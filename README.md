@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WorkPulse
 
-## Getting Started
+A **Workforce Activity & Productivity Management Platform** — time tracking, task management, activity monitoring, and AI-powered productivity insights for modern teams.
 
-First, run the development server:
+> **Phase 1 is frontend-only.** Every feature runs on mock data, static JSON, and simulated workflows — no backend, no real monitoring, no payments. The mock-service layer is the seam a real API drops into later.
+
+WorkPulse has its own original visual identity (see [Docs/DESIGN.md](Docs/DESIGN.md)) — a calm, warm greige canvas with a sage accent and a recurring pulse-line motif. It is not modeled on any existing product.
+
+## Quick start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run seed   # generate mock data into src/data/
+npm run dev    # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Sign in with the demo account: **`owner@acme.test`** and any password (Organization Owner — full access).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build (also runs lint + typecheck) |
+| `npm run start` | Serve the production build |
+| `npm run lint` | ESLint |
+| `npm run format` | Prettier write |
+| `npm run seed` | Regenerate mock data via Faker |
+| `npm run test` | Vitest (unit/component) |
+| `npm run test:e2e` | Playwright (E2E) |
 
-## Learn More
+## Tech stack
 
-To learn more about Next.js, take a look at the following resources:
+Next.js 15 (App Router) · React 18.3 · TypeScript · Tailwind v4 · shadcn/ui (Base UI primitives) · Zustand · React Hook Form + Zod · TanStack Table · Recharts · dnd-kit · next-themes · Faker.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Fonts: **Plus Jakarta Sans** (display), **Inter** (body), **JetBrains Mono** (figures).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Architecture
 
-## Deploy on Vercel
+Module-first under `src/`:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `app/` — App Router. Route groups: `(auth)` (login, etc.) and `(app)` (authenticated, wrapped by `AuthGuard` + `DashboardShell`). `/` (landing) and `/onboarding` are standalone.
+- `modules/<name>/` — feature code (components, services, …). Pages stay thin and delegate here.
+- `stores/` — Zustand: `auth`, `roles`, `notification`, `timer`, `dashboard`, `ui`.
+- `lib/` — `rbac.ts`, `data.ts` (typed mock accessors), `format.ts`, `mock-jwt.ts`, `utils.ts`.
+- `constants/` — permission catalog, system roles, navigation tree.
+- `components/shared/` + `components/ui/` (shadcn).
+- `data/` — generated JSON (output of `npm run seed`; never edit by hand).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**RBAC drives the UI.** Roles hold permission ids (`<module>:<action>`) or the wildcard `*`. The sidebar and routes are generated/guarded from the active role's permissions via `canAccess`.
+
+## Status
+
+Phase 1 (Core Foundation) is implemented: auth, RBAC, app shell with a collapsible sidebar, the dashboard, and the Roles & Permissions manager. The remaining sections (of 29 total) are navigable placeholders, built out in later phases — see [Docs/SPEC.md](Docs/SPEC.md) §6.
+
+## Documentation
+
+- [Docs/SPEC.md](Docs/SPEC.md) — **canonical spec** (reconciles the docs below; wins on conflicts)
+- [Docs/PRD.md](Docs/PRD.md) · [Docs/TDD.md](Docs/TDD.md) · [Docs/PAGES.md](Docs/PAGES.md) · [Docs/DESIGN.md](Docs/DESIGN.md)
+- [CLAUDE.md](CLAUDE.md) — guidance for working in this repo
