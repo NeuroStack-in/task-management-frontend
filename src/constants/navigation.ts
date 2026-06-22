@@ -13,7 +13,6 @@ import {
   AlertTriangle,
   Mail,
   Bell,
-  Briefcase,
   Plug,
   CreditCard,
   ShieldCheck,
@@ -24,6 +23,7 @@ import {
   Settings,
   HelpCircle,
   Building2,
+  CalendarCheck,
 } from "lucide-react";
 import type { PermissionId } from "@/types/rbac";
 
@@ -114,16 +114,16 @@ export const NAV_GROUPS: NavGroup[] = [
         permission: "employees:view",
       },
       {
+        label: "Attendance",
+        href: "/attendance",
+        icon: CalendarCheck,
+        permission: "attendance:view",
+      },
+      {
         label: "Approvals",
         href: "/approvals",
         icon: CheckCheck,
         permission: "approvals:view",
-      },
-      {
-        label: "Jobs",
-        href: "/jobs",
-        icon: Briefcase,
-        permission: "jobs:view",
       },
     ],
   },

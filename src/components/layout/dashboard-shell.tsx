@@ -3,6 +3,7 @@
 import { useUiStore } from "@/stores/ui.store";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
+import { ChatBot } from "./chat-bot";
 import { cn } from "@/lib/utils";
 
 /**
@@ -29,6 +30,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         <TopNavbar />
         <main className="flex-1 px-4 pb-8 sm:px-6">{children}</main>
       </div>
+      <ChatBot />
     </div>
   );
 }

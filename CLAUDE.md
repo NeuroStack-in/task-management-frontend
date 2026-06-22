@@ -30,9 +30,13 @@ npm run test:e2e     # Playwright E2E
 
 There is no single-test runner script; use `npx vitest run path/to/file.test.ts` or `npx vitest -t "name"`.
 
+> **Tests are scaffolded, not yet wired.** The deps and `package.json` scripts exist, but there is no `vitest.config.*` or `playwright.config.*` (nor a test setup file) checked in yet, so `npm run test` / `npm run test:e2e` won't run a real suite until those are added. Today the dependable gate is `npm run build` (it runs lint + typecheck).
+
 ## Stack (pinned — do not "upgrade" casually)
 
-Next.js **15** (App Router) · React **18.3** · TypeScript · Tailwind **v4** · shadcn/ui (**Base UI** primitives, not Radix) · Zustand · React Hook Form + Zod · TanStack Table · Recharts · dnd-kit · next-themes · Faker (dev).
+Next.js **15** (App Router) · React **18.3** · TypeScript · Tailwind **v4** · shadcn/ui (**Base UI** primitives, not Radix) · Zustand · React Hook Form + Zod · TanStack Table · Recharts · dnd-kit · next-themes · Faker (dev). Plus: **sonner** (toasts), **react-joyride** (onboarding tour), **html2canvas + jspdf** (PDF export) and **papaparse** (CSV) for report exports.
+
+Imports use the `@/*` path alias → `./src/*` (tsconfig).
 
 `create-next-app` pulls Next 16 + React 19; this project is intentionally on Next 15 + React 18.3 for library compatibility. Keep it there.
 
@@ -52,7 +56,7 @@ Module-first, mirroring TDD §4. Key directories under `src/`:
 - `stores/` — Zustand stores: `auth`, `roles`, `notification`, `timer`, `dashboard`. Persisted ones use the `persist` middleware with `wp-*` storage keys.
 - `lib/` — `rbac.ts` (access logic), `data.ts` (typed mock-data accessors), `format.ts` (server-safe helpers), `mock-jwt.ts`, `utils.ts` (`cn`).
 - `constants/` — `permissions.ts` (catalog), `roles.ts` (system roles), `navigation.ts` (sidebar tree).
-- `components/shared/` (PageHeader, StatCard, EmptyState, Loader, ComingSoon) and `components/layout/` (shell, sidebar, navbar, global timer, etc.).
+- `components/shared/` (PageHeader, StatCard, EmptyState, Loader, ComingSoon, plus the **pulse-line primitives** `sparkline`, `delta-pill`, `gauge` — the WorkPulse design signature; reuse these instead of new chart one-offs) and `components/layout/` (shell, sidebar, navbar, global timer, etc.).
 - `data/` — generated JSON (git-tracked output of `npm run seed`). **Never edit by hand; never import directly from components** — go through `lib/data.ts` and module services.
 
 ### Load-bearing patterns (read before changing)
@@ -69,6 +73,6 @@ Module-first, mirroring TDD §4. Key directories under `src/`:
 
 ## Conventions
 
-- Theme tokens are CSS variables in [src/app/globals.css](src/app/globals.css) (oklch, light + `.dark`). Brand primary is indigo; `--chart-1..5` is a categorical palette; `--success`/`--warning` exist. Use token classes (`bg-primary`, `text-muted-foreground`), not hardcoded colors.
+- Theme tokens are CSS variables in [src/app/globals.css](src/app/globals.css) (hex, light + `.dark`). Palette is **Graphite & Indigo**: cool graphite neutrals + an indigo `--primary` (see [Docs/DESIGN.md](Docs/DESIGN.md)). `--feature`/`--feature-tint` are the featured-card accent surfaces; `--chart-1..5` is an indigo-led categorical palette; `--success`/`--warning`/`--positive`/`--negative` exist. Use token classes (`bg-primary`, `bg-feature`, `text-muted-foreground`), not hardcoded colors.
 - Keep every route navigable (PRD metric: "100% clickable workflows"). New, unbuilt sections render `<ComingSoon … phase={n} />`.
 - Avoid `Date.now()`/`Math.random()` in render paths; the seed script is deterministic (`faker.seed(...)`-pinned), so regenerating data is stable.

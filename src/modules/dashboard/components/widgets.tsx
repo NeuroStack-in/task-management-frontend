@@ -68,7 +68,7 @@ export function ScreenshotsWidget({
     <Card className="justify-between">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-sage-tint text-primary">
+          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <Camera className="size-4" />
           </span>
           Screenshots Captured
@@ -89,13 +89,13 @@ export function ScreenshotsWidget({
 
 export function AiSummaryWidget() {
   return (
-    <Card className="bg-sage-strong text-sage-strong-foreground shadow-none">
+    <Card className="bg-feature text-feature-foreground shadow-none">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Sparkles className="size-4" /> AI Summary
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3 text-sm leading-relaxed text-sage-strong-foreground/90">
+      <CardContent className="space-y-3 text-sm leading-relaxed text-feature-foreground/90">
         <p>
           Productivity rose 3% this week, led by Engineering and Product. Two
           teams show early burnout signals worth a closer look.
@@ -239,7 +239,7 @@ export function BillingWidget({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-sage-tint text-primary">
+          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <CreditCard className="size-4" />
           </span>
           Billing Overview

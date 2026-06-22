@@ -13,7 +13,6 @@ export function Gauge({ value, label, size = 160, className }: GaugeProps) {
   const clamped = Math.max(0, Math.min(100, value));
   const stroke = 12;
   const r = (size - stroke) / 2;
-  const cx = size / 2;
   const cy = size / 2;
   // Semicircle arc length (half the full circumference).
   const arc = Math.PI * r;

@@ -27,7 +27,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
   const top = Math.max(...data.map((d) => d.score));
 
   return (
-    <Card className="xl:col-span-2">
+    <Card>
       <CardHeader>
         <CardTitle>Team Comparison</CardTitle>
         <CardDescription>Average productivity by department</CardDescription>
@@ -65,7 +65,9 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
                   <Cell
                     key={d.team}
                     fill={
-                      d.score === top ? "var(--chart-1)" : "var(--sage-strong)"
+                      d.score === top
+                        ? "var(--chart-1)"
+                        : "color-mix(in srgb, var(--primary) 28%, var(--muted))"
                     }
                   />
                 ))}

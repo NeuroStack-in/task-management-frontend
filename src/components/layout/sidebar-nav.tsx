@@ -49,7 +49,7 @@ export function SidebarNav({
 
   if (collapsed) {
     return (
-      <div className="flex h-full w-[68px] flex-col items-center rounded-[1.6rem] bg-sidebar py-4 text-sidebar-foreground shadow-soft">
+      <div className="flex h-full w-[68px] flex-col items-center overflow-hidden rounded-[1.6rem] bg-sidebar py-4 text-sidebar-foreground shadow-soft">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -67,7 +67,7 @@ export function SidebarNav({
           <TooltipContent side="right">Expand sidebar</TooltipContent>
         </Tooltip>
 
-        <ScrollArea className="my-3 flex-1">
+        <ScrollArea className="my-3 w-full min-h-0 flex-1">
           <nav className="flex flex-col items-center gap-1 px-2">
             {nav.map((group, gi) => (
               <div
@@ -177,7 +177,7 @@ export function SidebarNav({
         </button>
       </div>
 
-      <ScrollArea className="flex-1 px-3 pb-4">
+      <ScrollArea className="min-h-0 flex-1 px-3 pb-4">
         <nav className="flex flex-col gap-5">
           {nav.map((group) => (
             <div key={group.label}>

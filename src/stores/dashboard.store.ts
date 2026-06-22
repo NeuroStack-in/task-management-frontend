@@ -2,20 +2,24 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { DashboardWidget } from "@/types";
 
+/** id === type for these built-in widgets (one instance of each). */
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
-  { id: "w-productivity", title: "Productivity Score", type: "productivity", position: 0, visible: true },
-  { id: "w-activity", title: "Activity Trends", type: "activity", position: 1, visible: true },
-  { id: "w-tasks", title: "Open Tasks", type: "tasks", position: 2, visible: true },
-  { id: "w-projects", title: "Projects", type: "projects", position: 3, visible: true },
-  { id: "w-deadlines", title: "Upcoming Deadlines", type: "deadlines", position: 4, visible: true },
-  { id: "w-ai", title: "AI Summary", type: "ai-summary", position: 5, visible: true },
-  { id: "w-employees", title: "Top Performers", type: "employees", position: 6, visible: false },
-  { id: "w-billing", title: "Billing Snapshot", type: "billing", position: 7, visible: false },
+  { id: "heatmap", title: "Productivity Heatmap", type: "heatmap", position: 0, visible: true },
+  { id: "attendance", title: "Attendance", type: "attendance", position: 1, visible: true },
+  { id: "team-comparison", title: "Team Comparison", type: "team-comparison", position: 2, visible: true },
+  { id: "active-inactive", title: "Active vs Inactive", type: "active-inactive", position: 3, visible: true },
+  { id: "top-employees", title: "Top Employees", type: "top-employees", position: 4, visible: true },
+  { id: "ai-summary", title: "AI Summary", type: "ai-summary", position: 5, visible: true },
+  { id: "alerts", title: "Recent Alerts", type: "alerts", position: 6, visible: true },
+  { id: "deadlines", title: "Deadline Warnings", type: "deadlines", position: 7, visible: true },
+  { id: "upcoming-tasks", title: "Upcoming Tasks", type: "upcoming-tasks", position: 8, visible: true },
+  { id: "screenshots", title: "Screenshots Captured", type: "screenshots", position: 9, visible: false },
+  { id: "headcount", title: "Headcount by Status", type: "headcount", position: 10, visible: false },
+  { id: "billing", title: "Billing Overview", type: "billing", position: 11, visible: false },
 ];
 
 interface DashboardState {
   widgets: DashboardWidget[];
-  setWidgets: (widgets: DashboardWidget[]) => void;
   toggleWidget: (id: string) => void;
   reorder: (orderedIds: string[]) => void;
   reset: () => void;
@@ -25,8 +29,6 @@ export const useDashboardStore = create<DashboardState>()(
   persist(
     (set) => ({
       widgets: DEFAULT_WIDGETS,
-
-      setWidgets: (widgets) => set({ widgets }),
 
       toggleWidget: (id) =>
         set((s) => ({
@@ -45,6 +47,12 @@ export const useDashboardStore = create<DashboardState>()(
 
       reset: () => set({ widgets: DEFAULT_WIDGETS }),
     }),
-    { name: "wp-dashboard" },
+    {
+      name: "wp-dashboard",
+      // Bumped when the widget set changed shape; older persisted layouts are
+      // discarded so they don't reference removed widget types.
+      version: 2,
+      migrate: () => ({ widgets: DEFAULT_WIDGETS }) as DashboardState,
+    },
   ),
 );

@@ -30,14 +30,14 @@ export function StatCard({
     <Card
       className={cn(
         "justify-between",
-        featured && "bg-sage-strong text-sage-strong-foreground shadow-none",
+        featured && "bg-feature text-feature-foreground shadow-none",
       )}
     >
       <div className="flex items-center justify-between gap-3 px-5">
         <span
           className={cn(
             "text-sm",
-            featured ? "text-sage-strong-foreground/85" : "text-muted-foreground",
+            featured ? "text-feature-foreground/85" : "text-muted-foreground",
           )}
         >
           {label}
@@ -46,7 +46,7 @@ export function StatCard({
           <span
             className={cn(
               "flex size-8 items-center justify-center rounded-full",
-              featured ? "bg-white/15" : "bg-sage-tint text-primary",
+              featured ? "bg-white/15" : "bg-feature-tint text-primary",
             )}
           >
             <Icon className="size-4" />
@@ -66,7 +66,7 @@ export function StatCard({
                 className={cn(
                   "text-xs",
                   featured
-                    ? "text-sage-strong-foreground/80"
+                    ? "text-feature-foreground/80"
                     : "text-muted-foreground",
                 )}
               >

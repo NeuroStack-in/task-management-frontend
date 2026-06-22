@@ -11,7 +11,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -49,14 +48,14 @@ export function UserMenu() {
         <span className="hidden text-sm font-medium sm:inline">{user.name}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="flex flex-col">
-          <span className="truncate">{user.name}</span>
-          <span className="truncate text-xs font-normal text-muted-foreground">
+        <div className="flex flex-col px-2 py-1.5">
+          <span className="truncate text-sm font-medium">{user.name}</span>
+          <span className="truncate text-xs text-muted-foreground">
             {role?.name ?? "No role"}
           </span>
-        </DropdownMenuLabel>
+        </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/employees")}>
+        <DropdownMenuItem onClick={() => router.push("/profile")}>
           <UserIcon className="size-4" /> Profile
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => router.push("/settings")}>

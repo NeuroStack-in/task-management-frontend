@@ -27,15 +27,18 @@ export interface ActiveTimerTask {
 }
 
 export type WidgetType =
-  | "productivity"
-  | "activity"
-  | "tasks"
-  | "projects"
-  | "deadlines"
+  | "heatmap"
+  | "team-comparison"
+  | "attendance"
+  | "active-inactive"
+  | "headcount"
+  | "screenshots"
+  | "top-employees"
   | "ai-summary"
   | "billing"
-  | "reports"
-  | "employees";
+  | "alerts"
+  | "deadlines"
+  | "upcoming-tasks";
 
 export interface DashboardWidget {
   id: string;

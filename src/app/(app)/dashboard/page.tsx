@@ -1,18 +1,15 @@
 import type { Metadata } from "next";
 import { Gauge, Users, UserMinus, Timer } from "lucide-react";
 import { users } from "@/lib/data";
+import {
+  statusCounts,
+  attendanceCounts,
+  productivityHeatmap,
+} from "@/lib/mock-metrics";
 import { StatCard } from "@/components/shared/stat-card";
 import { GreetingHeader } from "@/modules/dashboard/components/greeting-header";
-import { TeamComparisonChart } from "@/modules/dashboard/components/team-comparison-chart";
-import {
-  TopEmployeesWidget,
-  ScreenshotsWidget,
-  AiSummaryWidget,
-  AlertsWidget,
-  DeadlineWidget,
-  UpcomingTasksWidget,
-  BillingWidget,
-} from "@/modules/dashboard/components/widgets";
+import { CustomizableDashboard } from "@/modules/dashboard/components/customizable-dashboard";
+import type { DashboardData } from "@/modules/dashboard/widget-registry";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -43,11 +40,24 @@ export default function DashboardPage() {
     .sort((a, b) => b.score - a.score)
     .slice(0, 7);
 
+  const data: DashboardData = {
+    teamData,
+    screenshotCount: 1284,
+    screenshotsTrend: [180, 210, 240, 220, 260, 250, 284],
+    topPerformers,
+    billing: { plan: "Business", seatsUsed: active, seatsTotal: 120 },
+    heatmap: productivityHeatmap(),
+    attendanceCounts: attendanceCounts(users),
+    statusCounts: statusCounts(users),
+    activeCount: active,
+    inactiveCount: inactive,
+  };
+
   return (
     <div className="space-y-5 pt-1">
       <GreetingHeader />
 
-      {/* KPI widgets */}
+      {/* KPI strip (always shown) */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Productivity Score"
@@ -80,28 +90,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Team comparison + screenshots */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <TeamComparisonChart data={teamData} />
-        <ScreenshotsWidget
-          count={1284}
-          trend={[180, 210, 240, 220, 260, 250, 284]}
-        />
-      </div>
-
-      {/* People · AI · Billing */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <TopEmployeesWidget people={topPerformers} />
-        <AiSummaryWidget />
-        <BillingWidget plan="Business" seatsUsed={active} seatsTotal={120} />
-      </div>
-
-      {/* Alerts · Deadlines · Tasks */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <AlertsWidget />
-        <DeadlineWidget />
-        <UpcomingTasksWidget />
-      </div>
+      <CustomizableDashboard data={data} />
     </div>
   );
 }

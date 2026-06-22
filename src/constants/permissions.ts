@@ -71,6 +71,14 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     ],
   },
   {
+    module: "attendance",
+    label: "Attendance",
+    permissions: [
+      p("attendance", "view", "View Attendance"),
+      p("attendance", "manage", "Manage Attendance"),
+    ],
+  },
+  {
     module: "activity",
     label: "Activity Monitoring",
     permissions: [
