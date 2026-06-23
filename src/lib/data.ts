@@ -6,10 +6,15 @@
  */
 import usersJson from "@/data/users.json";
 import organizationJson from "@/data/organization.json";
+import projectsJson from "@/data/projects.json";
+import tasksJson from "@/data/tasks.json";
 import type { Organization, User } from "@/types/user";
+import type { Project, Task } from "@/modules/projects/types";
 
 export const users = usersJson as User[];
 export const organization = organizationJson as Organization;
+export const projects = projectsJson as Project[];
+export const tasks = tasksJson as Task[];
 
 /** Simulates network latency for mock services. */
 export function delay<T>(value: T, ms = 250): Promise<T> {

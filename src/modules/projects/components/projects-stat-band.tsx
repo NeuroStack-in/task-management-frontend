@@ -1,0 +1,114 @@
+"use client";
+
+import {
+  Activity,
+  AlertTriangle,
+  FolderKanban,
+  Gauge,
+  type LucideIcon,
+} from "lucide-react";
+import { Sparkline } from "@/components/shared/sparkline";
+import { cn } from "@/lib/utils";
+import type { PortfolioStats } from "../lib";
+
+interface Segment {
+  key: string;
+  label: string;
+  value: string | number;
+  sub: string;
+  icon: LucideIcon;
+  chip: string;
+  primary?: boolean;
+  spark?: number[];
+}
+
+/**
+ * A single connected KPI band (not four floating cards) — reads as an admin
+ * control strip. The primary cell carries the indigo feature tint + the
+ * portfolio pulse; 1px gaps over a border-coloured parent form the dividers.
+ */
+export function ProjectsStatBand({ stats }: { stats: PortfolioStats }) {
+  const segments: Segment[] = [
+    {
+      key: "total",
+      label: "Total projects",
+      value: stats.total,
+      sub: "across the organization",
+      icon: FolderKanban,
+      chip: "bg-primary/10 text-primary",
+      primary: true,
+      spark: stats.pulse,
+    },
+    {
+      key: "active",
+      label: "Active",
+      value: stats.active,
+      sub: "in flight now",
+      icon: Activity,
+      chip: "bg-feature-tint text-primary",
+    },
+    {
+      key: "risk",
+      label: "At risk",
+      value: stats.atRisk,
+      sub: "over budget or overdue",
+      icon: AlertTriangle,
+      chip: "bg-warning/15 text-warning",
+    },
+    {
+      key: "avg",
+      label: "Avg progress",
+      value: `${stats.avgProgress}%`,
+      sub: "live projects",
+      icon: Gauge,
+      chip: "bg-feature-tint text-primary",
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border bg-border lg:grid-cols-4">
+      {segments.map((s) => {
+        const Icon = s.icon;
+        return (
+          <div
+            key={s.key}
+            className={cn(
+              "flex flex-col gap-4 bg-card p-5",
+              s.primary && "bg-feature-tint/60",
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm text-muted-foreground">{s.label}</span>
+              <span
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-full",
+                  s.chip,
+                )}
+              >
+                <Icon className="size-4" />
+              </span>
+            </div>
+            <div className="flex items-end justify-between gap-2">
+              <div className="space-y-1">
+                <p className="font-display text-3xl leading-none font-semibold tracking-tight tabular-nums">
+                  {s.value}
+                </p>
+                <p className="text-xs text-muted-foreground">{s.sub}</p>
+              </div>
+              {s.spark ? (
+                <Sparkline
+                  data={s.spark}
+                  width={84}
+                  height={36}
+                  area
+                  showDot={false}
+                  className="text-primary"
+                />
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
