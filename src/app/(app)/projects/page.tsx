@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <ComingSoon
       title="Projects"
-      description="Project dashboards, allocation, and progress tracking."
+      description="Project dashboards, allocation, progress tracking, and per-project task boards (with a 'My tasks' view)."
       phase={2}
     />
   );

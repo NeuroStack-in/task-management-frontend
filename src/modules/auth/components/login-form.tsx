@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -9,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { AuthError, DEMO_EMAIL } from "@/modules/auth/services/auth.service";
+import { SsoButtons } from "./sso-buttons";
 import {
   Card,
   CardContent,
@@ -48,7 +50,7 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       await login(values.email, values.password);
-      toast.success("Welcome back!");
+      toast.success("Signed in");
       const from = params.get("from");
       router.replace(from && from.startsWith("/") ? from : "/dashboard");
     } catch (err) {
@@ -74,6 +76,7 @@ export function LoginForm() {
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
+          <SsoButtons />
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -127,11 +130,20 @@ export function LoginForm() {
               "Sign in"
             )}
           </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            <a href="/forgot-password" className="hover:text-foreground">
+          <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
+            <Link href="/forgot-password" className="hover:text-foreground">
               Forgot password?
-            </a>
-          </p>
+            </Link>
+            <span>
+              New to WorkPulse?{" "}
+              <Link
+                href="/register"
+                className="font-medium text-primary underline-offset-2 hover:underline"
+              >
+                Create an account
+              </Link>
+            </span>
+          </div>
         </CardFooter>
       </form>
     </Card>

@@ -46,17 +46,20 @@ Route groups follow TDD §3. `(marketing)` and `(auth)` are unauthenticated; eve
 | 3 | Onboarding | `/onboarding` | 1 |
 | 4 | Dashboard Center | `/dashboard` | 2 |
 | 5 | Time Tracking | `/time-tracking` | 2 |
-| 6 | Tasks & Work Management | `/tasks` | 2 |
+| 6 | Tasks & Work Management | merged into `/projects` (per-project task boards + "My tasks" view); no standalone `/tasks` | 2 |
 | 7 | Project Management | `/projects` | 2 |
 | 8 | Employee Management | `/employees` | 3 |
 | 9 | Organization Management | `/settings/organization` | 4 |
-| 10 | Activity Monitoring | `/activity` | 3 |
-| 11 | Screenshot Center | `/screenshots` | 3 |
+| 10 | Activity Monitoring | `/insights/activity` (Insights tab) | 3 |
+| 11 | Screenshot Center | `/insights/screenshots` (Insights tab) | 3 |
 | 12 | Monitoring Configuration | `/settings/monitoring` | 4 |
 | 13 | Application & URL Management | `/settings/tracking-rules` | 4 |
-| 14 | Reports Center | `/reports` | 3 |
-| 15 | AI Center | `/ai` | 5 |
-| 16 | Anomaly Detection Center | `/anomalies` | 5 |
+| 14 | Reports Center | `/insights/reports` (Insights tab) | 3 |
+| 15 | AI Center | `/insights/ai` (Insights tab) | 5 |
+| 16 | Anomaly Detection Center | `/insights/anomalies` (Insights tab) | 5 |
+
+> Sections 10, 11, 14, 15, 16 are unified into a single **Insights** page (one
+> sidebar entry) with nested, permission-gated tabs under `/insights/*`.
 | 17 | Approval Center | `/approvals` | 4 |
 | 18 | Internal Communication | `/inbox` | 4 |
 | 19 | Notification Center | `/notifications` | 4 |

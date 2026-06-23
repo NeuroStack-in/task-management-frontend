@@ -1,12 +1,8 @@
-import { AuthStub } from "@/modules/auth/components/auth-stub";
+import type { Metadata } from "next";
+import { ResetPasswordForm } from "@/modules/auth/components/reset-password-form";
 
-export const metadata = { title: "Reset password" };
+export const metadata: Metadata = { title: "Reset password" };
 
 export default function ResetPasswordPage() {
-  return (
-    <AuthStub
-      title="Reset password"
-      description="Set a new password. This flow is simulated for the frontend demo."
-    />
-  );
+  return <ResetPasswordForm />;
 }

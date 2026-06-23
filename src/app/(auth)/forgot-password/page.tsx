@@ -1,12 +1,8 @@
-import { AuthStub } from "@/modules/auth/components/auth-stub";
+import type { Metadata } from "next";
+import { ForgotPasswordForm } from "@/modules/auth/components/forgot-password-form";
 
-export const metadata = { title: "Forgot password" };
+export const metadata: Metadata = { title: "Forgot password" };
 
 export default function ForgotPasswordPage() {
-  return (
-    <AuthStub
-      title="Forgot password"
-      description="Password recovery is simulated in this demo. In production you'd receive a reset link by email."
-    />
-  );
+  return <ForgotPasswordForm />;
 }

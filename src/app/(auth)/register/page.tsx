@@ -1,12 +1,8 @@
-import { AuthStub } from "@/modules/auth/components/auth-stub";
+import type { Metadata } from "next";
+import { RegisterForm } from "@/modules/auth/components/register-form";
 
-export const metadata = { title: "Create organization" };
+export const metadata: Metadata = { title: "Create account" };
 
 export default function RegisterPage() {
-  return (
-    <AuthStub
-      title="Create your organization"
-      description="Organization registration runs through onboarding in this demo. Sign in to explore the platform."
-    />
-  );
+  return <RegisterForm />;
 }

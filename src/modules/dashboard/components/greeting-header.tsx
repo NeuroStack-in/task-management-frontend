@@ -12,7 +12,7 @@ export function GreetingHeader() {
         Hello, {firstName}
       </h1>
       <p className="text-sm text-muted-foreground">
-        Here&apos;s the pulse of your organization today.
+        Here&apos;s your organization at a glance.
       </p>
     </div>
   );

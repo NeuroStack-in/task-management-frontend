@@ -31,7 +31,7 @@ const DEMO_NOTIFICATIONS: AppNotification[] = [
     message: "“Finalize Q3 report” is due at 5:00 PM.",
     read: false,
     createdAt: Date.now() - 1000 * 60 * 60,
-    href: "/tasks",
+    href: "/projects",
   },
   {
     id: "seed-3",
@@ -40,7 +40,7 @@ const DEMO_NOTIFICATIONS: AppNotification[] = [
     message: "Engineering · Backend is down 8% vs last week.",
     read: true,
     createdAt: Date.now() - 1000 * 60 * 60 * 5,
-    href: "/anomalies",
+    href: "/insights/anomalies",
   },
 ];
 
@@ -100,7 +100,7 @@ export function NotificationsMenu() {
         <ScrollArea className="max-h-80">
           {notifications.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">
-              You&apos;re all caught up.
+              No new notifications.
             </p>
           ) : (
             <ul className="divide-y">

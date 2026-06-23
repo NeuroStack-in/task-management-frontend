@@ -27,8 +27,8 @@ export function ComingSoon({ title, description, phase }: ComingSoonProps) {
       />
       <EmptyState
         icon={Construction}
-        title="This section is coming soon"
-        description="The layout, navigation, and access control are wired up. Screens for this module land in a later build phase."
+        title="Coming soon"
+        description="The layout, navigation, and access control for this section are in place. The full screens will be available in a later phase."
       />
     </div>
   );

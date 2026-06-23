@@ -13,7 +13,7 @@ interface Message {
 }
 
 const GREETING =
-  "Hi! I'm Pulse, your WorkPulse assistant. Ask me about productivity, your team, or this screen.";
+  "I'm your WorkPulse assistant. Ask about productivity, your team, or the current screen.";
 
 const SUGGESTIONS = [
   "Summarize this week",
@@ -32,7 +32,7 @@ function mockReply(prompt: string): string {
     return "I can draft a productivity report for the last 7 days covering active vs. productive time, top performers, and deadlines. Head to Reports → Custom Report Builder to export it as PDF or CSV.";
   if (q.includes("top") || q.includes("productive"))
     return "Your top performers this week are leading at 90%+ productivity. You can see the full ranking on the Dashboard and in Employees.";
-  return "In this demo I answer from mock data. Try asking for a weekly summary, who needs attention, or a productivity report.";
+  return "This assistant runs on sample data in the demo. Try asking for a weekly summary, who needs attention, or a productivity report.";
 }
 
 export function ChatBot() {
@@ -77,8 +77,10 @@ export function ChatBot() {
               <Sparkles className="size-4" />
             </span>
             <div className="flex-1">
-              <p className="text-sm font-medium leading-none">Pulse Assistant</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Always here to help</p>
+              <p className="text-sm font-medium leading-none">WorkPulse Assistant</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                AI productivity assistant
+              </p>
             </div>
             <Button
               variant="ghost"
@@ -143,7 +145,7 @@ export function ChatBot() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Pulse…"
+              placeholder="Ask the assistant…"
               className="h-10 rounded-full"
               aria-label="Message"
             />

@@ -1,6 +1,12 @@
 import type { Role, PermissionId } from "@/types/rbac";
 import { WILDCARD } from "@/constants/permissions";
-import { NAV_GROUPS, type NavGroup, type NavItem } from "@/constants/navigation";
+import {
+  NAV_GROUPS,
+  ADMIN_SECTIONS,
+  INSIGHTS_TABS,
+  type NavGroup,
+  type NavItem,
+} from "@/constants/navigation";
 
 /**
  * Core access check (TDD §8). Returns true when the role holds the wildcard or
@@ -32,6 +38,15 @@ export function canAny(
   return permissions.some((perm) => canAccess(role, perm));
 }
 
+/** Visibility for a nav item: by `anyPermissions` if present, else by `permission`. */
+export function isNavItemVisible(
+  role: Role | null | undefined,
+  item: NavItem,
+): boolean {
+  if (item.anyPermissions) return canAny(role, item.anyPermissions);
+  return canAccess(role, item.permission);
+}
+
 /**
  * Filters the navigation tree down to the items the role may access, dropping
  * empty groups. Used by the sidebar generator (TDD §8 — "navigation filtering").
@@ -39,22 +54,26 @@ export function canAny(
 export function getAccessibleNav(role: Role | null | undefined): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item: NavItem) =>
-      canAccess(role, item.permission),
-    ),
+    items: group.items.filter((item) => isNavItemVisible(role, item)),
   })).filter((group) => group.items.length > 0);
 }
 
-/** Resolves the required permission for a given pathname, if any nav item matches. */
+/**
+ * Resolves the required permission for a given pathname. Scans the sidebar nav
+ * AND the admin sections (which live in the Settings hub, not the sidebar) so
+ * relocated routes stay guarded. Returns the most specific (longest href) match.
+ */
 export function permissionForPath(pathname: string): PermissionId | null {
+  const items: NavItem[] = [
+    ...NAV_GROUPS.flatMap((g) => g.items),
+    ...ADMIN_SECTIONS.flatMap((g) => g.items),
+    ...INSIGHTS_TABS,
+  ];
   let match: NavItem | null = null;
-  for (const group of NAV_GROUPS) {
-    for (const item of group.items) {
-      if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
-        // Prefer the most specific (longest) matching href.
-        if (!match || item.href.length > match.href.length) {
-          match = item;
-        }
+  for (const item of items) {
+    if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
+      if (!match || item.href.length > match.href.length) {
+        match = item;
       }
     }
   }

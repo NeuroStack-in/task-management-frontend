@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, PanelLeftClose, LogOut, Settings } from "lucide-react";
+import { Activity, PanelLeftClose, LogOut } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/stores/ui.store";
 import { useAuthStore } from "@/stores/auth.store";
@@ -113,22 +113,6 @@ export function SidebarNav({
         </ScrollArea>
 
         <div className="flex flex-col items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Link
-                  href="/settings"
-                  onClick={onNavigate}
-                  aria-label="Settings"
-                />
-              }
-            >
-              <span className="flex size-10 items-center justify-center rounded-2xl text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
-                <Settings className="size-[18px]" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right">Settings</TooltipContent>
-          </Tooltip>
           <Tooltip>
             <TooltipTrigger
               render={
