@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
-import { TimeTrackingView } from "@/modules/time-tracking/components/time-tracking-view";
+import { ComingSoon } from "@/components/shared/coming-soon";
 
 export const metadata: Metadata = { title: "Time Tracking" };
 
 export default function Page() {
-  return <TimeTrackingView />;
+  return (
+    <ComingSoon
+      title="Time Tracking"
+      description="Live timer, timesheets, manual entries, and approvals."
+      phase={2}
+    />
+  );
 }

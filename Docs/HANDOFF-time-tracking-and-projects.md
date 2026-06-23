@@ -81,15 +81,22 @@ React Hook Form + Zod · papaparse (CSV) · jspdf + html2canvas (PDF) · sonner 
 **Route:** `/time-tracking` · **Permissions:** `time-tracking:view` (gate edits with
 `time-tracking:edit`, approvals with `time-tracking:approve`).
 
-### What already exists
-- Page: [src/app/(app)/time-tracking/page.tsx](<../src/app/(app)/time-tracking/page.tsx>)
-- Module: `src/modules/time-tracking/components/` — `time-tracking-view.tsx`
-  (KPI strip + weekly chart + "Today at a glance" + today's timesheet table),
-  `timer-hero.tsx`, `weekly-hours-chart.tsx`.
+### Current state
+- The page [src/app/(app)/time-tracking/page.tsx](<../src/app/(app)/time-tracking/page.tsx>)
+  is currently an **empty `ComingSoon` stub** — build it fresh.
+- A **v1 implementation still lives in the module** as reference/starting
+  material (not wired to the route): `src/modules/time-tracking/components/`
+  — `time-tracking-view.tsx` (KPI strip + weekly chart + "Today at a glance" +
+  today's timesheet), `timer-hero.tsx`, `weekly-hours-chart.tsx`. Reuse, rework,
+  or delete as you see fit.
 - Mock data + helpers: [src/lib/mock-time.ts](../src/lib/mock-time.ts) —
   `TimeEntry`, `TaskOption`, `TASK_OPTIONS`, `TODAYS_ENTRIES`, `WEEKLY_HOURS`,
   `summarize()`, `formatHours()`.
 - Global timer store: `useTimerStore` (start/pause/resume/stop/`switchTask`/`elapsed`).
+- **Make it role-aware** (see [RBAC.md](RBAC.md)): show the personal tracker only
+  for `time-tracking:edit` holders without `approve`; show the team timesheet /
+  approvals view for oversight roles (`time-tracking:approve`) — so the Owner/Admin
+  don't get a personal timer.
 
 ### What to build (SPEC §5 / PAGES §5)
 > Note: `TimerHero` already reads `useTimerStore`, so the page timer and the
