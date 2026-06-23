@@ -123,14 +123,6 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [p("notifications", "view", "View Notifications")],
   },
   {
-    module: "jobs",
-    label: "Job Portal",
-    permissions: [
-      p("jobs", "view", "View Jobs"),
-      p("jobs", "manage", "Manage Hiring"),
-    ],
-  },
-  {
     module: "integrations",
     label: "Integrations",
     permissions: [

@@ -9,9 +9,25 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity as ActivityIcon, Keyboard, MousePointer2, Clock } from "lucide-react";
+import {
+  Activity as ActivityIcon,
+  Gauge,
+  MousePointerClick,
+  Coffee,
+} from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  ProductivityHeatmap,
+  ActiveInactiveRing,
+} from "@/modules/dashboard/components/insight-widgets";
+import { users } from "@/lib/data";
+import { productivityHeatmap } from "@/lib/mock-metrics";
 import {
   APP_USAGE,
   URL_USAGE,
@@ -28,6 +44,13 @@ import {
 
 const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
 
+const formatMinutes = (min: number): string => {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+};
+
 const trendData = ACTIVITY_BY_HOUR.map((active, i) => ({
   hour: HOUR_LABELS[i],
   active,
@@ -35,63 +58,46 @@ const trendData = ACTIVITY_BY_HOUR.map((active, i) => ({
   mouse: MOUSE_BY_HOUR[i],
 }));
 
-function UsageList({ title, items }: { title: string; items: UsageItem[] }) {
-  const max = Math.max(...items.map((i) => i.minutes));
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {items.map((it) => (
-          <div key={it.name} className="space-y-1">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-2">
-                <span
-                  className="size-2 rounded-full"
-                  style={{ backgroundColor: CATEGORY_COLOR[it.category] }}
-                />
-                {it.name}
-              </span>
-              <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                {Math.floor(it.minutes / 60)}h {it.minutes % 60}m
-              </span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `${(it.minutes / max) * 100}%`,
-                  backgroundColor: CATEGORY_COLOR[it.category],
-                }}
-              />
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
 export function ActivityTab() {
+  const active = users.filter((u) => u.status === "active").length;
+  const inactive = users.filter((u) => u.status === "inactive").length;
+
   const totals = usageTotals(APP_USAGE);
   const totalMin = totals.productive + totals.neutral + totals.distracting;
-  const productiveHrs = (totals.productive / 60).toFixed(1);
+  const productivePct = Math.round((totals.productive / (totalMin || 1)) * 100);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Avg. active"
-          value={`${avg(ACTIVITY_BY_HOUR)}%`}
+          label="Active now"
+          value={active}
           icon={ActivityIcon}
-          hint="across the workday"
+          hint="live"
           trend={ACTIVITY_BY_HOUR}
           featured
         />
-        <StatCard label="Keyboard" value={`${avg(KEYBOARD_BY_HOUR)}%`} icon={Keyboard} trend={KEYBOARD_BY_HOUR} delta={4} />
-        <StatCard label="Mouse" value={`${avg(MOUSE_BY_HOUR)}%`} icon={MousePointer2} trend={MOUSE_BY_HOUR} delta={2} />
-        <StatCard label="Productive time" value={`${productiveHrs}h`} icon={Clock} hint="logged today" />
+        <StatCard
+          label="Avg. active"
+          value={`${avg(ACTIVITY_BY_HOUR)}%`}
+          icon={Gauge}
+          delta={4}
+          trend={ACTIVITY_BY_HOUR.slice(-7)}
+        />
+        <StatCard
+          label="Productive time"
+          value={`${productivePct}%`}
+          icon={MousePointerClick}
+          delta={2}
+          trend={KEYBOARD_BY_HOUR.slice(-7)}
+        />
+        <StatCard
+          label="Distracting time"
+          value={formatMinutes(totals.distracting)}
+          icon={Coffee}
+          delta={-6}
+          trend={[52, 48, 55, 44, 50, 46, 41]}
+        />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -157,10 +163,98 @@ export function ActivityTab() {
         </Card>
       </div>
 
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <ProductivityHeatmap data={productivityHeatmap()} />
+        </div>
+        <ActiveInactiveRing active={active} inactive={inactive} />
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <UsageList title="Top applications" items={APP_USAGE} />
         <UsageList title="Top websites" items={URL_USAGE} />
       </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <IntensityCard title="Keyboard intensity" data={KEYBOARD_BY_HOUR} labels={HOUR_LABELS} />
+        <IntensityCard title="Mouse intensity" data={MOUSE_BY_HOUR} labels={HOUR_LABELS} />
+      </div>
     </div>
+  );
+}
+
+function UsageList({ title, items }: { title: string; items: UsageItem[] }) {
+  const max = Math.max(...items.map((i) => i.minutes));
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {items.map((it) => (
+          <div key={it.name} className="space-y-1">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: CATEGORY_COLOR[it.category] }}
+                />
+                {it.name}
+              </span>
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                {formatMinutes(it.minutes)}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${(it.minutes / max) * 100}%`,
+                  backgroundColor: CATEGORY_COLOR[it.category],
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function IntensityCard({
+  title,
+  data,
+  labels,
+}: {
+  title: string;
+  data: number[];
+  labels: string[];
+}) {
+  const max = Math.max(...data);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex h-28 items-end gap-1.5">
+          {data.map((v, i) => (
+            <div
+              key={i}
+              title={`${labels[i]} · ${v}%`}
+              className="flex-1 rounded-t-[4px] bg-primary/80"
+              style={{ height: `${(v / max) * 100}%` }}
+            />
+          ))}
+        </div>
+        <div className="mt-1 flex justify-between">
+          {labels.map((h) => (
+            <span key={h} className="text-[10px] text-muted-foreground">
+              {h}
+            </span>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

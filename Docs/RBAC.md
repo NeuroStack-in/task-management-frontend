@@ -60,8 +60,6 @@ Source of truth in code:
 | Anomaly Detection | `anomalies:view` | View Anomalies |
 | Communication | `communication:view` | View Inbox |
 | Notifications | `notifications:view` | View Notifications |
-| Job Portal | `jobs:view` | View Jobs |
-| Job Portal | `jobs:manage` | Manage Hiring |
 | Integrations | `integrations:view` | View Integrations |
 | Integrations | `integrations:manage` | Manage Integrations |
 | Billing | `billing:view` | View Billing |
@@ -127,8 +125,6 @@ Source of truth in code:
 | `anomalies:view` | ✓ | ✓ | — |
 | `communication:view` | ✓ | ✓ | ✓ |
 | `notifications:view` | ✓ | ✓ | ✓ |
-| `jobs:view` | ✓ | ✓ | — |
-| `jobs:manage` | ✓ | ✓ | — |
 | `integrations:view` | ✓ | ✓ | — |
 | `integrations:manage` | ✓ | ✓ | — |
 | `billing:view` | ✓ | ✓ | — |

@@ -63,7 +63,7 @@ Route groups follow TDD §3. `(marketing)` and `(auth)` are unauthenticated; eve
 | 17 | Approval Center | `/approvals` | 4 |
 | 18 | Internal Communication | `/inbox` | 4 |
 | 19 | Notification Center | `/notifications` | 4 |
-| 20 | Job Portal | `/jobs` | 4 |
+| 20 | ~~Job Portal~~ — removed from scope | — | — |
 | 21 | Integrations Marketplace | `/integrations` | 4 |
 | 22 | Billing & Subscription | `/billing` | 4 |
 | 23 | Role & Permission Management | `/roles` | 1 |
@@ -85,7 +85,7 @@ Route groups follow TDD §3. `(marketing)` and `(auth)` are unauthenticated; eve
 ```
 modules/  auth · onboarding · dashboard · time-tracking · tasks · projects ·
           employees · activity · screenshots · reports · ai · anomalies ·
-          approvals · communication · notifications · jobs · integrations ·
+          approvals · communication · notifications · integrations ·
           billing · roles · security · audit-logs · remote-support · agents ·
           help · settings · marketing
 ```
@@ -95,7 +95,7 @@ modules/  auth · onboarding · dashboard · time-tracking · tasks · projects 
 ## 5. Data layer (canonical)
 
 - All access goes through `src/modules/<m>/services/*.service.ts` returning mocks (TDD §20). **No component reads JSON directly** — this is the backend seam.
-- Static datasets in `src/data/` (TDD §19): `users, tasks, projects, activity, screenshots, reports, invoices, roles, permissions, notifications` + V2 additions (`departments, teams, integrations, jobs, auditLogs, agents`).
+- Static datasets in `src/data/` (TDD §19): `users, tasks, projects, activity, screenshots, reports, invoices, roles, permissions, notifications` + V2 additions (`departments, teams, integrations, auditLogs, agents`).
 - Volumes (PRD §9): 100+ users · 500+ tasks · 50+ projects · 10,000+ activity logs · 1,000+ screenshots · 100+ reports → **generate with Faker seed scripts**, render large tables via TanStack Table pagination/virtualization.
 - RBAC (TDD §8): `canAccess(role, permission)` gates routes; sidebar is generated from `role.permissions`. Build in Phase 1.
 - Zustand stores (TDD §10): `auth · dashboard · theme · notification · timer`. Mock JWT in `localStorage`.
@@ -109,7 +109,7 @@ modules/  auth · onboarding · dashboard · time-tracking · tasks · projects 
 | 1 | Core Foundation | Layout shell, theme, auth (simulated), RBAC + `canAccess`, generated sidebar/nav, roles |
 | 2 | Productivity | Dashboard + widget system, tasks (list/kanban/calendar/timeline), projects, global timer |
 | 3 | Monitoring | Activity monitoring, screenshots, reports + CSV/PDF export, employees |
-| 4 | Business | Billing, approvals, notifications, integrations, jobs, communication, settings (org/monitoring/tracking/features), security, audit logs |
+| 4 | Business | Billing, approvals, notifications, integrations, communication, settings (org/monitoring/tracking/features), security, audit logs |
 | 5 | Finalize | AI Center, anomaly detection, remote support, desktop agents, help, marketing site, guided tour, accessibility, test pass, polish |
 
 **MVP = Phases 1–2** (auth, RBAC, dashboard, tasks, time tracking) — the demoable core.
