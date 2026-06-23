@@ -79,7 +79,7 @@ export function ScreenshotsWidget({
           {count.toLocaleString()}
         </p>
         <p className="text-xs text-muted-foreground">captured today</p>
-        <Sparkline data={trend} area width={220} height={48} className="w-full" />
+        <Sparkline data={trend} area showDot={false} width={220} height={48} className="w-full" />
       </CardContent>
     </Card>
   );
