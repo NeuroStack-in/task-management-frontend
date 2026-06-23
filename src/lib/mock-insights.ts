@@ -225,20 +225,30 @@ export const SEVERITY_META: Record<
 
 /* -------------------------------- Reports -------------------------------- */
 
+export type ReportCategory = "workforce" | "time" | "projects";
+
 export interface ReportDef {
   id: string;
   name: string;
   description: string;
+  category: ReportCategory;
   period: string;
   columns: string[];
   rows: (string | number)[][];
 }
+
+export const REPORT_CATEGORY_LABEL: Record<ReportCategory, string> = {
+  workforce: "Workforce",
+  time: "Time & Billing",
+  projects: "Projects",
+};
 
 export const REPORTS: ReportDef[] = [
   {
     id: "productivity",
     name: "Productivity Report",
     description: "Per-employee productivity score, active hours, and trend.",
+    category: "workforce",
     period: "This week",
     columns: ["Employee", "Department", "Active hrs", "Productivity %", "Trend"],
     rows: SAMPLE_PEOPLE.map((u, i) => [
@@ -250,9 +260,21 @@ export const REPORTS: ReportDef[] = [
     ]),
   },
   {
+    id: "leaderboard",
+    name: "Productivity Leaderboard",
+    description: "Top performers ranked by productivity score this week.",
+    category: "workforce",
+    period: "This week",
+    columns: ["Rank", "Employee", "Department", "Productivity %"],
+    rows: [...SAMPLE_PEOPLE]
+      .sort((a, b) => b.productivityScore - a.productivityScore)
+      .map((u, i) => [i + 1, u.name, u.department, u.productivityScore]),
+  },
+  {
     id: "time",
     name: "Time & Attendance",
     description: "Clock-in/out, tracked vs idle, and billable split.",
+    category: "time",
     period: "This week",
     columns: ["Employee", "Tracked hrs", "Idle hrs", "Billable %"],
     rows: SAMPLE_PEOPLE.map((u, i) => [
@@ -263,9 +285,22 @@ export const REPORTS: ReportDef[] = [
     ]),
   },
   {
+    id: "utilization",
+    name: "Utilization Report",
+    description: "Billable vs non-billable hours against weekly capacity.",
+    category: "time",
+    period: "This week",
+    columns: ["Employee", "Capacity hrs", "Billable hrs", "Utilization %"],
+    rows: SAMPLE_PEOPLE.map((u, i) => {
+      const billable = 22 + ((i * 4) % 16);
+      return [u.name, 40, billable, Math.round((billable / 40) * 100)];
+    }),
+  },
+  {
     id: "project",
     name: "Project Time Allocation",
     description: "Hours logged per project with completion estimates.",
+    category: "projects",
     period: "This month",
     columns: ["Project", "Hours", "Members", "On track"],
     rows: [
