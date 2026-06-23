@@ -12,6 +12,13 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { SYSTEM_ROLES } from "../src/constants/roles";
 import type { Organization, User, UserStatus } from "../src/types/user";
+import type {
+  Project,
+  ProjectStatus,
+  Task,
+  TaskPriority,
+  TaskStatus,
+} from "../src/modules/projects/types";
 
 faker.seed(20260622);
 
@@ -119,7 +126,216 @@ function generateUsers(count: number): User[] {
   return users;
 }
 
+/* ------------------------------------------------------------------ */
+/* Projects & Tasks (SPEC §7). Dates are anchored to a fixed reference  */
+/* so faker.date stays deterministic across runs.                       */
+/* ------------------------------------------------------------------ */
+
+const NOW = new Date("2026-06-23T00:00:00Z").getTime();
+const DAY = 86_400_000;
+
+/** Whole-day ISO offset from the fixed anchor — deterministic. */
+function isoFromOffsetDays(days: number): string {
+  return new Date(NOW + days * DAY).toISOString().slice(0, 10);
+}
+
+const PROJECT_ADJ = [
+  "Atlas", "Orbit", "Beacon", "Nova", "Helix", "Summit", "Vertex", "Quantum",
+  "Pulse", "Horizon", "Cobalt", "Cascade", "Lumen", "Falcon", "Aurora",
+  "Mosaic", "Pioneer", "Catalyst", "Zenith", "Harbor", "Tessera", "Meridian",
+] as const;
+
+const PROJECT_NOUN = [
+  "Migration", "Redesign", "Platform", "Launch", "Revamp", "Pipeline",
+  "Initiative", "Rollout", "Overhaul", "Program", "Refresh", "Expansion",
+  "Integration", "Onboarding", "Modernization",
+] as const;
+
+const TASK_VERB = [
+  "Implement", "Refactor", "Design", "Fix", "Investigate", "Document",
+  "Optimize", "Migrate", "Review", "Test", "Polish", "Wire up", "Audit",
+  "Ship", "Spec out", "Triage",
+] as const;
+
+const PROJECT_STATUS_WEIGHTS: { value: ProjectStatus; weight: number }[] = [
+  { value: "active", weight: 58 },
+  { value: "on_hold", weight: 14 },
+  { value: "completed", weight: 21 },
+  { value: "archived", weight: 7 },
+];
+
+/** A trended 7-point pulse derived from a baseline + bounded jitter. */
+function generateVelocity(baseline: number): number[] {
+  const out: number[] = [];
+  let cur = baseline;
+  for (let i = 0; i < 7; i++) {
+    cur = Math.max(4, Math.min(100, cur + faker.number.int({ min: -14, max: 18 })));
+    out.push(cur);
+  }
+  return out;
+}
+
+function progressForStatus(status: ProjectStatus): number {
+  switch (status) {
+    case "completed":
+      return 100;
+    case "archived":
+      return faker.number.int({ min: 35, max: 95 });
+    case "on_hold":
+      return faker.number.int({ min: 15, max: 70 });
+    default:
+      return faker.number.int({ min: 8, max: 92 });
+  }
+}
+
+function generateProjects(count: number, users: User[]): Project[] {
+  const leadPool = users.filter(
+    (u) =>
+      u.status === "active" &&
+      ["role-owner", "role-admin", "role-manager"].includes(u.roleId),
+  );
+  const memberPool = users.filter((u) => u.status !== "suspended");
+  const usedNames = new Set<string>();
+  const usedKeys = new Set<string>();
+  const projects: Project[] = [];
+
+  for (let i = 0; i < count; i++) {
+    // Unique "Adjective Noun" name.
+    let name = "";
+    do {
+      name = `${faker.helpers.arrayElement(PROJECT_ADJ)} ${faker.helpers.arrayElement(PROJECT_NOUN)}`;
+    } while (usedNames.has(name));
+    usedNames.add(name);
+
+    // Unique 2–3 char key derived from the adjective.
+    const adj = name.split(" ")[0].toUpperCase();
+    let key = adj.slice(0, 2);
+    let n = 2;
+    while (usedKeys.has(key)) key = adj.slice(0, 2) + (n++).toString();
+    usedKeys.add(key);
+
+    const status = faker.helpers.weightedArrayElement(PROJECT_STATUS_WEIGHTS);
+    const progress = progressForStatus(status);
+
+    const lead = faker.helpers.arrayElement(
+      leadPool.length ? leadPool : memberPool,
+    );
+    const memberCount = faker.number.int({ min: 3, max: 9 });
+    const members = faker.helpers
+      .arrayElements(memberPool, memberCount)
+      .map((u) => u.id);
+    // Seed the demo Owner into the first dozen projects so "My tasks" is alive.
+    if (i < 12 && !members.includes("user-owner")) members.unshift("user-owner");
+    if (!members.includes(lead.id)) members.unshift(lead.id);
+
+    const budget = faker.number.int({ min: 20, max: 480 }) * 1000;
+    // Spent tracks progress, with a slice of projects intentionally over budget.
+    const burn = progress / 100 + faker.number.float({ min: -0.12, max: 0.18 });
+    const spent = Math.round(budget * Math.max(0, Math.min(1.22, burn)));
+
+    const startOffset = -faker.number.int({ min: 20, max: 210 });
+    const span = faker.number.int({ min: 45, max: 170 });
+    const dueOffset =
+      status === "completed" || status === "archived"
+        ? startOffset + faker.number.int({ min: 30, max: span })
+        : startOffset + span;
+
+    projects.push({
+      id: `proj-${(i + 1).toString().padStart(4, "0")}`,
+      name,
+      key,
+      status,
+      progress,
+      leadUserId: lead.id,
+      memberIds: [...new Set(members)],
+      department: faker.helpers.arrayElement(DEPARTMENTS),
+      budget,
+      spent,
+      startDate: isoFromOffsetDays(startOffset),
+      dueDate: isoFromOffsetDays(dueOffset),
+      velocity: generateVelocity(faker.number.int({ min: 20, max: 70 })),
+    });
+  }
+
+  return projects;
+}
+
+function taskStatusFor(project: Project): TaskStatus {
+  // Bias a task's status toward the parent project's lifecycle stage.
+  if (project.status === "completed")
+    return faker.helpers.weightedArrayElement([
+      { value: "done", weight: 88 },
+      { value: "in_review", weight: 8 },
+      { value: "in_progress", weight: 4 },
+    ]);
+  if (project.status === "archived")
+    return faker.helpers.weightedArrayElement([
+      { value: "done", weight: 70 },
+      { value: "todo", weight: 30 },
+    ]);
+  return faker.helpers.weightedArrayElement([
+    { value: "todo", weight: 34 },
+    { value: "in_progress", weight: 32 },
+    { value: "in_review", weight: 14 },
+    { value: "done", weight: 20 },
+  ]);
+}
+
+function generateTasks(projects: Project[]): Task[] {
+  const tasks: Task[] = [];
+  let counter = 0;
+
+  for (const project of projects) {
+    const taskCount = faker.number.int({ min: 8, max: 22 });
+    for (let i = 0; i < taskCount; i++) {
+      const status = taskStatusFor(project);
+      const priority: TaskPriority = faker.helpers.weightedArrayElement([
+        { value: "low" as TaskPriority, weight: 32 },
+        { value: "medium" as TaskPriority, weight: 46 },
+        { value: "high" as TaskPriority, weight: 22 },
+      ]);
+
+      // Unassigned only makes sense for not-yet-started work.
+      let assigneeId: string | null = null;
+      if (status !== "todo" || faker.datatype.boolean(0.6)) {
+        assigneeId = faker.helpers.arrayElement(project.memberIds);
+        // Keep the Owner visibly busy in their projects for the demo.
+        if (
+          project.memberIds.includes("user-owner") &&
+          faker.datatype.boolean(0.28)
+        ) {
+          assigneeId = "user-owner";
+        }
+      }
+
+      const dueDate =
+        status === "done"
+          ? null
+          : faker.datatype.boolean(0.78)
+            ? isoFromOffsetDays(faker.number.int({ min: -18, max: 70 }))
+            : null;
+
+      tasks.push({
+        id: `task-${(++counter).toString().padStart(5, "0")}`,
+        projectId: project.id,
+        title: `${faker.helpers.arrayElement(TASK_VERB)} ${faker.hacker.noun()} ${faker.hacker.noun()}`,
+        status,
+        assigneeId,
+        priority,
+        dueDate,
+        estimateHours: faker.number.int({ min: 1, max: 16 }),
+      });
+    }
+  }
+
+  return tasks;
+}
+
 console.log("Seeding mock data...");
 writeJson("organization.json", generateOrganization());
-writeJson("users.json", generateUsers(120));
+const seededUsers = generateUsers(120);
+writeJson("users.json", seededUsers);
+const seededProjects = generateProjects(40, seededUsers);
+writeJson("projects.json", seededProjects);
+writeJson("tasks.json", generateTasks(seededProjects));
 console.log("Done.");
