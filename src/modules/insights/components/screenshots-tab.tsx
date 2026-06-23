@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Camera, ChevronRight, EyeOff, Flag, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  ChevronRight,
+  EyeOff,
+  Flag,
+  Search,
+  Users,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,12 +61,34 @@ export function ScreenshotsTab() {
 /* ----------------------------- Employee gallery ---------------------------- */
 
 function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
+  const [query, setQuery] = useState("");
+  const [dept, setDept] = useState("all");
+  const [flag, setFlag] = useState<"all" | "flagged">("all");
+
   const totalCaptures = SCREENSHOTS.length;
   const totalFlagged = SCREENSHOT_EMPLOYEES.reduce((a, e) => a + e.flagged, 0);
   const avgActivity = Math.round(
     SCREENSHOT_EMPLOYEES.reduce((a, e) => a + e.avgActivity, 0) /
       SCREENSHOT_EMPLOYEES.length,
   );
+
+  const departments = useMemo(
+    () =>
+      Array.from(
+        new Set(SCREENSHOT_EMPLOYEES.map((e) => e.user.department)),
+      ).sort(),
+    [],
+  );
+
+  const employees = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return SCREENSHOT_EMPLOYEES.filter(
+      (e) =>
+        (dept === "all" || e.user.department === dept) &&
+        (flag === "all" || e.flagged > 0) &&
+        (q === "" || e.user.name.toLowerCase().includes(q)),
+    );
+  }, [query, dept, flag]);
 
   return (
     <div className="space-y-5">
@@ -80,16 +110,98 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
         <StatCard label="Avg activity" value={`${avgActivity}%`} icon={EyeOff} />
       </div>
 
+      {/* Filters: search · department · flagged */}
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
+        <Field label="Search">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Employee name…"
+              className="w-56 pl-8"
+            />
+          </div>
+        </Field>
+
+        <Field label="Department">
+          <div className="flex h-8 flex-wrap items-center gap-1.5">
+            <Pill active={dept === "all"} onClick={() => setDept("all")}>
+              All
+            </Pill>
+            {departments.map((d) => (
+              <Pill key={d} active={dept === d} onClick={() => setDept(d)}>
+                {d}
+              </Pill>
+            ))}
+          </div>
+        </Field>
+
+        <fieldset className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground">Show</span>
+          <div className="flex h-8 items-center gap-3">
+            {(["all", "flagged"] as const).map((opt) => (
+              <label key={opt} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="radio"
+                  name="emp-flag-filter"
+                  className="size-4"
+                  style={{ accentColor: "var(--primary)" }}
+                  checked={flag === opt}
+                  onChange={() => setFlag(opt)}
+                />
+                {opt === "all" ? "All" : "With flags"}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+
       <p className="text-sm text-muted-foreground">
-        Select an employee to view their full screenshot history.
+        <span className="font-medium text-foreground">{employees.length}</span> of{" "}
+        {SCREENSHOT_EMPLOYEES.length} employees · select one to view their full
+        screenshot history.
       </p>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {SCREENSHOT_EMPLOYEES.map((emp) => (
-          <EmployeeCard key={emp.user.id} emp={emp} onOpen={() => onSelect(emp)} />
-        ))}
-      </div>
+      {employees.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No employees match"
+          description="Try a different name, department, or clear the flagged filter."
+        />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {employees.map((emp) => (
+            <EmployeeCard key={emp.user.id} emp={emp} onOpen={() => onSelect(emp)} />
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+function Pill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

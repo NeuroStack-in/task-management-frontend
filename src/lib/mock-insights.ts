@@ -308,6 +308,52 @@ export const REPORT_CATEGORY_LABEL: Record<ReportCategory, string> = {
   projects: "Projects",
 };
 
+/**
+ * Typed source datasets — the report tables AND the analytics charts both
+ * derive from these, so the numbers always agree (one source of truth).
+ */
+export interface ProjectHours {
+  project: string;
+  hours: number;
+  members: number;
+  onTrack: boolean;
+}
+
+export const PROJECT_HOURS: ProjectHours[] = [
+  { project: "Acme Storefront", hours: 412, members: 9, onTrack: true },
+  { project: "Platform", hours: 288, members: 6, onTrack: true },
+  { project: "Customer Success", hours: 164, members: 4, onTrack: false },
+  { project: "Internal", hours: 96, members: 12, onTrack: true },
+  { project: "Mobile App", hours: 201, members: 5, onTrack: false },
+];
+
+export interface EmployeeTime {
+  name: string;
+  /** First name — compact axis label. */
+  first: string;
+  tracked: number;
+  idle: number;
+  billable: number; // %
+  capacity: number; // hrs/week
+  billableHrs: number;
+  utilization: number; // %
+}
+
+export const EMPLOYEE_TIME: EmployeeTime[] = SAMPLE_PEOPLE.map((u, i) => {
+  const billableHrs = 22 + ((i * 4) % 16);
+  const capacity = 40;
+  return {
+    name: u.name,
+    first: u.name.split(" ")[0],
+    tracked: 38 + ((i * 5) % 6),
+    idle: 2 + (i % 4),
+    billable: 62 + ((i * 6) % 30),
+    capacity,
+    billableHrs,
+    utilization: Math.round((billableHrs / capacity) * 100),
+  };
+});
+
 export const REPORTS: ReportDef[] = [
   {
     id: "productivity",
@@ -342,12 +388,7 @@ export const REPORTS: ReportDef[] = [
     category: "time",
     period: "This week",
     columns: ["Employee", "Tracked hrs", "Idle hrs", "Billable %"],
-    rows: SAMPLE_PEOPLE.map((u, i) => [
-      u.name,
-      38 + ((i * 5) % 6),
-      2 + (i % 4),
-      62 + ((i * 6) % 30),
-    ]),
+    rows: EMPLOYEE_TIME.map((e) => [e.name, e.tracked, e.idle, e.billable]),
   },
   {
     id: "utilization",
@@ -356,10 +397,12 @@ export const REPORTS: ReportDef[] = [
     category: "time",
     period: "This week",
     columns: ["Employee", "Capacity hrs", "Billable hrs", "Utilization %"],
-    rows: SAMPLE_PEOPLE.map((u, i) => {
-      const billable = 22 + ((i * 4) % 16);
-      return [u.name, 40, billable, Math.round((billable / 40) * 100)];
-    }),
+    rows: EMPLOYEE_TIME.map((e) => [
+      e.name,
+      e.capacity,
+      e.billableHrs,
+      e.utilization,
+    ]),
   },
   {
     id: "project",
@@ -368,12 +411,11 @@ export const REPORTS: ReportDef[] = [
     category: "projects",
     period: "This month",
     columns: ["Project", "Hours", "Members", "On track"],
-    rows: [
-      ["Acme Storefront", 412, 9, "Yes"],
-      ["Platform", 288, 6, "Yes"],
-      ["Customer Success", 164, 4, "At risk"],
-      ["Internal", 96, 12, "Yes"],
-      ["Mobile App", 201, 5, "At risk"],
-    ],
+    rows: PROJECT_HOURS.map((p) => [
+      p.project,
+      p.hours,
+      p.members,
+      p.onTrack ? "Yes" : "At risk",
+    ]),
   },
 ];
