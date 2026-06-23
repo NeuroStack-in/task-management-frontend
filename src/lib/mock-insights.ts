@@ -85,6 +85,8 @@ export const CATEGORY_LABEL: Record<UsageCategory, string> = {
 export interface Screenshot {
   id: string;
   user: User;
+  /** ISO capture date, "YYYY-MM-DD". */
+  date: string;
   time: string;
   app: string;
   activity: number;
@@ -106,24 +108,87 @@ const SHOT_APPS = [
   "Reddit",
 ];
 
-/** A grid of recent captures (deterministic), most recent first. */
-export const SCREENSHOTS: Screenshot[] = Array.from({ length: 12 }, (_, i) => {
-  const person = SAMPLE_PEOPLE[i % SAMPLE_PEOPLE.length];
-  const minutesAgo = i * 11 + 3;
-  const totalMin = 17 * 60 + 28 - minutesAgo; // count back from 17:28
-  const hh = Math.floor(totalMin / 60);
-  const mm = totalMin % 60;
-  const app = SHOT_APPS[i % SHOT_APPS.length];
-  const activity = 90 - ((i * 13) % 70);
-  return {
-    id: `shot-${i + 1}`,
-    user: person,
-    time: `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`,
-    app,
-    activity,
-    flagged: app === "YouTube" || app === "Reddit" || activity < 25,
-  };
-});
+/** Deterministic capture dates spanning two months, most recent first. */
+const SHOT_DATES = [
+  "2026-06-23",
+  "2026-06-22",
+  "2026-06-20",
+  "2026-06-19",
+  "2026-06-16",
+  "2026-05-29",
+  "2026-05-27",
+  "2026-05-22",
+];
+const SHOT_TIMES = ["09:12", "10:40", "11:55", "14:05", "15:30", "16:48"];
+
+/**
+ * Every capture, per employee, across several days (deterministic). The
+ * Screenshots page is an employee gallery — drill into a person to see their
+ * full history, filterable by month/date — so captures are grouped by user,
+ * not presented as a flat recent feed.
+ */
+export const SCREENSHOTS: Screenshot[] = SAMPLE_PEOPLE.flatMap((user, pi) =>
+  SHOT_DATES.flatMap((date, di) =>
+    Array.from({ length: 3 }, (_, k) => {
+      const idx = pi * 137 + di * 17 + k * 5;
+      const app = SHOT_APPS[idx % SHOT_APPS.length];
+      const activity = 94 - ((idx * 13) % 78);
+      return {
+        id: `shot-${user.id}-${di}-${k}`,
+        user,
+        date,
+        time: SHOT_TIMES[(di + k) % SHOT_TIMES.length],
+        app,
+        activity,
+        flagged: app === "YouTube" || app === "Reddit" || activity < 25,
+      };
+    }),
+  ),
+);
+
+export interface EmployeeShots {
+  user: User;
+  shots: Screenshot[];
+  total: number;
+  flagged: number;
+  avgActivity: number;
+  /** Most recent capture (cover thumbnail). */
+  latest: Screenshot;
+}
+
+/** Screenshots grouped by employee, with per-person summary stats. */
+export const SCREENSHOT_EMPLOYEES: EmployeeShots[] = SAMPLE_PEOPLE.map(
+  (user) => {
+    const shots = SCREENSHOTS.filter((s) => s.user.id === user.id);
+    const flagged = shots.filter((s) => s.flagged).length;
+    const avgActivity = Math.round(
+      shots.reduce((a, s) => a + s.activity, 0) / shots.length,
+    );
+    return { user, shots, total: shots.length, flagged, avgActivity, latest: shots[0] };
+  },
+);
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "2026-06-23" → "2026-06". */
+export function monthKey(date: string): string {
+  return date.slice(0, 7);
+}
+
+/** "2026-06" → "June 2026". */
+export function monthLabel(key: string): string {
+  const [y, m] = key.split("-");
+  return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
+}
+
+/** "2026-06-23" → "Jun 23". */
+export function dayLabel(date: string): string {
+  const [, m, d] = date.split("-");
+  return `${MONTH_NAMES[Number(m) - 1].slice(0, 3)} ${Number(d)}`;
+}
 
 /* ------------------------------- Anomalies ------------------------------- */
 
