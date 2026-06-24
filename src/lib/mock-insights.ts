@@ -85,6 +85,8 @@ export const CATEGORY_LABEL: Record<UsageCategory, string> = {
 export interface Screenshot {
   id: string;
   user: User;
+  /** ISO capture date, "YYYY-MM-DD". */
+  date: string;
   time: string;
   app: string;
   activity: number;
@@ -106,24 +108,87 @@ const SHOT_APPS = [
   "Reddit",
 ];
 
-/** A grid of recent captures (deterministic), most recent first. */
-export const SCREENSHOTS: Screenshot[] = Array.from({ length: 12 }, (_, i) => {
-  const person = SAMPLE_PEOPLE[i % SAMPLE_PEOPLE.length];
-  const minutesAgo = i * 11 + 3;
-  const totalMin = 17 * 60 + 28 - minutesAgo; // count back from 17:28
-  const hh = Math.floor(totalMin / 60);
-  const mm = totalMin % 60;
-  const app = SHOT_APPS[i % SHOT_APPS.length];
-  const activity = 90 - ((i * 13) % 70);
-  return {
-    id: `shot-${i + 1}`,
-    user: person,
-    time: `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`,
-    app,
-    activity,
-    flagged: app === "YouTube" || app === "Reddit" || activity < 25,
-  };
-});
+/** Deterministic capture dates spanning two months, most recent first. */
+const SHOT_DATES = [
+  "2026-06-23",
+  "2026-06-22",
+  "2026-06-20",
+  "2026-06-19",
+  "2026-06-16",
+  "2026-05-29",
+  "2026-05-27",
+  "2026-05-22",
+];
+const SHOT_TIMES = ["09:12", "10:40", "11:55", "14:05", "15:30", "16:48"];
+
+/**
+ * Every capture, per employee, across several days (deterministic). The
+ * Screenshots page is an employee gallery — drill into a person to see their
+ * full history, filterable by month/date — so captures are grouped by user,
+ * not presented as a flat recent feed.
+ */
+export const SCREENSHOTS: Screenshot[] = SAMPLE_PEOPLE.flatMap((user, pi) =>
+  SHOT_DATES.flatMap((date, di) =>
+    Array.from({ length: 3 }, (_, k) => {
+      const idx = pi * 137 + di * 17 + k * 5;
+      const app = SHOT_APPS[idx % SHOT_APPS.length];
+      const activity = 94 - ((idx * 13) % 78);
+      return {
+        id: `shot-${user.id}-${di}-${k}`,
+        user,
+        date,
+        time: SHOT_TIMES[(di + k) % SHOT_TIMES.length],
+        app,
+        activity,
+        flagged: app === "YouTube" || app === "Reddit" || activity < 25,
+      };
+    }),
+  ),
+);
+
+export interface EmployeeShots {
+  user: User;
+  shots: Screenshot[];
+  total: number;
+  flagged: number;
+  avgActivity: number;
+  /** Most recent capture (cover thumbnail). */
+  latest: Screenshot;
+}
+
+/** Screenshots grouped by employee, with per-person summary stats. */
+export const SCREENSHOT_EMPLOYEES: EmployeeShots[] = SAMPLE_PEOPLE.map(
+  (user) => {
+    const shots = SCREENSHOTS.filter((s) => s.user.id === user.id);
+    const flagged = shots.filter((s) => s.flagged).length;
+    const avgActivity = Math.round(
+      shots.reduce((a, s) => a + s.activity, 0) / shots.length,
+    );
+    return { user, shots, total: shots.length, flagged, avgActivity, latest: shots[0] };
+  },
+);
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** "2026-06-23" → "2026-06". */
+export function monthKey(date: string): string {
+  return date.slice(0, 7);
+}
+
+/** "2026-06" → "June 2026". */
+export function monthLabel(key: string): string {
+  const [y, m] = key.split("-");
+  return `${MONTH_NAMES[Number(m) - 1]} ${y}`;
+}
+
+/** "2026-06-23" → "Jun 23". */
+export function dayLabel(date: string): string {
+  const [, m, d] = date.split("-");
+  return `${MONTH_NAMES[Number(m) - 1].slice(0, 3)} ${Number(d)}`;
+}
 
 /* ------------------------------- Anomalies ------------------------------- */
 
@@ -225,20 +290,76 @@ export const SEVERITY_META: Record<
 
 /* -------------------------------- Reports -------------------------------- */
 
+export type ReportCategory = "workforce" | "time" | "projects";
+
 export interface ReportDef {
   id: string;
   name: string;
   description: string;
+  category: ReportCategory;
   period: string;
   columns: string[];
   rows: (string | number)[][];
 }
+
+export const REPORT_CATEGORY_LABEL: Record<ReportCategory, string> = {
+  workforce: "Workforce",
+  time: "Time & Billing",
+  projects: "Projects",
+};
+
+/**
+ * Typed source datasets — the report tables AND the analytics charts both
+ * derive from these, so the numbers always agree (one source of truth).
+ */
+export interface ProjectHours {
+  project: string;
+  hours: number;
+  members: number;
+  onTrack: boolean;
+}
+
+export const PROJECT_HOURS: ProjectHours[] = [
+  { project: "Acme Storefront", hours: 412, members: 9, onTrack: true },
+  { project: "Platform", hours: 288, members: 6, onTrack: true },
+  { project: "Customer Success", hours: 164, members: 4, onTrack: false },
+  { project: "Internal", hours: 96, members: 12, onTrack: true },
+  { project: "Mobile App", hours: 201, members: 5, onTrack: false },
+];
+
+export interface EmployeeTime {
+  name: string;
+  /** First name — compact axis label. */
+  first: string;
+  tracked: number;
+  idle: number;
+  billable: number; // %
+  capacity: number; // hrs/week
+  billableHrs: number;
+  utilization: number; // %
+}
+
+export const EMPLOYEE_TIME: EmployeeTime[] = SAMPLE_PEOPLE.map((u, i) => {
+  const billableHrs = 22 + ((i * 4) % 16);
+  const capacity = 40;
+  return {
+    name: u.name,
+    first: u.name.split(" ")[0],
+    tracked: 38 + ((i * 5) % 6),
+    idle: 2 + (i % 4),
+    billable: 62 + ((i * 6) % 30),
+    capacity,
+    billableHrs,
+    utilization: Math.round((billableHrs / capacity) * 100),
+  };
+});
 
 export const REPORTS: ReportDef[] = [
   {
     id: "productivity",
     name: "Productivity Report",
     description: "Per-employee productivity score, active hours, and trend.",
+    category: "workforce",
     period: "This week",
     columns: ["Employee", "Department", "Active hrs", "Productivity %", "Trend"],
     rows: SAMPLE_PEOPLE.map((u, i) => [
@@ -250,30 +371,51 @@ export const REPORTS: ReportDef[] = [
     ]),
   },
   {
+    id: "leaderboard",
+    name: "Productivity Leaderboard",
+    description: "Top performers ranked by productivity score this week.",
+    category: "workforce",
+    period: "This week",
+    columns: ["Rank", "Employee", "Department", "Productivity %"],
+    rows: [...SAMPLE_PEOPLE]
+      .sort((a, b) => b.productivityScore - a.productivityScore)
+      .map((u, i) => [i + 1, u.name, u.department, u.productivityScore]),
+  },
+  {
     id: "time",
     name: "Time & Attendance",
     description: "Clock-in/out, tracked vs idle, and billable split.",
+    category: "time",
     period: "This week",
     columns: ["Employee", "Tracked hrs", "Idle hrs", "Billable %"],
-    rows: SAMPLE_PEOPLE.map((u, i) => [
-      u.name,
-      38 + ((i * 5) % 6),
-      2 + (i % 4),
-      62 + ((i * 6) % 30),
+    rows: EMPLOYEE_TIME.map((e) => [e.name, e.tracked, e.idle, e.billable]),
+  },
+  {
+    id: "utilization",
+    name: "Utilization Report",
+    description: "Billable vs non-billable hours against weekly capacity.",
+    category: "time",
+    period: "This week",
+    columns: ["Employee", "Capacity hrs", "Billable hrs", "Utilization %"],
+    rows: EMPLOYEE_TIME.map((e) => [
+      e.name,
+      e.capacity,
+      e.billableHrs,
+      e.utilization,
     ]),
   },
   {
     id: "project",
     name: "Project Time Allocation",
     description: "Hours logged per project with completion estimates.",
+    category: "projects",
     period: "This month",
     columns: ["Project", "Hours", "Members", "On track"],
-    rows: [
-      ["Acme Storefront", 412, 9, "Yes"],
-      ["Platform", 288, 6, "Yes"],
-      ["Customer Success", 164, 4, "At risk"],
-      ["Internal", 96, 12, "Yes"],
-      ["Mobile App", 201, 5, "At risk"],
-    ],
+    rows: PROJECT_HOURS.map((p) => [
+      p.project,
+      p.hours,
+      p.members,
+      p.onTrack ? "Yes" : "At risk",
+    ]),
   },
 ];

@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import { users } from "@/lib/data";
+import { buildTeamTimesheet, TEAM_WEEKLY } from "@/lib/mock-time";
+import { TimeTrackingView } from "@/modules/time-tracking/components/time-tracking-view";
 
 export const metadata: Metadata = { title: "Time Tracking" };
 
-export default function Page() {
+export default function TimeTrackingPage() {
   return (
-    <ComingSoon
-      title="Time Tracking"
-      description="Live timer, timesheets, manual entries, and approvals."
-      phase={2}
-    />
+    <TimeTrackingView teamRows={buildTeamTimesheet(users)} teamWeekly={TEAM_WEEKLY} />
   );
 }
