@@ -19,6 +19,8 @@ export interface Project {
   /** 0–100. */
   progress: number;
   leadUserId: string;
+  /** Optional project manager (distinct from the delivery lead). */
+  managerId?: string;
   memberIds: string[];
   department: string;
   budget: number;

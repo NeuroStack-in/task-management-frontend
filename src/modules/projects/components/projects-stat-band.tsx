@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  Activity,
-  AlertTriangle,
-  FolderKanban,
-  Gauge,
-  type LucideIcon,
-} from "lucide-react";
+import { Activity, FolderKanban, Gauge, type LucideIcon } from "lucide-react";
 import { Sparkline } from "@/components/shared/sparkline";
 import { cn } from "@/lib/utils";
 import type { ProjectStats } from "../lib";
@@ -48,14 +42,6 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
       chip: "bg-feature-tint text-primary",
     },
     {
-      key: "risk",
-      label: "At risk",
-      value: stats.atRisk,
-      sub: "over budget or overdue",
-      icon: AlertTriangle,
-      chip: "bg-warning/15 text-warning",
-    },
-    {
       key: "avg",
       label: "Avg progress",
       value: `${stats.avgProgress}%`,
@@ -66,7 +52,7 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border bg-border lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border bg-border sm:grid-cols-3">
       {segments.map((s) => {
         const Icon = s.icon;
         return (

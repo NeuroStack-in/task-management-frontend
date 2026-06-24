@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { projects as seedProjects, users } from "@/lib/data";
+import { projects as seedProjects } from "@/lib/data";
 import { TODAY } from "@/modules/projects/lib";
-import type { Project, ProjectStatus } from "@/modules/projects/types";
+import type { Project } from "@/modules/projects/types";
 
 /**
  * Working copy of the project list for the session. Seeded from the static mock
@@ -17,12 +17,11 @@ import type { Project, ProjectStatus } from "@/modules/projects/types";
 export interface ProjectFormValues {
   name: string;
   description: string;
-  key: string;
   department: string;
-  status: ProjectStatus;
   leadUserId: string;
-  teamSize: number;
-  budget: number;
+  managerId: string;
+  /** Team members picked from the org directory. */
+  memberIds: string[];
   dueDate: string;
 }
 
@@ -37,15 +36,21 @@ interface ProjectsState {
 const TODAY_ISO = new Date(TODAY).toISOString().slice(0, 10);
 let seq = 0;
 
-/** Assemble a member roster of `teamSize` people, lead first, filled deterministically. */
-function buildMemberIds(leadId: string, teamSize: number): string[] {
-  const size = Math.max(1, Math.round(teamSize));
-  const ids = [leadId];
-  for (const u of users) {
-    if (ids.length >= size) break;
-    if (u.id !== leadId) ids.push(u.id);
-  }
-  return ids;
+/** Derive a short uppercase project key from the name (e.g. "Atlas Migration" → "AM"). */
+function deriveKey(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const base =
+    words.length >= 2 ? words[0][0] + words[1][0] : (words[0] ?? "PR").slice(0, 3);
+  return base.toUpperCase().slice(0, 4) || "PRJ";
+}
+
+/** Lead + manager are always part of the team; merge them with the picked members. */
+function rosterOf(values: ProjectFormValues): string[] {
+  return Array.from(
+    new Set(
+      [values.leadUserId, values.managerId, ...values.memberIds].filter(Boolean),
+    ),
+  );
 }
 
 export const useProjectsStore = create<ProjectsState>((set, get) => ({
@@ -59,13 +64,14 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       id: `proj-local-${seq}`,
       name: v.name,
       description: v.description.trim() || undefined,
-      key: v.key.toUpperCase(),
-      status: v.status,
+      key: deriveKey(v.name),
+      status: "active",
       progress: 0,
       leadUserId: v.leadUserId,
-      memberIds: buildMemberIds(v.leadUserId, v.teamSize),
+      managerId: v.managerId || undefined,
+      memberIds: rosterOf(v),
       department: v.department,
-      budget: v.budget,
+      budget: 0,
       spent: 0,
       startDate: TODAY_ISO,
       dueDate: v.dueDate,
@@ -81,14 +87,13 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         p.id === id
           ? {
               ...p,
+              // key, budget, spent and status are preserved (not edited here).
               name: v.name,
               description: v.description.trim() || undefined,
-              key: v.key.toUpperCase(),
-              status: v.status,
               department: v.department,
               leadUserId: v.leadUserId,
-              memberIds: buildMemberIds(v.leadUserId, v.teamSize),
-              budget: v.budget,
+              managerId: v.managerId || undefined,
+              memberIds: rosterOf(v),
               dueDate: v.dueDate,
             }
           : p,

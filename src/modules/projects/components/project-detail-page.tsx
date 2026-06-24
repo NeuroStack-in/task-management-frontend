@@ -7,10 +7,10 @@ import {
   ArrowLeft,
   CalendarRange,
   Crown,
+  ListChecks,
   Pencil,
   Trash2,
   Users,
-  Wallet,
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -38,37 +38,31 @@ import {
 } from "@/stores/projects.store";
 import {
   PROJECT_STATUS_META,
+  TASK_PRIORITY_META,
   TASK_STATUS_META,
   TASK_STATUS_ORDER,
   type Task,
-  type TaskPriority,
   type TaskStatus,
 } from "../types";
 import {
-  budgetHealth,
   daysUntil,
+  dueLabel,
   formatDate,
-  formatMoney,
   isAtRisk,
   taskCounts,
+  toneDot,
+  toneSoft,
   type UserMini,
 } from "../lib";
-import { MemberStack, ProgressTrack, StatusBadge } from "./parts";
+import {
+  MemberStack,
+  Segmented,
+  StatusBadge,
+  type SegmentedOption,
+} from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
 
-/* Fixed dark surfaces — these stay dark regardless of the app theme. */
-const COLUMN_DOT: Record<TaskStatus, string> = {
-  todo: "bg-zinc-400",
-  in_progress: "bg-indigo-400",
-  in_review: "bg-amber-400",
-  done: "bg-emerald-400",
-};
-
-const PRIORITY_CHIP: Record<TaskPriority, string> = {
-  low: "bg-white/12 text-indigo-100",
-  medium: "bg-amber-400/20 text-amber-200",
-  high: "bg-rose-500/20 text-rose-200",
-};
+type TaskFilter = TaskStatus | "all";
 
 interface ProjectDetailPageProps {
   id: string;
@@ -88,11 +82,31 @@ export function ProjectDetailPage({
 
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
 
   const leads = useMemo(
     () => Object.values(userMap).sort((a, b) => a.name.localeCompare(b.name)),
     [userMap],
   );
+
+  const counts = useMemo(() => taskCounts(tasks), [tasks]);
+
+  const visibleTasks = useMemo(() => {
+    const list =
+      taskFilter === "all"
+        ? tasks
+        : tasks.filter((t) => t.status === taskFilter);
+    const prioRank = { high: 0, medium: 1, low: 2 };
+    return [...list].sort((a, b) => {
+      const aDone = a.status === "done" ? 1 : 0;
+      const bDone = b.status === "done" ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+      const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+      if (aDue !== bDue) return aDue - bDue;
+      return prioRank[a.priority] - prioRank[b.priority];
+    });
+  }, [tasks, taskFilter]);
 
   if (!project) {
     return (
@@ -110,11 +124,13 @@ export function ProjectDetailPage({
   }
 
   const status = PROJECT_STATUS_META[project.status];
-  const health = budgetHealth(project);
-  const counts = taskCounts(tasks);
   const atRisk = isAtRisk(project);
   const daysLeft = daysUntil(project.dueDate);
   const lead = userMap[project.leadUserId];
+  const manager = project.managerId ? userMap[project.managerId] : null;
+
+  const completed = counts.done;
+  const pending = tasks.length - counts.done;
 
   const deadlineText =
     daysLeft === 0
@@ -123,15 +139,22 @@ export function ProjectDetailPage({
         ? `${-daysLeft} days overdue`
         : `${daysLeft} days left`;
 
+  const filterOptions: SegmentedOption<TaskFilter>[] = [
+    { value: "all", label: "All", count: tasks.length },
+    ...TASK_STATUS_ORDER.map((s) => ({
+      value: s as TaskFilter,
+      label: TASK_STATUS_META[s].label,
+      count: counts[s],
+    })),
+  ];
+
   const editInitial: Partial<ProjectFormValues> = {
     name: project.name,
     description: project.description ?? "",
-    key: project.key,
     department: project.department,
-    status: project.status,
     leadUserId: project.leadUserId,
-    teamSize: project.memberIds.length,
-    budget: project.budget,
+    managerId: project.managerId ?? "",
+    memberIds: project.memberIds,
     dueDate: project.dueDate.slice(0, 10),
   };
 
@@ -190,7 +213,6 @@ export function ProjectDetailPage({
             "linear-gradient(135deg, color-mix(in oklab, var(--feature) 86%, #ffffff 14%), var(--feature) 52%, color-mix(in oklab, var(--feature), #000000 26%))",
         }}
       >
-        {/* Soft light glow for depth */}
         <div
           aria-hidden
           className="pointer-events-none absolute -top-24 -right-16 size-72 rounded-full bg-white/20 blur-3xl"
@@ -203,7 +225,7 @@ export function ProjectDetailPage({
         <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-indigo-200 ring-1 ring-white/10">
+              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-white/90 ring-1 ring-white/10">
                 {project.key}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/90 ring-1 ring-white/10">
@@ -270,7 +292,7 @@ export function ProjectDetailPage({
         </div>
       </header>
 
-      {/* KPI row: completion meter · budget · team size */}
+      {/* KPI row: completion meter · tasks · team size */}
       <div className="grid gap-4 md:grid-cols-3">
         {/* Completion meter */}
         <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-5">
@@ -279,37 +301,33 @@ export function ProjectDetailPage({
           </p>
           <Gauge value={project.progress} label="of work done" size={172} />
           <p className="mt-1 text-xs text-muted-foreground">
-            {counts.done} of {tasks.length} tasks done
+            {completed} of {tasks.length} tasks done
           </p>
         </div>
 
-        {/* Budget */}
+        {/* Tasks: completed vs pending */}
         <div className="flex flex-col rounded-2xl border bg-card p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Budget
+              Tasks
             </p>
             <span className="flex size-8 items-center justify-center rounded-full bg-feature-tint text-primary">
-              <Wallet className="size-4" />
+              <ListChecks className="size-4" />
             </span>
           </div>
           <div className="mt-5 flex items-baseline gap-2">
             <span className="font-display text-3xl font-semibold tabular-nums">
-              {Math.round(health.pct * 100)}%
+              {tasks.length}
             </span>
-            <span className="text-sm text-muted-foreground">spent</span>
+            <span className="text-sm text-muted-foreground">total</span>
           </div>
-          {/* Brand-themed meter (follows the active palette, not status colours) */}
-          <ProgressTrack
-            value={Math.min(100, health.pct * 100)}
-            tone="primary"
-            className="mt-3 h-2"
-          />
-          <div className="mt-3 flex items-center justify-between text-xs">
-            <span className="tabular-nums text-muted-foreground">
-              {formatMoney(project.spent)} / {formatMoney(project.budget)}
-            </span>
-            <span className="font-medium text-primary">{health.label}</span>
+          <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
+            <TaskStat label="Completed" value={completed} dot="bg-primary" />
+            <TaskStat
+              label="Pending"
+              value={pending}
+              dot="bg-muted-foreground/40"
+            />
           </div>
         </div>
 
@@ -335,28 +353,35 @@ export function ProjectDetailPage({
         </div>
       </div>
 
-      {/* Tasks + team rail */}
+      {/* Tasks list + team rail */}
       <div className="grid gap-6 lg:grid-cols-12">
-        {/* Tasks board */}
+        {/* Tasks list */}
         <section className="space-y-3 lg:col-span-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
               Tasks
             </h2>
-            <span className="text-xs text-muted-foreground">
-              {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
-            </span>
+            <Segmented
+              options={filterOptions}
+              value={taskFilter}
+              onChange={setTaskFilter}
+              className="flex-wrap"
+            />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {TASK_STATUS_ORDER.map((col) => (
-              <BoardColumn
-                key={col}
-                col={col}
-                tasks={tasks.filter((t) => t.status === col)}
-                userMap={userMap}
-              />
-            ))}
-          </div>
+
+          {visibleTasks.length === 0 ? (
+            <div className="rounded-2xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+              No tasks in this view.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border bg-card">
+              <ul className="divide-y">
+                {visibleTasks.map((t) => (
+                  <TaskRow key={t.id} task={t} userMap={userMap} />
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
 
         {/* Right rail: team details + members */}
@@ -364,6 +389,9 @@ export function ProjectDetailPage({
           <Panel title="Team details">
             <dl className="space-y-3 text-sm">
               <DetailRow label="Lead" value={lead?.name ?? "—"} />
+              {manager ? (
+                <DetailRow label="Manager" value={manager.name} />
+              ) : null}
               <DetailRow label="Department" value={project.department} />
               <DetailRow
                 label="Team size"
@@ -386,6 +414,7 @@ export function ProjectDetailPage({
                 const u = userMap[mid];
                 if (!u) return null;
                 const isLead = mid === project.leadUserId;
+                const isManager = mid === project.managerId;
                 return (
                   <li key={mid} className="flex items-center gap-3">
                     <Avatar size="sm">
@@ -405,7 +434,11 @@ export function ProjectDetailPage({
                         ) : null}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {isLead ? "Project lead" : u.jobTitle}
+                        {isLead
+                          ? "Project lead"
+                          : isManager
+                            ? "Project manager"
+                            : u.jobTitle}
                       </p>
                     </div>
                   </li>
@@ -462,6 +495,28 @@ function teamOf(
   return memberIds.map((id) => userMap[id]).filter(Boolean) as UserMini[];
 }
 
+function TaskStat({
+  label,
+  value,
+  dot,
+}: {
+  label: string;
+  value: number;
+  dot: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-muted/30 px-3 py-2.5">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className={cn("size-1.5 rounded-full", dot)} />
+        {label}
+      </p>
+      <p className="mt-1 font-heading text-xl font-semibold tabular-nums">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function Panel({
   title,
   children,
@@ -494,73 +549,65 @@ function DetailRow({
   );
 }
 
-/* Dark task column. */
-function BoardColumn({
-  col,
-  tasks,
+function TaskRow({
+  task,
   userMap,
 }: {
-  col: TaskStatus;
-  tasks: Task[];
+  task: Task;
   userMap: Record<string, UserMini>;
 }) {
-  const meta = TASK_STATUS_META[col];
+  const prio = TASK_PRIORITY_META[task.priority];
+  const status = TASK_STATUS_META[task.status];
+  const due = dueLabel(task.dueDate);
+  const assignee = task.assigneeId ? userMap[task.assigneeId] : null;
+
   return (
-    <div
-      className="flex flex-col rounded-2xl border border-white/15 p-3 text-white"
-      style={{ backgroundColor: "var(--feature)" }}
-    >
-      <div className="mb-3 flex items-center justify-between px-1">
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white">
-          <span className={cn("size-2 rounded-full", COLUMN_DOT[col])} />
-          {meta.label}
-        </span>
-        <span className="text-xs tabular-nums text-white/60">
-          {tasks.length}
-        </span>
+    <li className="flex items-center gap-3 px-4 py-3">
+      <span
+        className={cn("size-2 shrink-0 rounded-full", toneDot[prio.tone])}
+        title={`${prio.label} priority`}
+      />
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            "truncate text-sm font-medium",
+            task.status === "done" && "text-muted-foreground line-through",
+          )}
+        >
+          {task.title}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {assignee ? assignee.name : "Unassigned"}
+        </p>
       </div>
 
-      {tasks.length === 0 ? (
-        <p className="px-1 py-6 text-center text-xs text-white/50">
-          Nothing here
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {tasks.map((t) => {
-            const assignee = t.assigneeId ? userMap[t.assigneeId] : null;
-            return (
-              <li
-                key={t.id}
-                className="rounded-xl border border-white/15 bg-white/10 p-3 transition-colors hover:border-white/30 hover:bg-white/[0.16]"
-              >
-                <p className="text-sm leading-snug text-white">{t.title}</p>
-                <div className="mt-2.5 flex items-center justify-between">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium",
-                      PRIORITY_CHIP[t.priority],
-                    )}
-                  >
-                    {t.priority[0].toUpperCase() + t.priority.slice(1)}
-                  </span>
-                  {assignee ? (
-                    <Avatar size="sm" className="size-6 ring-1 ring-white/10">
-                      {assignee.avatarUrl ? (
-                        <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
-                      ) : null}
-                      <AvatarFallback className="bg-white/10 text-[0.55rem] text-white">
-                        {initials(assignee.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                  ) : (
-                    <span className="text-xs text-white/55">Unassigned</span>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+      <span
+        className={cn(
+          "hidden shrink-0 text-xs font-medium tabular-nums sm:block",
+          due.overdue ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {due.text}
+      </span>
+      <span
+        className={cn(
+          "hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium md:inline-flex",
+          toneSoft[prio.tone],
+        )}
+      >
+        {prio.label}
+      </span>
+      <StatusBadge tone={status.tone} label={status.label} className="shrink-0" />
+      {assignee ? (
+        <Avatar size="sm" className="size-7 shrink-0">
+          {assignee.avatarUrl ? (
+            <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+          ) : null}
+          <AvatarFallback className="text-[0.6rem]">
+            {initials(assignee.name)}
+          </AvatarFallback>
+        </Avatar>
+      ) : null}
+    </li>
   );
 }
