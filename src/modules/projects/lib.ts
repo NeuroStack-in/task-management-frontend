@@ -92,7 +92,7 @@ export function isAtRisk(p: Project): boolean {
   return overBudget || overdue;
 }
 
-export interface PortfolioStats {
+export interface ProjectStats {
   total: number;
   active: number;
   atRisk: number;
@@ -101,7 +101,7 @@ export interface PortfolioStats {
   pulse: number[];
 }
 
-export function portfolioStats(projects: Project[]): PortfolioStats {
+export function projectStats(projects: Project[]): ProjectStats {
   const active = projects.filter((p) => p.status === "active");
   const live = projects.filter(
     (p) => p.status === "active" || p.status === "on_hold",

@@ -43,6 +43,12 @@ export default function RootLayout({
       className={`${inter.variable} ${display.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="min-h-full flex flex-col antialiased">
+        {/* Apply the saved colour palette before paint to avoid a flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var p=localStorage.getItem('wp-palette');if(p&&p!=='indigo'){document.documentElement.setAttribute('data-palette',p);}}catch(e){}})();`,
+          }}
+        />
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

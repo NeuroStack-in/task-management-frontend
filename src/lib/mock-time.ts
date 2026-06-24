@@ -252,6 +252,55 @@ export function buildTeamTimesheet(users: MinimalUser[]): TeamMemberTime[] {
     });
 }
 
+/* ----------------------------- Project-wise ----------------------------- */
+
+export interface ProjectTimesheet {
+  id: string;
+  name: string;
+  key: string;
+  department: string;
+  /** People who logged time against the project. */
+  members: number;
+  /** Tracked hours this week (weekly base). */
+  trackedHrs: number;
+  status: TimesheetStatus;
+}
+
+interface MinimalProject {
+  id: string;
+  name: string;
+  key: string;
+  department: string;
+  memberIds: string[];
+  progress: number;
+}
+
+/**
+ * Deterministic per-project weekly totals for the timesheet grid. Derived from
+ * the seeded projects (no randomness), so values are stable across renders.
+ */
+export function buildProjectTimesheet(
+  projects: MinimalProject[],
+): ProjectTimesheet[] {
+  return projects.map((p) => {
+    const seed = [...p.id].reduce((s, c) => s + c.charCodeAt(0), 0);
+    const members = Math.max(1, p.memberIds.length);
+    const trackedHrs = members * (7 + (seed % 5)); // ~7–11h per member / week
+    const activity = Math.min(98, 45 + Math.round(p.progress * 0.45) + (seed % 8));
+    const status: TimesheetStatus =
+      activity < 50 ? "flagged" : seed % 4 === 0 ? "pending" : "approved";
+    return {
+      id: p.id,
+      name: p.name,
+      key: p.key,
+      department: p.department,
+      members,
+      trackedHrs,
+      status,
+    };
+  });
+}
+
 /** Team-wide tracked hours this week (Mon–Sun). Deterministic. */
 export const TEAM_WEEKLY: DailyHours[] = [
   { day: "Mon", hours: 612, billable: 451 },
