@@ -193,3 +193,72 @@ export function formatHours(hours: number): string {
   if (h === 0) return `${m}m`;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
+
+/* --------------------------- Team / oversight --------------------------- */
+
+export type TimesheetStatus = "approved" | "pending" | "flagged";
+
+export interface TeamMemberTime {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  department: string;
+  /** Hours tracked this week. */
+  trackedHrs: number;
+  /** Idle hours this week. */
+  idleHrs: number;
+  billablePct: number;
+  /** Avg activity 0–100. */
+  activity: number;
+  status: TimesheetStatus;
+}
+
+interface MinimalUser {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  department: string;
+  status: string;
+  productivityScore: number;
+}
+
+/**
+ * Deterministic per-person weekly timesheet for the oversight view. Derived from
+ * the seeded users (no randomness), so it's stable across renders. The mock
+ * service seam (lib/data.ts) drops a real API in later.
+ */
+export function buildTeamTimesheet(users: MinimalUser[]): TeamMemberTime[] {
+  return users
+    .filter((u) => u.status === "active" || u.status === "inactive")
+    .map((u) => {
+      const seed = [...u.id].reduce((s, c) => s + c.charCodeAt(0), 0);
+      const trackedHrs = 30 + (seed % 14); // 30–43h
+      const idleHrs = 1 + (seed % 5); // 1–5h
+      const billablePct = 55 + (seed % 38); // 55–92%
+      const activity = u.productivityScore;
+      const status: TimesheetStatus =
+        activity < 45 ? "flagged" : seed % 4 === 0 ? "pending" : "approved";
+      return {
+        id: u.id,
+        name: u.name,
+        avatarUrl: u.avatarUrl,
+        department: u.department,
+        trackedHrs,
+        idleHrs,
+        billablePct,
+        activity,
+        status,
+      };
+    });
+}
+
+/** Team-wide tracked hours this week (Mon–Sun). Deterministic. */
+export const TEAM_WEEKLY: DailyHours[] = [
+  { day: "Mon", hours: 612, billable: 451 },
+  { day: "Tue", hours: 648, billable: 489 },
+  { day: "Wed", hours: 593, billable: 432 },
+  { day: "Thu", hours: 661, billable: 503 },
+  { day: "Fri", hours: 524, billable: 372 },
+  { day: "Sat", hours: 88, billable: 41 },
+  { day: "Sun", hours: 36, billable: 12 },
+];

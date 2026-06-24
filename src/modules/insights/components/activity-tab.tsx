@@ -100,13 +100,12 @@ export function ActivityTab() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle>Activity by hour</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[260px] w-full">
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity by hour</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trendData} margin={{ left: -18, right: 8, top: 4 }}>
                   <defs>
@@ -134,6 +133,8 @@ export function ActivityTab() {
           </CardContent>
         </Card>
 
+      {/* Two balanced summary cards of similar height */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Time by category</CardTitle>
@@ -161,14 +162,11 @@ export function ActivityTab() {
             </p>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ProductivityHeatmap data={productivityHeatmap()} />
-        </div>
         <ActiveInactiveRing active={active} inactive={inactive} />
       </div>
+
+      {/* Heatmap — full width */}
+      <ProductivityHeatmap data={productivityHeatmap()} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <UsageList title="Top applications" items={APP_USAGE} />

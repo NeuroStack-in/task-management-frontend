@@ -1,9 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Camera, EyeOff, Flag } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  ChevronRight,
+  EyeOff,
+  Flag,
+  Search,
+  Users,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -16,32 +26,15 @@ import {
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { initials } from "@/lib/format";
-import { SCREENSHOTS, type Screenshot } from "@/lib/mock-insights";
+import {
+  SCREENSHOTS,
+  SCREENSHOT_EMPLOYEES,
+  dayLabel,
+  type EmployeeShots,
+  type Screenshot,
+} from "@/lib/mock-insights";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "flagged" | "productive" | "low";
-
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "flagged", label: "Flagged" },
-  { key: "productive", label: "Productive" },
-  { key: "low", label: "Low activity" },
-];
-
-function matches(shot: Screenshot, filter: Filter): boolean {
-  switch (filter) {
-    case "flagged":
-      return shot.flagged;
-    case "productive":
-      return shot.activity >= 60;
-    case "low":
-      return shot.activity < 40;
-    default:
-      return true;
-  }
-}
-
-/** Why a capture was flagged for review. */
 function flagReason(shot: Screenshot): string | null {
   if (!shot.flagged) return null;
   if (shot.app === "YouTube" || shot.app === "Reddit")
@@ -56,77 +49,343 @@ function activityTone(activity: number): string {
 }
 
 export function ScreenshotsTab() {
-  const [blur, setBlur] = useState(true);
-  const [filter, setFilter] = useState<Filter>("all");
-  const [selected, setSelected] = useState<Screenshot | null>(null);
+  const [selected, setSelected] = useState<EmployeeShots | null>(null);
 
-  const flaggedCount = SCREENSHOTS.filter((s) => s.flagged).length;
+  return selected ? (
+    <EmployeeDetail employee={selected} onBack={() => setSelected(null)} />
+  ) : (
+    <Gallery onSelect={setSelected} />
+  );
+}
+
+/* ----------------------------- Employee gallery ---------------------------- */
+
+function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
+  const [query, setQuery] = useState("");
+  const [dept, setDept] = useState("all");
+  const [flag, setFlag] = useState<"all" | "flagged">("all");
+
+  const totalCaptures = SCREENSHOTS.length;
+  const totalFlagged = SCREENSHOT_EMPLOYEES.reduce((a, e) => a + e.flagged, 0);
   const avgActivity = Math.round(
-    SCREENSHOTS.reduce((a, s) => a + s.activity, 0) / SCREENSHOTS.length,
+    SCREENSHOT_EMPLOYEES.reduce((a, e) => a + e.avgActivity, 0) /
+      SCREENSHOT_EMPLOYEES.length,
   );
-  const shots = useMemo(
-    () => SCREENSHOTS.filter((s) => matches(s, filter)),
-    [filter],
+
+  const departments = useMemo(
+    () =>
+      Array.from(
+        new Set(SCREENSHOT_EMPLOYEES.map((e) => e.user.department)),
+      ).sort(),
+    [],
   );
+
+  const employees = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return SCREENSHOT_EMPLOYEES.filter(
+      (e) =>
+        (dept === "all" || e.user.department === dept) &&
+        (flag === "all" || e.flagged > 0) &&
+        (q === "" || e.user.name.toLowerCase().includes(q)),
+    );
+  }, [query, dept, flag]);
 
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Captured today"
-          value={SCREENSHOTS.length * 107}
-          icon={Camera}
-          hint="across all agents"
-          trend={[180, 210, 240, 220, 260, 250, 284]}
+          label="Employees monitored"
+          value={SCREENSHOT_EMPLOYEES.length}
+          icon={Users}
+          hint="with captures"
           featured
         />
         <StatCard
-          label="Every"
-          value="10 min"
+          label="Total captures"
+          value={totalCaptures.toLocaleString()}
           icon={Camera}
-          hint="capture frequency"
+          hint="across all dates"
         />
-        <StatCard
-          label="Flagged"
-          value={flaggedCount}
-          icon={Flag}
-          hint="need review"
-          delta={-2}
-          trend={[6, 5, 7, 4, 6, 5, flaggedCount]}
-        />
-        <StatCard
-          label="Avg activity"
-          value={`${avgActivity}%`}
-          icon={EyeOff}
-          delta={3}
-          trend={[62, 58, 66, 70, 61, 68, avgActivity]}
-        />
+        <StatCard label="Flagged" value={totalFlagged} icon={Flag} hint="need review" />
+        <StatCard label="Avg activity" value={`${avgActivity}%`} icon={EyeOff} />
       </div>
 
-      {/* Controls: risk filter + privacy blur */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-card px-5 py-3 shadow-soft">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                filter === f.key
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {f.label}
-            </button>
+      {/* Filters: search · department · flagged */}
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
+        <Field label="Search">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Employee name…"
+              className="w-56 pl-8"
+            />
+          </div>
+        </Field>
+
+        <Field label="Department">
+          <div className="flex h-8 flex-wrap items-center gap-1.5">
+            <Pill active={dept === "all"} onClick={() => setDept("all")}>
+              All
+            </Pill>
+            {departments.map((d) => (
+              <Pill key={d} active={dept === d} onClick={() => setDept(d)}>
+                {d}
+              </Pill>
+            ))}
+          </div>
+        </Field>
+
+        <fieldset className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground">Show</span>
+          <div className="flex h-8 items-center gap-3">
+            {(["all", "flagged"] as const).map((opt) => (
+              <label key={opt} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="radio"
+                  name="emp-flag-filter"
+                  className="size-4"
+                  style={{ accentColor: "var(--primary)" }}
+                  checked={flag === opt}
+                  onChange={() => setFlag(opt)}
+                />
+                {opt === "all" ? "All" : "With flags"}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">{employees.length}</span> of{" "}
+        {SCREENSHOT_EMPLOYEES.length} employees · select one to view their full
+        screenshot history.
+      </p>
+
+      {employees.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No employees match"
+          description="Try a different name, department, or clear the flagged filter."
+        />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {employees.map((emp) => (
+            <EmployeeCard key={emp.user.id} emp={emp} onOpen={() => onSelect(emp)} />
           ))}
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{shots.length}</span>{" "}
-            captures
-          </span>
+      )}
+    </div>
+  );
+}
+
+function Pill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function EmployeeCard({
+  emp,
+  onOpen,
+}: {
+  emp: EmployeeShots;
+  onOpen: () => void;
+}) {
+  return (
+    <Card
+      className="group cursor-pointer gap-0 overflow-hidden p-0 transition hover:ring-1 hover:ring-primary/40"
+      onClick={onOpen}
+    >
+      {/* Cover = latest capture */}
+      <div className="relative aspect-[16/10] overflow-hidden">
+        <FauxCapture blur />
+        <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
+          {emp.latest.app}
+        </div>
+        {emp.flagged > 0 ? (
+          <Badge variant="destructive" className="absolute right-2 top-2 backdrop-blur-sm">
+            <Flag className="size-3" /> {emp.flagged}
+          </Badge>
+        ) : null}
+        <span className="absolute bottom-2 left-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
+          {emp.total} captures
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <Avatar className="size-8">
+          <AvatarImage src={emp.user.avatarUrl} alt={emp.user.name} />
+          <AvatarFallback className="text-[10px]">
+            {initials(emp.user.name)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{emp.user.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {emp.user.department}
+          </p>
+        </div>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
+      </div>
+    </Card>
+  );
+}
+
+/* ----------------------------- Employee detail ----------------------------- */
+
+function EmployeeDetail({
+  employee,
+  onBack,
+}: {
+  employee: EmployeeShots;
+  onBack: () => void;
+}) {
+  const [blur, setBlur] = useState(true);
+  const [day, setDay] = useState<string>(""); // ISO date, "" = any
+  const [from, setFrom] = useState<string>(""); // "HH:MM", "" = open start
+  const [to, setTo] = useState<string>(""); // "HH:MM", "" = open end
+  const [flag, setFlag] = useState<"all" | "flagged">("all");
+  const [lightbox, setLightbox] = useState<Screenshot | null>(null);
+
+  // Calendar bounds = the window this employee actually has captures in.
+  const [minDate, maxDate] = useMemo(() => {
+    const sorted = employee.shots.map((s) => s.date).sort();
+    return [sorted[0], sorted[sorted.length - 1]];
+  }, [employee]);
+
+  const shots = useMemo(
+    () =>
+      employee.shots.filter((s) => {
+        if (day && s.date !== day) return false;
+        if (from && s.time < from) return false;
+        if (to && s.time > to) return false;
+        if (flag === "flagged" && !s.flagged) return false;
+        return true;
+      }),
+    [employee, day, from, to, flag],
+  );
+
+  const dirty = day !== "" || from !== "" || to !== "" || flag !== "all";
+  const reset = () => {
+    setDay("");
+    setFrom("");
+    setTo("");
+    setFlag("all");
+  };
+
+  return (
+    <div className="space-y-5">
+      <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
+        <ArrowLeft className="size-4" /> All employees
+      </Button>
+
+      {/* Employee header */}
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-card px-5 py-4 shadow-soft">
+        <Avatar className="size-12">
+          <AvatarImage src={employee.user.avatarUrl} alt={employee.user.name} />
+          <AvatarFallback>{initials(employee.user.name)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-heading text-lg font-semibold">
+            {employee.user.name}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {employee.user.jobTitle} · {employee.user.department}
+          </p>
+        </div>
+        <div className="flex gap-5 text-sm">
+          <Summary label="Captures" value={employee.total} />
+          <Summary
+            label="Avg activity"
+            value={`${employee.avgActivity}%`}
+            tone={activityTone(employee.avgActivity)}
+          />
+          <Summary
+            label="Flagged"
+            value={employee.flagged}
+            tone={employee.flagged > 0 ? "text-destructive" : undefined}
+          />
+        </div>
+      </div>
+
+      {/* Filters: calendar date · time range · flagged radio · privacy blur */}
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
+        <Field label="Date">
+          <Input
+            type="date"
+            value={day}
+            min={minDate}
+            max={maxDate}
+            onChange={(e) => setDay(e.target.value)}
+            className="w-[9.5rem]"
+          />
+        </Field>
+        <Field label="From">
+          <Input
+            type="time"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="w-28"
+          />
+        </Field>
+        <Field label="To">
+          <Input
+            type="time"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="w-28"
+          />
+        </Field>
+
+        <fieldset className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground">Show</span>
+          <div className="flex h-8 items-center gap-3">
+            {(["all", "flagged"] as const).map((opt) => (
+              <label
+                key={opt}
+                className="flex items-center gap-1.5 text-sm capitalize"
+              >
+                <input
+                  type="radio"
+                  name="flag-filter"
+                  className="size-4"
+                  style={{ accentColor: "var(--primary)" }}
+                  checked={flag === opt}
+                  onChange={() => setFlag(opt)}
+                />
+                {opt === "all" ? "All" : "Flagged only"}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="ml-auto flex items-center gap-4">
+          {dirty ? (
+            <Button variant="ghost" size="sm" onClick={reset}>
+              Clear
+            </Button>
+          ) : null}
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={blur} onCheckedChange={setBlur} />
             Privacy blur
@@ -134,11 +393,16 @@ export function ScreenshotsTab() {
         </div>
       </div>
 
+      <p className="text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">{shots.length}</span>{" "}
+        captures
+      </p>
+
       {shots.length === 0 ? (
         <EmptyState
-          icon={Flag}
-          title="No captures match this filter"
-          description="Try a different filter — “All” shows every recent capture."
+          icon={Camera}
+          title="No captures in this range"
+          description="Try a different month or date — “All” shows the full history."
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -147,16 +411,52 @@ export function ScreenshotsTab() {
               key={shot.id}
               shot={shot}
               blur={blur}
-              onOpen={() => setSelected(shot)}
+              onOpen={() => setLightbox(shot)}
             />
           ))}
         </div>
       )}
 
-      <Lightbox shot={selected} onClose={() => setSelected(null)} />
+      <Lightbox shot={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }
+
+function Summary({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  tone?: string;
+}) {
+  return (
+    <div className="text-center">
+      <p className={cn("font-display text-xl font-semibold tabular-nums", tone)}>
+        {value}
+      </p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/* ------------------------------- Shared bits ------------------------------- */
 
 /** The faux capture surface (no real images in Phase 1). */
 function FauxCapture({ blur }: { blur: boolean }) {
@@ -202,10 +502,7 @@ function ShotCard({
           {shot.app}
         </div>
         {shot.flagged ? (
-          <Badge
-            variant="destructive"
-            className="absolute right-2 top-2 backdrop-blur-sm"
-          >
+          <Badge variant="destructive" className="absolute right-2 top-2 backdrop-blur-sm">
             <Flag className="size-3" /> Flagged
           </Badge>
         ) : null}
@@ -214,17 +511,9 @@ function ShotCard({
         </span>
       </div>
 
-      <div className="flex items-center gap-2 px-3 py-2.5">
-        <Avatar className="size-7">
-          <AvatarImage src={shot.user.avatarUrl} alt={shot.user.name} />
-          <AvatarFallback className="text-[10px]">
-            {initials(shot.user.name)}
-          </AvatarFallback>
-        </Avatar>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {shot.user.name}
-        </span>
-        <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+      <div className="flex items-center justify-between px-3 py-2.5 text-sm">
+        <span className="font-medium">{dayLabel(shot.date)}</span>
+        <span className="font-mono text-xs tabular-nums text-muted-foreground">
           {shot.time}
         </span>
       </div>
@@ -255,7 +544,7 @@ function Lightbox({
                 ) : null}
               </DialogTitle>
               <DialogDescription>
-                {shot.user.department} · captured at {shot.time}
+                {shot.user.department} · {dayLabel(shot.date)} at {shot.time}
               </DialogDescription>
             </DialogHeader>
 
@@ -280,7 +569,9 @@ function Lightbox({
                 {shot.activity}%
               </dd>
               <dt className="text-muted-foreground">Captured</dt>
-              <dd className="text-right font-medium">{shot.time}</dd>
+              <dd className="text-right font-medium">
+                {dayLabel(shot.date)} · {shot.time}
+              </dd>
               {reason ? (
                 <>
                   <dt className="text-muted-foreground">Flag reason</dt>

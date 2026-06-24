@@ -3,7 +3,18 @@
 import { useMemo, useState } from "react";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
-import { FileBarChart, FileText, Lock, Sheet } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { FileBarChart, FileText, FolderKanban, Lock, Sheet, Timer } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -25,11 +36,22 @@ import {
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/use-permissions";
 import {
+  EMPLOYEE_TIME,
+  PROJECT_HOURS,
   REPORTS,
   REPORT_CATEGORY_LABEL,
   type ReportCategory,
   type ReportDef,
 } from "@/lib/mock-insights";
+
+const TOOLTIP_STYLE = {
+  background: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: "var(--radius)",
+  fontSize: 12,
+  color: "var(--popover-foreground)",
+} as const;
+const AXIS_TICK = { fontSize: 11, fill: "var(--muted-foreground)" } as const;
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -108,7 +130,85 @@ export function ReportsTab() {
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
+      {/* Analytics: project + time graphs */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="font-heading text-lg font-semibold">Analytics</h2>
+          <p className="text-sm text-muted-foreground">
+            Project workload and time utilization at a glance.
+          </p>
+        </div>
+
+        <ChartCard
+          icon={FolderKanban}
+          title="Hours by project"
+          description="Total hours logged per project this month · amber = at risk"
+        >
+          <BarChart data={PROJECT_HOURS} margin={{ left: -14, right: 8, top: 4 }}>
+            <CartesianGrid vertical={false} stroke="var(--border)" />
+            <XAxis dataKey="project" tickLine={false} axisLine={false} tick={AXIS_TICK} interval={0} />
+            <YAxis tickLine={false} axisLine={false} tick={AXIS_TICK} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "var(--muted)" }} />
+            <Bar dataKey="hours" name="Hours" radius={[6, 6, 0, 0]}>
+              {PROJECT_HOURS.map((p) => (
+                <Cell
+                  key={p.project}
+                  fill={p.onTrack ? "var(--chart-1)" : "var(--warning)"}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ChartCard>
+
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <ChartCard
+            icon={Timer}
+            title="Tracked vs idle hours"
+            description="Weekly hours per employee, split by activity"
+          >
+            <BarChart data={EMPLOYEE_TIME} margin={{ left: -18, right: 8, top: 4 }}>
+              <CartesianGrid vertical={false} stroke="var(--border)" />
+              <XAxis dataKey="first" tickLine={false} axisLine={false} tick={AXIS_TICK} interval={0} />
+              <YAxis tickLine={false} axisLine={false} tick={AXIS_TICK} />
+              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "var(--muted)" }} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="tracked" stackId="t" name="Tracked" fill="var(--chart-1)" />
+              <Bar dataKey="idle" stackId="t" name="Idle" fill="var(--chart-4)" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ChartCard>
+
+          <ChartCard
+            icon={Timer}
+            title="Utilization"
+            description="Billable hours as a share of weekly capacity"
+          >
+            <BarChart data={EMPLOYEE_TIME} margin={{ left: -18, right: 8, top: 4 }}>
+              <CartesianGrid vertical={false} stroke="var(--border)" />
+              <XAxis dataKey="first" tickLine={false} axisLine={false} tick={AXIS_TICK} interval={0} />
+              <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={AXIS_TICK} />
+              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "var(--muted)" }} />
+              <Bar dataKey="utilization" name="Utilization %" radius={[6, 6, 0, 0]}>
+                {EMPLOYEE_TIME.map((e) => (
+                  <Cell
+                    key={e.name}
+                    fill={
+                      e.utilization >= 80
+                        ? "var(--success)"
+                        : e.utilization >= 60
+                          ? "var(--chart-1)"
+                          : "var(--warning)"
+                    }
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartCard>
+        </div>
+      </section>
+
+      {/* Report templates catalog */}
+      <section className="space-y-4">
       {/* Toolbar: summary + category filter */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
@@ -217,6 +317,40 @@ export function ReportsTab() {
           </Card>
         ))}
       </div>
+      </section>
     </div>
+  );
+}
+
+function ChartCard({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: typeof Timer;
+  title: string;
+  description: string;
+  children: React.ReactElement;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-feature-tint text-primary">
+            <Icon className="size-4" />
+          </span>
+          {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="h-[260px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            {children}
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
