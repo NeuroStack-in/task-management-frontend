@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   FolderKanban,
   LayoutGrid,
@@ -14,9 +15,12 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAuthStore } from "@/stores/auth.store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
+import {
+  useProjectsStore,
+  type ProjectFormValues,
+} from "@/stores/projects.store";
 import {
   PROJECT_STATUS_META,
   PROJECT_STATUS_ORDER,
@@ -24,60 +28,37 @@ import {
   type ProjectStatus,
   type Task,
 } from "../types";
-import {
-  portfolioStats,
-  toneDot,
-  type UserMini,
-} from "../lib";
+import { projectStats, toneDot, type UserMini } from "../lib";
 import { ProjectCard } from "./project-card";
 import { ProjectsList } from "./projects-list";
 import { ProjectsStatBand } from "./projects-stat-band";
-import { ProjectDetailSheet } from "./project-detail-sheet";
-import { MyTasksView } from "./my-tasks-view";
-import {
-  NewProjectDialog,
-  type NewProjectInput,
-} from "./new-project-dialog";
+import { TasksView } from "./tasks-view";
+import { ProjectFormDialog } from "./project-form-dialog";
 import { Segmented } from "./parts";
 
-type View = "portfolio" | "mine";
+type View = "projects" | "tasks";
 type Layout = "grid" | "list";
 type StatusFilter = ProjectStatus | "all";
 
 interface ProjectsViewProps {
-  projects: Project[];
   tasks: Task[];
   userMap: Record<string, UserMini>;
 }
 
-export function ProjectsView({
-  projects,
-  tasks,
-  userMap,
-}: ProjectsViewProps) {
-  const user = useAuthStore((s) => s.user);
-  const hydrated = useAuthStore((s) => s.hydrated);
+export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
+  const router = useRouter();
   const { can } = usePermissions();
 
-  const [localProjects, setLocalProjects] = useState<Project[]>(projects);
-  const [view, setView] = useState<View>("portfolio");
+  const projects = useProjectsStore((s) => s.projects);
+  const createProject = useProjectsStore((s) => s.createProject);
+
+  const [view, setView] = useState<View>("projects");
   const [layout, setLayout] = useState<Layout>("grid");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
-  const localSeq = useRef(0);
-  const didInit = useRef(false);
 
-  // Role-aware default: members without manage access land on "My tasks".
-  useEffect(() => {
-    if (didInit.current || !hydrated) return;
-    didInit.current = true;
-    if (!can("projects:manage")) setView("mine");
-  }, [hydrated, can]);
-
-  const stats = useMemo(() => portfolioStats(localProjects), [localProjects]);
+  const stats = useMemo(() => projectStats(projects), [projects]);
 
   const tasksByProject = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -91,13 +72,13 @@ export function ProjectsView({
 
   const projectMap = useMemo(() => {
     const map: Record<string, Project> = {};
-    for (const p of localProjects) map[p.id] = p;
+    for (const p of projects) map[p.id] = p;
     return map;
-  }, [localProjects]);
+  }, [projects]);
 
   const taskSummary = useMemo(() => {
     const map: Record<string, { done: number; total: number }> = {};
-    for (const p of localProjects) {
+    for (const p of projects) {
       const list = tasksByProject.get(p.id) ?? [];
       map[p.id] = {
         done: list.filter((t) => t.status === "done").length,
@@ -105,75 +86,51 @@ export function ProjectsView({
       };
     }
     return map;
-  }, [localProjects, tasksByProject]);
+  }, [projects, tasksByProject]);
 
   const statusCounts = useMemo(() => {
     const c: Record<StatusFilter, number> = {
-      all: localProjects.length,
+      all: projects.length,
       active: 0,
       on_hold: 0,
       completed: 0,
       archived: 0,
     };
-    for (const p of localProjects) c[p.status] += 1;
+    for (const p of projects) c[p.status] += 1;
     return c;
-  }, [localProjects]);
+  }, [projects]);
 
-  const filtered = useMemo(() => {
+  // Projects matching the search: by name/key OR by a task title inside them.
+  const filteredProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return localProjects.filter((p) => {
+    return projects.filter((p) => {
       if (statusFilter !== "all" && p.status !== statusFilter) return false;
       if (!q) return true;
-      return (
-        p.name.toLowerCase().includes(q) || p.key.toLowerCase().includes(q)
-      );
+      if (p.name.toLowerCase().includes(q) || p.key.toLowerCase().includes(q))
+        return true;
+      const list = tasksByProject.get(p.id) ?? [];
+      return list.some((t) => t.title.toLowerCase().includes(q));
     });
-  }, [localProjects, statusFilter, query]);
-
-  const myTasks = useMemo(
-    () => (user ? tasks.filter((t) => t.assigneeId === user.id) : []),
-    [tasks, user],
-  );
+  }, [projects, statusFilter, query, tasksByProject]);
 
   const leads = useMemo(
-    () =>
-      Object.values(userMap).sort((a, b) => a.name.localeCompare(b.name)),
+    () => Object.values(userMap).sort((a, b) => a.name.localeCompare(b.name)),
     [userMap],
   );
 
   const membersFor = (p: Project): UserMini[] =>
     p.memberIds.map((id) => userMap[id]).filter(Boolean) as UserMini[];
 
-  const openProject = (id: string) => {
-    setSelectedId(id);
-    setSheetOpen(true);
-  };
+  const openProject = (id: string) => router.push(`/projects/${id}`);
 
-  const handleCreate = (input: NewProjectInput) => {
-    localSeq.current += 1;
-    const lead = userMap[input.leadUserId];
-    const project: Project = {
-      id: `proj-local-${localSeq.current}`,
-      name: input.name,
-      key: input.key,
-      status: input.status,
-      progress: 0,
-      leadUserId: input.leadUserId,
-      memberIds: lead ? [lead.id] : [],
-      department: input.department,
-      budget: input.budget,
-      spent: 0,
-      startDate: new Date().toISOString().slice(0, 10),
-      dueDate: input.dueDate,
-      velocity: [6, 9, 8, 11, 10, 13, 15],
-    };
-    setLocalProjects((prev) => [project, ...prev]);
+  const handleCreate = (values: ProjectFormValues) => {
+    const project = createProject(values);
     toast.success(`Project “${project.name}” created`, {
-      description: "Added to your portfolio for this session.",
+      description: "Added to your projects for this session.",
     });
+    router.push(`/projects/${project.id}`);
   };
 
-  const selected = selectedId ? projectMap[selectedId] ?? null : null;
   const canCreate = can("projects:create");
 
   return (
@@ -194,72 +151,73 @@ export function ProjectsView({
       {/* KPI stat band */}
       <ProjectsStatBand stats={stats} />
 
-      {/* View toggle + tools */}
+      {/* Projects / Tasks filter + unified search */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <Segmented
           options={[
-            { value: "portfolio", label: "Portfolio", count: localProjects.length },
-            { value: "mine", label: "My tasks", count: myTasks.length },
+            { value: "projects", label: "Projects", count: projects.length },
+            { value: "tasks", label: "Tasks", count: tasks.length },
           ]}
           value={view}
           onChange={setView}
         />
 
-        {view === "portfolio" ? (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <FilterChip
-                active={statusFilter === "all"}
-                onClick={() => setStatusFilter("all")}
-                label="All"
-                count={statusCounts.all}
-              />
-              {PROJECT_STATUS_ORDER.map((s) => (
-                <FilterChip
-                  key={s}
-                  active={statusFilter === s}
-                  onClick={() => setStatusFilter(s)}
-                  label={PROJECT_STATUS_META[s].label}
-                  count={statusCounts[s]}
-                  dot={toneDot[PROJECT_STATUS_META[s].tone]}
-                />
-              ))}
-            </div>
-            <div className="relative sm:w-52">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search projects…"
-                className="pl-8"
-              />
-            </div>
-
-            {/* Grid / list layout toggle */}
-            <div className="inline-flex items-center gap-0.5 rounded-lg border bg-background p-0.5">
-              <LayoutToggleButton
-                active={layout === "grid"}
-                onClick={() => setLayout("grid")}
-                icon={LayoutGrid}
-                label="Grid view"
-              />
-              <LayoutToggleButton
-                active={layout === "list"}
-                onClick={() => setLayout("list")}
-                icon={List}
-                label="List view"
-              />
-            </div>
-          </div>
-        ) : null}
+        <div className="relative sm:w-72">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by project or task name…"
+            className="pl-8"
+          />
+        </div>
       </div>
 
+      {/* Projects tab tools */}
+      {view === "projects" ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <FilterChip
+              active={statusFilter === "all"}
+              onClick={() => setStatusFilter("all")}
+              label="All"
+              count={statusCounts.all}
+            />
+            {PROJECT_STATUS_ORDER.map((s) => (
+              <FilterChip
+                key={s}
+                active={statusFilter === s}
+                onClick={() => setStatusFilter(s)}
+                label={PROJECT_STATUS_META[s].label}
+                count={statusCounts[s]}
+                dot={toneDot[PROJECT_STATUS_META[s].tone]}
+              />
+            ))}
+          </div>
+
+          <div className="inline-flex items-center gap-0.5 self-start rounded-lg border bg-background p-0.5">
+            <LayoutToggleButton
+              active={layout === "grid"}
+              onClick={() => setLayout("grid")}
+              icon={LayoutGrid}
+              label="Grid view"
+            />
+            <LayoutToggleButton
+              active={layout === "list"}
+              onClick={() => setLayout("list")}
+              icon={List}
+              label="List view"
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* Content */}
-      {view === "portfolio" ? (
-        filtered.length > 0 ? (
+      {view === "projects" ? (
+        filteredProjects.length > 0 ? (
           layout === "grid" ? (
             <div className="grid gap-4 md:grid-cols-2">
-              {filtered.map((p) => {
+              {filteredProjects.map((p) => {
                 const summary = taskSummary[p.id] ?? { done: 0, total: 0 };
                 return (
                   <ProjectCard
@@ -275,7 +233,7 @@ export function ProjectsView({
             </div>
           ) : (
             <ProjectsList
-              projects={filtered}
+              projects={filteredProjects}
               userMap={userMap}
               taskSummary={taskSummary}
               onOpen={openProject}
@@ -300,27 +258,21 @@ export function ProjectsView({
           />
         )
       ) : (
-        <MyTasksView
-          tasks={myTasks}
+        <TasksView
+          tasks={tasks}
           projectMap={projectMap}
+          query={query}
           onOpenProject={openProject}
         />
       )}
 
-      <ProjectDetailSheet
-        project={selected}
-        tasks={selected ? tasksByProject.get(selected.id) ?? [] : []}
-        userMap={userMap}
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-      />
-
       {canCreate ? (
-        <NewProjectDialog
+        <ProjectFormDialog
+          mode="create"
           open={newOpen}
           onOpenChange={setNewOpen}
           leads={leads}
-          onCreate={handleCreate}
+          onSubmit={handleCreate}
         />
       ) : null}
     </div>

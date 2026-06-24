@@ -170,6 +170,667 @@
   --sidebar-ring: #6366f1;
 }
 
+/* ============================================================= */
+/*  Alternate palette: Ember                                      */
+/*  Fire Opal #EF6448 · Raisin Black #202322 ·                    */
+/*  Masterpiece Red #5A2132 · Dirty White #EFE9E9                 */
+/*  Activated by data-palette="ember" on <html>.                  */
+/* ============================================================= */
+
+/* ---- Ember light: dirty-white canvas + fire-opal accent ---- */
+[data-palette="ember"] {
+  --background: #efe9e9;
+  --foreground: #202322;
+
+  --card: #fcf8f7;
+  --card-foreground: #202322;
+  --popover: #fcf8f7;
+  --popover-foreground: #202322;
+
+  --primary: #ef6448;
+  --primary-foreground: #241310;
+
+  --secondary: #e4dbd8;
+  --secondary-foreground: #3a2c2a;
+
+  --muted: #e8e1df;
+  --muted-foreground: #796965;
+
+  --accent: #fae0d6;
+  --accent-foreground: #b4431f;
+
+  --destructive: #c0392b;
+  --success: #18794e;
+  --warning: #b7791f;
+  --positive: #18794e;
+  --negative: #c0392b;
+
+  --feature: #5a2132;
+  --feature-foreground: #fbede9;
+  --feature-tint: #f3e3e2;
+
+  --border: #ded4d1;
+  --input: #d6cac6;
+  --ring: #ef6448;
+
+  --chart-1: #ef6448;
+  --chart-2: #5a2132;
+  --chart-3: #b7791f;
+  --chart-4: #8c5a3b;
+  --chart-5: #c0392b;
+
+  --sidebar: #fcf8f7;
+  --sidebar-foreground: #202322;
+  --sidebar-primary: #ef6448;
+  --sidebar-primary-foreground: #241310;
+  --sidebar-accent: #fae0d6;
+  --sidebar-accent-foreground: #b4431f;
+  --sidebar-border: #e6dcd9;
+  --sidebar-ring: #ef6448;
+}
+
+/* ---- Ember dark: raisin-black canvas + warm fire accent ---- */
+[data-palette="ember"].dark {
+  --background: #1b1513;
+  --foreground: #efe9e9;
+
+  --card: #241d1b;
+  --card-foreground: #efe9e9;
+  --popover: #241d1b;
+  --popover-foreground: #efe9e9;
+
+  --primary: #f2785c;
+  --primary-foreground: #2a1411;
+
+  --secondary: #2e2422;
+  --secondary-foreground: #efe9e9;
+
+  --muted: #2a201e;
+  --muted-foreground: #b3a39e;
+
+  --accent: #3a2420;
+  --accent-foreground: #f4b59e;
+
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+
+  --feature: #7a2e40;
+  --feature-foreground: #fbede9;
+  --feature-tint: #3a2228;
+
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #f2785c;
+
+  --chart-1: #f2785c;
+  --chart-2: #c76b7e;
+  --chart-3: #e0a951;
+  --chart-4: #c08a6b;
+  --chart-5: #e5705f;
+
+  --sidebar: #241d1b;
+  --sidebar-foreground: #efe9e9;
+  --sidebar-primary: #f2785c;
+  --sidebar-primary-foreground: #2a1411;
+  --sidebar-accent: #3a2420;
+  --sidebar-accent-foreground: #f4b59e;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: #f2785c;
+}
+
+/* ============================================================= */
+/*  Alternate palette: Fire Opal                                  */
+/*  Fire Opal #EF6448 accent · Raisin Black #202322 anchor.       */
+/*  Activated by data-palette="fireopal" on <html>.               */
+/* ============================================================= */
+
+/* ---- Fire Opal light: warm paper + fire accent ---- */
+[data-palette="fireopal"] {
+  --background: #f3efea;
+  --foreground: #202322;
+
+  --card: #fbf9f6;
+  --card-foreground: #202322;
+  --popover: #fbf9f6;
+  --popover-foreground: #202322;
+
+  --primary: #ef6448;
+  --primary-foreground: #201310;
+
+  --secondary: #e7e1da;
+  --secondary-foreground: #34302b;
+
+  --muted: #eae4dd;
+  --muted-foreground: #7c726a;
+
+  --accent: #fbe0d6;
+  --accent-foreground: #c14a26;
+
+  --destructive: #c0392b;
+  --success: #18794e;
+  --warning: #b7791f;
+  --positive: #18794e;
+  --negative: #c0392b;
+
+  --feature: #202322;
+  --feature-foreground: #f4efea;
+  --feature-tint: #f7e4dc;
+
+  --border: #ddd5cd;
+  --input: #d4cbc2;
+  --ring: #ef6448;
+
+  --chart-1: #ef6448;
+  --chart-2: #202322;
+  --chart-3: #b7791f;
+  --chart-4: #9c6a4a;
+  --chart-5: #c0392b;
+
+  --sidebar: #fbf9f6;
+  --sidebar-foreground: #202322;
+  --sidebar-primary: #ef6448;
+  --sidebar-primary-foreground: #201310;
+  --sidebar-accent: #fbe0d6;
+  --sidebar-accent-foreground: #c14a26;
+  --sidebar-border: #e8e1da;
+  --sidebar-ring: #ef6448;
+}
+
+/* ---- Fire Opal dark: raisin-black canvas + fire accent ---- */
+[data-palette="fireopal"].dark {
+  --background: #202322;
+  --foreground: #f1edea;
+
+  --card: #2a2d2c;
+  --card-foreground: #f1edea;
+  --popover: #2a2d2c;
+  --popover-foreground: #f1edea;
+
+  --primary: #f2785c;
+  --primary-foreground: #201310;
+
+  --secondary: #333635;
+  --secondary-foreground: #f1edea;
+
+  --muted: #2e3130;
+  --muted-foreground: #aaa39c;
+
+  --accent: #3a2a25;
+  --accent-foreground: #f4ad95;
+
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+
+  --feature: #161817;
+  --feature-foreground: #f4efea;
+  --feature-tint: #2f211c;
+
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #f2785c;
+
+  --chart-1: #f2785c;
+  --chart-2: #d98a72;
+  --chart-3: #e0a951;
+  --chart-4: #c79073;
+  --chart-5: #e5705f;
+
+  --sidebar: #2a2d2c;
+  --sidebar-foreground: #f1edea;
+  --sidebar-primary: #f2785c;
+  --sidebar-primary-foreground: #201310;
+  --sidebar-accent: #3a2a25;
+  --sidebar-accent-foreground: #f4ad95;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: #f2785c;
+}
+
+/* ============================================================= */
+/*  Alternate palette: Masterpiece Red                            */
+/*  Masterpiece Red #5A2132 accent · Dirty White #EFE9E9 canvas.  */
+/*  Activated by data-palette="masterpiece" on <html>.            */
+/* ============================================================= */
+
+/* ---- Masterpiece light: dirty-white canvas + wine accent ---- */
+[data-palette="masterpiece"] {
+  --background: #efe9e9;
+  --foreground: #2b141a;
+
+  --card: #faf5f5;
+  --card-foreground: #2b141a;
+  --popover: #faf5f5;
+  --popover-foreground: #2b141a;
+
+  --primary: #5a2132;
+  --primary-foreground: #efe9e9;
+
+  --secondary: #e6dada;
+  --secondary-foreground: #3e2127;
+
+  --muted: #e9dede;
+  --muted-foreground: #7e6469;
+
+  --accent: #f0dee2;
+  --accent-foreground: #6e2536;
+
+  --destructive: #c0392b;
+  --success: #18794e;
+  --warning: #b7791f;
+  --positive: #18794e;
+  --negative: #c0392b;
+
+  --feature: #5a2132;
+  --feature-foreground: #efe9e9;
+  --feature-tint: #f1dee2;
+
+  --border: #ddcfcf;
+  --input: #d4c4c4;
+  --ring: #5a2132;
+
+  --chart-1: #5a2132;
+  --chart-2: #9c4a5a;
+  --chart-3: #b7791f;
+  --chart-4: #8c5a6a;
+  --chart-5: #c0392b;
+
+  --sidebar: #faf5f5;
+  --sidebar-foreground: #2b141a;
+  --sidebar-primary: #5a2132;
+  --sidebar-primary-foreground: #efe9e9;
+  --sidebar-accent: #f0dee2;
+  --sidebar-accent-foreground: #6e2536;
+  --sidebar-border: #e7dada;
+  --sidebar-ring: #5a2132;
+}
+
+/* ---- Masterpiece dark: wine-black canvas + rose accent ---- */
+[data-palette="masterpiece"].dark {
+  --background: #1f1013;
+  --foreground: #efe9e9;
+
+  --card: #2a161a;
+  --card-foreground: #efe9e9;
+  --popover: #2a161a;
+  --popover-foreground: #efe9e9;
+
+  --primary: #c2566a;
+  --primary-foreground: #25090f;
+
+  --secondary: #382329;
+  --secondary-foreground: #efe9e9;
+
+  --muted: #2e1d22;
+  --muted-foreground: #b29aa0;
+
+  --accent: #3e2329;
+  --accent-foreground: #e9a9b6;
+
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+
+  --feature: #5a2132;
+  --feature-foreground: #efe9e9;
+  --feature-tint: #3a1f25;
+
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #c2566a;
+
+  --chart-1: #c2566a;
+  --chart-2: #d98a98;
+  --chart-3: #e0a951;
+  --chart-4: #c08a98;
+  --chart-5: #e5705f;
+
+  --sidebar: #2a161a;
+  --sidebar-foreground: #efe9e9;
+  --sidebar-primary: #c2566a;
+  --sidebar-primary-foreground: #25090f;
+  --sidebar-accent: #3e2329;
+  --sidebar-accent-foreground: #e9a9b6;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: #c2566a;
+}
+
+/* ============================================================= */
+/*  Alternate palette: Golden Amber                               */
+/*  Golden Amber #FFB246 accent · Deep Indigo #2D1A47 anchor.     */
+/*  Activated by data-palette="goldamber" on <html>.              */
+/* ============================================================= */
+
+/* ---- Golden Amber light: warm cream + amber accent ---- */
+[data-palette="goldamber"] {
+  --background: #f6f2ec;
+  --foreground: #2d1a47;
+
+  --card: #fffdf9;
+  --card-foreground: #2d1a47;
+  --popover: #fffdf9;
+  --popover-foreground: #2d1a47;
+
+  --primary: #ffb246;
+  --primary-foreground: #2d1a47;
+
+  --secondary: #e9e3da;
+  --secondary-foreground: #3a2752;
+
+  --muted: #ece6dc;
+  --muted-foreground: #756b7e;
+
+  --accent: #fdeccb;
+  --accent-foreground: #875312;
+
+  --destructive: #c0392b;
+  --success: #18794e;
+  --warning: #b7791f;
+  --positive: #18794e;
+  --negative: #c0392b;
+
+  --feature: #2d1a47;
+  --feature-foreground: #ffe9c9;
+  --feature-tint: #ece5f3;
+
+  --border: #ddd6cc;
+  --input: #d3ccc0;
+  --ring: #ffb246;
+
+  --chart-1: #ffb246;
+  --chart-2: #2d1a47;
+  --chart-3: #7c3aed;
+  --chart-4: #d97706;
+  --chart-5: #9333ea;
+
+  --sidebar: #fffdf9;
+  --sidebar-foreground: #2d1a47;
+  --sidebar-primary: #ffb246;
+  --sidebar-primary-foreground: #2d1a47;
+  --sidebar-accent: #fdeccb;
+  --sidebar-accent-foreground: #875312;
+  --sidebar-border: #e8e1d6;
+  --sidebar-ring: #ffb246;
+}
+
+/* ---- Golden Amber dark: deep-indigo canvas + amber accent ---- */
+[data-palette="goldamber"].dark {
+  --background: #241539;
+  --foreground: #f5ecdd;
+
+  --card: #2d1a47;
+  --card-foreground: #f5ecdd;
+  --popover: #2d1a47;
+  --popover-foreground: #f5ecdd;
+
+  --primary: #ffb246;
+  --primary-foreground: #2d1a47;
+
+  --secondary: #3a2658;
+  --secondary-foreground: #f5ecdd;
+
+  --muted: #352050;
+  --muted-foreground: #b6abc4;
+
+  --accent: #3e2a5e;
+  --accent-foreground: #ffcd85;
+
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+
+  --feature: #3a2160;
+  --feature-foreground: #ffe9c9;
+  --feature-tint: #3a2658;
+
+  --border: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.14);
+  --ring: #ffb246;
+
+  --chart-1: #ffb246;
+  --chart-2: #b07cd6;
+  --chart-3: #a78bfa;
+  --chart-4: #fbbf24;
+  --chart-5: #c084fc;
+
+  --sidebar: #2d1a47;
+  --sidebar-foreground: #f5ecdd;
+  --sidebar-primary: #ffb246;
+  --sidebar-primary-foreground: #2d1a47;
+  --sidebar-accent: #3e2a5e;
+  --sidebar-accent-foreground: #ffcd85;
+  --sidebar-border: rgb(255 255 255 / 0.1);
+  --sidebar-ring: #ffb246;
+}
+
+/* ============================================================= */
+/*  Alternate palette: Creative Teal                              */
+/*  Pine Teal #004643 · Cream #F0EDE5.                            */
+/*  Activated by data-palette="creative" on <html>.               */
+/* ============================================================= */
+
+/* ---- Creative light: cream canvas + pine-teal accent ---- */
+[data-palette="creative"] {
+  --background: #f0ede5;
+  --foreground: #003835;
+
+  --card: #faf8f1;
+  --card-foreground: #003835;
+  --popover: #faf8f1;
+  --popover-foreground: #003835;
+
+  --primary: #004643;
+  --primary-foreground: #f0ede5;
+
+  --secondary: #e3e0d6;
+  --secondary-foreground: #1f3d3a;
+
+  --muted: #e7e4da;
+  --muted-foreground: #5f6f6b;
+
+  --accent: #d8e6e2;
+  --accent-foreground: #00564f;
+
+  --destructive: #c0392b;
+  --success: #18794e;
+  --warning: #b7791f;
+  --positive: #18794e;
+  --negative: #c0392b;
+
+  --feature: #004643;
+  --feature-foreground: #f0ede5;
+  --feature-tint: #dce8e4;
+
+  --border: #d7d3c8;
+  --input: #cdc9bd;
+  --ring: #004643;
+
+  --chart-1: #004643;
+  --chart-2: #0d9488;
+  --chart-3: #b7791f;
+  --chart-4: #3f7d5e;
+  --chart-5: #99774a;
+
+  --sidebar: #faf8f1;
+  --sidebar-foreground: #003835;
+  --sidebar-primary: #004643;
+  --sidebar-primary-foreground: #f0ede5;
+  --sidebar-accent: #d8e6e2;
+  --sidebar-accent-foreground: #00564f;
+  --sidebar-border: #e4e0d6;
+  --sidebar-ring: #004643;
+}
+
+/* ---- Creative dark: deep-teal canvas + mint accent ---- */
+[data-palette="creative"].dark {
+  --background: #00302e;
+  --foreground: #f0ede5;
+
+  --card: #004643;
+  --card-foreground: #f0ede5;
+  --popover: #004643;
+  --popover-foreground: #f0ede5;
+
+  --primary: #4db3a1;
+  --primary-foreground: #00302e;
+
+  --secondary: #0a4f4b;
+  --secondary-foreground: #f0ede5;
+
+  --muted: #0a4744;
+  --muted-foreground: #9fb5b1;
+
+  --accent: #0d524d;
+  --accent-foreground: #9fe3d6;
+
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+
+  --feature: #00514c;
+  --feature-foreground: #f0ede5;
+  --feature-tint: #0d524d;
+
+  --border: rgb(255 255 255 / 0.09);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #4db3a1;
+
+  --chart-1: #4db3a1;
+  --chart-2: #5eead4;
+  --chart-3: #e0a951;
+  --chart-4: #6fbf9b;
+  --chart-5: #c0a36a;
+
+  --sidebar: #004643;
+  --sidebar-foreground: #f0ede5;
+  --sidebar-primary: #4db3a1;
+  --sidebar-primary-foreground: #00302e;
+  --sidebar-accent: #0d524d;
+  --sidebar-accent-foreground: #9fe3d6;
+  --sidebar-border: rgb(255 255 255 / 0.09);
+  --sidebar-ring: #4db3a1;
+}
+
+/* ============================================================= */
+/*  Alternate palette: Midnight Plum                              */
+/*  Honey Dawn #F0C986 accent · Midnight Plum #3B153A anchor.     */
+/*  Activated by data-palette="midnightplum" on <html>.           */
+/* ============================================================= */
+
+/* ---- Midnight Plum light: warm cream + honey accent ---- */
+[data-palette="midnightplum"] {
+  --background: #f4eee6;
+  --foreground: #3b153a;
+
+  --card: #fdf9f2;
+  --card-foreground: #3b153a;
+  --popover: #fdf9f2;
+  --popover-foreground: #3b153a;
+
+  --primary: #f0c986;
+  --primary-foreground: #3b153a;
+
+  --secondary: #e8e1d6;
+  --secondary-foreground: #4a2449;
+
+  --muted: #ebe4d9;
+  --muted-foreground: #7a6973;
+
+  --accent: #f7e6c8;
+  --accent-foreground: #7a531c;
+
+  --destructive: #c0392b;
+  --success: #18794e;
+  --warning: #b7791f;
+  --positive: #18794e;
+  --negative: #c0392b;
+
+  --feature: #3b153a;
+  --feature-foreground: #f6ecdb;
+  --feature-tint: #f1e4ee;
+
+  --border: #ddd4cd;
+  --input: #d3cabf;
+  --ring: #f0c986;
+
+  --chart-1: #f0c986;
+  --chart-2: #3b153a;
+  --chart-3: #b7791f;
+  --chart-4: #7c3a6e;
+  --chart-5: #9333ea;
+
+  --sidebar: #fdf9f2;
+  --sidebar-foreground: #3b153a;
+  --sidebar-primary: #f0c986;
+  --sidebar-primary-foreground: #3b153a;
+  --sidebar-accent: #f7e6c8;
+  --sidebar-accent-foreground: #7a531c;
+  --sidebar-border: #e9e1d6;
+  --sidebar-ring: #f0c986;
+}
+
+/* ---- Midnight Plum dark: plum canvas + honey accent ---- */
+[data-palette="midnightplum"].dark {
+  --background: #2a0f29;
+  --foreground: #f6ecdb;
+
+  --card: #3b153a;
+  --card-foreground: #f6ecdb;
+  --popover: #3b153a;
+  --popover-foreground: #f6ecdb;
+
+  --primary: #f0c986;
+  --primary-foreground: #3b153a;
+
+  --secondary: #4a2148;
+  --secondary-foreground: #f6ecdb;
+
+  --muted: #421d40;
+  --muted-foreground: #c0a8bd;
+
+  --accent: #4e2349;
+  --accent-foreground: #f3d49a;
+
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+
+  --feature: #4a1a47;
+  --feature-foreground: #f6ecdb;
+  --feature-tint: #4e2349;
+
+  --border: rgb(255 255 255 / 0.09);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #f0c986;
+
+  --chart-1: #f0c986;
+  --chart-2: #c98ab8;
+  --chart-3: #e0a951;
+  --chart-4: #d98ac0;
+  --chart-5: #c084fc;
+
+  --sidebar: #3b153a;
+  --sidebar-foreground: #f6ecdb;
+  --sidebar-primary: #f0c986;
+  --sidebar-primary-foreground: #3b153a;
+  --sidebar-accent: #4e2349;
+  --sidebar-accent-foreground: #f3d49a;
+  --sidebar-border: rgb(255 255 255 / 0.09);
+  --sidebar-ring: #f0c986;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -194,4 +855,56 @@
   box-shadow:
     0 1px 2px rgb(16 18 24 / 0.04),
     0 10px 30px -16px rgb(16 18 24 / 0.16);
+}
+
+/* ---- Live, animated meters & progress bars ---- */
+@keyframes wp-meter-grow {
+  from {
+    width: 0;
+  }
+}
+@keyframes wp-gauge-fill {
+  from {
+    stroke-dashoffset: var(--gauge-arc);
+  }
+}
+@keyframes wp-meter-sheen {
+  0% {
+    transform: translateX(-130%);
+  }
+  55%,
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+/* Bar fills from 0 → its set width on mount. */
+.wp-meter-fill {
+  animation: wp-meter-grow 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Semicircular gauge sweeps from empty → its value on mount. */
+.wp-gauge-arc {
+  animation: wp-gauge-fill 1.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* A soft highlight that periodically sweeps the filled bar — the "live" cue. */
+.wp-meter-sheen {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / 0.5) 50%,
+    transparent 100%
+  );
+  animation: wp-meter-sheen 2.8s ease-in-out 1s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-meter-fill,
+  .wp-gauge-arc {
+    animation: none;
+  }
+  .wp-meter-sheen {
+    display: none;
+  }
 }

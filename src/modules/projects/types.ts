@@ -11,6 +11,8 @@ export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
 export interface Project {
   id: string;
   name: string;
+  /** Optional one-paragraph brief shown on the project detail page. */
+  description?: string;
   /** Short uppercase key, e.g. "WP" — used as a task prefix and card badge. */
   key: string;
   status: ProjectStatus;

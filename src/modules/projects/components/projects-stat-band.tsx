@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Sparkline } from "@/components/shared/sparkline";
 import { cn } from "@/lib/utils";
-import type { PortfolioStats } from "../lib";
+import type { ProjectStats } from "../lib";
 
 interface Segment {
   key: string;
@@ -25,9 +25,9 @@ interface Segment {
 /**
  * A single connected KPI band (not four floating cards) — reads as an admin
  * control strip. The primary cell carries the indigo feature tint + the
- * portfolio pulse; 1px gaps over a border-coloured parent form the dividers.
+ * aggregate project pulse; 1px gaps over a border-coloured parent form the dividers.
  */
-export function ProjectsStatBand({ stats }: { stats: PortfolioStats }) {
+export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
   const segments: Segment[] = [
     {
       key: "total",
