@@ -1,17 +1,7 @@
-import type { Metadata } from "next";
-import { PageHeader } from "@/components/shared/page-header";
-import { AdminHub } from "@/modules/settings/components/admin-hub";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Settings" };
-
+// The settings hub is a two-pane shell (see layout.tsx). The index has no
+// content of its own — land on the first account section.
 export default function SettingsPage() {
-  return (
-    <div className="space-y-5 pt-1">
-      <PageHeader
-        title="Settings"
-        description="Manage your organization, monitoring, access, and account preferences."
-      />
-      <AdminHub />
-    </div>
-  );
+  redirect("/settings/profile");
 }

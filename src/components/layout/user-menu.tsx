@@ -55,7 +55,7 @@ export function UserMenu() {
           </span>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/profile")}>
+        <DropdownMenuItem onClick={() => router.push("/settings/profile")}>
           <UserIcon className="size-4" /> Profile
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => router.push("/settings")}>
