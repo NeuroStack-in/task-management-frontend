@@ -28,7 +28,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNavbar />
-        <main className="flex-1 px-4 pb-8 sm:px-6">{children}</main>
+        {/* pb clears the fixed AI-assistant FAB (bottom-right) so it never
+            covers page content like pagination controls. */}
+        <main className="flex-1 px-4 pb-24 sm:px-6">{children}</main>
       </div>
       <ChatBot />
     </div>

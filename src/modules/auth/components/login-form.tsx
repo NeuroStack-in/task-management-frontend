@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { AuthError, DEMO_EMAIL } from "@/modules/auth/services/auth.service";
@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email address."),
@@ -35,6 +36,7 @@ export function LoginForm() {
   const params = useSearchParams();
   const login = useAuthStore((s) => s.login);
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -67,11 +69,11 @@ export function LoginForm() {
   };
 
   return (
-    <Card>
+    <Card className="shadow-soft">
       <CardHeader>
-        <CardTitle className="text-xl">Sign in</CardTitle>
+        <CardTitle className="font-heading text-2xl">Welcome back</CardTitle>
         <CardDescription>
-          Enter your credentials to access your workspace.
+          Sign in to your WorkPulse workspace.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -84,6 +86,7 @@ export function LoginForm() {
               type="email"
               autoComplete="email"
               placeholder="you@company.com"
+              aria-invalid={!!errors.email}
               {...register("email")}
             />
             {errors.email ? (
@@ -91,21 +94,51 @@ export function LoginForm() {
             ) : null}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              placeholder="••••••••"
-              {...register("password")}
-            />
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link
+                href="/forgot-password"
+                className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                placeholder="••••••••"
+                className="pr-9"
+                aria-invalid={!!errors.password}
+                {...register("password")}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
+            </div>
             {errors.password ? (
               <p className="text-xs text-destructive">
                 {errors.password.message}
               </p>
             ) : null}
           </div>
-          <div className="rounded-md border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
+
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox id="remember" defaultChecked />
+            Keep me signed in
+          </label>
+
+          <div className="rounded-xl border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">Demo mode</p>
             <p className="mt-0.5">
               Use{" "}
@@ -130,20 +163,15 @@ export function LoginForm() {
               "Sign in"
             )}
           </Button>
-          <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
-            <Link href="/forgot-password" className="hover:text-foreground">
-              Forgot password?
+          <p className="text-center text-xs text-muted-foreground">
+            New to WorkPulse?{" "}
+            <Link
+              href="/register"
+              className="font-medium text-primary underline-offset-2 hover:underline"
+            >
+              Create an account
             </Link>
-            <span>
-              New to WorkPulse?{" "}
-              <Link
-                href="/register"
-                className="font-medium text-primary underline-offset-2 hover:underline"
-              >
-                Create an account
-              </Link>
-            </span>
-          </div>
+          </p>
         </CardFooter>
       </form>
     </Card>
