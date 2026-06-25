@@ -1,14 +1,8 @@
-import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import type { Metadata } from "next"
+import { TrackingRulesTab } from "@/modules/settings/components/tracking-rules-tab"
 
-export const metadata: Metadata = { title: "Application & URL Management" };
+export const metadata: Metadata = { title: "Application & URL Rules · Settings" }
 
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Application & URL Management"
-      description="Allow/block lists and productivity scoring."
-      phase={4}
-    />
-  );
+  return <TrackingRulesTab />
 }

@@ -1,14 +1,8 @@
-import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import type { Metadata } from "next"
+import { HelpPage } from "@/modules/help/components/help-page"
 
-export const metadata: Metadata = { title: "Help Center" };
+export const metadata: Metadata = { title: "Help Center" }
 
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Help Center"
-      description="Documentation, tutorials, FAQs, and support tickets."
-      phase={5}
-    />
-  );
+  return <HelpPage />
 }

@@ -1,14 +1,8 @@
-import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import type { Metadata } from "next"
+import { MonitoringTab } from "@/modules/settings/components/monitoring-tab"
 
-export const metadata: Metadata = { title: "Monitoring Configuration" };
+export const metadata: Metadata = { title: "Monitoring · Settings" }
 
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Monitoring Configuration"
-      description="Idle, screenshot, and productivity thresholds."
-      phase={4}
-    />
-  );
+  return <MonitoringTab />
 }
