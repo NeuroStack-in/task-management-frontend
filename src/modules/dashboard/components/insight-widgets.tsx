@@ -36,7 +36,7 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
                   title={`${HEATMAP_DAYS[d]} · ${v}%`}
                   className="h-5 flex-1 rounded-[4px]"
                   style={{
-                    backgroundColor: `color-mix(in srgb, var(--primary) ${v}%, var(--muted))`,
+                    backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,
                   }}
                 />
               ))}
@@ -60,7 +60,7 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
               key={v}
               className="size-3 rounded-[3px]"
               style={{
-                backgroundColor: `color-mix(in srgb, var(--primary) ${v}%, var(--muted))`,
+                backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,
               }}
             />
           ))}

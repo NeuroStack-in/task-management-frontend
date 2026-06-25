@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -16,6 +17,7 @@ import {
   Coffee,
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -31,16 +33,15 @@ import { productivityHeatmap } from "@/lib/mock-metrics";
 import {
   APP_USAGE,
   URL_USAGE,
-  ACTIVITY_BY_HOUR,
-  HOUR_LABELS,
-  KEYBOARD_BY_HOUR,
-  MOUSE_BY_HOUR,
+  activitySeries,
   usageTotals,
   CATEGORY_COLOR,
   CATEGORY_LABEL,
+  type Granularity,
   type UsageItem,
   type UsageCategory,
 } from "@/lib/mock-insights";
+import { cn } from "@/lib/utils";
 
 const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
 
@@ -51,16 +52,47 @@ const formatMinutes = (min: number): string => {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 };
 
-const trendData = ACTIVITY_BY_HOUR.map((active, i) => ({
-  hour: HOUR_LABELS[i],
-  active,
-  keyboard: KEYBOARD_BY_HOUR[i],
-  mouse: MOUSE_BY_HOUR[i],
-}));
+const GRANULARITIES: { key: Granularity; label: string }[] = [
+  { key: "daily", label: "Daily" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+];
+
+/** Stable numeric seed from a chosen date so the mock curve shifts per date. */
+const dateSeed = (date: string): number =>
+  [...date].reduce((s, c) => s + c.charCodeAt(0), 0);
 
 export function ActivityTab() {
+  const [granularity, setGranularity] = useState<Granularity>("daily");
+  const [date, setDate] = useState("");
+
+  const series = useMemo(
+    () => activitySeries(granularity, date ? dateSeed(date) : 0),
+    [granularity, date],
+  );
+
+  const trendData = useMemo(
+    () =>
+      series.labels.map((label, i) => ({
+        label,
+        active: series.active[i],
+        keyboard: series.keyboard[i],
+        mouse: series.mouse[i],
+      })),
+    [series],
+  );
+
   const active = users.filter((u) => u.status === "active").length;
   const inactive = users.filter((u) => u.status === "inactive").length;
+
+  // "Active now" is only meaningful live (daily); for a range, show the average.
+  const activeLabel = granularity === "daily" ? "Active now" : "Active users";
+  const activeHint =
+    granularity === "daily"
+      ? "live"
+      : granularity === "weekly"
+        ? "avg this week"
+        : "avg this month";
 
   const totals = usageTotals(APP_USAGE);
   const totalMin = totals.productive + totals.neutral + totals.distracting;
@@ -68,28 +100,59 @@ export function ActivityTab() {
 
   return (
     <div className="space-y-4">
+      {/* Range filter: granularity + specific date */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card px-4 py-2.5 shadow-soft">
+        <div className="flex rounded-full border bg-background p-0.5">
+          {GRANULARITIES.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              onClick={() => setGranularity(g.key)}
+              className={cn(
+                "rounded-full px-3.5 py-1 text-sm font-medium transition-colors",
+                granularity === g.key
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          Date
+          <Input
+            type="date"
+            value={date}
+            max="2026-06-25"
+            onChange={(e) => setDate(e.target.value)}
+            className="w-[9.5rem]"
+          />
+        </label>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Active now"
+          label={activeLabel}
           value={active}
           icon={ActivityIcon}
-          hint="live"
-          trend={ACTIVITY_BY_HOUR}
+          hint={activeHint}
+          trend={series.active}
           featured
         />
         <StatCard
           label="Avg. active"
-          value={`${avg(ACTIVITY_BY_HOUR)}%`}
+          value={`${avg(series.active)}%`}
           icon={Gauge}
           delta={4}
-          trend={ACTIVITY_BY_HOUR.slice(-7)}
+          trend={series.active.slice(-7)}
         />
         <StatCard
           label="Productive time"
           value={`${productivePct}%`}
           icon={MousePointerClick}
           delta={2}
-          trend={KEYBOARD_BY_HOUR.slice(-7)}
+          trend={series.keyboard.slice(-7)}
         />
         <StatCard
           label="Distracting time"
@@ -100,13 +163,12 @@ export function ActivityTab() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle>Activity by hour</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[260px] w-full">
+      <Card>
+        <CardHeader>
+          <CardTitle>{series.title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trendData} margin={{ left: -18, right: 8, top: 4 }}>
                   <defs>
@@ -116,7 +178,7 @@ export function ActivityTab() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="var(--border)" />
-                  <XAxis dataKey="hour" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
                   <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
                   <Tooltip
                     contentStyle={{
@@ -134,6 +196,8 @@ export function ActivityTab() {
           </CardContent>
         </Card>
 
+      {/* Two balanced summary cards of similar height */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Time by category</CardTitle>
@@ -161,14 +225,11 @@ export function ActivityTab() {
             </p>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ProductivityHeatmap data={productivityHeatmap()} />
-        </div>
         <ActiveInactiveRing active={active} inactive={inactive} />
       </div>
+
+      {/* Heatmap — full width */}
+      <ProductivityHeatmap data={productivityHeatmap()} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <UsageList title="Top applications" items={APP_USAGE} />
@@ -176,8 +237,8 @@ export function ActivityTab() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <IntensityCard title="Keyboard intensity" data={KEYBOARD_BY_HOUR} labels={HOUR_LABELS} />
-        <IntensityCard title="Mouse intensity" data={MOUSE_BY_HOUR} labels={HOUR_LABELS} />
+        <IntensityCard title="Keyboard intensity" data={series.keyboard} labels={series.labels} />
+        <IntensityCard title="Mouse intensity" data={series.mouse} labels={series.labels} />
       </div>
     </div>
   );

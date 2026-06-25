@@ -1,14 +1,10 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import { tasks, users } from "@/lib/data";
+import { buildUserMap } from "@/modules/projects/lib";
+import { ProjectsView } from "@/modules/projects/components/projects-view";
 
 export const metadata: Metadata = { title: "Projects" };
 
-export default function Page() {
-  return (
-    <ComingSoon
-      title="Projects"
-      description="Project dashboards, allocation, progress tracking, and per-project task boards (with a 'My tasks' view)."
-      phase={2}
-    />
-  );
+export default function ProjectsPage() {
+  return <ProjectsView tasks={tasks} userMap={buildUserMap(users)} />;
 }

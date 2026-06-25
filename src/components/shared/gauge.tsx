@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 
 interface GaugeProps {
@@ -30,6 +31,8 @@ export function Gauge({ value, label, size = 160, className }: GaugeProps) {
           strokeLinecap="round"
         />
         <path
+          className="wp-gauge-arc"
+          style={{ ["--gauge-arc"]: arc } as CSSProperties}
           d={`M ${stroke / 2} ${cy} A ${r} ${r} 0 0 1 ${size - stroke / 2} ${cy}`}
           fill="none"
           stroke="var(--primary)"
