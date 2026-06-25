@@ -3,15 +3,14 @@
 import Link from "next/link";
 import {
   ArrowLeft,
-  CalendarDays,
+  Contact,
   FolderKanban,
   Gauge,
   ListChecks,
-  Mail,
   MapPin,
-  Phone,
   Sparkles,
   TrendingUp,
+  type LucideIcon,
 } from "lucide-react";
 import {
   Area,
@@ -132,27 +131,23 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
           </div>
 
           {/* Employee details */}
-          <Panel title="Employee details">
-            <dl className="space-y-3 text-sm">
-              <Row icon={Phone} label="Phone" value={data.phone} />
-              <Row icon={Mail} label="Email" value={data.email} />
-              <Row icon={CalendarDays} label="Date of birth" value={data.dob} />
-              <Row icon={ListChecks} label="Title" value={data.jobTitle} />
-              <Row
-                icon={CalendarDays}
-                label="Hire date"
-                value={data.hireDate}
-              />
+          <Panel title="Employee details" icon={Contact}>
+            <dl className="divide-y text-sm">
+              <InfoRow label="Phone" value={data.phone} />
+              <InfoRow label="Email" value={data.email} />
+              <InfoRow label="Date of birth" value={data.dob} />
+              <InfoRow label="Title" value={data.jobTitle} />
+              <InfoRow label="Hire date" value={data.hireDate} />
             </dl>
           </Panel>
 
           {/* Address */}
-          <Panel title="Address">
-            <dl className="space-y-3 text-sm">
-              <Row icon={MapPin} label="Country" value={data.country} />
-              <Row icon={MapPin} label="City / State" value={data.cityState} />
-              <Row icon={MapPin} label="Address" value={data.address} />
-              <Row icon={MapPin} label="Postcode" value={data.postcode} />
+          <Panel title="Address" icon={MapPin}>
+            <dl className="divide-y text-sm">
+              <InfoRow label="Country" value={data.country} />
+              <InfoRow label="City / State" value={data.cityState} />
+              <InfoRow label="Address" value={data.address} />
+              <InfoRow label="Postcode" value={data.postcode} />
             </dl>
           </Panel>
 
@@ -422,39 +417,35 @@ function AiInsights({ data }: { data: EmployeeProfileData }) {
 
 function Panel({
   title,
+  icon: Icon,
   children,
 }: {
   title: string;
+  icon?: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl border bg-card p-5">
-      <p className="mb-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {title}
-      </p>
+      <div className="mb-3 flex items-center gap-2">
+        {Icon ? (
+          <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+            <Icon className="size-4" />
+          </span>
+        ) : null}
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          {title}
+        </p>
+      </div>
       {children}
     </div>
   );
 }
 
-function Row({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Mail;
-  label: string;
-  value: string;
-}) {
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <dt className="text-xs text-muted-foreground">{label}</dt>
-        <dd className="truncate text-sm font-medium">{value}</dd>
-      </div>
+    <div className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="text-right font-medium break-words">{value}</dd>
     </div>
   );
 }
@@ -464,7 +455,7 @@ function Kpi({
   label,
   value,
 }: {
-  icon: typeof Mail;
+  icon: LucideIcon;
   label: string;
   value: string | number;
 }) {

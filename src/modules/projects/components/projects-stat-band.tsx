@@ -37,7 +37,7 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
       key: "active",
       label: "Active",
       value: stats.active,
-      sub: "in flight now",
+      sub: "currently underway",
       icon: Activity,
       chip: "bg-feature-tint text-primary",
     },
