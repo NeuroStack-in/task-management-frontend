@@ -58,6 +58,81 @@ export const HOUR_LABELS = [
 export const KEYBOARD_BY_HOUR = [40, 62, 78, 81, 70, 32, 48, 79, 84, 73, 55, 30];
 export const MOUSE_BY_HOUR = [48, 58, 66, 70, 61, 38, 52, 68, 72, 64, 50, 36];
 
+/** Daily buckets (Mon → Sun) for the weekly view. */
+export const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export const ACTIVITY_BY_DAY = [74, 81, 78, 83, 69, 41, 28];
+export const KEYBOARD_BY_DAY = [70, 78, 74, 80, 64, 34, 22];
+export const MOUSE_BY_DAY = [60, 66, 63, 69, 55, 38, 26];
+
+/** Weekly buckets (W1 → W5) for the monthly view. */
+export const WEEK_LABELS = ["W1", "W2", "W3", "W4", "W5"];
+export const ACTIVITY_BY_WEEK = [71, 76, 68, 80, 73];
+export const KEYBOARD_BY_WEEK = [66, 72, 61, 77, 69];
+export const MOUSE_BY_WEEK = [58, 63, 54, 67, 60];
+
+export type Granularity = "daily" | "weekly" | "monthly";
+
+export interface ActivitySeries {
+  granularity: Granularity;
+  labels: string[];
+  active: number[];
+  keyboard: number[];
+  mouse: number[];
+  /** Heading for the main activity chart. */
+  title: string;
+}
+
+/** Rotate values relative to fixed labels — a deterministic way for a chosen
+ * date to vary the mock curve without faking a backend. */
+function phase(values: number[], by: number): number[] {
+  const n = values.length;
+  if (n === 0 || by % n === 0) return values;
+  const k = ((by % n) + n) % n;
+  return [...values.slice(k), ...values.slice(0, k)];
+}
+
+/**
+ * Activity series for a granularity, optionally phase-shifted by a numeric
+ * seed (e.g. derived from a chosen date) so changing the date moves the curve.
+ */
+export function activitySeries(
+  granularity: Granularity,
+  seed = 0,
+): ActivitySeries {
+  const base =
+    granularity === "weekly"
+      ? {
+          labels: DAY_LABELS,
+          active: ACTIVITY_BY_DAY,
+          keyboard: KEYBOARD_BY_DAY,
+          mouse: MOUSE_BY_DAY,
+          title: "Activity by day",
+        }
+      : granularity === "monthly"
+        ? {
+            labels: WEEK_LABELS,
+            active: ACTIVITY_BY_WEEK,
+            keyboard: KEYBOARD_BY_WEEK,
+            mouse: MOUSE_BY_WEEK,
+            title: "Activity by week",
+          }
+        : {
+            labels: HOUR_LABELS,
+            active: ACTIVITY_BY_HOUR,
+            keyboard: KEYBOARD_BY_HOUR,
+            mouse: MOUSE_BY_HOUR,
+            title: "Activity by hour",
+          };
+  return {
+    granularity,
+    labels: base.labels,
+    active: phase(base.active, seed),
+    keyboard: phase(base.keyboard, seed),
+    mouse: phase(base.mouse, seed),
+    title: base.title,
+  };
+}
+
 export function usageTotals(items: UsageItem[]): Record<UsageCategory, number> {
   const totals: Record<UsageCategory, number> = {
     productive: 0,
@@ -319,18 +394,37 @@ export interface ProjectHours {
   onTrack: boolean;
 }
 
-export const PROJECT_HOURS: ProjectHours[] = [
-  { project: "Acme Storefront", hours: 412, members: 9, onTrack: true },
-  { project: "Platform", hours: 288, members: 6, onTrack: true },
-  { project: "Customer Success", hours: 164, members: 4, onTrack: false },
-  { project: "Internal", hours: 96, members: 12, onTrack: true },
-  { project: "Mobile App", hours: 201, members: 5, onTrack: false },
+const PROJ_PREFIX = [
+  "Acme", "Platform", "Mobile", "Billing", "Data", "Search", "Identity", "Growth",
+  "Core", "Partner", "Insights", "Payments", "Comms", "Design", "Admin", "Ops",
+];
+const PROJ_SUFFIX = [
+  "Storefront", "Pipeline", "Revamp", "Migration", "Service", "Portal",
+  "Console", "API", "Sync", "Platform",
 ];
 
+/**
+ * 50 projects, deterministic. (prefix, suffix) indices form a bijection for
+ * i < prefix×suffix, so generated names stay unique.
+ */
+export const PROJECT_HOURS: ProjectHours[] = Array.from({ length: 50 }, (_, i) => ({
+  project: `${PROJ_PREFIX[i % PROJ_PREFIX.length]} ${
+    PROJ_SUFFIX[Math.floor(i / PROJ_PREFIX.length) % PROJ_SUFFIX.length]
+  }`,
+  hours: 40 + ((i * 53) % 380),
+  members: 2 + ((i * 7) % 14),
+  onTrack: i % 3 !== 0,
+}));
+
 export interface EmployeeTime {
+  id: string;
   name: string;
   /** First name — compact axis label. */
   first: string;
+  department: string;
+  jobTitle: string;
+  avatarUrl?: string;
+  productivity: number; // %
   tracked: number;
   idle: number;
   billable: number; // %
@@ -339,18 +433,29 @@ export interface EmployeeTime {
   utilization: number; // %
 }
 
-export const EMPLOYEE_TIME: EmployeeTime[] = SAMPLE_PEOPLE.map((u, i) => {
-  const billableHrs = 22 + ((i * 4) % 16);
+/** The tracked workforce — every active/inactive employee (100+ at full seed). */
+const WORKFORCE: User[] = users.filter(
+  (u) => u.status === "active" || u.status === "inactive",
+);
+
+export const EMPLOYEE_TIME: EmployeeTime[] = WORKFORCE.map((u) => {
+  const seed = [...u.id].reduce((s, c) => s + c.charCodeAt(0), 0);
   const capacity = 40;
+  const billableHrs = 14 + (seed % 28); // 14–41h → spreads utilization across bands
   return {
+    id: u.id,
     name: u.name,
     first: u.name.split(" ")[0],
-    tracked: 38 + ((i * 5) % 6),
-    idle: 2 + (i % 4),
-    billable: 62 + ((i * 6) % 30),
+    department: u.department,
+    jobTitle: u.jobTitle,
+    avatarUrl: u.avatarUrl,
+    productivity: u.productivityScore,
+    tracked: 30 + (seed % 14),
+    idle: 1 + (seed % 5),
+    billable: 45 + (seed % 50),
     capacity,
     billableHrs,
-    utilization: Math.round((billableHrs / capacity) * 100),
+    utilization: Math.min(100, Math.round((billableHrs / capacity) * 100)),
   };
 });
 
@@ -362,7 +467,7 @@ export const REPORTS: ReportDef[] = [
     category: "workforce",
     period: "This week",
     columns: ["Employee", "Department", "Active hrs", "Productivity %", "Trend"],
-    rows: SAMPLE_PEOPLE.map((u, i) => [
+    rows: WORKFORCE.map((u, i) => [
       u.name,
       u.department,
       32 + ((i * 7) % 9),
@@ -373,12 +478,13 @@ export const REPORTS: ReportDef[] = [
   {
     id: "leaderboard",
     name: "Productivity Leaderboard",
-    description: "Top performers ranked by productivity score this week.",
+    description: "Top 10 performers ranked by productivity score this week.",
     category: "workforce",
     period: "This week",
     columns: ["Rank", "Employee", "Department", "Productivity %"],
-    rows: [...SAMPLE_PEOPLE]
+    rows: [...WORKFORCE]
       .sort((a, b) => b.productivityScore - a.productivityScore)
+      .slice(0, 10)
       .map((u, i) => [i + 1, u.name, u.department, u.productivityScore]),
   },
   {
