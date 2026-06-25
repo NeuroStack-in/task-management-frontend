@@ -4,7 +4,11 @@ import { useState } from "react";
 import { Users, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { usePermissions } from "@/hooks/use-permissions";
-import type { DailyHours, TeamMemberTime } from "@/lib/mock-time";
+import type {
+  DailyHours,
+  ProjectTimesheet,
+  TeamMemberTime,
+} from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
 import { PersonalTimeView } from "./personal-time-view";
 import { TeamTimeView } from "./team-time-view";
@@ -20,9 +24,11 @@ type View = "team" | "personal";
  */
 export function TimeTrackingView({
   teamRows,
+  projectRows,
   teamWeekly,
 }: {
   teamRows: TeamMemberTime[];
+  projectRows: ProjectTimesheet[];
   teamWeekly: DailyHours[];
 }) {
   const { can } = usePermissions();
@@ -65,7 +71,12 @@ export function TimeTrackingView({
       />
 
       {view === "team" ? (
-        <TeamTimeView rows={teamRows} weekly={teamWeekly} canApprove={canApprove} />
+        <TeamTimeView
+          rows={teamRows}
+          projectRows={projectRows}
+          weekly={teamWeekly}
+          canApprove={canApprove}
+        />
       ) : (
         <PersonalTimeView canExport={canTrack} />
       )}

@@ -17,33 +17,51 @@ import { Segmented, StatusBadge, type SegmentedOption } from "./parts";
 
 type Filter = TaskStatus | "all";
 
-interface MyTasksViewProps {
+interface TasksViewProps {
   tasks: Task[];
   projectMap: Record<string, Project>;
+  /** Shared search term — matches task title or parent project name/key. */
+  query: string;
   onOpenProject: (projectId: string) => void;
 }
 
-export function MyTasksView({
+export function TasksView({
   tasks,
   projectMap,
+  query,
   onOpenProject,
-}: MyTasksViewProps) {
+}: TasksViewProps) {
   const [filter, setFilter] = useState<Filter>("all");
+
+  // Apply the shared search across task title + the project it belongs to.
+  const searched = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return tasks;
+    return tasks.filter((t) => {
+      const project = projectMap[t.projectId];
+      return (
+        t.title.toLowerCase().includes(q) ||
+        (project?.name.toLowerCase().includes(q) ?? false) ||
+        (project?.key.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [tasks, projectMap, query]);
 
   const counts = useMemo(() => {
     const c: Record<Filter, number> = {
-      all: tasks.length,
+      all: searched.length,
       todo: 0,
       in_progress: 0,
       in_review: 0,
       done: 0,
     };
-    for (const t of tasks) c[t.status] += 1;
+    for (const t of searched) c[t.status] += 1;
     return c;
-  }, [tasks]);
+  }, [searched]);
 
   const visible = useMemo(() => {
-    const list = filter === "all" ? tasks : tasks.filter((t) => t.status === filter);
+    const list =
+      filter === "all" ? searched : searched.filter((t) => t.status === filter);
     // Open work first, then by due date (undated last), high priority breaks ties.
     const prioRank = { high: 0, medium: 1, low: 2 };
     return [...list].sort((a, b) => {
@@ -55,7 +73,7 @@ export function MyTasksView({
       if (aDue !== bDue) return aDue - bDue;
       return prioRank[a.priority] - prioRank[b.priority];
     });
-  }, [tasks, filter]);
+  }, [searched, filter]);
 
   const filterOptions: SegmentedOption<Filter>[] = [
     { value: "all", label: "All", count: counts.all },
@@ -66,12 +84,16 @@ export function MyTasksView({
     })),
   ];
 
-  if (tasks.length === 0) {
+  if (searched.length === 0) {
     return (
       <EmptyState
         icon={ListChecks}
-        title="No tasks assigned to you"
-        description="Tasks assigned to you across every project will collect here."
+        title={query ? "No tasks match your search" : "No tasks yet"}
+        description={
+          query
+            ? "Try a different task or project name."
+            : "Tasks across every project will collect here."
+        }
       />
     );
   }
@@ -120,7 +142,9 @@ export function MyTasksView({
                       <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
                         {project?.key ?? "—"}
                       </span>
-                      <span className="truncate">{project?.name ?? "Unknown"}</span>
+                      <span className="truncate">
+                        {project?.name ?? "Unknown"}
+                      </span>
                     </p>
                   </div>
                   <span
