@@ -1,14 +1,8 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import { AuditLogs } from "@/modules/audit/components/audit-logs";
 
 export const metadata: Metadata = { title: "Audit Logs" };
 
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Audit Logs"
-      description="User actions, permission changes, and login events."
-      phase={4}
-    />
-  );
+  return <AuditLogs />;
 }
