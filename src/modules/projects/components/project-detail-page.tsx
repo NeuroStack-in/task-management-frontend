@@ -7,8 +7,10 @@ import {
   ArrowLeft,
   CalendarRange,
   Crown,
+  FileDown,
   ListChecks,
   Pencil,
+  Plus,
   Trash2,
   Users,
   AlertTriangle,
@@ -36,6 +38,7 @@ import {
   useProjectsStore,
   type ProjectFormValues,
 } from "@/stores/projects.store";
+import { useTasksStore, type TaskFormValues } from "@/stores/tasks.store";
 import {
   PROJECT_STATUS_META,
   TASK_PRIORITY_META,
@@ -54,59 +57,42 @@ import {
   toneSoft,
   type UserMini,
 } from "../lib";
-import {
-  MemberStack,
-  Segmented,
-  StatusBadge,
-  type SegmentedOption,
-} from "./parts";
+import { MemberStack, StatusBadge } from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
-
-type TaskFilter = TaskStatus | "all";
+import { TaskFormDialog } from "./task-form-dialog";
+import { generateProjectReportPdf } from "../report";
 
 interface ProjectDetailPageProps {
   id: string;
-  tasks: Task[];
   userMap: Record<string, UserMini>;
 }
 
-export function ProjectDetailPage({
-  id,
-  tasks,
-  userMap,
-}: ProjectDetailPageProps) {
+export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const router = useRouter();
   const project = useProjectsStore((s) => s.projects.find((p) => p.id === id));
   const updateProject = useProjectsStore((s) => s.updateProject);
   const deleteProject = useProjectsStore((s) => s.deleteProject);
 
+  const allTasks = useTasksStore((s) => s.tasks);
+  const createTask = useTasksStore((s) => s.createTask);
+  const updateTask = useTasksStore((s) => s.updateTask);
+  const tasks = useMemo(
+    () => allTasks.filter((t) => t.projectId === id),
+    [allTasks, id],
+  );
+
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
 
-  const leads = useMemo(
+  const members = useMemo(
     () => Object.values(userMap).sort((a, b) => a.name.localeCompare(b.name)),
     [userMap],
   );
 
   const counts = useMemo(() => taskCounts(tasks), [tasks]);
-
-  const visibleTasks = useMemo(() => {
-    const list =
-      taskFilter === "all"
-        ? tasks
-        : tasks.filter((t) => t.status === taskFilter);
-    const prioRank = { high: 0, medium: 1, low: 2 };
-    return [...list].sort((a, b) => {
-      const aDone = a.status === "done" ? 1 : 0;
-      const bDone = b.status === "done" ? 1 : 0;
-      if (aDone !== bDone) return aDone - bDone;
-      const aDue = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
-      const bDue = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
-      if (aDue !== bDue) return aDue - bDue;
-      return prioRank[a.priority] - prioRank[b.priority];
-    });
-  }, [tasks, taskFilter]);
 
   if (!project) {
     return (
@@ -128,7 +114,6 @@ export function ProjectDetailPage({
   const daysLeft = daysUntil(project.dueDate);
   const lead = userMap[project.leadUserId];
   const manager = project.managerId ? userMap[project.managerId] : null;
-
   const completed = counts.done;
   const pending = tasks.length - counts.done;
 
@@ -138,15 +123,6 @@ export function ProjectDetailPage({
       : daysLeft < 0
         ? `${-daysLeft} days overdue`
         : `${daysLeft} days left`;
-
-  const filterOptions: SegmentedOption<TaskFilter>[] = [
-    { value: "all", label: "All", count: tasks.length },
-    ...TASK_STATUS_ORDER.map((s) => ({
-      value: s as TaskFilter,
-      label: TASK_STATUS_META[s].label,
-      count: counts[s],
-    })),
-  ];
 
   const editInitial: Partial<ProjectFormValues> = {
     name: project.name,
@@ -174,10 +150,48 @@ export function ProjectDetailPage({
     router.push("/projects");
   };
 
+  const openCreateTask = (s: TaskStatus) => {
+    setEditingTask(null);
+    setCreateStatus(s);
+    setTaskOpen(true);
+  };
+  const openEditTask = (t: Task) => {
+    setEditingTask(t);
+    setTaskOpen(true);
+  };
+  const handleTaskSubmit = (values: TaskFormValues) => {
+    if (editingTask) {
+      updateTask(editingTask.id, values);
+      toast.success("Task updated", { description: values.title });
+    } else {
+      createTask(project.id, values);
+      toast.success("Task added", { description: values.title });
+    }
+  };
+
+  const taskInitial = editingTask
+    ? {
+        title: editingTask.title,
+        status: editingTask.status,
+        assigneeId: editingTask.assigneeId ?? "",
+        priority: editingTask.priority,
+        dueDate: editingTask.dueDate?.slice(0, 10) ?? "",
+        estimateHours: editingTask.estimateHours,
+      }
+    : { status: createStatus };
+
+  const downloadReport = () => {
+    void generateProjectReportPdf(project, tasks, userMap).then(() =>
+      toast.success("Report generated", {
+        description: `${project.key}-project-report.pdf`,
+      }),
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Top bar: back + actions */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/projects"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -185,7 +199,11 @@ export function ProjectDetailPage({
           <ArrowLeft className="size-4" />
           All projects
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" className="gap-1.5" onClick={downloadReport}>
+            <FileDown className="size-4" />
+            Report (PDF)
+          </Button>
           <Button
             variant="outline"
             className="gap-1.5"
@@ -205,7 +223,7 @@ export function ProjectDetailPage({
         </div>
       </div>
 
-      {/* Hero — filled with the active palette's feature colour (follows palette) */}
+      {/* Hero — filled with the active palette's feature colour */}
       <header
         className="relative overflow-hidden rounded-3xl border border-white/15 text-white shadow-[0_30px_80px_-40px_rgb(0_0_0/0.55)]"
         style={{
@@ -227,6 +245,9 @@ export function ProjectDetailPage({
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-white/90 ring-1 ring-white/10">
                 {project.key}
+              </span>
+              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[0.7rem] text-white/70 ring-1 ring-white/10">
+                ID: {project.id}
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/90 ring-1 ring-white/10">
                 <span className="size-1.5 rounded-full bg-white/75" />
@@ -292,9 +313,8 @@ export function ProjectDetailPage({
         </div>
       </header>
 
-      {/* KPI row: completion meter · tasks · team size */}
+      {/* KPI row */}
       <div className="grid gap-4 md:grid-cols-3">
-        {/* Completion meter */}
         <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-5">
           <p className="self-start text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Completion
@@ -305,7 +325,6 @@ export function ProjectDetailPage({
           </p>
         </div>
 
-        {/* Tasks: completed vs pending */}
         <div className="flex flex-col rounded-2xl border bg-card p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -331,7 +350,6 @@ export function ProjectDetailPage({
           </div>
         </div>
 
-        {/* Team size */}
         <div className="flex flex-col rounded-2xl border bg-card p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -353,41 +371,38 @@ export function ProjectDetailPage({
         </div>
       </div>
 
-      {/* Tasks list + team rail */}
+      {/* Kanban + team rail */}
       <div className="grid gap-6 lg:grid-cols-12">
-        {/* Tasks list */}
         <section className="space-y-3 lg:col-span-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between">
             <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
               Tasks
             </h2>
-            <Segmented
-              options={filterOptions}
-              value={taskFilter}
-              onChange={setTaskFilter}
-              className="flex-wrap"
-            />
+            <Button size="sm" className="gap-1.5" onClick={() => openCreateTask("todo")}>
+              <Plus className="size-4" />
+              Add task
+            </Button>
           </div>
-
-          {visibleTasks.length === 0 ? (
-            <div className="rounded-2xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-              No tasks in this view.
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-2xl border bg-card">
-              <ul className="divide-y">
-                {visibleTasks.map((t) => (
-                  <TaskRow key={t.id} task={t} userMap={userMap} />
-                ))}
-              </ul>
-            </div>
-          )}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {TASK_STATUS_ORDER.map((col) => (
+              <KanbanColumn
+                key={col}
+                col={col}
+                tasks={tasks.filter((t) => t.status === col)}
+                userMap={userMap}
+                onAdd={() => openCreateTask(col)}
+                onEdit={openEditTask}
+              />
+            ))}
+          </div>
         </section>
 
-        {/* Right rail: team details + members */}
+        {/* Right rail */}
         <aside className="space-y-6 lg:col-span-4">
           <Panel title="Team details">
             <dl className="space-y-3 text-sm">
+              <DetailRow label="Project ID" value={<Mono>{project.id}</Mono>} />
+              <DetailRow label="Key" value={<Mono>{project.key}</Mono>} />
               <DetailRow label="Lead" value={lead?.name ?? "—"} />
               {manager ? (
                 <DetailRow label="Manager" value={manager.name} />
@@ -449,14 +464,24 @@ export function ProjectDetailPage({
         </aside>
       </div>
 
-      {/* Edit dialog */}
+      {/* Project edit dialog */}
       <ProjectFormDialog
         mode="edit"
         open={editOpen}
         onOpenChange={setEditOpen}
-        leads={leads}
+        leads={members}
         initial={editInitial}
         onSubmit={handleEdit}
+      />
+
+      {/* Task add/edit dialog */}
+      <TaskFormDialog
+        mode={editingTask ? "edit" : "create"}
+        open={taskOpen}
+        onOpenChange={setTaskOpen}
+        members={members}
+        initial={taskInitial}
+        onSubmit={handleTaskSubmit}
       />
 
       {/* Delete confirm */}
@@ -493,6 +518,14 @@ function teamOf(
   userMap: Record<string, UserMini>,
 ): UserMini[] {
   return memberIds.map((id) => userMap[id]).filter(Boolean) as UserMini[];
+}
+
+function Mono({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+      {children}
+    </span>
+  );
 }
 
 function TaskStat({
@@ -549,65 +582,118 @@ function DetailRow({
   );
 }
 
-function TaskRow({
+function KanbanColumn({
+  col,
+  tasks,
+  userMap,
+  onAdd,
+  onEdit,
+}: {
+  col: TaskStatus;
+  tasks: Task[];
+  userMap: Record<string, UserMini>;
+  onAdd: () => void;
+  onEdit: (t: Task) => void;
+}) {
+  const meta = TASK_STATUS_META[col];
+  return (
+    <div className="flex flex-col rounded-2xl border bg-muted/40 p-3">
+      <div className="mb-3 flex items-center justify-between px-1">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
+          <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
+          {meta.label}
+          <span className="text-muted-foreground tabular-nums">
+            {tasks.length}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={onAdd}
+          aria-label={`Add task to ${meta.label}`}
+          className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+        >
+          <Plus className="size-4" />
+        </button>
+      </div>
+
+      {tasks.length === 0 ? (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+        >
+          Add a task
+        </button>
+      ) : (
+        <ul className="space-y-2">
+          {tasks.map((t) => (
+            <TaskCard key={t.id} task={t} userMap={userMap} onEdit={onEdit} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function TaskCard({
   task,
   userMap,
+  onEdit,
 }: {
   task: Task;
   userMap: Record<string, UserMini>;
+  onEdit: (t: Task) => void;
 }) {
   const prio = TASK_PRIORITY_META[task.priority];
-  const status = TASK_STATUS_META[task.status];
-  const due = dueLabel(task.dueDate);
   const assignee = task.assigneeId ? userMap[task.assigneeId] : null;
-
+  const due = dueLabel(task.dueDate);
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
-      <span
-        className={cn("size-2 shrink-0 rounded-full", toneDot[prio.tone])}
-        title={`${prio.label} priority`}
-      />
-      <div className="min-w-0 flex-1">
-        <p
+    <li className="group/task relative rounded-xl border bg-card p-3">
+      <button
+        type="button"
+        onClick={() => onEdit(task)}
+        aria-label="Edit task"
+        className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/task:opacity-100"
+      >
+        <Pencil className="size-3.5" />
+      </button>
+      <p className="pr-6 text-sm leading-snug font-medium">{task.title}</p>
+      <div className="mt-2.5 flex items-center justify-between gap-2">
+        <span
           className={cn(
-            "truncate text-sm font-medium",
-            task.status === "done" && "text-muted-foreground line-through",
+            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium",
+            toneSoft[prio.tone],
           )}
         >
-          {task.title}
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {assignee ? assignee.name : "Unassigned"}
-        </p>
-      </div>
-
-      <span
-        className={cn(
-          "hidden shrink-0 text-xs font-medium tabular-nums sm:block",
-          due.overdue ? "text-destructive" : "text-muted-foreground",
-        )}
-      >
-        {due.text}
-      </span>
-      <span
-        className={cn(
-          "hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium md:inline-flex",
-          toneSoft[prio.tone],
-        )}
-      >
-        {prio.label}
-      </span>
-      <StatusBadge tone={status.tone} label={status.label} className="shrink-0" />
-      {assignee ? (
-        <Avatar size="sm" className="size-7 shrink-0">
-          {assignee.avatarUrl ? (
-            <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+          {prio.label}
+        </span>
+        <div className="flex items-center gap-2">
+          {task.dueDate ? (
+            <span
+              className={cn(
+                "text-[0.7rem] tabular-nums",
+                due.overdue ? "text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {due.text}
+            </span>
           ) : null}
-          <AvatarFallback className="text-[0.6rem]">
-            {initials(assignee.name)}
-          </AvatarFallback>
-        </Avatar>
-      ) : null}
+          {assignee ? (
+            <Avatar size="sm" className="size-6">
+              {assignee.avatarUrl ? (
+                <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+              ) : null}
+              <AvatarFallback className="text-[0.55rem]">
+                {initials(assignee.name)}
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            <span className="text-[0.7rem] text-muted-foreground/60">
+              Unassigned
+            </span>
+          )}
+        </div>
+      </div>
     </li>
   );
 }

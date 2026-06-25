@@ -10,6 +10,7 @@ import {
   Mail,
   MapPin,
   Phone,
+  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import {
@@ -341,7 +342,77 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
               </ul>
             )}
           </div>
+
+          {/* AI insights — overall summary of the employee */}
+          <AiInsights data={data} />
         </section>
+      </div>
+    </div>
+  );
+}
+
+function AiInsights({ data }: { data: EmployeeProfileData }) {
+  const first = data.name.split(" ")[0];
+  const tier =
+    data.productivityScore >= 80
+      ? "high"
+      : data.productivityScore >= 60
+        ? "steady"
+        : "developing";
+  const trendUp =
+    data.kpi.current[data.kpi.current.length - 1] >=
+    data.kpi.previous[data.kpi.previous.length - 1];
+  const top = [...data.activeProjects].sort((a, b) => b.progress - a.progress)[0];
+
+  const summary = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${data.activeProjects.length} active ${data.activeProjects.length === 1 ? "project" : "projects"}. Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks in flight.`;
+
+  const points: string[] = [
+    trendUp
+      ? "Productivity is trending up over the last 6 months versus the prior period."
+      : "Productivity has softened recently — a check-in could surface blockers.",
+    `Workload is ${data.totalTasks >= 40 ? "heavy" : data.totalTasks >= 20 ? "balanced" : "light"} at ${data.totalTasks} tasks across ${data.activeProjects.length} ${data.activeProjects.length === 1 ? "project" : "projects"}.`,
+    top
+      ? `Strongest contribution: ${top.name} at ${top.progress}% complete.`
+      : "Not currently assigned to an active project.",
+    tier === "high"
+      ? "A consistent top performer — a candidate for stretch work or mentoring."
+      : tier === "steady"
+        ? "Reliable output — small focus gains could lift them into the top tier."
+        : "Ramping up — pairing and clearer scope would accelerate progress.",
+  ];
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl border border-white/10 p-5 text-white shadow-[0_24px_60px_-40px_rgb(0_0_0/0.5)]"
+      style={{
+        backgroundImage:
+          "linear-gradient(150deg, color-mix(in oklab, var(--feature) 88%, #ffffff 12%), var(--feature) 60%, color-mix(in oklab, var(--feature), #000000 22%))",
+      }}
+    >
+      <div className="pointer-events-none absolute -top-16 -right-10 size-48 rounded-full bg-white/10 blur-3xl" />
+      <div className="relative">
+        <div className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-full bg-white/15">
+            <Sparkles className="size-4" />
+          </span>
+          <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
+            AI insights
+          </h2>
+          <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-[0.65rem] font-medium text-white/80">
+            Beta
+          </span>
+        </div>
+
+        <p className="mt-3 text-sm leading-relaxed text-white/90">{summary}</p>
+
+        <ul className="mt-4 space-y-2">
+          {points.map((p, i) => (
+            <li key={i} className="flex gap-2.5 text-sm text-white/85">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-white/70" />
+              <span className="leading-relaxed">{p}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );
