@@ -71,6 +71,60 @@ export function orgDayCounts(month: number, day: number): DayCounts {
   return counts;
 }
 
+export interface DayRecord {
+  status: DayStatus;
+  clockIn: string;
+  clockOut: string;
+  hours: number;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Deterministic per-person attendance record for a specific date — used by the
+ * log so past days can be looked up. Varies by person and date; weekends skew
+ * heavily to "off the clock".
+ */
+export function dayRecordFor(
+  id: string,
+  year: number,
+  month: number,
+  day: number,
+): DayRecord {
+  const weekday = mondayIndex(new Date(year, month, day).getDay());
+  const r = (hash(id) * 31 + day * 17 + month * 7 + year) % 100;
+  let status: DayStatus =
+    r < 5 ? "absent" : r < 12 ? "leave" : r < 24 ? "late" : "present";
+  if (weekday >= 5) status = r < 78 ? "absent" : "present"; // weekends
+
+  const s = hash(id);
+  if (status === "present") {
+    return {
+      status,
+      clockIn: `09:0${s % 6}`,
+      clockOut: `17:${10 + (s % 40)}`,
+      hours: 8 + (s % 5) / 10,
+    };
+  }
+  if (status === "late") {
+    return {
+      status,
+      clockIn: `09:${pad2((s % 24) + 6)}`,
+      clockOut: `17:${10 + (s % 30)}`,
+      hours: 7 + (s % 6) / 10,
+    };
+  }
+  return { status, clockIn: "—", clockOut: "—", hours: 0 };
+}
+
+/** Is the date in the future relative to the demo "today"? (No records yet.) */
+export function isFutureDate(year: number, month: number, day: number): boolean {
+  return (
+    new Date(year, month, day).getTime() >
+    new Date(TODAY.year, TODAY.month, TODAY.day).getTime()
+  );
+}
+
 /**
  * Six-week (Monday-first) matrix for a month, including leading/trailing days
  * from adjacent months (flagged `inMonth: false`). Working days carry counts.
@@ -141,31 +195,27 @@ export function monthSummary(year: number, month: number): DayCounts {
 /** Total employed headcount (denominator for attendance). */
 export const HEADCOUNT_TOTAL = HEADCOUNT.length;
 
-/** Static parts of the "Today" overview header (deltas, log hours). */
+/** Static parts of the "Today" overview header (week-over-week deltas). */
 export const OVERVIEW = {
   rateDelta: 2.8,
   attendedDelta: 2.8,
-  logHours: "234:12:23",
-  logHoursTarget: "300:00:00",
-  logHoursDelta: -0.5,
 };
 
-export interface DeptPerformance {
+export interface DeptAttendance {
   dept: string;
   /** Attendance rate % (gauge value). */
   rate: number;
-  /** Employee performance %. */
-  perf: number;
-  /** Logged working hours. */
-  hours: string;
+  present: number;
+  leave: number;
+  absent: number;
 }
 
-/** Per-department working-hour performance (gauge tabs). */
-export const DEPARTMENT_PERFORMANCE: DeptPerformance[] = [
-  { dept: "Marketing", rate: 89, perf: 86, hours: "234:12:23" },
-  { dept: "Developer", rate: 93, perf: 91, hours: "268:40:10" },
-  { dept: "Creative", rate: 82, perf: 78, hours: "201:18:44" },
-  { dept: "Support", rate: 88, perf: 84, hours: "220:05:30" },
+/** Per-department attendance (gauge tabs). */
+export const DEPARTMENT_ATTENDANCE: DeptAttendance[] = [
+  { dept: "Marketing", rate: 92, present: 22, leave: 1, absent: 1 },
+  { dept: "Developer", rate: 95, present: 38, leave: 1, absent: 1 },
+  { dept: "Creative", rate: 88, present: 14, leave: 1, absent: 1 },
+  { dept: "Support", rate: 90, present: 18, leave: 2, absent: 1 },
 ];
 
 export const MONTH_NAMES = [

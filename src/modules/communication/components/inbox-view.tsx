@@ -1,275 +1,287 @@
 "use client";
 
-import { useState } from "react";
-import {
-  FileText,
-  Inbox as InboxIcon,
-  Mail,
-  Megaphone,
-  Reply,
-  Send,
-  Star,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Megaphone, Plus, Search, Send } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/shared/empty-state";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { initials } from "@/lib/format";
 import {
-  MESSAGES,
-  TEMPLATES,
-  type Folder,
-  type Message,
+  CONVERSATIONS,
+  QUICK_REPLIES,
+  type ChatMessage,
+  type Conversation,
 } from "@/lib/mock-inbox";
 import { cn } from "@/lib/utils";
 
-type View = Folder | "templates";
-
-const FOLDERS: { value: View; label: string; icon: LucideIcon }[] = [
-  { value: "inbox", label: "Inbox", icon: InboxIcon },
-  { value: "announcements", label: "Announcements", icon: Megaphone },
-  { value: "sent", label: "Sent", icon: Send },
-  { value: "templates", label: "Templates", icon: FileText },
-];
-
 export function InboxView() {
-  const [messages, setMessages] = useState<Message[]>(MESSAGES);
-  const [view, setView] = useState<View>("inbox");
-  const [selectedId, setSelectedId] = useState<string | null>("msg-1");
+  const [conversations, setConversations] =
+    useState<Conversation[]>(CONVERSATIONS);
+  const [activeId, setActiveId] = useState(CONVERSATIONS[0].id);
+  const [query, setQuery] = useState("");
+  const [draft, setDraft] = useState("");
+  const idRef = useRef(100);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const folderMessages =
-    view === "templates"
-      ? []
-      : messages.filter((m) => m.folder === view);
-  const selected = messages.find((m) => m.id === selectedId) ?? null;
+  const active = conversations.find((c) => c.id === activeId)!;
+  const totalUnread = conversations.reduce((s, c) => s + c.unread, 0);
 
-  const unreadIn = (f: Folder) =>
-    messages.filter((m) => m.folder === f && !m.read).length;
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return conversations.filter((c) => c.name.toLowerCase().includes(q));
+  }, [conversations, query]);
 
-  const open = (m: Message) => {
-    setSelectedId(m.id);
-    if (!m.read) {
-      setMessages((prev) =>
-        prev.map((x) => (x.id === m.id ? { ...x, read: true } : x)),
-      );
-    }
+  useEffect(() => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [active.messages.length, activeId]);
+
+  const openConversation = (id: string) => {
+    setActiveId(id);
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, unread: 0 } : c)),
+    );
   };
 
-  const toggleStar = (id: string) =>
-    setMessages((prev) =>
-      prev.map((x) => (x.id === id ? { ...x, starred: !x.starred } : x)),
+  const send = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const msg: ChatMessage = {
+      id: `s-${idRef.current++}`,
+      fromMe: true,
+      text: trimmed,
+      time: "now",
+    };
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeId
+          ? { ...c, messages: [...c.messages, msg], lastTime: "now" }
+          : c,
+      ),
     );
+    setDraft("");
+  };
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Inbox"
-        description="Internal mail, company announcements, and message templates."
+        description={
+          totalUnread > 0
+            ? `${totalUnread} unread across your conversations`
+            : "You're all caught up"
+        }
         actions={
-          <Button
-            onClick={() => toast.info("Compose isn't wired up in this demo.")}
-          >
-            <Mail className="size-4" /> Compose
+          <Button onClick={() => toast.info("New message isn't wired up in this demo.")}>
+            <Plus className="size-4" /> New message
           </Button>
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-[200px_minmax(0,340px)_1fr]">
-        {/* Folders */}
-        <nav className="flex gap-2 lg:flex-col">
-          {FOLDERS.map((f) => {
-            const Icon = f.icon;
-            const count =
-              f.value === "templates"
-                ? TEMPLATES.length
-                : unreadIn(f.value as Folder);
-            return (
-              <button
-                key={f.value}
-                type="button"
-                onClick={() => setView(f.value)}
-                className={cn(
-                  "flex flex-1 items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors lg:flex-none",
-                  view === f.value
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <Icon className="size-4" />
-                <span className="flex-1 text-left">{f.label}</span>
-                {count > 0 ? (
-                  <span
-                    className={cn(
-                      "rounded-full px-1.5 text-xs tabular-nums",
-                      view === f.value
-                        ? "bg-white/20"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {count}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </nav>
+      <Card className="grid h-[68vh] min-h-[560px] gap-0 overflow-hidden p-0 lg:grid-cols-[320px_1fr]">
+        {/* Conversation list */}
+        <aside className="flex min-h-0 flex-col border-b lg:border-b-0 lg:border-r">
+          <div className="border-b p-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search conversations…"
+                className="h-9 pl-8"
+              />
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {filtered.map((c) => (
+              <ConversationRow
+                key={c.id}
+                conversation={c}
+                active={c.id === activeId}
+                onClick={() => openConversation(c.id)}
+              />
+            ))}
+          </div>
+        </aside>
 
-        {view === "templates" ? (
-          <Card className="lg:col-span-2">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {TEMPLATES.map((t) => (
+        {/* Thread */}
+        <section className="flex min-h-0 flex-col">
+          {/* Thread header */}
+          <div className="flex items-center gap-3 border-b px-5 py-3">
+            <ConversationAvatar conversation={active} />
+            <div className="min-w-0">
+              <p className="truncate font-medium">{active.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {active.kind === "channel"
+                  ? active.role
+                  : active.online
+                    ? "Active now"
+                    : `Last seen ${active.lastTime}`}
+              </p>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div
+            ref={scrollRef}
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-muted/30 px-5 py-4"
+          >
+            {active.messages.map((m) => (
+              <Bubble key={m.id} message={m} />
+            ))}
+          </div>
+
+          {/* Composer */}
+          <div className="space-y-2 border-t p-3">
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_REPLIES.map((q) => (
                 <button
-                  key={t.id}
+                  key={q}
                   type="button"
-                  onClick={() => toast.success(`Template “${t.name}” loaded.`)}
-                  className="flex items-start gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
+                  onClick={() => send(q)}
+                  className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <span className="flex size-9 items-center justify-center rounded-lg bg-feature-tint text-primary">
-                    <FileText className="size-4" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium">{t.name}</p>
-                    <p className="text-xs text-muted-foreground">{t.category}</p>
-                  </div>
+                  {q}
                 </button>
               ))}
             </div>
-          </Card>
-        ) : (
-          <>
-            {/* Message list */}
-            <Card className="max-h-[640px] overflow-y-auto p-0">
-              {folderMessages.length === 0 ? (
-                <EmptyState
-                  icon={InboxIcon}
-                  title="No messages"
-                  description="This folder is empty."
-                  className="m-3 border-0"
-                />
-              ) : (
-                <ul className="divide-y">
-                  {folderMessages.map((m) => (
-                    <li key={m.id}>
-                      <button
-                        type="button"
-                        onClick={() => open(m)}
-                        className={cn(
-                          "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50",
-                          selectedId === m.id && "bg-feature-tint/50",
-                          !m.read && "bg-feature-tint/30",
-                        )}
-                      >
-                        <Avatar className="size-8">
-                          <AvatarImage src={m.from.avatarUrl} alt={m.from.name} />
-                          <AvatarFallback className="text-[10px]">
-                            {initials(m.from.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={cn(
-                                "flex-1 truncate text-sm",
-                                !m.read && "font-semibold",
-                              )}
-                            >
-                              {m.from.name}
-                            </span>
-                            <span className="shrink-0 text-[11px] text-muted-foreground">
-                              {m.time}
-                            </span>
-                          </div>
-                          <p className="truncate text-sm font-medium">
-                            {m.subject}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {m.preview}
-                          </p>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                send(draft);
+              }}
+            >
+              <Input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={`Message ${active.name}…`}
+                className="h-10 flex-1"
+              />
+              <Button
+                type="submit"
+                size="icon"
+                className="size-10 shrink-0 rounded-full"
+                disabled={!draft.trim()}
+                aria-label="Send"
+              >
+                <Send className="size-4" />
+              </Button>
+            </form>
+          </div>
+        </section>
+      </Card>
+    </div>
+  );
+}
 
-            {/* Reading pane */}
-            <Card className="min-h-[400px]">
-              {selected ? (
-                <div className="space-y-4 px-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <h2 className="font-display text-xl font-semibold">
-                        {selected.subject}
-                      </h2>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="size-7">
-                          <AvatarImage
-                            src={selected.from.avatarUrl}
-                            alt={selected.from.name}
-                          />
-                          <AvatarFallback className="text-[10px]">
-                            {initials(selected.from.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm font-medium">
-                          {selected.from.name}
-                        </span>
-                        {selected.from.role ? (
-                          <Badge variant="outline">{selected.from.role}</Badge>
-                        ) : null}
-                        <span className="text-xs text-muted-foreground">
-                          {selected.time}
-                        </span>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 shrink-0"
-                      aria-label="Star"
-                      onClick={() => toggleStar(selected.id)}
-                    >
-                      <Star
-                        className={cn(
-                          "size-4",
-                          selected.starred &&
-                            "fill-warning text-warning",
-                        )}
-                      />
-                    </Button>
-                  </div>
+function ConversationRow({
+  conversation: c,
+  active,
+  onClick,
+}: {
+  conversation: Conversation;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const last = c.messages[c.messages.length - 1];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-accent/50",
+        active && "bg-feature-tint/50",
+      )}
+    >
+      <ConversationAvatar conversation={c} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "flex-1 truncate text-sm",
+              c.unread > 0 ? "font-semibold" : "font-medium",
+            )}
+          >
+            {c.name}
+          </span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {c.lastTime}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "flex-1 truncate text-xs",
+              c.unread > 0 ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {last.fromMe ? "You: " : ""}
+            {last.text}
+          </span>
+          {c.unread > 0 ? (
+            <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground tabular-nums">
+              {c.unread}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </button>
+  );
+}
 
-                  <div className="space-y-3 border-t pt-4 text-sm leading-relaxed text-foreground/90">
-                    {selected.body.map((p, i) => (
-                      <p key={i}>{p}</p>
-                    ))}
-                  </div>
+function ConversationAvatar({
+  conversation: c,
+}: {
+  conversation: Conversation;
+}) {
+  if (c.kind === "channel") {
+    return (
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-feature-tint text-primary">
+        <Megaphone className="size-4" />
+      </span>
+    );
+  }
+  return (
+    <span className="relative shrink-0">
+      <Avatar className="size-9">
+        <AvatarImage src={c.avatarUrl} alt={c.name} />
+        <AvatarFallback className="text-xs">{initials(c.name)}</AvatarFallback>
+      </Avatar>
+      {c.online ? (
+        <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-success ring-2 ring-card" />
+      ) : null}
+    </span>
+  );
+}
 
-                  <div className="flex gap-2 border-t pt-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => toast.info("Reply isn't wired up in this demo.")}
-                    >
-                      <Reply className="size-4" /> Reply
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <EmptyState
-                  icon={Mail}
-                  title="No message selected"
-                  description="Pick a message from the list to read it here."
-                  className="border-0"
-                />
-              )}
-            </Card>
-          </>
-        )}
+function Bubble({ message: m }: { message: ChatMessage }) {
+  return (
+    <div className={cn("flex", m.fromMe ? "justify-end" : "justify-start")}>
+      <div className="max-w-[78%] space-y-0.5">
+        <div
+          className={cn(
+            "rounded-2xl px-3.5 py-2 text-sm leading-relaxed shadow-soft",
+            m.fromMe
+              ? "rounded-br-md bg-primary text-primary-foreground"
+              : "rounded-bl-md bg-card text-foreground",
+          )}
+        >
+          {m.text}
+        </div>
+        <p
+          className={cn(
+            "px-1 text-[10px] text-muted-foreground",
+            m.fromMe ? "text-right" : "text-left",
+          )}
+        >
+          {m.time}
+        </p>
       </div>
     </div>
   );

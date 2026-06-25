@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, Flag, PieChart, Users } from "lucide-react";
+import { CalendarX2, Flag, PieChart, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { DeltaPill } from "@/components/shared/delta-pill";
 import { TickGauge } from "@/components/shared/tick-gauge";
 import {
-  DEPARTMENT_PERFORMANCE,
+  DEPARTMENT_ATTENDANCE,
   OVERVIEW,
   TODAY,
   orgDayCounts,
@@ -18,16 +18,17 @@ const BARS = 34;
 export function AttendanceOverview() {
   const c = orgDayCounts(TODAY.month, TODAY.day);
   const total = c.total;
-  const attended = c.present + c.late;
-  const rate = Math.round((attended / total) * 1000) / 10;
+  // "Present" counts everyone who showed up (on-time + late).
+  const present = c.present + c.late;
+  const out = c.leave + c.absent;
+  const rate = Math.round((present / total) * 1000) / 10;
 
-  const onTimePct = Math.round((c.present / total) * 100);
-  const latePct = Math.round((c.late / total) * 100);
-  const notInPct = 100 - onTimePct - latePct;
+  const presentPct = Math.round((present / total) * 100);
+  const leavePct = Math.round((c.leave / total) * 100);
+  const absentPct = 100 - presentPct - leavePct;
 
-  // Distribute the bar chart across the three segments.
-  const onTimeBars = Math.round((c.present / total) * BARS);
-  const lateBars = Math.round((c.late / total) * BARS);
+  const presentBars = Math.round((present / total) * BARS);
+  const leaveBars = Math.round((c.leave / total) * BARS);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr_1.4fr]">
@@ -44,15 +45,15 @@ export function AttendanceOverview() {
           </div>
           <p className="-mt-2 text-xs text-muted-foreground">Attendance Rate</p>
 
-          {/* Bar distribution */}
+          {/* Distribution */}
           <div className="flex h-24 items-end gap-[3px]">
             {Array.from({ length: BARS }, (_, i) => {
               const seg =
-                i < onTimeBars
-                  ? "bg-primary"
-                  : i < onTimeBars + lateBars
-                    ? "bg-warning"
-                    : "bg-muted";
+                i < presentBars
+                  ? "bg-success"
+                  : i < presentBars + leaveBars
+                    ? "bg-primary"
+                    : "bg-destructive/70";
               const h = 58 + ((i * 11) % 34) - (i / BARS) * 18;
               return (
                 <div
@@ -66,20 +67,20 @@ export function AttendanceOverview() {
 
           {/* Legend */}
           <div className="grid grid-cols-3 gap-2 border-t pt-3">
-            <LegendItem dot="bg-primary" label="On-Time" value={`${onTimePct}%`} />
-            <LegendItem dot="bg-warning" label="Late" value={`${latePct}%`} />
-            <LegendItem dot="bg-muted" label="Not Attend Yet" value={`${notInPct}%`} />
+            <LegendItem dot="bg-success" label="Present" value={`${presentPct}%`} />
+            <LegendItem dot="bg-primary" label="On leave" value={`${leavePct}%`} />
+            <LegendItem dot="bg-destructive" label="Absent" value={`${absentPct}%`} />
           </div>
         </CardContent>
       </Card>
 
-      {/* Employee Attend + Total Log Hours */}
+      {/* Employee Attend + Out today */}
       <div className="grid gap-4">
         <Card>
           <CardContent className="space-y-3 px-5">
             <SectionTitle icon={Users} title="Employee Attend" />
             <p className="font-display text-3xl font-semibold tabular-nums">
-              {attended.toLocaleString()}
+              {present.toLocaleString()}
               <span className="text-lg font-normal text-muted-foreground">
                 /{total.toLocaleString()}
               </span>
@@ -93,41 +94,43 @@ export function AttendanceOverview() {
 
         <Card>
           <CardContent className="space-y-3 px-5">
-            <SectionTitle icon={Clock} title="Total Log Hours" />
-            <p className="font-mono text-2xl font-semibold tabular-nums">
-              {OVERVIEW.logHours}
-              <span className="text-base font-normal text-muted-foreground">
-                /{OVERVIEW.logHoursTarget}
-              </span>
+            <SectionTitle icon={CalendarX2} title="Out Today" />
+            <p className="font-display text-3xl font-semibold tabular-nums">
+              {out.toLocaleString()}
             </p>
             <div className="flex items-center justify-between border-t pt-3 text-sm">
-              <span className="text-muted-foreground">Last Week</span>
-              <DeltaPill value={OVERVIEW.logHoursDelta} />
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <span className="size-2 rounded-full bg-primary" />
+                {c.leave} on leave
+              </span>
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <span className="size-2 rounded-full bg-destructive" />
+                {c.absent} absent
+              </span>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Working Hour Performance */}
-      <WorkingHourPerformance />
+      {/* Department Attendance */}
+      <DepartmentAttendance />
     </div>
   );
 }
 
-function WorkingHourPerformance() {
-  const [active, setActive] = useState(DEPARTMENT_PERFORMANCE[0].dept);
+function DepartmentAttendance() {
+  const [active, setActive] = useState(DEPARTMENT_ATTENDANCE[0].dept);
   const dept =
-    DEPARTMENT_PERFORMANCE.find((d) => d.dept === active) ??
-    DEPARTMENT_PERFORMANCE[0];
+    DEPARTMENT_ATTENDANCE.find((d) => d.dept === active) ??
+    DEPARTMENT_ATTENDANCE[0];
 
   return (
     <Card>
       <CardContent className="space-y-4 px-5">
-        <SectionTitle icon={PieChart} title="Working Hour Performance" />
+        <SectionTitle icon={PieChart} title="Department Attendance" />
 
-        {/* Department tabs */}
         <div className="flex gap-1 overflow-x-auto rounded-full bg-muted p-1">
-          {DEPARTMENT_PERFORMANCE.map((d) => (
+          {DEPARTMENT_ATTENDANCE.map((d) => (
             <button
               key={d.dept}
               type="button"
@@ -145,22 +148,13 @@ function WorkingHourPerformance() {
         </div>
 
         <div className="flex justify-center py-1">
-          <TickGauge value={dept.rate} label="It's already great!" size={184} ticks={26} />
+          <TickGauge value={dept.rate} label="Attendance rate" size={184} ticks={26} />
         </div>
 
-        <div className="grid grid-cols-2 gap-3 border-t pt-3">
-          <div>
-            <p className="text-xs text-muted-foreground">Employee Perf.</p>
-            <p className="font-display text-lg font-semibold tabular-nums">
-              {dept.perf}%
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Working Hour</p>
-            <p className="font-mono text-lg font-semibold tabular-nums">
-              {dept.hours}
-            </p>
-          </div>
+        <div className="grid grid-cols-3 gap-2 border-t pt-3">
+          <SubStat dot="bg-success" label="Present" value={dept.present} />
+          <SubStat dot="bg-primary" label="On leave" value={dept.leave} />
+          <SubStat dot="bg-destructive" label="Absent" value={dept.absent} />
         </div>
       </CardContent>
     </Card>
@@ -200,6 +194,26 @@ function LegendItem({
         <span className="truncate text-xs text-muted-foreground">{label}</span>
       </span>
       <p className="font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function SubStat({
+  dot,
+  label,
+  value,
+}: {
+  dot: string;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="space-y-1">
+      <span className="flex items-center gap-1.5">
+        <span className={cn("size-2 rounded-full", dot)} />
+        <span className="truncate text-xs text-muted-foreground">{label}</span>
+      </span>
+      <p className="font-display text-lg font-semibold tabular-nums">{value}</p>
     </div>
   );
 }

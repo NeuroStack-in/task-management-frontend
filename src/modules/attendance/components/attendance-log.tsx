@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import {
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -15,7 +16,15 @@ import {
 import { toast } from "sonner";
 import { users } from "@/lib/data";
 import { initials } from "@/lib/format";
-import { attendanceFor, type AttendanceStatus } from "@/lib/mock-metrics";
+import { type AttendanceStatus } from "@/lib/mock-metrics";
+import {
+  dayRecordFor,
+  isFutureDate,
+  monthMatrix,
+  MONTH_NAMES,
+  TODAY,
+  WEEKDAY_LABELS,
+} from "@/lib/mock-attendance";
 import {
   Card,
   CardContent,
@@ -87,13 +96,27 @@ interface Row {
   hours: number;
 }
 
+interface SelectedDate {
+  year: number;
+  month: number;
+  day: number;
+}
+
+const isToday = (d: SelectedDate) =>
+  d.year === TODAY.year && d.month === TODAY.month && d.day === TODAY.day;
+
+const dateLabel = (d: SelectedDate) =>
+  `${MONTH_NAMES[d.month].slice(0, 3)} ${d.day}, ${d.year}`;
+
 export function AttendanceLog() {
   const router = useRouter();
+
+  const [date, setDate] = useState<SelectedDate>({ ...TODAY });
 
   const allRows: Row[] = useMemo(
     () =>
       users.map((u) => {
-        const a = attendanceFor(u.id);
+        const a = dayRecordFor(u.id, date.year, date.month, date.day);
         return {
           id: u.id,
           name: u.name,
@@ -105,7 +128,7 @@ export function AttendanceLog() {
           hours: a.hours,
         };
       }),
-    [],
+    [date],
   );
 
   const departments = useMemo(
@@ -180,25 +203,36 @@ export function AttendanceLog() {
         r.hours ? r.hours.toFixed(1) : "—",
       ]),
     });
+    const fname = `attendance-${date.year}-${String(date.month + 1).padStart(2, "0")}-${String(date.day).padStart(2, "0")}.csv`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "attendance-log.csv";
+    a.download = fname;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
     toast.success("Attendance log exported", {
-      description: `${filtered.length} rows · attendance-log.csv`,
+      description: `${dateLabel(date)} · ${filtered.length} rows · ${fname}`,
     });
   };
 
   return (
     <Card>
       <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-        <CardTitle>Today&apos;s log</CardTitle>
+        <div>
+          <CardTitle>{isToday(date) ? "Today's log" : "Attendance log"}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">{dateLabel(date)}</p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
+          <LogDatePicker
+            value={date}
+            onChange={(d) => {
+              setDate(d);
+              resetPage();
+            }}
+          />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -415,5 +449,106 @@ function SortHead({
         ) : null}
       </button>
     </TableHead>
+  );
+}
+
+function LogDatePicker({
+  value,
+  onChange,
+}: {
+  value: SelectedDate;
+  onChange: (d: SelectedDate) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState({ year: value.year, month: value.month });
+
+  const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
+
+  const step = (dir: -1 | 1) =>
+    setView((v) => {
+      const m = v.month + dir;
+      if (m < 0) return { year: v.year - 1, month: 11 };
+      if (m > 11) return { year: v.year + 1, month: 0 };
+      return { year: v.year, month: m };
+    });
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger
+        render={<Button variant="outline" size="sm" className="h-9 gap-1.5" />}
+      >
+        <CalendarDays className="size-4" />
+        {dateLabel(value)}
+        <ChevronDown className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => step(-1)}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+          <span className="text-sm font-medium">
+            {MONTH_NAMES[view.month]} {view.year}
+          </span>
+          <button
+            type="button"
+            onClick={() => step(1)}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Next month"
+          >
+            <ChevronRight className="size-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-muted-foreground">
+          {WEEKDAY_LABELS.map((d) => (
+            <span key={d}>{d[0]}</span>
+          ))}
+        </div>
+
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {weeks.flat().map((cell, i) => {
+            const selected =
+              cell.inMonth &&
+              cell.year === value.year &&
+              cell.month === value.month &&
+              cell.day === value.day;
+            const disabled =
+              !cell.inMonth || isFutureDate(cell.year, cell.month, cell.day);
+            return (
+              <button
+                key={i}
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  onChange({
+                    year: cell.year,
+                    month: cell.month,
+                    day: cell.day,
+                  });
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex aspect-square items-center justify-center rounded-md text-xs tabular-nums transition-colors",
+                  selected
+                    ? "bg-primary font-semibold text-primary-foreground"
+                    : disabled
+                      ? "cursor-default text-muted-foreground/40"
+                      : cell.isToday
+                        ? "text-primary ring-1 ring-primary hover:bg-muted"
+                        : "hover:bg-muted",
+                )}
+              >
+                {cell.day}
+              </button>
+            );
+          })}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
