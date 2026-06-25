@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Users,
   UserCheck,
@@ -10,23 +11,15 @@ import {
   ChevronDown,
   Check,
   UserPlus,
-  Mail,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
-import { Gauge } from "@/components/shared/gauge";
-import { Sparkline } from "@/components/shared/sparkline";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -41,7 +34,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { usePermissions } from "@/hooks/use-permissions";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -136,11 +128,11 @@ export function EmployeesView({
   stats: { total: number; active: number; avgProductivity: number; departments: number };
 }) {
   const { can } = usePermissions();
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
-  const [selected, setSelected] = useState<EmployeeRow | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -161,9 +153,6 @@ export function EmployeesView({
     setter(v);
     setPage(0);
   };
-
-  const trendFor = (score: number) =>
-    [-9, -4, -6, -1, -3, 2, 0].map((d) => Math.max(20, Math.min(100, score + d)));
 
   return (
     <div className="space-y-5">
@@ -243,7 +232,7 @@ export function EmployeesView({
                     <TableRow
                       key={e.id}
                       className="cursor-pointer"
-                      onClick={() => setSelected(e)}
+                      onClick={() => router.push(`/employees/${e.id}`)}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -310,85 +299,6 @@ export function EmployeesView({
             Next
           </Button>
         </div>
-      </div>
-
-      {/* Profile slide-over */}
-      <Sheet open={Boolean(selected)} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-          <SheetTitle className="sr-only">Employee profile</SheetTitle>
-          {selected ? (
-            <div className="space-y-6 p-6">
-              <div className="flex items-center gap-4">
-                <Avatar className="size-16">
-                  <AvatarImage src={selected.avatarUrl} alt={selected.name} />
-                  <AvatarFallback className="text-lg">
-                    {initials(selected.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0">
-                  <h2 className="font-display text-xl font-semibold tracking-tight">
-                    {selected.name}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">{selected.jobTitle}</p>
-                  <div className="mt-1.5 flex flex-wrap gap-2">
-                    <Badge className="bg-feature-tint text-primary">
-                      {selected.roleName}
-                    </Badge>
-                    <Badge className={STATUS_META[selected.status]}>
-                      {selected.status}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Productivity</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col items-center gap-3">
-                  <Gauge value={selected.productivityScore} label="this week" />
-                  <Sparkline
-                    data={trendFor(selected.productivityScore)}
-                    area
-                    width={260}
-                    height={48}
-                    showDot={false}
-                    className="w-full text-primary"
-                  />
-                </CardContent>
-              </Card>
-
-              <div className="space-y-3">
-                <Detail label="Email" value={selected.email} icon={Mail} />
-                <Detail label="Department" value={selected.department} icon={Building2} />
-                <Detail label="Team" value={selected.team} icon={Users} />
-                <Detail label="Role" value={selected.roleName} icon={UserCheck} />
-              </div>
-            </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
-    </div>
-  );
-}
-
-function Detail({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  icon: typeof Mail;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="truncate text-sm font-medium">{value}</p>
       </div>
     </div>
   );

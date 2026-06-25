@@ -59,9 +59,14 @@ export function ProgressTrack({
       )}
     >
       <div
-        className={cn("h-full rounded-full transition-[width]", toneBar[tone])}
+        className={cn(
+          "wp-meter-fill relative h-full overflow-hidden rounded-full",
+          toneBar[tone],
+        )}
         style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
-      />
+      >
+        <span className="wp-meter-sheen pointer-events-none absolute inset-0" />
+      </div>
     </div>
   );
 }
