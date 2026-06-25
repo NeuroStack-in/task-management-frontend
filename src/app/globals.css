@@ -850,6 +850,18 @@
   }
 }
 
+/* Diagonal hatch for inactive calendar cells (weekends / out-of-month) */
+@utility wp-hatch {
+  background-color: color-mix(in srgb, var(--muted) 60%, transparent);
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--muted-foreground) 16%, transparent) 0,
+    color-mix(in srgb, var(--muted-foreground) 16%, transparent) 1px,
+    transparent 1px,
+    transparent 7px
+  );
+}
+
 /* Soft elevation used by cards/panels */
 @utility shadow-soft {
   box-shadow:
