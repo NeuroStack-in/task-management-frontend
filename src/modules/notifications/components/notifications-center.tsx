@@ -2,18 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bell, BellOff, Check, CheckCheck, X } from "lucide-react";
+import { BellOff, Check, CheckCheck, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useNotificationStore } from "@/stores/notification.store";
 import {
@@ -62,7 +54,7 @@ export function NotificationsCenter() {
     <div className="space-y-5">
       <PageHeader
         title="Notifications"
-        description="Everything that needs your attention, plus delivery preferences."
+        description="Everything that needs your attention."
         actions={
           <Button
             variant="outline"
@@ -74,10 +66,9 @@ export function NotificationsCenter() {
         }
       />
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        {/* Feed */}
-        <div className="space-y-4 lg:col-span-2">
-          {/* Filter pills */}
+      {/* Feed */}
+      <div className="space-y-4">
+        {/* Filter pills */}
           <div className="flex flex-wrap gap-2">
             <FilterPill
               label={`All${notifications.length ? ` · ${notifications.length}` : ""}`}
@@ -179,11 +170,7 @@ export function NotificationsCenter() {
             </Card>
           )}
         </div>
-
-        {/* Preferences */}
-        <PreferencesCard />
       </div>
-    </div>
   );
 }
 
@@ -212,61 +199,3 @@ function FilterPill({
   );
 }
 
-function PreferencesCard() {
-  const [prefs, setPrefs] = useState<
-    Record<NotificationType, { email: boolean; push: boolean }>
-  >({
-    task: { email: true, push: true },
-    approval: { email: true, push: true },
-    productivity: { email: false, push: true },
-    billing: { email: true, push: false },
-    system: { email: false, push: true },
-  });
-
-  const toggle = (type: NotificationType, channel: "email" | "push") =>
-    setPrefs((p) => ({
-      ...p,
-      [type]: { ...p[type], [channel]: !p[type][channel] },
-    }));
-
-  return (
-    <Card className="h-fit">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bell className="size-4" /> Preferences
-        </CardTitle>
-        <CardDescription>Choose how each type reaches you.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-          <span>Type</span>
-          <span className="flex gap-4">
-            <span className="w-10 text-center">Email</span>
-            <span className="w-10 text-center">Push</span>
-          </span>
-        </div>
-        {TYPES.map((t) => (
-          <div key={t} className="flex items-center justify-between">
-            <span className="flex items-center gap-2 text-sm">
-              <Badge variant="outline">{NOTIFICATION_TYPE_META[t].label}</Badge>
-            </span>
-            <span className="flex gap-4">
-              <span className="flex w-10 justify-center">
-                <Switch
-                  checked={prefs[t].email}
-                  onCheckedChange={() => toggle(t, "email")}
-                />
-              </span>
-              <span className="flex w-10 justify-center">
-                <Switch
-                  checked={prefs[t].push}
-                  onCheckedChange={() => toggle(t, "push")}
-                />
-              </span>
-            </span>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}

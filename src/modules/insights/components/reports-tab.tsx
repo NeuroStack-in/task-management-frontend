@@ -15,14 +15,13 @@ import {
   YAxis,
 } from "recharts";
 import {
+  Download,
   FileBarChart,
   FileText,
   FolderKanban,
   Lock,
-  Search,
   Sheet,
   Timer,
-  UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -34,9 +33,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Table,
   TableBody,
@@ -46,14 +42,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
 import { usePermissions } from "@/hooks/use-permissions";
+import { AiReportCard } from "./ai-report-card";
 import {
   EMPLOYEE_TIME,
   PROJECT_HOURS,
   REPORTS,
   REPORT_CATEGORY_LABEL,
-  type EmployeeTime,
   type ReportCategory,
   type ReportDef,
 } from "@/lib/mock-insights";
@@ -123,36 +118,62 @@ function exportPdf(report: ReportDef) {
   toast.success("PDF exported", { description: `${report.name}.pdf` });
 }
 
-/** Build a one-row ReportDef for a single employee, reusing the export pipeline. */
-function employeeReport(e: EmployeeTime): ReportDef {
-  return {
-    id: `employee-${e.id}`,
-    name: `${e.name} — Weekly Report`,
-    description: `Individual report for ${e.name}`,
-    category: "workforce",
-    period: "This week",
-    columns: [
-      "Employee",
-      "Department",
-      "Productivity %",
-      "Tracked hrs",
-      "Idle hrs",
-      "Billable %",
-      "Utilization %",
-    ],
-    rows: [
-      [
-        e.name,
-        e.department,
-        e.productivity,
-        e.tracked,
-        e.idle,
-        e.billable,
-        e.utilization,
-      ],
-    ],
-  };
+/** One combined PDF containing every report — the "overall reports" export. */
+function exportAllPdf(reports: ReportDef[]) {
+  const doc = new jsPDF({ orientation: "landscape" });
+  const margin = 14;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const usable = pageW - margin * 2;
+
+  // Cover page
+  doc.setFontSize(24);
+  doc.text("WorkPulse", margin, 28);
+  doc.setFontSize(14);
+  doc.setTextColor(80);
+  doc.text("Reports Pack", margin, 38);
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  doc.text(`${reports.length} reports · generated from WorkPulse`, margin, 48);
+  reports.forEach((r, i) =>
+    doc.text(`${i + 1}.  ${r.name}  —  ${r.period}`, margin, 62 + i * 7),
+  );
+
+  for (const report of reports) {
+    doc.addPage();
+    const colW = usable / report.columns.length;
+    doc.setFontSize(16);
+    doc.setTextColor(20);
+    doc.text(report.name, margin, 18);
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    doc.text(`${report.period} · WorkPulse`, margin, 25);
+
+    let y = 36;
+    doc.setTextColor(20);
+    doc.setFont("helvetica", "bold");
+    report.columns.forEach((c, i) => doc.text(String(c), margin + i * colW, y));
+    doc.setDrawColor(210);
+    doc.line(margin, y + 2, margin + usable, y + 2);
+    doc.setFont("helvetica", "normal");
+    y += 9;
+
+    for (const row of report.rows) {
+      row.forEach((cell, i) => doc.text(String(cell), margin + i * colW, y));
+      y += 8;
+      if (y > pageH - 14) {
+        doc.addPage();
+        y = 20;
+      }
+    }
+  }
+
+  doc.save("workpulse-reports.pdf");
+  toast.success("All reports exported", {
+    description: `${reports.length} reports · workpulse-reports.pdf`,
+  });
 }
+
 
 type Filter = "all" | ReportCategory;
 
@@ -160,6 +181,9 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All reports" },
   { key: "workforce", label: REPORT_CATEGORY_LABEL.workforce },
   { key: "time", label: REPORT_CATEGORY_LABEL.time },
+  { key: "attendance", label: REPORT_CATEGORY_LABEL.attendance },
+  { key: "activity", label: REPORT_CATEGORY_LABEL.activity },
+  { key: "monitoring", label: REPORT_CATEGORY_LABEL.monitoring },
   { key: "projects", label: REPORT_CATEGORY_LABEL.projects },
 ];
 
@@ -225,6 +249,16 @@ export function ReportsTab() {
 
   return (
     <div className="space-y-8">
+      <AiReportCard
+        title="AI reporting summary"
+        summary={`Across ${empCount} employees and ${projCount} projects, Engineering and Product lead utilization this week. Two projects are flagged at risk and a small group is trending toward over-utilization — details in the charts below.`}
+        signals={[
+          { label: "Utilization", value: "78%", tone: "flat" },
+          { label: "At-risk projects", value: "2", tone: "down" },
+          { label: "Top dept", value: "Engineering", tone: "up" },
+        ]}
+      />
+
       {/* Analytics: aggregated so it scales to many projects / employees */}
       <section className="space-y-4">
         <div>
@@ -312,12 +346,21 @@ export function ReportsTab() {
 
       {/* Report templates catalog */}
       <section className="space-y-4">
-      {/* Toolbar: summary + category filter */}
+      {/* Toolbar: summary + export-all + category filter */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{REPORTS.length}</span>{" "}
-          report templates · export-ready as CSV or PDF
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{REPORTS.length}</span>{" "}
+            report templates · export-ready as CSV or PDF
+          </p>
+          <Button
+            size="sm"
+            disabled={!canExport}
+            onClick={() => exportAllPdf(REPORTS)}
+          >
+            <Download className="size-4" /> Export all
+          </Button>
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
             <button
@@ -422,168 +465,11 @@ export function ReportsTab() {
       </div>
       </section>
 
-      {/* Individual employee reports */}
-      <IndividualEmployeeReports canExport={canExport} />
     </div>
   );
 }
 
-function IndividualEmployeeReports({ canExport }: { canExport: boolean }) {
-  const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string>(EMPLOYEE_TIME[0]?.id);
 
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return q === ""
-      ? EMPLOYEE_TIME
-      : EMPLOYEE_TIME.filter(
-          (e) =>
-            e.name.toLowerCase().includes(q) ||
-            e.department.toLowerCase().includes(q),
-        );
-  }, [query]);
-
-  const selected =
-    EMPLOYEE_TIME.find((e) => e.id === selectedId) ?? matches[0] ?? null;
-
-  return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="font-heading text-lg font-semibold">
-          Individual employee reports
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Search anyone in the workforce and export their personal report.
-        </p>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
-        {/* Picker */}
-        <Card className="flex flex-col">
-          <CardContent className="space-y-3 pt-5">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search employee…"
-                className="pl-8"
-              />
-            </div>
-            <ScrollArea className="h-[280px] pr-2">
-              <div className="space-y-1">
-                {matches.map((e) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => setSelectedId(e.id)}
-                    className={cn(
-                      "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors",
-                      selected?.id === e.id
-                        ? "bg-primary/10"
-                        : "hover:bg-muted",
-                    )}
-                  >
-                    <Avatar className="size-7">
-                      <AvatarImage src={e.avatarUrl} alt={e.name} />
-                      <AvatarFallback className="text-[10px]">
-                        {initials(e.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{e.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {e.department}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-                {matches.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-sm text-muted-foreground">
-                    No employees match “{query}”.
-                  </p>
-                ) : null}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        {/* Selected employee report */}
-        {selected ? (
-          <Card>
-            <CardHeader className="flex-row items-start justify-between space-y-0">
-              <div className="flex items-center gap-3">
-                <Avatar className="size-12">
-                  <AvatarImage src={selected.avatarUrl} alt={selected.name} />
-                  <AvatarFallback>{initials(selected.name)}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <UserRound className="size-4 text-muted-foreground" />
-                    {selected.name}
-                  </CardTitle>
-                  <CardDescription>
-                    {selected.jobTitle} · {selected.department} · this week
-                  </CardDescription>
-                </div>
-              </div>
-              <div className="flex gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!canExport}
-                  onClick={() => exportCsv(employeeReport(selected))}
-                >
-                  <Sheet className="size-4" /> CSV
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!canExport}
-                  onClick={() => exportPdf(employeeReport(selected))}
-                >
-                  <FileText className="size-4" /> PDF
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <Kpi label="Productivity" value={`${selected.productivity}%`} tone={tone(selected.productivity)} />
-                <Kpi label="Utilization" value={`${selected.utilization}%`} tone={tone(selected.utilization)} />
-                <Kpi label="Billable" value={`${selected.billable}%`} />
-                <Kpi label="Tracked" value={`${selected.tracked}h`} />
-                <Kpi label="Idle" value={`${selected.idle}h`} />
-                <Kpi label="Capacity" value={`${selected.capacity}h`} />
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-const tone = (pct: number): string | undefined =>
-  pct >= 75 ? "text-success" : pct >= 50 ? undefined : "text-destructive";
-
-function Kpi({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-}) {
-  return (
-    <div className="rounded-xl border p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 font-display text-2xl font-semibold tabular-nums", tone)}>
-        {value}
-      </p>
-    </div>
-  );
-}
 
 function ChartCard({
   icon: Icon,
