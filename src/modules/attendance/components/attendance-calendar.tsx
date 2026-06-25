@@ -20,7 +20,6 @@ import {
   COUNT_METRICS,
   MONTH_NAMES,
   REFERENCE_MONTH,
-  TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
   monthSummary,
@@ -42,10 +41,6 @@ export function AttendanceCalendar() {
 
   const isRefMonth =
     view.year === REFERENCE_MONTH.year && view.month === REFERENCE_MONTH.month;
-  const showToday = view.year === TODAY.year && view.month === TODAY.month;
-  const todayCol = showToday
-    ? weeks.flat().find((c) => c.isToday)?.weekday ?? -1
-    : -1;
 
   const step = (dir: -1 | 1) =>
     setView((v) => {
@@ -117,19 +112,10 @@ export function AttendanceCalendar() {
         </div>
 
         {/* Day grid */}
-        <div className="relative">
-          {todayCol >= 0 ? (
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-y-0 z-10 border-l-2 border-dashed border-primary/50"
-              style={{ left: `calc(${((todayCol + 0.5) / 7) * 100}% )` }}
-            />
-          ) : null}
-          <div className="grid grid-cols-7 gap-1.5">
-            {weeks.flat().map((cell, i) => (
-              <DayCellView key={i} cell={cell} />
-            ))}
-          </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {weeks.flat().map((cell, i) => (
+            <DayCellView key={i} cell={cell} />
+          ))}
         </div>
 
         {/* Legend */}

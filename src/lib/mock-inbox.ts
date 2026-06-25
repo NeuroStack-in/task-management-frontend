@@ -1,134 +1,127 @@
 /**
  * Deterministic mock data for Internal Communication / Inbox (SPEC.md §3,
- * section 18). Server-safe — senders are pulled from the seeded users. Covers
- * business mail, org-wide announcements, and a sent folder.
+ * section 18), modelled as chat conversations (DMs + broadcast channels) for a
+ * messenger-style UI. Server-safe — participants are pulled from seeded users.
  */
 import { users } from "@/lib/data";
-import type { User } from "@/types/user";
 
-export type Folder = "inbox" | "announcements" | "sent";
-
-export interface Message {
+export interface ChatMessage {
   id: string;
-  folder: Folder;
-  from: { name: string; avatarUrl?: string; role?: string };
-  subject: string;
-  preview: string;
-  body: string[];
+  /** true = sent by the current user (right-aligned bubble). */
+  fromMe: boolean;
+  text: string;
   time: string;
-  read: boolean;
-  starred: boolean;
+}
+
+export interface Conversation {
+  id: string;
+  kind: "dm" | "channel";
+  name: string;
+  avatarUrl?: string;
+  /** Job title (DM) or channel topic. */
+  role?: string;
+  online?: boolean;
+  unread: number;
+  lastTime: string;
+  messages: ChatMessage[];
 }
 
 const PEOPLE = [...users]
   .sort((a, b) => a.id.localeCompare(b.id))
-  .slice(0, 10);
+  .slice(0, 12);
 
-const person = (u: User) => ({
-  name: u.name,
-  avatarUrl: u.avatarUrl,
-  role: u.jobTitle,
-});
-
-export const MESSAGES: Message[] = [
-  {
-    id: "msg-1",
-    folder: "announcements",
-    from: { name: "WorkPulse HR", role: "People Ops" },
-    subject: "Q3 company all-hands — Friday 3 PM",
-    preview: "Join us for the quarterly all-hands covering roadmap and results…",
-    body: [
-      "Hi everyone,",
-      "Our Q3 all-hands is this Friday at 3:00 PM in the main hall and on Zoom. We'll cover the product roadmap, hiring plans, and celebrate this quarter's wins.",
-      "Come with questions — the last 20 minutes are an open Q&A with the leadership team.",
-      "— The People Ops team",
-    ],
-    time: "9:05 AM",
-    read: false,
-    starred: true,
-  },
-  {
-    id: "msg-2",
-    folder: "inbox",
-    from: person(PEOPLE[0]),
-    subject: "Re: Checkout flow — payment step",
-    preview: "Thanks for the review. I pushed the fixes for the edge cases you…",
-    body: [
-      "Thanks for the review!",
-      "I pushed the fixes for the edge cases you flagged — the expired-card path now shows the inline error instead of the toast. Mind taking another look when you get a chance?",
-    ],
-    time: "8:42 AM",
-    read: false,
-    starred: false,
-  },
-  {
-    id: "msg-3",
-    folder: "inbox",
-    from: person(PEOPLE[1]),
-    subject: "Timesheet question",
-    preview: "Quick one — should the offline workshop count as billable for…",
-    body: [
-      "Quick one —",
-      "Should the offline workshop on Tuesday count as billable for the Acme Storefront project? I logged it as a manual entry but wasn't sure on the category.",
-    ],
-    time: "Yesterday",
-    read: true,
-    starred: false,
-  },
-  {
-    id: "msg-4",
-    folder: "announcements",
-    from: { name: "IT & Security", role: "Security" },
-    subject: "Mandatory: enable MFA by July 1",
-    preview: "All accounts must have multi-factor authentication enabled before…",
-    body: [
-      "Team,",
-      "As part of our SOC 2 commitments, all accounts must have multi-factor authentication enabled before July 1. You can set it up in Settings → Security.",
-      "Reach out to #it-help if you hit any snags.",
-    ],
-    time: "Yesterday",
-    read: true,
-    starred: false,
-  },
-  {
-    id: "msg-5",
-    folder: "inbox",
-    from: person(PEOPLE[2]),
-    subject: "Design tokens sign-off",
-    preview: "The Graphite & Indigo tokens are ready for a final pass before we…",
-    body: [
-      "Hey,",
-      "The Graphite & Indigo tokens are ready for a final pass before we lock them in for the dashboard refresh. Left a few notes on the contrast ratios in the doc.",
-    ],
-    time: "Mon",
-    read: true,
-    starred: true,
-  },
-  {
-    id: "msg-6",
-    folder: "sent",
-    from: { name: "You" },
-    subject: "Re: Timesheet question",
-    preview: "Yes — billable to Acme Storefront. I'll approve the manual entry…",
-    body: [
-      "Yes — billable to Acme Storefront.",
-      "I'll approve the manual entry now. Thanks for checking!",
-    ],
-    time: "Yesterday",
-    read: true,
-    starred: false,
-  },
+/** Canned quick-replies offered above the composer. */
+export const QUICK_REPLIES = [
+  "Thanks!",
+  "On it 👍",
+  "Can you share more?",
+  "Let's sync later",
 ];
 
-export const TEMPLATES = [
-  { id: "tpl-1", name: "Timesheet reminder", category: "Operations" },
-  { id: "tpl-2", name: "Welcome — new hire", category: "People Ops" },
-  { id: "tpl-3", name: "Productivity check-in", category: "Management" },
-  { id: "tpl-4", name: "Policy update", category: "Company" },
+export const CONVERSATIONS: Conversation[] = [
+  {
+    id: "c-carole",
+    kind: "dm",
+    name: PEOPLE[0].name,
+    avatarUrl: PEOPLE[0].avatarUrl,
+    role: PEOPLE[0].jobTitle,
+    online: true,
+    unread: 2,
+    lastTime: "9:12",
+    messages: [
+      { id: "m1", fromMe: false, text: "Morning! Quick question on my timesheet.", time: "9:05" },
+      { id: "m2", fromMe: true, text: "Sure — what's up?", time: "9:06" },
+      { id: "m3", fromMe: false, text: "Should the offline workshop on Tuesday be billable for Acme Storefront?", time: "9:11" },
+      { id: "m4", fromMe: false, text: "I logged it as a manual entry but wasn't sure on the category.", time: "9:12" },
+    ],
+  },
+  {
+    id: "c-announce",
+    kind: "channel",
+    name: "Company Announcements",
+    role: "Org-wide · People Ops",
+    unread: 1,
+    lastTime: "9:05",
+    messages: [
+      { id: "m1", fromMe: false, text: "📣 Q3 all-hands is this Friday at 3:00 PM — main hall + Zoom.", time: "9:00" },
+      { id: "m2", fromMe: false, text: "We'll cover the roadmap, hiring, and celebrate this quarter's wins. Bring questions for the open Q&A!", time: "9:05" },
+    ],
+  },
+  {
+    id: "c-marcus",
+    kind: "dm",
+    name: PEOPLE[3].name,
+    avatarUrl: PEOPLE[3].avatarUrl,
+    role: PEOPLE[3].jobTitle,
+    online: false,
+    unread: 0,
+    lastTime: "Yesterday",
+    messages: [
+      { id: "m1", fromMe: false, text: "Submitted my leave request for Jul 8–10 🌴", time: "Yesterday" },
+      { id: "m2", fromMe: true, text: "Got it — approved. Enjoy the break!", time: "Yesterday" },
+      { id: "m3", fromMe: false, text: "Thanks! I'll wrap up the handover notes before then.", time: "Yesterday" },
+    ],
+  },
+  {
+    id: "c-aisha",
+    kind: "dm",
+    name: PEOPLE[2].name,
+    avatarUrl: PEOPLE[2].avatarUrl,
+    role: PEOPLE[2].jobTitle,
+    online: true,
+    unread: 0,
+    lastTime: "8:42",
+    messages: [
+      { id: "m1", fromMe: false, text: "Pushed the fixes for the edge cases you flagged on the payment step.", time: "8:40" },
+      { id: "m2", fromMe: false, text: "Expired-card path now shows the inline error instead of the toast. Mind another look?", time: "8:42" },
+      { id: "m3", fromMe: true, text: "Nice — will review after standup 👍", time: "8:43" },
+    ],
+  },
+  {
+    id: "c-security",
+    kind: "channel",
+    name: "IT & Security",
+    role: "Org-wide · Security",
+    unread: 0,
+    lastTime: "Mon",
+    messages: [
+      { id: "m1", fromMe: false, text: "🔐 Reminder: enable MFA before July 1 (SOC 2 requirement).", time: "Mon" },
+      { id: "m2", fromMe: false, text: "Set it up in Settings → Security. Ping #it-help if you hit snags.", time: "Mon" },
+    ],
+  },
+  {
+    id: "c-design",
+    kind: "dm",
+    name: PEOPLE[5].name,
+    avatarUrl: PEOPLE[5].avatarUrl,
+    role: PEOPLE[5].jobTitle,
+    online: false,
+    unread: 0,
+    lastTime: "Mon",
+    messages: [
+      { id: "m1", fromMe: false, text: "Graphite & Indigo tokens are ready for a final pass before the dashboard refresh.", time: "Mon" },
+      { id: "m2", fromMe: false, text: "Left a few notes on the contrast ratios in the doc.", time: "Mon" },
+      { id: "m3", fromMe: true, text: "Perfect, signing off on them today.", time: "Mon" },
+    ],
+  },
 ];
-
-export const FOLDER_META: Record<Folder, { label: string }> = {
-  inbox: { label: "Inbox" },
-  announcements: { label: "Announcements" },
-  sent: { label: "Sent" },
-};
