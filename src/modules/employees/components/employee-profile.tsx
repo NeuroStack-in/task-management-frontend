@@ -1,17 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowLeft,
-  Contact,
-  FolderKanban,
-  Gauge,
-  ListChecks,
-  MapPin,
-  Sparkles,
-  TrendingUp,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowLeft, FolderKanban, Sparkles } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -30,13 +20,14 @@ import { Badge } from "@/components/ui/badge";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export interface ActiveProjectItem {
+export interface ProjectItem {
   id: string;
   name: string;
   key: string;
   progress: number;
   tasks: number;
   teammates: number;
+  active: boolean;
 }
 
 export interface EmployeeProfileData {
@@ -58,7 +49,7 @@ export interface EmployeeProfileData {
   cityState: string;
   address: string;
   postcode: string;
-  activeProjects: ActiveProjectItem[];
+  projects: ProjectItem[];
   kpi: { months: string[]; current: number[]; previous: number[] };
   totalTasks: number;
   avgCompletion: number;
@@ -71,14 +62,6 @@ const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   suspended: "bg-destructive/12 text-destructive",
 };
 
-const BAR_COLORS = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
-
 export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
   const chartData = data.kpi.months.map((m, i) => ({
     month: m,
@@ -87,7 +70,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
   }));
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-5xl space-y-5">
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
@@ -101,253 +84,203 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
           <span>Team</span>
           <span className="text-muted-foreground/50">/</span>
           <span className="font-medium text-foreground">{data.name}</span>
-          <Badge className="bg-feature-tint text-primary">{data.jobTitle}</Badge>
         </nav>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-12">
-        {/* Left: identity + details */}
-        <aside className="space-y-6 lg:col-span-4">
-          {/* Identity */}
-          <div className="flex flex-col items-center rounded-2xl border bg-card p-6 text-center">
-            <Avatar className="size-24 ring-4 ring-feature-tint">
-              <AvatarImage src={data.avatarUrl} alt={data.name} />
-              <AvatarFallback className="text-2xl">
-                {initials(data.name)}
-              </AvatarFallback>
-            </Avatar>
-            <h1 className="mt-4 font-display text-xl font-semibold tracking-tight">
-              {data.name}
-            </h1>
-            <p className="font-mono text-xs text-muted-foreground">
-              {data.empCode}
+      {/* Employee — identity, contact & address in ONE card */}
+      <div className="overflow-hidden rounded-2xl border bg-card">
+        <div className="flex flex-col gap-5 border-b p-6 sm:flex-row sm:items-center">
+          <Avatar className="size-20 shrink-0 ring-4 ring-feature-tint">
+            <AvatarImage src={data.avatarUrl} alt={data.name} />
+            <AvatarFallback className="text-xl">
+              {initials(data.name)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h1 className="font-display text-2xl font-semibold tracking-tight">
+                {data.name}
+              </h1>
+              <span className="font-mono text-xs text-muted-foreground">
+                {data.empCode}
+              </span>
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {data.jobTitle} · {data.department}
             </p>
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <Badge className="bg-feature-tint text-primary">
                 {data.roleName}
               </Badge>
               <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
             </div>
           </div>
+        </div>
 
-          {/* Employee details */}
-          <Panel title="Employee details" icon={Contact}>
-            <dl className="divide-y text-sm">
-              <InfoRow label="Phone" value={data.phone} />
-              <InfoRow label="Email" value={data.email} />
-              <InfoRow label="Date of birth" value={data.dob} />
-              <InfoRow label="Title" value={data.jobTitle} />
-              <InfoRow label="Hire date" value={data.hireDate} />
-            </dl>
-          </Panel>
-
-          {/* Address */}
-          <Panel title="Address" icon={MapPin}>
-            <dl className="divide-y text-sm">
-              <InfoRow label="Country" value={data.country} />
-              <InfoRow label="City / State" value={data.cityState} />
-              <InfoRow label="Address" value={data.address} />
-              <InfoRow label="Postcode" value={data.postcode} />
-            </dl>
-          </Panel>
-
-          {/* Active projects */}
-          <Panel
-            title={`Active projects · ${data.activeProjects.length}`}
-          >
-            {data.activeProjects.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Not assigned to any project yet.
-              </p>
-            ) : (
-              <ul className="space-y-2.5">
-                {data.activeProjects.map((p, i) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center gap-3 rounded-xl border bg-muted/20 p-3"
-                  >
-                    <span
-                      className="size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: BAR_COLORS[i % BAR_COLORS.length] }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.tasks} tasks · {p.teammates} teammates
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-        </aside>
-
-        {/* Right: KPIs + charts */}
-        <section className="space-y-6 lg:col-span-8">
-          {/* Productivity KPIs */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Kpi icon={Gauge} label="Productivity" value={`${data.productivityScore}%`} />
-            <Kpi
-              icon={FolderKanban}
-              label="Active projects"
-              value={data.activeProjects.length}
-            />
-            <Kpi
-              icon={TrendingUp}
-              label="Avg. completion"
-              value={`${data.avgCompletion}%`}
-            />
-            <Kpi icon={ListChecks} label="Tasks" value={data.totalTasks} />
-          </div>
-
-          {/* KPI area chart — dark, palette-coloured surface */}
-          <div
-            className="relative overflow-hidden rounded-2xl border border-white/15 p-5 text-white shadow-[0_30px_80px_-40px_rgb(0_0_0/0.55)]"
-            style={{
-              backgroundImage:
-                "linear-gradient(160deg, color-mix(in oklab, var(--feature) 88%, #ffffff 12%), var(--feature) 58%, color-mix(in oklab, var(--feature), #000000 24%))",
-            }}
-          >
-            <div className="pointer-events-none absolute -top-20 -right-12 size-56 rounded-full bg-white/10 blur-3xl" />
-            <div className="relative mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
-                  KPI
-                </h2>
-                <p className="text-xs text-white/70">
-                  Avg. productive hours / day
-                </p>
-              </div>
-              <div className="flex items-center gap-4 text-xs text-white/75">
-                <Legend className="bg-white" label="Last 6 months" />
-                <Legend
-                  className="bg-white/60"
-                  label="Previous 6 months"
-                  dashed
-                />
-              </div>
-            </div>
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart
-                data={chartData}
-                margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
-              >
-                <defs>
-                  <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ffffff" stopOpacity={0.38} />
-                    <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="kpi-previous" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ffffff" stopOpacity={0.12} />
-                    <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgb(255 255 255 / 0.14)"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 12, fill: "rgb(255 255 255 / 0.7)" }}
-                  dy={6}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  width={42}
-                  tick={{ fontSize: 12, fill: "rgb(255 255 255 / 0.7)" }}
-                  tickFormatter={(v) => `${v}h`}
-                />
-                <Tooltip
-                  cursor={{ stroke: "rgb(255 255 255 / 0.3)" }}
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: "1px solid rgb(255 255 255 / 0.18)",
-                    background: "rgb(17 18 23 / 0.92)",
-                    color: "#ffffff",
-                    fontSize: 12,
-                  }}
-                  labelStyle={{ color: "rgb(255 255 255 / 0.7)" }}
-                  formatter={(v: number) => `${v}h`}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="previous"
-                  name="Previous 6 months"
-                  stroke="rgb(255 255 255 / 0.6)"
-                  strokeDasharray="5 5"
-                  strokeWidth={2}
-                  fill="url(#kpi-previous)"
-                  dot={false}
-                  activeDot={false}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="current"
-                  name="Last 6 months"
-                  stroke="#ffffff"
-                  strokeWidth={2.5}
-                  fill="url(#kpi-current)"
-                  dot={false}
-                  activeDot={{ r: 4, fill: "#ffffff", stroke: "none" }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Project completion */}
-          <div className="rounded-2xl border bg-card p-5">
-            <h2 className="mb-4 font-heading text-sm font-semibold tracking-wide uppercase">
-              Project completion
-            </h2>
-            {data.activeProjects.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No projects to show.
-              </p>
-            ) : (
-              <ul className="space-y-4">
-                {data.activeProjects.map((p, i) => (
-                  <li key={p.id} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2 font-medium">
-                        <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
-                          {p.key}
-                        </span>
-                        {p.name}
-                      </span>
-                      <span className="font-mono tabular-nums text-muted-foreground">
-                        {p.progress}%
-                      </span>
-                    </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="wp-meter-fill h-full rounded-full"
-                        style={{
-                          width: `${p.progress}%`,
-                          backgroundColor: BAR_COLORS[i % BAR_COLORS.length],
-                        }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* AI insights — overall summary of the employee */}
-          <AiInsights data={data} />
-        </section>
+        <dl className="grid grid-cols-1 gap-x-8 gap-y-5 p-6 sm:grid-cols-2 lg:grid-cols-3">
+          <Detail label="Phone" value={data.phone} />
+          <Detail label="Email" value={data.email} />
+          <Detail label="Team" value={data.team} />
+          <Detail label="Date of birth" value={data.dob} />
+          <Detail label="Hire date" value={data.hireDate} />
+          <Detail label="Country" value={data.country} />
+          <Detail label="City / State" value={data.cityState} />
+          <Detail label="Address" value={data.address} />
+          <Detail label="Postcode" value={data.postcode} />
+        </dl>
       </div>
+
+      {/* Projects — all projects, single accent bar, Active badge when active */}
+      <div className="rounded-2xl border bg-card p-6">
+        <div className="mb-5 flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+            <FolderKanban className="size-4" />
+          </span>
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Projects
+          </p>
+          <Badge className="bg-muted font-normal text-muted-foreground">
+            {data.projects.length}
+          </Badge>
+        </div>
+        {data.projects.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Not assigned to any project yet.
+          </p>
+        ) : (
+          <ul className="space-y-5">
+            {data.projects.map((p) => (
+              <li key={p.id} className="space-y-2">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="flex min-w-0 items-center gap-2 font-medium">
+                    <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
+                      {p.key}
+                    </span>
+                    <span className="truncate">{p.name}</span>
+                    {p.active ? (
+                      <Badge className="bg-success/12 text-[0.65rem] text-success">
+                        Active
+                      </Badge>
+                    ) : null}
+                  </span>
+                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+                    {p.progress}%
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="wp-meter-fill h-full rounded-full bg-primary"
+                    style={{ width: `${p.progress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {p.tasks} tasks · {p.teammates} teammates
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* KPI chart */}
+      <div className="rounded-2xl border bg-card p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+              <Sparkles className="size-4" />
+            </span>
+            <div>
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                KPI
+              </p>
+              <p className="text-xs text-muted-foreground/80">
+                Avg. productive hours / day
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <Legend className="bg-primary" label="Last 6 months" />
+            <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={230}>
+          <AreaChart
+            data={chartData}
+            margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
+          >
+            <defs>
+              <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
+                <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="var(--border)"
+              vertical={false}
+            />
+            <XAxis
+              dataKey="month"
+              tickLine={false}
+              axisLine={false}
+              tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+              dy={6}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              width={42}
+              tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+              tickFormatter={(v) => `${v}h`}
+            />
+            <Tooltip
+              cursor={{ stroke: "var(--border)" }}
+              contentStyle={{
+                borderRadius: 12,
+                border: "1px solid var(--border)",
+                background: "var(--popover)",
+                color: "var(--popover-foreground)",
+                fontSize: 12,
+              }}
+              labelStyle={{ color: "var(--muted-foreground)" }}
+              formatter={(v: number) => `${v}h`}
+            />
+            <Area
+              type="monotone"
+              dataKey="previous"
+              name="Previous 6 months"
+              stroke="var(--muted-foreground)"
+              strokeDasharray="5 5"
+              strokeOpacity={0.55}
+              strokeWidth={2}
+              fill="transparent"
+              dot={false}
+              activeDot={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="current"
+              name="Last 6 months"
+              stroke="var(--primary)"
+              strokeWidth={2.5}
+              fill="url(#kpi-current)"
+              dot={false}
+              activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Employee summary */}
+      <AiInsights data={data} />
     </div>
   );
 }
 
 function AiInsights({ data }: { data: EmployeeProfileData }) {
   const first = data.name.split(" ")[0];
+  const total = data.projects.length;
+  const activeCount = data.projects.filter((p) => p.active).length;
   const tier =
     data.productivityScore >= 80
       ? "high"
@@ -357,18 +290,18 @@ function AiInsights({ data }: { data: EmployeeProfileData }) {
   const trendUp =
     data.kpi.current[data.kpi.current.length - 1] >=
     data.kpi.previous[data.kpi.previous.length - 1];
-  const top = [...data.activeProjects].sort((a, b) => b.progress - a.progress)[0];
+  const top = [...data.projects].sort((a, b) => b.progress - a.progress)[0];
 
-  const summary = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${data.activeProjects.length} active ${data.activeProjects.length === 1 ? "project" : "projects"}. Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks in flight.`;
+  const summary = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""}. Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks in flight.`;
 
   const points: string[] = [
     trendUp
       ? "Productivity is trending up over the last 6 months versus the prior period."
       : "Productivity has softened recently — a check-in could surface blockers.",
-    `Workload is ${data.totalTasks >= 40 ? "heavy" : data.totalTasks >= 20 ? "balanced" : "light"} at ${data.totalTasks} tasks across ${data.activeProjects.length} ${data.activeProjects.length === 1 ? "project" : "projects"}.`,
+    `Workload is ${data.totalTasks >= 40 ? "heavy" : data.totalTasks >= 20 ? "balanced" : "light"} at ${data.totalTasks} tasks across ${total} ${total === 1 ? "project" : "projects"}.`,
     top
       ? `Strongest contribution: ${top.name} at ${top.progress}% complete.`
-      : "Not currently assigned to an active project.",
+      : "Not currently assigned to a project.",
     tier === "high"
       ? "A consistent top performer — a candidate for stretch work or mentoring."
       : tier === "steady"
@@ -377,99 +310,42 @@ function AiInsights({ data }: { data: EmployeeProfileData }) {
   ];
 
   return (
-    <div
-      className="relative overflow-hidden rounded-2xl border border-white/10 p-5 text-white shadow-[0_24px_60px_-40px_rgb(0_0_0/0.5)]"
-      style={{
-        backgroundImage:
-          "linear-gradient(150deg, color-mix(in oklab, var(--feature) 88%, #ffffff 12%), var(--feature) 60%, color-mix(in oklab, var(--feature), #000000 22%))",
-      }}
-    >
-      <div className="pointer-events-none absolute -top-16 -right-10 size-48 rounded-full bg-white/10 blur-3xl" />
-      <div className="relative">
-        <div className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-white/15">
-            <Sparkles className="size-4" />
-          </span>
-          <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
-            AI insights
-          </h2>
-          <span className="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-[0.65rem] font-medium text-white/80">
-            Beta
-          </span>
-        </div>
-
-        <p className="mt-3 text-sm leading-relaxed text-white/90">{summary}</p>
-
-        <ul className="mt-4 space-y-2">
-          {points.map((p, i) => (
-            <li key={i} className="flex gap-2.5 text-sm text-white/85">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-white/70" />
-              <span className="leading-relaxed">{p}</span>
-            </li>
-          ))}
-        </ul>
+    <div className="rounded-2xl border bg-card p-6">
+      <div className="flex items-center gap-2">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+          <Sparkles className="size-4" />
+        </span>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          Employee summary
+        </p>
+        <Badge className="ml-auto bg-feature-tint text-primary">AI · Beta</Badge>
       </div>
+
+      <p className="mt-3 text-sm leading-relaxed">{summary}</p>
+
+      <ul className="mt-4 space-y-2">
+        {points.map((p, i) => (
+          <li key={i} className="flex gap-2.5 text-sm text-muted-foreground">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
+            <span className="leading-relaxed">{p}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 /* ------------------------------- atoms -------------------------------- */
 
-function Panel({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon?: LucideIcon;
-  children: React.ReactNode;
-}) {
+function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border bg-card p-5">
-      <div className="mb-3 flex items-center gap-2">
-        {Icon ? (
-          <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-            <Icon className="size-4" />
-          </span>
-        ) : null}
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          {title}
-        </p>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
-      <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="text-right font-medium break-words">{value}</dd>
-    </div>
-  );
-}
-
-function Kpi({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <div className="rounded-2xl border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
-          <Icon className="size-3.5" />
-        </span>
-      </div>
-      <p className="mt-2 font-display text-2xl font-semibold tabular-nums">
+    <div className="min-w-0">
+      <dt className="text-[0.7rem] font-medium tracking-wide text-muted-foreground/70 uppercase">
+        {label}
+      </dt>
+      <dd className="mt-1 truncate text-sm font-medium" title={value}>
         {value}
-      </p>
+      </dd>
     </div>
   );
 }
