@@ -177,12 +177,36 @@ const COMPANY_SIZE_SELECT_OPTIONS: SelectOption[] = COMPANY_SIZE_OPTIONS.map(
 function CompanyInfoSection({
   value,
   onChange,
+  branding,
+  onBrandingChange,
   canManage,
 }: {
   value: CompanyForm
   onChange: (patch: Partial<CompanyForm>) => void
+  branding: BrandingForm
+  onBrandingChange: (patch: Partial<BrandingForm>) => void
   canManage: boolean
 }) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+
+  function acceptFile(file: File | undefined) {
+    if (!file || !file.type.startsWith("image/")) return
+    onBrandingChange({ logo: URL.createObjectURL(file) })
+  }
+
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    acceptFile(e.target.files?.[0])
+    e.target.value = ""
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragging(false)
+    if (!canManage) return
+    acceptFile(e.dataTransfer.files?.[0])
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -191,9 +215,91 @@ function CompanyInfoSection({
           Basic profile shown across the platform and used in exported reports.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-5 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label>Company name</Label>
+      <CardContent className="space-y-6">
+        {/* Logo + brand identity */}
+        <div className="space-y-2">
+          <Label>Company logo</Label>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Clickable drag-and-drop upload zone (doubles as the preview) */}
+            <button
+              type="button"
+              disabled={!canManage}
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault()
+                if (canManage) setDragging(true)
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={handleDrop}
+              aria-label={
+                branding.logo ? "Replace company logo" : "Upload company logo"
+              }
+              className={cn(
+                "group relative flex h-24 w-48 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-dashed bg-muted/40 transition-colors",
+                canManage
+                  ? "cursor-pointer hover:border-primary/60 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  : "cursor-default",
+                dragging && "border-primary bg-feature-tint",
+              )}
+            >
+              {branding.logo ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={branding.logo}
+                    alt="Company logo preview"
+                    className="h-full w-full object-contain p-3"
+                  />
+                  {canManage && (
+                    <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-foreground/55 text-xs font-medium text-background opacity-0 transition-opacity group-hover:opacity-100">
+                      <ImagePlus className="size-4" />
+                      Replace
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="flex flex-col items-center gap-1.5 px-3 text-center text-muted-foreground">
+                  <ImagePlus className="size-5" />
+                  <span className="text-xs font-medium text-foreground">
+                    Upload logo
+                  </span>
+                  <span className="text-[11px]">Click or drag &amp; drop</span>
+                </span>
+              )}
+            </button>
+
+            <div className="space-y-3">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                PNG, SVG or JPG · recommended 200 × 50 px · up to 2 MB.
+              </p>
+              {canManage && branding.logo && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onBrandingChange({ logo: null })}
+                  className="gap-1.5 text-destructive hover:text-destructive"
+                >
+                  <X className="size-3.5" />
+                  Remove logo
+                </Button>
+              )}
+            </div>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={handleLogoChange}
+          />
+        </div>
+
+        <div className="h-px bg-border" />
+
+        {/* Company details */}
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Company name</Label>
           <Input
             value={value.name}
             disabled={!canManage}
@@ -237,140 +343,17 @@ function CompanyInfoSection({
             options={COMPANY_SIZE_SELECT_OPTIONS}
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Primary timezone</Label>
-          <StyledSelect
-            value={value.timezone}
-            onChange={(v) => onChange({ timezone: v })}
-            disabled={!canManage}
-            className="w-full"
-            options={COMMON_TIMEZONES}
-          />
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-// ── Branding ──────────────────────────────────────────────────────────────────
-
-function BrandingSection({
-  value,
-  onChange,
-  canManage,
-}: {
-  value: BrandingForm
-  onChange: (patch: Partial<BrandingForm>) => void
-  canManage: boolean
-}) {
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [dragging, setDragging] = useState(false)
-
-  function acceptFile(file: File | undefined) {
-    if (!file || !file.type.startsWith("image/")) return
-    onChange({ logo: URL.createObjectURL(file) })
-  }
-
-  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    acceptFile(e.target.files?.[0])
-    e.target.value = ""
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault()
-    setDragging(false)
-    if (!canManage) return
-    acceptFile(e.dataTransfer.files?.[0])
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Branding</CardTitle>
-        <CardDescription>
-          Upload your company logo. Accent colour and app theme are managed in{" "}
-          <a
-            href="/settings/appearance"
-            className="font-medium underline underline-offset-2 hover:text-foreground"
-          >
-            Account → Appearance
-          </a>
-          .
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Label className="mb-2 block">Company logo</Label>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          {/* Clickable drag-and-drop upload zone (doubles as the preview) */}
-          <button
-            type="button"
-            disabled={!canManage}
-            onClick={() => fileRef.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault()
-              if (canManage) setDragging(true)
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={handleDrop}
-            aria-label={value.logo ? "Replace company logo" : "Upload company logo"}
-            className={cn(
-              "group relative flex h-24 w-48 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-dashed bg-muted/40 transition-colors",
-              canManage
-                ? "cursor-pointer hover:border-primary/60 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                : "cursor-default",
-              dragging && "border-primary bg-feature-tint",
-            )}
-          >
-            {value.logo ? (
-              <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={value.logo}
-                  alt="Company logo preview"
-                  className="h-full w-full object-contain p-3"
-                />
-                {canManage && (
-                  <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-foreground/55 text-xs font-medium text-background opacity-0 transition-opacity group-hover:opacity-100">
-                    <ImagePlus className="size-4" />
-                    Replace
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="flex flex-col items-center gap-1.5 px-3 text-center text-muted-foreground">
-                <ImagePlus className="size-5" />
-                <span className="text-xs font-medium text-foreground">
-                  Upload logo
-                </span>
-                <span className="text-[11px]">Click or drag &amp; drop</span>
-              </span>
-            )}
-          </button>
-
-          <div className="space-y-3">
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              PNG, SVG or JPG · recommended 200 × 50 px · up to 2 MB.
-            </p>
-            {canManage && value.logo && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onChange({ logo: null })}
-                className="gap-1.5 text-destructive hover:text-destructive"
-              >
-                <X className="size-3.5" />
-                Remove logo
-              </Button>
-            )}
+          <div className="space-y-1.5">
+            <Label>Primary timezone</Label>
+            <StyledSelect
+              value={value.timezone}
+              onChange={(v) => onChange({ timezone: v })}
+              disabled={!canManage}
+              className="w-full"
+              options={COMMON_TIMEZONES}
+            />
           </div>
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="sr-only"
-          onChange={handleLogoChange}
-        />
       </CardContent>
     </Card>
   )
@@ -1082,11 +1065,8 @@ export function OrganizationTab() {
         <CompanyInfoSection
           value={draft.company}
           onChange={updateCompany}
-          canManage={canManage}
-        />
-        <BrandingSection
-          value={draft.branding}
-          onChange={updateBranding}
+          branding={draft.branding}
+          onBrandingChange={updateBranding}
           canManage={canManage}
         />
         <DepartmentsTeamsSection
