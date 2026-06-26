@@ -33,14 +33,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import type { DashboardWidget } from "@/types";
 
 function SortableWidget({
   id,
-  span,
   children,
 }: {
   id: string;
-  span: 1 | 2;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -50,11 +49,7 @@ function SortableWidget({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn(
-        "group/widget relative",
-        span === 2 && "md:col-span-2 xl:col-span-2",
-        isDragging && "z-10 opacity-70",
-      )}
+      className={cn("group/widget relative", isDragging && "z-10 opacity-70")}
     >
       <button
         type="button"
@@ -65,9 +60,8 @@ function SortableWidget({
       >
         <GripVertical className="size-4" />
       </button>
-      {/* Stretch the rendered card to fill the (stretched) grid cell so cards
-          in the same row share a height. */}
-      <div className="h-full [&>*]:h-full">{children}</div>
+      {/* Roomier internal padding than the default card spacing. */}
+      <div className="[&>*]:[--card-spacing:--spacing(7)]!">{children}</div>
     </div>
   );
 }
@@ -91,6 +85,12 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const visibleIds = visible.map((w) => w.id);
   const hiddenIds = ordered.filter((w) => !w.visible).map((w) => w.id);
 
+  // Two zones: a wide column for the big chart widgets (span 2) and a narrow
+  // column for the rest. Each zone packs vertically with no stretching, so the
+  // charts keep their width while short widgets have no empty space or gaps.
+  const wide = visible.filter((w) => WIDGET_REGISTRY[w.type]?.span === 2);
+  const narrow = visible.filter((w) => WIDGET_REGISTRY[w.type]?.span !== 2);
+
   const onDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
@@ -101,8 +101,18 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     reorder([...newVisible, ...hiddenIds]);
   };
 
+  const renderWidget = (w: DashboardWidget) => {
+    const def = WIDGET_REGISTRY[w.type];
+    if (!def) return null;
+    return (
+      <SortableWidget key={w.id} id={w.id}>
+        {def.render(data)}
+      </SortableWidget>
+    );
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-lg font-semibold tracking-tight">
           Your widgets
@@ -156,16 +166,17 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           onDragEnd={onDragEnd}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {visible.map((w) => {
-                const def = WIDGET_REGISTRY[w.type];
-                if (!def) return null;
-                return (
-                  <SortableWidget key={w.id} id={w.id} span={def.span}>
-                    {def.render(data)}
-                  </SortableWidget>
-                );
-              })}
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+              {wide.length > 0 ? (
+                <div className="flex min-w-0 flex-col gap-6 lg:flex-[2]">
+                  {wide.map(renderWidget)}
+                </div>
+              ) : null}
+              {narrow.length > 0 ? (
+                <div className="flex min-w-0 flex-col gap-6 lg:flex-[1]">
+                  {narrow.map(renderWidget)}
+                </div>
+              ) : null}
             </div>
           </SortableContext>
         </DndContext>
