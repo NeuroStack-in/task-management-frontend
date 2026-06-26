@@ -3,9 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Activity,
   BatteryWarning,
-  Bell,
   Check,
   Clock,
   Lightbulb,
@@ -37,7 +35,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { initials } from "@/lib/format";
 import {
@@ -59,6 +56,18 @@ const KIND_ICON: Record<AnomalyKind, LucideIcon> = {
   burnout: BatteryWarning,
   "after-hours": Moon,
   policy: ShieldAlert,
+};
+
+/** A clear next step per anomaly kind — the "what should I do" for the dialog. */
+const KIND_ACTION: Record<AnomalyKind, string> = {
+  burnout:
+    "Rebalance their workload and encourage time off before it affects delivery.",
+  "productivity-drop":
+    "Set up a quick 1:1 to surface what's blocking them behind the drop.",
+  "after-hours":
+    "Confirm the late hours are intentional — not sustained overload.",
+  inactivity: "Check whether they're blocked, in meetings, or simply away.",
+  policy: "Review the flagged activity against your monitoring policy.",
 };
 
 /**
@@ -187,18 +196,15 @@ export function AiInsightsTab() {
         <AttentionTrend />
       </div>
 
-      {/* KPIs */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Needs attention" value={open.length} icon={Bell} hint="this week" featured />
-        <StatCard label="High priority" value={high} icon={ShieldAlert} hint="act first" />
-        <StatCard label="Burnout signals" value={burnout} icon={Activity} hint="people flagged" />
-        <StatCard label="Productivity drops" value={drops} icon={TrendingDown} hint="sharp declines" />
-      </div>
-
       {/* Needs-attention list */}
       <Card>
-        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-          <CardTitle>Needs attention</CardTitle>
+        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+          <div className="space-y-1">
+            <CardTitle>Needs attention ({open.length})</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {high} high priority · {burnout} burnout · {drops} productivity drops
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {clearedCount > 0 ? (
               <span className="text-xs text-muted-foreground">
@@ -343,66 +349,100 @@ function AttentionDialog({
 }) {
   return (
     <Dialog open={!!a} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="grid-cols-1 sm:max-w-md">
         {a ? (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                {a.title}
-                <Badge className={SEVERITY_META[a.severity].badge}>
-                  {SEVERITY_META[a.severity].label}
-                </Badge>
-              </DialogTitle>
-              <DialogDescription>
-                {ANOMALY_KIND_LABEL[a.kind]} · detected {a.time}
-              </DialogDescription>
-            </DialogHeader>
+          (() => {
+            const sev = SEVERITY_META[a.severity];
+            const Icon = KIND_ICON[a.kind];
+            return (
+              <>
+                <DialogHeader>
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={cn(
+                        "flex size-10 shrink-0 items-center justify-center rounded-xl",
+                        a.severity === "high"
+                          ? "bg-destructive/12 text-destructive"
+                          : "bg-feature-tint text-primary",
+                      )}
+                    >
+                      <Icon className="size-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <DialogTitle className="flex items-center gap-2">
+                        {a.title}
+                        <Badge className={sev.badge}>{sev.label}</Badge>
+                      </DialogTitle>
+                      <DialogDescription>
+                        {ANOMALY_KIND_LABEL[a.kind]} · detected {a.time}
+                      </DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
 
-            <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-3">
-              <Avatar className="size-10">
-                <AvatarImage src={a.user.avatarUrl} alt={a.user.name} />
-                <AvatarFallback>{initials(a.user.name)}</AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{a.user.name}</p>
-                <p className="truncate text-sm text-muted-foreground">
-                  {a.user.jobTitle} · {a.user.department}
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                render={<Link href={`/employees/${a.user.id}`} />}
-                nativeButton={false}
-              >
-                View profile
-              </Button>
-            </div>
+                {/* Person */}
+                <div className="flex items-center gap-3 rounded-xl border p-3">
+                  <Avatar className="size-10">
+                    <AvatarImage src={a.user.avatarUrl} alt={a.user.name} />
+                    <AvatarFallback>{initials(a.user.name)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{a.user.name}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {a.user.jobTitle} · {a.user.department}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    render={<Link href={`/employees/${a.user.id}`} />}
+                    nativeButton={false}
+                  >
+                    View profile
+                  </Button>
+                </div>
 
-            <dl className="space-y-2 text-sm">
-              <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  What triggered it
-                </dt>
-                <dd className="mt-0.5">{ANOMALY_KIND_SIGNAL[a.kind]}</dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Detail
-                </dt>
-                <dd className="mt-0.5 text-muted-foreground">{a.detail}</dd>
-              </div>
-            </dl>
+                {/* Trigger + detail */}
+                <dl className="space-y-3 rounded-xl bg-muted/50 p-4 text-sm">
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      What triggered it
+                    </dt>
+                    <dd className="mt-0.5">{ANOMALY_KIND_SIGNAL[a.kind]}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Detail
+                    </dt>
+                    <dd className="mt-0.5 text-muted-foreground">{a.detail}</dd>
+                  </div>
+                </dl>
 
-            <DialogFooter>
-              <Button variant="outline" onClick={() => onDecide(a, "dismissed")}>
-                <X className="size-4" /> Dismiss
-              </Button>
-              <Button onClick={() => onDecide(a, "resolved")}>
-                <Check className="size-4" /> Resolve
-              </Button>
-            </DialogFooter>
-          </>
+                {/* Suggested action */}
+                <div className="flex gap-2.5 rounded-xl bg-feature-tint p-3 text-sm">
+                  <Lightbulb className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div>
+                    <p className="font-medium text-primary">Suggested action</p>
+                    <p className="mt-0.5 text-foreground/80">
+                      {KIND_ACTION[a.kind]}
+                    </p>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => onDecide(a, "dismissed")}
+                  >
+                    <X className="size-4" /> Dismiss
+                  </Button>
+                  <Button onClick={() => onDecide(a, "resolved")}>
+                    <Check className="size-4" /> Resolve
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()
         ) : null}
       </DialogContent>
     </Dialog>

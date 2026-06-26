@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, Search } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -41,19 +41,7 @@ export function TopNavbar() {
         </SheetContent>
       </Sheet>
 
-      {/* Search / command palette */}
-      <button
-        type="button"
-        className="flex h-10 flex-1 items-center gap-2.5 rounded-full bg-card px-4 text-sm text-muted-foreground shadow-soft transition-colors hover:text-foreground sm:max-w-sm"
-      >
-        <Search className="size-4" />
-        <span className="flex-1 text-left">Search people, projects, reports…</span>
-        <kbd className="pointer-events-none hidden rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium sm:inline">
-          ⌘K
-        </kbd>
-      </button>
-
-      <div className="flex items-center gap-2.5 sm:ml-auto">
+      <div className="flex flex-1 items-center justify-end gap-2.5">
         <div className="rounded-full bg-card p-1 shadow-soft">
           <PaletteSwitcher />
         </div>

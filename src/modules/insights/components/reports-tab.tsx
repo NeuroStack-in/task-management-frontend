@@ -3,19 +3,37 @@
 import { useMemo, useState } from "react";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
-import { Download, FileBarChart, FileText, Lock, Sheet } from "lucide-react";
+import {
+  Activity,
+  CalendarCheck,
+  ChevronDown,
+  Clock,
+  Download,
+  FileText,
+  FolderKanban,
+  Lock,
+  MonitorSmartphone,
+  Sheet,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  Table,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   TableBody,
   TableCell,
   TableHead,
@@ -33,7 +51,6 @@ import {
   type ReportCategory,
   type ReportDef,
 } from "@/lib/mock-insights";
-
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -147,6 +164,15 @@ function exportAllPdf(reports: ReportDef[]) {
   });
 }
 
+/** Each report category gets its own icon so cards are scannable at a glance. */
+const CATEGORY_ICON: Record<ReportCategory, LucideIcon> = {
+  workforce: Users,
+  time: Clock,
+  attendance: CalendarCheck,
+  activity: Activity,
+  monitoring: MonitorSmartphone,
+  projects: FolderKanban,
+};
 
 type Filter = "all" | ReportCategory;
 
@@ -164,6 +190,7 @@ export function ReportsTab() {
   const { can } = usePermissions();
   const canExport = can("reports:export");
   const [filter, setFilter] = useState<Filter>("all");
+  const [preview, setPreview] = useState<ReportDef | null>(null);
 
   const reports = useMemo(
     () =>
@@ -171,41 +198,37 @@ export function ReportsTab() {
     [filter],
   );
 
-  // Catalog summary counts.
   const empCount = EMPLOYEE_TIME.length;
   const projCount = PROJECT_HOURS.length;
 
-
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <AiReportCard
         title="AI reporting summary"
-        summary={`Across ${empCount} employees and ${projCount} projects, Engineering and Product lead utilization this week. Two projects are flagged at risk and a small group is trending toward over-utilization — export any report below for the detail.`}
-        signals={[
-          { label: "Utilization", value: "78%", tone: "flat" },
-          { label: "At-risk projects", value: "2", tone: "down" },
-          { label: "Top dept", value: "Engineering", tone: "up" },
+        summary={`Across ${empCount} employees and ${projCount} projects, Engineering and Product lead utilization this week. Two projects are flagged at risk and a small group is trending toward over-utilization — open any report below for the detail.`}
+        metrics={[
+          { label: "Utilization", value: "78%" },
+          { label: "At-risk projects", value: 2 },
+          { label: "Top dept", value: "Engineering" },
         ]}
       />
 
+      {/* Section header: title + primary bulk action */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
+          Report templates
+        </h2>
+        <Button disabled={!canExport} onClick={() => exportAllPdf(REPORTS)}>
+          <Download className="size-4" /> Export all
+        </Button>
+      </div>
 
-      {/* Report templates catalog */}
-      <section className="space-y-4">
-      {/* Toolbar: summary + export-all + category filter */}
+      {/* Toolbar: count (left) · category filter (right) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{REPORTS.length}</span>{" "}
-            report templates · export-ready as CSV or PDF
-          </p>
-          <Button
-            size="sm"
-            disabled={!canExport}
-            onClick={() => exportAllPdf(REPORTS)}
-          >
-            <Download className="size-4" /> Export all
-          </Button>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{reports.length}</span> of{" "}
+          {REPORTS.length} reports · export-ready as CSV or PDF
+        </p>
         <div className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
             <button
@@ -228,7 +251,7 @@ export function ReportsTab() {
       {!canExport ? (
         <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4" />
-          You can view reports, but exporting requires the{" "}
+          You can view and preview reports, but exporting requires the{" "}
           <span className="font-medium text-foreground">Export Reports</span>{" "}
           permission.
         </div>
@@ -236,80 +259,207 @@ export function ReportsTab() {
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {reports.map((report) => (
-          <Card key={report.id} className="flex flex-col">
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
-                  <FileBarChart className="size-5" />
-                </span>
-                <div className="flex flex-col items-end gap-1">
-                  <Badge variant="outline">
-                    {REPORT_CATEGORY_LABEL[report.category]}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {report.period}
-                  </span>
-                </div>
-              </div>
-              <CardTitle className="mt-3">{report.name}</CardTitle>
-              <CardDescription>{report.description}</CardDescription>
-            </CardHeader>
-            <CardContent className="mt-auto space-y-4">
-              {/* Mini preview */}
-              <div className="overflow-hidden rounded-xl border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {report.columns.slice(0, 3).map((c) => (
-                        <TableHead key={c} className="h-8 text-xs">
-                          {c}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {report.rows.slice(0, 3).map((row, ri) => (
-                      <TableRow key={ri}>
-                        {row.slice(0, 3).map((cell, ci) => (
-                          <TableCell key={ci} className="py-1.5 text-xs">
-                            {String(cell)}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {report.rows.length} rows · {report.columns.length} columns
-              </p>
-
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  disabled={!canExport}
-                  onClick={() => exportCsv(report)}
-                >
-                  <Sheet className="size-4" /> CSV
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  disabled={!canExport}
-                  onClick={() => exportPdf(report)}
-                >
-                  <FileText className="size-4" /> PDF
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <ReportCard
+            key={report.id}
+            report={report}
+            canExport={canExport}
+            onPreview={() => setPreview(report)}
+          />
         ))}
       </div>
-      </section>
 
+      <ReportPreviewDialog
+        report={preview}
+        canExport={canExport}
+        onClose={() => setPreview(null)}
+      />
     </div>
+  );
+}
+
+/* ------------------------------- report card ------------------------------- */
+
+function ReportCard({
+  report,
+  canExport,
+  onPreview,
+}: {
+  report: ReportDef;
+  canExport: boolean;
+  onPreview: () => void;
+}) {
+  const Icon = CATEGORY_ICON[report.category];
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onPreview}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onPreview();
+        }
+      }}
+      className="group flex cursor-pointer flex-col rounded-[1.4rem] bg-card p-5 shadow-soft transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
+          <Icon className="size-5" />
+        </span>
+        <ExportMenu report={report} canExport={canExport} />
+      </div>
+
+      <h3 className="mt-3 font-heading text-base font-semibold">{report.name}</h3>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {REPORT_CATEGORY_LABEL[report.category]} · {report.period}
+      </p>
+      <p className="mt-1.5 line-clamp-2 text-sm text-muted-foreground">
+        {report.description}
+      </p>
+
+      {/* Mini preview */}
+      <div className="mt-4 overflow-hidden rounded-xl border">
+        <table className="w-full caption-bottom text-sm">
+          <TableHeader>
+            <TableRow>
+              {report.columns.slice(0, 3).map((c) => (
+                <TableHead key={c} className="h-8 text-xs">
+                  {c}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {report.rows.slice(0, 3).map((row, ri) => (
+              <TableRow key={ri}>
+                {row.slice(0, 3).map((cell, ci) => (
+                  <TableCell key={ci} className="py-1.5 text-xs">
+                    {String(cell)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </table>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          {report.rows.length} rows · {report.columns.length} columns
+        </span>
+        <span className="font-medium text-primary transition-transform group-hover:translate-x-0.5">
+          View report →
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ExportMenu({
+  report,
+  canExport,
+}: {
+  report: ReportDef;
+  canExport: boolean;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={!canExport}
+            onClick={(e) => e.stopPropagation()}
+          />
+        }
+      >
+        <Download className="size-4" /> Export
+        <ChevronDown className="size-3.5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-auto min-w-44">
+        <DropdownMenuItem
+          className="whitespace-nowrap"
+          onClick={() => exportCsv(report)}
+        >
+          <Sheet className="size-4" /> Download CSV
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="whitespace-nowrap"
+          onClick={() => exportPdf(report)}
+        >
+          <FileText className="size-4" /> Download PDF
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/* ---------------------------- full report preview --------------------------- */
+
+function ReportPreviewDialog({
+  report,
+  canExport,
+  onClose,
+}: {
+  report: ReportDef | null;
+  canExport: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={!!report} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-3xl">
+        {report ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{report.name}</DialogTitle>
+              <DialogDescription>
+                {REPORT_CATEGORY_LABEL[report.category]} · {report.period} ·{" "}
+                {report.rows.length} rows
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="min-h-0 flex-1 overflow-auto rounded-xl border">
+              <table className="w-full caption-bottom text-sm">
+                <TableHeader className="sticky top-0 bg-card">
+                  <TableRow>
+                    {report.columns.map((c) => (
+                      <TableHead key={c} className="whitespace-nowrap">
+                        {c}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {report.rows.map((row, ri) => (
+                    <TableRow key={ri}>
+                      {row.map((cell, ci) => (
+                        <TableCell key={ci} className="whitespace-nowrap">
+                          {String(cell)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </table>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={!canExport}
+                onClick={() => exportCsv(report)}
+              >
+                <Sheet className="size-4" /> CSV
+              </Button>
+              <Button disabled={!canExport} onClick={() => exportPdf(report)}>
+                <FileText className="size-4" /> PDF
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
