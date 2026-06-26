@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { users } from "@/lib/data";
+import { DashboardView } from "@/modules/dashboard/components/dashboard-view";
 import {
   statusCounts,
   attendanceCounts,
@@ -12,6 +13,7 @@ import type { DashboardData } from "@/modules/dashboard/widget-registry";
 export const metadata: Metadata = { title: "Dashboard" };
 
 export default function DashboardPage() {
+  return <DashboardView users={users} />;
   const active = users.filter((u) => u.status === "active").length;
   const inactive = users.filter((u) => u.status === "inactive").length;
   const avgProductivity = Math.round(

@@ -1,3 +1,6 @@
+"use client";
+
+import Link from "next/link";
 import {
   AlertTriangle,
   CalendarClock,
@@ -15,9 +18,22 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sparkline } from "@/components/shared/sparkline";
+import { useAssistantStore } from "@/stores/assistant.store";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
+
+/** Subtle footer link that routes a widget to its canonical page. */
+function ViewAllLink({ href, label = "View all" }: { href: string; label?: string }) {
+  return (
+    <Link
+      href={href}
+      className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+    >
+      {label} <ArrowUpRight className="size-3.5" />
+    </Link>
+  );
+}
 
 /* ----------------------------- Top Employees ----------------------------- */
 
@@ -50,6 +66,7 @@ export function TopEmployeesWidget({ people }: { people: User[] }) {
             </span>
           </div>
         ))}
+        <ViewAllLink href="/employees" label="All employees" />
       </CardContent>
     </Card>
   );
@@ -80,6 +97,7 @@ export function ScreenshotsWidget({
         </p>
         <p className="text-xs text-muted-foreground">captured today</p>
         <Sparkline data={trend} area showDot={false} width={220} height={48} className="w-full" />
+        <ViewAllLink href="/insights/screenshots" label="Open Screenshot Center" />
       </CardContent>
     </Card>
   );
@@ -88,6 +106,7 @@ export function ScreenshotsWidget({
 /* ------------------------------ AI Summary ------------------------------ */
 
 export function AiSummaryWidget() {
+  const openAssistant = useAssistantStore((s) => s.openAssistant);
   return (
     <Card className="bg-feature text-feature-foreground shadow-none">
       <CardHeader>
@@ -102,6 +121,11 @@ export function AiSummaryWidget() {
         </p>
         <button
           type="button"
+          onClick={() =>
+            openAssistant(
+              "Summarise this week's productivity and flag any burnout risks.",
+            )
+          }
           className="inline-flex items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
         >
           Ask the assistant <ArrowUpRight className="size-3.5" />
@@ -145,6 +169,7 @@ export function AlertsWidget() {
             </div>
           </div>
         ))}
+        <ViewAllLink href="/insights/anomalies" label="View all alerts" />
       </CardContent>
     </Card>
   );
@@ -185,6 +210,7 @@ export function DeadlineWidget() {
             </span>
           </div>
         ))}
+        <ViewAllLink href="/projects" label="View all deadlines" />
       </CardContent>
     </Card>
   );
@@ -218,6 +244,7 @@ export function UpcomingTasksWidget() {
             </span>
           </div>
         ))}
+        <ViewAllLink href="/projects" label="View my tasks" />
       </CardContent>
     </Card>
   );
@@ -274,6 +301,7 @@ export function BillingWidget({
         <p className="text-xs text-muted-foreground">
           Next invoice on the 1st · auto-pay on
         </p>
+        <ViewAllLink href="/billing" label="Manage billing" />
       </CardContent>
     </Card>
   );

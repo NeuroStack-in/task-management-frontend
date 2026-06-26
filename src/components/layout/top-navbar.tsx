@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { Menu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Menu, Search } from "lucide-react";
 import { useUiStore } from "@/stores/ui.store";
@@ -50,6 +52,7 @@ export function TopNavbar() {
         </SheetContent>
       </Sheet>
 
+      <div className="flex flex-1 items-center justify-end gap-2.5">
       {/* Search / command palette */}
       <button
         type="button"

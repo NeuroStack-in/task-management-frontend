@@ -20,7 +20,7 @@ type View = "team" | "personal";
  * - Personal tracker for people who log their own time (`time-tracking:edit`).
  * - Team timesheets + approvals for oversight roles (`time-tracking:approve`),
  *   so Owners/Admins don't get a personal timer they'll never use.
- * Users with both (Owner/Admin) get a toggle and default to the team view.
+ * Users with both (Owner/Admin) get a toggle and default to their own time.
  */
 export function TimeTrackingView({
   teamRows,
@@ -37,7 +37,7 @@ export function TimeTrackingView({
   const showToggle = canApprove && canTrack;
 
   const [view, setView] = useState<View>(
-    canApprove ? "team" : canTrack ? "personal" : "team",
+    canTrack ? "personal" : "team",
   );
 
   const description =
@@ -54,16 +54,16 @@ export function TimeTrackingView({
           showToggle ? (
             <div className="flex rounded-full border bg-card p-0.5 shadow-soft">
               <ToggleButton
-                active={view === "team"}
-                onClick={() => setView("team")}
-                icon={Users}
-                label="Team"
-              />
-              <ToggleButton
                 active={view === "personal"}
                 onClick={() => setView("personal")}
                 icon={UserRound}
                 label="My time"
+              />
+              <ToggleButton
+                active={view === "team"}
+                onClick={() => setView("team")}
+                icon={Users}
+                label="Team"
               />
             </div>
           ) : undefined

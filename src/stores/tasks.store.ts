@@ -21,6 +21,8 @@ interface TasksState {
   tasks: Task[];
   createTask: (projectId: string, values: TaskFormValues) => Task;
   updateTask: (id: string, values: TaskFormValues) => void;
+  /** Move a task to a different status column (kanban drag-and-drop). */
+  moveTask: (id: string, status: TaskStatus) => void;
 }
 
 let seq = 0;
@@ -59,5 +61,10 @@ export const useTasksStore = create<TasksState>((set) => ({
             }
           : t,
       ),
+    })),
+
+  moveTask: (id, status) =>
+    set((s) => ({
+      tasks: s.tasks.map((t) => (t.id === id ? { ...t, status } : t)),
     })),
 }));
