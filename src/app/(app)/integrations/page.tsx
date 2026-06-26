@@ -1,14 +1,6 @@
-import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Integrations Marketplace" };
-
+// Integrations now lives inside the Settings hub; keep the old URL working.
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Integrations Marketplace"
-      description="Slack, Teams, Jira, GitHub, and more."
-      phase={4}
-    />
-  );
+  redirect("/settings/integrations");
 }

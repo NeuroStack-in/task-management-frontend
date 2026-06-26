@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useUiStore } from "@/stores/ui.store";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
 import { ChatBot } from "./chat-bot";
+import { CommandPalette } from "./command-palette";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,6 +16,14 @@ import { cn } from "@/lib/utils";
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
+  const pathname = usePathname();
+
+  // Settings has its own section rail, so collapse the main sidebar there to
+  // free up width — and expand it again on every other route.
+  useEffect(() => {
+    setSidebarCollapsed(pathname.startsWith("/settings"));
+  }, [pathname, setSidebarCollapsed]);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -28,9 +39,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNavbar />
-        <main className="flex-1 px-4 pb-8 sm:px-6">{children}</main>
+        {/* pb clears the fixed AI-assistant FAB (bottom-right) so it never
+            covers page content like pagination controls. */}
+        <main className="flex-1 px-4 pb-24 sm:px-6">{children}</main>
       </div>
       <ChatBot />
+      <CommandPalette />
     </div>
   );
 }

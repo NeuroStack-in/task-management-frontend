@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { AnomaliesTab } from "@/modules/insights/components/anomalies-tab";
+import { AiInsightsTab } from "@/modules/insights/components/ai-insights-tab";
 
-export const metadata: Metadata = { title: "Anomalies · Insights" };
+export const metadata: Metadata = { title: "AI Insights · Insights" };
 
 export default function Page() {
-  return <AnomaliesTab />;
+  return <AiInsightsTab />;
 }

@@ -16,28 +16,27 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { TrendPoint } from "@/modules/dashboard/lib/dashboard-data";
 
-const DATA = [
-  { day: "Mon", active: 72, productive: 64 },
-  { day: "Tue", active: 78, productive: 70 },
-  { day: "Wed", active: 81, productive: 74 },
-  { day: "Thu", active: 76, productive: 69 },
-  { day: "Fri", active: 84, productive: 77 },
-  { day: "Sat", active: 41, productive: 33 },
-  { day: "Sun", active: 28, productive: 22 },
-];
-
-export function ProductivityChart() {
+export function ProductivityChart({
+  data,
+  rangeLabel,
+}: {
+  data: TrendPoint[];
+  rangeLabel: string;
+}) {
   return (
-    <Card className="col-span-full xl:col-span-2">
+    <Card>
       <CardHeader>
         <CardTitle>Productivity Trends</CardTitle>
-        <CardDescription>Active vs. productive time, last 7 days</CardDescription>
+        <CardDescription>
+          Active vs. productive time · {rangeLabel}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[280px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={DATA} margin={{ left: -16, right: 8, top: 4 }}>
+            <AreaChart data={data} margin={{ left: -16, right: 8, top: 4 }}>
               <defs>
                 <linearGradient id="fillActive" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.4} />
@@ -50,7 +49,7 @@ export function ProductivityChart() {
               </defs>
               <CartesianGrid vertical={false} stroke="var(--border)" />
               <XAxis
-                dataKey="day"
+                dataKey="label"
                 tickLine={false}
                 axisLine={false}
                 tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}

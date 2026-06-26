@@ -11,47 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { AppNotification } from "@/types";
+import { DEMO_NOTIFICATIONS, timeAgo } from "@/lib/mock-notifications";
 import { cn } from "@/lib/utils";
-
-const DEMO_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: "seed-1",
-    type: "approval",
-    title: "Timesheet pending approval",
-    message: "Priya Nair submitted a timesheet for last week.",
-    read: false,
-    createdAt: Date.now() - 1000 * 60 * 12,
-    href: "/approvals",
-  },
-  {
-    id: "seed-2",
-    type: "task",
-    title: "Task due today",
-    message: "“Finalize Q3 report” is due at 5:00 PM.",
-    read: false,
-    createdAt: Date.now() - 1000 * 60 * 60,
-    href: "/projects",
-  },
-  {
-    id: "seed-3",
-    type: "productivity",
-    title: "Productivity dip detected",
-    message: "Engineering · Backend is down 8% vs last week.",
-    read: true,
-    createdAt: Date.now() - 1000 * 60 * 60 * 5,
-    href: "/insights/anomalies",
-  },
-];
-
-function timeAgo(ts: number): string {
-  const mins = Math.round((Date.now() - ts) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
-}
 
 export function NotificationsMenu() {
   const notifications = useNotificationStore((s) => s.notifications);

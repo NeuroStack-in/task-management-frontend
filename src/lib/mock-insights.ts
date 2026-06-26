@@ -363,9 +363,48 @@ export const SEVERITY_META: Record<
   },
 };
 
+export const ANOMALY_KIND_LABEL: Record<AnomalyKind, string> = {
+  inactivity: "Inactivity",
+  "productivity-drop": "Productivity drop",
+  burnout: "Burnout",
+  "after-hours": "After hours",
+  policy: "Policy",
+};
+
+/** Short, plain-language description of what each anomaly kind detects. */
+export const ANOMALY_KIND_SIGNAL: Record<AnomalyKind, string> = {
+  inactivity: "Idle time during core hours while the timer was running.",
+  "productivity-drop": "Activity fell sharply below the trailing 7-day average.",
+  burnout: "Sustained long hours with no breaks across multiple days.",
+  "after-hours": "Significant work logged well outside normal hours.",
+  policy: "Time on distracting / non-work domains above the team norm.",
+};
+
+/** Anomalies detected per day this week, split by severity (for the trend). */
+export const ANOMALY_TREND: {
+  day: string;
+  high: number;
+  medium: number;
+  low: number;
+}[] = [
+  { day: "Mon", high: 1, medium: 1, low: 2 },
+  { day: "Tue", high: 0, medium: 2, low: 1 },
+  { day: "Wed", high: 2, medium: 1, low: 1 },
+  { day: "Thu", high: 1, medium: 1, low: 0 },
+  { day: "Fri", high: 1, medium: 2, low: 1 },
+  { day: "Sat", high: 0, medium: 0, low: 1 },
+  { day: "Sun", high: 0, medium: 1, low: 0 },
+];
+
 /* -------------------------------- Reports -------------------------------- */
 
-export type ReportCategory = "workforce" | "time" | "projects";
+export type ReportCategory =
+  | "workforce"
+  | "time"
+  | "projects"
+  | "attendance"
+  | "activity"
+  | "monitoring";
 
 export interface ReportDef {
   id: string;
@@ -381,6 +420,9 @@ export const REPORT_CATEGORY_LABEL: Record<ReportCategory, string> = {
   workforce: "Workforce",
   time: "Time & Billing",
   projects: "Projects",
+  attendance: "Attendance",
+  activity: "Activity",
+  monitoring: "Monitoring",
 };
 
 /**
@@ -489,8 +531,8 @@ export const REPORTS: ReportDef[] = [
   },
   {
     id: "time",
-    name: "Time & Attendance",
-    description: "Clock-in/out, tracked vs idle, and billable split.",
+    name: "Timesheet Summary",
+    description: "Tracked vs idle hours and billable split per employee.",
     category: "time",
     period: "This week",
     columns: ["Employee", "Tracked hrs", "Idle hrs", "Billable %"],
@@ -522,6 +564,79 @@ export const REPORTS: ReportDef[] = [
       p.hours,
       p.members,
       p.onTrack ? "Yes" : "At risk",
+    ]),
+  },
+  // --- WorkPulse-specific reports (driven by this app's own modules) ---
+  {
+    id: "attendance",
+    name: "Attendance Summary",
+    description:
+      "Per-employee present / late / leave / absent days and attendance rate.",
+    category: "attendance",
+    period: "This week",
+    columns: ["Employee", "Department", "Present", "Late", "On leave", "Absent", "Rate %"],
+    rows: WORKFORCE.map((u) => {
+      const seed = [...u.id].reduce((s, c) => s + c.charCodeAt(0), 0);
+      const absent = seed % 5 === 0 ? 1 : 0;
+      const leave = seed % 7 === 0 ? 1 : 0;
+      const late = seed % 3 === 0 ? 1 : 0;
+      const present = 5 - absent - leave - late;
+      const rate = Math.round(((present + late) / 5) * 100);
+      return [u.name, u.department, present, late, leave, absent, rate];
+    }),
+  },
+  {
+    id: "app-usage",
+    name: "App & Website Usage",
+    description:
+      "Time spent per application and site, classified productive / neutral / distracting.",
+    category: "activity",
+    period: "Today",
+    columns: ["Source", "Name", "Category", "Minutes", "Share %"],
+    rows: (() => {
+      const items = [
+        ...APP_USAGE.map((a) => ({ source: "App", ...a })),
+        ...URL_USAGE.map((a) => ({ source: "Website", ...a })),
+      ];
+      const total = items.reduce((s, it) => s + it.minutes, 0) || 1;
+      return items.map((it) => [
+        it.source,
+        it.name,
+        CATEGORY_LABEL[it.category],
+        it.minutes,
+        Math.round((it.minutes / total) * 100),
+      ]);
+    })(),
+  },
+  {
+    id: "anomalies",
+    name: "Anomaly & Risk Report",
+    description:
+      "Flagged burnout, inactivity, and productivity-drop signals with severity.",
+    category: "monitoring",
+    period: "This week",
+    columns: ["Employee", "Anomaly", "Severity", "Detail", "When"],
+    rows: ANOMALIES.map((a) => [
+      a.user.name,
+      a.title,
+      SEVERITY_META[a.severity].label,
+      a.detail,
+      a.time,
+    ]),
+  },
+  {
+    id: "screenshots",
+    name: "Screenshot Compliance",
+    description:
+      "Capture volume, flagged shots, and average activity per monitored employee.",
+    category: "monitoring",
+    period: "This week",
+    columns: ["Employee", "Captures", "Flagged", "Avg activity %"],
+    rows: SCREENSHOT_EMPLOYEES.map((e) => [
+      e.user.name,
+      e.total,
+      e.flagged,
+      e.avgActivity,
     ]),
   },
 ];

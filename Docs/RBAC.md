@@ -117,11 +117,11 @@ Source of truth in code:
 | `attendance:manage` | ✓ | ✓ | — |
 | `activity:view` | ✓ | ✓ | — |
 | `screenshots:view` | ✓ | ✓ | — |
-| `reports:view` | ✓ | ✓ | ✓ |
+| `reports:view` | ✓ | ✓ | — |
 | `reports:export` | ✓ | ✓ | — |
 | `approvals:view` | ✓ | ✓ | — |
 | `approvals:approve` | ✓ | ✓ | — |
-| `ai:view` | ✓ | ✓ | ✓ |
+| `ai:view` | ✓ | ✓ | — |
 | `anomalies:view` | ✓ | ✓ | — |
 | `communication:view` | ✓ | ✓ | ✓ |
 | `notifications:view` | ✓ | ✓ | ✓ |
@@ -153,7 +153,9 @@ for oversight roles.
 
 **Employee** — `dashboard:view`, `time-tracking:view`, `time-tracking:edit`,
 `tasks:view`, `tasks:create`, `tasks:edit`, `projects:view`, `attendance:view`,
-`reports:view`, `ai:view`, `communication:view`, `notifications:view`, `help:view`.
+`communication:view`, `notifications:view`, `help:view`. Employee-reachable
+pages are **self-scoped** (own dashboard, own attendance, own projects/tasks) —
+they never see org-wide aggregates. Org reporting and AI insights are withheld.
 
 ---
 

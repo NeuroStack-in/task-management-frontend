@@ -5,15 +5,16 @@ import {
   ArrowLeft,
   Camera,
   ChevronRight,
-  EyeOff,
   Flag,
   Search,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -23,7 +24,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { initials } from "@/lib/format";
 import {
@@ -34,6 +34,7 @@ import {
   type Screenshot,
 } from "@/lib/mock-insights";
 import { cn } from "@/lib/utils";
+import { AiReportCard } from "./ai-report-card";
 
 function flagReason(shot: Screenshot): string | null {
   if (!shot.flagged) return null;
@@ -46,6 +47,20 @@ function activityTone(activity: number): string {
   if (activity >= 60) return "text-success";
   if (activity >= 40) return "text-warning";
   return "text-destructive";
+}
+
+/** Per-capture AI read — deterministic from the capture's app & activity. */
+function aiAnalysis(shot: Screenshot): string {
+  if (shot.flagged) {
+    if (shot.app === "YouTube" || shot.app === "Reddit")
+      return `Flagged: ${shot.app} is a distracting app, captured during core hours at only ${shot.activity}% activity.`;
+    return `Flagged: low engagement — ${shot.activity}% active, the screen appears idle.`;
+  }
+  if (shot.activity >= 75)
+    return `Focused work — ${shot.activity}% active in ${shot.app}, well above the team average.`;
+  if (shot.activity >= 50)
+    return `Steady activity — ${shot.activity}% active in ${shot.app}, in line with the team.`;
+  return `Light activity — ${shot.activity}% active in ${shot.app}; likely a short break.`;
 }
 
 export function ScreenshotsTab() {
@@ -92,23 +107,20 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Employees monitored"
-          value={SCREENSHOT_EMPLOYEES.length}
-          icon={Users}
-          hint="with captures"
-          featured
-        />
-        <StatCard
-          label="Total captures"
-          value={totalCaptures.toLocaleString()}
-          icon={Camera}
-          hint="across all dates"
-        />
-        <StatCard label="Flagged" value={totalFlagged} icon={Flag} hint="need review" />
-        <StatCard label="Avg activity" value={`${avgActivity}%`} icon={EyeOff} />
-      </div>
+      <AiReportCard
+        title="AI screenshot report"
+        summary={`Across ${SCREENSHOT_EMPLOYEES.length} monitored employees, ${totalCaptures.toLocaleString()} screenshots were captured. ${totalFlagged} ${
+          totalFlagged === 1 ? "was" : "were"
+        } auto-flagged for distracting apps or low activity${
+          totalFlagged ? " — review those first" : ""
+        }. Average on-screen activity sits at ${avgActivity}%.`}
+        metrics={[
+          { label: "Monitored", value: SCREENSHOT_EMPLOYEES.length },
+          { label: "Total captures", value: totalCaptures.toLocaleString() },
+          { label: "Flagged", value: totalFlagged },
+          { label: "Avg activity", value: `${avgActivity}%` },
+        ]}
+      />
 
       {/* Filters: search · department · flagged */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
@@ -329,33 +341,45 @@ function EmployeeDetail({
         </div>
       </div>
 
+      {/* Per-person AI report */}
+      <AiReportCard
+        title={`AI report — ${employee.user.name.split(" ")[0]}`}
+        summary={`${employee.user.name.split(" ")[0]} has ${employee.total} captures this period with activity averaging ${employee.avgActivity}%. ${
+          employee.flagged > 0
+            ? `${employee.flagged} were auto-flagged for distracting apps or low activity — review the highlighted captures below.`
+            : "Nothing was flagged — coverage and focus both look healthy."
+        }`}
+        signals={[
+          { label: "Captures", value: `${employee.total}`, tone: "flat" },
+          {
+            label: "Flagged",
+            value: `${employee.flagged}`,
+            tone: employee.flagged > 0 ? "down" : "up",
+          },
+          {
+            label: "Avg activity",
+            value: `${employee.avgActivity}%`,
+            tone: employee.avgActivity >= 60 ? "up" : "down",
+          },
+        ]}
+      />
+
       {/* Filters: calendar date · time range · flagged radio · privacy blur */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
         <Field label="Date">
-          <Input
-            type="date"
+          <DatePicker
             value={day}
             min={minDate}
             max={maxDate}
-            onChange={(e) => setDay(e.target.value)}
-            className="w-[9.5rem]"
+            onChange={setDay}
+            className="w-[10.5rem]"
           />
         </Field>
         <Field label="From">
-          <Input
-            type="time"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="w-28"
-          />
+          <TimePicker value={from} onChange={setFrom} className="w-28" />
         </Field>
         <Field label="To">
-          <Input
-            type="time"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="w-28"
-          />
+          <TimePicker value={to} onChange={setTo} className="w-28" />
         </Field>
 
         <fieldset className="flex flex-col gap-1.5">
@@ -581,6 +605,15 @@ function Lightbox({
                 </>
               ) : null}
             </dl>
+
+            {/* Per-capture AI analysis */}
+            <div className="flex gap-2 rounded-xl bg-feature-tint p-3 text-sm">
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div>
+                <p className="font-medium text-primary">AI analysis</p>
+                <p className="mt-0.5 text-foreground/80">{aiAnalysis(shot)}</p>
+              </div>
+            </div>
           </>
         ) : null}
       </DialogContent>

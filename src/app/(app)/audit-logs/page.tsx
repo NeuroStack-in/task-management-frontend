@@ -1,14 +1,6 @@
-import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Audit Logs" };
-
+// Audit Logs now lives inside the Settings hub; keep the old URL working.
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Audit Logs"
-      description="User actions, permission changes, and login events."
-      phase={4}
-    />
-  );
+  redirect("/settings/audit-logs");
 }

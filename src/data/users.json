@@ -13,6 +13,18 @@
     "organizationId": "org-acme"
   },
   {
+    "id": "user-employee",
+    "name": "Sam Rivera",
+    "email": "employee@acme.test",
+    "roleId": "role-employee",
+    "jobTitle": "Product Designer",
+    "department": "Design",
+    "team": "Product Design",
+    "status": "active",
+    "productivityScore": 78,
+    "organizationId": "org-acme"
+  },
+  {
     "id": "user-0001",
     "name": "Carole Ryan",
     "email": "carole_ryan40@acme.test",

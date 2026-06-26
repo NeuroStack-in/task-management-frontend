@@ -17,6 +17,18 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+import {
   Avatar,
   AvatarFallback,
   AvatarImage,
@@ -32,6 +44,9 @@ import {
 } from "@/components/ui/dialog";
 import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { usePermissions } from "@/hooks/use-permissions";
+import { useIsSelfScoped } from "@/hooks/use-self-scope";
+import { useAuthStore } from "@/stores/auth.store";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
 import {
@@ -57,7 +72,7 @@ import {
   toneSoft,
   type UserMini,
 } from "../lib";
-import { MemberStack, StatusBadge } from "./parts";
+import { MemberStack, Segmented, StatusBadge } from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { TaskFormDialog } from "./task-form-dialog";
 import { generateProjectReportPdf } from "../report";
@@ -69,6 +84,10 @@ interface ProjectDetailPageProps {
 
 export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const router = useRouter();
+  const { can } = usePermissions();
+  const selfScoped = useIsSelfScoped();
+  const userId = useAuthStore((s) => s.user?.id) ?? "";
+  const canManage = can("projects:manage");
   const project = useProjectsStore((s) => s.projects.find((p) => p.id === id));
   const updateProject = useProjectsStore((s) => s.updateProject);
   const deleteProject = useProjectsStore((s) => s.deleteProject);
@@ -76,6 +95,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const allTasks = useTasksStore((s) => s.tasks);
   const createTask = useTasksStore((s) => s.createTask);
   const updateTask = useTasksStore((s) => s.updateTask);
+  const moveTask = useTasksStore((s) => s.moveTask);
   const tasks = useMemo(
     () => allTasks.filter((t) => t.projectId === id),
     [allTasks, id],
@@ -86,6 +106,11 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const [taskOpen, setTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [taskView, setTaskView] = useState<"board" | "list">("list");
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
 
   const members = useMemo(
     () => Object.values(userMap).sort((a, b) => a.name.localeCompare(b.name)),
@@ -100,6 +125,22 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         icon={AlertTriangle}
         title="Project not found"
         description="This project may have been deleted or created in another session."
+        action={
+          <Button render={<Link href="/projects" />} nativeButton={false}>
+            Back to projects
+          </Button>
+        }
+      />
+    );
+  }
+
+  // Self-scoped roles (Employee) can only open projects they're a member of.
+  if (selfScoped && !project.memberIds.includes(userId)) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="No access to this project"
+        description="You can only view projects you're a member of."
         action={
           <Button render={<Link href="/projects" />} nativeButton={false}>
             Back to projects
@@ -188,6 +229,28 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
     );
   };
 
+  const activeTask = activeTaskId
+    ? (tasks.find((t) => t.id === activeTaskId) ?? null)
+    : null;
+
+  const handleDragStart = (e: DragStartEvent) =>
+    setActiveTaskId(e.active.id as string);
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    setActiveTaskId(null);
+    const { active, over } = e;
+    if (!over) return;
+    const target = over.id as TaskStatus;
+    const moved = tasks.find((t) => t.id === active.id);
+    if (
+      moved &&
+      moved.status !== target &&
+      TASK_STATUS_ORDER.includes(target)
+    ) {
+      moveTask(moved.id, target);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Top bar: back + actions */}
@@ -204,22 +267,26 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
             <FileDown className="size-4" />
             Report (PDF)
           </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => setEditOpen(true)}
-          >
-            <Pencil className="size-4" />
-            Edit project
-          </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => setConfirmOpen(true)}
-          >
-            <Trash2 className="size-4" />
-            Delete
-          </Button>
+          {canManage ? (
+            <>
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="size-4" />
+                Edit project
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setConfirmOpen(true)}
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -374,27 +441,65 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
       {/* Kanban + team rail */}
       <div className="grid gap-6 lg:grid-cols-12">
         <section className="space-y-3 lg:col-span-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
               Tasks
             </h2>
-            <Button size="sm" className="gap-1.5" onClick={() => openCreateTask("todo")}>
-              <Plus className="size-4" />
-              Add task
-            </Button>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {TASK_STATUS_ORDER.map((col) => (
-              <KanbanColumn
-                key={col}
-                col={col}
-                tasks={tasks.filter((t) => t.status === col)}
-                userMap={userMap}
-                onAdd={() => openCreateTask(col)}
-                onEdit={openEditTask}
+            <div className="flex items-center gap-2">
+              <Segmented
+                options={[
+                  { value: "board", label: "Board" },
+                  { value: "list", label: "List" },
+                ]}
+                value={taskView}
+                onChange={setTaskView}
               />
-            ))}
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => openCreateTask("todo")}
+              >
+                <Plus className="size-4" />
+                Add task
+              </Button>
+            </div>
           </div>
+
+          {taskView === "board" ? (
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setActiveTaskId(null)}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {TASK_STATUS_ORDER.map((col) => (
+                  <KanbanColumn
+                    key={col}
+                    col={col}
+                    tasks={tasks.filter((t) => t.status === col)}
+                    userMap={userMap}
+                    onAdd={() => openCreateTask(col)}
+                    onEdit={openEditTask}
+                  />
+                ))}
+              </div>
+              <DragOverlay dropAnimation={null}>
+                {activeTask ? (
+                  <div className="w-64 rotate-2 rounded-xl border bg-card p-3 shadow-xl">
+                    <TaskCardContent task={activeTask} userMap={userMap} />
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          ) : (
+            <TaskListView
+              tasks={tasks}
+              userMap={userMap}
+              onEdit={openEditTask}
+              onAdd={() => openCreateTask("todo")}
+            />
+          )}
         </section>
 
         {/* Right rail */}
@@ -596,8 +701,15 @@ function KanbanColumn({
   onEdit: (t: Task) => void;
 }) {
   const meta = TASK_STATUS_META[col];
+  const { setNodeRef, isOver } = useDroppable({ id: col });
   return (
-    <div className="flex flex-col rounded-2xl border bg-muted/40 p-3">
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex flex-col rounded-2xl border bg-muted/40 p-3 transition-colors",
+        isOver && "bg-primary/5 ring-2 ring-primary/40",
+      )}
+    >
       <div className="mb-3 flex items-center justify-between px-1">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
           <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
@@ -644,19 +756,167 @@ function TaskCard({
   userMap: Record<string, UserMini>;
   onEdit: (t: Task) => void;
 }) {
-  const prio = TASK_PRIORITY_META[task.priority];
-  const assignee = task.assigneeId ? userMap[task.assigneeId] : null;
-  const due = dueLabel(task.dueDate);
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: task.id });
+  const style = transform
+    ? { transform: CSS.Translate.toString(transform), zIndex: 50 }
+    : undefined;
+
   return (
-    <li className="group/task relative rounded-xl border bg-card p-3">
+    <li
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        "group/task relative cursor-grab touch-none rounded-xl border bg-card p-3 active:cursor-grabbing",
+        isDragging && "opacity-40",
+      )}
+    >
       <button
         type="button"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={() => onEdit(task)}
         aria-label="Edit task"
         className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/task:opacity-100"
       >
         <Pencil className="size-3.5" />
       </button>
+      <TaskCardContent task={task} userMap={userMap} />
+    </li>
+  );
+}
+
+function TaskListView({
+  tasks,
+  userMap,
+  onEdit,
+  onAdd,
+}: {
+  tasks: Task[];
+  userMap: Record<string, UserMini>;
+  onEdit: (t: Task) => void;
+  onAdd: () => void;
+}) {
+  if (tasks.length === 0) {
+    return (
+      <div className="rounded-2xl border bg-card p-10 text-center">
+        <p className="text-sm text-muted-foreground">No tasks yet.</p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-3 gap-1.5"
+          onClick={onAdd}
+        >
+          <Plus className="size-4" /> Add task
+        </Button>
+      </div>
+    );
+  }
+
+  const order: Record<TaskStatus, number> = {
+    todo: 0,
+    in_progress: 1,
+    in_review: 2,
+    done: 3,
+  };
+  const sorted = [...tasks].sort((a, b) => {
+    if (order[a.status] !== order[b.status])
+      return order[a.status] - order[b.status];
+    const ad = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+    const bd = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+    return ad - bd;
+  });
+
+  return (
+    <div className="overflow-hidden rounded-2xl border bg-card">
+      <ul className="divide-y">
+        {sorted.map((t) => {
+          const prio = TASK_PRIORITY_META[t.priority];
+          const status = TASK_STATUS_META[t.status];
+          const assignee = t.assigneeId ? userMap[t.assigneeId] : null;
+          const due = dueLabel(t.dueDate);
+          return (
+            <li key={t.id}>
+              <button
+                type="button"
+                onClick={() => onEdit(t)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+              >
+                <span
+                  className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    toneDot[prio.tone],
+                  )}
+                  title={`${prio.label} priority`}
+                />
+                <p
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-sm font-medium",
+                    t.status === "done" &&
+                      "text-muted-foreground line-through",
+                  )}
+                >
+                  {t.title}
+                </p>
+                {t.dueDate ? (
+                  <span
+                    className={cn(
+                      "hidden shrink-0 text-xs tabular-nums sm:block",
+                      due.overdue ? "text-destructive" : "text-muted-foreground",
+                    )}
+                  >
+                    {due.text}
+                  </span>
+                ) : null}
+                <span
+                  className={cn(
+                    "hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium md:inline-flex",
+                    toneSoft[prio.tone],
+                  )}
+                >
+                  {prio.label}
+                </span>
+                <StatusBadge
+                  tone={status.tone}
+                  label={status.label}
+                  className="shrink-0"
+                />
+                {assignee ? (
+                  <Avatar size="sm" className="size-6 shrink-0">
+                    {assignee.avatarUrl ? (
+                      <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+                    ) : null}
+                    <AvatarFallback className="text-[0.55rem]">
+                      {initials(assignee.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                ) : (
+                  <span className="hidden shrink-0 text-xs text-muted-foreground/60 lg:block">
+                    Unassigned
+                  </span>
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function TaskCardContent({
+  task,
+  userMap,
+}: {
+  task: Task;
+  userMap: Record<string, UserMini>;
+}) {
+  const prio = TASK_PRIORITY_META[task.priority];
+  const assignee = task.assigneeId ? userMap[task.assigneeId] : null;
+  const due = dueLabel(task.dueDate);
+  return (
+    <>
       <p className="pr-6 text-sm leading-snug font-medium">{task.title}</p>
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <span
@@ -694,6 +954,6 @@ function TaskCard({
           )}
         </div>
       </div>
-    </li>
+    </>
   );
 }

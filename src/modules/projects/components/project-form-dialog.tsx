@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Check, Search, X } from "lucide-react";
@@ -18,6 +18,13 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,6 +94,7 @@ export function ProjectFormDialog({
     reset,
     setValue,
     watch,
+    control,
     formState: { errors },
   } = useForm<FormShape>({
     resolver: zodResolver(schema),
@@ -118,7 +126,7 @@ export function ProjectFormDialog({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit project" : "New project"}</DialogTitle>
           <DialogDescription>
@@ -128,7 +136,8 @@ export function ProjectFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="space-y-3.5">
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-1">
           <Field label="Project name" error={errors.name?.message}>
             <Input
               placeholder="e.g. Atlas Migration"
@@ -149,55 +158,62 @@ export function ProjectFormDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Project lead" error={errors.leadUserId?.message}>
-              <select
-                className={fieldClass}
-                aria-invalid={!!errors.leadUserId}
-                {...register("leadUserId")}
-              >
-                <option value="" disabled>
-                  Select…
-                </option>
-                {leads.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} · {u.jobTitle}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={control}
+                name="leadUserId"
+                render={({ field }) => (
+                  <PersonSelect
+                    users={leads}
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="Select lead"
+                    invalid={!!errors.leadUserId}
+                  />
+                )}
+              />
             </Field>
             <Field label="Project manager" error={errors.managerId?.message}>
-              <select
-                className={fieldClass}
-                aria-invalid={!!errors.managerId}
-                {...register("managerId")}
-              >
-                <option value="" disabled>
-                  Select…
-                </option>
-                {leads.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} · {u.jobTitle}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={control}
+                name="managerId"
+                render={({ field }) => (
+                  <PersonSelect
+                    users={leads}
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="Select manager"
+                    invalid={!!errors.managerId}
+                  />
+                )}
+              />
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Department" error={errors.department?.message}>
-              <select
-                className={fieldClass}
-                aria-invalid={!!errors.department}
-                {...register("department")}
-              >
-                <option value="" disabled>
-                  Select…
-                </option>
-                {PROJECT_DEPARTMENTS.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={control}
+                name="department"
+                render={({ field }) => (
+                  <Select
+                    value={field.value || undefined}
+                    onValueChange={(v) => field.onChange(v as string)}
+                  >
+                    <SelectTrigger
+                      className={cn("w-full", errors.department && "border-destructive")}
+                    >
+                      <SelectValue placeholder="Select…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PROJECT_DEPARTMENTS.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </Field>
             <Field label="Deadline" error={errors.dueDate?.message}>
               <Input
@@ -221,7 +237,9 @@ export function ProjectFormDialog({
             />
           </Field>
 
-          <DialogFooter className="mt-2">
+          </div>
+
+          <DialogFooter>
             <Button
               type="button"
               variant="outline"
@@ -358,6 +376,73 @@ function MemberMultiSelect({
         )}
       </ul>
     </div>
+  );
+}
+
+/* --------------------- person picker (lead / manager) ---------------------- */
+
+function PersonSelect({
+  users,
+  value,
+  onChange,
+  placeholder,
+  invalid,
+}: {
+  users: UserMini[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder: string;
+  invalid?: boolean;
+}) {
+  return (
+    <Select
+      value={value || undefined}
+      onValueChange={(v) => onChange(v as string)}
+    >
+      <SelectTrigger className={cn("w-full", invalid && "border-destructive")}>
+        <SelectValue placeholder={placeholder}>
+          {(v) => {
+            const u = users.find((x) => x.id === v);
+            if (!u) return placeholder;
+            return (
+              <span className="flex min-w-0 items-center gap-2">
+                <Avatar className="size-5">
+                  {u.avatarUrl ? (
+                    <AvatarImage src={u.avatarUrl} alt={u.name} />
+                  ) : null}
+                  <AvatarFallback className="text-[0.55rem]">
+                    {initials(u.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="truncate">{u.name}</span>
+              </span>
+            );
+          }}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {users.map((u) => (
+          <SelectItem key={u.id} value={u.id}>
+            <span className="flex items-center gap-2">
+              <Avatar className="size-6">
+                {u.avatarUrl ? (
+                  <AvatarImage src={u.avatarUrl} alt={u.name} />
+                ) : null}
+                <AvatarFallback className="text-[0.6rem]">
+                  {initials(u.name)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate text-sm">{u.name}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {u.jobTitle}
+                </span>
+              </span>
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

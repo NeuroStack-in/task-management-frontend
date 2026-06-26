@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import Papa from "papaparse";
+import { jsPDF } from "jspdf";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   Contact,
+  Download,
+  FileText,
   FolderKanban,
   Gauge,
   ListChecks,
   MapPin,
+  Sheet,
   Sparkles,
   TrendingUp,
   type LucideIcon,
@@ -27,7 +33,15 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { initials } from "@/lib/format";
+import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
 export interface ActiveProjectItem {
@@ -79,6 +93,105 @@ const BAR_COLORS = [
   "var(--chart-5)",
 ];
 
+/** Safe filename stem from an employee code (e.g. "#EMP357148" → "EMP357148"). */
+const fileCode = (code: string) => code.replace(/[^\w-]/g, "") || "employee";
+
+function exportEmployeeCsv(d: EmployeeProfileData) {
+  const rows: (string | number)[][] = [
+    ["Field", "Value"],
+    ["Employee", d.name],
+    ["Code", d.empCode],
+    ["Role", d.roleName],
+    ["Title", d.jobTitle],
+    ["Department", d.department],
+    ["Team", d.team],
+    ["Status", d.status],
+    ["Email", d.email],
+    ["Phone", d.phone],
+    ["Date of birth", d.dob],
+    ["Hire date", d.hireDate],
+    ["Address", `${d.address}, ${d.cityState}, ${d.country} ${d.postcode}`],
+    ["Productivity %", d.productivityScore],
+    ["Avg. completion %", d.avgCompletion],
+    ["Total tasks", d.totalTasks],
+    ["Active projects", d.activeProjects.length],
+    [],
+    ["Project", "Key", "Progress %", "Tasks", "Teammates"],
+    ...d.activeProjects.map((p) => [p.name, p.key, p.progress, p.tasks, p.teammates]),
+  ];
+  downloadBlob(
+    new Blob([Papa.unparse(rows)], { type: "text/csv;charset=utf-8;" }),
+    `${fileCode(d.empCode)}-report.csv`,
+  );
+  toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.csv` });
+}
+
+function exportEmployeePdf(d: EmployeeProfileData) {
+  const doc = new jsPDF();
+  let y = 18;
+  doc.setFontSize(18);
+  doc.text(d.name, 14, y);
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  y += 6;
+  doc.text(`${d.jobTitle} · ${d.department} · ${d.empCode}`, 14, y);
+
+  const section = (title: string) => {
+    y += 10;
+    doc.setTextColor(20);
+    doc.setFontSize(13);
+    doc.text(title, 14, y);
+    doc.setDrawColor(210);
+    doc.line(14, y + 2, 196, y + 2);
+    y += 8;
+    doc.setFontSize(10);
+  };
+  const kv = (k: string, v: string) => {
+    doc.setTextColor(120);
+    doc.text(k, 14, y);
+    doc.setTextColor(20);
+    doc.text(v, 60, y);
+    y += 6;
+  };
+
+  section("Profile");
+  kv("Role", d.roleName);
+  kv("Status", d.status);
+  kv("Email", d.email);
+  kv("Phone", d.phone);
+  kv("Date of birth", d.dob);
+  kv("Hire date", d.hireDate);
+  kv("Address", `${d.address}, ${d.cityState}, ${d.country} ${d.postcode}`);
+
+  section("Performance");
+  kv("Productivity", `${d.productivityScore}%`);
+  kv("Avg. completion", `${d.avgCompletion}%`);
+  kv("Total tasks", String(d.totalTasks));
+  kv("Active projects", String(d.activeProjects.length));
+
+  section("Project completion");
+  if (d.activeProjects.length === 0) {
+    doc.text("No active projects.", 14, y);
+  } else {
+    for (const p of d.activeProjects) {
+      doc.setTextColor(20);
+      doc.text(`${p.key}  ${p.name}`, 14, y);
+      doc.text(`${p.progress}%`, 196, y, { align: "right" });
+      y += 6;
+      if (y > 282) {
+        doc.addPage();
+        y = 18;
+      }
+    }
+  }
+
+  doc.setFontSize(8);
+  doc.setTextColor(150);
+  doc.text("WorkPulse · employee report", 14, 292);
+  doc.save(`${fileCode(d.empCode)}-report.pdf`);
+  toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.pdf` });
+}
+
 export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
   const chartData = data.kpi.months.map((m, i) => ({
     month: m,
@@ -97,208 +210,195 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
           <ArrowLeft className="size-4" />
           All employees
         </Link>
-        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <span>Team</span>
-          <span className="text-muted-foreground/50">/</span>
-          <span className="font-medium text-foreground">{data.name}</span>
-          <Badge className="bg-feature-tint text-primary">{data.jobTitle}</Badge>
-        </nav>
+        <div className="flex items-center gap-3">
+          <nav className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
+            <span>Team</span>
+            <span className="text-muted-foreground/50">/</span>
+            <span className="font-medium text-foreground">{data.name}</span>
+            <Badge className="bg-feature-tint text-primary">{data.jobTitle}</Badge>
+          </nav>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+              <Download className="size-4" /> Download report
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportEmployeePdf(data)}>
+                <FileText className="size-4" /> PDF report
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportEmployeeCsv(data)}>
+                <Sheet className="size-4" /> CSV export
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-12">
-        {/* Left: identity + details */}
-        <aside className="space-y-6 lg:col-span-4">
-          {/* Identity */}
-          <div className="flex flex-col items-center rounded-2xl border bg-card p-6 text-center">
-            <Avatar className="size-24 ring-4 ring-feature-tint">
-              <AvatarImage src={data.avatarUrl} alt={data.name} />
-              <AvatarFallback className="text-2xl">
-                {initials(data.name)}
-              </AvatarFallback>
-            </Avatar>
-            <h1 className="mt-4 font-display text-xl font-semibold tracking-tight">
-              {data.name}
-            </h1>
-            <p className="font-mono text-xs text-muted-foreground">
-              {data.empCode}
-            </p>
-            <div className="mt-3 flex flex-wrap justify-center gap-2">
-              <Badge className="bg-feature-tint text-primary">
-                {data.roleName}
-              </Badge>
-              <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
-            </div>
+      {/* 1 · Personal details */}
+      <section className="grid items-start gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {/* Identity */}
+        <div className="flex flex-col items-center rounded-2xl border bg-card p-6 text-center">
+          <Avatar className="size-24 ring-4 ring-feature-tint">
+            <AvatarImage src={data.avatarUrl} alt={data.name} />
+            <AvatarFallback className="text-2xl">
+              {initials(data.name)}
+            </AvatarFallback>
+          </Avatar>
+          <h1 className="mt-4 font-display text-xl font-semibold tracking-tight">
+            {data.name}
+          </h1>
+          <p className="font-mono text-xs text-muted-foreground">
+            {data.empCode}
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <Badge className="bg-feature-tint text-primary">
+              {data.roleName}
+            </Badge>
+            <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
           </div>
+        </div>
 
-          {/* Employee details */}
-          <Panel title="Employee details" icon={Contact}>
-            <dl className="divide-y text-sm">
-              <InfoRow label="Phone" value={data.phone} />
-              <InfoRow label="Email" value={data.email} />
-              <InfoRow label="Date of birth" value={data.dob} />
-              <InfoRow label="Title" value={data.jobTitle} />
-              <InfoRow label="Hire date" value={data.hireDate} />
-            </dl>
-          </Panel>
+        {/* Employee details */}
+        <Panel title="Employee details" icon={Contact}>
+          <dl className="divide-y text-sm">
+            <InfoRow label="Phone" value={data.phone} />
+            <InfoRow label="Email" value={data.email} />
+            <InfoRow label="Date of birth" value={data.dob} />
+            <InfoRow label="Title" value={data.jobTitle} />
+            <InfoRow label="Hire date" value={data.hireDate} />
+          </dl>
+        </Panel>
 
-          {/* Address */}
-          <Panel title="Address" icon={MapPin}>
-            <dl className="divide-y text-sm">
-              <InfoRow label="Country" value={data.country} />
-              <InfoRow label="City / State" value={data.cityState} />
-              <InfoRow label="Address" value={data.address} />
-              <InfoRow label="Postcode" value={data.postcode} />
-            </dl>
-          </Panel>
+        {/* Address */}
+        <Panel title="Address" icon={MapPin}>
+          <dl className="divide-y text-sm">
+            <InfoRow label="Country" value={data.country} />
+            <InfoRow label="City / State" value={data.cityState} />
+            <InfoRow label="Address" value={data.address} />
+            <InfoRow label="Postcode" value={data.postcode} />
+          </dl>
+        </Panel>
+      </section>
 
-          {/* Active projects */}
-          <Panel
-            title={`Active projects · ${data.activeProjects.length}`}
-          >
-            {data.activeProjects.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Not assigned to any project yet.
+      {/* 2 · AI summary */}
+      <AiInsights data={data} />
+
+      {/* 3 · Reports */}
+      <section className="space-y-6">
+        {/* Productivity KPIs */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Kpi icon={Gauge} label="Productivity" value={`${data.productivityScore}%`} />
+          <Kpi
+            icon={FolderKanban}
+            label="Active projects"
+            value={data.activeProjects.length}
+          />
+          <Kpi
+            icon={TrendingUp}
+            label="Avg. completion"
+            value={`${data.avgCompletion}%`}
+          />
+          <Kpi icon={ListChecks} label="Tasks" value={data.totalTasks} />
+        </div>
+
+        {/* KPI area chart — dark, palette-coloured surface */}
+        <div
+          className="relative overflow-hidden rounded-2xl border border-white/15 p-5 text-white shadow-[0_30px_80px_-40px_rgb(0_0_0/0.55)]"
+          style={{
+            backgroundImage:
+              "linear-gradient(160deg, color-mix(in oklab, var(--feature) 88%, #ffffff 12%), var(--feature) 58%, color-mix(in oklab, var(--feature), #000000 24%))",
+          }}
+        >
+          <div className="pointer-events-none absolute -top-20 -right-12 size-56 rounded-full bg-white/10 blur-3xl" />
+          <div className="relative mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
+                KPI
+              </h2>
+              <p className="text-xs text-white/70">
+                Avg. productive hours / day
               </p>
-            ) : (
-              <ul className="space-y-2.5">
-                {data.activeProjects.map((p, i) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center gap-3 rounded-xl border bg-muted/20 p-3"
-                  >
-                    <span
-                      className="size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: BAR_COLORS[i % BAR_COLORS.length] }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.tasks} tasks · {p.teammates} teammates
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-        </aside>
-
-        {/* Right: KPIs + charts */}
-        <section className="space-y-6 lg:col-span-8">
-          {/* Productivity KPIs */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Kpi icon={Gauge} label="Productivity" value={`${data.productivityScore}%`} />
-            <Kpi
-              icon={FolderKanban}
-              label="Active projects"
-              value={data.activeProjects.length}
-            />
-            <Kpi
-              icon={TrendingUp}
-              label="Avg. completion"
-              value={`${data.avgCompletion}%`}
-            />
-            <Kpi icon={ListChecks} label="Tasks" value={data.totalTasks} />
-          </div>
-
-          {/* KPI area chart — dark, palette-coloured surface */}
-          <div
-            className="relative overflow-hidden rounded-2xl border border-white/15 p-5 text-white shadow-[0_30px_80px_-40px_rgb(0_0_0/0.55)]"
-            style={{
-              backgroundImage:
-                "linear-gradient(160deg, color-mix(in oklab, var(--feature) 88%, #ffffff 12%), var(--feature) 58%, color-mix(in oklab, var(--feature), #000000 24%))",
-            }}
-          >
-            <div className="pointer-events-none absolute -top-20 -right-12 size-56 rounded-full bg-white/10 blur-3xl" />
-            <div className="relative mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
-                  KPI
-                </h2>
-                <p className="text-xs text-white/70">
-                  Avg. productive hours / day
-                </p>
-              </div>
-              <div className="flex items-center gap-4 text-xs text-white/75">
-                <Legend className="bg-white" label="Last 6 months" />
-                <Legend
-                  className="bg-white/60"
-                  label="Previous 6 months"
-                  dashed
-                />
-              </div>
             </div>
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart
-                data={chartData}
-                margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
-              >
-                <defs>
-                  <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ffffff" stopOpacity={0.38} />
-                    <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="kpi-previous" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ffffff" stopOpacity={0.12} />
-                    <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgb(255 255 255 / 0.14)"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 12, fill: "rgb(255 255 255 / 0.7)" }}
-                  dy={6}
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  width={42}
-                  tick={{ fontSize: 12, fill: "rgb(255 255 255 / 0.7)" }}
-                  tickFormatter={(v) => `${v}h`}
-                />
-                <Tooltip
-                  cursor={{ stroke: "rgb(255 255 255 / 0.3)" }}
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: "1px solid rgb(255 255 255 / 0.18)",
-                    background: "rgb(17 18 23 / 0.92)",
-                    color: "#ffffff",
-                    fontSize: 12,
-                  }}
-                  labelStyle={{ color: "rgb(255 255 255 / 0.7)" }}
-                  formatter={(v: number) => `${v}h`}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="previous"
-                  name="Previous 6 months"
-                  stroke="rgb(255 255 255 / 0.6)"
-                  strokeDasharray="5 5"
-                  strokeWidth={2}
-                  fill="url(#kpi-previous)"
-                  dot={false}
-                  activeDot={false}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="current"
-                  name="Last 6 months"
-                  stroke="#ffffff"
-                  strokeWidth={2.5}
-                  fill="url(#kpi-current)"
-                  dot={false}
-                  activeDot={{ r: 4, fill: "#ffffff", stroke: "none" }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="flex items-center gap-4 text-xs text-white/75">
+              <Legend className="bg-white" label="Last 6 months" />
+              <Legend
+                className="bg-white/60"
+                label="Previous 6 months"
+                dashed
+              />
+            </div>
           </div>
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart
+              data={chartData}
+              margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
+            >
+              <defs>
+                <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ffffff" stopOpacity={0.38} />
+                  <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="kpi-previous" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ffffff" stopOpacity={0.12} />
+                  <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="rgb(255 255 255 / 0.14)"
+                vertical={false}
+              />
+              <XAxis
+                dataKey="month"
+                tickLine={false}
+                axisLine={false}
+                tick={{ fontSize: 12, fill: "rgb(255 255 255 / 0.7)" }}
+                dy={6}
+              />
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                width={42}
+                tick={{ fontSize: 12, fill: "rgb(255 255 255 / 0.7)" }}
+                tickFormatter={(v) => `${v}h`}
+              />
+              <Tooltip
+                cursor={{ stroke: "rgb(255 255 255 / 0.3)" }}
+                contentStyle={{
+                  borderRadius: 12,
+                  border: "1px solid rgb(255 255 255 / 0.18)",
+                  background: "rgb(17 18 23 / 0.92)",
+                  color: "#ffffff",
+                  fontSize: 12,
+                }}
+                labelStyle={{ color: "rgb(255 255 255 / 0.7)" }}
+                formatter={(v: number) => `${v}h`}
+              />
+              <Area
+                type="monotone"
+                dataKey="previous"
+                name="Previous 6 months"
+                stroke="rgb(255 255 255 / 0.6)"
+                strokeDasharray="5 5"
+                strokeWidth={2}
+                fill="url(#kpi-previous)"
+                dot={false}
+                activeDot={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="current"
+                name="Last 6 months"
+                stroke="#ffffff"
+                strokeWidth={2.5}
+                fill="url(#kpi-current)"
+                dot={false}
+                activeDot={{ r: 4, fill: "#ffffff", stroke: "none" }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
 
+        <div className="grid items-start gap-6 lg:grid-cols-2">
           {/* Project completion */}
           <div className="rounded-2xl border bg-card p-5">
             <h2 className="mb-4 font-heading text-sm font-semibold tracking-wide uppercase">
@@ -338,10 +438,36 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
             )}
           </div>
 
-          {/* AI insights — overall summary of the employee */}
-          <AiInsights data={data} />
-        </section>
-      </div>
+          {/* Active projects */}
+          <Panel title={`Active projects · ${data.activeProjects.length}`}>
+            {data.activeProjects.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Not assigned to any project yet.
+              </p>
+            ) : (
+              <ul className="space-y-2.5">
+                {data.activeProjects.map((p, i) => (
+                  <li
+                    key={p.id}
+                    className="flex items-center gap-3 rounded-xl border bg-muted/20 p-3"
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: BAR_COLORS[i % BAR_COLORS.length] }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {p.tasks} tasks · {p.teammates} teammates
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
+      </section>
     </div>
   );
 }

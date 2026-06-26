@@ -27,6 +27,7 @@ export interface ActiveTimerTask {
 }
 
 export type WidgetType =
+  | "productivity-trends"
   | "heatmap"
   | "team-comparison"
   | "attendance"
