@@ -876,6 +876,29 @@ input[type="date"]::-webkit-inner-spin-button {
   display: none;
 }
 
+/* Themed thin scrollbar for the Settings rail's independent scroll. Scoped —
+   does not affect the rest of the app's native scrollbars. */
+.wp-rail-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.wp-rail-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.wp-rail-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.wp-rail-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+.wp-rail-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+.wp-rail-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+
 /* Diagonal hatch for inactive calendar cells (weekends / out-of-month) */
 @utility wp-hatch {
   background-color: color-mix(in srgb, var(--muted) 60%, transparent);

@@ -328,12 +328,12 @@ export function SecurityCenter() {
         />
       </div>
 
-      {/* ── Two-factor authentication ── */}
+      {/* ── Multi-factor authentication ── */}
       <Card>
         <CardHeader>
-          <CardTitle>Two-Factor Authentication</CardTitle>
+          <CardTitle>Multi-Factor Authentication</CardTitle>
           <CardDescription>
-            Add a second verification step at sign-in for every member.
+            Add an extra verification step at sign-in for every member.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -358,8 +358,8 @@ export function SecurityCenter() {
 
           <div>
             <SettingRow
-              label="Require two-factor authentication"
-              description="All members must set up 2FA before they can access WorkPulse."
+              label="Require multi-factor authentication"
+              description="All members must set up MFA before they can access WorkPulse."
               disabled={!canManage}
             >
               <Switch
@@ -370,7 +370,7 @@ export function SecurityCenter() {
             </SettingRow>
             <SettingRow
               label="Enrollment grace period"
-              description="How long new members may wait before 2FA becomes mandatory."
+              description="How long new members may wait before MFA becomes mandatory."
               disabled={!canManage || !policies.mfaRequired}
             >
               <Select
@@ -548,7 +548,7 @@ export function SecurityCenter() {
           </SettingRow>
           <SettingRow
             label="Remember this device"
-            description="Skip 2FA on trusted devices for this many days."
+            description="Skip MFA on trusted devices for this many days."
             disabled={!canManage}
           >
             <NumberStepper
@@ -638,14 +638,14 @@ export function SecurityCenter() {
         <CardHeader>
           <CardTitle>Recent Security Events</CardTitle>
           <CardDescription>
-            Sign-ins, 2FA changes, and policy updates across your organization.
+            Sign-ins, MFA changes, and policy updates across your organization.
           </CardDescription>
           <CardAction>
             <Button
               size="sm"
               variant="ghost"
               nativeButton={false}
-              render={<Link href="/audit-logs" />}
+              render={<Link href="/settings/audit-logs" />}
             >
               View all
             </Button>

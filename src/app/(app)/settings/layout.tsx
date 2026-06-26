@@ -67,7 +67,7 @@ export default function SettingsLayout({
         <p className="mb-4 hidden font-display text-lg font-semibold tracking-tight lg:block">
           Settings
         </p>
-        <div className="flex gap-5 overflow-x-auto pb-1 lg:flex-col lg:gap-5 lg:overflow-visible lg:pb-0">
+        <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:max-h-[calc(100vh-7rem)] lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
           {groups.map((group) => (
             <div key={group.label} className="shrink-0 space-y-1.5">
               <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">

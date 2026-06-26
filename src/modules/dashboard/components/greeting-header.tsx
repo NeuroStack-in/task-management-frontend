@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/stores/auth.store";
+import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 
 export function GreetingHeader() {
   const user = useAuthStore((s) => s.user);
   const firstName = user?.name.split(" ")[0] ?? "there";
+  const personal = useIsPersonalDashboard();
 
   // Resolve the date on the client to avoid an SSR/hydration mismatch.
   const [today, setToday] = useState("");
@@ -26,6 +28,9 @@ export function GreetingHeader() {
       </h1>
       <p className="text-sm text-muted-foreground">
         {today ? `${today} · ` : ""}Here&apos;s your organization at a glance.
+        {personal
+          ? "Here's your day at a glance."
+          : "Here's your organization at a glance."}
       </p>
     </div>
   );

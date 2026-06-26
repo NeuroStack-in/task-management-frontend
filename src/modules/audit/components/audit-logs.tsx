@@ -9,7 +9,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -171,8 +170,13 @@ export function AuditLogs() {
             setVisible(PAGE_SIZE)
           }}
         >
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue />
+          <SelectTrigger className="w-full sm:w-56">
+            <span className="truncate">
+              <span className="text-muted-foreground">Category:</span>{" "}
+              {category === "all"
+                ? "All"
+                : AUDIT_CATEGORY_LABEL[category as AuditCategory]}
+            </span>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
@@ -191,8 +195,11 @@ export function AuditLogs() {
             setVisible(PAGE_SIZE)
           }}
         >
-          <SelectTrigger className="w-full sm:w-36">
-            <SelectValue />
+          <SelectTrigger className="w-full sm:w-40">
+            <span className="truncate">
+              <span className="text-muted-foreground">Status:</span>{" "}
+              {status === "all" ? "All" : STATUS_LABEL[status as AuditStatus]}
+            </span>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
@@ -210,7 +217,11 @@ export function AuditLogs() {
           }}
         >
           <SelectTrigger className="w-full sm:w-44">
-            <SelectValue />
+            <span className="truncate">
+              <span className="text-muted-foreground">Date:</span>{" "}
+              {AUDIT_TIMEFRAMES.find((t) => t.value === timeframe)?.label ??
+                "All time"}
+            </span>
           </SelectTrigger>
           <SelectContent>
             {AUDIT_TIMEFRAMES.map((t) => (

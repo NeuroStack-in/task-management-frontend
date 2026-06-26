@@ -190,7 +190,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Add TOTP-based MFA to your account or enforce it across the organization.",
     readMins: 4,
-    body: "MFA adds a second layer of security to your WorkPulse account. To enable it for your personal account, go to Settings → Security → Two-Factor Authentication and scan the QR code with an authenticator app (Google Authenticator, Authy, or 1Password). Admins can enforce MFA for all users in Security → Policies. Recovery codes are shown once during setup — store them securely.",
+    body: "MFA adds a second layer of security to your WorkPulse account. To enable it for your personal account, go to Settings → Security → Multi-Factor Authentication and scan the QR code with an authenticator app (Google Authenticator, Authy, or 1Password). Admins can enforce MFA for all users in Security → Policies. Recovery codes are shown once during setup — store them securely.",
   },
   {
     slug: "slack-integration",

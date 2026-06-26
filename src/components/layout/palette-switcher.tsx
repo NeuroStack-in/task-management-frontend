@@ -23,7 +23,7 @@ interface PaletteDef {
  * Available palettes — the documented WorkPulse colour schemes
  * (Docs/DESIGN-color-guide.md). `indigo` is the default (no data-palette attr).
  */
-const PALETTES: PaletteDef[] = [
+export const PALETTES: PaletteDef[] = [
   {
     id: "indigo",
     name: "Graphite & Indigo",
@@ -82,7 +82,7 @@ const PALETTES: PaletteDef[] = [
 
 const STORAGE_KEY = "wp-palette";
 
-function applyPalette(id: string) {
+export function applyPalette(id: string) {
   const el = document.documentElement;
   if (id === "indigo") el.removeAttribute("data-palette");
   else el.setAttribute("data-palette", id);

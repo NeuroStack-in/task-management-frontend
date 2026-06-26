@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { AuditLogs } from "@/modules/audit/components/audit-logs";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Audit Logs" };
-
+// Audit Logs now lives inside the Settings hub; keep the old URL working.
 export default function Page() {
-  return <AuditLogs />;
+  redirect("/settings/audit-logs");
 }

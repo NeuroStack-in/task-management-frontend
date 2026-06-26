@@ -27,6 +27,24 @@ mkdirSync(DATA_DIR, { recursive: true });
 
 const ORG_ID = "org-acme";
 
+/**
+ * A fixed Employee account for the demo login (email: employee@acme.test, any
+ * password). Added to users.json only — kept out of the project/task pools so it
+ * doesn't shift the deterministic faker selections for the rest of the data.
+ */
+const DEMO_EMPLOYEE: User = {
+  id: "user-employee",
+  name: "Sam Rivera",
+  email: "employee@acme.test",
+  roleId: "role-employee",
+  jobTitle: "Product Designer",
+  department: "Design",
+  team: "Product Design",
+  status: "active",
+  productivityScore: 78,
+  organizationId: ORG_ID,
+};
+
 const DEPARTMENTS = [
   "Engineering",
   "Product",
@@ -331,11 +349,47 @@ function generateTasks(projects: Project[]): Task[] {
   return tasks;
 }
 
+/**
+ * Give the fixed demo Employee a realistic workload: membership in a few active
+ * projects and a spread of assigned tasks. Pure post-processing (mutates records
+ * by id, no faker), so the rest of the generated data is unchanged.
+ */
+function assignDemoEmployee(projects: Project[], tasks: Task[]) {
+  const targetProjects = projects.filter((p) => p.status === "active").slice(0, 3);
+  for (const p of targetProjects) {
+    if (!p.memberIds.includes(DEMO_EMPLOYEE.id)) {
+      p.memberIds.push(DEMO_EMPLOYEE.id);
+    }
+  }
+
+  // Cycle of statuses weighted toward open work so the dashboard has content.
+  const statusCycle: TaskStatus[] = [
+    "in_progress", "todo", "in_review", "in_progress", "todo", "done",
+  ];
+  let assigned = 0;
+  for (const p of targetProjects) {
+    const projectTasks = tasks.filter((t) => t.projectId === p.id).slice(0, 4);
+    for (const t of projectTasks) {
+      t.assigneeId = DEMO_EMPLOYEE.id;
+      t.status = statusCycle[assigned % statusCycle.length];
+      if (t.status !== "done" && !t.dueDate) {
+        t.dueDate = isoFromOffsetDays(3 + (assigned % 10));
+      }
+      assigned += 1;
+    }
+  }
+}
+
 console.log("Seeding mock data...");
 writeJson("organization.json", generateOrganization());
+// Projects & tasks are built from the seeded users only, so the demo Employee
+// stays out of the faker pools; it's woven in afterwards by assignDemoEmployee.
 const seededUsers = generateUsers(120);
-writeJson("users.json", seededUsers);
 const seededProjects = generateProjects(40, seededUsers);
+const seededTasks = generateTasks(seededProjects);
+assignDemoEmployee(seededProjects, seededTasks);
+// Insert the fixed demo Employee right after the Owner for users.json.
+writeJson("users.json", [seededUsers[0], DEMO_EMPLOYEE, ...seededUsers.slice(1)]);
 writeJson("projects.json", seededProjects);
-writeJson("tasks.json", generateTasks(seededProjects));
+writeJson("tasks.json", seededTasks);
 console.log("Done.");
