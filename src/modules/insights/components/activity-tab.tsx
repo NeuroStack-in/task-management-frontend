@@ -17,7 +17,7 @@ import {
   Coffee,
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Card,
   CardContent,
@@ -42,6 +42,7 @@ import {
   type UsageCategory,
 } from "@/lib/mock-insights";
 import { cn } from "@/lib/utils";
+import { AiReportCard } from "./ai-report-card";
 
 const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
 
@@ -121,15 +122,24 @@ export function ActivityTab() {
         </div>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           Date
-          <Input
-            type="date"
+          <DatePicker
             value={date}
             max="2026-06-25"
-            onChange={(e) => setDate(e.target.value)}
-            className="w-[9.5rem]"
+            onChange={setDate}
+            className="w-[10.5rem]"
           />
         </label>
       </div>
+
+      <AiReportCard
+        title="AI activity report"
+        summary="Active time is tracking above the weekly average, with clear peaks around 11am and 4pm and the usual post-lunch dip. Keyboard and mouse intensity stay in step — no idle anomalies detected today."
+        signals={[
+          { label: "Avg active", value: `${avg(series.active)}%`, tone: "up" },
+          { label: "Idle anomalies", value: "0", tone: "flat" },
+          { label: "Peak", value: "11am · 4pm", tone: "up" },
+        ]}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

@@ -850,6 +850,22 @@
   }
 }
 
+/* Hide native up/down spinners on number/time/date inputs (e.g. Insights
+   filters) — they clash with the app's input styling. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="time"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-inner-spin-button {
+  display: none;
+}
+
 /* Diagonal hatch for inactive calendar cells (weekends / out-of-month) */
 @utility wp-hatch {
   background-color: color-mix(in srgb, var(--muted) 60%, transparent);
