@@ -24,12 +24,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  ProductivityHeatmap,
-  ActiveInactiveRing,
-} from "@/modules/dashboard/components/insight-widgets";
+import { ActiveInactiveRing } from "@/modules/dashboard/components/insight-widgets";
 import { users } from "@/lib/data";
-import { productivityHeatmap } from "@/lib/mock-metrics";
 import {
   APP_USAGE,
   URL_USAGE,
@@ -169,7 +165,6 @@ export function ActivityTab() {
           value={formatMinutes(totals.distracting)}
           icon={Coffee}
           delta={-6}
-          trend={[52, 48, 55, 44, 50, 46, 41]}
         />
       </div>
 
@@ -238,17 +233,9 @@ export function ActivityTab() {
         <ActiveInactiveRing active={active} inactive={inactive} />
       </div>
 
-      {/* Heatmap — full width */}
-      <ProductivityHeatmap data={productivityHeatmap()} />
-
       <div className="grid gap-4 lg:grid-cols-2">
         <UsageList title="Top applications" items={APP_USAGE} />
         <UsageList title="Top websites" items={URL_USAGE} />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <IntensityCard title="Keyboard intensity" data={series.keyboard} labels={series.labels} />
-        <IntensityCard title="Mouse intensity" data={series.mouse} labels={series.labels} />
       </div>
     </div>
   );
@@ -287,44 +274,6 @@ function UsageList({ title, items }: { title: string; items: UsageItem[] }) {
             </div>
           </div>
         ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function IntensityCard({
-  title,
-  data,
-  labels,
-}: {
-  title: string;
-  data: number[];
-  labels: string[];
-}) {
-  const max = Math.max(...data);
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex h-28 items-end gap-1.5">
-          {data.map((v, i) => (
-            <div
-              key={i}
-              title={`${labels[i]} · ${v}%`}
-              className="flex-1 rounded-t-[4px] bg-primary/80"
-              style={{ height: `${(v / max) * 100}%` }}
-            />
-          ))}
-        </div>
-        <div className="mt-1 flex justify-between">
-          {labels.map((h) => (
-            <span key={h} className="text-[10px] text-muted-foreground">
-              {h}
-            </span>
-          ))}
-        </div>
       </CardContent>
     </Card>
   );
