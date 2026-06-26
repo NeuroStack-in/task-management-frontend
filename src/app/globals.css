@@ -677,6 +677,170 @@
   --sidebar-ring: #c2c8d0;
 }
 
+/* ---- Corporate Blue — refined business blue on a clean, cool-neutral light ---- */
+[data-palette="corporate"] {
+  --background: #f5f7fa;
+  --foreground: #1f2937;
+  --card: #ffffff;
+  --card-foreground: #1f2937;
+  --popover: #ffffff;
+  --popover-foreground: #1f2937;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f7;
+  --secondary-foreground: #3f4654;
+  --muted: #eef2f7;
+  --muted-foreground: #6b7280;
+  --accent: #e6effd;
+  --accent-foreground: #1e40af;
+  --destructive: #e5544a;
+  --success: #2fa36a;
+  --warning: #e0922a;
+  --positive: #2fa36a;
+  --negative: #e5544a;
+  --feature: #1d4ed8;
+  --feature-foreground: #ffffff;
+  --feature-tint: #e6effd;
+  --border: #e3e8ef;
+  --input: #d8e0ea;
+  --ring: #2563eb;
+  --chart-1: #2563eb;
+  --chart-2: #60a5fa;
+  --chart-3: #0ea5e9;
+  --chart-4: #14b8a6;
+  --chart-5: #94a3b8;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1f2937;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e6effd;
+  --sidebar-accent-foreground: #1e40af;
+  --sidebar-border: #eaeef3;
+  --sidebar-ring: #2563eb;
+}
+[data-palette="corporate"].dark {
+  --background: #1b1c1f;
+  --foreground: #e6e6e8;
+  --card: #232427;
+  --card-foreground: #e6e6e8;
+  --popover: #232427;
+  --popover-foreground: #e6e6e8;
+  --primary: #5b8def;
+  --primary-foreground: #06122b;
+  --secondary: #2d2e33;
+  --secondary-foreground: #e6e6e8;
+  --muted: #25262a;
+  --muted-foreground: #a3a4aa;
+  --accent: #2e2f34;
+  --accent-foreground: #bcd3fb;
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+  --feature: #1e40af;
+  --feature-foreground: #ffffff;
+  --feature-tint: #16243f;
+  --border: rgb(255 255 255 / 0.07);
+  --input: rgb(255 255 255 / 0.11);
+  --ring: #5b8def;
+  --chart-1: #5b8def;
+  --chart-2: #7fb0fb;
+  --chart-3: #56c2e8;
+  --chart-4: #2dd4bf;
+  --chart-5: #a3a4aa;
+  --sidebar: #232427;
+  --sidebar-foreground: #e6e6e8;
+  --sidebar-primary: #5b8def;
+  --sidebar-primary-foreground: #06122b;
+  --sidebar-accent: #2e2f34;
+  --sidebar-accent-foreground: #bcd3fb;
+  --sidebar-border: rgb(255 255 255 / 0.07);
+  --sidebar-ring: #5b8def;
+}
+
+/* ---- Evergreen & Mint — calm SaaS green/teal on a clean light canvas ---- */
+[data-palette="evergreen"] {
+  --background: #f5f8f6;
+  --foreground: #1d2a26;
+  --card: #ffffff;
+  --card-foreground: #1d2a26;
+  --popover: #ffffff;
+  --popover-foreground: #1d2a26;
+  --primary: #059669;
+  --primary-foreground: #ffffff;
+  --secondary: #eef3f0;
+  --secondary-foreground: #3c4a45;
+  --muted: #eef3f0;
+  --muted-foreground: #6b7771;
+  --accent: #d8f3e9;
+  --accent-foreground: #065f46;
+  --destructive: #e5544a;
+  --success: #2fa36a;
+  --warning: #e0922a;
+  --positive: #2fa36a;
+  --negative: #e5544a;
+  --feature: #047857;
+  --feature-foreground: #ffffff;
+  --feature-tint: #d8f3e9;
+  --border: #e1ebe6;
+  --input: #d6e2db;
+  --ring: #059669;
+  --chart-1: #059669;
+  --chart-2: #34d399;
+  --chart-3: #14b8a6;
+  --chart-4: #e0922a;
+  --chart-5: #94a39b;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1d2a26;
+  --sidebar-primary: #059669;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #d8f3e9;
+  --sidebar-accent-foreground: #065f46;
+  --sidebar-border: #e7efea;
+  --sidebar-ring: #059669;
+}
+[data-palette="evergreen"].dark {
+  --background: #1b1c1f;
+  --foreground: #e6e6e8;
+  --card: #232427;
+  --card-foreground: #e6e6e8;
+  --popover: #232427;
+  --popover-foreground: #e6e6e8;
+  --primary: #34d399;
+  --primary-foreground: #04231a;
+  --secondary: #2d2e33;
+  --secondary-foreground: #e6e6e8;
+  --muted: #25262a;
+  --muted-foreground: #a3a4aa;
+  --accent: #2e2f34;
+  --accent-foreground: #a7f3d0;
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+  --feature: #047857;
+  --feature-foreground: #ffffff;
+  --feature-tint: #12302a;
+  --border: rgb(255 255 255 / 0.07);
+  --input: rgb(255 255 255 / 0.11);
+  --ring: #34d399;
+  --chart-1: #34d399;
+  --chart-2: #6ee7b7;
+  --chart-3: #2dd4bf;
+  --chart-4: #e0a951;
+  --chart-5: #a3a4aa;
+  --sidebar: #232427;
+  --sidebar-foreground: #e6e6e8;
+  --sidebar-primary: #34d399;
+  --sidebar-primary-foreground: #04231a;
+  --sidebar-accent: #2e2f34;
+  --sidebar-accent-foreground: #a7f3d0;
+  --sidebar-border: rgb(255 255 255 / 0.07);
+  --sidebar-ring: #34d399;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -694,6 +858,57 @@
   .font-display {
     font-family: var(--font-display), var(--font-body), sans-serif;
   }
+}
+
+/* Hide native up/down spinners on number/time/date inputs (e.g. Insights
+   filters) — they clash with the app's input styling. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="time"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-inner-spin-button {
+  display: none;
+}
+
+/* Themed thin scrollbar for the Settings rail's independent scroll. Scoped —
+   does not affect the rest of the app's native scrollbars. */
+.wp-rail-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.wp-rail-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.wp-rail-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.wp-rail-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+.wp-rail-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+.wp-rail-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* Diagonal hatch for inactive calendar cells (weekends / out-of-month) */
+@utility wp-hatch {
+  background-color: color-mix(in srgb, var(--muted) 60%, transparent);
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--muted-foreground) 16%, transparent) 0,
+    color-mix(in srgb, var(--muted-foreground) 16%, transparent) 1px,
+    transparent 1px,
+    transparent 7px
+  );
 }
 
 /* Soft elevation used by cards/panels */

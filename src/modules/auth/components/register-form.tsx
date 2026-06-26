@@ -6,7 +6,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import { SsoButtons } from "./sso-buttons";
 
 const schema = z.object({
@@ -34,19 +35,42 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+const STRENGTH = ["Weak", "Fair", "Good", "Strong"];
+const STRENGTH_COLOR = [
+  "bg-destructive",
+  "bg-warning",
+  "bg-chart-2",
+  "bg-success",
+];
+
+function scorePassword(pw: string): number {
+  if (!pw) return 0;
+  return [
+    pw.length >= 8,
+    /[A-Z]/.test(pw),
+    /[0-9]/.test(pw),
+    /[^A-Za-z0-9]/.test(pw),
+  ].filter(Boolean).length;
+}
+
 export function RegisterForm() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { name: "", email: "", company: "", password: "" },
   });
+
+  const password = watch("password") ?? "";
+  const score = scorePassword(password);
 
   const onSubmit = async () => {
     setSubmitting(true);
@@ -58,11 +82,13 @@ export function RegisterForm() {
   };
 
   return (
-    <Card>
+    <Card className="shadow-soft">
       <CardHeader>
-        <CardTitle className="text-xl">Create your account</CardTitle>
+        <CardTitle className="font-heading text-2xl">
+          Create your account
+        </CardTitle>
         <CardDescription>
-          Set up your WorkPulse workspace.
+          Set up your WorkPulse workspace in minutes.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -104,13 +130,46 @@ export function RegisterForm() {
 
           <div className="space-y-2">
             <Label htmlFor="reg-password">Password</Label>
-            <Input
-              id="reg-password"
-              type="password"
-              autoComplete="new-password"
-              placeholder="At least 8 characters"
-              {...register("password")}
-            />
+            <div className="relative">
+              <Input
+                id="reg-password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
+                placeholder="At least 8 characters"
+                className="pr-9"
+                {...register("password")}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
+            </div>
+            {password ? (
+              <div className="flex items-center gap-2">
+                <div className="flex flex-1 gap-1">
+                  {[0, 1, 2, 3].map((i) => (
+                    <span
+                      key={i}
+                      className={cn(
+                        "h-1 flex-1 rounded-full transition-colors",
+                        i < score ? STRENGTH_COLOR[score - 1] : "bg-muted",
+                      )}
+                    />
+                  ))}
+                </div>
+                <span className="w-10 text-right text-[11px] text-muted-foreground">
+                  {STRENGTH[Math.max(0, score - 1)]}
+                </span>
+              </div>
+            ) : null}
             {errors.password ? (
               <p className="text-xs text-destructive">
                 {errors.password.message}

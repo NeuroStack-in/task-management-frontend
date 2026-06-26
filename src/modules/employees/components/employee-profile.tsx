@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, FolderKanban, Sparkles } from "lucide-react";
+import Papa from "papaparse";
+import { jsPDF } from "jspdf";
+import { toast } from "sonner";
+import {
+  ArrowLeft,
+  Download,
+  FileText,
+  FolderKanban,
+  Sheet,
+  Sparkles,
+} from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -17,7 +27,15 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { initials } from "@/lib/format";
+import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
 export interface ProjectItem {
@@ -62,6 +80,110 @@ const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   suspended: "bg-destructive/12 text-destructive",
 };
 
+/** Safe filename stem from an employee code (e.g. "#EMP357148" → "EMP357148"). */
+const fileCode = (code: string) => code.replace(/[^\w-]/g, "") || "employee";
+
+function exportEmployeeCsv(d: EmployeeProfileData) {
+  const activeCount = d.projects.filter((p) => p.active).length;
+  const rows: (string | number)[][] = [
+    ["Field", "Value"],
+    ["Employee", d.name],
+    ["Code", d.empCode],
+    ["Role", d.roleName],
+    ["Title", d.jobTitle],
+    ["Department", d.department],
+    ["Team", d.team],
+    ["Status", d.status],
+    ["Email", d.email],
+    ["Phone", d.phone],
+    ["Date of birth", d.dob],
+    ["Hire date", d.hireDate],
+    ["Address", `${d.address}, ${d.cityState}, ${d.country} ${d.postcode}`],
+    ["Productivity %", d.productivityScore],
+    ["Avg. completion %", d.avgCompletion],
+    ["Total tasks", d.totalTasks],
+    ["Projects", d.projects.length],
+    ["Active projects", activeCount],
+    [],
+    ["Project", "Key", "Progress %", "Tasks", "Teammates", "Active"],
+    ...d.projects.map((p) => [
+      p.name, p.key, p.progress, p.tasks, p.teammates, p.active ? "Yes" : "No",
+    ]),
+  ];
+  downloadBlob(
+    new Blob([Papa.unparse(rows)], { type: "text/csv;charset=utf-8;" }),
+    `${fileCode(d.empCode)}-report.csv`,
+  );
+  toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.csv` });
+}
+
+function exportEmployeePdf(d: EmployeeProfileData) {
+  const activeCount = d.projects.filter((p) => p.active).length;
+  const doc = new jsPDF();
+  let y = 18;
+  doc.setFontSize(18);
+  doc.text(d.name, 14, y);
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  y += 6;
+  doc.text(`${d.jobTitle} · ${d.department} · ${d.empCode}`, 14, y);
+
+  const section = (title: string) => {
+    y += 10;
+    doc.setTextColor(20);
+    doc.setFontSize(13);
+    doc.text(title, 14, y);
+    doc.setDrawColor(210);
+    doc.line(14, y + 2, 196, y + 2);
+    y += 8;
+    doc.setFontSize(10);
+  };
+  const kv = (k: string, v: string) => {
+    doc.setTextColor(120);
+    doc.text(k, 14, y);
+    doc.setTextColor(20);
+    doc.text(v, 60, y);
+    y += 6;
+  };
+
+  section("Profile");
+  kv("Role", d.roleName);
+  kv("Status", d.status);
+  kv("Email", d.email);
+  kv("Phone", d.phone);
+  kv("Date of birth", d.dob);
+  kv("Hire date", d.hireDate);
+  kv("Address", `${d.address}, ${d.cityState}, ${d.country} ${d.postcode}`);
+
+  section("Performance");
+  kv("Productivity", `${d.productivityScore}%`);
+  kv("Avg. completion", `${d.avgCompletion}%`);
+  kv("Total tasks", String(d.totalTasks));
+  kv("Projects", `${d.projects.length} (${activeCount} active)`);
+
+  section("Projects");
+  if (d.projects.length === 0) {
+    doc.text("No projects.", 14, y);
+  } else {
+    for (const p of d.projects) {
+      doc.setTextColor(20);
+      doc.text(`${p.key}  ${p.name}${p.active ? "  (active)" : ""}`, 14, y);
+      doc.text(`${p.progress}%`, 196, y, { align: "right" });
+      y += 6;
+      if (y > 282) {
+        doc.addPage();
+        y = 18;
+      }
+    }
+  }
+
+  doc.setFontSize(8);
+  doc.setTextColor(150);
+  doc.text("WorkPulse · employee report", 14, 292);
+  doc.save(`${fileCode(d.empCode)}-report.pdf`);
+  toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.pdf` });
+}
+
 export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
   const chartData = data.kpi.months.map((m, i) => ({
     month: m,
@@ -80,11 +202,26 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
           <ArrowLeft className="size-4" />
           All employees
         </Link>
-        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <span>Team</span>
-          <span className="text-muted-foreground/50">/</span>
-          <span className="font-medium text-foreground">{data.name}</span>
-        </nav>
+        <div className="flex items-center gap-3">
+          <nav className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
+            <span>Team</span>
+            <span className="text-muted-foreground/50">/</span>
+            <span className="font-medium text-foreground">{data.name}</span>
+          </nav>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+              <Download className="size-4" /> Download report
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportEmployeePdf(data)}>
+                <FileText className="size-4" /> PDF report
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportEmployeeCsv(data)}>
+                <Sheet className="size-4" /> CSV export
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Employee — identity, contact & address in ONE card */}

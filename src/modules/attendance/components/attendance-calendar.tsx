@@ -1,0 +1,348 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  COUNT_METRICS,
+  MONTH_NAMES,
+  REFERENCE_MONTH,
+  WEEKDAY_LABELS,
+  monthMatrix,
+  monthSummary,
+  type DayCell,
+} from "@/lib/mock-attendance";
+import { cn } from "@/lib/utils";
+
+interface AttendanceDate {
+  year: number;
+  month: number;
+  day: number;
+}
+
+type CalendarMode = "simple" | "detailed";
+
+/** Background tint for the simple heatmap, scaled by attendance rate. */
+function rateTint(rate: number): string {
+  if (rate >= 92) return "bg-success/20";
+  if (rate >= 88) return "bg-success/10";
+  if (rate >= 85) return "bg-success/[0.06]";
+  if (rate >= 80) return "bg-warning/15";
+  return "bg-destructive/15";
+}
+
+export function AttendanceCalendar({
+  selected,
+  onSelect,
+}: {
+  selected: AttendanceDate;
+  onSelect: (d: AttendanceDate) => void;
+}) {
+  const [view, setView] = useState({
+    year: REFERENCE_MONTH.year,
+    month: REFERENCE_MONTH.month,
+  });
+  const [mode, setMode] = useState<CalendarMode>("simple");
+
+  const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
+  const summary = useMemo(() => monthSummary(view.year, view.month), [view]);
+
+  const isRefMonth =
+    view.year === REFERENCE_MONTH.year && view.month === REFERENCE_MONTH.month;
+
+  const step = (dir: -1 | 1) =>
+    setView((v) => {
+      const m = v.month + dir;
+      if (m < 0) return { year: v.year - 1, month: 11 };
+      if (m > 11) return { year: v.year + 1, month: 0 };
+      return { year: v.year, month: m };
+    });
+
+  return (
+    <Card>
+      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+        <div>
+          <CardTitle>
+            {MONTH_NAMES[view.month]} {view.year}
+          </CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Avg/day{" "}
+            <span className="font-medium text-success">
+              {summary.present} present
+            </span>
+            {" · "}
+            <span className="font-medium text-primary">
+              {summary.leave} on leave
+            </span>
+            {" · "}
+            <span className="font-medium text-destructive">
+              {summary.absent} absent
+            </span>{" "}
+            across {summary.total} employees
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* View switch */}
+          <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+            {(["simple", "detailed"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+                  mode === m
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setView({
+                  year: REFERENCE_MONTH.year,
+                  month: REFERENCE_MONTH.month,
+                })
+              }
+              disabled={isRefMonth}
+            >
+              Today
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Previous month"
+              onClick={() => step(-1)}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Next month"
+              onClick={() => step(1)}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-3">
+        {/* Weekday header */}
+        <div className="grid grid-cols-7 gap-1.5">
+          {WEEKDAY_LABELS.map((d) => (
+            <div
+              key={d}
+              className="text-center text-xs font-medium text-muted-foreground"
+            >
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* Day grid */}
+        <div className="grid grid-cols-7 gap-1.5">
+          {weeks.flat().map((cell, i) => (
+            <DayCellView
+              key={i}
+              cell={cell}
+              mode={mode}
+              selected={selected}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+
+        {/* Legend + hint */}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1">
+          {mode === "detailed" ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+              {COUNT_METRICS.map((m) => (
+                <span
+                  key={m.key}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <span className={cn("size-2.5 rounded-full", m.dot)} />
+                  {m.label}
+                </span>
+              ))}
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
+                Weekend / off
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+              <span>Attendance</span>
+              <span className="flex items-center gap-1">
+                <span className="size-2.5 rounded-sm bg-destructive/30" />
+                <span className="size-2.5 rounded-sm bg-warning/30" />
+                <span className="size-2.5 rounded-sm bg-success/20" />
+                <span className="size-2.5 rounded-sm bg-success/40" />
+              </span>
+              <span>low → high</span>
+              <span className="flex items-center gap-1.5">
+                <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
+                Weekend / off
+              </span>
+            </div>
+          )}
+          <span className="text-xs text-muted-foreground">
+            Select a day to view its log below ↓
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DayCellView({
+  cell,
+  mode,
+  selected,
+  onSelect,
+}: {
+  cell: DayCell;
+  mode: CalendarMode;
+  selected: AttendanceDate;
+  onSelect: (d: AttendanceDate) => void;
+}) {
+  if (!cell.isWorkday) {
+    return (
+      <div
+        className={cn(
+          "wp-hatch flex min-h-[4.25rem] flex-col rounded-xl p-2",
+          mode === "simple" && "min-h-[3.5rem]",
+          !cell.inMonth && "opacity-50",
+        )}
+      >
+        <span
+          className={cn(
+            "text-xs font-semibold leading-none tabular-nums",
+            cell.inMonth
+              ? "text-muted-foreground"
+              : "text-muted-foreground/50",
+          )}
+        >
+          {cell.day}
+        </span>
+      </div>
+    );
+  }
+
+  const c = cell.counts!;
+  const present = c.present + c.late;
+  const rate = Math.round((present / c.total) * 100);
+  const presentPct = (present / c.total) * 100;
+  const leavePct = (c.leave / c.total) * 100;
+  const absentPct = Math.max(0, 100 - presentPct - leavePct);
+
+  const isSelected =
+    cell.inMonth &&
+    selected.year === cell.year &&
+    selected.month === cell.month &&
+    selected.day === cell.day;
+
+  const title = `${cell.day}: ${present} in · ${c.leave} on leave · ${c.absent} absent`;
+
+  // ── Simple heatmap cell ──
+  if (mode === "simple") {
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          onSelect({ year: cell.year, month: cell.month, day: cell.day })
+        }
+        title={title}
+        className={cn(
+          "flex min-h-[3.5rem] flex-col justify-between rounded-xl p-2 text-left ring-1 ring-border transition-all hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+          rateTint(rate),
+          cell.isToday && !isSelected && "ring-primary/60",
+          isSelected && "ring-2 ring-primary",
+        )}
+      >
+        <span
+          className={cn(
+            "text-sm font-semibold leading-none tabular-nums",
+            cell.isToday ? "text-primary" : "text-foreground",
+          )}
+        >
+          {cell.day}
+        </span>
+        <span className="text-right text-xs font-semibold tabular-nums text-foreground/70">
+          {rate}%
+        </span>
+      </button>
+    );
+  }
+
+  // ── Detailed cell ──
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        onSelect({ year: cell.year, month: cell.month, day: cell.day })
+      }
+      title={title}
+      className={cn(
+        "flex min-h-[4.25rem] flex-col gap-1 rounded-xl bg-card p-2 text-left ring-1 ring-border transition-all hover:shadow-sm hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+        cell.isToday && !isSelected && "ring-primary/60",
+        isSelected && "ring-2 ring-primary",
+      )}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <span
+          className={cn(
+            "text-sm font-semibold leading-none tabular-nums",
+            cell.isToday ? "text-primary" : "text-foreground",
+          )}
+        >
+          {cell.day}
+        </span>
+        <span
+          className={cn(
+            "text-[11px] font-semibold leading-none tabular-nums",
+            rate >= 90
+              ? "text-success"
+              : rate >= 75
+                ? "text-warning"
+                : "text-destructive",
+          )}
+        >
+          {rate}%
+        </span>
+      </div>
+
+      <div className="mt-auto space-y-1">
+        <p className="text-[11px] leading-none text-muted-foreground">
+          <span className="font-semibold text-foreground tabular-nums">
+            {present}
+          </span>{" "}
+          in
+        </p>
+        <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+          <span className="bg-success" style={{ width: `${presentPct}%` }} />
+          <span className="bg-primary" style={{ width: `${leavePct}%` }} />
+          <span className="bg-destructive" style={{ width: `${absentPct}%` }} />
+        </div>
+      </div>
+    </button>
+  );
+}

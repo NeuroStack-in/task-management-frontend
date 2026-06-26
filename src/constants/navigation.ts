@@ -8,8 +8,7 @@ import {
   Camera,
   FileBarChart,
   CheckCheck,
-  Bot,
-  AlertTriangle,
+  Sparkles,
   LineChart,
   Mail,
   Bell,
@@ -23,10 +22,12 @@ import {
   HelpCircle,
   Building2,
   CalendarCheck,
+  Wallet,
   SlidersHorizontal,
   Globe,
   ToggleRight,
   Plug,
+  TriangleAlert,
 } from "lucide-react";
 import type { PermissionId } from "@/types/rbac";
 
@@ -73,7 +74,6 @@ export const NAV_GROUPS: NavGroup[] = [
         anyPermissions: [
           "activity:view",
           "screenshots:view",
-          "anomalies:view",
           "reports:view",
           "ai:view",
         ],
@@ -85,6 +85,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Employees", href: "/employees", icon: Users, permission: "employees:view" },
       { label: "Attendance", href: "/attendance", icon: CalendarCheck, permission: "attendance:view" },
+      { label: "Payroll", href: "/payroll", icon: Wallet, permission: "payroll:view" },
       { label: "Approvals", href: "/approvals", icon: CheckCheck, permission: "approvals:view" },
     ],
   },
@@ -108,7 +109,7 @@ export const NAV_GROUPS: NavGroup[] = [
 ];
 
 /**
- * Insights tabs — the Activity / Screenshots / Anomalies / Reports / AI Center
+ * Insights tabs — the Activity / Screenshots / AI Insights / Reports
  * sections, merged into one tabbed `/insights` page. Rendered as a tab bar
  * (filtered by permission) and scanned by permissionForPath so each tab keeps
  * its own route guard.
@@ -129,11 +130,11 @@ export const INSIGHTS_TABS: NavItem[] = [
     description: "Screenshot gallery, timeline, and risk analysis.",
   },
   {
-    label: "Anomalies",
+    label: "AI Insights",
     href: "/insights/anomalies",
-    icon: AlertTriangle,
-    permission: "anomalies:view",
-    description: "Inactivity, productivity drops, and burnout indicators.",
+    icon: Sparkles,
+    permission: "ai:view",
+    description: "AI summaries, recommendations, and people who need attention.",
   },
   {
     label: "Reports",
@@ -141,13 +142,6 @@ export const INSIGHTS_TABS: NavItem[] = [
     icon: FileBarChart,
     permission: "reports:view",
     description: "Productivity, time, project, and AI reports with export.",
-  },
-  {
-    label: "AI Center",
-    href: "/insights/ai",
-    icon: Bot,
-    permission: "ai:view",
-    description: "AI summaries, comparisons, and recommendations.",
   },
 ];
 
@@ -173,6 +167,13 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: ToggleRight,
         permission: "settings:view",
         description: "Turn modules on or off for the whole organization.",
+      },
+      {
+        label: "Ownership & deletion",
+        href: "/settings/ownership",
+        icon: TriangleAlert,
+        permission: "settings:manage",
+        description: "Transfer ownership, export data, or close the organization.",
       },
     ],
   },
@@ -200,21 +201,21 @@ export const ADMIN_SECTIONS: NavGroup[] = [
     items: [
       {
         label: "Roles & Permissions",
-        href: "/roles",
+        href: "/settings/roles",
         icon: KeyRound,
         permission: "roles:view",
         description: "Create roles and control what each can access.",
       },
       {
         label: "Security",
-        href: "/security",
+        href: "/settings/security",
         icon: ShieldCheck,
         permission: "security:view",
         description: "MFA, SSO, session policies, and security events.",
       },
       {
         label: "Audit Logs",
-        href: "/audit-logs",
+        href: "/settings/audit-logs",
         icon: ScrollText,
         permission: "audit-logs:view",
         description: "User actions, permission changes, and login events.",
@@ -226,21 +227,21 @@ export const ADMIN_SECTIONS: NavGroup[] = [
     items: [
       {
         label: "Integrations",
-        href: "/integrations",
+        href: "/settings/integrations",
         icon: Plug,
         permission: "integrations:view",
         description: "Slack, Teams, Jira, GitHub, and more.",
       },
       {
         label: "Remote Support",
-        href: "/remote-support",
+        href: "/settings/remote-support",
         icon: Headset,
         permission: "remote-support:view",
         description: "Approval-gated remote support sessions and diagnostics.",
       },
       {
         label: "Desktop Agents",
-        href: "/agents",
+        href: "/settings/agents",
         icon: MonitorSmartphone,
         permission: "agents:view",
         description: "Agent status, configuration, policies, and health.",

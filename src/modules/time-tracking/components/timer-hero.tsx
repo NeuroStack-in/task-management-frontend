@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pause, Play, Square, ChevronDown } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  FolderKanban,
+  ListChecks,
+  Pause,
+  Play,
+  Square,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useTimerStore } from "@/stores/timer.store";
 import { Button } from "@/components/ui/button";
@@ -19,10 +28,16 @@ import { cn } from "@/lib/utils";
 
 const pad = (n: number) => n.toString().padStart(2, "0");
 
+const PROJECTS = Array.from(new Set(TASK_OPTIONS.map((o) => o.projectName)));
+const tasksForProject = (project: string) =>
+  TASK_OPTIONS.filter((o) => o.projectName === project);
+
 /**
- * The live timer — Time Tracking's hero (TDD §11). Drives the same persisted
- * timer store as the global navbar timer, so the two stay in lock-step. Pick a
- * task, start/pause/resume, and stopping appends a real entry to today's sheet.
+ * The live timer — Time Tracking's hero. Pick a project, then a task, and
+ * start. Each continuous run is logged as its own entry: pausing (and stopping)
+ * appends the segment to today's sheet. While paused you can switch the
+ * project/task and resume against the new one. Drives the same persisted timer
+ * store as the navbar timer, so the two stay in lock-step.
  */
 export function TimerHero({
   onLogged,
@@ -31,13 +46,16 @@ export function TimerHero({
 }) {
   const task = useTimerStore((s) => s.task);
   const status = useTimerStore((s) => s.status);
+  const segmentStartedAt = useTimerStore((s) => s.segmentStartedAt);
   const start = useTimerStore((s) => s.start);
   const pause = useTimerStore((s) => s.pause);
   const resume = useTimerStore((s) => s.resume);
   const stop = useTimerStore((s) => s.stop);
+  const switchTask = useTimerStore((s) => s.switchTask);
   const elapsed = useTimerStore((s) => s.elapsed);
 
-  const [selected, setSelected] = useState<TaskOption>(TASK_OPTIONS[0]);
+  const [selProject, setSelProject] = useState(TASK_OPTIONS[0].projectName);
+  const [selTask, setSelTask] = useState<TaskOption>(TASK_OPTIONS[0]);
   const [, setTick] = useState(0);
 
   // Tick once per second while running so the clock animates.
@@ -47,42 +65,89 @@ export function TimerHero({
     return () => clearInterval(id);
   }, [status]);
 
+  // Keep the pickers in sync when a known task is the active one (e.g. after a
+  // reload while a timer is running).
+  useEffect(() => {
+    if (!task) return;
+    const opt = TASK_OPTIONS.find((o) => o.taskId === task.taskId);
+    if (opt) {
+      setSelProject(opt.projectName);
+      setSelTask(opt);
+    }
+  }, [task]);
+
   const running = status === "running";
   const active = Boolean(task);
+  const locked = running; // can only change the task when idle or paused
 
-  const handleStart = () => {
-    start({
-      taskId: selected.taskId,
-      taskTitle: selected.taskTitle,
-      projectName: selected.projectName,
+  const chooseProject = (project: string) => {
+    setSelProject(project);
+    setSelTask(tasksForProject(project)[0]);
+  };
+
+  /** Log the just-finished run segment (between resume/start and now). */
+  const logSegment = (): number => {
+    if (!task || segmentStartedAt === null) return 0;
+    const end = new Date();
+    const begin = new Date(segmentStartedAt);
+    const sec = Math.max(0, Math.floor((end.getTime() - begin.getTime()) / 1000));
+    if (sec < 1) return 0;
+    const matched = TASK_OPTIONS.find((o) => o.taskId === task.taskId);
+    onLogged({
+      id: `te-live-${end.getTime()}`,
+      task: task.taskTitle,
+      project: task.projectName ?? "",
+      start: `${pad(begin.getHours())}:${pad(begin.getMinutes())}`,
+      end: `${pad(end.getHours())}:${pad(end.getMinutes())}`,
+      durationSec: sec,
+      billable: matched?.billable ?? true,
+      activity: 68 + (sec % 28),
     });
+    return sec;
+  };
+
+  const handleStart = () =>
+    start({
+      taskId: selTask.taskId,
+      taskTitle: selTask.taskTitle,
+      projectName: selTask.projectName,
+    });
+
+  const handlePause = () => {
+    const sec = logSegment();
+    pause();
+    if (sec)
+      toast.success("Segment logged", {
+        description: `${formatDuration(sec)} on “${task?.taskTitle}”.`,
+      });
+  };
+
+  const handleResume = () => {
+    if (task && selTask.taskId !== task.taskId) {
+      switchTask({
+        taskId: selTask.taskId,
+        taskTitle: selTask.taskTitle,
+        projectName: selTask.projectName,
+      });
+      toast.success("Switched task", { description: selTask.taskTitle });
+    } else {
+      resume();
+    }
   };
 
   const handleStop = () => {
-    const total = stop();
-    const end = new Date();
-    const begin = new Date(end.getTime() - total * 1000);
-    const matched = TASK_OPTIONS.find((t) => t.taskTitle === task?.taskTitle);
-    const entry: TimeEntry = {
-      id: `te-live-${end.getTime()}`,
-      task: task?.taskTitle ?? selected.taskTitle,
-      project: task?.projectName ?? selected.projectName,
-      start: `${pad(begin.getHours())}:${pad(begin.getMinutes())}`,
-      end: `${pad(end.getHours())}:${pad(end.getMinutes())}`,
-      durationSec: total,
-      billable: matched?.billable ?? true,
-      activity: 70 + (total % 25),
-    };
-    onLogged(entry);
-    toast.success("Time entry logged", {
-      description: `${formatDuration(total)} on “${entry.task}”.`,
+    logSegment();
+    stop();
+    toast.success("Timer stopped", {
+      description: "Today’s timesheet is up to date.",
     });
   };
 
   return (
     <Card className="bg-feature text-feature-foreground shadow-none">
-      <div className="flex flex-col gap-6 px-6 py-1 md:flex-row md:items-center md:justify-between">
-        <div className="space-y-3">
+      <div className="flex flex-col gap-6 px-6 py-1 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0 flex-1 space-y-3.5">
+          {/* Status */}
           <div className="flex items-center gap-2 text-feature-foreground/80">
             <span
               className={cn(
@@ -99,51 +164,98 @@ export function TimerHero({
             </span>
           </div>
 
-          {/* Task picker */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              disabled={active}
-              render={
-                <button
-                  type="button"
-                  className="group flex items-center gap-2 text-left disabled:cursor-default"
-                />
-              }
+          {/* Project + Task pickers */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <HeroPicker
+              icon={FolderKanban}
+              label={selProject}
+              disabled={locked}
+              width="w-64"
             >
-              <div>
-                <p className="font-display text-xl font-semibold leading-tight">
-                  {active ? task?.taskTitle : selected.taskTitle}
-                </p>
-                <p className="text-sm text-feature-foreground/75">
-                  {active ? task?.projectName : selected.projectName}
-                </p>
-              </div>
-              {!active ? (
-                <ChevronDown className="size-4 text-feature-foreground/70 transition-transform group-data-[popup-open]:rotate-180" />
-              ) : null}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-72">
-              {TASK_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.taskId}
-                  onClick={() => setSelected(opt)}
-                  className="flex-col items-start gap-0.5"
-                >
-                  <span className="flex w-full items-center justify-between gap-2">
-                    <span className="font-medium">{opt.taskTitle}</span>
-                    {opt.billable ? (
-                      <Badge variant="secondary" className="shrink-0">
-                        Billable
-                      </Badge>
+              <p className="px-1.5 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">
+                Project
+              </p>
+              {PROJECTS.map((p) => {
+                const isSel = p === selProject;
+                return (
+                  <DropdownMenuItem
+                    key={p}
+                    onClick={() => chooseProject(p)}
+                    className={cn(
+                      "gap-2.5 rounded-lg px-1.5 py-1.5",
+                      isSel && "bg-accent/60",
+                    )}
+                  >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <FolderKanban className="size-4" />
+                    </span>
+                    <span className="flex-1 truncate font-medium">{p}</span>
+                    {isSel ? (
+                      <Check className="size-4 shrink-0 text-primary" />
                     ) : null}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {opt.projectName} · {opt.taskId}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  </DropdownMenuItem>
+                );
+              })}
+            </HeroPicker>
+
+            <HeroPicker
+              icon={ListChecks}
+              label={selTask.taskTitle}
+              disabled={locked}
+              width="w-80"
+            >
+              <p className="flex items-center gap-1.5 px-1.5 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">
+                Task
+                <span className="font-normal text-muted-foreground/70">
+                  · {selProject}
+                </span>
+              </p>
+              {tasksForProject(selProject).map((opt) => {
+                const isSel = opt.taskId === selTask.taskId;
+                return (
+                  <DropdownMenuItem
+                    key={opt.taskId}
+                    onClick={() => setSelTask(opt)}
+                    className={cn(
+                      "items-start gap-2.5 rounded-lg px-1.5 py-1.5",
+                      isSel && "bg-accent/60",
+                    )}
+                  >
+                    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <ListChecks className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="truncate font-medium">
+                          {opt.taskTitle}
+                        </span>
+                        {opt.billable ? (
+                          <Badge
+                            variant="secondary"
+                            className="shrink-0 px-1.5 py-0 text-[0.65rem]"
+                          >
+                            Billable
+                          </Badge>
+                        ) : null}
+                      </span>
+                      <span className="block truncate font-mono text-[0.7rem] text-muted-foreground">
+                        {opt.taskId}
+                      </span>
+                    </span>
+                    {isSel ? (
+                      <Check className="mt-0.5 size-4 shrink-0 text-primary" />
+                    ) : null}
+                  </DropdownMenuItem>
+                );
+              })}
+            </HeroPicker>
+          </div>
+
+          {active && !running ? (
+            <p className="text-xs text-feature-foreground/70">
+              Paused — switch the project or task above, then resume.
+            </p>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-5">
@@ -166,7 +278,7 @@ export function TimerHero({
                   <Button
                     size="icon"
                     className="size-11 rounded-full bg-white/15 text-white hover:bg-white/25"
-                    onClick={pause}
+                    onClick={handlePause}
                     aria-label="Pause"
                   >
                     <Pause className="size-5" />
@@ -175,7 +287,7 @@ export function TimerHero({
                   <Button
                     size="icon"
                     className="size-11 rounded-full bg-white text-primary hover:bg-white/90"
-                    onClick={resume}
+                    onClick={handleResume}
                     aria-label="Resume"
                   >
                     <Play className="size-5 fill-current" />
@@ -195,5 +307,46 @@ export function TimerHero({
         </div>
       </div>
     </Card>
+  );
+}
+
+function HeroPicker({
+  icon: Icon,
+  label,
+  disabled,
+  width,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  disabled?: boolean;
+  width?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        render={
+          <button
+            type="button"
+            className="group inline-flex max-w-full items-center gap-2 rounded-xl bg-white/15 px-3.5 py-2 text-sm font-medium text-white shadow-sm ring-1 ring-inset ring-white/15 backdrop-blur-sm transition-colors hover:bg-white/25 hover:ring-white/25 disabled:opacity-70 disabled:ring-white/10 disabled:hover:bg-white/15"
+          />
+        }
+      >
+        <Icon className="size-4 shrink-0 text-white/80" />
+        <span className="truncate">{label}</span>
+        {!disabled ? (
+          <ChevronDown className="size-4 shrink-0 text-white/70 transition-transform group-data-[popup-open]:rotate-180" />
+        ) : null}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={8}
+        className={cn("max-h-80 overflow-y-auto p-1.5", width)}
+      >
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

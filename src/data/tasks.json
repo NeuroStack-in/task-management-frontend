@@ -133,18 +133,18 @@
     "id": "task-00014",
     "projectId": "proj-0002",
     "title": "Polish array port",
-    "status": "done",
-    "assigneeId": "user-owner",
+    "status": "in_progress",
+    "assigneeId": "user-employee",
     "priority": "medium",
-    "dueDate": null,
+    "dueDate": "2026-06-26",
     "estimateHours": 16
   },
   {
     "id": "task-00015",
     "projectId": "proj-0002",
     "title": "Polish driver system",
-    "status": "in_progress",
-    "assigneeId": "user-owner",
+    "status": "todo",
+    "assigneeId": "user-employee",
     "priority": "high",
     "dueDate": "2026-08-13",
     "estimateHours": 9
@@ -153,8 +153,8 @@
     "id": "task-00016",
     "projectId": "proj-0002",
     "title": "Review port panel",
-    "status": "todo",
-    "assigneeId": null,
+    "status": "in_review",
+    "assigneeId": "user-employee",
     "priority": "low",
     "dueDate": "2026-06-14",
     "estimateHours": 12
@@ -163,8 +163,8 @@
     "id": "task-00017",
     "projectId": "proj-0002",
     "title": "Ship card transmitter",
-    "status": "todo",
-    "assigneeId": null,
+    "status": "in_progress",
+    "assigneeId": "user-employee",
     "priority": "high",
     "dueDate": "2026-08-20",
     "estimateHours": 13
@@ -634,7 +634,7 @@
     "projectId": "proj-0005",
     "title": "Spec out monitor card",
     "status": "todo",
-    "assigneeId": "user-0027",
+    "assigneeId": "user-employee",
     "priority": "medium",
     "dueDate": "2026-07-05",
     "estimateHours": 14
@@ -643,8 +643,8 @@
     "id": "task-00065",
     "projectId": "proj-0005",
     "title": "Optimize bandwidth card",
-    "status": "todo",
-    "assigneeId": null,
+    "status": "done",
+    "assigneeId": "user-employee",
     "priority": "high",
     "dueDate": "2026-06-09",
     "estimateHours": 15
@@ -654,9 +654,9 @@
     "projectId": "proj-0005",
     "title": "Optimize pixel driver",
     "status": "in_progress",
-    "assigneeId": "user-owner",
+    "assigneeId": "user-employee",
     "priority": "low",
-    "dueDate": null,
+    "dueDate": "2026-07-02",
     "estimateHours": 11
   },
   {
@@ -664,7 +664,7 @@
     "projectId": "proj-0005",
     "title": "Wire up protocol program",
     "status": "todo",
-    "assigneeId": "user-0116",
+    "assigneeId": "user-employee",
     "priority": "low",
     "dueDate": "2026-07-13",
     "estimateHours": 7
@@ -853,10 +853,10 @@
     "id": "task-00086",
     "projectId": "proj-0006",
     "title": "Audit protocol transmitter",
-    "status": "todo",
-    "assigneeId": "user-0011",
+    "status": "in_review",
+    "assigneeId": "user-employee",
     "priority": "medium",
-    "dueDate": null,
+    "dueDate": "2026-07-04",
     "estimateHours": 14
   },
   {
@@ -864,7 +864,7 @@
     "projectId": "proj-0006",
     "title": "Migrate hard drive application",
     "status": "in_progress",
-    "assigneeId": "user-0047",
+    "assigneeId": "user-employee",
     "priority": "medium",
     "dueDate": "2026-07-21",
     "estimateHours": 9
@@ -873,8 +873,8 @@
     "id": "task-00088",
     "projectId": "proj-0006",
     "title": "Review bus circuit",
-    "status": "in_progress",
-    "assigneeId": "user-owner",
+    "status": "todo",
+    "assigneeId": "user-employee",
     "priority": "high",
     "dueDate": "2026-08-22",
     "estimateHours": 15
@@ -883,8 +883,8 @@
     "id": "task-00089",
     "projectId": "proj-0006",
     "title": "Polish pixel sensor",
-    "status": "in_progress",
-    "assigneeId": "user-0047",
+    "status": "done",
+    "assigneeId": "user-employee",
     "priority": "low",
     "dueDate": "2026-07-04",
     "estimateHours": 3

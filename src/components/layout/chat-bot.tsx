@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sparkles, X, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAssistantStore } from "@/stores/assistant.store";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -36,7 +37,11 @@ function mockReply(prompt: string): string {
 }
 
 export function ChatBot() {
-  const [open, setOpen] = useState(false);
+  const open = useAssistantStore((s) => s.open);
+  const setOpen = useAssistantStore((s) => s.setOpen);
+  const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
+  const consumePrompt = useAssistantStore((s) => s.consumePrompt);
+
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -62,6 +67,16 @@ export function ChatBot() {
       setPending(false);
     }, 700);
   };
+
+  // When opened with a seeded prompt (e.g. from the Help Center "Ask AI"
+  // button), send it once.
+  useEffect(() => {
+    if (open && pendingPrompt) {
+      const prompt = consumePrompt();
+      if (prompt) send(prompt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pendingPrompt]);
 
   return (
     <>
@@ -167,7 +182,7 @@ export function ChatBot() {
         size="icon"
         aria-label={open ? "Close assistant" : "Open assistant"}
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
         className="fixed bottom-5 right-5 z-50 size-14 rounded-full shadow-soft transition-transform hover:scale-105"
       >
         {open ? <X className="size-6" /> : <Sparkles className="size-6" />}

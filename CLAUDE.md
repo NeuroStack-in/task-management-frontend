@@ -53,7 +53,7 @@ Module-first, mirroring TDD §4. Key directories under `src/`:
 
 - `app/` — App Router. Route groups: `(auth)` (login/mfa/etc.), `(app)` (everything authenticated, wrapped by `AuthGuard` + `DashboardShell`). `/` (landing) and `/onboarding` are standalone.
 - `modules/<name>/` — feature code (`auth`, `dashboard`, `roles`, …), each with `components/`, `services/`, etc. **Pages stay thin** and delegate to module components.
-- `stores/` — Zustand stores: `auth`, `roles`, `notification`, `timer`, `dashboard`. Persisted ones use the `persist` middleware with `wp-*` storage keys.
+- `stores/` — Zustand stores: `auth`, `roles`, `notification`, `timer`, `dashboard`, `projects`, `tasks`, `assistant`, `features`, and `ui` (sidebar-collapse + ⌘K command-palette open state). Persisted ones use the `persist` middleware with `wp-*` storage keys, and `partialize` to persist only durable prefs (e.g. `wp-ui` persists the sidebar rail but not the palette).
 - `lib/` — `rbac.ts` (access logic), `data.ts` (typed mock-data accessors), `format.ts` (server-safe helpers), `mock-jwt.ts`, `utils.ts` (`cn`).
 - `constants/` — `permissions.ts` (catalog), `roles.ts` (system roles), `navigation.ts` (sidebar tree).
 - `components/shared/` (PageHeader, StatCard, EmptyState, Loader, ComingSoon, plus the **pulse-line primitives** `sparkline`, `delta-pill`, `gauge` — the WorkPulse design signature; reuse these instead of new chart one-offs) and `components/layout/` (shell, sidebar, navbar, global timer, etc.).
