@@ -16,6 +16,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsSelfScoped } from "@/hooks/use-self-scope";
+import { useAuthStore } from "@/stores/auth.store";
 import { cn } from "@/lib/utils";
 import {
   useProjectsStore,
@@ -48,9 +50,26 @@ interface ProjectsViewProps {
 export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
   const router = useRouter();
   const { can } = usePermissions();
+  const selfScoped = useIsSelfScoped();
+  const userId = useAuthStore((s) => s.user?.id) ?? "";
 
-  const projects = useProjectsStore((s) => s.projects);
+  const allProjects = useProjectsStore((s) => s.projects);
   const createProject = useProjectsStore((s) => s.createProject);
+
+  // Self-scoped roles (Employee) only see projects they're a member of, and the
+  // tasks within them — never the full org portfolio.
+  const projects = useMemo(
+    () =>
+      selfScoped
+        ? allProjects.filter((p) => p.memberIds.includes(userId))
+        : allProjects,
+    [allProjects, selfScoped, userId],
+  );
+  const visibleTasks = useMemo(() => {
+    if (!selfScoped) return tasks;
+    const ids = new Set(projects.map((p) => p.id));
+    return tasks.filter((t) => ids.has(t.projectId));
+  }, [tasks, projects, selfScoped]);
 
   const [view, setView] = useState<View>("projects");
   const [layout, setLayout] = useState<Layout>("grid");
@@ -62,13 +81,13 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
 
   const tasksByProject = useMemo(() => {
     const map = new Map<string, Task[]>();
-    for (const t of tasks) {
+    for (const t of visibleTasks) {
       const arr = map.get(t.projectId);
       if (arr) arr.push(t);
       else map.set(t.projectId, [t]);
     }
     return map;
-  }, [tasks]);
+  }, [visibleTasks]);
 
   const projectMap = useMemo(() => {
     const map: Record<string, Project> = {};
@@ -141,7 +160,11 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
     <div className="space-y-6">
       <PageHeader
         title="Projects"
-        description="Every project across the organization — status, budget health, and delivery at a glance."
+        description={
+          selfScoped
+            ? "Projects you're a member of — status, progress, and your tasks."
+            : "Every project across the organization — status, budget health, and delivery at a glance."
+        }
         actions={
           canCreate ? (
             <Button onClick={() => setNewOpen(true)} className="gap-1.5">
@@ -160,7 +183,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
         <Segmented
           options={[
             { value: "projects", label: "Projects", count: projects.length },
-            { value: "tasks", label: "Tasks", count: tasks.length },
+            { value: "tasks", label: "Tasks", count: visibleTasks.length },
           ]}
           value={view}
           onChange={setView}
@@ -263,7 +286,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
         )
       ) : (
         <TasksView
-          tasks={tasks}
+          tasks={visibleTasks}
           projectMap={projectMap}
           query={query}
           onOpenProject={openProject}

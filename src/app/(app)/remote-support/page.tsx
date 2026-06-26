@@ -1,14 +1,6 @@
-import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Remote Support Center" };
-
+// Remote Support now lives inside the Settings hub; keep the old URL working.
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Remote Support Center"
-      description="Approval-gated remote support sessions and diagnostics."
-      phase={5}
-    />
-  );
+  redirect("/settings/remote-support");
 }

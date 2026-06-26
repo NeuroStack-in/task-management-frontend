@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { RolesManager } from "@/modules/roles/components/roles-manager";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Roles & Permissions" };
-
-export default function RolesPage() {
-  return <RolesManager />;
+// Roles now lives inside the Settings hub; keep the old URL working.
+export default function Page() {
+  redirect("/settings/roles");
 }

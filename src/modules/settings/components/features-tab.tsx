@@ -65,7 +65,7 @@ const FEATURE_LIST: FeatureDef[] = [
   {
     key: "ai",
     icon: Bot,
-    label: "AI Center",
+    label: "AI Insights",
     description:
       "AI-generated productivity summaries, anomaly detection, and smart recommendations.",
     beta: true,

@@ -297,6 +297,216 @@ export function HelpPage() {
         </div>
       </section>
 
+      {/* ── Support tickets ── */}
+      <section className="space-y-6">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Support
+        </h2>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Submit ticket form */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Submit a ticket</CardTitle>
+              <CardDescription>
+                Our support team typically responds within 24 hours on business days.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit(onTicketSubmit)} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ticket-subject">Subject</Label>
+                  <Input
+                    id="ticket-subject"
+                    placeholder="Brief description of your issue"
+                    {...register("subject")}
+                    className={cn(errors.subject && "border-destructive")}
+                  />
+                  {errors.subject && (
+                    <p className="text-xs text-destructive">{errors.subject.message}</p>
+                  )}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>Category</Label>
+                    <Controller
+                      control={control}
+                      name="category"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger
+                            className={cn(
+                              "w-full",
+                              errors.category && "border-destructive",
+                            )}
+                          >
+                            <SelectValue placeholder="Select a category…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {HELP_CATEGORIES.map((cat) => (
+                              <SelectItem key={cat.key} value={cat.key}>
+                                {cat.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {errors.category && (
+                      <p className="text-xs text-destructive">
+                        {errors.category.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>Priority</Label>
+                    <Controller
+                      control={control}
+                      name="priority"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue>
+                              {(v) => {
+                                const opt = PRIORITY_OPTIONS.find(
+                                  (p) => p.value === v,
+                                )
+                                return (
+                                  <span className="flex items-center gap-2">
+                                    {opt && (
+                                      <span
+                                        className={cn(
+                                          "size-2 rounded-full",
+                                          opt.dot,
+                                        )}
+                                      />
+                                    )}
+                                    {opt?.label ?? "Select"}
+                                  </span>
+                                )
+                              }}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PRIORITY_OPTIONS.map((p) => (
+                              <SelectItem key={p.value} value={p.value}>
+                                <span className="flex items-center gap-2">
+                                  <span
+                                    className={cn("size-2 rounded-full", p.dot)}
+                                  />
+                                  {p.label}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="ticket-message">Message</Label>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {messageLength}/500
+                    </span>
+                  </div>
+                  <textarea
+                    id="ticket-message"
+                    rows={5}
+                    maxLength={500}
+                    placeholder="Describe your issue in detail — steps to reproduce, screenshots, error messages…"
+                    {...register("message")}
+                    className={cn(
+                      "w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50",
+                      errors.message && "border-destructive",
+                    )}
+                  />
+                  {errors.message && (
+                    <p className="text-xs text-destructive">{errors.message.message}</p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => toast.info("File attachments are coming soon")}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+                >
+                  <Paperclip className="size-3.5" />
+                  Attach screenshots or files
+                </button>
+
+                <Button type="submit" className="w-full">
+                  <Send className="size-4" />
+                  Submit ticket
+                </Button>
+
+                <p className="text-center text-xs text-muted-foreground">
+                  Need an answer now?{" "}
+                  <button
+                    type="button"
+                    onClick={askAi}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Ask the AI assistant
+                  </button>
+                </p>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Recent tickets */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Your recent tickets</CardTitle>
+              <CardDescription>Status of previously submitted support requests.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {tickets.length === 0 ? (
+                <div className="px-6 py-8">
+                  <EmptyState
+                    icon={Ticket}
+                    title="No tickets yet"
+                    description="Submit your first ticket using the form."
+                  />
+                </div>
+              ) : (
+                <ul className="divide-y">
+                  {tickets.map((ticket) => (
+                    <li key={ticket.id}>
+                      <button
+                        onClick={() => toast.info(`Opening ${ticket.id}`)}
+                        className="flex w-full items-center gap-3 px-6 py-3.5 text-left transition-colors hover:bg-muted/50"
+                      >
+                        <span
+                          className={cn(
+                            "size-2 shrink-0 rounded-full",
+                            TICKET_DOT[ticket.status],
+                          )}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {ticket.subject}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            <span className="font-mono">{ticket.id}</span> ·{" "}
+                            {ticket.createdAt}
+                          </p>
+                        </div>
+                        <StatusBadge status={ticket.status} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
       {/* ── Quick links / categories ── */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -517,216 +727,6 @@ export function HelpPage() {
               </Card>
             )
           })}
-        </div>
-      </section>
-
-      {/* ── Support tickets ── */}
-      <section className="space-y-6">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Support
-        </h2>
-
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Submit ticket form */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Submit a ticket</CardTitle>
-              <CardDescription>
-                Our support team typically responds within 24 hours on business days.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit(onTicketSubmit)} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="ticket-subject">Subject</Label>
-                  <Input
-                    id="ticket-subject"
-                    placeholder="Brief description of your issue"
-                    {...register("subject")}
-                    className={cn(errors.subject && "border-destructive")}
-                  />
-                  {errors.subject && (
-                    <p className="text-xs text-destructive">{errors.subject.message}</p>
-                  )}
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Category</Label>
-                    <Controller
-                      control={control}
-                      name="category"
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger
-                            className={cn(
-                              "w-full",
-                              errors.category && "border-destructive",
-                            )}
-                          >
-                            <SelectValue placeholder="Select a category…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {HELP_CATEGORIES.map((cat) => (
-                              <SelectItem key={cat.key} value={cat.key}>
-                                {cat.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {errors.category && (
-                      <p className="text-xs text-destructive">
-                        {errors.category.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label>Priority</Label>
-                    <Controller
-                      control={control}
-                      name="priority"
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue>
-                              {(v) => {
-                                const opt = PRIORITY_OPTIONS.find(
-                                  (p) => p.value === v,
-                                )
-                                return (
-                                  <span className="flex items-center gap-2">
-                                    {opt && (
-                                      <span
-                                        className={cn(
-                                          "size-2 rounded-full",
-                                          opt.dot,
-                                        )}
-                                      />
-                                    )}
-                                    {opt?.label ?? "Select"}
-                                  </span>
-                                )
-                              }}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PRIORITY_OPTIONS.map((p) => (
-                              <SelectItem key={p.value} value={p.value}>
-                                <span className="flex items-center gap-2">
-                                  <span
-                                    className={cn("size-2 rounded-full", p.dot)}
-                                  />
-                                  {p.label}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="ticket-message">Message</Label>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {messageLength}/500
-                    </span>
-                  </div>
-                  <textarea
-                    id="ticket-message"
-                    rows={5}
-                    maxLength={500}
-                    placeholder="Describe your issue in detail — steps to reproduce, screenshots, error messages…"
-                    {...register("message")}
-                    className={cn(
-                      "w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50",
-                      errors.message && "border-destructive",
-                    )}
-                  />
-                  {errors.message && (
-                    <p className="text-xs text-destructive">{errors.message.message}</p>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => toast.info("File attachments are coming soon")}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-                >
-                  <Paperclip className="size-3.5" />
-                  Attach screenshots or files
-                </button>
-
-                <Button type="submit" className="w-full">
-                  <Send className="size-4" />
-                  Submit ticket
-                </Button>
-
-                <p className="text-center text-xs text-muted-foreground">
-                  Need an answer now?{" "}
-                  <button
-                    type="button"
-                    onClick={askAi}
-                    className="font-medium text-primary hover:underline"
-                  >
-                    Ask the AI assistant
-                  </button>
-                </p>
-              </form>
-            </CardContent>
-          </Card>
-
-          {/* Recent tickets */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Your recent tickets</CardTitle>
-              <CardDescription>Status of previously submitted support requests.</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              {tickets.length === 0 ? (
-                <div className="px-6 py-8">
-                  <EmptyState
-                    icon={Ticket}
-                    title="No tickets yet"
-                    description="Submit your first ticket using the form."
-                  />
-                </div>
-              ) : (
-                <ul className="divide-y">
-                  {tickets.map((ticket) => (
-                    <li key={ticket.id}>
-                      <button
-                        onClick={() => toast.info(`Opening ${ticket.id}`)}
-                        className="flex w-full items-center gap-3 px-6 py-3.5 text-left transition-colors hover:bg-muted/50"
-                      >
-                        <span
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            TICKET_DOT[ticket.status],
-                          )}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {ticket.subject}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            <span className="font-mono">{ticket.id}</span> ·{" "}
-                            {ticket.createdAt}
-                          </p>
-                        </div>
-                        <StatusBadge status={ticket.status} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </section>
 

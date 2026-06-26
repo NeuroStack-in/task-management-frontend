@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { Gauge, Users, UserMinus, Timer } from "lucide-react";
 import { users } from "@/lib/data";
 import {
   statusCounts,
   attendanceCounts,
   productivityHeatmap,
 } from "@/lib/mock-metrics";
-import { StatCard } from "@/components/shared/stat-card";
 import { GreetingHeader } from "@/modules/dashboard/components/greeting-header";
-import { CustomizableDashboard } from "@/modules/dashboard/components/customizable-dashboard";
+import { DashboardView } from "@/modules/dashboard/components/dashboard-view";
 import type { DashboardData } from "@/modules/dashboard/widget-registry";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -56,41 +54,10 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5 pt-1">
       <GreetingHeader />
-
-      {/* KPI strip (always shown) */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Productivity Score"
-          value={`${avgProductivity}%`}
-          icon={Gauge}
-          hint="this week"
-          trend={[64, 66, 63, 70, 72, 69, 74]}
-          featured
-        />
-        <StatCard
-          label="Active Users"
-          value={active}
-          icon={Users}
-          delta={4}
-          trend={[58, 62, 60, 68, 64, 72, 78]}
-        />
-        <StatCard
-          label="Inactive Users"
-          value={inactive}
-          icon={UserMinus}
-          delta={-2}
-          trend={[30, 28, 33, 27, 31, 26, 24]}
-        />
-        <StatCard
-          label="Running Timers"
-          value={runningTimers}
-          icon={Timer}
-          hint="live now"
-          trend={[12, 18, 22, 19, 26, 24, 31]}
-        />
-      </div>
-
-      <CustomizableDashboard data={data} />
+      <DashboardView
+        data={data}
+        kpis={{ avgProductivity, active, inactive, runningTimers }}
+      />
     </div>
   );
 }
