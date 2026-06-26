@@ -149,7 +149,7 @@ export function AttendanceDonut({
           slices={[
             { label: "Present", value: counts.present, color: "var(--success)" },
             { label: "Late", value: counts.late, color: "var(--warning)" },
-            { label: "On leave", value: counts.leave, color: "var(--chart-3)" },
+            { label: "On leave", value: counts.leave, color: "var(--muted-foreground)" },
             { label: "Absent", value: counts.absent, color: "var(--destructive)" },
           ]}
         />
