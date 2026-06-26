@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { RegisterForm } from "@/modules/auth/components/register-form";
+import "@/app/marketing.css";
+import { SignupExperience } from "@/modules/auth/components/signup-experience";
 
 export const metadata: Metadata = { title: "Create account" };
 
 export default function RegisterPage() {
-  return <RegisterForm />;
+  return <SignupExperience />;
 }
