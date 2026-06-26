@@ -64,6 +64,8 @@ export const SYSTEM_ROLES: Role[] = [
       "settings:view",
       "settings:manage",
       "help:view",
+      "leave:view",
+      "leave:request",
     ],
   },
   {
@@ -96,6 +98,8 @@ export const SYSTEM_ROLES: Role[] = [
       "communication:view",
       "notifications:view",
       "help:view",
+      "leave:view",
+      "leave:request",
     ],
   },
   {
@@ -117,6 +121,8 @@ export const SYSTEM_ROLES: Role[] = [
       "communication:view",
       "notifications:view",
       "help:view",
+      "leave:view",
+      "leave:request",
     ],
   },
   {
@@ -135,6 +141,8 @@ export const SYSTEM_ROLES: Role[] = [
       "reports:export",
       "notifications:view",
       "help:view",
+      "leave:view",
+      "leave:request",
     ],
   },
   {
@@ -154,6 +162,8 @@ export const SYSTEM_ROLES: Role[] = [
       "communication:view",
       "notifications:view",
       "help:view",
+      "leave:view",
+      "leave:request",
     ],
   },
 ];

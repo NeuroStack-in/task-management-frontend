@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -159,8 +160,26 @@ function exportAllPdf(reports: ReportDef[]) {
   }
 
   doc.save("workpulse-reports.pdf");
-  toast.success("All reports exported", {
-    description: `${reports.length} reports · workpulse-reports.pdf`,
+  toast.success(`${reports.length} report${reports.length > 1 ? "s" : ""} exported`, {
+    description: "workpulse-reports.pdf",
+  });
+}
+
+/** One CSV file with each selected report as a labelled section. */
+function exportSelectedCsv(reports: ReportDef[]) {
+  if (reports.length === 1) return exportCsv(reports[0]);
+  const csv = reports
+    .map((r) => {
+      const body = Papa.unparse({ fields: r.columns, data: r.rows });
+      return `# ${r.name} — ${r.period}\n${body}`;
+    })
+    .join("\n\n");
+  downloadBlob(
+    new Blob([csv], { type: "text/csv;charset=utf-8;" }),
+    "workpulse-reports.csv",
+  );
+  toast.success(`${reports.length} reports exported`, {
+    description: "workpulse-reports.csv",
   });
 }
 
@@ -191,12 +210,37 @@ export function ReportsTab() {
   const canExport = can("reports:export");
   const [filter, setFilter] = useState<Filter>("all");
   const [preview, setPreview] = useState<ReportDef | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const reports = useMemo(
     () =>
       filter === "all" ? REPORTS : REPORTS.filter((r) => r.category === filter),
     [filter],
   );
+
+  const selectedReports = useMemo(
+    () => REPORTS.filter((r) => selected.has(r.id)),
+    [selected],
+  );
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // "Select all" acts on the currently filtered set.
+  const allFilteredSelected =
+    reports.length > 0 && reports.every((r) => selected.has(r.id));
+  const toggleSelectAll = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) reports.forEach((r) => next.delete(r.id));
+      else reports.forEach((r) => next.add(r.id));
+      return next;
+    });
 
   const empCount = EMPLOYEE_TIME.length;
   const projCount = PROJECT_HOURS.length;
@@ -213,22 +257,65 @@ export function ReportsTab() {
         ]}
       />
 
-      {/* Section header: title + primary bulk action */}
+      {/* Section header: title + bulk actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
           Report templates
         </h2>
-        <Button disabled={!canExport} onClick={() => exportAllPdf(REPORTS)}>
-          <Download className="size-4" /> Export all
-        </Button>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 ? (
+            <>
+              <span className="text-sm text-muted-foreground">
+                {selected.size} selected
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelected(new Set())}
+              >
+                Clear
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={<Button disabled={!canExport} className="gap-1.5" />}
+                >
+                  <Download className="size-4" /> Download selected
+                  <ChevronDown className="size-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-48">
+                  <DropdownMenuItem onClick={() => exportAllPdf(selectedReports)}>
+                    <FileText className="size-4" /> Combined PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportSelectedCsv(selectedReports)}>
+                    <Sheet className="size-4" /> Combined CSV
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : (
+            <Button disabled={!canExport} onClick={() => exportAllPdf(REPORTS)}>
+              <Download className="size-4" /> Export all
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Toolbar: count (left) · category filter (right) */}
+      {/* Toolbar: select-all + count (left) · category filter (right) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{reports.length}</span> of{" "}
-          {REPORTS.length} reports · export-ready as CSV or PDF
-        </p>
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <label className="flex cursor-pointer items-center gap-2 select-none">
+            <Checkbox
+              checked={allFilteredSelected}
+              onCheckedChange={toggleSelectAll}
+              aria-label="Select all reports"
+            />
+            Select all
+          </label>
+          <span>
+            <span className="font-medium text-foreground">{reports.length}</span> of{" "}
+            {REPORTS.length} reports
+          </span>
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
             <button
@@ -263,6 +350,8 @@ export function ReportsTab() {
             key={report.id}
             report={report}
             canExport={canExport}
+            selected={selected.has(report.id)}
+            onToggleSelect={() => toggleSelect(report.id)}
             onPreview={() => setPreview(report)}
           />
         ))}
@@ -282,10 +371,14 @@ export function ReportsTab() {
 function ReportCard({
   report,
   canExport,
+  selected,
+  onToggleSelect,
   onPreview,
 }: {
   report: ReportDef;
   canExport: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
   onPreview: () => void;
 }) {
   const Icon = CATEGORY_ICON[report.category];
@@ -300,12 +393,23 @@ function ReportCard({
           onPreview();
         }
       }}
-      className="group flex cursor-pointer flex-col rounded-[1.4rem] bg-card p-5 shadow-soft transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      className={cn(
+        "group flex cursor-pointer flex-col rounded-[1.4rem] bg-card p-5 shadow-soft transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        selected && "ring-2 ring-primary",
+      )}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
-          <Icon className="size-5" />
-        </span>
+        <div className="flex items-center gap-2.5">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={onToggleSelect}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select ${report.name}`}
+          />
+          <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
+            <Icon className="size-5" />
+          </span>
+        </div>
         <ExportMenu report={report} canExport={canExport} />
       </div>
 

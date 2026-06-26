@@ -43,7 +43,7 @@ import type { DashboardWidget } from "@/types";
  * grows (flex-1) and spreads its children top-to-bottom (justify-between).
  */
 const FILL_CARD =
-  "h-full [&>*]:h-full [&>*]:[--card-spacing:--spacing(7)]! " +
+  "h-full [&>*]:h-full [&>*]:[--card-spacing:--spacing(4)]! " +
   "[&_[data-slot=card-content]]:flex-1 [&_[data-slot=card-content]]:flex " +
   "[&_[data-slot=card-content]]:flex-col [&_[data-slot=card-content]]:justify-between";
 
@@ -208,7 +208,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           </SortableContext>
           <DragOverlay>
             {activeWidget ? (
-              <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(7)]!">
+              <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
                 {WIDGET_REGISTRY[activeWidget.type]?.render(data)}
               </div>
             ) : null}

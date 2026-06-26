@@ -112,6 +112,14 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     ],
   },
   {
+    module: "leave",
+    label: "Leave",
+    permissions: [
+      p("leave", "view", "View Leave Requests"),
+      p("leave", "request", "Submit Leave Request"),
+    ],
+  },
+  {
     module: "ai",
     label: "AI Insights",
     permissions: [p("ai", "view", "Use AI Assistant")],

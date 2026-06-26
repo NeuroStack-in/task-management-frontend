@@ -34,7 +34,7 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
                 <div
                   key={h}
                   title={`${HEATMAP_DAYS[d]} · ${v}%`}
-                  className="h-5 flex-1 rounded-[4px]"
+                  className="h-4 flex-1 rounded-[4px]"
                   style={{
                     backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,
                   }}
@@ -84,16 +84,18 @@ function Donut({
 }) {
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
   return (
-    // h-full so the donut fills (and vertically centers within) its card.
-    <div className="flex h-full items-center gap-4">
-      <div className="relative size-28 shrink-0">
+    // The ring grows to fill all space above the legend (flex-1 + percentage
+    // radii), so the card is used efficiently — no dead band — with the legend
+    // anchored at the bottom.
+    <div className="flex h-full flex-col gap-4">
+      <div className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={slices}
               dataKey="value"
-              innerRadius={38}
-              outerRadius={54}
+              innerRadius="56%"
+              outerRadius="82%"
               paddingAngle={2}
               stroke="none"
             >
@@ -104,13 +106,13 @@ function Donut({
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-display text-xl font-semibold tabular-nums">
+          <span className="font-display text-3xl font-semibold tabular-nums">
             {center}
           </span>
-          <span className="text-[10px] text-muted-foreground">{caption}</span>
+          <span className="text-xs text-muted-foreground">{caption}</span>
         </div>
       </div>
-      <ul className="flex-1 space-y-1.5">
+      <ul className="w-full space-y-2.5">
         {slices.map((s) => (
           <li key={s.label} className="flex items-center gap-2 text-sm">
             <span

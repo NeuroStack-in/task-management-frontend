@@ -33,7 +33,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
         <CardDescription>Average productivity by department</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-full min-h-[240px] w-full">
+        <div className="h-full min-h-[150px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ left: -18, right: 8, top: 4 }}>
               <CartesianGrid vertical={false} stroke="var(--border)" />

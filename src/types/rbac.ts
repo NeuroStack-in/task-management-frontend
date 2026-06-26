@@ -16,7 +16,8 @@ export type PermissionAction =
   | "assign"
   | "manage"
   | "export"
-  | "approve";
+  | "approve"
+  | "request";
 
 export type PermissionId = string; // `${module}:${action}` or "*"
 
