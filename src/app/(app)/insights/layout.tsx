@@ -16,7 +16,7 @@ export default function InsightsLayout({
     <div className="space-y-5 pt-1">
       <PageHeader
         title="Insights"
-        description="Activity, screenshots, anomalies, reports, and AI — in one place."
+        description="Activity, screenshots, reports, and AI insights — in one place."
       />
       <InsightsTabs />
       <div>{children}</div>

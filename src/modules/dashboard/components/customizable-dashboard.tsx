@@ -23,7 +23,7 @@ import {
   type DashboardData,
 } from "@/modules/dashboard/widget-registry";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -113,13 +113,13 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
               {ordered.map((w) => (
                 <label
                   key={w.id}
-                  className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
                 >
-                  <span className="truncate">{w.title}</span>
-                  <Switch
+                  <Checkbox
                     checked={w.visible}
                     onCheckedChange={() => toggleWidget(w.id)}
                   />
+                  <span className="truncate">{w.title}</span>
                 </label>
               ))}
             </div>

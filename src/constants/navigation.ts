@@ -8,8 +8,7 @@ import {
   Camera,
   FileBarChart,
   CheckCheck,
-  Bot,
-  AlertTriangle,
+  Sparkles,
   LineChart,
   Mail,
   Bell,
@@ -73,7 +72,6 @@ export const NAV_GROUPS: NavGroup[] = [
         anyPermissions: [
           "activity:view",
           "screenshots:view",
-          "anomalies:view",
           "reports:view",
           "ai:view",
         ],
@@ -129,11 +127,11 @@ export const INSIGHTS_TABS: NavItem[] = [
     description: "Screenshot gallery, timeline, and risk analysis.",
   },
   {
-    label: "Anomalies",
+    label: "AI Insights",
     href: "/insights/anomalies",
-    icon: AlertTriangle,
-    permission: "anomalies:view",
-    description: "Inactivity, productivity drops, and burnout indicators.",
+    icon: Sparkles,
+    permission: "ai:view",
+    description: "AI summaries, recommendations, and detected anomalies.",
   },
   {
     label: "Reports",
@@ -141,13 +139,6 @@ export const INSIGHTS_TABS: NavItem[] = [
     icon: FileBarChart,
     permission: "reports:view",
     description: "Productivity, time, project, and AI reports with export.",
-  },
-  {
-    label: "AI Center",
-    href: "/insights/ai",
-    icon: Bot,
-    permission: "ai:view",
-    description: "AI summaries, comparisons, and recommendations.",
   },
 ];
 

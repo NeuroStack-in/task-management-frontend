@@ -106,7 +106,11 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
     return projects.filter((p) => {
       if (statusFilter !== "all" && p.status !== statusFilter) return false;
       if (!q) return true;
-      if (p.name.toLowerCase().includes(q) || p.key.toLowerCase().includes(q))
+      if (
+        p.name.toLowerCase().includes(q) ||
+        p.key.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q)
+      )
         return true;
       const list = tasksByProject.get(p.id) ?? [];
       return list.some((t) => t.title.toLowerCase().includes(q));
@@ -167,7 +171,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by project or task name…"
+            placeholder="Search by project, task, or ID…"
             className="pl-8"
           />
         </div>
