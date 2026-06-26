@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   DndContext,
   closestCenter,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -11,6 +12,7 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   rectSortingStrategy,
   arrayMove,
@@ -34,9 +36,11 @@ import { cn } from "@/lib/utils";
 
 function SortableWidget({
   id,
+  span,
   children,
 }: {
   id: string;
+  span: 1 | 2;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -47,7 +51,8 @@ function SortableWidget({
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "group/widget relative mb-4 break-inside-avoid",
+        "group/widget relative",
+        span === 2 && "md:col-span-2 xl:col-span-2",
         isDragging && "z-10 opacity-70",
       )}
     >
@@ -60,7 +65,9 @@ function SortableWidget({
       >
         <GripVertical className="size-4" />
       </button>
-      {children}
+      {/* Stretch the rendered card to fill the (stretched) grid cell so cards
+          in the same row share a height. */}
+      <div className="h-full [&>*]:h-full">{children}</div>
     </div>
   );
 }
@@ -73,6 +80,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   const ordered = useMemo(
@@ -148,12 +156,12 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           onDragEnd={onDragEnd}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            <div className="columns-1 gap-4 md:columns-2 xl:columns-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {visible.map((w) => {
                 const def = WIDGET_REGISTRY[w.type];
                 if (!def) return null;
                 return (
-                  <SortableWidget key={w.id} id={w.id}>
+                  <SortableWidget key={w.id} id={w.id} span={def.span}>
                     {def.render(data)}
                   </SortableWidget>
                 );
