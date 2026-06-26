@@ -145,7 +145,7 @@ export function TimerHero({
 
   return (
     <Card className="bg-feature text-feature-foreground shadow-none">
-      <div className="flex flex-col gap-6 px-6 py-1 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-6 p-5 lg:p-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1 space-y-3.5">
           {/* Status */}
           <div className="flex items-center gap-2 text-feature-foreground/80">
@@ -170,7 +170,7 @@ export function TimerHero({
               icon={FolderKanban}
               label={selProject}
               disabled={locked}
-              width="w-64"
+              width="min-w-[16rem]"
             >
               <p className="px-1.5 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">
                 Project
@@ -202,7 +202,7 @@ export function TimerHero({
               icon={ListChecks}
               label={selTask.taskTitle}
               disabled={locked}
-              width="w-80"
+              width="min-w-[20rem]"
             >
               <p className="flex items-center gap-1.5 px-1.5 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">
                 Task
@@ -330,7 +330,7 @@ function HeroPicker({
         render={
           <button
             type="button"
-            className="group inline-flex max-w-full items-center gap-2 rounded-xl bg-white/15 px-3.5 py-2 text-sm font-medium text-white shadow-sm ring-1 ring-inset ring-white/15 backdrop-blur-sm transition-colors hover:bg-white/25 hover:ring-white/25 disabled:opacity-70 disabled:ring-white/10 disabled:hover:bg-white/15"
+            className="group inline-flex min-w-[8rem] max-w-xs items-center gap-2 rounded-xl bg-white/15 px-3.5 py-2 text-sm font-medium text-white shadow-sm ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/25 hover:ring-white/25 disabled:opacity-70 disabled:ring-white/10 disabled:hover:bg-white/15"
           />
         }
       >

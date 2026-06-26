@@ -14,8 +14,6 @@ import {
 } from "@/lib/mock-attendance";
 import { cn } from "@/lib/utils";
 
-const BARS = 34;
-
 export function AttendanceOverview() {
   const c = orgDayCounts(TODAY.month, TODAY.day);
   const total = c.total;
@@ -26,9 +24,6 @@ export function AttendanceOverview() {
   const presentPct = Math.round((present / total) * 100);
   const leavePct = Math.round((c.leave / total) * 100);
   const absentPct = 100 - presentPct - leavePct;
-
-  const presentBars = Math.round((present / total) * BARS);
-  const leaveBars = Math.round((c.leave / total) * BARS);
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -45,24 +40,28 @@ export function AttendanceOverview() {
           </div>
           <p className="-mt-2 text-xs text-muted-foreground">Attendance Rate</p>
 
-          {/* Distribution */}
-          <div className="flex h-24 items-end gap-[3px]">
-            {Array.from({ length: BARS }, (_, i) => {
-              const seg =
-                i < presentBars
-                  ? "bg-success"
-                  : i < presentBars + leaveBars
-                    ? "bg-primary"
-                    : "bg-destructive/70";
-              const h = 58 + ((i * 11) % 34) - (i / BARS) * 18;
-              return (
-                <div
-                  key={i}
-                  className={cn("flex-1 rounded-full", seg)}
-                  style={{ height: `${Math.max(28, h)}%` }}
-                />
-              );
-            })}
+          {/* Stacked distribution bar */}
+          <div className="space-y-2">
+            <div className="flex h-3 overflow-hidden rounded-full bg-muted">
+              <span
+                className="bg-success transition-all"
+                style={{ width: `${presentPct}%` }}
+                title={`Present ${presentPct}%`}
+              />
+              <span
+                className="bg-primary transition-all"
+                style={{ width: `${leavePct}%` }}
+                title={`On leave ${leavePct}%`}
+              />
+              <span
+                className="bg-destructive/70 transition-all"
+                style={{ width: `${absentPct}%` }}
+                title={`Absent ${absentPct}%`}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {present} of {total} employees accounted for today
+            </p>
           </div>
 
           {/* Legend */}

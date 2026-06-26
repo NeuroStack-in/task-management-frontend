@@ -8,9 +8,6 @@ import {
   BadgeDollarSign,
   Activity,
   Download,
-  Timer,
-  FolderKanban,
-  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/shared/stat-card";
@@ -52,18 +49,6 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
     () => entries.reduce((s, e) => s + e.durationSec, 0),
     [entries],
   );
-  const dayStats = useMemo(
-    () => ({
-      billable: formatHours(
-        entries.filter((e) => e.billable).reduce((s, e) => s + e.durationSec, 0) / 3600,
-      ),
-      focus: `${summary.avgActivity}%`,
-      longest: formatDuration(entries.reduce((m, e) => Math.max(m, e.durationSec), 0)),
-      projects: String(new Set(entries.map((e) => e.project)).size),
-    }),
-    [entries, summary.avgActivity],
-  );
-
   // Resolve the date on the client to avoid an SSR/hydration mismatch.
   const [today, setToday] = useState("");
   useEffect(() => {
@@ -167,26 +152,6 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-xl border sm:grid-cols-4 sm:divide-y-0">
-            <SummaryCell
-              icon={BadgeDollarSign}
-              label="Billable today"
-              value={dayStats.billable}
-              tone="success"
-            />
-            <SummaryCell icon={Activity} label="Focus" value={dayStats.focus} />
-            <SummaryCell
-              icon={Timer}
-              label="Longest session"
-              value={dayStats.longest}
-            />
-            <SummaryCell
-              icon={FolderKanban}
-              label="Projects touched"
-              value={dayStats.projects}
-            />
-          </div>
-
           <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader>
@@ -248,43 +213,10 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   );
 }
 
-function SummaryCell({
-  icon: Icon,
-  label,
-  value,
-  tone = "default",
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  tone?: "default" | "success";
-}) {
-  return (
-    <div className="flex items-center gap-3 bg-card px-4 py-3.5">
-      <span
-        className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-lg",
-          tone === "success"
-            ? "bg-success/10 text-success"
-            : "bg-primary/10 text-primary",
-        )}
-      >
-        <Icon className="size-[1.15rem]" />
-      </span>
-      <div className="min-w-0">
-        <p className="truncate text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="text-lg font-semibold leading-tight tabular-nums">{value}</p>
-      </div>
-    </div>
-  );
-}
-
 function ActivityBar({ value }: { value: number }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+      <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
             "h-full rounded-full",

@@ -10,8 +10,9 @@ import {
   FileText,
   FolderKanban,
   Sheet,
-  Sparkles,
+  BarChart2,
 } from "lucide-react";
+import { AiInsight } from "@/components/shared/ai-insight";
 import {
   Area,
   AreaChart,
@@ -204,7 +205,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
         </Link>
         <div className="flex items-center gap-3">
           <nav className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
-            <span>Team</span>
+            <Link href="/employees" className="transition-colors hover:text-foreground">Employees</Link>
             <span className="text-muted-foreground/50">/</span>
             <span className="font-medium text-foreground">{data.name}</span>
           </nav>
@@ -258,12 +259,9 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
           <Detail label="Phone" value={data.phone} />
           <Detail label="Email" value={data.email} />
           <Detail label="Team" value={data.team} />
-          <Detail label="Date of birth" value={data.dob} />
           <Detail label="Hire date" value={data.hireDate} />
-          <Detail label="Country" value={data.country} />
           <Detail label="City / State" value={data.cityState} />
-          <Detail label="Address" value={data.address} />
-          <Detail label="Postcode" value={data.postcode} />
+          <Detail label="Country" value={data.country} />
         </dl>
       </div>
 
@@ -324,11 +322,11 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-              <Sparkles className="size-4" />
+              <BarChart2 className="size-4" />
             </span>
             <div>
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                KPI
+                Productivity
               </p>
               <p className="text-xs text-muted-foreground/80">
                 Avg. productive hours / day
@@ -409,12 +407,12 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
       </div>
 
       {/* Employee summary */}
-      <AiInsights data={data} />
+      <EmployeeSummaryInsight data={data} />
     </div>
   );
 }
 
-function AiInsights({ data }: { data: EmployeeProfileData }) {
+function EmployeeSummaryInsight({ data }: { data: EmployeeProfileData }) {
   const first = data.name.split(" ")[0];
   const total = data.projects.length;
   const activeCount = data.projects.filter((p) => p.active).length;
@@ -429,7 +427,9 @@ function AiInsights({ data }: { data: EmployeeProfileData }) {
     data.kpi.previous[data.kpi.previous.length - 1];
   const top = [...data.projects].sort((a, b) => b.progress - a.progress)[0];
 
-  const summary = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""}. Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks in flight.`;
+  const title = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""}.`;
+
+  const detail = `Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks in flight.`;
 
   const points: string[] = [
     trendUp
@@ -447,28 +447,13 @@ function AiInsights({ data }: { data: EmployeeProfileData }) {
   ];
 
   return (
-    <div className="rounded-2xl border bg-card p-6">
-      <div className="flex items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-          <Sparkles className="size-4" />
-        </span>
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Employee summary
-        </p>
-        <Badge className="ml-auto bg-feature-tint text-primary">AI · Beta</Badge>
-      </div>
-
-      <p className="mt-3 text-sm leading-relaxed">{summary}</p>
-
-      <ul className="mt-4 space-y-2">
-        {points.map((p, i) => (
-          <li key={i} className="flex gap-2.5 text-sm text-muted-foreground">
-            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-            <span className="leading-relaxed">{p}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <AiInsight
+      label="Employee summary"
+      title={title}
+      detail={detail}
+      points={points}
+      basis={`${data.totalTasks} tasks · ${total} projects · 6-month KPI trend`}
+    />
   );
 }
 

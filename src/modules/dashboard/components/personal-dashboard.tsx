@@ -2,13 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import {
-  Gauge,
-  Clock,
-  ListChecks,
-  FolderKanban,
-  ArrowRight,
-} from "lucide-react";
+import { Gauge, Clock, ArrowRight } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -64,17 +58,17 @@ export function PersonalDashboard() {
     [userId],
   );
 
-  const { openTasks, doneCount } = useMemo(() => {
-    const mine = tasks.filter((t) => t.assigneeId === userId);
-    const open = mine
-      .filter((t) => t.status !== "done")
-      .sort((a, b) => {
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return a.dueDate.localeCompare(b.dueDate);
-      });
-    return { openTasks: open, doneCount: mine.length - open.length };
-  }, [tasks, userId]);
+  const openTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.assigneeId === userId && t.status !== "done")
+        .sort((a, b) => {
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return a.dueDate.localeCompare(b.dueDate);
+        }),
+    [tasks, userId],
+  );
 
   // This week's attendance (last 7 calendar days ending on the demo "today").
   const week = useMemo(() => {
@@ -104,8 +98,10 @@ export function PersonalDashboard() {
 
   return (
     <>
-      {/* Personal KPI strip */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Personal KPI strip — only the two metrics the lists below don't
+          already surface. Open Tasks and My Projects counts were dropped
+          because the "My tasks" and "My projects" lists show them directly. */}
+      <div className="grid gap-4 sm:grid-cols-2">
         <StatCard
           label="My Productivity"
           value={`${score}%`}
@@ -120,23 +116,13 @@ export function PersonalDashboard() {
           icon={Clock}
           hint={`${weekHours}h this week`}
         />
-        <StatCard
-          label="Open Tasks"
-          value={openTasks.length}
-          icon={ListChecks}
-          hint={`${doneCount} completed`}
-        />
-        <StatCard
-          label="My Projects"
-          value={myProjects.length}
-          icon={FolderKanban}
-          hint="you're a member of"
-        />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      {/* My tasks (3fr) sits beside a roomier This week (2fr); My projects gets
+          its own full-width row below so progress bars have real space. */}
+      <div className="grid gap-4 xl:grid-cols-5">
         {/* My tasks */}
-        <Card className="gap-0 p-0 xl:col-span-2">
+        <Card className="gap-0 p-0 xl:col-span-3">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">
               My tasks
@@ -184,7 +170,7 @@ export function PersonalDashboard() {
         </Card>
 
         {/* This week's attendance */}
-        <Card className="gap-0 p-0">
+        <Card className="gap-0 p-0 xl:col-span-2">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">
               This week
@@ -222,7 +208,7 @@ export function PersonalDashboard() {
         </Card>
 
         {/* My projects */}
-        <Card className="gap-0 p-0 xl:col-span-3">
+        <Card className="gap-0 p-0 xl:col-span-5">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">
               My projects

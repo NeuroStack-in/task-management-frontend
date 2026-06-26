@@ -75,7 +75,7 @@ function StatusBadge({ status }: { status: AuditStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-medium",
         STATUS_STYLE[status],
       )}
     >
@@ -248,7 +248,7 @@ export function AuditLogs() {
 
       {/* ── Log table ── */}
       {filtered.length === 0 ? (
-        <div className="rounded-[1.4rem] bg-card py-10 shadow-soft">
+        <div className="rounded-lg border border-border bg-card py-10">
           <EmptyState
             icon={Search}
             title="No matching events"
@@ -261,7 +261,7 @@ export function AuditLogs() {
           />
         </div>
       ) : (
-        <div className="overflow-hidden rounded-[1.4rem] bg-card shadow-soft">
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
           <table className="w-full caption-bottom text-sm">
             <TableHeader>
               <TableRow className="hover:bg-transparent">

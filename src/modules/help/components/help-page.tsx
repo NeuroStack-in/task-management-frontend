@@ -1,13 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   BarChart2,
+  BookOpen,
   ChevronDown,
   Clock,
   Compass,
+  FileText,
+  HelpCircle,
   Paperclip,
-  Play,
   PlayCircle,
   Search,
   Send,
@@ -199,6 +201,16 @@ const WALKTHROUGHS = [
 
 const POPULAR_SEARCHES = ["Time tracking", "Screenshots", "Reports", "Billing"]
 
+// Section ids for anchor nav
+const SECTIONS = [
+  { id: "support", label: "Support", icon: Ticket },
+  { id: "browse", label: "Browse", icon: BookOpen },
+  { id: "articles", label: "Articles", icon: FileText },
+  { id: "tutorials", label: "Tutorials", icon: PlayCircle },
+  { id: "faqs", label: "FAQs", icon: HelpCircle },
+  { id: "walkthroughs", label: "Walkthroughs", icon: Compass },
+] as const
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Help page root
 // ──────────────────────────────────────────────────────────────────────────────
@@ -209,9 +221,32 @@ export function HelpPage() {
   const [selectedArticle, setSelectedArticle] = useState<HelpArticle | null>(null)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [tickets, setTickets] = useState<SupportTicket[]>([...MOCK_TICKETS])
+  const [activeSection, setActiveSection] = useState<string>("support")
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
   const askAi = () => openAssistant(search.trim() || undefined)
+
+  // Update active section on scroll
+  useEffect(() => {
+    function onScroll() {
+      const scrollY = window.scrollY + 120
+      for (const sec of [...SECTIONS].reverse()) {
+        const el = sectionRefs.current[sec.id]
+        if (el && el.offsetTop <= scrollY) {
+          setActiveSection(sec.id)
+          break
+        }
+      }
+    }
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
+
+  function scrollTo(id: string) {
+    const el = sectionRefs.current[id]
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
 
   // Ticket form
   const {
@@ -255,7 +290,7 @@ export function HelpPage() {
   return (
     <div className="space-y-10">
       {/* ── Hero ── */}
-      <section className="relative overflow-hidden rounded-[1.6rem] bg-feature px-6 py-12 text-center text-feature-foreground sm:py-16">
+      <section className="rounded-lg border border-border bg-feature px-6 py-10 text-center text-feature-foreground sm:py-14">
         <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
           How can we help?
         </h1>
@@ -297,8 +332,35 @@ export function HelpPage() {
         </div>
       </section>
 
+      {/* ── Sticky anchor nav ── */}
+      <nav className="sticky top-0 z-20 -mx-1 flex gap-1 overflow-x-auto border-b border-border bg-background/95 pb-0 pt-1 backdrop-blur-sm">
+        {SECTIONS.map((sec) => {
+          const Icon = sec.icon
+          const active = activeSection === sec.id
+          return (
+            <button
+              key={sec.id}
+              onClick={() => scrollTo(sec.id)}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 border-b-2 px-3 pb-2 pt-1 text-xs font-medium transition-colors",
+                active
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Icon className="size-3.5" />
+              {sec.label}
+            </button>
+          )
+        })}
+      </nav>
+
       {/* ── Support tickets ── */}
-      <section className="space-y-6">
+      <section
+        id="support"
+        ref={(el) => { sectionRefs.current["support"] = el }}
+        className="space-y-6 scroll-mt-16"
+      >
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Support
         </h2>
@@ -508,11 +570,15 @@ export function HelpPage() {
       </section>
 
       {/* ── Quick links / categories ── */}
-      <section className="space-y-3">
+      <section
+        id="browse"
+        ref={(el) => { sectionRefs.current["browse"] = el }}
+        className="space-y-3 scroll-mt-16"
+      >
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Browse by category
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {HELP_CATEGORIES.map((cat) => {
             const Icon = cat.icon
             const active = selectedCategory === cat.key
@@ -523,22 +589,24 @@ export function HelpPage() {
                   setSelectedCategory(active ? null : cat.key)
                 }
                 className={cn(
-                  "flex flex-col items-center gap-2 rounded-2xl border p-3 text-center text-xs font-medium transition-colors",
+                  "flex items-center gap-3 rounded-md border p-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                   active
                     ? "border-primary bg-primary/5 text-primary"
-                    : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                    : "border-border bg-card text-foreground hover:border-primary/30 hover:bg-muted",
                 )}
               >
                 <div
                   className={cn(
-                    "flex size-9 items-center justify-center rounded-xl",
+                    "flex size-8 shrink-0 items-center justify-center rounded-md",
                     active ? "bg-primary/10" : "bg-muted",
                   )}
                 >
                   <Icon className="size-4" />
                 </div>
-                <span className="leading-tight">{cat.label}</span>
-                <span className="text-[10px] text-muted-foreground">{cat.count} articles</span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{cat.label}</p>
+                  <p className="text-xs text-muted-foreground">{cat.count} articles</p>
+                </div>
               </button>
             )
           })}
@@ -546,7 +614,11 @@ export function HelpPage() {
       </section>
 
       {/* ── Articles ── */}
-      <section className="space-y-3">
+      <section
+        id="articles"
+        ref={(el) => { sectionRefs.current["articles"] = el }}
+        className="space-y-3 scroll-mt-16"
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
             Documentation &amp; guides
@@ -616,49 +688,56 @@ export function HelpPage() {
       </section>
 
       {/* ── Video tutorials ── */}
-      <section className="space-y-3">
+      <section
+        id="tutorials"
+        ref={(el) => { sectionRefs.current["tutorials"] = el }}
+        className="space-y-3 scroll-mt-16"
+      >
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Video tutorials
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {VIDEO_TUTORIALS.map((video, i) => {
-            const hue = [210, 160, 280, 30, 190, 320][i % 6]
-            return (
-              <button
-                key={video.title}
-                onClick={() => toast.info("Video player coming soon")}
-                className="group relative overflow-hidden rounded-2xl border text-left"
-              >
-                {/* Gradient thumbnail */}
+        <Card>
+          <CardContent className="divide-y p-0">
+            {VIDEO_TUTORIALS.map((video) => {
+              const categoryLabel =
+                HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
+                video.category
+              return (
                 <div
-                  className="flex h-36 items-center justify-center"
-                  style={{
-                    background: `linear-gradient(135deg, hsl(${hue} 60% 30%), hsl(${hue + 40} 70% 50%))`,
-                  }}
+                  key={video.title}
+                  className="flex items-center gap-3 px-4 py-3"
                 >
-                  <div className="flex size-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110">
-                    <Play className="size-5 fill-white text-white" />
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <PlayCircle className="size-4" />
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{video.title}</p>
+                    <p className="text-xs text-muted-foreground">{categoryLabel}</p>
+                  </div>
+                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
+                    {video.duration}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="shrink-0"
+                    onClick={() => toast.info("Video player coming soon")}
+                  >
+                    Play
+                  </Button>
                 </div>
-                {/* Duration badge */}
-                <div className="absolute top-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
-                  {video.duration}
-                </div>
-                <div className="p-3">
-                  <p className="text-sm font-medium leading-snug">{video.title}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground capitalize">
-                    {HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
-                      video.category}
-                  </p>
-                </div>
-              </button>
-            )
-          })}
-        </div>
+              )
+            })}
+          </CardContent>
+        </Card>
       </section>
 
       {/* ── FAQs ── */}
-      <section className="space-y-3">
+      <section
+        id="faqs"
+        ref={(el) => { sectionRefs.current["faqs"] = el }}
+        className="space-y-3 scroll-mt-16"
+      >
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Frequently asked questions
         </h2>
@@ -673,7 +752,7 @@ export function HelpPage() {
                   {faq.q}
                   <ChevronDown
                     className={cn(
-                      "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+                      "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
                       openFaq === i && "rotate-180",
                     )}
                   />
@@ -688,46 +767,48 @@ export function HelpPage() {
       </section>
 
       {/* ── Guided walkthroughs ── */}
-      <section className="space-y-3">
+      <section
+        id="walkthroughs"
+        ref={(el) => { sectionRefs.current["walkthroughs"] = el }}
+        className="space-y-3 scroll-mt-16"
+      >
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Guided walkthroughs
         </h2>
         <p className="text-sm text-muted-foreground">
-          Interactive step-by-step tours that walk you through key features in context.
+          Step-by-step in-app tours. Tours use react-joyride and will highlight the relevant UI as you follow along.
         </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {WALKTHROUGHS.map((tour) => {
-            const Icon = tour.icon
-            return (
-              <Card key={tour.id} className="flex flex-col">
-                <CardContent className="flex flex-1 flex-col gap-3 pt-5">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
-                    <Icon className="size-5" />
+        <Card>
+          <CardContent className="divide-y p-0">
+            {WALKTHROUGHS.map((tour) => {
+              const Icon = tour.icon
+              return (
+                <div key={tour.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-feature-tint text-primary">
+                    <Icon className="size-4" />
                   </div>
-                  <div className="flex-1 space-y-1">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">{tour.title}</p>
-                    <p className="text-xs text-muted-foreground">{tour.description}</p>
-                  </div>
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="size-3" />
                       {tour.duration}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5"
-                      onClick={() => toast.success(`"${tour.title}" tour started`)}
-                    >
-                      <PlayCircle className="size-4" />
-                      Start tour
-                    </Button>
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      toast.info(`"${tour.title}" tour — coming in the next release`)
+                    }
+                  >
+                    <PlayCircle className="size-4" />
+                    Start tour
+                  </Button>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
       </section>
 
       {/* Article reader sheet */}

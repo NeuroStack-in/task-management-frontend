@@ -5,7 +5,6 @@ import { Check, Plug, Search, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import {
   Sheet,
@@ -68,9 +67,9 @@ function AppLogo({
   )
 }
 
-function ConnectedPill() {
+function ConnectedBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-success/12 px-2 py-0.5 text-xs font-medium text-success">
+    <span className="inline-flex items-center gap-1.5 rounded-sm border border-success/30 bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
       <Check className="size-3" /> Connected
     </span>
   )
@@ -164,7 +163,7 @@ export function IntegrationsMarketplace() {
 
       {/* ── Grid ── */}
       {filtered.length === 0 ? (
-        <div className="rounded-[1.4rem] bg-card py-10 shadow-soft">
+        <div className="rounded-lg border border-border bg-card py-10">
           <EmptyState
             icon={Plug}
             title="No integrations found"
@@ -187,7 +186,12 @@ export function IntegrationsMarketplace() {
                     setSelected(integration)
                   }
                 }}
-                className="group flex cursor-pointer flex-col rounded-[1.4rem] bg-card p-5 text-left shadow-soft transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                className={cn(
+                  "group flex cursor-pointer flex-col rounded-lg border bg-card p-5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  isConnected
+                    ? "border-success/30 hover:border-success/50"
+                    : "border-border hover:border-primary/30",
+                )}
               >
                 <div className="flex items-start gap-3">
                   <AppLogo
@@ -196,21 +200,14 @@ export function IntegrationsMarketplace() {
                     className="size-11 shrink-0"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-display font-semibold">
-                        {integration.name}
-                      </p>
-                      {integration.popular && !isConnected && (
-                        <Badge variant="secondary" className="font-normal">
-                          Popular
-                        </Badge>
-                      )}
-                    </div>
+                    <p className="font-display font-semibold">
+                      {integration.name}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {integration.category}
                     </p>
                   </div>
-                  {isConnected && <ConnectedPill />}
+                  {isConnected && <ConnectedBadge />}
                 </div>
 
                 <p className="mt-3 line-clamp-2 flex-1 text-sm text-muted-foreground">
@@ -219,9 +216,17 @@ export function IntegrationsMarketplace() {
 
                 <div className="mt-4">
                   {isConnected ? (
-                    <span className="text-sm font-medium text-primary">
-                      Manage →
-                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!canManage}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelected(integration)
+                      }}
+                    >
+                      Manage
+                    </Button>
                   ) : (
                     <Button
                       size="sm"
@@ -289,7 +294,7 @@ function IntegrationDetail({
             </SheetTitle>
             <p className="text-xs text-muted-foreground">{integration.category}</p>
           </div>
-          {connected && <ConnectedPill />}
+          {connected && <ConnectedBadge />}
         </div>
         <SheetDescription className="pt-2 text-left">
           {integration.description}

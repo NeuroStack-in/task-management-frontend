@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ImagePlus, Upload, X } from "lucide-react"
-import { toast } from "sonner"
+import { ImagePlus, Upload, X, Clock } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -65,9 +64,18 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
         <DialogHeader>
           <DialogTitle>Upload profile photo</DialogTitle>
           <DialogDescription>
-            Photo upload will be saved to AWS S3 once the backend is connected.
+            Preview your selection below. Saving is not available yet — photo upload requires a backend connection (coming in a future phase).
           </DialogDescription>
         </DialogHeader>
+
+        {/* Coming-soon notice */}
+        <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
+          <Clock className="mt-0.5 size-3.5 shrink-0 text-warning" />
+          <span>
+            <strong className="font-medium text-foreground">Coming soon.</strong>{" "}
+            You can preview a photo here, but it won&apos;t be saved until this feature launches.
+          </span>
+        </div>
 
         {preview ? (
           /* ── Preview state ── */
@@ -141,14 +149,12 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
 
         <DialogFooter showCloseButton>
           <Button
-            disabled={!preview}
-            className="gap-1.5"
-            onClick={() =>
-              toast.info("Photo upload will be available once the backend is connected.")
-            }
+            disabled
+            className="gap-1.5 cursor-not-allowed opacity-50"
+            title="Photo upload is not yet available"
           >
             <Upload className="size-3.5" />
-            Upload photo
+            Save photo (coming soon)
           </Button>
         </DialogFooter>
       </DialogContent>

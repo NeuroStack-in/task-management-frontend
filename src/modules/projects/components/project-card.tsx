@@ -49,16 +49,16 @@ export function ProjectCard({
         }
       }}
       className={cn(
-        "relative cursor-pointer gap-4 pl-6 outline-none transition-all duration-200",
-        "hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-24px_rgb(0_0_0/0.35)]",
-        "focus-visible:ring-3 focus-visible:ring-ring/50",
+        "relative cursor-pointer gap-4 pl-6 outline-none transition-colors duration-150",
+        "hover:border-primary/30",
+        "focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
     >
       {/* Status accent rail */}
       <span
         aria-hidden
         className={cn(
-          "absolute inset-y-3 left-2 w-1 rounded-full transition-all duration-200 group-hover/card:inset-y-2",
+          "absolute inset-y-3 left-2 w-1 rounded-full",
           toneRail[status.tone],
         )}
       />
@@ -67,14 +67,11 @@ export function ProjectCard({
       <div className="flex items-start justify-between gap-3 px-5">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
+            <span className="rounded-sm bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
               {project.key}
             </span>
-            <span className="font-mono text-[0.65rem] text-muted-foreground/70">
-              {project.id}
-            </span>
             <span className="truncate text-xs text-muted-foreground">
-              · {project.department}
+              {project.department}
             </span>
           </div>
           <h3 className="mt-1.5 truncate font-heading text-base font-semibold tracking-tight transition-colors group-hover/card:text-primary">

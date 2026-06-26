@@ -85,7 +85,7 @@ function SortableWidget({
         // Dashed drop-placeholder; the floating DragOverlay shows the widget.
         <div className="relative h-full">
           <div className={cn("invisible", FILL_CARD)}>{children}</div>
-          <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
+          <div className="absolute inset-0 rounded-lg border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
         </div>
       ) : (
         <div className={FILL_CARD}>{children}</div>
@@ -107,8 +107,14 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // Skip any widget whose type no longer has a registry def (e.g. the removed
+  // static ai-summary/alerts/deadlines/upcoming-tasks still present in older
+  // persisted layouts) so they never show in the grid or the Customize list.
   const ordered = useMemo(
-    () => [...widgets].sort((a, b) => a.position - b.position),
+    () =>
+      [...widgets]
+        .filter((w) => WIDGET_REGISTRY[w.type])
+        .sort((a, b) => a.position - b.position),
     [widgets],
   );
   const visible = ordered.filter((w) => w.visible);
@@ -185,7 +191,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
       </div>
 
       {visible.length === 0 ? (
-        <div className="rounded-[1.4rem] border border-dashed p-10 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
           No widgets shown. Use{" "}
           <span className="font-medium text-foreground">Customize</span> to add
           some.
@@ -199,16 +205,17 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           onDragCancel={() => setActiveId(null)}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            {/* Equal-height bento grid: `auto-rows-fr` makes every row the same
-                height; each widget card fills its cell (see FILL_CARD). Charts
-                span 2 columns; drop any widget anywhere — order = placement. */}
-            <div className="grid auto-rows-fr grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {/* Bento grid: every row caps at ~22rem so chart widgets stay a
+                readable height instead of stretching into whitespace; each card
+                fills its cell (see FILL_CARD). Charts span 2 columns; drop any
+                widget anywhere — order = placement. */}
+            <div className="grid auto-rows-[minmax(0,22rem)] grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {visible.map(renderWidget)}
             </div>
           </SortableContext>
           <DragOverlay>
             {activeWidget ? (
-              <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
+              <div className="cursor-grabbing rounded-lg opacity-95 shadow-lg ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
                 {WIDGET_REGISTRY[activeWidget.type]?.render(data)}
               </div>
             ) : null}

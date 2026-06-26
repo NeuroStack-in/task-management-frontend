@@ -1,13 +1,9 @@
-import type { Metadata } from "next";
-import { ForgotPasswordForm } from "@/modules/auth/components/forgot-password-form";
-import { AuthShell } from "@/modules/auth/components/auth-shell";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Forgot password" };
-
+/**
+ * Password reset lives inline on /login (see LoginExperience "reset" mode),
+ * so this route redirects there to avoid a duplicate flow.
+ */
 export default function ForgotPasswordPage() {
-  return (
-    <AuthShell>
-      <ForgotPasswordForm />
-    </AuthShell>
-  );
+  redirect("/login");
 }

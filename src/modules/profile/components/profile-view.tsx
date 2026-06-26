@@ -10,13 +10,14 @@ import {
   CheckSquare,
   CalendarCheck,
   ImagePlus,
+  TrendingUp,
+  Info,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
 import { initials } from "@/lib/format";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
-import { Gauge } from "@/components/shared/gauge";
 import { Loader } from "@/components/shared/loader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,8 +37,17 @@ const STATUS_TONE: Record<string, string> = {
   suspended: "bg-destructive/12 text-destructive",
 };
 
+function formatMemberSince(issuedAt: number | undefined): string | null {
+  if (!issuedAt) return null;
+  return new Date(issuedAt).toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export function ProfileView() {
   const user = useAuthStore((s) => s.user);
+  const session = useAuthStore((s) => s.session);
   const role = useCurrentRole();
 
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -50,11 +60,15 @@ export function ProfileView() {
   const tasksDone = 40 + (seed % 60);
   const attendance = 88 + (seed % 12);
 
+  const memberSince = formatMemberSince(session?.issuedAt);
+
   const details = [
     { icon: Mail, label: "Email", value: user.email },
     { icon: Building2, label: "Department", value: user.department },
     { icon: UsersIcon, label: "Team", value: user.team },
-    { icon: CalendarCheck, label: "Member since", value: "Jan 2024" },
+    ...(memberSince
+      ? [{ icon: CalendarCheck, label: "Member since", value: memberSince }]
+      : []),
   ];
 
   return (
@@ -107,10 +121,11 @@ export function ProfileView() {
               <Badge className={STATUS_TONE[user.status] ?? "bg-muted"}>
                 {user.status}
               </Badge>
-              <span className="text-xs text-muted-foreground">
-                {user.department} · {user.team}
-              </span>
             </div>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Info className="size-3 shrink-0" />
+              Name and job title are managed by your administrator.
+            </p>
             {!user.avatarUrl && (
               <button
                 onClick={() => setUploadOpen(true)}
@@ -125,11 +140,11 @@ export function ProfileView() {
       </Card>
 
       {/* Personal stats */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
-          label="Productivity"
+          label="Productivity score"
           value={`${user.productivityScore}%`}
-          icon={CheckSquare}
+          icon={TrendingUp}
           hint="this week"
           trend={[62, 65, 63, 70, 72, 69, user.productivityScore]}
           featured
@@ -169,15 +184,21 @@ export function ProfileView() {
           </CardContent>
         </Card>
 
-        {/* Attendance rate */}
-        <Card className="items-center justify-center">
-          <CardHeader className="w-full">
-            <CardTitle>Attendance rate</CardTitle>
-          </CardHeader>
-          <CardContent className="flex justify-center pb-2">
-            <Gauge value={attendance} label="present, last 30 days" />
-          </CardContent>
-        </Card>
+        {/* Attendance + tasks pair — compact stats side by side */}
+        <div className="flex flex-col gap-4">
+          <StatCard
+            label="Attendance rate"
+            value={`${attendance}%`}
+            icon={CalendarCheck}
+            hint="present, last 30 days"
+          />
+          <StatCard
+            label="On-time completion"
+            value={`${Math.min(100, attendance - 2 + (seed % 8))}%`}
+            icon={CheckSquare}
+            hint="tasks this month"
+          />
+        </div>
       </div>
 
       {/* Upload wireframe modal */}

@@ -223,7 +223,7 @@ function CategoriesPanel({
       {CATEGORIES.map((cat) => (
         <div
           key={cat}
-          className="shadow-soft flex items-stretch overflow-hidden rounded-[1.4rem] bg-card"
+          className="flex items-stretch overflow-hidden rounded-lg border border-border bg-card"
         >
           <span
             className="w-1.5 shrink-0"
@@ -297,7 +297,7 @@ function ItemsPanel({
           />
         </div>
 
-        <div className="overflow-hidden rounded-xl border">
+        <div className="overflow-hidden rounded-md border border-border">
           <table className="w-full caption-bottom text-sm">
             <TableHeader>
               <TableRow>
@@ -381,7 +381,7 @@ function ChipList({
       {items.map((item) => (
         <div
           key={item}
-          className="flex items-center gap-1.5 rounded-full border bg-muted px-3 py-1 text-xs"
+          className="flex items-center gap-1.5 rounded-sm border border-border bg-muted px-2.5 py-1 text-xs"
         >
           {item}
           {canManage && (
@@ -514,26 +514,6 @@ const WEIGHT_DESCRIPTIONS: Record<UsageCategory, string> = {
   distracting: "Distracting — no contribution; higher values penalise the score",
 }
 
-function WeightBar({
-  value,
-  category,
-}: {
-  value: number
-  category: UsageCategory
-}) {
-  return (
-    <div className="hidden gap-1 sm:flex">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <span
-          key={i}
-          className={cn("h-1.5 w-5 rounded-full bg-muted")}
-          style={i < value ? { backgroundColor: CATEGORY_COLOR[category] } : undefined}
-        />
-      ))}
-    </div>
-  )
-}
-
 function ScoringPanel({
   weights,
   onChange,
@@ -558,7 +538,6 @@ function ScoringPanel({
             <div key={cat} className="flex items-center gap-4 py-4">
               <CategoryDot category={cat} />
               <p className="min-w-0 flex-1 text-sm">{WEIGHT_DESCRIPTIONS[cat]}</p>
-              <WeightBar value={weights[cat]} category={cat} />
               <NumberStepper
                 value={weights[cat]}
                 min={0}
@@ -713,7 +692,7 @@ export function TrackingRulesTab() {
       />
 
       {!canManage && (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
           <span className="font-medium text-foreground">Manage Settings</span>{" "}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Copy,
+  Eye,
   KeyRound,
   Lock,
   MoreVertical,
@@ -107,7 +108,7 @@ export function RolesManager() {
         }
       />
 
-      <div className="overflow-hidden rounded-[1.4rem] bg-card shadow-soft">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <table className="w-full caption-bottom text-sm">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -119,7 +120,7 @@ export function RolesManager() {
               <TableHead className="py-3 pr-6 text-right md:pr-2">
                 Permissions
               </TableHead>
-              {canManage && <TableHead className="w-12 py-3 pr-4" />}
+              <TableHead className="w-12 py-3 pr-4" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -176,37 +177,46 @@ export function RolesManager() {
                 </TableCell>
 
                 {/* Actions */}
-                {canManage && (
-                  <TableCell className="py-3 pr-4 text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button variant="ghost" size="icon" className="size-8" />
-                        }
-                      >
-                        <MoreVertical className="size-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleClone(role)}>
-                          <Copy className="size-4" /> Clone
+                <TableCell className="py-3 pr-4 text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button variant="ghost" size="icon" className="size-8" />
+                      }
+                    >
+                      <MoreVertical className="size-4" />
+                      <span className="sr-only">Actions for {role.name}</span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {/* System roles are read-only: view their permissions. */}
+                      {role.system ? (
+                        <DropdownMenuItem onClick={() => openEdit(role)}>
+                          <Eye className="size-4" /> View permissions
                         </DropdownMenuItem>
+                      ) : (
                         <DropdownMenuItem
-                          disabled={role.system}
+                          disabled={!canManage}
                           onClick={() => openEdit(role)}
                         >
                           <Pencil className="size-4" /> Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          disabled={role.system}
-                          onClick={() => setDeleteTarget(role)}
-                        >
-                          <Trash2 className="size-4" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                )}
+                      )}
+                      <DropdownMenuItem
+                        disabled={!canManage}
+                        onClick={() => handleClone(role)}
+                      >
+                        <Copy className="size-4" /> Clone
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={!canManage || role.system}
+                        onClick={() => setDeleteTarget(role)}
+                      >
+                        <Trash2 className="size-4" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

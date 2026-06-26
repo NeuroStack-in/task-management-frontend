@@ -7,7 +7,6 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { usePermissions } from "@/hooks/use-permissions";
 import {
   CURRENT_PLAN,
   INVOICES,
@@ -16,8 +15,18 @@ import {
   USAGE_METERS,
   formatCurrency,
   type Invoice,
+  type InvoiceStatus,
 } from "@/lib/mock-billing";
 import { cn } from "@/lib/utils";
+
+const INVOICE_STATUS_META: Record<
+  InvoiceStatus,
+  { cls: string; label: string }
+> = {
+  paid: { cls: "bg-success/12 text-success", label: "Paid" },
+  due: { cls: "bg-warning/15 text-warning", label: "Due" },
+  failed: { cls: "bg-destructive/12 text-destructive", label: "Failed" },
+};
 
 function downloadInvoice(inv: Invoice) {
   const doc = new jsPDF();
@@ -46,9 +55,6 @@ function downloadInvoice(inv: Invoice) {
 }
 
 export function BillingView() {
-  const { can } = usePermissions();
-  const canManage = can("billing:manage");
-
   const monthly = CURRENT_PLAN.seatsUsed * CURRENT_PLAN.pricePerSeat;
   const seatPct = Math.round(
     (CURRENT_PLAN.seatsUsed / CURRENT_PLAN.seatsTotal) * 100,
@@ -98,11 +104,12 @@ export function BillingView() {
               Renews {CURRENT_PLAN.renewsOn} · {CURRENT_PLAN.billingCycle}
             </p>
 
+            {/* Stub CTA: always disabled — subscription management is a later phase */}
             <Button
               variant="outline"
               size="sm"
-              disabled={!canManage}
-              onClick={() => toast.info("Subscription management is a later phase.")}
+              disabled
+              title="Subscription management is available in a later phase."
             >
               Manage subscription
             </Button>
@@ -124,12 +131,13 @@ export function BillingView() {
                 </p>
               </div>
             </div>
+            {/* Stub CTA: always disabled — card update is a later phase */}
             <Button
               variant="ghost"
               size="sm"
               className="-ml-2"
-              disabled={!canManage}
-              onClick={() => toast.info("Updating cards is a later phase.")}
+              disabled
+              title="Updating payment method is available in a later phase."
             >
               Update card
             </Button>
@@ -168,101 +176,87 @@ export function BillingView() {
         </div>
       </section>
 
-      {/* Plans */}
+      {/* Plans — current tier is collapsed to a label; only upgrades/downgrades shown */}
       <section className="space-y-4">
         <h2 className="text-sm font-medium text-muted-foreground">Plans</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {PLAN_TIERS.map((tier) => {
-            const current = tier.id === CURRENT_PLAN.tierId;
-            return (
-              <div
-                key={tier.id}
-                className={cn(
-                  "rounded-2xl border p-4",
-                  current ? "border-primary bg-primary/[0.03]" : "border-border",
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <p className="font-medium">{tier.name}</p>
-                  {current ? (
-                    <Badge variant="secondary" className="text-[11px]">
-                      Current
-                    </Badge>
-                  ) : null}
-                </div>
-                <p className="mt-1 font-display text-xl font-semibold tabular-nums">
-                  {formatCurrency(tier.pricePerSeat)}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {" "}
-                    /seat/mo
-                  </span>
-                </p>
-                <ul className="mt-3 space-y-1.5 text-xs text-muted-foreground">
-                  {tier.features.map((f) => (
-                    <li key={f} className="flex items-center gap-1.5">
-                      <Check className="size-3 shrink-0 text-success" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                {!current ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-3 -ml-2"
-                    disabled={!canManage}
-                    onClick={() =>
-                      toast.info(`Switching to ${tier.name} is a later phase.`)
-                    }
-                  >
-                    Switch
-                  </Button>
-                ) : null}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {PLAN_TIERS.filter((t) => t.id !== CURRENT_PLAN.tierId).map((tier) => (
+            <div
+              key={tier.id}
+              className="rounded-lg border border-border p-4"
+            >
+              <div className="flex items-center justify-between">
+                <p className="font-medium">{tier.name}</p>
               </div>
-            );
-          })}
+              <p className="mt-1 font-display text-xl font-semibold tabular-nums">
+                {formatCurrency(tier.pricePerSeat)}
+                <span className="text-xs font-normal text-muted-foreground">
+                  {" "}
+                  /seat/mo
+                </span>
+              </p>
+              <ul className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                {tier.features.map((f) => (
+                  <li key={f} className="flex items-center gap-1.5">
+                    <Check className="size-3 shrink-0 text-success" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              {/* Stub CTA: always disabled — plan switching is a later phase */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-3 -ml-2"
+                disabled
+                title={`Switching to ${tier.name} is available in a later phase.`}
+              >
+                Switch to {tier.name}
+              </Button>
+            </div>
+          ))}
         </div>
+        <p className="text-xs text-muted-foreground">
+          Current plan: <span className="font-medium text-foreground">Business</span> · {formatCurrency(CURRENT_PLAN.pricePerSeat)}/seat/mo
+        </p>
       </section>
 
       {/* Invoices */}
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">Invoices</h2>
-        <div className="divide-y rounded-2xl border">
-          {INVOICES.map((inv) => (
-            <div
-              key={inv.id}
-              className="flex items-center gap-4 px-4 py-3 text-sm"
-            >
-              <span className="font-mono text-xs text-muted-foreground">
-                {inv.number}
-              </span>
-              <span className="flex-1 text-muted-foreground">{inv.date}</span>
-              <span className="font-medium tabular-nums">
-                {formatCurrency(inv.amount)}
-              </span>
-              <span
-                className={cn(
-                  "w-14 text-xs capitalize",
-                  inv.status === "paid"
-                    ? "text-muted-foreground"
-                    : inv.status === "failed"
-                      ? "text-destructive"
-                      : "text-warning",
-                )}
+        <div className="divide-y rounded-lg border border-border">
+          {INVOICES.map((inv) => {
+            const meta = INVOICE_STATUS_META[inv.status] ?? {
+              cls: "bg-muted text-muted-foreground",
+              label: inv.status,
+            };
+            return (
+              <div
+                key={inv.id}
+                className="flex items-center gap-4 px-4 py-3 text-sm"
               >
-                {inv.status}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 text-muted-foreground"
-                aria-label={`Download ${inv.number}`}
-                onClick={() => downloadInvoice(inv)}
-              >
-                <Download className="size-4" />
-              </Button>
-            </div>
-          ))}
+                <span className="font-mono text-xs text-muted-foreground">
+                  {inv.number}
+                </span>
+                <span className="flex-1 text-muted-foreground">{inv.date}</span>
+                <span className="font-medium tabular-nums">
+                  {formatCurrency(inv.amount)}
+                </span>
+                <Badge className={cn("rounded-sm text-[11px] font-medium", meta.cls)}>
+                  {meta.label}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8 text-muted-foreground"
+                  aria-label={`Download ${inv.number}`}
+                  onClick={() => downloadInvoice(inv)}
+                >
+                  <Download className="size-4" />
+                </Button>
+              </div>
+            );
+          })}
         </div>
       </section>
     </div>

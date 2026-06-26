@@ -84,7 +84,7 @@ export function LeaveRequestsView() {
     <div className="space-y-5">
       <PageHeader
         title="Leave"
-        description="Request time off and track the status of your leave."
+        description="Request time off yourself (no approval needed for self-service types) or submit for manager approval — track all requests here."
         actions={
           can("leave:request") ? (
             <Button onClick={() => setOpen(true)}>
@@ -97,7 +97,7 @@ export function LeaveRequestsView() {
       {/* Balances */}
       <div className="grid gap-4 sm:grid-cols-3">
         {balances.map((b) => {
-          const pct = Math.round((b.used / b.allowance) * 100);
+          const remainingPct = Math.round((b.remaining / b.allowance) * 100);
           return (
             <Card key={b.value} className="gap-2 p-5">
               <p className="text-sm text-muted-foreground">{b.label}</p>
@@ -105,17 +105,17 @@ export function LeaveRequestsView() {
                 {b.remaining}
                 <span className="text-base font-normal text-muted-foreground">
                   {" "}
-                  / {b.allowance} days
+                  / {b.allowance} days remaining
                 </span>
               </p>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-2.5 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${Math.min(100, pct)}%` }}
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${Math.min(100, remainingPct)}%` }}
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                {b.used} used · {b.remaining} remaining
+                {b.used} used · {b.remaining} left of {b.allowance}
               </p>
             </Card>
           );
@@ -159,7 +159,10 @@ export function LeaveRequestsView() {
                     {fmtRange(r.startDate, r.endDate)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{r.days}</TableCell>
-                  <TableCell className="max-w-[16rem] truncate text-muted-foreground">
+                  <TableCell
+                    className="max-w-[16rem] truncate text-muted-foreground"
+                    title={r.reason}
+                  >
                     {r.reason}
                   </TableCell>
                   <TableCell>

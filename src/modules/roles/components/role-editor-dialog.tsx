@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Lock } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -16,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { PERMISSION_CATEGORIES } from "@/constants/permissions";
+import { PERMISSION_CATEGORIES, WILDCARD, ALL_PERMISSIONS } from "@/constants/permissions";
 import { useRolesStore } from "@/stores/roles.store";
 import type { PermissionId, Role } from "@/types/rbac";
 
@@ -36,6 +37,11 @@ export function RoleEditorDialog({
   const updateRole = useRolesStore((s) => s.updateRole);
 
   const isEdit = Boolean(role);
+  // System roles are immutable — the dialog opens in read-only view mode so the
+  // assigned permissions can still be inspected.
+  const readOnly = Boolean(role?.system);
+  const hasWildcard = role?.permissions.includes(WILDCARD) ?? false;
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [selected, setSelected] = useState<Set<PermissionId>>(new Set());
@@ -45,7 +51,14 @@ export function RoleEditorDialog({
     if (!open) return;
     setName(role?.name ?? "");
     setDescription(role?.description ?? "");
-    setSelected(new Set(role?.permissions ?? []));
+    // A wildcard role implicitly grants every permission — reflect that in the view.
+    setSelected(
+      new Set(
+        role?.permissions.includes(WILDCARD)
+          ? ALL_PERMISSIONS.map((p) => p.id)
+          : (role?.permissions ?? []),
+      ),
+    );
   }, [open, role]);
 
   const toggle = (id: PermissionId) =>
@@ -79,13 +92,24 @@ export function RoleEditorDialog({
     onOpenChange(false);
   };
 
+  const title = readOnly
+    ? `${role?.name} permissions`
+    : isEdit
+      ? "Edit role"
+      : "Create role";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <DialogHeader className="border-b p-6">
-          <DialogTitle>{isEdit ? "Edit role" : "Create role"}</DialogTitle>
+        <DialogHeader className="border-b border-border p-6">
+          <DialogTitle className="flex items-center gap-2">
+            {readOnly && <Lock className="size-4 text-muted-foreground" />}
+            {title}
+          </DialogTitle>
           <DialogDescription>
-            Define a name and the permissions this role grants.
+            {readOnly
+              ? "This is a built-in system role. Its permissions cannot be changed — clone it to make a custom role you can edit."
+              : "Define a name and the permissions this role grants."}
           </DialogDescription>
         </DialogHeader>
 
@@ -98,6 +122,7 @@ export function RoleEditorDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Team Lead"
+                disabled={readOnly}
               />
             </div>
             <div className="space-y-2">
@@ -107,18 +132,21 @@ export function RoleEditorDialog({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Short summary"
+                disabled={readOnly}
               />
             </div>
           </div>
 
           <div className="flex items-center justify-between">
             <Label>Permissions</Label>
-            <Badge variant="secondary">{selected.size} selected</Badge>
+            <Badge variant="secondary">
+              {hasWildcard ? "All permissions" : `${selected.size} selected`}
+            </Badge>
           </div>
         </div>
 
-        <ScrollArea className="max-h-[42vh] border-t">
-          <div className="divide-y">
+        <ScrollArea className="max-h-[60vh] min-h-[20rem] border-t border-border">
+          <div className="divide-y divide-border">
             {PERMISSION_CATEGORIES.map((cat) => {
               const ids = cat.permissions.map((p) => p.id);
               const allOn = ids.every((id) => selected.has(id));
@@ -126,25 +154,28 @@ export function RoleEditorDialog({
                 <div key={cat.module} className="p-6">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-medium">{cat.label}</p>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => toggleCategory(ids, allOn)}
-                    >
-                      {allOn ? "Clear all" : "Select all"}
-                    </Button>
+                    {!readOnly && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => toggleCategory(ids, allOn)}
+                      >
+                        {allOn ? "Clear all" : "Select all"}
+                      </Button>
+                    )}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {cat.permissions.map((perm) => (
                       <label
                         key={perm.id}
-                        className="flex items-center justify-between gap-2 rounded-md border p-2.5"
+                        className="flex items-center justify-between gap-2 rounded-md border border-border p-2.5"
                       >
                         <span className="text-sm">{perm.label}</span>
                         <Switch
                           checked={selected.has(perm.id)}
+                          disabled={readOnly}
                           onCheckedChange={() => toggle(perm.id)}
                         />
                       </label>
@@ -156,13 +187,19 @@ export function RoleEditorDialog({
           </div>
         </ScrollArea>
 
-        <DialogFooter className="border-t p-6">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>
-            {isEdit ? "Save changes" : "Create role"}
-          </Button>
+        <DialogFooter className="border-t border-border p-6">
+          {readOnly ? (
+            <Button onClick={() => onOpenChange(false)}>Close</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave}>
+                {isEdit ? "Save changes" : "Create role"}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

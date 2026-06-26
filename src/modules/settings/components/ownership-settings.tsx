@@ -147,7 +147,7 @@ export function OwnershipSettings() {
       />
 
       {!isOwner && (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           Only the{" "}
           <span className="font-medium text-foreground">Organization Owner</span>{" "}

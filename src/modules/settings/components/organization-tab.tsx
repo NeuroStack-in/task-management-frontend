@@ -572,7 +572,7 @@ function DepartmentsTeamsSection({
                 {dept.teams.map((team) => (
                   <span
                     key={team}
-                    className="flex items-center gap-1.5 rounded-full border bg-muted px-3 py-1 text-xs"
+                    className="flex items-center gap-1.5 rounded-sm border border-border bg-muted px-2.5 py-1 text-xs"
                   >
                     {team}
                     {canManage && (
@@ -1053,7 +1053,7 @@ export function OrganizationTab() {
       />
 
       {!canManage && (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
           <span className="font-medium text-foreground">Manage Settings</span>{" "}

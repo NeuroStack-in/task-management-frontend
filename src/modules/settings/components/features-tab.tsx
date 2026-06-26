@@ -165,7 +165,7 @@ export function FeaturesTab() {
       />
 
       {!canManage && (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
           <span className="font-medium text-foreground">Manage Settings</span>{" "}
@@ -194,7 +194,7 @@ export function FeaturesTab() {
                     !enabled && "opacity-60",
                   )}
                 >
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
                     <Icon className="size-5 text-muted-foreground" />
                   </div>
                   <div className="min-w-0 flex-1">

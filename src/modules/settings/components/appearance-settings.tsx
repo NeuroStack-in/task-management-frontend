@@ -27,21 +27,21 @@ const THEME_OPTIONS: ThemeOption[] = [
   {
     value: "light",
     label: "Light",
-    description: "Bright graphite canvas for well-lit spaces.",
+    description: "Bright graphite canvas.",
     icon: Sun,
     swatch: { canvas: "#F4F5F7", card: "#FFFFFF", accent: "#4338CA" },
   },
   {
     value: "dark",
     label: "Dark",
-    description: "Charcoal canvas that's easy on the eyes at night.",
+    description: "Charcoal canvas for low light.",
     icon: Moon,
     swatch: { canvas: "#14161B", card: "#1B1E25", accent: "#6366F1" },
   },
   {
     value: "system",
     label: "System",
-    description: "Match your device's appearance automatically.",
+    description: "Match your device.",
     icon: Monitor,
     swatch: { canvas: "#9AA1AD", card: "#E7E9EE", accent: "#4F46E5" },
   },
@@ -50,22 +50,43 @@ const THEME_OPTIONS: ThemeOption[] = [
 function ThemePreview({ swatch }: { swatch: ThemeOption["swatch"] }) {
   return (
     <div
-      className="flex h-16 w-full items-end gap-1.5 rounded-lg border p-2"
+      className="flex h-28 w-full gap-2 rounded-md border border-border p-2.5"
       style={{ backgroundColor: swatch.canvas }}
     >
+      {/* Mini sidebar */}
       <div
-        className="h-full flex-1 rounded-md"
+        className="flex w-1/4 flex-col gap-1.5 rounded-sm p-1.5"
         style={{ backgroundColor: swatch.card }}
-      />
-      <div className="flex h-full flex-col justify-end gap-1">
+      >
         <span
-          className="block h-2 w-8 rounded-full"
+          className="block h-1.5 w-full rounded-full"
           style={{ backgroundColor: swatch.accent }}
         />
         <span
-          className="block h-2 w-6 rounded-full"
+          className="block h-1.5 w-3/4 rounded-full opacity-40"
+          style={{ backgroundColor: swatch.accent }}
+        />
+        <span
+          className="block h-1.5 w-2/3 rounded-full opacity-40"
+          style={{ backgroundColor: swatch.accent }}
+        />
+      </div>
+      {/* Content cards */}
+      <div className="flex flex-1 flex-col gap-2">
+        <div
+          className="h-1/2 rounded-sm"
           style={{ backgroundColor: swatch.card }}
         />
+        <div className="flex flex-1 gap-2">
+          <div
+            className="flex-1 rounded-sm"
+            style={{ backgroundColor: swatch.card }}
+          />
+          <div
+            className="w-1/3 rounded-sm"
+            style={{ backgroundColor: swatch.accent }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -90,8 +111,7 @@ export function AppearanceSettings() {
         <CardHeader>
           <CardTitle>Theme</CardTitle>
           <CardDescription>
-            Applies to your account on this browser. It does not change the theme
-            for other members.
+            Applies to your account on this browser only.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -110,10 +130,10 @@ export function AppearanceSettings() {
                   aria-checked={selected}
                   onClick={() => setTheme(option.value)}
                   className={cn(
-                    "group relative flex flex-col gap-3 rounded-2xl border p-3 text-left transition-colors",
+                    "group relative flex flex-col gap-3 rounded-lg border border-border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                     selected
                       ? "border-primary ring-1 ring-primary"
-                      : "hover:border-foreground/20 hover:bg-muted/50",
+                      : "hover:border-primary/30 hover:bg-muted/50",
                   )}
                 >
                   <ThemePreview swatch={option.swatch} />

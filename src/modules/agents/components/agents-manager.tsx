@@ -173,11 +173,10 @@ export function AgentsManager() {
       />
 
       {/* ── Overview ── */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         <StatCard label="Total agents" value={total} icon={MonitorSmartphone} hint="enrolled devices" />
         <StatCard label="Online now" value={online} icon={Wifi} hint="reporting activity" />
         <StatCard label="Offline" value={offline} icon={WifiOff} hint="not reporting" />
-        <StatCard label="Need update" value={outdated} icon={AlertTriangle} hint={`latest is v${LATEST_AGENT_VERSION}`} />
       </div>
 
       {/* ── Outdated banner ── */}
@@ -358,6 +357,12 @@ export function AgentsManager() {
       </Card>
 
       {/* ── Agent settings ── */}
+      <div className="flex items-center gap-3 pt-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Fleet configuration
+        </span>
+        <div className="flex-1 border-t border-border" />
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Agent Settings</CardTitle>

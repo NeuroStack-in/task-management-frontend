@@ -290,55 +290,34 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         </div>
       </div>
 
-      {/* Hero — filled with the active palette's feature colour */}
-      <header
-        className="relative overflow-hidden rounded-3xl border border-white/15 text-white shadow-[0_30px_80px_-40px_rgb(0_0_0/0.55)]"
-        style={{
-          backgroundImage:
-            "linear-gradient(135deg, color-mix(in oklab, var(--feature) 86%, #ffffff 14%), var(--feature) 52%, color-mix(in oklab, var(--feature), #000000 26%))",
-        }}
-      >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-24 -right-16 size-72 rounded-full bg-white/20 blur-3xl"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-28 left-1/3 size-72 rounded-full bg-white/10 blur-3xl"
-        />
-
-        <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
+      {/* Hero — clean enterprise header */}
+      <header className="rounded-lg border border-border bg-card">
+        <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-white/90 ring-1 ring-white/10">
+              <span className="rounded-sm bg-accent px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-accent-foreground">
                 {project.key}
               </span>
-              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[0.7rem] text-white/70 ring-1 ring-white/10">
-                ID: {project.id}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/90 ring-1 ring-white/10">
-                <span className="size-1.5 rounded-full bg-white/75" />
-                {status.label}
-              </span>
+              <StatusBadge tone={status.tone} label={status.label} />
               {atRisk ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
+                <span className="inline-flex items-center gap-1 rounded-sm bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
                   <AlertTriangle className="size-3" />
                   At risk
                 </span>
               ) : null}
             </div>
 
-            <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight sm:text-3xl">
               {project.name}
             </h1>
 
             {project.description ? (
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/80">
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
                 {project.description}
               </p>
             ) : null}
 
-            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-white/75">
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
               <span>{project.department}</span>
               <span className="inline-flex items-center gap-1.5">
                 <CalendarRange className="size-4" />
@@ -346,11 +325,11 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
               </span>
               {lead ? (
                 <span className="inline-flex items-center gap-1.5">
-                  <Avatar size="sm" className="size-5 ring-1 ring-white/15">
+                  <Avatar size="sm" className="size-5">
                     {lead.avatarUrl ? (
                       <AvatarImage src={lead.avatarUrl} alt={lead.name} />
                     ) : null}
-                    <AvatarFallback className="bg-white/10 text-[0.55rem] text-white">
+                    <AvatarFallback className="text-[0.55rem]">
                       {initials(lead.name)}
                     </AvatarFallback>
                   </Avatar>
@@ -360,20 +339,20 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
             </div>
           </div>
 
-          {/* Glassmorphic deadline card */}
-          <div className="shrink-0 rounded-2xl border border-white/20 bg-white/10 px-5 py-4 shadow-lg backdrop-blur-md">
-            <p className="text-xs font-medium tracking-wide text-white/80 uppercase">
+          {/* Deadline card */}
+          <div className="shrink-0 rounded-md border border-border bg-muted/30 px-5 py-4">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Deadline
             </p>
             <p
               className={cn(
                 "mt-1 font-heading text-2xl font-semibold tabular-nums",
-                daysLeft < 0 ? "text-rose-200" : "text-white",
+                daysLeft < 0 ? "text-destructive" : "text-foreground",
               )}
             >
               {deadlineText}
             </p>
-            <p className="mt-0.5 text-xs text-white/70">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {formatDate(project.dueDate)}
             </p>
           </div>
@@ -382,7 +361,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
 
       {/* KPI row */}
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-5">
+        <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card p-5">
           <p className="self-start text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Completion
           </p>
@@ -392,12 +371,12 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
           </p>
         </div>
 
-        <div className="flex flex-col rounded-2xl border bg-card p-5">
+        <div className="flex flex-col rounded-lg border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Tasks
             </p>
-            <span className="flex size-8 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <span className="flex size-7 items-center justify-center rounded-md bg-muted text-primary">
               <ListChecks className="size-4" />
             </span>
           </div>
@@ -417,12 +396,12 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
           </div>
         </div>
 
-        <div className="flex flex-col rounded-2xl border bg-card p-5">
+        <div className="flex flex-col rounded-lg border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Team size
             </p>
-            <span className="flex size-8 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <span className="flex size-7 items-center justify-center rounded-md bg-muted text-primary">
               <Users className="size-4" />
             </span>
           </div>
@@ -440,7 +419,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
 
       {/* Kanban + team rail */}
       <div className="grid gap-6 lg:grid-cols-12">
-        <section className="space-y-3 lg:col-span-8">
+        <section className="space-y-3 lg:col-span-9">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
               Tasks
@@ -472,7 +451,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
               onDragEnd={handleDragEnd}
               onDragCancel={() => setActiveTaskId(null)}
             >
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {TASK_STATUS_ORDER.map((col) => (
                   <KanbanColumn
                     key={col}
@@ -486,7 +465,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
               </div>
               <DragOverlay dropAnimation={null}>
                 {activeTask ? (
-                  <div className="w-64 rotate-2 rounded-xl border bg-card p-3 shadow-xl">
+                  <div className="w-[240px] rotate-1 cursor-grabbing rounded-md border border-primary/40 bg-card p-3.5 shadow-lg">
                     <TaskCardContent task={activeTask} userMap={userMap} />
                   </div>
                 ) : null}
@@ -503,28 +482,11 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         </section>
 
         {/* Right rail */}
-        <aside className="space-y-6 lg:col-span-4">
-          <Panel title="Team details">
+        <aside className="space-y-6 lg:col-span-3">
+          <Panel title="Details">
             <dl className="space-y-3 text-sm">
-              <DetailRow label="Project ID" value={<Mono>{project.id}</Mono>} />
               <DetailRow label="Key" value={<Mono>{project.key}</Mono>} />
-              <DetailRow label="Lead" value={lead?.name ?? "—"} />
-              {manager ? (
-                <DetailRow label="Manager" value={manager.name} />
-              ) : null}
-              <DetailRow label="Department" value={project.department} />
-              <DetailRow
-                label="Team size"
-                value={`${project.memberIds.length} members`}
-              />
-              <DetailRow
-                label="Status"
-                value={<StatusBadge tone={status.tone} label={status.label} />}
-              />
-              <DetailRow
-                label="Timeline"
-                value={`${formatDate(project.startDate)} – ${formatDate(project.dueDate)}`}
-              />
+              <DetailRow label="Manager" value={manager?.name ?? "—"} />
             </dl>
           </Panel>
 
@@ -643,7 +605,7 @@ function TaskStat({
   dot: string;
 }) {
   return (
-    <div className="rounded-xl border bg-muted/30 px-3 py-2.5">
+    <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5">
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className={cn("size-1.5 rounded-full", dot)} />
         {label}
@@ -663,7 +625,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border bg-card p-5">
+    <div className="rounded-lg border border-border bg-card p-5">
       <p className="mb-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
         {title}
       </p>
@@ -706,12 +668,12 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex flex-col rounded-2xl border bg-muted/40 p-3 transition-colors",
-        isOver && "bg-primary/5 ring-2 ring-primary/40",
+        "flex min-w-0 flex-col rounded-lg border border-border bg-muted/30 p-3 transition-colors lg:min-w-[220px]",
+        isOver && "border-primary bg-primary/10 ring-2 ring-primary/40",
       )}
     >
       <div className="mb-3 flex items-center justify-between px-1">
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
           <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
           {meta.label}
           <span className="text-muted-foreground tabular-nums">
@@ -722,7 +684,7 @@ function KanbanColumn({
           type="button"
           onClick={onAdd}
           aria-label={`Add task to ${meta.label}`}
-          className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
         >
           <Plus className="size-4" />
         </button>
@@ -732,12 +694,15 @@ function KanbanColumn({
         <button
           type="button"
           onClick={onAdd}
-          className="rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className={cn(
+            "rounded-md border border-dashed py-8 text-center text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground",
+            isOver && "border-primary/60 text-foreground",
+          )}
         >
           Add a task
         </button>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-2.5">
           {tasks.map((t) => (
             <TaskCard key={t.id} task={t} userMap={userMap} onEdit={onEdit} />
           ))}
@@ -769,8 +734,8 @@ function TaskCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "group/task relative cursor-grab touch-none rounded-xl border bg-card p-3 active:cursor-grabbing",
-        isDragging && "opacity-40",
+        "group/task relative cursor-grab touch-none rounded-md border border-border bg-card p-3.5 transition-colors hover:border-primary/30 active:cursor-grabbing",
+        isDragging && "opacity-50 ring-2 ring-primary/40",
       )}
     >
       <button
@@ -778,7 +743,7 @@ function TaskCard({
         onPointerDown={(e) => e.stopPropagation()}
         onClick={() => onEdit(task)}
         aria-label="Edit task"
-        className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/task:opacity-100"
+        className="absolute top-2 right-2 flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none group-hover/task:opacity-100"
       >
         <Pencil className="size-3.5" />
       </button>
@@ -917,42 +882,43 @@ function TaskCardContent({
   const due = dueLabel(task.dueDate);
   return (
     <>
-      <p className="pr-6 text-sm leading-snug font-medium">{task.title}</p>
-      <div className="mt-2.5 flex items-center justify-between gap-2">
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium",
-            toneSoft[prio.tone],
-          )}
-        >
-          {prio.label}
-        </span>
-        <div className="flex items-center gap-2">
+      <p className="pr-7 text-sm leading-snug font-medium">{task.title}</p>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[0.7rem] font-medium",
+              toneSoft[prio.tone],
+            )}
+          >
+            {prio.label}
+          </span>
           {task.dueDate ? (
             <span
               className={cn(
-                "text-[0.7rem] tabular-nums",
+                "inline-flex items-center gap-1 text-xs tabular-nums",
                 due.overdue ? "text-destructive" : "text-muted-foreground",
               )}
             >
+              <CalendarRange className="size-3.5" />
               {due.text}
             </span>
           ) : null}
-          {assignee ? (
-            <Avatar size="sm" className="size-6">
-              {assignee.avatarUrl ? (
-                <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
-              ) : null}
-              <AvatarFallback className="text-[0.55rem]">
-                {initials(assignee.name)}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            <span className="text-[0.7rem] text-muted-foreground/60">
-              Unassigned
-            </span>
-          )}
         </div>
+        {assignee ? (
+          <Avatar size="sm" className="size-7 shrink-0" title={assignee.name}>
+            {assignee.avatarUrl ? (
+              <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+            ) : null}
+            <AvatarFallback className="text-[0.6rem]">
+              {initials(assignee.name)}
+            </AvatarFallback>
+          </Avatar>
+        ) : (
+          <span className="shrink-0 text-xs text-muted-foreground/60">
+            Unassigned
+          </span>
+        )}
       </div>
     </>
   );

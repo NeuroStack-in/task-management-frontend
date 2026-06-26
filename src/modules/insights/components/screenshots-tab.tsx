@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Camera,
   ChevronRight,
+  Eye,
+  EyeOff,
   Flag,
   Search,
-  Sparkles,
   Users,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -25,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { AiInsight } from "@/components/shared/ai-insight";
 import { initials } from "@/lib/format";
 import {
   SCREENSHOTS,
@@ -34,7 +36,6 @@ import {
   type Screenshot,
 } from "@/lib/mock-insights";
 import { cn } from "@/lib/utils";
-import { AiReportCard } from "./ai-report-card";
 
 function flagReason(shot: Screenshot): string | null {
   if (!shot.flagged) return null;
@@ -107,23 +108,22 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
 
   return (
     <div className="space-y-5">
-      <AiReportCard
-        title="AI screenshot report"
-        summary={`Across ${SCREENSHOT_EMPLOYEES.length} monitored employees, ${totalCaptures.toLocaleString()} screenshots were captured. ${totalFlagged} ${
-          totalFlagged === 1 ? "was" : "were"
-        } marked for review for distracting apps or low activity${
-          totalFlagged ? " — review those first" : ""
-        }. Average on-screen activity sits at ${avgActivity}%.`}
-        metrics={[
-          { label: "Monitored", value: SCREENSHOT_EMPLOYEES.length },
-          { label: "Total captures", value: totalCaptures.toLocaleString() },
-          { label: "Needs review", value: totalFlagged },
-          { label: "Avg activity", value: `${avgActivity}%` },
+      <AiInsight
+        title={`${totalFlagged} ${totalFlagged === 1 ? "capture needs" : "captures need"} review across ${SCREENSHOT_EMPLOYEES.length} monitored employees`}
+        detail={
+          totalFlagged
+            ? "Flagged for distracting apps or low on-screen activity — start with those."
+            : "Nothing flagged — coverage and on-screen activity both look healthy."
+        }
+        points={[
+          `${totalCaptures.toLocaleString()} screenshots captured`,
+          `Average on-screen activity ${avgActivity}%`,
         ]}
+        basis={`${totalCaptures.toLocaleString()} captures across ${SCREENSHOT_EMPLOYEES.length} employees`}
       />
 
       {/* Filters: search · department · flagged */}
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-lg border border-border bg-card px-4 py-3">
         <Field label="Search">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -206,7 +206,7 @@ function Pill({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        "rounded-md border px-3 py-1 text-xs font-medium transition-colors",
         active
           ? "border-primary bg-primary text-primary-foreground"
           : "border-border text-muted-foreground hover:text-foreground",
@@ -226,7 +226,7 @@ function EmployeeCard({
 }) {
   return (
     <Card
-      className="group cursor-pointer gap-0 overflow-hidden p-0 transition hover:ring-1 hover:ring-primary/40"
+      className="group cursor-pointer gap-0 overflow-hidden p-0 transition-colors hover:border-primary/30"
       onClick={onOpen}
     >
       {/* Cover = latest capture */}
@@ -313,7 +313,7 @@ function EmployeeDetail({
       </Button>
 
       {/* Employee header */}
-      <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-card px-5 py-4 shadow-soft">
+      <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card px-5 py-4">
         <Avatar className="size-12">
           <AvatarImage src={employee.user.avatarUrl} alt={employee.user.name} />
           <AvatarFallback>{initials(employee.user.name)}</AvatarFallback>
@@ -341,31 +341,26 @@ function EmployeeDetail({
         </div>
       </div>
 
-      {/* Per-person AI report */}
-      <AiReportCard
-        title={`AI report — ${employee.user.name.split(" ")[0]}`}
-        summary={`${employee.user.name.split(" ")[0]} has ${employee.total} captures this period with activity averaging ${employee.avgActivity}%. ${
-          employee.flagged > 0
-            ? `${employee.flagged} were marked for review for distracting apps or low activity — review the highlighted captures below.`
-            : "Nothing needs review — coverage and focus both look healthy."
-        }`}
-        signals={[
-          { label: "Captures", value: `${employee.total}`, tone: "flat" },
-          {
-            label: "Needs review",
-            value: `${employee.flagged}`,
-            tone: employee.flagged > 0 ? "down" : "up",
-          },
-          {
-            label: "Avg activity",
-            value: `${employee.avgActivity}%`,
-            tone: employee.avgActivity >= 60 ? "up" : "down",
-          },
-        ]}
-      />
+      {/* Per-person AI read */}
+      {employee.flagged > 0 ? (
+        <AiInsight
+          title={`${employee.user.name.split(" ")[0]} has ${employee.flagged} ${employee.flagged === 1 ? "capture" : "captures"} flagged for review`}
+          detail="Flagged for distracting apps or low on-screen activity — highlighted captures are marked below."
+          points={[
+            `${employee.total} captures · activity averaging ${employee.avgActivity}%`,
+          ]}
+          basis={`${employee.total} captures this period`}
+        />
+      ) : (
+        <AiInsight
+          title={`${employee.user.name.split(" ")[0]}'s coverage looks healthy`}
+          detail={`Nothing needs review — ${employee.total} captures this period with activity averaging ${employee.avgActivity}%.`}
+          basis={`${employee.total} captures this period`}
+        />
+      )}
 
-      {/* Filters: calendar date · time range · flagged radio · privacy blur */}
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
+      {/* Filters: date · time range · flagged · privacy blur — one row */}
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-lg border border-border bg-card px-4 py-3">
         <Field label="Date">
           <DatePicker
             value={day}
@@ -441,7 +436,11 @@ function EmployeeDetail({
         </div>
       )}
 
-      <Lightbox shot={lightbox} onClose={() => setLightbox(null)} />
+      <Lightbox
+        shot={lightbox}
+        blur={blur}
+        onClose={() => setLightbox(null)}
+      />
     </div>
   );
 }
@@ -515,10 +514,10 @@ function ShotCard({
   return (
     <Card
       className={cn(
-        "group cursor-pointer gap-0 overflow-hidden p-0 transition",
+        "group cursor-pointer gap-0 overflow-hidden p-0 transition-colors",
         shot.flagged
-          ? "bg-primary/5 ring-2 ring-primary ring-offset-1 ring-offset-background hover:ring-primary"
-          : "hover:ring-1 hover:ring-primary/40",
+          ? "border-primary bg-primary/5 hover:border-primary"
+          : "hover:border-primary/30",
       )}
       onClick={onOpen}
     >
@@ -557,12 +556,23 @@ function ShotCard({
 
 function Lightbox({
   shot,
+  blur,
   onClose,
 }: {
   shot: Screenshot | null;
+  /** Inherits the gallery's privacy-blur state so opening a capture never
+   *  silently bypasses the privacy setting. */
+  blur: boolean;
   onClose: () => void;
 }) {
+  // Reveal only on explicit reviewer action; resets each time a capture opens.
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => {
+    setRevealed(false);
+  }, [shot]);
+
   const reason = shot ? flagReason(shot) : null;
+  const isBlurred = blur && !revealed;
   return (
     <Dialog open={!!shot} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
@@ -582,12 +592,30 @@ function Lightbox({
               </DialogDescription>
             </DialogHeader>
 
-            {/* Full capture — unblurred for review */}
+            {/* Capture — respects privacy blur; reviewer can reveal to inspect. */}
             <div className="relative aspect-[16/10] overflow-hidden rounded-lg border">
-              <FauxCapture blur={false} />
+              <FauxCapture blur={isBlurred} />
               <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
                 {shot.app}
               </div>
+              {blur ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="absolute bottom-2 right-2 gap-1.5 backdrop-blur-sm"
+                  onClick={() => setRevealed((v) => !v)}
+                >
+                  {revealed ? (
+                    <>
+                      <EyeOff className="size-3.5" /> Hide
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="size-3.5" /> Reveal
+                    </>
+                  )}
+                </Button>
+              ) : null}
             </div>
 
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -616,14 +644,12 @@ function Lightbox({
               ) : null}
             </dl>
 
-            {/* Per-capture AI analysis */}
-            <div className="flex gap-2 rounded-xl bg-feature-tint p-3 text-sm">
-              <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-              <div>
-                <p className="font-medium text-primary">AI analysis</p>
-                <p className="mt-0.5 text-foreground/80">{aiAnalysis(shot)}</p>
-              </div>
-            </div>
+            {/* Per-capture AI read — derived from the capture's app & activity. */}
+            <AiInsight
+              title="Capture analysis"
+              detail={aiAnalysis(shot)}
+              basis={`${shot.app} · ${shot.activity}% on-screen activity`}
+            />
           </>
         ) : null}
       </DialogContent>

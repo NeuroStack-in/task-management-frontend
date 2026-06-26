@@ -107,7 +107,7 @@ export function TasksView({
         className="flex-wrap"
       />
 
-      <div className="overflow-hidden rounded-2xl border bg-card">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <ul className="divide-y">
           {visible.map((t) => {
             const project = projectMap[t.projectId];

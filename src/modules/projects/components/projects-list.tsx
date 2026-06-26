@@ -69,7 +69,7 @@ export function ProjectsList({
         return (
           <div
             key={status}
-            className="overflow-hidden rounded-2xl border bg-card"
+            className="overflow-hidden rounded-lg border border-border bg-card"
           >
             {/* Group header */}
             <button
@@ -85,7 +85,7 @@ export function ProjectsList({
               />
               <span
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                  "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium",
                   status === "active" && "bg-accent text-accent-foreground",
                   status === "on_hold" && "bg-warning/15 text-warning",
                   status === "completed" && "bg-success/12 text-success",

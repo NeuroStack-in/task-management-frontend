@@ -379,7 +379,7 @@ function DayCellView({
           </span>{" "}
           in
         </p>
-        <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
           <span className="bg-success" style={{ width: `${presentPct}%` }} />
           <span className="bg-primary" style={{ width: `${leavePct}%` }} />
           <span className="bg-destructive" style={{ width: `${absentPct}%` }} />

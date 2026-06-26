@@ -311,8 +311,8 @@ export default function LandingPage() {
         </Reveal>
       </section>
 
-      {/* ---------------- Logos ---------------- */}
-      <section className="px-5 py-12">
+      {/* ---------------- Social proof (logos + stats) ---------------- */}
+      <section className="px-5 py-14">
         <div className="mx-auto max-w-6xl">
           <Reveal>
             <p className="text-center text-xs tracking-wide uppercase" style={{ color: "var(--m-muted)" }}>
@@ -326,25 +326,21 @@ export default function LandingPage() {
               ))}
             </div>
           </div>
+          <Reveal>
+            <div className="mt-10 grid max-w-5xl grid-cols-2 gap-px overflow-hidden rounded-3xl border md:mx-auto md:grid-cols-4" style={{ borderColor: "var(--m-border)", background: "var(--m-border)" }}>
+              {STATS.map((s) => (
+                <div key={s.label} className="p-7 text-center" style={{ background: "var(--m-bg)" }}>
+                  <p className="m-display text-3xl font-semibold sm:text-4xl" style={{ color: "var(--m-accent)" }}>
+                    {s.value}
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: "var(--m-muted)" }}>
+                    {s.label}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
         </div>
-      </section>
-
-      {/* ---------------- Stats ---------------- */}
-      <section className="px-5 py-12">
-        <Reveal>
-          <div className="mx-auto grid max-w-5xl grid-cols-2 gap-px overflow-hidden rounded-3xl border md:grid-cols-4" style={{ borderColor: "var(--m-border)", background: "var(--m-border)" }}>
-            {STATS.map((s) => (
-              <div key={s.label} className="p-7 text-center" style={{ background: "var(--m-bg)" }}>
-                <p className="m-display text-3xl font-semibold sm:text-4xl" style={{ color: "var(--m-accent)" }}>
-                  {s.value}
-                </p>
-                <p className="mt-1 text-sm" style={{ color: "var(--m-muted)" }}>
-                  {s.label}
-                </p>
-              </div>
-            ))}
-          </div>
-        </Reveal>
       </section>
 
       {/* ---------------- Features ---------------- */}
@@ -577,10 +573,6 @@ export default function LandingPage() {
       <section className="px-5 py-24 sm:py-32">
         <Reveal>
           <div className="relative mx-auto max-w-4xl overflow-hidden rounded-[28px] border p-10 text-center sm:p-16" style={{ borderColor: "var(--m-border)", background: "var(--m-surface)" }}>
-            <div className="m-aurora" aria-hidden="true" style={{ opacity: 0.4 }}>
-              <span style={{ width: "40%", height: "120%", left: "10%", top: "-20%", background: "var(--m-accent)", animation: "m-drift-a 24s ease-in-out infinite" }} />
-              <span style={{ width: "40%", height: "120%", right: "8%", top: "-10%", background: "var(--m-accent-2)", animation: "m-drift-b 28s ease-in-out infinite" }} />
-            </div>
             <div className="relative">
               <h2 className="m-display text-3xl font-semibold sm:text-5xl">
                 Find your team&apos;s pulse.
@@ -729,13 +721,26 @@ function FeatureMock({ kind }: { kind: "timer" | "heatmap" | "kanban" | "chart" 
         </div>
       ) : null}
       {kind === "kanban" ? (
-        <div className="grid grid-cols-3 gap-2 py-2">
-          {[["To do", 2], ["Doing", 1], ["Done", 3]].map(([t, n]) => (
-            <div key={t as string} className="rounded-lg p-2" style={{ background: "var(--m-surface-2)" }}>
-              <p className="mb-2 text-[0.65rem] font-medium" style={{ color: "var(--m-muted)" }}>{t}</p>
-              {Array.from({ length: n as number }).map((_, i) => (
-                <div key={i} className="mb-1.5 rounded-md border p-2 text-[0.65rem]" style={{ borderColor: "var(--m-border)", background: "var(--m-surface)" }}>
-                  Task {i + 1}
+        <div className="grid grid-cols-3 gap-2.5 py-2">
+          {(
+            [
+              { col: "To do", n: 4, tasks: ["Onboard new hires", "Q3 capacity plan"] },
+              { col: "In progress", n: 3, tasks: ["Checkout redesign", "Payroll export"] },
+              { col: "Done", n: 6, tasks: ["Sprint review", "Client report"] },
+            ] as const
+          ).map(({ col, n, tasks }) => (
+            <div key={col} className="rounded-lg p-2.5" style={{ background: "var(--m-surface-2)" }}>
+              <div className="mb-2.5 flex items-center justify-between">
+                <p className="text-xs font-medium" style={{ color: "var(--m-text)" }}>{col}</p>
+                <span className="rounded-sm px-1.5 text-[0.7rem] font-medium" style={{ background: "var(--m-surface)", color: "var(--m-muted)" }}>{n}</span>
+              </div>
+              {tasks.map((task) => (
+                <div key={task} className="mb-2 rounded-md border p-2.5" style={{ borderColor: "var(--m-border)", background: "var(--m-surface)" }}>
+                  <p className="text-xs leading-snug">{task}</p>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="h-1.5 w-10 rounded-full" style={{ background: "color-mix(in srgb, var(--m-accent) 45%, transparent)" }} />
+                    <span className="size-4 rounded-full" style={{ background: "var(--m-accent-tint)" }} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -794,7 +799,7 @@ function Footer() {
     { h: "Solutions", links: ["Field service", "Remote teams", "Agencies", "Construction"] },
     { h: "Company", links: ["About", "Careers", "Blog", "Contact"] },
     { h: "Resources", links: ["Help center", "API docs", "Status", "Security"] },
-    { h: "Legal", links: ["Privacy", "Terms", "DPA"] },
+    { h: "Legal", links: ["Privacy", "Terms", "Cookies", "DPA"] },
   ];
   return (
     <footer className="border-t px-5 pt-16 pb-10" style={{ borderColor: "var(--m-border)" }}>
@@ -832,11 +837,9 @@ function Footer() {
           <p className="text-xs" style={{ color: "var(--m-muted)" }}>
             © 2026 WorkPulse. All rights reserved.
           </p>
-          <div className="flex gap-5 text-xs" style={{ color: "var(--m-muted)" }}>
-            <a href="#" className="hover:opacity-70">Privacy</a>
-            <a href="#" className="hover:opacity-70">Terms</a>
-            <a href="#" className="hover:opacity-70">Cookies</a>
-          </div>
+          <p className="text-xs" style={{ color: "var(--m-muted)" }}>
+            Made for teams that run on rhythm.
+          </p>
         </div>
       </div>
     </footer>

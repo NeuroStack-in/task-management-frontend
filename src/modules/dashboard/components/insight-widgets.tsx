@@ -133,13 +133,24 @@ function Donut({
 
 /* --------------------------- Attendance donut --------------------------- */
 
+/**
+ * Attendance + activity in one card. The donut shows the attendance breakdown
+ * (present/late/leave/absent) and a footer line carries the active-vs-inactive
+ * split — folding in what used to be a near-duplicate "Active vs Inactive"
+ * ring instead of repeating a second donut of the same population.
+ */
 export function AttendanceDonut({
   counts,
+  active,
+  inactive,
 }: {
   counts: Record<AttendanceStatus, number>;
+  active: number;
+  inactive: number;
 }) {
   const total = counts.present + counts.late + counts.leave + counts.absent;
   const presentPct = Math.round(((counts.present + counts.late) / (total || 1)) * 100);
+  const activePct = Math.round((active / (active + inactive || 1)) * 100);
   return (
     <Card>
       <CardHeader>
@@ -156,35 +167,14 @@ export function AttendanceDonut({
             { label: "Absent", value: counts.absent, color: "var(--destructive)" },
           ]}
         />
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ------------------------- Active vs inactive ring ------------------------- */
-
-export function ActiveInactiveRing({
-  active,
-  inactive,
-}: {
-  active: number;
-  inactive: number;
-}) {
-  const total = active + inactive || 1;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Active vs Inactive</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Donut
-          center={`${Math.round((active / total) * 100)}%`}
-          caption="active"
-          slices={[
-            { label: "Active", value: active, color: "var(--primary)" },
-            { label: "Inactive", value: inactive, color: "var(--muted-foreground)" },
-          ]}
-        />
+        <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <span className="size-2 rounded-full bg-primary" /> Active now
+          </span>
+          <span className="font-medium tabular-nums">
+            {active} active · {inactive} inactive ({activePct}%)
+          </span>
+        </div>
       </CardContent>
     </Card>
   );
