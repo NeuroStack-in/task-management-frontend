@@ -50,6 +50,7 @@ export function TopNavbar() {
         </SheetContent>
       </Sheet>
 
+      <div className="flex flex-1 items-center justify-end gap-2.5">
       {/* Search / command palette */}
       <button
         type="button"
@@ -75,6 +76,7 @@ export function TopNavbar() {
         <div className="rounded-full bg-card shadow-soft">
           <UserMenu />
         </div>
+      </div>
       </div>
     </header>
   );

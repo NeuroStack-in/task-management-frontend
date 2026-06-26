@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   Camera,
   ChevronRight,
-  EyeOff,
   Flag,
   Search,
   Sparkles,
@@ -25,7 +24,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { initials } from "@/lib/format";
 import {
@@ -109,23 +107,20 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Employees monitored"
-          value={SCREENSHOT_EMPLOYEES.length}
-          icon={Users}
-          hint="with captures"
-          featured
-        />
-        <StatCard
-          label="Total captures"
-          value={totalCaptures.toLocaleString()}
-          icon={Camera}
-          hint="across all dates"
-        />
-        <StatCard label="Flagged" value={totalFlagged} icon={Flag} hint="need review" />
-        <StatCard label="Avg activity" value={`${avgActivity}%`} icon={EyeOff} />
-      </div>
+      <AiReportCard
+        title="AI screenshot report"
+        summary={`Across ${SCREENSHOT_EMPLOYEES.length} monitored employees, ${totalCaptures.toLocaleString()} screenshots were captured. ${totalFlagged} ${
+          totalFlagged === 1 ? "was" : "were"
+        } auto-flagged for distracting apps or low activity${
+          totalFlagged ? " — review those first" : ""
+        }. Average on-screen activity sits at ${avgActivity}%.`}
+        metrics={[
+          { label: "Monitored", value: SCREENSHOT_EMPLOYEES.length },
+          { label: "Total captures", value: totalCaptures.toLocaleString() },
+          { label: "Flagged", value: totalFlagged },
+          { label: "Avg activity", value: `${avgActivity}%` },
+        ]}
+      />
 
       {/* Filters: search · department · flagged */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
