@@ -84,7 +84,8 @@ function Donut({
 }) {
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
   return (
-    <div className="flex items-center gap-4">
+    // h-full so the donut fills (and vertically centers within) its card.
+    <div className="flex h-full items-center gap-4">
       <div className="relative size-28 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>

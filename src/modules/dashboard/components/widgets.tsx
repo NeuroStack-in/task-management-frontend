@@ -114,8 +114,9 @@ export function AiSummaryWidget() {
           <Sparkles className="size-4" /> AI Summary
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3 text-sm leading-relaxed text-feature-foreground/90">
-        <p>
+      <CardContent className="gap-3 text-sm leading-relaxed text-feature-foreground/90">
+        {/* flex-1 so the text grows and vertically centers, filling the card. */}
+        <p className="flex flex-1 items-center">
           Productivity rose 3% this week, led by Engineering and Product. Two
           teams show early burnout signals worth a closer look.
         </p>
@@ -126,7 +127,7 @@ export function AiSummaryWidget() {
               "Summarise this week's productivity and flag any burnout risks.",
             )
           }
-          className="inline-flex items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
+          className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
         >
           Ask the assistant <ArrowUpRight className="size-3.5" />
         </button>

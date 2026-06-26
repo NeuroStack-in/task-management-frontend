@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -37,48 +37,34 @@ import {
 import { cn } from "@/lib/utils";
 import type { DashboardWidget } from "@/types";
 
-/** Vertical gap between masonry items (px) — folded into the row-span. */
-const MASONRY_GAP = 24;
+/**
+ * Makes a widget card fill its (equal-height) grid cell and distribute its
+ * content to fill the space: the card stretches to h-full, and its CardContent
+ * grows (flex-1) and spreads its children top-to-bottom (justify-between).
+ */
+const FILL_CARD =
+  "h-full [&>*]:h-full [&>*]:[--card-spacing:--spacing(7)]! " +
+  "[&_[data-slot=card-content]]:flex-1 [&_[data-slot=card-content]]:flex " +
+  "[&_[data-slot=card-content]]:flex-col [&_[data-slot=card-content]]:justify-between";
 
 function SortableWidget({
   id,
   span,
-  masonry,
   children,
 }: {
   id: string;
   span: 1 | 2;
-  /** When true, set a measured row-span so the grid packs like masonry. */
-  masonry: boolean;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id });
 
-  // Measure content height → row-span (each grid row is 1px, see container).
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [rows, setRows] = useState<number | null>(null);
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const measure = () =>
-      setRows(Math.max(1, Math.round(el.offsetHeight) + MASONRY_GAP));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   return (
     <div
       ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        transition,
-        gridRowEnd: masonry && rows ? `span ${rows}` : undefined,
-      }}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "group/widget relative",
+        "group/widget relative h-full",
         span === 2 && "sm:col-span-2",
         isDragging && "z-10",
       )}
@@ -94,21 +80,16 @@ function SortableWidget({
           <GripVertical className="size-4" />
         </button>
       ) : null}
-      <div ref={contentRef}>
-        {isDragging ? (
-          // Reserve the slot with a dashed drop-placeholder; the floating
-          // preview (DragOverlay) shows the actual widget while dragging.
-          <div className="relative">
-            <div className="invisible [&>*]:[--card-spacing:--spacing(7)]!">
-              {children}
-            </div>
-            <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
-          </div>
-        ) : (
-          // Roomier internal padding than the default card spacing.
-          <div className="[&>*]:[--card-spacing:--spacing(7)]!">{children}</div>
-        )}
-      </div>
+
+      {isDragging ? (
+        // Dashed drop-placeholder; the floating DragOverlay shows the widget.
+        <div className="relative h-full">
+          <div className={cn("invisible", FILL_CARD)}>{children}</div>
+          <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
+        </div>
+      ) : (
+        <div className={FILL_CARD}>{children}</div>
+      )}
     </div>
   );
 }
@@ -120,10 +101,6 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const reset = useDashboardStore((s) => s.reset);
 
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Masonry (measured row-spans) only kicks in after mount, so the server/
-  // first paint uses a plain grid and never collapses to 1px rows.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -159,7 +136,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     const def = WIDGET_REGISTRY[w.type];
     if (!def) return null;
     return (
-      <SortableWidget key={w.id} id={w.id} span={def.span} masonry={mounted}>
+      <SortableWidget key={w.id} id={w.id} span={def.span}>
         {def.render(data)}
       </SortableWidget>
     );
@@ -222,16 +199,10 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           onDragCancel={() => setActiveId(null)}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            {/* Masonry bento grid: each widget spans its own height (1px rows),
-                so columns pack tight with no gaps. Charts span 2 columns; drop
-                any widget anywhere — placement follows drag order. */}
-            <div
-              className={cn(
-                "grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-3",
-                !mounted && "items-start gap-y-6",
-              )}
-              style={mounted ? { gridAutoRows: "1px" } : undefined}
-            >
+            {/* Equal-height bento grid: `auto-rows-fr` makes every row the same
+                height; each widget card fills its cell (see FILL_CARD). Charts
+                span 2 columns; drop any widget anywhere — order = placement. */}
+            <div className="grid auto-rows-fr grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {visible.map(renderWidget)}
             </div>
           </SortableContext>
