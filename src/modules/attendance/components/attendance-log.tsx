@@ -108,10 +108,14 @@ const isToday = (d: SelectedDate) =>
 const dateLabel = (d: SelectedDate) =>
   `${MONTH_NAMES[d.month].slice(0, 3)} ${d.day}, ${d.year}`;
 
-export function AttendanceLog() {
+export function AttendanceLog({
+  date,
+  onDateChange,
+}: {
+  date: SelectedDate;
+  onDateChange: (d: SelectedDate) => void;
+}) {
   const router = useRouter();
-
-  const [date, setDate] = useState<SelectedDate>({ ...TODAY });
 
   const allRows: Row[] = useMemo(
     () =>
@@ -229,7 +233,7 @@ export function AttendanceLog() {
           <LogDatePicker
             value={date}
             onChange={(d) => {
-              setDate(d);
+              onDateChange(d);
               resetPage();
             }}
           />
