@@ -44,7 +44,7 @@ import { useEmployeesStore } from "@/stores/employees.store";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
-import { CreateEmployeeDialog } from "./create-employee-dialog";
+import { InviteDialog } from "./invite-dialog";
 
 export interface EmployeeRow {
   id: string;
@@ -196,7 +196,7 @@ export function EmployeesView({
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // Runtime-created accounts (persisted store) sit on top of the seed users.
   const allEmployees = useMemo(
@@ -265,7 +265,7 @@ export function EmployeesView({
               </DropdownMenuContent>
             </DropdownMenu>
             {can("employees:manage") ? (
-              <Button onClick={() => setCreateOpen(true)}>
+              <Button onClick={() => setInviteOpen(true)}>
                 <UserPlus className="size-4" /> Add employee
               </Button>
             ) : null}
@@ -409,11 +409,10 @@ export function EmployeesView({
         </div>
       </div>
 
-      <CreateEmployeeDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+      <InviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
         departments={departments}
-        existingEmails={allEmployees.map((e) => e.email)}
       />
     </div>
   );
