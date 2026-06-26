@@ -78,6 +78,30 @@ export const PALETTES: PaletteDef[] = [
     note: "Security · compliance",
     swatch: ["#3f4855", "#6b7280", "#dc2626", "#f7f5f1"],
   },
+  {
+    id: "navy",
+    name: "Midnight Navy",
+    note: "Authoritative · corporate",
+    swatch: ["#2c4e7c", "#4f74a8", "#232427", "#f5f7fa"],
+  },
+  {
+    id: "cobalt",
+    name: "Graphite Cobalt",
+    note: "Data-driven · analytics",
+    swatch: ["#3e63b0", "#6585c8", "#232427", "#f6f7f9"],
+  },
+  {
+    id: "burgundy",
+    name: "Burgundy Wine",
+    note: "Premium · executive",
+    swatch: ["#8c3f4d", "#a86472", "#262223", "#faf6f5"],
+  },
+  {
+    id: "petrol",
+    name: "Petrol Cyan",
+    note: "Calm · technical",
+    swatch: ["#1b6b77", "#3f8d97", "#222626", "#f4f8f8"],
+  },
 ];
 
 const STORAGE_KEY = "wp-palette";

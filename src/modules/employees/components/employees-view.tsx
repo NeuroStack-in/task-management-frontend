@@ -23,7 +23,6 @@ import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -45,7 +44,7 @@ import { useEmployeesStore } from "@/stores/employees.store";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
-import { CreateEmployeeDialog } from "./create-employee-dialog";
+import { InviteDialog } from "./invite-dialog";
 
 export interface EmployeeRow {
   id: string;
@@ -59,13 +58,6 @@ export interface EmployeeRow {
   status: "active" | "inactive" | "invited" | "suspended";
   productivityScore: number;
 }
-
-const STATUS_META: Record<EmployeeRow["status"], string> = {
-  active: "bg-success/12 text-success",
-  inactive: "bg-muted text-muted-foreground",
-  invited: "bg-warning/15 text-warning",
-  suspended: "bg-destructive/12 text-destructive",
-};
 
 const STATUSES = ["all", "active", "inactive", "invited", "suspended"] as const;
 const PAGE_SIZE = 9;
@@ -204,7 +196,7 @@ export function EmployeesView({
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   // Runtime-created accounts (persisted store) sit on top of the seed users.
   const allEmployees = useMemo(
@@ -273,7 +265,7 @@ export function EmployeesView({
               </DropdownMenuContent>
             </DropdownMenu>
             {can("employees:manage") ? (
-              <Button onClick={() => setCreateOpen(true)}>
+              <Button onClick={() => setInviteOpen(true)}>
                 <UserPlus className="size-4" /> Add employee
               </Button>
             ) : null}
@@ -336,7 +328,6 @@ export function EmployeesView({
                     <TableHead>Employee</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead>Department</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead className="w-40">Productivity</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -375,9 +366,6 @@ export function EmployeesView({
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {e.department} · {e.team}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={STATUS_META[e.status]}>{e.status}</Badge>
                       </TableCell>
                       <TableCell>
                         <ProductivityCell value={e.productivityScore} />
@@ -421,11 +409,10 @@ export function EmployeesView({
         </div>
       </div>
 
-      <CreateEmployeeDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+      <InviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
         departments={departments}
-        existingEmails={allEmployees.map((e) => e.email)}
       />
     </div>
   );
