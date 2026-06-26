@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useUiStore } from "@/stores/ui.store";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
@@ -13,6 +15,14 @@ import { cn } from "@/lib/utils";
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
+  const pathname = usePathname();
+
+  // Settings has its own section rail, so collapse the main sidebar there to
+  // free up width — and expand it again on every other route.
+  useEffect(() => {
+    setSidebarCollapsed(pathname.startsWith("/settings"));
+  }, [pathname, setSidebarCollapsed]);
 
   return (
     <div className="flex min-h-screen bg-background">

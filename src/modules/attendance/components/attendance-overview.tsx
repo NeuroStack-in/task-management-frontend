@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarX2, Flag, PieChart, Users } from "lucide-react";
+import { Flag, PieChart } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { DeltaPill } from "@/components/shared/delta-pill";
 import { TickGauge } from "@/components/shared/tick-gauge";
@@ -20,7 +21,6 @@ export function AttendanceOverview() {
   const total = c.total;
   // "Present" counts everyone who showed up (on-time + late).
   const present = c.present + c.late;
-  const out = c.leave + c.absent;
   const rate = Math.round((present / total) * 1000) / 10;
 
   const presentPct = Math.round((present / total) * 100);
@@ -31,7 +31,7 @@ export function AttendanceOverview() {
   const leaveBars = Math.round((c.leave / total) * BARS);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr_1.4fr]">
+    <div className="grid gap-4 lg:grid-cols-2">
       {/* Today's Attendance */}
       <Card>
         <CardContent className="space-y-4 px-5">
@@ -73,44 +73,6 @@ export function AttendanceOverview() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Employee Attend + Out today */}
-      <div className="grid gap-4">
-        <Card>
-          <CardContent className="space-y-3 px-5">
-            <SectionTitle icon={Users} title="Employee Attend" />
-            <p className="font-display text-3xl font-semibold tabular-nums">
-              {present.toLocaleString()}
-              <span className="text-lg font-normal text-muted-foreground">
-                /{total.toLocaleString()}
-              </span>
-            </p>
-            <div className="flex items-center justify-between border-t pt-3 text-sm">
-              <span className="text-muted-foreground">Last Week</span>
-              <DeltaPill value={OVERVIEW.attendedDelta} />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="space-y-3 px-5">
-            <SectionTitle icon={CalendarX2} title="Out Today" />
-            <p className="font-display text-3xl font-semibold tabular-nums">
-              {out.toLocaleString()}
-            </p>
-            <div className="flex items-center justify-between border-t pt-3 text-sm">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <span className="size-2 rounded-full bg-primary" />
-                {c.leave} on leave
-              </span>
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <span className="size-2 rounded-full bg-destructive" />
-                {c.absent} absent
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Department Attendance */}
       <DepartmentAttendance />
@@ -165,7 +127,7 @@ function SectionTitle({
   icon: Icon,
   title,
 }: {
-  icon: typeof Users;
+  icon: LucideIcon;
   title: string;
 }) {
   return (
