@@ -1,14 +1,6 @@
-import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Security Center" };
-
+// Security now lives inside the Settings hub; keep the old URL working.
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Security Center"
-      description="MFA, SSO, session policies, and security events."
-      phase={4}
-    />
-  );
+  redirect("/settings/security");
 }

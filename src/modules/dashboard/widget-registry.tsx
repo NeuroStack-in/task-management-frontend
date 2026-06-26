@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { WidgetType } from "@/types";
-import type { User, UserStatus } from "@/types/user";
-import type { AttendanceStatus } from "@/lib/mock-metrics";
+import { ProductivityChart } from "./components/productivity-chart";
 import { TeamComparisonChart } from "./components/team-comparison-chart";
 import {
   ProductivityHeatmap,
@@ -18,28 +17,23 @@ import {
   UpcomingTasksWidget,
   BillingWidget,
 } from "./components/widgets";
+import type { DashboardData } from "./lib/dashboard-data";
 
-/** All data the dashboard widgets need, computed once on the server. */
-export interface DashboardData {
-  teamData: { team: string; score: number }[];
-  screenshotCount: number;
-  screenshotsTrend: number[];
-  topPerformers: User[];
-  billing: { plan: string; seatsUsed: number; seatsTotal: number };
-  heatmap: number[][];
-  attendanceCounts: Record<AttendanceStatus, number>;
-  statusCounts: Record<UserStatus, number>;
-  activeCount: number;
-  inactiveCount: number;
-}
+export type { DashboardData } from "./lib/dashboard-data";
 
 interface WidgetDef {
-  /** Grid columns spanned on xl (1 or 2 of 3). */
+  /** Columns spanned on the xl (3-col) bento grid. */
   span: 1 | 2;
   render: (d: DashboardData) => ReactNode;
 }
 
 export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
+  "productivity-trends": {
+    span: 2,
+    render: (d) => (
+      <ProductivityChart data={d.productivityTrend} rangeLabel={d.rangeLabel} />
+    ),
+  },
   heatmap: { span: 2, render: (d) => <ProductivityHeatmap data={d.heatmap} /> },
   "team-comparison": {
     span: 2,

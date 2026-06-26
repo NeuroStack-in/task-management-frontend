@@ -2,12 +2,15 @@
 
 import { useMemo, useState } from "react";
 import {
+  CalendarCheck,
   Check,
   ChevronLeft,
   ChevronRight,
   FolderKanban,
   Search,
   UserRound,
+  Users2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,6 +22,13 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { initials } from "@/lib/format";
 import type {
   ProjectTimesheet,
@@ -63,6 +73,7 @@ interface GridRow {
   id: string;
   name: string;
   subtitle: string;
+  department: string;
   avatarUrl?: string;
   isProject: boolean;
   badge?: string;
@@ -124,6 +135,7 @@ export function TimesheetGrid({
   const [statusFilter, setStatusFilter] = useState<"all" | TimesheetStatus>(
     "all",
   );
+  const [deptFilter, setDeptFilter] = useState("all");
   const [weekOffset, setWeekOffset] = useState(0);
   const [overrides, setOverrides] = useState<Record<string, TimesheetStatus>>({});
   const [selection, setSelection] = useState<
@@ -156,6 +168,7 @@ export function TimesheetGrid({
         id: r.id,
         name: r.name,
         subtitle: r.department,
+        department: r.department,
         avatarUrl: r.avatarUrl,
         isProject: false,
         total: r.trackedHrs,
@@ -166,6 +179,7 @@ export function TimesheetGrid({
       id: p.id,
       name: p.name,
       subtitle: `${p.members} members · ${p.department}`,
+      department: p.department,
       isProject: true,
       badge: p.key,
       total: p.trackedHrs,
@@ -173,16 +187,24 @@ export function TimesheetGrid({
     }));
   }, [group, personRows, projectRows]);
 
+  // Team = department, for the team filter.
+  const departments = useMemo(
+    () => Array.from(new Set(baseRows.map((r) => r.department))).sort(),
+    [baseRows],
+  );
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const matched = q
-      ? baseRows.filter(
-          (r) =>
-            r.name.toLowerCase().includes(q) ||
-            r.subtitle.toLowerCase().includes(q) ||
-            (r.badge?.toLowerCase().includes(q) ?? false),
-        )
-      : baseRows;
+    const matched = baseRows.filter((r) => {
+      if (deptFilter !== "all" && r.department !== deptFilter) return false;
+      if (!q) return true;
+      return (
+        r.name.toLowerCase().includes(q) ||
+        r.subtitle.toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q) ||
+        (r.badge?.toLowerCase().includes(q) ?? false)
+      );
+    });
 
     return matched
       .map((r) => {
@@ -193,7 +215,15 @@ export function TimesheetGrid({
       })
       .filter((r) => statusFilter === "all" || r.status === statusFilter)
       .sort((a, b) => b.total - a.total);
-  }, [baseRows, query, statusFilter, weekOffset, overrides]);
+  }, [baseRows, query, deptFilter, statusFilter, weekOffset, overrides]);
+
+  const hasFilters =
+    deptFilter !== "all" || statusFilter !== "all" || query.trim() !== "";
+  const clearFilters = () => {
+    setDeptFilter("all");
+    setStatusFilter("all");
+    setQuery("");
+  };
 
   const colTotals = useMemo(() => {
     const totals = [0, 0, 0, 0, 0, 0, 0];
@@ -242,22 +272,24 @@ export function TimesheetGrid({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Week navigation */}
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setWeekOffset((w) => w - 1)}
-              aria-label="Previous week"
-              className="flex size-8 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ChevronLeft className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setWeekOffset((w) => w + 1)}
-              aria-label="Next week"
-              className="flex size-8 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ChevronRight className="size-4" />
-            </button>
+            <div className="flex items-center gap-1 rounded-lg border p-0.5">
+              <button
+                type="button"
+                onClick={() => setWeekOffset((w) => w - 1)}
+                aria-label="Previous week"
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekOffset((w) => w + 1)}
+                aria-label="Next week"
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
             <div className="ml-1 leading-tight">
               <p className="font-heading text-base font-semibold">
                 {weekOffset === 0 ? "This Week" : "Week of"}
@@ -266,11 +298,12 @@ export function TimesheetGrid({
             </div>
             {weekOffset !== 0 ? (
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="ml-1 h-7 text-xs"
+                className="ml-2 h-8 gap-1.5"
                 onClick={() => setWeekOffset(0)}
               >
+                <CalendarCheck className="size-4" />
                 Today
               </Button>
             ) : null}
@@ -292,13 +325,44 @@ export function TimesheetGrid({
                 label="By project"
               />
             </div>
+            {/* Team (department) filter */}
+            <Select
+              value={deptFilter}
+              onValueChange={(v) => setDeptFilter(v as string)}
+            >
+              <SelectTrigger
+                aria-label="Filter by team"
+                className="h-9 w-full gap-2 sm:w-44"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <Users2 className="size-4 shrink-0 text-muted-foreground" />
+                  <SelectValue>
+                    {(value) =>
+                      value === "all" || value == null
+                        ? "All teams"
+                        : String(value)
+                    }
+                  </SelectValue>
+                </div>
+              </SelectTrigger>
+              <SelectContent className="min-w-44">
+                <SelectItem value="all">All teams</SelectItem>
+                {departments.map((d) => (
+                  <SelectItem key={d} value={d}>
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="relative sm:w-56">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={
-                  group === "person" ? "Search employees…" : "Search projects…"
+                  group === "person"
+                    ? "Search employees or ID…"
+                    : "Search projects or ID…"
                 }
                 className="pl-8"
               />
@@ -336,6 +400,38 @@ export function TimesheetGrid({
             total
           </p>
         </div>
+
+        {/* Active filter tags */}
+        {hasFilters ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Filters:</span>
+            {deptFilter !== "all" ? (
+              <FilterTagChip
+                label={`Team: ${deptFilter}`}
+                onClear={() => setDeptFilter("all")}
+              />
+            ) : null}
+            {statusFilter !== "all" ? (
+              <FilterTagChip
+                label={`Status: ${STATUS_META[statusFilter as TimesheetStatus].label}`}
+                onClear={() => setStatusFilter("all")}
+              />
+            ) : null}
+            {query.trim() ? (
+              <FilterTagChip
+                label={`Search: ${query.trim()}`}
+                onClear={() => setQuery("")}
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Clear all
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Grid */}
@@ -412,7 +508,10 @@ export function TimesheetGrid({
                             {r.name}
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {r.subtitle}
+                            <span className="font-mono text-[0.65rem] text-muted-foreground/70">
+                              {r.isProject ? "PID" : "EID"} {r.id}
+                            </span>{" "}
+                            · {r.subtitle}
                           </p>
                         </div>
                       </div>
@@ -511,6 +610,28 @@ export function TimesheetGrid({
 
       <ActivityDialog view={activeView} onClose={() => setSelection(null)} />
     </Card>
+  );
+}
+
+function FilterTagChip({
+  label,
+  onClear,
+}: {
+  label: string;
+  onClear: () => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-accent py-0.5 pr-1 pl-2 text-xs font-medium text-accent-foreground">
+      {label}
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={`Remove ${label}`}
+        className="rounded-full p-0.5 transition-colors hover:bg-foreground/10"
+      >
+        <X className="size-3" />
+      </button>
+    </span>
   );
 }
 

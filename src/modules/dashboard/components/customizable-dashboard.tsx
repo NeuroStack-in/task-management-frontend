@@ -1,16 +1,20 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   rectSortingStrategy,
   arrayMove,
@@ -23,7 +27,7 @@ import {
   type DashboardData,
 } from "@/modules/dashboard/widget-registry";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,12 +35,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import type { DashboardWidget } from "@/types";
+
+/**
+ * Makes a widget card fill its (equal-height) grid cell and distribute its
+ * content to fill the space: the card stretches to h-full, and its CardContent
+ * grows (flex-1) and spreads its children top-to-bottom (justify-between).
+ */
+const FILL_CARD =
+  "h-full [&>*]:h-full [&>*]:[--card-spacing:--spacing(4)]! " +
+  "[&_[data-slot=card-content]]:flex-1 [&_[data-slot=card-content]]:flex " +
+  "[&_[data-slot=card-content]]:flex-col [&_[data-slot=card-content]]:justify-between";
 
 function SortableWidget({
   id,
+  span,
   children,
 }: {
   id: string;
+  span: 1 | 2;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -47,20 +64,32 @@ function SortableWidget({
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "group/widget relative mb-4 break-inside-avoid",
-        isDragging && "z-10 opacity-70",
+        "group/widget relative h-full",
+        span === 2 && "sm:col-span-2",
+        isDragging && "z-10",
       )}
     >
-      <button
-        type="button"
-        aria-label="Drag to reorder"
-        {...attributes}
-        {...listeners}
-        className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
-      >
-        <GripVertical className="size-4" />
-      </button>
-      {children}
+      {!isDragging ? (
+        <button
+          type="button"
+          aria-label="Drag to reorder"
+          {...attributes}
+          {...listeners}
+          className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </button>
+      ) : null}
+
+      {isDragging ? (
+        // Dashed drop-placeholder; the floating DragOverlay shows the widget.
+        <div className="relative h-full">
+          <div className={cn("invisible", FILL_CARD)}>{children}</div>
+          <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
+        </div>
+      ) : (
+        <div className={FILL_CARD}>{children}</div>
+      )}
     </div>
   );
 }
@@ -71,8 +100,11 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const reorder = useDashboardStore((s) => s.reorder);
   const reset = useDashboardStore((s) => s.reset);
 
+  const [activeId, setActiveId] = useState<string | null>(null);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   const ordered = useMemo(
@@ -83,7 +115,14 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const visibleIds = visible.map((w) => w.id);
   const hiddenIds = ordered.filter((w) => !w.visible).map((w) => w.id);
 
+  const activeWidget = activeId
+    ? ordered.find((w) => w.id === activeId)
+    : null;
+
+  const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
+
   const onDragEnd = (e: DragEndEvent) => {
+    setActiveId(null);
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIndex = visibleIds.indexOf(String(active.id));
@@ -93,8 +132,18 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     reorder([...newVisible, ...hiddenIds]);
   };
 
+  const renderWidget = (w: DashboardWidget) => {
+    const def = WIDGET_REGISTRY[w.type];
+    if (!def) return null;
+    return (
+      <SortableWidget key={w.id} id={w.id} span={def.span}>
+        {def.render(data)}
+      </SortableWidget>
+    );
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-lg font-semibold tracking-tight">
           Your widgets
@@ -113,13 +162,13 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
               {ordered.map((w) => (
                 <label
                   key={w.id}
-                  className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
                 >
-                  <span className="truncate">{w.title}</span>
-                  <Switch
+                  <Checkbox
                     checked={w.visible}
                     onCheckedChange={() => toggleWidget(w.id)}
                   />
+                  <span className="truncate">{w.title}</span>
                 </label>
               ))}
             </div>
@@ -145,21 +194,25 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          onDragStart={onDragStart}
           onDragEnd={onDragEnd}
+          onDragCancel={() => setActiveId(null)}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            <div className="columns-1 gap-4 md:columns-2 xl:columns-3">
-              {visible.map((w) => {
-                const def = WIDGET_REGISTRY[w.type];
-                if (!def) return null;
-                return (
-                  <SortableWidget key={w.id} id={w.id}>
-                    {def.render(data)}
-                  </SortableWidget>
-                );
-              })}
+            {/* Equal-height bento grid: `auto-rows-fr` makes every row the same
+                height; each widget card fills its cell (see FILL_CARD). Charts
+                span 2 columns; drop any widget anywhere — order = placement. */}
+            <div className="grid auto-rows-fr grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              {visible.map(renderWidget)}
             </div>
           </SortableContext>
+          <DragOverlay>
+            {activeWidget ? (
+              <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
+                {WIDGET_REGISTRY[activeWidget.type]?.render(data)}
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       )}
     </div>

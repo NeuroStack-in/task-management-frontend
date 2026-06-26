@@ -1,20 +1,11 @@
-import Link from "next/link";
-import { Activity } from "lucide-react";
-
+/**
+ * Passthrough — each auth page owns its own layout. The bespoke login/signup
+ * fill the viewport; the secondary pages (forgot/mfa/reset) use <AuthShell>.
+ */
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/30 p-4">
-      <Link href="/" className="mb-8 flex items-center gap-2">
-        <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Activity className="size-5" />
-        </div>
-        <span className="text-lg font-semibold tracking-tight">WorkPulse</span>
-      </Link>
-      <div className="w-full max-w-sm">{children}</div>
-    </div>
-  );
+  return <>{children}</>;
 }

@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Sparkline } from "./sparkline";
@@ -15,6 +17,8 @@ interface StatCardProps {
   hint?: string;
   /** Featured sage treatment (white text on sage fill). */
   featured?: boolean;
+  /** When set, the whole card becomes a click-through link. */
+  href?: string;
 }
 
 export function StatCard({
@@ -25,12 +29,14 @@ export function StatCard({
   trend,
   hint,
   featured,
+  href,
 }: StatCardProps) {
-  return (
+  const card = (
     <Card
       className={cn(
-        "justify-between",
+        "h-full justify-between transition-shadow",
         featured && "bg-feature text-feature-foreground shadow-none",
+        href && "group-hover/stat:shadow-md",
       )}
     >
       <div className="flex items-center justify-between gap-3 px-5">
@@ -60,7 +66,13 @@ export function StatCard({
             {value}
           </p>
           <div className="flex items-center gap-2">
-            {delta !== undefined && !featured ? <DeltaPill value={delta} /> : null}
+            {delta !== undefined ? (
+              featured ? (
+                <FeaturedDelta value={delta} />
+              ) : (
+                <DeltaPill value={delta} />
+              )
+            ) : null}
             {hint ? (
               <span
                 className={cn(
@@ -86,5 +98,24 @@ export function StatCard({
         ) : null}
       </div>
     </Card>
+  );
+
+  if (!href) return card;
+  return (
+    <Link href={href} className="group/stat block focus-visible:outline-none">
+      {card}
+    </Link>
+  );
+}
+
+/** Delta pill tuned for the featured (white-on-accent) card. */
+function FeaturedDelta({ value }: { value: number }) {
+  const positive = value >= 0;
+  const Icon = positive ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-white/15 px-1.5 py-0.5 text-xs font-medium text-white">
+      <Icon className="size-3" />
+      {Math.abs(value)}%
+    </span>
   );
 }

@@ -10,26 +10,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  Activity as ActivityIcon,
-  Gauge,
-  MousePointerClick,
-  Coffee,
-} from "lucide-react";
-import { StatCard } from "@/components/shared/stat-card";
-import { Input } from "@/components/ui/input";
+import { ChevronDown } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  ProductivityHeatmap,
-  ActiveInactiveRing,
-} from "@/modules/dashboard/components/insight-widgets";
+import { ActiveInactiveRing } from "@/modules/dashboard/components/insight-widgets";
 import { users } from "@/lib/data";
-import { productivityHeatmap } from "@/lib/mock-metrics";
 import {
   APP_USAGE,
   URL_USAGE,
@@ -42,6 +32,7 @@ import {
   type UsageCategory,
 } from "@/lib/mock-insights";
 import { cn } from "@/lib/utils";
+import { AiReportCard } from "./ai-report-card";
 
 const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
 
@@ -65,6 +56,7 @@ const dateSeed = (date: string): number =>
 export function ActivityTab() {
   const [granularity, setGranularity] = useState<Granularity>("daily");
   const [date, setDate] = useState("");
+  const [showUsage, setShowUsage] = useState(false);
 
   const series = useMemo(
     () => activitySeries(granularity, date ? dateSeed(date) : 0),
@@ -121,47 +113,29 @@ export function ActivityTab() {
         </div>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           Date
-          <Input
-            type="date"
+          <DatePicker
             value={date}
             max="2026-06-25"
-            onChange={(e) => setDate(e.target.value)}
-            className="w-[9.5rem]"
+            onChange={setDate}
+            className="w-[10.5rem]"
           />
         </label>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label={activeLabel}
-          value={active}
-          icon={ActivityIcon}
-          hint={activeHint}
-          trend={series.active}
-          featured
-        />
-        <StatCard
-          label="Avg. active"
-          value={`${avg(series.active)}%`}
-          icon={Gauge}
-          delta={4}
-          trend={series.active.slice(-7)}
-        />
-        <StatCard
-          label="Productive time"
-          value={`${productivePct}%`}
-          icon={MousePointerClick}
-          delta={2}
-          trend={series.keyboard.slice(-7)}
-        />
-        <StatCard
-          label="Distracting time"
-          value={formatMinutes(totals.distracting)}
-          icon={Coffee}
-          delta={-6}
-          trend={[52, 48, 55, 44, 50, 46, 41]}
-        />
-      </div>
+      <AiReportCard
+        title="AI activity report"
+        summary="Active time is tracking above the weekly average, with clear peaks around 11am and 4pm and the usual post-lunch dip. Keyboard and mouse intensity stay in step — no idle anomalies detected today."
+        metrics={[
+          { label: activeLabel, value: active, hint: activeHint },
+          { label: "Avg. active", value: `${avg(series.active)}%`, delta: 4 },
+          { label: "Productive time", value: `${productivePct}%`, delta: 2 },
+          {
+            label: "Distracting time",
+            value: formatMinutes(totals.distracting),
+            delta: -6,
+          },
+        ]}
+      />
 
       <Card>
         <CardHeader>
@@ -228,21 +202,28 @@ export function ActivityTab() {
         <ActiveInactiveRing active={active} inactive={inactive} />
       </div>
 
-      {/* Heatmap — full width */}
-      <ProductivityHeatmap data={productivityHeatmap()} />
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <UsageList title="Top applications" items={APP_USAGE} />
-        <UsageList title="Top websites" items={URL_USAGE} />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <IntensityCard title="Keyboard intensity" data={series.keyboard} labels={series.labels} />
-        <IntensityCard title="Mouse intensity" data={series.mouse} labels={series.labels} />
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setShowUsage((v) => !v)}
+          className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronDown
+            className={cn("size-4 transition-transform", showUsage && "rotate-180")}
+          />
+          {showUsage ? "Hide" : "Show"} app &amp; website breakdown
+        </button>
+        {showUsage ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <UsageList title="Top applications" items={APP_USAGE} />
+            <UsageList title="Top websites" items={URL_USAGE} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
+
 
 function UsageList({ title, items }: { title: string; items: UsageItem[] }) {
   const max = Math.max(...items.map((i) => i.minutes));
@@ -277,44 +258,6 @@ function UsageList({ title, items }: { title: string; items: UsageItem[] }) {
             </div>
           </div>
         ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function IntensityCard({
-  title,
-  data,
-  labels,
-}: {
-  title: string;
-  data: number[];
-  labels: string[];
-}) {
-  const max = Math.max(...data);
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex h-28 items-end gap-1.5">
-          {data.map((v, i) => (
-            <div
-              key={i}
-              title={`${labels[i]} · ${v}%`}
-              className="flex-1 rounded-t-[4px] bg-primary/80"
-              style={{ height: `${(v / max) * 100}%` }}
-            />
-          ))}
-        </div>
-        <div className="mt-1 flex justify-between">
-          {labels.map((h) => (
-            <span key={h} className="text-[10px] text-muted-foreground">
-              {h}
-            </span>
-          ))}
-        </div>
       </CardContent>
     </Card>
   );

@@ -19,55 +19,94 @@ interface PaletteDef {
   swatch: string[];
 }
 
-/** Available palettes. `indigo` is the default (no data-palette attribute). */
-const PALETTES: PaletteDef[] = [
+/**
+ * Available palettes — the documented WorkPulse colour schemes
+ * (Docs/DESIGN-color-guide.md). `indigo` is the default (no data-palette attr).
+ */
+export const PALETTES: PaletteDef[] = [
   {
     id: "indigo",
     name: "Graphite & Indigo",
-    note: "Cool neutrals · indigo",
-    swatch: ["#4338ca", "#3730a3", "#1a1d23", "#eef0ff"],
+    note: "Default · warm neutral",
+    swatch: ["#4f46e5", "#6366f1", "#232427", "#f7f5f1"],
   },
   {
-    id: "ember",
-    name: "Ember",
-    note: "Fire Opal · Masterpiece Red",
-    swatch: ["#ef6448", "#5a2132", "#202322", "#efe9e9"],
+    id: "corporate",
+    name: "Corporate Blue",
+    note: "Refined · professional",
+    swatch: ["#2563eb", "#60a5fa", "#1f2937", "#f5f7fa"],
+  },
+  {
+    id: "evergreen",
+    name: "Evergreen & Mint",
+    note: "Calm · SaaS green",
+    swatch: ["#059669", "#34d399", "#1d2a26", "#f5f8f6"],
   },
   {
     id: "fireopal",
     name: "Fire Opal",
     note: "Fire Opal · Raisin Black",
-    swatch: ["#ef6448", "#202322", "#7c726a", "#f3efea"],
+    swatch: ["#ef6448", "#2a2320", "#252320", "#f8f5f1"],
   },
   {
-    id: "masterpiece",
-    name: "Masterpiece Red",
-    note: "Masterpiece Red · Dirty White",
-    swatch: ["#5a2132", "#9c4a5a", "#2b141a", "#efe9e9"],
+    id: "teal",
+    name: "Slate & Teal",
+    note: "Calm · HR-grade",
+    swatch: ["#0f9b8e", "#16b8a6", "#232427", "#f7f5f1"],
   },
   {
-    id: "goldamber",
-    name: "Golden Amber",
-    note: "Golden Amber · Deep Indigo",
-    swatch: ["#ffb246", "#2d1a47", "#7c3aed", "#f6f2ec"],
+    id: "violet",
+    name: "Cloud & Violet",
+    note: "Modern · people-ops",
+    swatch: ["#7c3aed", "#a78bfa", "#232427", "#f7f5f1"],
   },
   {
-    id: "creative",
-    name: "Creative Teal",
-    note: "Pine Teal · Cream",
-    swatch: ["#004643", "#0d9488", "#5f6f6b", "#f0ede5"],
+    id: "sapphire",
+    name: "Arctic & Sapphire",
+    note: "Data-forward · analytics",
+    swatch: ["#1d63c9", "#2563eb", "#232427", "#f7f5f1"],
   },
   {
-    id: "midnightplum",
-    name: "Midnight Plum",
-    note: "Midnight Plum · Honey Dawn",
-    swatch: ["#f0c986", "#3b153a", "#7c3a6e", "#f4eee6"],
+    id: "dusk",
+    name: "Dusk & Rose",
+    note: "Editorial · executive",
+    swatch: ["#7e3bd4", "#f43f5e", "#232427", "#f8f5f2"],
+  },
+  {
+    id: "iron",
+    name: "Iron & Crimson",
+    note: "Security · compliance",
+    swatch: ["#3f4855", "#6b7280", "#dc2626", "#f7f5f1"],
+  },
+  {
+    id: "navy",
+    name: "Midnight Navy",
+    note: "Authoritative · corporate",
+    swatch: ["#2c4e7c", "#4f74a8", "#232427", "#f5f7fa"],
+  },
+  {
+    id: "cobalt",
+    name: "Graphite Cobalt",
+    note: "Data-driven · analytics",
+    swatch: ["#3e63b0", "#6585c8", "#232427", "#f6f7f9"],
+  },
+  {
+    id: "burgundy",
+    name: "Burgundy Wine",
+    note: "Premium · executive",
+    swatch: ["#8c3f4d", "#a86472", "#262223", "#faf6f5"],
+  },
+  {
+    id: "petrol",
+    name: "Petrol Cyan",
+    note: "Calm · technical",
+    swatch: ["#1b6b77", "#3f8d97", "#222626", "#f4f8f8"],
   },
 ];
 
 const STORAGE_KEY = "wp-palette";
 
-function applyPalette(id: string) {
+export function applyPalette(id: string) {
   const el = document.documentElement;
   if (id === "indigo") el.removeAttribute("data-palette");
   else el.setAttribute("data-palette", id);
@@ -79,13 +118,13 @@ function applyPalette(id: string) {
 }
 
 export function PaletteSwitcher() {
-  const [active, setActive] = useState("indigo");
+  const [active, setActive] = useState("fireopal");
 
   // Read the persisted choice on mount (the inline head script already applied
-  // it pre-paint; this just syncs the active checkmark).
+  // it pre-paint; this just syncs the active checkmark). Default = Fire Opal.
   useEffect(() => {
     try {
-      setActive(window.localStorage.getItem(STORAGE_KEY) || "indigo");
+      setActive(window.localStorage.getItem(STORAGE_KEY) || "fireopal");
     } catch {
       /* ignore */
     }

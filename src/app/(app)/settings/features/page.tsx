@@ -1,14 +1,8 @@
-import type { Metadata } from "next";
-import { ComingSoon } from "@/components/shared/coming-soon";
+import type { Metadata } from "next"
+import { FeaturesTab } from "@/modules/settings/components/features-tab"
 
-export const metadata: Metadata = { title: "Feature Management" };
+export const metadata: Metadata = { title: "Feature Management · Settings" }
 
 export default function Page() {
-  return (
-    <ComingSoon
-      title="Feature Management"
-      description="Enable or disable modules organization-wide."
-      phase={4}
-    />
-  );
+  return <FeaturesTab />
 }

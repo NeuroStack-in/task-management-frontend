@@ -1,7 +1,7 @@
 # Technical Design Document
 
 **Project:** Workforce Activity & Productivity Management Platform
-**Version:** 1.0
+**Version:** 1.2
 
 > **Canonical authority:** [SPEC.md](SPEC.md) reconciles this document with PRD.md and PAGES.md. Where they conflict, SPEC.md wins. Scope is **PAGES.md V2 (29 sections)**; the timeline is **MVP-first phasing** (see [§25](#25-development-sequence)), not a literal 5-day target.
 
@@ -221,6 +221,12 @@ app
 │
 ├── employees
 │
+├── attendance
+│
+├── payroll
+│
+├── leave-requests   (self-service Leave Management)
+│
 ├── approvals
 │
 ├── ai
@@ -247,11 +253,21 @@ app
 │
 ├── audit-logs
 │
-├── settings
+├── settings           (hub — admin sections relocated here, permission-gated)
+│   ├── profile
+│   ├── notifications
+│   ├── appearance
 │   ├── organization
+│   ├── features
+│   ├── ownership       (transfer ownership / delete organization)
 │   ├── monitoring
-│   ├── tracking-rules   (Application & URL Management)
-│   └── features
+│   ├── tracking-rules  (Application & URL Management)
+│   ├── roles
+│   ├── security
+│   ├── audit-logs
+│   ├── integrations
+│   ├── remote-support
+│   └── agents          (Desktop Agent Management)
 │
 └── help
 ```
@@ -271,6 +287,9 @@ modules/
 ├── screenshots/
 ├── reports/
 ├── employees/
+├── attendance/
+├── payroll/
+├── leave/            (self-service Leave Management)
 ├── approvals/
 ├── ai/
 ├── anomalies/
@@ -396,9 +415,17 @@ interface DashboardWidget {
 
 - Add Widget
 - Remove Widget
-- Drag Widget
-- Resize Widget
-- Save Layout
+- Drag Widget (free reordering via dnd-kit + DragOverlay)
+- Save Layout (persisted, `wp-dashboard`)
+
+### Role-Aware Rendering
+
+`DashboardView` branches on `useIsSelfScoped()`:
+
+- **Self-scoped (Employee):** a fixed `PersonalDashboard` (own productivity, open
+  tasks, this-week attendance, member projects) — no widget store, no org data.
+- **Org roles:** the customizable bento grid plus range (Today / 7d / 30d) and
+  team filters that recompute KPIs and widget data.
 
 ---
 
@@ -440,6 +467,20 @@ Sidebar automatically generated based on:
 ```typescript
 role.permissions
 ```
+
+### Permission Ids & Actions
+
+Ids are `"<module>:<action>"` (or `"*"` wildcard). Actions include
+`view · create · edit · delete · assign · manage · export · approve · request`
+(`request` added for `leave:request`). New permission modules: `payroll`
+(`view` / `manage` / `export`) and `leave` (`view` / `request`).
+
+### Self-Scoped Roles
+
+`useIsSelfScoped()` returns `true` when a role lacks both `employees:view` and
+`activity:view` (e.g. Employee). Pages use it to render personal vs. org views
+(Dashboard, Attendance, Projects), so a self-scoped user never sees org-wide
+data — UI-level scoping that maps to server-side authorization later.
 
 ---
 
@@ -502,6 +543,22 @@ notifications
 activeTask
 elapsedTime
 status
+```
+
+### Additional Stores
+
+Runtime-created data uses persisted Zustand stores keyed `wp-*`, merged on top of
+the seeded JSON in the views:
+
+```text
+roles            wp-roles            custom roles (system roles merged in)
+employees        wp-employees        accounts created via "Add employee"
+leave-requests   wp-leave-requests   self-service leave requests + balances
+projects         wp-projects         session projects (seed + created)
+tasks            (session)           working copy of tasks (create/edit/move)
+assistant                            AI assistant panel open state + prompt
+features         wp-features         org-level module enable/disable
+ui               wp-ui               sidebar collapse + ⌘K command-palette state
 ```
 
 ---
@@ -934,6 +991,11 @@ Polish
 
 Approved for Frontend Development.
 
-- **Version:** 1.1
+- **Version:** 1.2
 - **Phase:** UI/UX Development
 - **Phasing:** MVP-first (5 phases; see SPEC.md §6) — duration driven by scope, not a fixed 5 days
+- **1.2 changes:** added Payroll and self-service Leave modules + routes; Settings
+  hub reorganization (admin sections under `/settings/*`, incl. ownership);
+  role-aware dashboard (`useIsSelfScoped` personal vs org); new permission modules
+  (`payroll`, `leave`) and the `request` action; documented the additional `wp-*`
+  Zustand stores.

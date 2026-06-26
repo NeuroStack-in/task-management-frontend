@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Papa from "papaparse";
+import { jsPDF } from "jspdf";
+import { toast } from "sonner";
 import {
   Users,
   UserCheck,
@@ -10,6 +13,9 @@ import {
   Search,
   ChevronDown,
   Check,
+  Download,
+  FileText,
+  Sheet,
   UserPlus,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -17,7 +23,6 @@ import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -35,8 +40,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useEmployeesStore } from "@/stores/employees.store";
 import { initials } from "@/lib/format";
+import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
+import { InviteDialog } from "./invite-dialog";
 
 export interface EmployeeRow {
   id: string;
@@ -51,15 +59,69 @@ export interface EmployeeRow {
   productivityScore: number;
 }
 
-const STATUS_META: Record<EmployeeRow["status"], string> = {
-  active: "bg-success/12 text-success",
-  inactive: "bg-muted text-muted-foreground",
-  invited: "bg-warning/15 text-warning",
-  suspended: "bg-destructive/12 text-destructive",
-};
-
 const STATUSES = ["all", "active", "inactive", "invited", "suspended"] as const;
 const PAGE_SIZE = 9;
+
+const REPORT_COLUMNS = [
+  "ID", "Name", "Email", "Role", "Title", "Department", "Team", "Status", "Productivity %",
+];
+const reportRow = (e: EmployeeRow) => [
+  e.id, e.name, e.email, e.roleName, e.jobTitle, e.department, e.team, e.status, e.productivityScore,
+];
+
+function exportEmployeesCsv(list: EmployeeRow[]) {
+  const csv = Papa.unparse({ fields: REPORT_COLUMNS, data: list.map(reportRow) });
+  downloadBlob(
+    new Blob([csv], { type: "text/csv;charset=utf-8;" }),
+    "employees-report.csv",
+  );
+  toast.success("Report exported", {
+    description: `employees-report.csv · ${list.length} people`,
+  });
+}
+
+function exportEmployeesPdf(
+  list: EmployeeRow[],
+  stats: { active: number; avgProductivity: number },
+) {
+  const doc = new jsPDF();
+  doc.setFontSize(18);
+  doc.text("Employee Report", 14, 18);
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  doc.text(
+    `${list.length} employees · ${stats.active} active · ${stats.avgProductivity}% avg productivity · WorkPulse`,
+    14,
+    25,
+  );
+
+  const xs = [14, 92, 140, 178];
+  let y = 36;
+  doc.setTextColor(20);
+  doc.setFont("helvetica", "bold");
+  ["Name", "Department", "Status", "Prod %"].forEach((c, i) => doc.text(c, xs[i], y));
+  doc.setDrawColor(210);
+  doc.line(14, y + 2, 196, y + 2);
+  doc.setFont("helvetica", "normal");
+  y += 8;
+
+  for (const e of list) {
+    doc.text(e.name, xs[0], y);
+    doc.text(e.department, xs[1], y);
+    doc.text(e.status, xs[2], y);
+    doc.text(`${e.productivityScore}%`, xs[3], y);
+    y += 7;
+    if (y > 285) {
+      doc.addPage();
+      y = 18;
+    }
+  }
+
+  doc.save("employees-report.pdf");
+  toast.success("Report exported", {
+    description: `employees-report.pdf · ${list.length} people`,
+  });
+}
 
 function FilterDropdown({
   label,
@@ -129,21 +191,49 @@ export function EmployeesView({
 }) {
   const { can } = usePermissions();
   const router = useRouter();
+  const customEmployees = useEmployeesStore((s) => s.customEmployees);
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
+  const [inviteOpen, setInviteOpen] = useState(false);
+
+  // Runtime-created accounts (persisted store) sit on top of the seed users.
+  const allEmployees = useMemo(
+    () => [...customEmployees, ...employees],
+    [customEmployees, employees],
+  );
+  // Created accounts have no seed-backed profile page, so their rows don't link.
+  const customIds = useMemo(
+    () => new Set(customEmployees.map((e) => e.id)),
+    [customEmployees],
+  );
+
+  // Stats stay in sync as accounts are added this session.
+  const liveStats = useMemo(() => {
+    if (customEmployees.length === 0) return stats;
+    const total = allEmployees.length;
+    const active = allEmployees.filter((e) => e.status === "active").length;
+    const avgProductivity = Math.round(
+      allEmployees.reduce((s, e) => s + e.productivityScore, 0) / total,
+    );
+    const departmentCount = new Set(allEmployees.map((e) => e.department)).size;
+    return { total, active, avgProductivity, departments: departmentCount };
+  }, [allEmployees, customEmployees.length, stats]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return employees.filter((e) => {
+    return allEmployees.filter((e) => {
       if (dept !== "all" && e.department !== dept) return false;
       if (status !== "all" && e.status !== status) return false;
-      if (q && !`${e.name} ${e.email} ${e.jobTitle}`.toLowerCase().includes(q))
+      if (
+        q &&
+        !`${e.name} ${e.email} ${e.jobTitle} ${e.id}`.toLowerCase().includes(q)
+      )
         return false;
       return true;
     });
-  }, [employees, query, dept, status]);
+  }, [allEmployees, query, dept, status]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -160,19 +250,34 @@ export function EmployeesView({
         title="Employees"
         description="Your organization's people, productivity, and teams."
         actions={
-          can("employees:manage") ? (
-            <Button>
-              <UserPlus className="size-4" /> Invite people
-            </Button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" />}>
+                <Download className="size-4" /> Export report
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => exportEmployeesPdf(filtered, liveStats)}>
+                  <FileText className="size-4" /> PDF report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
+                  <Sheet className="size-4" /> CSV export
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {can("employees:manage") ? (
+              <Button onClick={() => setInviteOpen(true)}>
+                <UserPlus className="size-4" /> Add employee
+              </Button>
+            ) : null}
+          </div>
         }
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total employees" value={stats.total} icon={Users} hint="in this organization" featured />
-        <StatCard label="Active" value={stats.active} icon={UserCheck} delta={4} />
-        <StatCard label="Avg. productivity" value={`${stats.avgProductivity}%`} icon={GaugeIcon} delta={3} />
-        <StatCard label="Departments" value={stats.departments} icon={Building2} hint="across the org" />
+        <StatCard label="Total employees" value={liveStats.total} icon={Users} hint="in this organization" featured />
+        <StatCard label="Active" value={liveStats.active} icon={UserCheck} delta={4} />
+        <StatCard label="Avg. productivity" value={`${liveStats.avgProductivity}%`} icon={GaugeIcon} delta={3} />
+        <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />
       </div>
 
       {/* Toolbar */}
@@ -182,7 +287,7 @@ export function EmployeesView({
           <Input
             value={query}
             onChange={(e) => resetPage(setQuery)(e.target.value)}
-            placeholder="Search by name, email, or title…"
+            placeholder="Search by name, email, ID, or title…"
             className="pl-9"
           />
         </div>
@@ -223,7 +328,6 @@ export function EmployeesView({
                     <TableHead>Employee</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead>Department</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead className="w-40">Productivity</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -231,8 +335,12 @@ export function EmployeesView({
                   {rows.map((e) => (
                     <TableRow
                       key={e.id}
-                      className="cursor-pointer"
-                      onClick={() => router.push(`/employees/${e.id}`)}
+                      className={cn(!customIds.has(e.id) && "cursor-pointer")}
+                      onClick={() =>
+                        customIds.has(e.id)
+                          ? undefined
+                          : router.push(`/employees/${e.id}`)
+                      }
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -245,7 +353,10 @@ export function EmployeesView({
                           <div className="min-w-0">
                             <p className="truncate font-medium">{e.name}</p>
                             <p className="truncate text-xs text-muted-foreground">
-                              {e.email}
+                              <span className="font-mono text-[0.65rem] text-muted-foreground/70">
+                                {e.id}
+                              </span>{" "}
+                              · {e.email}
                             </p>
                           </div>
                         </div>
@@ -255,9 +366,6 @@ export function EmployeesView({
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {e.department} · {e.team}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={STATUS_META[e.status]}>{e.status}</Badge>
                       </TableCell>
                       <TableCell>
                         <ProductivityCell value={e.productivityScore} />
@@ -300,6 +408,12 @@ export function EmployeesView({
           </Button>
         </div>
       </div>
+
+      <InviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        departments={departments}
+      />
     </div>
   );
 }

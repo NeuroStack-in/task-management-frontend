@@ -14,7 +14,8 @@ export default function InsightsIndex() {
 
   useEffect(() => {
     const first = INSIGHTS_TABS.find((t) => canAccess(role, t.permission));
-    if (first) router.replace(first.href);
+    // No accessible tab (e.g. an Employee) — send them back to the dashboard.
+    router.replace(first ? first.href : "/dashboard");
   }, [role, router]);
 
   return <Loader label="Opening insights…" />;

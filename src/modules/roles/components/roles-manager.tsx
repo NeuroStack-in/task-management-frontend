@@ -21,11 +21,12 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -106,79 +107,110 @@ export function RolesManager() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {roles.map((role) => (
-          <Card key={role.id} className="flex flex-col">
-            <CardHeader className="flex-row items-start justify-between space-y-0">
-              <div className="flex items-center gap-2">
-                <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <KeyRound className="size-4.5" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">{role.name}</CardTitle>
-                  <Badge
-                    variant={role.system ? "secondary" : "outline"}
-                    className="mt-1"
-                  >
-                    {role.system ? (
-                      <>
-                        <Lock className="size-3" /> System
-                      </>
-                    ) : (
-                      "Custom"
-                    )}
-                  </Badge>
-                </div>
-              </div>
+      <div className="overflow-hidden rounded-[1.4rem] bg-card shadow-soft">
+        <table className="w-full caption-bottom text-sm">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="py-3 pl-6">Role</TableHead>
+              <TableHead className="hidden py-3 md:table-cell">
+                Description
+              </TableHead>
+              <TableHead className="py-3 text-right">Members</TableHead>
+              <TableHead className="py-3 pr-6 text-right md:pr-2">
+                Permissions
+              </TableHead>
+              {canManage && <TableHead className="w-12 py-3 pr-4" />}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {roles.map((role) => (
+              <TableRow key={role.id}>
+                {/* Role identity */}
+                <TableCell className="py-3 pl-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <KeyRound className="size-4.5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{role.name}</span>
+                        <Badge
+                          variant={role.system ? "secondary" : "outline"}
+                          className="font-normal"
+                        >
+                          {role.system ? (
+                            <>
+                              <Lock className="size-3" /> System
+                            </>
+                          ) : (
+                            "Custom"
+                          )}
+                        </Badge>
+                      </div>
+                      {/* Description shown inline on small screens */}
+                      <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground md:hidden">
+                        {role.description}
+                      </p>
+                    </div>
+                  </div>
+                </TableCell>
 
-              {canManage ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="ghost" size="icon" className="size-8" />
-                    }
-                  >
-                    <MoreVertical className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleClone(role)}>
-                      <Copy className="size-4" /> Clone
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={role.system}
-                      onClick={() => openEdit(role)}
-                    >
-                      <Pencil className="size-4" /> Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      disabled={role.system}
-                      onClick={() => setDeleteTarget(role)}
-                    >
-                      <Trash2 className="size-4" /> Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
-            </CardHeader>
-            <CardContent className="mt-auto space-y-3">
-              <p className="line-clamp-2 text-sm text-muted-foreground">
-                {role.description}
-              </p>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <Users className="size-4" />
-                  {userCountFor(role.id)} users
-                </span>
-                <span className="font-medium">
+                {/* Description */}
+                <TableCell className="hidden max-w-md py-3 whitespace-normal text-muted-foreground md:table-cell">
+                  <span className="line-clamp-2">{role.description}</span>
+                </TableCell>
+
+                {/* Members */}
+                <TableCell className="py-3 text-right">
+                  <span className="inline-flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
+                    <Users className="size-4" />
+                    {userCountFor(role.id)}
+                  </span>
+                </TableCell>
+
+                {/* Permissions */}
+                <TableCell className="py-3 pr-6 text-right font-medium tabular-nums md:pr-2">
                   {role.permissions.includes(WILDCARD)
-                    ? "All permissions"
-                    : `${permissionCount(role)} permissions`}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                    ? "All"
+                    : permissionCount(role)}
+                </TableCell>
+
+                {/* Actions */}
+                {canManage && (
+                  <TableCell className="py-3 pr-4 text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button variant="ghost" size="icon" className="size-8" />
+                        }
+                      >
+                        <MoreVertical className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleClone(role)}>
+                          <Copy className="size-4" /> Clone
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={role.system}
+                          onClick={() => openEdit(role)}
+                        >
+                          <Pencil className="size-4" /> Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          disabled={role.system}
+                          onClick={() => setDeleteTarget(role)}
+                        >
+                          <Trash2 className="size-4" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </table>
       </div>
 
       <RoleEditorDialog

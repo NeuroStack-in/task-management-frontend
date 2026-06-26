@@ -44,7 +44,8 @@
       "user-owner",
       "user-0098",
       "user-0043",
-      "user-0025"
+      "user-0025",
+      "user-employee"
     ],
     "department": "Customer Success",
     "budget": 161000,
@@ -135,7 +136,8 @@
       "user-owner",
       "user-0027",
       "user-0041",
-      "user-0012"
+      "user-0012",
+      "user-employee"
     ],
     "department": "Design",
     "budget": 185000,
@@ -166,7 +168,8 @@
       "user-0001",
       "user-0011",
       "user-0053",
-      "user-0003"
+      "user-0003",
+      "user-employee"
     ],
     "department": "Finance",
     "budget": 424000,
