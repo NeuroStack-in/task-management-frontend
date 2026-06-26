@@ -1,42 +1,18 @@
 "use client";
 
 import { jsPDF } from "jspdf";
-import {
-  Check,
-  CreditCard,
-  Download,
-  Receipt,
-  TrendingUp,
-  Users,
-  Wallet,
-} from "lucide-react";
+import { Check, CreditCard, Download } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
-import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
 import { usePermissions } from "@/hooks/use-permissions";
 import {
   CURRENT_PLAN,
   INVOICES,
   PAYMENT_METHOD,
   PLAN_TIERS,
-  SPEND_TREND,
   USAGE_METERS,
   formatCurrency,
   type Invoice,
@@ -69,12 +45,6 @@ function downloadInvoice(inv: Invoice) {
   toast.success("Invoice downloaded", { description: `${inv.number}.pdf` });
 }
 
-const INVOICE_BADGE: Record<Invoice["status"], string> = {
-  paid: "bg-success/15 text-success",
-  due: "bg-warning/15 text-warning",
-  failed: "bg-destructive/12 text-destructive",
-};
-
 export function BillingView() {
   const { can } = usePermissions();
   const canManage = can("billing:manage");
@@ -85,132 +55,102 @@ export function BillingView() {
   );
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Billing & Subscription"
-        description="Manage your plan, usage, invoices, and payment method."
-      />
+    <div className="mx-auto max-w-4xl space-y-8">
+      <PageHeader title="Billing" description="Plan, usage, and invoices." />
 
-      {/* KPI strip */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Monthly spend"
-          value={formatCurrency(monthly)}
-          icon={TrendingUp}
-          hint="this cycle"
-          trend={SPEND_TREND}
-          featured
-        />
-        <StatCard
-          label="Seats used"
-          value={`${CURRENT_PLAN.seatsUsed} / ${CURRENT_PLAN.seatsTotal}`}
-          icon={Users}
-          hint={`${seatPct}% allocated`}
-          trend={[78, 82, 85, 88, 90, 93, CURRENT_PLAN.seatsUsed]}
-        />
-        <StatCard
-          label="Plan"
-          value="Business"
-          icon={Wallet}
-          hint={`${formatCurrency(CURRENT_PLAN.pricePerSeat)}/seat`}
-        />
-        <StatCard
-          label="Next invoice"
-          value={CURRENT_PLAN.renewsOn.replace(", 2026", "")}
-          icon={Receipt}
-          hint={CURRENT_PLAN.billingCycle}
-        />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Current plan */}
-        <Card className="bg-feature text-feature-foreground shadow-none lg:col-span-2">
-          <CardContent className="flex flex-col gap-5 px-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-2">
-              <Badge className="border-0 bg-white/15 text-white">
-                Current plan
-              </Badge>
-              <p className="font-display text-2xl font-semibold">
-                Business — {formatCurrency(monthly)}
-                <span className="text-base font-normal text-feature-foreground/75">
-                  /mo
+      {/* Plan + payment */}
+      <Card>
+        <CardContent className="grid gap-8 px-6 md:grid-cols-2">
+          {/* Plan */}
+          <div className="space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Current plan</p>
+                <p className="font-display text-2xl font-semibold">Business</p>
+              </div>
+              <p className="text-right">
+                <span className="font-display text-2xl font-semibold tabular-nums">
+                  {formatCurrency(monthly)}
                 </span>
+                <span className="text-sm text-muted-foreground"> /mo</span>
               </p>
-              <p className="text-sm text-feature-foreground/80">
-                {CURRENT_PLAN.seatsUsed} seats ×{" "}
-                {formatCurrency(CURRENT_PLAN.pricePerSeat)} · renews{" "}
-                {CURRENT_PLAN.renewsOn}
-              </p>
-              <div className="pt-1">
-                <div className="mb-1 flex justify-between text-xs text-feature-foreground/75">
-                  <span>Seats</span>
-                  <span className="tabular-nums">
-                    {CURRENT_PLAN.seatsUsed} / {CURRENT_PLAN.seatsTotal}
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-white/20 sm:w-64">
-                  <div
-                    className="h-full rounded-full bg-white"
-                    style={{ width: `${seatPct}%` }}
-                  />
-                </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
+                <span>
+                  {CURRENT_PLAN.seatsUsed} of {CURRENT_PLAN.seatsTotal} seats
+                </span>
+                <span>{seatPct}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${seatPct}%` }}
+                />
               </div>
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              Renews {CURRENT_PLAN.renewsOn} · {CURRENT_PLAN.billingCycle}
+            </p>
+
             <Button
-              className="bg-white text-primary hover:bg-white/90"
+              variant="outline"
+              size="sm"
               disabled={!canManage}
               onClick={() => toast.info("Subscription management is a later phase.")}
             >
               Manage subscription
             </Button>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Payment method */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="size-4" /> Payment method
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-xl bg-muted p-4">
-              <p className="font-mono text-sm tracking-widest">
-                •••• •••• •••• {PAYMENT_METHOD.last4}
-              </p>
-              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{PAYMENT_METHOD.brand}</span>
-                <span>Exp {PAYMENT_METHOD.expires}</span>
+          {/* Payment */}
+          <div className="space-y-4 md:border-l md:pl-8">
+            <p className="text-sm text-muted-foreground">Payment method</p>
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <CreditCard className="size-5" />
+              </span>
+              <div>
+                <p className="font-mono text-sm tracking-wider">
+                  •••• {PAYMENT_METHOD.last4}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {PAYMENT_METHOD.brand} · Exp {PAYMENT_METHOD.expires}
+                </p>
               </div>
             </div>
             <Button
-              variant="outline"
-              className="w-full"
+              variant="ghost"
+              size="sm"
+              className="-ml-2"
               disabled={!canManage}
               onClick={() => toast.info("Updating cards is a later phase.")}
             >
               Update card
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Usage meters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Usage this cycle</CardTitle>
-          <CardDescription>Resources consumed against your plan limits.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Usage */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Usage this cycle
+        </h2>
+        <div className="space-y-4">
           {USAGE_METERS.map((m) => {
             const pct = Math.round((m.used / m.total) * 100);
             return (
               <div key={m.label} className="space-y-1.5">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-muted-foreground">{m.label}</span>
-                  <span className="text-xs font-medium tabular-nums">{pct}%</span>
+                <div className="flex items-baseline justify-between text-sm">
+                  <span>{m.label}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {m.used.toLocaleString()} / {m.total.toLocaleString()} {m.unit}
+                  </span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
                     className={cn(
                       "h-full rounded-full",
@@ -219,116 +159,109 @@ export function BillingView() {
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground tabular-nums">
-                  {m.used.toLocaleString()} / {m.total.toLocaleString()} {m.unit}
-                </p>
               </div>
             );
           })}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      {/* Plan comparison */}
-      <div>
-        <h2 className="mb-3 font-display text-lg font-semibold">Plans</h2>
-        <div className="grid gap-4 lg:grid-cols-3">
+      {/* Plans */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-medium text-muted-foreground">Plans</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
           {PLAN_TIERS.map((tier) => {
             const current = tier.id === CURRENT_PLAN.tierId;
             return (
-              <Card
+              <div
                 key={tier.id}
-                className={cn(current && "ring-2 ring-primary")}
+                className={cn(
+                  "rounded-2xl border p-4",
+                  current ? "border-primary bg-primary/[0.03]" : "border-border",
+                )}
               >
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>{tier.name}</CardTitle>
-                    {current ? <Badge>Current</Badge> : null}
-                  </div>
-                  <CardDescription>{tier.blurb}</CardDescription>
-                  <p className="pt-1 font-display text-2xl font-semibold">
-                    {formatCurrency(tier.pricePerSeat)}
-                    <span className="text-sm font-normal text-muted-foreground">
-                      /seat/mo
-                    </span>
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="space-y-2 text-sm">
-                    {tier.features.map((f) => (
-                      <li key={f} className="flex items-center gap-2">
-                        <Check className="size-4 shrink-0 text-success" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
+                <div className="flex items-center justify-between">
+                  <p className="font-medium">{tier.name}</p>
+                  {current ? (
+                    <Badge variant="secondary" className="text-[11px]">
+                      Current
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="mt-1 font-display text-xl font-semibold tabular-nums">
+                  {formatCurrency(tier.pricePerSeat)}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {" "}
+                    /seat/mo
+                  </span>
+                </p>
+                <ul className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                  {tier.features.map((f) => (
+                    <li key={f} className="flex items-center gap-1.5">
+                      <Check className="size-3 shrink-0 text-success" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                {!current ? (
                   <Button
-                    variant={current ? "outline" : "default"}
-                    className="w-full"
-                    disabled={current || !canManage}
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3 -ml-2"
+                    disabled={!canManage}
                     onClick={() =>
                       toast.info(`Switching to ${tier.name} is a later phase.`)
                     }
                   >
-                    {current ? "Current plan" : `Switch to ${tier.name}`}
+                    Switch
                   </Button>
-                </CardContent>
-              </Card>
+                ) : null}
+              </div>
             );
           })}
         </div>
-      </div>
+      </section>
 
       {/* Invoices */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Invoices</CardTitle>
-          <CardDescription>Download past invoices as PDF.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Download</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {INVOICES.map((inv) => (
-                  <TableRow key={inv.id}>
-                    <TableCell className="font-mono text-xs">
-                      {inv.number}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {inv.date}
-                    </TableCell>
-                    <TableCell className="font-medium tabular-nums">
-                      {formatCurrency(inv.amount)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={cn("border-0", INVOICE_BADGE[inv.status])}>
-                        {inv.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => downloadInvoice(inv)}
-                      >
-                        <Download className="size-4" /> PDF
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground">Invoices</h2>
+        <div className="divide-y rounded-2xl border">
+          {INVOICES.map((inv) => (
+            <div
+              key={inv.id}
+              className="flex items-center gap-4 px-4 py-3 text-sm"
+            >
+              <span className="font-mono text-xs text-muted-foreground">
+                {inv.number}
+              </span>
+              <span className="flex-1 text-muted-foreground">{inv.date}</span>
+              <span className="font-medium tabular-nums">
+                {formatCurrency(inv.amount)}
+              </span>
+              <span
+                className={cn(
+                  "w-14 text-xs capitalize",
+                  inv.status === "paid"
+                    ? "text-muted-foreground"
+                    : inv.status === "failed"
+                      ? "text-destructive"
+                      : "text-warning",
+                )}
+              >
+                {inv.status}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-muted-foreground"
+                aria-label={`Download ${inv.number}`}
+                onClick={() => downloadInvoice(inv)}
+              >
+                <Download className="size-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
