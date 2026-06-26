@@ -3,26 +3,7 @@
 import { useMemo, useState } from "react";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  Download,
-  FileBarChart,
-  FileText,
-  FolderKanban,
-  Lock,
-  Sheet,
-  Timer,
-} from "lucide-react";
+import { Download, FileBarChart, FileText, Lock, Sheet } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -53,14 +34,6 @@ import {
   type ReportDef,
 } from "@/lib/mock-insights";
 
-const TOOLTIP_STYLE = {
-  background: "var(--popover)",
-  border: "1px solid var(--border)",
-  borderRadius: "var(--radius)",
-  fontSize: 12,
-  color: "var(--popover-foreground)",
-} as const;
-const AXIS_TICK = { fontSize: 11, fill: "var(--muted-foreground)" } as const;
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -198,60 +171,16 @@ export function ReportsTab() {
     [filter],
   );
 
-  // Scalable aggregations: bounded number of marks regardless of dataset size.
+  // Catalog summary counts.
   const empCount = EMPLOYEE_TIME.length;
   const projCount = PROJECT_HOURS.length;
 
-  // Top N projects by hours; the long tail is summarized in the subtitle so the
-  // top bars stay comparable (an aggregated "Other" bar would dwarf them).
-  const TOP_PROJECTS = 12;
-  const { topProjects, tail } = useMemo(() => {
-    const sorted = [...PROJECT_HOURS].sort((a, b) => b.hours - a.hours);
-    return {
-      topProjects: sorted.slice(0, TOP_PROJECTS).map((p) => ({
-        name: p.project,
-        hours: p.hours,
-        fill: p.onTrack ? "var(--chart-1)" : "var(--warning)",
-      })),
-      tail: sorted.slice(TOP_PROJECTS).reduce(
-        (acc, p) => ({ count: acc.count + 1, hours: acc.hours + p.hours }),
-        { count: 0, hours: 0 },
-      ),
-    };
-  }, []);
-
-  // Tracked vs idle aggregated by department — stays bounded as headcount grows.
-  const byDept = useMemo(() => {
-    const m = new Map<string, { department: string; tracked: number; idle: number }>();
-    for (const e of EMPLOYEE_TIME) {
-      const d = m.get(e.department) ?? { department: e.department, tracked: 0, idle: 0 };
-      d.tracked += e.tracked;
-      d.idle += e.idle;
-      m.set(e.department, d);
-    }
-    return [...m.values()].sort((a, b) => b.tracked - a.tracked);
-  }, []);
-
-  // Utilization as a distribution (employees per band) instead of one bar each.
-  const utilBands = useMemo(() => {
-    const bands = [
-      { band: "<50%", min: 0, max: 50, fill: "var(--warning)" },
-      { band: "50–69%", min: 50, max: 70, fill: "var(--chart-4)" },
-      { band: "70–89%", min: 70, max: 90, fill: "var(--chart-1)" },
-      { band: "90%+", min: 90, max: 101, fill: "var(--success)" },
-    ];
-    return bands.map((b) => ({
-      band: b.band,
-      count: EMPLOYEE_TIME.filter((e) => e.utilization >= b.min && e.utilization < b.max).length,
-      fill: b.fill,
-    }));
-  }, []);
 
   return (
     <div className="space-y-8">
       <AiReportCard
         title="AI reporting summary"
-        summary={`Across ${empCount} employees and ${projCount} projects, Engineering and Product lead utilization this week. Two projects are flagged at risk and a small group is trending toward over-utilization — details in the charts below.`}
+        summary={`Across ${empCount} employees and ${projCount} projects, Engineering and Product lead utilization this week. Two projects are flagged at risk and a small group is trending toward over-utilization — export any report below for the detail.`}
         signals={[
           { label: "Utilization", value: "78%", tone: "flat" },
           { label: "At-risk projects", value: "2", tone: "down" },
@@ -259,90 +188,6 @@ export function ReportsTab() {
         ]}
       />
 
-      {/* Analytics: aggregated so it scales to many projects / employees */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="font-heading text-lg font-semibold">Analytics</h2>
-          <p className="text-sm text-muted-foreground">
-            Aggregated across {projCount} projects and {empCount} employees.
-          </p>
-        </div>
-
-        <ChartCard
-          icon={FolderKanban}
-          title="Hours by project"
-          description={`Top ${TOP_PROJECTS} of ${projCount} by hours · ${tail.count} more totaling ${tail.hours.toLocaleString()}h · amber = at risk`}
-          height={topProjects.length * 26 + 24}
-        >
-          <BarChart
-            layout="vertical"
-            data={topProjects}
-            margin={{ left: 8, right: 16, top: 4, bottom: 4 }}
-          >
-            <CartesianGrid horizontal={false} stroke="var(--border)" />
-            <XAxis type="number" tickLine={false} axisLine={false} tick={AXIS_TICK} />
-            <YAxis
-              type="category"
-              dataKey="name"
-              width={118}
-              tickLine={false}
-              axisLine={false}
-              tick={AXIS_TICK}
-            />
-            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "var(--muted)" }} />
-            <Bar dataKey="hours" name="Hours" radius={[0, 6, 6, 0]}>
-              {topProjects.map((p) => (
-                <Cell key={p.name} fill={p.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ChartCard>
-
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          <ChartCard
-            icon={Timer}
-            title="Tracked vs idle by department"
-            description="Weekly hours rolled up per department"
-          >
-            <BarChart data={byDept} margin={{ left: -18, right: 8, top: 4 }}>
-              <CartesianGrid vertical={false} stroke="var(--border)" />
-              <XAxis
-                dataKey="department"
-                tickLine={false}
-                axisLine={false}
-                tick={{ ...AXIS_TICK, fontSize: 10 }}
-                interval={0}
-                angle={-20}
-                textAnchor="end"
-                height={54}
-              />
-              <YAxis tickLine={false} axisLine={false} tick={AXIS_TICK} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "var(--muted)" }} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="tracked" stackId="t" name="Tracked" fill="var(--chart-1)" />
-              <Bar dataKey="idle" stackId="t" name="Idle" fill="var(--chart-4)" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ChartCard>
-
-          <ChartCard
-            icon={Timer}
-            title="Utilization distribution"
-            description={`${empCount} employees grouped by utilization band`}
-          >
-            <BarChart data={utilBands} margin={{ left: -18, right: 8, top: 4 }}>
-              <CartesianGrid vertical={false} stroke="var(--border)" />
-              <XAxis dataKey="band" tickLine={false} axisLine={false} tick={AXIS_TICK} interval={0} />
-              <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={AXIS_TICK} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "var(--muted)" }} />
-              <Bar dataKey="count" name="Employees" radius={[6, 6, 0, 0]}>
-                {utilBands.map((b) => (
-                  <Cell key={b.band} fill={b.fill} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartCard>
-        </div>
-      </section>
 
       {/* Report templates catalog */}
       <section className="space-y-4">
@@ -466,42 +311,5 @@ export function ReportsTab() {
       </section>
 
     </div>
-  );
-}
-
-
-
-function ChartCard({
-  icon: Icon,
-  title,
-  description,
-  height = 260,
-  children,
-}: {
-  icon: typeof Timer;
-  title: string;
-  description: string;
-  height?: number;
-  children: React.ReactElement;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-feature-tint text-primary">
-            <Icon className="size-4" />
-          </span>
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="w-full" style={{ height }}>
-          <ResponsiveContainer width="100%" height="100%">
-            {children}
-          </ResponsiveContainer>
-        </div>
-      </CardContent>
-    </Card>
   );
 }

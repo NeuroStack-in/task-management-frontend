@@ -363,6 +363,39 @@ export const SEVERITY_META: Record<
   },
 };
 
+export const ANOMALY_KIND_LABEL: Record<AnomalyKind, string> = {
+  inactivity: "Inactivity",
+  "productivity-drop": "Productivity drop",
+  burnout: "Burnout",
+  "after-hours": "After hours",
+  policy: "Policy",
+};
+
+/** Short, plain-language description of what each anomaly kind detects. */
+export const ANOMALY_KIND_SIGNAL: Record<AnomalyKind, string> = {
+  inactivity: "Idle time during core hours while the timer was running.",
+  "productivity-drop": "Activity fell sharply below the trailing 7-day average.",
+  burnout: "Sustained long hours with no breaks across multiple days.",
+  "after-hours": "Significant work logged well outside normal hours.",
+  policy: "Time on distracting / non-work domains above the team norm.",
+};
+
+/** Anomalies detected per day this week, split by severity (for the trend). */
+export const ANOMALY_TREND: {
+  day: string;
+  high: number;
+  medium: number;
+  low: number;
+}[] = [
+  { day: "Mon", high: 1, medium: 1, low: 2 },
+  { day: "Tue", high: 0, medium: 2, low: 1 },
+  { day: "Wed", high: 2, medium: 1, low: 1 },
+  { day: "Thu", high: 1, medium: 1, low: 0 },
+  { day: "Fri", high: 1, medium: 2, low: 1 },
+  { day: "Sat", high: 0, medium: 0, low: 1 },
+  { day: "Sun", high: 0, medium: 1, low: 0 },
+];
+
 /* -------------------------------- Reports -------------------------------- */
 
 export type ReportCategory =

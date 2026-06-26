@@ -131,7 +131,7 @@ export const INSIGHTS_TABS: NavItem[] = [
     href: "/insights/anomalies",
     icon: Sparkles,
     permission: "ai:view",
-    description: "AI summaries, recommendations, and detected anomalies.",
+    description: "AI summaries, recommendations, and people who need attention.",
   },
   {
     label: "Reports",
