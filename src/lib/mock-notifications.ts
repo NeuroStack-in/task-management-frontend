@@ -70,7 +70,7 @@ export const DEMO_NOTIFICATIONS: AppNotification[] = [
     message: "A new sign-in from Chrome on Windows was detected.",
     read: true,
     createdAt: Date.now() - HOUR * 26,
-    href: "/security",
+    href: "/settings/security",
   },
   {
     id: "seed-7",

@@ -3,9 +3,11 @@
 import { useRef, useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { TODAY, orgDayCounts } from "@/lib/mock-attendance";
+import { useIsSelfScoped } from "@/hooks/use-self-scope";
 import { AttendanceOverview } from "./attendance-overview";
 import { AttendanceCalendar } from "./attendance-calendar";
 import { AttendanceLog } from "./attendance-log";
+import { PersonalAttendanceView } from "./personal-attendance-view";
 
 export interface AttendanceDate {
   year: number;
@@ -14,9 +16,14 @@ export interface AttendanceDate {
 }
 
 export function AttendanceView() {
+  // Self-scoped roles (Employee) see only their own attendance, never the org.
+  const selfScoped = useIsSelfScoped();
+
   // Shared selected day — the calendar drives the log below it.
   const [date, setDate] = useState<AttendanceDate>({ ...TODAY });
   const logRef = useRef<HTMLDivElement>(null);
+
+  if (selfScoped) return <PersonalAttendanceView />;
 
   const today = orgDayCounts(TODAY.month, TODAY.day);
   const presentPct = Math.round(

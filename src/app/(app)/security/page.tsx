@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { SecurityCenter } from "@/modules/security/components/security-center";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Security Center" };
-
+// Security now lives inside the Settings hub; keep the old URL working.
 export default function Page() {
-  return <SecurityCenter />;
+  redirect("/settings/security");
 }

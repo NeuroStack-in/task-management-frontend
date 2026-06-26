@@ -79,6 +79,15 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     ],
   },
   {
+    module: "payroll",
+    label: "Payroll",
+    permissions: [
+      p("payroll", "view", "View Payroll"),
+      p("payroll", "manage", "Run Payroll"),
+      p("payroll", "export", "Export Payslips"),
+    ],
+  },
+  {
     module: "activity",
     label: "Activity Monitoring",
     permissions: [
@@ -104,7 +113,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     module: "ai",
-    label: "AI Center",
+    label: "AI Insights",
     permissions: [p("ai", "view", "Use AI Assistant")],
   },
   {

@@ -81,7 +81,7 @@ export function MfaForm() {
         <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-feature-tint text-primary">
           <ShieldCheck className="size-6" />
         </span>
-        <CardTitle className="text-xl">Two-factor verification</CardTitle>
+        <CardTitle className="text-xl">Multi-factor verification</CardTitle>
         <CardDescription>
           Enter the 6-digit code from your authenticator app.
         </CardDescription>

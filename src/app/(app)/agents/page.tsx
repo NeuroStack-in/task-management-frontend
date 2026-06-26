@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { AgentsManager } from "@/modules/agents/components/agents-manager";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Desktop Agent Management" };
-
+// Desktop Agents now lives inside the Settings hub; keep the old URL working.
 export default function Page() {
-  return <AgentsManager />;
+  redirect("/settings/agents");
 }

@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { IntegrationsMarketplace } from "@/modules/integrations/components/integrations-marketplace";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Integrations Marketplace" };
-
+// Integrations now lives inside the Settings hub; keep the old URL working.
 export default function Page() {
-  return <IntegrationsMarketplace />;
+  redirect("/settings/integrations");
 }

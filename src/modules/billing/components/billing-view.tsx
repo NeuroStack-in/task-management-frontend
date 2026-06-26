@@ -56,7 +56,10 @@ export function BillingView() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
-      <PageHeader title="Billing" description="Plan, usage, and invoices." />
+      <PageHeader
+        title="Billing & Subscription"
+        description="Manage your plan, seats, payment method, and invoices."
+      />
 
       {/* Plan + payment */}
       <Card>

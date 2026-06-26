@@ -32,6 +32,9 @@ import {
 } from "@/components/ui/dialog";
 import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { usePermissions } from "@/hooks/use-permissions";
+import { useIsSelfScoped } from "@/hooks/use-self-scope";
+import { useAuthStore } from "@/stores/auth.store";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
 import {
@@ -69,6 +72,10 @@ interface ProjectDetailPageProps {
 
 export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const router = useRouter();
+  const { can } = usePermissions();
+  const selfScoped = useIsSelfScoped();
+  const userId = useAuthStore((s) => s.user?.id) ?? "";
+  const canManage = can("projects:manage");
   const project = useProjectsStore((s) => s.projects.find((p) => p.id === id));
   const updateProject = useProjectsStore((s) => s.updateProject);
   const deleteProject = useProjectsStore((s) => s.deleteProject);
@@ -100,6 +107,22 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         icon={AlertTriangle}
         title="Project not found"
         description="This project may have been deleted or created in another session."
+        action={
+          <Button render={<Link href="/projects" />} nativeButton={false}>
+            Back to projects
+          </Button>
+        }
+      />
+    );
+  }
+
+  // Self-scoped roles (Employee) can only open projects they're a member of.
+  if (selfScoped && !project.memberIds.includes(userId)) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="No access to this project"
+        description="You can only view projects you're a member of."
         action={
           <Button render={<Link href="/projects" />} nativeButton={false}>
             Back to projects
@@ -204,22 +227,26 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
             <FileDown className="size-4" />
             Report (PDF)
           </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => setEditOpen(true)}
-          >
-            <Pencil className="size-4" />
-            Edit project
-          </Button>
-          <Button
-            variant="outline"
-            className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => setConfirmOpen(true)}
-          >
-            <Trash2 className="size-4" />
-            Delete
-          </Button>
+          {canManage ? (
+            <>
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="size-4" />
+                Edit project
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setConfirmOpen(true)}
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
 
