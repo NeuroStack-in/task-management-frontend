@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -35,33 +37,78 @@ import {
 import { cn } from "@/lib/utils";
 import type { DashboardWidget } from "@/types";
 
+/** Vertical gap between masonry items (px) — folded into the row-span. */
+const MASONRY_GAP = 24;
+
 function SortableWidget({
   id,
+  span,
+  masonry,
   children,
 }: {
   id: string;
+  span: 1 | 2;
+  /** When true, set a measured row-span so the grid packs like masonry. */
+  masonry: boolean;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id });
 
+  // Measure content height → row-span (each grid row is 1px, see container).
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [rows, setRows] = useState<number | null>(null);
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const measure = () =>
+      setRows(Math.max(1, Math.round(el.offsetHeight) + MASONRY_GAP));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn("group/widget relative", isDragging && "z-10 opacity-70")}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+        gridRowEnd: masonry && rows ? `span ${rows}` : undefined,
+      }}
+      className={cn(
+        "group/widget relative",
+        span === 2 && "sm:col-span-2",
+        isDragging && "z-10",
+      )}
     >
-      <button
-        type="button"
-        aria-label="Drag to reorder"
-        {...attributes}
-        {...listeners}
-        className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
-      >
-        <GripVertical className="size-4" />
-      </button>
-      {/* Roomier internal padding than the default card spacing. */}
-      <div className="[&>*]:[--card-spacing:--spacing(7)]!">{children}</div>
+      {!isDragging ? (
+        <button
+          type="button"
+          aria-label="Drag to reorder"
+          {...attributes}
+          {...listeners}
+          className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </button>
+      ) : null}
+      <div ref={contentRef}>
+        {isDragging ? (
+          // Reserve the slot with a dashed drop-placeholder; the floating
+          // preview (DragOverlay) shows the actual widget while dragging.
+          <div className="relative">
+            <div className="invisible [&>*]:[--card-spacing:--spacing(7)]!">
+              {children}
+            </div>
+            <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
+          </div>
+        ) : (
+          // Roomier internal padding than the default card spacing.
+          <div className="[&>*]:[--card-spacing:--spacing(7)]!">{children}</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -71,6 +118,12 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const toggleWidget = useDashboardStore((s) => s.toggleWidget);
   const reorder = useDashboardStore((s) => s.reorder);
   const reset = useDashboardStore((s) => s.reset);
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  // Masonry (measured row-spans) only kicks in after mount, so the server/
+  // first paint uses a plain grid and never collapses to 1px rows.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -85,13 +138,14 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const visibleIds = visible.map((w) => w.id);
   const hiddenIds = ordered.filter((w) => !w.visible).map((w) => w.id);
 
-  // Two zones: a wide column for the big chart widgets (span 2) and a narrow
-  // column for the rest. Each zone packs vertically with no stretching, so the
-  // charts keep their width while short widgets have no empty space or gaps.
-  const wide = visible.filter((w) => WIDGET_REGISTRY[w.type]?.span === 2);
-  const narrow = visible.filter((w) => WIDGET_REGISTRY[w.type]?.span !== 2);
+  const activeWidget = activeId
+    ? ordered.find((w) => w.id === activeId)
+    : null;
+
+  const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
 
   const onDragEnd = (e: DragEndEvent) => {
+    setActiveId(null);
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIndex = visibleIds.indexOf(String(active.id));
@@ -105,7 +159,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     const def = WIDGET_REGISTRY[w.type];
     if (!def) return null;
     return (
-      <SortableWidget key={w.id} id={w.id}>
+      <SortableWidget key={w.id} id={w.id} span={def.span} masonry={mounted}>
         {def.render(data)}
       </SortableWidget>
     );
@@ -163,22 +217,31 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          onDragStart={onDragStart}
           onDragEnd={onDragEnd}
+          onDragCancel={() => setActiveId(null)}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-              {wide.length > 0 ? (
-                <div className="flex min-w-0 flex-col gap-6 lg:flex-[2]">
-                  {wide.map(renderWidget)}
-                </div>
-              ) : null}
-              {narrow.length > 0 ? (
-                <div className="flex min-w-0 flex-col gap-6 lg:flex-[1]">
-                  {narrow.map(renderWidget)}
-                </div>
-              ) : null}
+            {/* Masonry bento grid: each widget spans its own height (1px rows),
+                so columns pack tight with no gaps. Charts span 2 columns; drop
+                any widget anywhere — placement follows drag order. */}
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-3",
+                !mounted && "items-start gap-y-6",
+              )}
+              style={mounted ? { gridAutoRows: "1px" } : undefined}
+            >
+              {visible.map(renderWidget)}
             </div>
           </SortableContext>
+          <DragOverlay>
+            {activeWidget ? (
+              <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(7)]!">
+                {WIDGET_REGISTRY[activeWidget.type]?.render(data)}
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       )}
     </div>
