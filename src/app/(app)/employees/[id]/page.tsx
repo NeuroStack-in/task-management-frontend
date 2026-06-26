@@ -7,7 +7,7 @@ import { projects, tasks, users } from "@/lib/data";
 import { SYSTEM_ROLES } from "@/constants/roles";
 import {
   EmployeeProfile,
-  type ActiveProjectItem,
+  type ProjectItem,
   type EmployeeProfileData,
 } from "@/modules/employees/components/employee-profile";
 
@@ -50,10 +50,9 @@ function buildProfile(id: string): EmployeeProfileData | null {
   const postcode = String(10000 + (seed % 89999));
   const empCode = `#EMP${100000 + (seed % 899999)}`;
 
-  // Real active projects (the seed data the user belongs to).
+  // All projects the employee belongs to, with an active flag per project.
   const memberProjects = projects.filter((p) => p.memberIds.includes(u.id));
-  const activeProjects: ActiveProjectItem[] = memberProjects
-    .filter((p) => p.status === "active" || p.status === "on_hold")
+  const projectItems: ProjectItem[] = memberProjects
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -61,15 +60,14 @@ function buildProfile(id: string): EmployeeProfileData | null {
       progress: p.progress,
       tasks: tasks.filter((t) => t.projectId === p.id).length,
       teammates: p.memberIds.length,
+      active: p.status === "active",
     }))
-    .sort((a, b) => b.progress - a.progress)
-    .slice(0, 6);
+    .sort((a, b) => Number(b.active) - Number(a.active) || b.progress - a.progress);
 
-  const totalTasks = activeProjects.reduce((s, p) => s + p.tasks, 0);
-  const avgCompletion = activeProjects.length
+  const totalTasks = projectItems.reduce((s, p) => s + p.tasks, 0);
+  const avgCompletion = projectItems.length
     ? Math.round(
-        activeProjects.reduce((s, p) => s + p.progress, 0) /
-          activeProjects.length,
+        projectItems.reduce((s, p) => s + p.progress, 0) / projectItems.length,
       )
     : 0;
 
@@ -103,7 +101,7 @@ function buildProfile(id: string): EmployeeProfileData | null {
     cityState,
     address,
     postcode,
-    activeProjects,
+    projects: projectItems,
     kpi: { months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"], current, previous },
     totalTasks,
     avgCompletion,
