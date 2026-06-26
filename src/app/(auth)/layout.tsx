@@ -1,3 +1,7 @@
+/**
+ * Passthrough — each auth page owns its own layout. The bespoke login/signup
+ * fill the viewport; the secondary pages (forgot/mfa/reset) use <AuthShell>.
+ */
 import Link from "next/link";
 import { Activity, Clock, ShieldCheck, Sparkles } from "lucide-react";
 import { Sparkline } from "@/components/shared/sparkline";
@@ -27,6 +31,7 @@ export default function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
+  return <>{children}</>;
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       {/* Brand panel — the WorkPulse pulse motif on the indigo feature surface */}

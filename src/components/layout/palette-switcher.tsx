@@ -94,13 +94,13 @@ export function applyPalette(id: string) {
 }
 
 export function PaletteSwitcher() {
-  const [active, setActive] = useState("indigo");
+  const [active, setActive] = useState("fireopal");
 
   // Read the persisted choice on mount (the inline head script already applied
-  // it pre-paint; this just syncs the active checkmark).
+  // it pre-paint; this just syncs the active checkmark). Default = Fire Opal.
   useEffect(() => {
     try {
-      setActive(window.localStorage.getItem(STORAGE_KEY) || "indigo");
+      setActive(window.localStorage.getItem(STORAGE_KEY) || "fireopal");
     } catch {
       /* ignore */
     }
