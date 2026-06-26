@@ -206,10 +206,10 @@ function Pill({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-md border px-3 py-1 text-xs font-medium transition-colors",
+        "rounded-md border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         active
           ? "border-primary bg-primary text-primary-foreground"
-          : "border-border text-muted-foreground hover:text-foreground",
+          : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground",
       )}
     >
       {children}
@@ -226,8 +226,12 @@ function EmployeeCard({
 }) {
   return (
     <Card
-      className="group cursor-pointer gap-0 overflow-hidden p-0 transition-colors hover:border-primary/30"
+      className="group cursor-pointer gap-0 overflow-hidden p-0 transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       onClick={onOpen}
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onOpen()}
+      role="button"
+      aria-label={`View screenshots for ${emp.user.name}${emp.flagged > 0 ? `, ${emp.flagged} flagged` : ""}`}
     >
       {/* Cover = latest capture */}
       <div className="relative aspect-[16/10] overflow-hidden">
@@ -514,12 +518,16 @@ function ShotCard({
   return (
     <Card
       className={cn(
-        "group cursor-pointer gap-0 overflow-hidden p-0 transition-colors",
+        "group cursor-pointer gap-0 overflow-hidden p-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         shot.flagged
           ? "border-primary bg-primary/5 hover:border-primary"
           : "hover:border-primary/30",
       )}
       onClick={onOpen}
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onOpen()}
+      role="button"
+      aria-label={`View screenshot: ${shot.app} at ${shot.time}${shot.flagged ? " — needs review" : ""}`}
     >
       <div className="relative aspect-[16/10] overflow-hidden">
         <FauxCapture blur={blur} />

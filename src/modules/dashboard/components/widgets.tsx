@@ -74,7 +74,7 @@ export function ScreenshotsWidget({
   trend: number[];
 }) {
   return (
-    <Card className="justify-between">
+    <Card className="justify-between transition-colors hover:border-primary/30">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <span className="flex size-7 items-center justify-center rounded-md bg-feature-tint text-primary">
@@ -157,7 +157,7 @@ export function BillingWidget({
 }) {
   const pct = Math.round((seatsUsed / seatsTotal) * 100);
   return (
-    <Card>
+    <Card className="transition-colors hover:border-primary/30">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <span className="flex size-7 items-center justify-center rounded-md bg-feature-tint text-primary">

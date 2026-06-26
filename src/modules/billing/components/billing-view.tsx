@@ -1,7 +1,7 @@
 "use client";
 
 import { jsPDF } from "jspdf";
-import { Check, CreditCard, Download } from "lucide-react";
+import { AlertCircle, Check, Clock, CreditCard, Download, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,11 @@ import { cn } from "@/lib/utils";
 
 const INVOICE_STATUS_META: Record<
   InvoiceStatus,
-  { cls: string; label: string }
+  { cls: string; label: string; Icon: LucideIcon }
 > = {
-  paid: { cls: "bg-success/12 text-success", label: "Paid" },
-  due: { cls: "bg-warning/15 text-warning", label: "Due" },
-  failed: { cls: "bg-destructive/12 text-destructive", label: "Failed" },
+  paid: { cls: "bg-success/12 text-success", label: "Paid", Icon: Check },
+  due: { cls: "bg-warning/15 text-warning", label: "Due", Icon: Clock },
+  failed: { cls: "bg-destructive/12 text-destructive", label: "Failed", Icon: AlertCircle },
 };
 
 function downloadInvoice(inv: Invoice) {
@@ -233,7 +233,7 @@ export function BillingView() {
             return (
               <div
                 key={inv.id}
-                className="flex items-center gap-4 px-4 py-3 text-sm"
+                className="flex items-center gap-4 px-4 py-3 text-sm transition-colors hover:bg-muted/40"
               >
                 <span className="font-mono text-xs text-muted-foreground">
                   {inv.number}
@@ -242,7 +242,8 @@ export function BillingView() {
                 <span className="font-medium tabular-nums">
                   {formatCurrency(inv.amount)}
                 </span>
-                <Badge className={cn("rounded-sm text-[11px] font-medium", meta.cls)}>
+                <Badge className={cn("gap-1 rounded-sm text-[11px] font-medium", meta.cls)}>
+                  <meta.Icon className="size-3" />
                   {meta.label}
                 </Badge>
                 <Button

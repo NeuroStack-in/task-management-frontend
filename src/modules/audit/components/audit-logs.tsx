@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import type { LucideIcon } from "lucide-react"
-import { Download, ScrollText, Search } from "lucide-react"
+import { CheckCircle2, AlertTriangle, XCircle, Download, ScrollText, Search } from "lucide-react"
 import { toast } from "sonner"
 import {
   Select,
@@ -55,6 +55,12 @@ const STATUS_LABEL: Record<AuditStatus, string> = {
   failed: "Failed",
 }
 
+const STATUS_ICON: Record<AuditStatus, LucideIcon> = {
+  success: CheckCircle2,
+  warning: AlertTriangle,
+  failed: XCircle,
+}
+
 function categoryIcon(category: AuditCategory): LucideIcon {
   return (
     AUDIT_CATEGORIES.find((c) => c.key === category)?.icon ?? ScrollText
@@ -72,13 +78,15 @@ function CategoryBadge({ category }: { category: AuditCategory }) {
 }
 
 function StatusBadge({ status }: { status: AuditStatus }) {
+  const Icon = STATUS_ICON[status]
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-xs font-medium",
         STATUS_STYLE[status],
       )}
     >
+      <Icon className="size-3 shrink-0" />
       {STATUS_LABEL[status]}
     </span>
   )
@@ -279,8 +287,15 @@ export function AuditLogs() {
               {shown.map((e) => (
                 <TableRow
                   key={e.id}
+                  tabIndex={0}
                   onClick={() => setSelected(e)}
-                  className="cursor-pointer"
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter" || ev.key === " ") {
+                      ev.preventDefault()
+                      setSelected(e)
+                    }
+                  }}
+                  className="cursor-pointer transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                 >
                   <TableCell className="hidden py-3 pl-6 tabular-nums text-muted-foreground lg:table-cell">
                     {e.timestamp}

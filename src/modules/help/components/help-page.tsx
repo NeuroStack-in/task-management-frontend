@@ -663,7 +663,7 @@ export function HelpPage() {
                 <button
                   key={article.slug}
                   onClick={() => setSelectedArticle(article)}
-                  className="group flex flex-col items-start gap-2 rounded-2xl border bg-card p-4 text-left transition-colors hover:bg-muted"
+                  className="group flex cursor-pointer flex-col items-start gap-2 rounded-2xl border bg-card p-4 text-left transition-colors hover:border-primary/30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >
                   <div className="flex w-full items-center justify-between gap-2">
                     <Badge variant="secondary" className="text-xs capitalize">
@@ -703,9 +703,11 @@ export function HelpPage() {
                 HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
                 video.category
               return (
-                <div
+                <button
                   key={video.title}
-                  className="flex items-center gap-3 px-4 py-3"
+                  type="button"
+                  onClick={() => toast.info("Video player coming soon")}
+                  className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
                     <PlayCircle className="size-4" />
@@ -717,15 +719,10 @@ export function HelpPage() {
                   <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
                     {video.duration}
                   </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="shrink-0"
-                    onClick={() => toast.info("Video player coming soon")}
-                  >
+                  <span className="shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground">
                     Play
-                  </Button>
-                </div>
+                  </span>
+                </button>
               )
             })}
           </CardContent>
@@ -746,7 +743,7 @@ export function HelpPage() {
             {FAQS.map((faq, i) => (
               <div key={i}>
                 <button
-                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left text-sm font-medium transition-colors hover:bg-muted/50"
+                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left text-sm font-medium transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
                 >
                   {faq.q}
@@ -783,7 +780,7 @@ export function HelpPage() {
             {WALKTHROUGHS.map((tour) => {
               const Icon = tour.icon
               return (
-                <div key={tour.id} className="flex items-center gap-3 px-4 py-3">
+                <div key={tour.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50">
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-feature-tint text-primary">
                     <Icon className="size-4" />
                   </div>

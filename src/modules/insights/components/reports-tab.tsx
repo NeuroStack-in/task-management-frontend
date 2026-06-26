@@ -329,10 +329,10 @@ export function ReportsTab() {
               type="button"
               onClick={() => setFilter(f.key)}
               className={cn(
-                "rounded-md border px-3 py-1 text-xs font-medium transition-colors",
+                "rounded-md border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                 filter === f.key
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
+                  : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground",
               )}
             >
               {f.label}

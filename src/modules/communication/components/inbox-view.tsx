@@ -229,7 +229,7 @@ function ConversationRow({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-accent/50",
+        "flex w-full cursor-pointer items-center gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
         active && "bg-feature-tint/50",
       )}
     >

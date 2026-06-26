@@ -226,7 +226,7 @@ export function AiInsightsTab() {
                 type="button"
                 onClick={() => setSeverity(s)}
                 className={cn(
-                  "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
+                  "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                   severity === s
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground",
@@ -259,7 +259,7 @@ export function AiInsightsTab() {
                     key={a.id}
                     type="button"
                     onClick={() => setActive(a)}
-                    className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-accent/50"
+                    className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                   >
                     <span className={`mt-1.5 size-2 shrink-0 rounded-full ${sev.dot}`} />
                     <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-feature-tint text-primary">

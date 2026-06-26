@@ -332,8 +332,18 @@ export function AttendanceLog({
                     return (
                       <TableRow
                         key={r.id}
+                        tabIndex={0}
                         onClick={() => router.push(`/employees/${r.id}`)}
-                        className={cn("cursor-pointer", meta.row)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter" || ev.key === " ") {
+                            ev.preventDefault();
+                            router.push(`/employees/${r.id}`);
+                          }
+                        }}
+                        className={cn(
+                          "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                          meta.row,
+                        )}
                       >
                         <TableCell>
                           <div className="flex items-center gap-3">
@@ -350,7 +360,7 @@ export function AttendanceLog({
                           {r.department}
                         </TableCell>
                         <TableCell>
-                          <Badge className={meta.badge}>{meta.label}</Badge>
+                          <Badge className={cn("rounded-sm", meta.badge)}>{meta.label}</Badge>
                         </TableCell>
                         <TableCell className="font-mono tabular-nums">
                           {r.clockIn}
@@ -422,12 +432,15 @@ function SortHead({
   align?: "right";
 }) {
   return (
-    <TableHead className={align === "right" ? "text-right" : undefined}>
+    <TableHead
+      className={align === "right" ? "text-right" : undefined}
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+    >
       <button
         type="button"
         onClick={onClick}
         className={cn(
-          "inline-flex items-center gap-1 transition-colors hover:text-foreground",
+          "inline-flex cursor-pointer items-center gap-1 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
           align === "right" && "flex-row-reverse",
           active && "text-foreground",
         )}

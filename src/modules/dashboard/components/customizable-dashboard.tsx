@@ -72,10 +72,10 @@ function SortableWidget({
       {!isDragging ? (
         <button
           type="button"
-          aria-label="Drag to reorder"
+          aria-label="Drag to reorder widget"
           {...attributes}
           {...listeners}
-          className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
+          className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:flex focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
         >
           <GripVertical className="size-4" />
         </button>

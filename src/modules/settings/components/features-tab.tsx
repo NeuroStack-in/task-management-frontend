@@ -211,6 +211,7 @@ export function FeaturesTab() {
                   <Switch
                     checked={enabled}
                     disabled={!canManage}
+                    aria-label={`${f.label} — ${enabled ? "enabled" : "disabled"}`}
                     onCheckedChange={(v) =>
                       setDraft((p) => ({ ...p, [f.key]: v }))
                     }

@@ -181,11 +181,15 @@ export function RolesManager() {
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
-                        <Button variant="ghost" size="icon" className="size-8" />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          aria-label={`Actions for ${role.name}`}
+                        />
                       }
                     >
-                      <MoreVertical className="size-4" />
-                      <span className="sr-only">Actions for {role.name}</span>
+                      <MoreVertical className="size-4" aria-hidden />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {/* System roles are read-only: view their permissions. */}

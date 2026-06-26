@@ -285,7 +285,17 @@ export function ApprovalsView() {
                     <TableRow
                       key={req.id}
                       onClick={() => setSelectedId(req.id)}
-                      className="group cursor-pointer"
+                      className={cn(
+                        "group cursor-pointer transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                        isChecked && "bg-accent/40",
+                      )}
+                      tabIndex={0}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          setSelectedId(req.id);
+                        }
+                      }}
                       data-selected={isChecked || undefined}
                     >
                       {canApprove && (
@@ -348,7 +358,7 @@ export function ApprovalsView() {
                       <TableCell>
                         <Badge
                           className={cn(
-                            "gap-1 border-0 capitalize",
+                            "gap-1 rounded-sm border-0 capitalize",
                             STATUS_BADGE[req.status],
                           )}
                         >

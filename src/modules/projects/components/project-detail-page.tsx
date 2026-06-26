@@ -417,9 +417,10 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         </div>
       </div>
 
-      {/* Kanban + team rail */}
-      <div className="grid gap-6 lg:grid-cols-12">
-        <section className="space-y-3 lg:col-span-9">
+      {/* Kanban + team rail — board takes full width until xl so columns stay
+          readable; the Details/Team rail drops below on smaller screens. */}
+      <div className="grid gap-6 xl:grid-cols-12">
+        <section className="space-y-3 xl:col-span-9">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
               Tasks
@@ -481,8 +482,9 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
           )}
         </section>
 
-        {/* Right rail */}
-        <aside className="space-y-6 lg:col-span-3">
+        {/* Right rail — below the board until xl, where it splits Details/Team
+            across two columns so it doesn't read as one tall stack. */}
+        <aside className="grid gap-6 md:grid-cols-2 xl:col-span-3 xl:grid-cols-1">
           <Panel title="Details">
             <dl className="space-y-3 text-sm">
               <DetailRow label="Key" value={<Mono>{project.key}</Mono>} />
@@ -668,8 +670,9 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex min-w-0 flex-col rounded-lg border border-border bg-muted/30 p-3 transition-colors lg:min-w-[220px]",
-        isOver && "border-primary bg-primary/10 ring-2 ring-primary/40",
+        "flex min-w-0 flex-col rounded-lg border border-border bg-muted/30 p-3 transition-colors lg:min-w-[240px]",
+        isOver &&
+          "border-primary bg-primary/10 ring-2 ring-primary/50 ring-offset-2 ring-offset-background",
       )}
     >
       <div className="mb-3 flex items-center justify-between px-1">
@@ -695,8 +698,8 @@ function KanbanColumn({
           type="button"
           onClick={onAdd}
           className={cn(
-            "rounded-md border border-dashed py-8 text-center text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground",
-            isOver && "border-primary/60 text-foreground",
+            "cursor-pointer rounded-md border border-dashed py-8 text-center text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:border-primary/40 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+            isOver && "border-primary/60 bg-primary/5 text-foreground",
           )}
         >
           Add a task
@@ -734,7 +737,7 @@ function TaskCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "group/task relative cursor-grab touch-none rounded-md border border-border bg-card p-3.5 transition-colors hover:border-primary/30 active:cursor-grabbing",
+        "group/task relative cursor-grab touch-none rounded-md border border-border bg-card p-3.5 transition-colors hover:border-primary/30 focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none active:cursor-grabbing",
         isDragging && "opacity-50 ring-2 ring-primary/40",
       )}
     >
@@ -765,7 +768,7 @@ function TaskListView({
 }) {
   if (tasks.length === 0) {
     return (
-      <div className="rounded-2xl border bg-card p-10 text-center">
+      <div className="rounded-lg border border-border bg-card p-10 text-center">
         <p className="text-sm text-muted-foreground">No tasks yet.</p>
         <Button
           size="sm"
@@ -794,7 +797,7 @@ function TaskListView({
   });
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-card">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
       <ul className="divide-y">
         {sorted.map((t) => {
           const prio = TASK_PRIORITY_META[t.priority];
@@ -806,7 +809,7 @@ function TaskListView({
               <button
                 type="button"
                 onClick={() => onEdit(t)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none"
               >
                 <span
                   className={cn(

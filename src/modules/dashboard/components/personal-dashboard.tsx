@@ -146,7 +146,7 @@ export function PersonalDashboard() {
                 return (
                   <li
                     key={t.id}
-                    className="flex items-center gap-3 px-5 py-3 text-sm"
+                    className="flex items-center gap-3 px-5 py-3 text-sm transition-colors hover:bg-muted/40 cursor-pointer"
                   >
                     {project ? (
                       <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
@@ -229,7 +229,7 @@ export function PersonalDashboard() {
               {myProjects.slice(0, 5).map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center gap-4 px-5 py-3 text-sm"
+                  className="flex items-center gap-4 px-5 py-3 text-sm transition-colors hover:bg-muted/40 cursor-pointer"
                 >
                   <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
                     {p.key}

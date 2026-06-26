@@ -243,7 +243,7 @@ function FilterPill({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         active
           ? "bg-primary text-primary-foreground"
           : "bg-card text-muted-foreground shadow-soft hover:text-foreground",

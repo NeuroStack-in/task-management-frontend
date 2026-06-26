@@ -270,7 +270,7 @@ export function AgentsManager() {
                     <TableRow
                       key={a.id}
                       onClick={() => setSelected(a)}
-                      className="cursor-pointer"
+                      className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
                       <TableCell className="py-3 pl-4">
                         <div className="flex items-center gap-3">
@@ -313,6 +313,7 @@ export function AgentsManager() {
                                   variant="ghost"
                                   size="icon"
                                   className="size-8"
+                                  aria-label={`Actions for ${a.hostname}`}
                                   onClick={(e) => e.stopPropagation()}
                                 />
                               }
@@ -470,7 +471,7 @@ export function AgentsManager() {
                 <button
                   key={p.os}
                   onClick={() => toast.success(`Downloading ${p.file}`)}
-                  className="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:border-primary/30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
                     <MonitorSmartphone className="size-4.5" />

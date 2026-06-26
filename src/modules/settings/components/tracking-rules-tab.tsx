@@ -710,7 +710,7 @@ export function TrackingRulesTab() {
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={cn(
-                  "flex shrink-0 items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors",
+                  "flex shrink-0 cursor-pointer items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                   active
                     ? "-mb-px border-b-2 border-primary text-foreground"
                     : "text-muted-foreground hover:text-foreground",

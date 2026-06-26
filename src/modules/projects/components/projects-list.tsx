@@ -75,7 +75,8 @@ export function ProjectsList({
             <button
               type="button"
               onClick={() => toggle(status)}
-              className="flex w-full items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/40"
+              aria-expanded={open}
+              className="flex w-full cursor-pointer items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none"
             >
               <ChevronDown
                 className={cn(
@@ -131,7 +132,7 @@ export function ProjectsList({
                       onClick={() => onOpen(p.id)}
                       className={cn(
                         ROW,
-                        "w-full border-b text-left transition-colors last:border-b-0 hover:bg-muted/40",
+                        "w-full cursor-pointer border-b text-left transition-colors last:border-b-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none",
                       )}
                     >
                       {/* Project */}

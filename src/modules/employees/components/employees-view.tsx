@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
@@ -169,9 +169,17 @@ const STATUS_BADGE: Record<EmployeeRow["status"], string> = {
   suspended: "bg-destructive/12 text-destructive",
 };
 
+const STATUS_ICON: Record<EmployeeRow["status"], React.ReactNode> = {
+  active: <span className="inline-block size-1.5 rounded-full bg-success" />,
+  inactive: <span className="inline-block size-1.5 rounded-full bg-muted-foreground" />,
+  invited: <span className="inline-block size-1.5 rounded-full bg-warning" />,
+  suspended: <span className="inline-block size-1.5 rounded-full bg-destructive" />,
+};
+
 function StatusBadge({ status }: { status: EmployeeRow["status"] }) {
   return (
-    <Badge className={cn("capitalize rounded-sm", STATUS_BADGE[status])}>
+    <Badge className={cn("gap-1.5 capitalize rounded-sm", STATUS_BADGE[status])}>
+      {STATUS_ICON[status]}
       {status}
     </Badge>
   );
@@ -352,12 +360,23 @@ export function EmployeesView({
                   {rows.map((e) => (
                     <TableRow
                       key={e.id}
-                      className={cn(!customIds.has(e.id) && "cursor-pointer")}
+                      tabIndex={!customIds.has(e.id) ? 0 : undefined}
+                      className={cn(
+                        "transition-colors",
+                        !customIds.has(e.id) &&
+                          "cursor-pointer hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                      )}
                       onClick={() =>
                         customIds.has(e.id)
                           ? undefined
                           : router.push(`/employees/${e.id}`)
                       }
+                      onKeyDown={(ev) => {
+                        if (!customIds.has(e.id) && (ev.key === "Enter" || ev.key === " ")) {
+                          ev.preventDefault();
+                          router.push(`/employees/${e.id}`);
+                        }
+                      }}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">

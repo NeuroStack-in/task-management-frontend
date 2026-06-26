@@ -410,10 +410,13 @@ export function PayrollView() {
           <Table className="[&_td:first-child]:pl-5 [&_td:last-child]:pr-5 [&_th:first-child]:pl-5 [&_th:last-child]:pr-5">
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[200px]">
+                <TableHead
+                  className="min-w-[200px]"
+                  aria-sort={sortCol === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                >
                   <button
                     type="button"
-                    className="flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none"
+                    className="flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
                     onClick={() => toggleSort("name")}
                   >
                     Employee
@@ -421,10 +424,13 @@ export function PayrollView() {
                   </button>
                 </TableHead>
                 <TableHead>Department</TableHead>
-                <TableHead className="text-right">
+                <TableHead
+                  className="text-right"
+                  aria-sort={sortCol === "hours" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                >
                   <button
                     type="button"
-                    className="ml-auto flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none"
+                    className="ml-auto flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
                     onClick={() => toggleSort("hours")}
                   >
                     Hours
@@ -434,10 +440,13 @@ export function PayrollView() {
                 <TableHead className="text-right">Rate</TableHead>
                 <TableHead className="text-right">Gross</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
-                <TableHead className="text-right">
+                <TableHead
+                  className="text-right"
+                  aria-sort={sortCol === "net" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                >
                   <button
                     type="button"
-                    className="ml-auto flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none"
+                    className="ml-auto flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
                     onClick={() => toggleSort("net")}
                   >
                     Net pay
@@ -450,7 +459,7 @@ export function PayrollView() {
             </TableHeader>
             <TableBody>
               {pageRows.map((r) => (
-                <TableRow key={r.employeeId}>
+                <TableRow key={r.employeeId} className="transition-colors hover:bg-muted/40">
                   <TableCell className="min-w-[200px]">
                     <div className="flex items-center gap-3">
                       <Avatar className="size-8 shrink-0">
@@ -485,7 +494,7 @@ export function PayrollView() {
                   </TableCell>
                   <TableCell>
                     <Badge
-                      className={cn("font-medium", STATUS_META[r.status].cls)}
+                      className={cn("rounded-sm font-medium", STATUS_META[r.status].cls)}
                     >
                       {STATUS_META[r.status].label}
                     </Badge>

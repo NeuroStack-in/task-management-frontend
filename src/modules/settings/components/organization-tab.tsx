@@ -673,6 +673,7 @@ function LocationsSection({
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label={`Remove ${loc.name}`}
                         onClick={() => removeLocation(loc.id)}
                       >
                         <Trash2 className="size-4 text-muted-foreground" />
@@ -880,6 +881,7 @@ function HolidaysSection({
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label={`Remove ${h.name}`}
                         onClick={() => removeHoliday(h.id)}
                       >
                         <Trash2 className="size-4 text-muted-foreground" />
