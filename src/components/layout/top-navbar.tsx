@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { Menu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Menu, Search } from "lucide-react";
 import { useUiStore } from "@/stores/ui.store";
@@ -78,6 +76,7 @@ export function TopNavbar() {
         <div className="rounded-full bg-card shadow-soft">
           <UserMenu />
         </div>
+      </div>
       </div>
     </header>
   );

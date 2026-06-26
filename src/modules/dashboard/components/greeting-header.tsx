@@ -27,7 +27,7 @@ export function GreetingHeader() {
         Hello, {firstName}
       </h1>
       <p className="text-sm text-muted-foreground">
-        {today ? `${today} · ` : ""}Here&apos;s your organization at a glance.
+        {today ? `${today} · ` : ""}
         {personal
           ? "Here's your day at a glance."
           : "Here's your organization at a glance."}

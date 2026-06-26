@@ -15,6 +15,8 @@ import { StatCard } from "@/components/shared/stat-card";
 import { GreetingHeader } from "./greeting-header";
 import { DashboardControls } from "./dashboard-controls";
 import { CustomizableDashboard } from "./customizable-dashboard";
+import { PersonalDashboard } from "./personal-dashboard";
+import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import {
   buildDashboardData,
   teamsOf,
@@ -22,6 +24,9 @@ import {
 } from "../lib/dashboard-data";
 
 export function DashboardView({ users }: { users: User[] }) {
+  // Self-scoped roles (Employee) get a personal dashboard, never org aggregates.
+  const personal = useIsPersonalDashboard();
+
   const [range, setRange] = useState<DashboardRange>("7d");
   const [team, setTeam] = useState("all");
   const [lastUpdated, setLastUpdated] = useState("");
@@ -44,6 +49,15 @@ export function DashboardView({ users }: { users: User[] }) {
   }, [range, team]);
 
   const { kpis, rangeLabel } = data;
+
+  if (personal) {
+    return (
+      <div className="space-y-5 pt-1">
+        <GreetingHeader />
+        <PersonalDashboard />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5 pt-1">
@@ -135,22 +149,4 @@ export function DashboardView({ users }: { users: User[] }) {
       <CustomizableDashboard data={data} />
     </div>
   );
-import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
-import { OrgDashboard, type OrgKpis } from "./org-dashboard";
-import { PersonalDashboard } from "./personal-dashboard";
-import type { DashboardData } from "@/modules/dashboard/widget-registry";
-
-/**
- * Picks the dashboard the current role should see: a personal, self-scoped view
- * for Employees, or the company-wide view for roles with org visibility.
- */
-export function DashboardView({
-  data,
-  kpis,
-}: {
-  data: DashboardData;
-  kpis: OrgKpis;
-}) {
-  const personal = useIsPersonalDashboard();
-  return personal ? <PersonalDashboard /> : <OrgDashboard data={data} kpis={kpis} />;
 }
