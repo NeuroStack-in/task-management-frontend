@@ -5,7 +5,11 @@ import type { ActiveTimerTask, TimerStatus } from "@/types";
 interface TimerState {
   task: ActiveTimerTask | null;
   status: TimerStatus;
-  /** Accumulated seconds from completed run segments (excludes the live one). */
+  /**
+   * Accumulated seconds for the current work session, across every run segment
+   * (and across task switches) — excludes the live segment. The session clock
+   * keeps counting when you switch tasks; each segment is logged individually.
+   */
   accumulatedSeconds: number;
   /** Epoch ms when the current running segment started; null when not running. */
   segmentStartedAt: number | null;
@@ -66,11 +70,13 @@ export const useTimerStore = create<TimerState>()(
         return total;
       },
 
+      // Switch the active task mid-session without resetting the clock: the
+      // previous segment has already been logged/paused, so we keep
+      // accumulatedSeconds and just open a fresh live segment for the new task.
       switchTask: (task) =>
         set({
           task,
           status: "running",
-          accumulatedSeconds: 0,
           segmentStartedAt: Date.now(),
         }),
 

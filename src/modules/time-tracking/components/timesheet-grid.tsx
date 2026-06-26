@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  CalendarCheck,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +22,13 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { initials } from "@/lib/format";
 import type {
   ProjectTimesheet,
@@ -264,22 +272,24 @@ export function TimesheetGrid({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Week navigation */}
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setWeekOffset((w) => w - 1)}
-              aria-label="Previous week"
-              className="flex size-8 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ChevronLeft className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setWeekOffset((w) => w + 1)}
-              aria-label="Next week"
-              className="flex size-8 items-center justify-center rounded-lg border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ChevronRight className="size-4" />
-            </button>
+            <div className="flex items-center gap-1 rounded-lg border p-0.5">
+              <button
+                type="button"
+                onClick={() => setWeekOffset((w) => w - 1)}
+                aria-label="Previous week"
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekOffset((w) => w + 1)}
+                aria-label="Next week"
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
             <div className="ml-1 leading-tight">
               <p className="font-heading text-base font-semibold">
                 {weekOffset === 0 ? "This Week" : "Week of"}
@@ -288,11 +298,12 @@ export function TimesheetGrid({
             </div>
             {weekOffset !== 0 ? (
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="ml-1 h-7 text-xs"
+                className="ml-2 h-8 gap-1.5"
                 onClick={() => setWeekOffset(0)}
               >
+                <CalendarCheck className="size-4" />
                 Today
               </Button>
             ) : null}
@@ -315,22 +326,34 @@ export function TimesheetGrid({
               />
             </div>
             {/* Team (department) filter */}
-            <div className="relative">
-              <Users2 className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-              <select
-                value={deptFilter}
-                onChange={(e) => setDeptFilter(e.target.value)}
+            <Select
+              value={deptFilter}
+              onValueChange={(v) => setDeptFilter(v as string)}
+            >
+              <SelectTrigger
                 aria-label="Filter by team"
-                className="h-9 w-full rounded-lg border border-input bg-background py-0 pr-2.5 pl-8 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:w-44"
+                className="h-9 w-full gap-2 sm:w-44"
               >
-                <option value="all">All teams</option>
+                <div className="flex min-w-0 items-center gap-2">
+                  <Users2 className="size-4 shrink-0 text-muted-foreground" />
+                  <SelectValue>
+                    {(value) =>
+                      value === "all" || value == null
+                        ? "All teams"
+                        : String(value)
+                    }
+                  </SelectValue>
+                </div>
+              </SelectTrigger>
+              <SelectContent className="min-w-44">
+                <SelectItem value="all">All teams</SelectItem>
                 {departments.map((d) => (
-                  <option key={d} value={d}>
+                  <SelectItem key={d} value={d}>
                     {d}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
-            </div>
+              </SelectContent>
+            </Select>
             <div className="relative sm:w-56">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
