@@ -139,7 +139,10 @@ export function EmployeesView({
     return employees.filter((e) => {
       if (dept !== "all" && e.department !== dept) return false;
       if (status !== "all" && e.status !== status) return false;
-      if (q && !`${e.name} ${e.email} ${e.jobTitle}`.toLowerCase().includes(q))
+      if (
+        q &&
+        !`${e.name} ${e.email} ${e.jobTitle} ${e.id}`.toLowerCase().includes(q)
+      )
         return false;
       return true;
     });
@@ -182,7 +185,7 @@ export function EmployeesView({
           <Input
             value={query}
             onChange={(e) => resetPage(setQuery)(e.target.value)}
-            placeholder="Search by name, email, or title…"
+            placeholder="Search by name, email, ID, or title…"
             className="pl-9"
           />
         </div>
@@ -245,7 +248,10 @@ export function EmployeesView({
                           <div className="min-w-0">
                             <p className="truncate font-medium">{e.name}</p>
                             <p className="truncate text-xs text-muted-foreground">
-                              {e.email}
+                              <span className="font-mono text-[0.65rem] text-muted-foreground/70">
+                                {e.id}
+                              </span>{" "}
+                              · {e.email}
                             </p>
                           </div>
                         </div>
