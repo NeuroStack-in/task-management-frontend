@@ -31,6 +31,18 @@ const PALETTES: PaletteDef[] = [
     swatch: ["#4f46e5", "#6366f1", "#232427", "#f7f5f1"],
   },
   {
+    id: "corporate",
+    name: "Corporate Blue",
+    note: "Refined · professional",
+    swatch: ["#2563eb", "#60a5fa", "#1f2937", "#f5f7fa"],
+  },
+  {
+    id: "evergreen",
+    name: "Evergreen & Mint",
+    note: "Calm · SaaS green",
+    swatch: ["#059669", "#34d399", "#1d2a26", "#f5f8f6"],
+  },
+  {
     id: "fireopal",
     name: "Fire Opal",
     note: "Fire Opal · Raisin Black",
