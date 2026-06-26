@@ -72,7 +72,7 @@ export function Calendar({
   return (
     <div
       className={cn(
-        "w-64 rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
+        "w-64 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
         className,
       )}
     >

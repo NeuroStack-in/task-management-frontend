@@ -37,7 +37,7 @@ function useDismiss(open: boolean, close: () => void) {
 }
 
 const TRIGGER =
-  "flex h-8 items-center gap-2 rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+  "flex h-8 items-center gap-2 rounded-md border bg-background px-3 text-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
 export function DatePicker({
   value,
@@ -146,7 +146,7 @@ export function TimePicker({
       {open ? (
         <div
           className={cn(
-            "absolute top-full z-50 mt-2 w-32 rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
+            "absolute top-full z-50 mt-2 w-32 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
             alignRight ? "right-0" : "left-0",
           )}
         >

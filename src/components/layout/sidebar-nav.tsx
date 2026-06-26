@@ -49,7 +49,7 @@ export function SidebarNav({
 
   if (collapsed) {
     return (
-      <div className="flex h-full w-[68px] flex-col items-center overflow-hidden rounded-[1.6rem] bg-sidebar py-4 text-sidebar-foreground shadow-soft">
+      <div className="flex h-full w-[68px] flex-col items-center overflow-hidden rounded-none border-r border-sidebar-border bg-sidebar py-4 text-sidebar-foreground">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -60,7 +60,7 @@ export function SidebarNav({
               />
             }
           >
-            <span className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+            <span className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Activity className="size-5" />
             </span>
           </TooltipTrigger>
@@ -94,9 +94,9 @@ export function SidebarNav({
                       >
                         <span
                           className={cn(
-                            "flex size-10 items-center justify-center rounded-2xl transition-colors",
+                            "flex size-10 items-center justify-center rounded-md transition-colors",
                             active
-                              ? "bg-foreground text-background"
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
                               : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                           )}
                         >
@@ -123,7 +123,7 @@ export function SidebarNav({
                 />
               }
             >
-              <span className="flex size-10 items-center justify-center rounded-2xl text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+              <span className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
                 <LogOut className="size-[18px]" />
               </span>
             </TooltipTrigger>
@@ -143,9 +143,9 @@ export function SidebarNav({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[1.4rem] bg-sidebar text-sidebar-foreground shadow-soft">
+    <div className="flex h-full flex-col overflow-hidden rounded-none border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex h-16 items-center gap-2.5 px-4">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+        <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
           <Activity className="size-5" />
         </div>
         <span className="flex-1 font-display text-lg font-semibold tracking-tight">
@@ -179,9 +179,9 @@ export function SidebarNav({
                         onClick={onNavigate}
                         aria-current={active ? "page" : undefined}
                         className={cn(
-                          "flex items-center gap-3 rounded-full px-3 py-2 text-sm transition-colors",
+                          "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                           active
-                            ? "bg-sidebar-primary font-medium text-sidebar-primary-foreground"
+                            ? "border-l-2 border-primary bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                             : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                         )}
                       >

@@ -67,10 +67,10 @@ function monotonePath(pts: readonly (readonly [number, number])[]): string {
 export function Sparkline({
   data,
   area = false,
-  showDot = true,
+  showDot = false,
   width = 120,
   height = 36,
-  strokeWidth = 2,
+  strokeWidth = 1.5,
   className,
 }: SparklineProps) {
   if (data.length < 2) return null;
@@ -109,7 +109,7 @@ export function Sparkline({
         <>
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="currentColor" stopOpacity={0.2} />
+              <stop offset="0%" stopColor="currentColor" stopOpacity={0.10} />
               <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
             </linearGradient>
           </defs>

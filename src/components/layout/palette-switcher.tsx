@@ -25,9 +25,15 @@ interface PaletteDef {
  */
 export const PALETTES: PaletteDef[] = [
   {
+    id: "meridian",
+    name: "Meridian — Slate & Teal",
+    note: "Default · enterprise",
+    swatch: ["#0e7490", "#22a5b8", "#0f1729", "#f7f8fa"],
+  },
+  {
     id: "indigo",
     name: "Graphite & Indigo",
-    note: "Default · warm neutral",
+    note: "Classic · warm neutral",
     swatch: ["#4f46e5", "#6366f1", "#232427", "#f7f5f1"],
   },
   {
@@ -118,13 +124,13 @@ export function applyPalette(id: string) {
 }
 
 export function PaletteSwitcher() {
-  const [active, setActive] = useState("fireopal");
+  const [active, setActive] = useState("meridian");
 
   // Read the persisted choice on mount (the inline head script already applied
-  // it pre-paint; this just syncs the active checkmark). Default = Fire Opal.
+  // it pre-paint; this just syncs the active checkmark). Default = Meridian.
   useEffect(() => {
     try {
-      setActive(window.localStorage.getItem(STORAGE_KEY) || "fireopal");
+      setActive(window.localStorage.getItem(STORAGE_KEY) || "meridian");
     } catch {
       /* ignore */
     }
@@ -142,7 +148,7 @@ export function PaletteSwitcher() {
           <Button variant="ghost" size="icon" aria-label="Change colour palette" />
         }
       >
-        <Palette className="size-5" />
+        <Palette className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
         <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
@@ -160,7 +166,7 @@ export function PaletteSwitcher() {
                 {p.swatch.map((c, i) => (
                   <span
                     key={c + i}
-                    className="size-4 rounded-full ring-1 ring-black/10"
+                    className="size-4 rounded-sm border border-border/60"
                     style={{ backgroundColor: c }}
                   />
                 ))}

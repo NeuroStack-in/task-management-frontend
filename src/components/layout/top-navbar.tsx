@@ -13,7 +13,6 @@ import {
 import { SidebarNav } from "./sidebar-nav";
 import { GlobalTimer } from "./global-timer";
 import { ThemeSwitcher } from "./theme-switcher";
-import { PaletteSwitcher } from "./palette-switcher";
 import { NotificationsMenu } from "./notifications-menu";
 import { UserMenu } from "./user-menu";
 
@@ -29,7 +28,7 @@ export function TopNavbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 bg-background/85 px-4 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md sm:px-6">
       {/* Mobile sidebar trigger */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetTrigger
@@ -37,14 +36,14 @@ export function TopNavbar() {
             <Button
               variant="ghost"
               size="icon"
-              className="size-10 rounded-full bg-card shadow-soft hover:bg-card lg:hidden"
+              className="size-10 rounded-md border border-border bg-card hover:bg-card lg:hidden"
               aria-label="Open menu"
             />
           }
         >
           <Menu className="size-5" />
         </SheetTrigger>
-        <SheetContent side="left" className="w-72 border-0 bg-transparent p-3">
+        <SheetContent side="left" className="w-72 border-0 bg-transparent p-3 shadow-soft">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <SidebarNav onNavigate={() => setMobileOpen(false)} />
         </SheetContent>
@@ -55,25 +54,24 @@ export function TopNavbar() {
       <button
         type="button"
         onClick={() => openCommand(true)}
-        className="flex h-10 flex-1 items-center gap-2.5 rounded-full bg-card px-4 text-sm text-muted-foreground shadow-soft transition-colors hover:text-foreground sm:max-w-sm"
+        className="flex h-10 flex-1 items-center gap-2.5 rounded-md border border-border bg-card px-4 text-sm text-muted-foreground transition-colors hover:text-foreground sm:max-w-sm"
       >
         <Search className="size-4" />
         <span className="flex-1 text-left">Search people, projects, reports…</span>
-        <kbd className="pointer-events-none hidden rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium sm:inline">
+        <kbd className="pointer-events-none hidden rounded-sm bg-muted px-2 py-0.5 text-[10px] font-medium sm:inline">
           {isMac ? "⌘K" : "Ctrl K"}
         </kbd>
       </button>
 
       <div className="flex items-center gap-2.5 sm:ml-auto">
-        <div className="rounded-full bg-card p-1 shadow-soft">
-          <PaletteSwitcher />
-        </div>
-        <GlobalTimer />
-        <div className="flex items-center gap-0.5 rounded-full bg-card p-1 shadow-soft">
+        <div className="flex items-center gap-0.5 rounded-md border border-border bg-card p-1">
           <NotificationsMenu />
           <ThemeSwitcher />
         </div>
-        <div className="rounded-full bg-card shadow-soft">
+        <div className="rounded-md border border-border bg-card">
+          <GlobalTimer />
+        </div>
+        <div className="rounded-md border border-border">
           <UserMenu />
         </div>
       </div>

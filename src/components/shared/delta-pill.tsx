@@ -14,10 +14,10 @@ export function DeltaPill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-0.5 rounded-sm border px-1.5 py-0.5 text-xs font-medium",
         positive
-          ? "bg-success/12 text-success"
-          : "bg-destructive/12 text-destructive",
+          ? "border-success/30 bg-success/10 text-success"
+          : "border-destructive/30 bg-destructive/10 text-destructive",
         className,
       )}
     >

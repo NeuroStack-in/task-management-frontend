@@ -318,7 +318,7 @@ export function CommandPalette() {
                       onMouseMove={() => setActive(i)}
                       onClick={() => r.run()}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors",
+                        "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
                         i === activeIdx ? "bg-accent" : "hover:bg-muted/60",
                       )}
                     >
@@ -330,7 +330,7 @@ export function CommandPalette() {
                           </AvatarFallback>
                         </Avatar>
                       ) : Icon ? (
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-primary">
                           <Icon className="size-4" />
                         </span>
                       ) : null}

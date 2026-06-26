@@ -12,7 +12,7 @@ interface GaugeProps {
 /** Semicircular gauge. Track + sage progress arc with the value in the center. */
 export function Gauge({ value, label, size = 160, className }: GaugeProps) {
   const clamped = Math.max(0, Math.min(100, value));
-  const stroke = 12;
+  const stroke = 8;
   const r = (size - stroke) / 2;
   const cy = size / 2;
   // Semicircle arc length (half the full circumference).
@@ -43,7 +43,7 @@ export function Gauge({ value, label, size = 160, className }: GaugeProps) {
         />
       </svg>
       <div className="-mt-8 text-center">
-        <div className="font-display text-3xl font-semibold tabular-nums">
+        <div className="font-display text-2xl font-semibold tabular-nums">
           {Math.round(clamped)}%
         </div>
         {label ? (

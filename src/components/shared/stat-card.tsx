@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Sparkline } from "./sparkline";
@@ -34,27 +33,15 @@ export function StatCard({
   const card = (
     <Card
       className={cn(
-        "h-full justify-between transition-shadow",
-        featured && "bg-feature text-feature-foreground shadow-none",
-        href && "group-hover/stat:shadow-md",
+        "h-full justify-between border border-border transition-shadow",
+        featured && "border-t-2 border-t-primary",
+        href && "hover:bg-accent/30",
       )}
     >
       <div className="flex items-center justify-between gap-3 px-5">
-        <span
-          className={cn(
-            "text-sm",
-            featured ? "text-feature-foreground/85" : "text-muted-foreground",
-          )}
-        >
-          {label}
-        </span>
+        <span className="text-sm text-muted-foreground">{label}</span>
         {Icon ? (
-          <span
-            className={cn(
-              "flex size-8 items-center justify-center rounded-full",
-              featured ? "bg-white/15" : "bg-feature-tint text-primary",
-            )}
-          >
+          <span className="flex size-7 items-center justify-center rounded-md bg-muted text-primary">
             <Icon className="size-4" />
           </span>
         ) : null}
@@ -62,28 +49,13 @@ export function StatCard({
 
       <div className="flex items-end justify-between gap-3 px-5">
         <div className="space-y-1.5">
-          <p className="font-display text-3xl font-semibold tracking-tight tabular-nums">
+          <p className="font-display text-[1.75rem] font-semibold tracking-tight tabular-nums">
             {value}
           </p>
           <div className="flex items-center gap-2">
-            {delta !== undefined ? (
-              featured ? (
-                <FeaturedDelta value={delta} />
-              ) : (
-                <DeltaPill value={delta} />
-              )
-            ) : null}
+            {delta !== undefined ? <DeltaPill value={delta} /> : null}
             {hint ? (
-              <span
-                className={cn(
-                  "text-xs",
-                  featured
-                    ? "text-feature-foreground/80"
-                    : "text-muted-foreground",
-                )}
-              >
-                {hint}
-              </span>
+              <span className="text-xs text-muted-foreground">{hint}</span>
             ) : null}
           </div>
         </div>
@@ -93,7 +65,7 @@ export function StatCard({
             area
             width={92}
             height={40}
-            className={featured ? "text-white" : "text-primary"}
+            className="text-primary"
           />
         ) : null}
       </div>
@@ -108,14 +80,3 @@ export function StatCard({
   );
 }
 
-/** Delta pill tuned for the featured (white-on-accent) card. */
-function FeaturedDelta({ value }: { value: number }) {
-  const positive = value >= 0;
-  const Icon = positive ? ArrowUpRight : ArrowDownRight;
-  return (
-    <span className="inline-flex items-center gap-0.5 rounded-full bg-white/15 px-1.5 py-0.5 text-xs font-medium text-white">
-      <Icon className="size-3" />
-      {Math.abs(value)}%
-    </span>
-  );
-}

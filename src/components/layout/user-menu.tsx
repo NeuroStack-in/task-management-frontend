@@ -34,7 +34,7 @@ export function UserMenu() {
         render={
           <Button
             variant="ghost"
-            className="h-9 gap-2 px-1.5 sm:pr-3"
+            className="h-9 gap-2 rounded-md border border-border px-1.5 sm:pr-3"
             aria-label="Account menu"
           />
         }
