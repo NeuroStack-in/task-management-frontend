@@ -114,10 +114,16 @@ export function AiSummaryWidget() {
           <Sparkles className="size-4" /> AI Summary
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3 text-sm leading-relaxed text-feature-foreground/90">
-        <p>
-          Productivity rose 3% this week, led by Engineering and Product. Two
-          teams show early burnout signals worth a closer look.
+      <CardContent className="gap-3 text-sm leading-relaxed text-feature-foreground/90">
+        {/* flex-1 so the text grows and vertically centers, filling the card. */}
+        <p className="flex-1">
+          Productivity rose 3% this week, led by Engineering and Product, while
+          overall attendance held steady at 80% with on-time rates ticking up.
+          Average activity climbed to 84% and idle time fell 6% versus last
+          week. Two teams — Design and Backend — show early burnout signals from
+          sustained overtime, so they&apos;re worth a closer look. Screenshot
+          coverage and timesheet submissions are both healthy, and no anomalies
+          breached critical thresholds.
         </p>
         <button
           type="button"
@@ -126,7 +132,7 @@ export function AiSummaryWidget() {
               "Summarise this week's productivity and flag any burnout risks.",
             )
           }
-          className="inline-flex items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
+          className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
         >
           Ask the assistant <ArrowUpRight className="size-3.5" />
         </button>

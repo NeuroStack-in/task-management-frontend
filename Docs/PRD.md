@@ -222,10 +222,50 @@ Organization creators can:
 - View Billing
 - Manage Subscription
 
+**Employees**
+
+- View Employees
+- Manage Employees
+
+**Attendance**
+
+- View Attendance
+- Manage Attendance
+
+**Payroll**
+
+- View Payroll
+- Run Payroll
+- Export Payslips
+
+**Leave**
+
+- View Leave Requests
+- Submit Leave Request
+
+**Approvals**
+
+- View Approvals
+- Approve Requests
+
 **Settings**
 
 - Organization Settings
 - Security Settings
+
+### Role-Scoped Experience
+
+Pages are **scoped to the viewer's access**. A self-scoped role (e.g. Employee —
+no `employees:view` / `activity:view`) sees only their own data, never org-wide
+aggregates:
+
+- **Dashboard** renders a personal view (own productivity, tasks, attendance, projects).
+- **Attendance** shows the individual's own calendar, not the organization roll-up.
+- **Projects** are limited to projects the user is a member of (list and detail).
+- Org-only sections (org Reports, AI Insights, Employees directory) are hidden.
+
+Approver-only and oversight roles (Owner / Admin / Manager / HR) get the full
+organization view.
 
 ---
 
@@ -298,11 +338,16 @@ Organization creators can:
 - Alerts Widget
 - Billing Overview
 
+**Role-aware** — Employees and other self-scoped roles see a **personal**
+dashboard (own productivity, open tasks, this-week attendance, their projects)
+instead of the company-wide one. Org roles get the full bento dashboard with a
+**range filter** (Today / 7d / 30d) and **team filter**.
+
 **Dashboard Customization** — users can:
 
 - Add Widgets
 - Remove Widgets
-- Rearrange Widgets
+- Rearrange Widgets (free drag-and-drop)
 - Save Layouts
 
 ### Module 5: Time Tracking
@@ -395,13 +440,19 @@ Organization creators can:
 **Features**
 
 - Employee Directory
+- Create / Invite Employee — add a new account (name, email, role, department, team, status) via an in-app form
 - Employee Profiles
 - Productivity Overview
 - Assigned Projects
 - Reports
 - Activity Records
+- Export directory (CSV / PDF)
 
 ### Module 12: Approval Center
+
+> The Approval Center is the **approver side** (review / approve / reject). The
+> **requester side** for leave lives in Module 31 (Leave Management), so regular
+> employees submit and track their own requests separately from approvers.
 
 **Approval Types**
 
@@ -540,6 +591,10 @@ Organization creators can:
 - Holidays
 - Policies
 - Branding
+- **Ownership & deletion** (owner-only) — transfer the Organization Owner role
+  to another active member, or permanently close the organization. Closure is
+  gated: export organization data → acknowledge consequences → type the org name
+  to confirm.
 
 ### Module 24: Monitoring Configuration
 
@@ -601,6 +656,31 @@ Organization-level module enable/disable control over: Time Tracking, Activity M
 - Agent Policies
 - Version Management
 - Health Monitoring
+
+### Module 30: Payroll
+
+> Added after the original 29-section scope. Phase-1 frontend only — no real
+> payments.
+
+**Features**
+
+- Monthly pay run — per-employee payslips derived from logged working hours × a
+  deterministic hourly rate (by department + seniority)
+- Summary KPIs (net payout, gross, employees paid, hours logged)
+- Pay-period switcher, search, department/status filters, pagination
+- Per-payslip PDF download and full-run CSV export
+
+### Module 31: Leave Management
+
+> The self-service **requester** counterpart to the Approval Center (Module 12).
+
+**Features**
+
+- Leave balances by type (Vacation / Sick / Personal / Unpaid)
+- Request leave — type, date range, reason; auto-counts working days
+- Track own requests with status (Pending / Approved / Rejected)
+- Withdraw a still-pending request
+- Available to all roles; requests start **Pending** awaiting an approver
 
 ---
 
@@ -673,5 +753,6 @@ Frontend will simulate all workflows using mock services and static datasets.
 
 ## Version
 
-- **Version:** 1.1
-- **Status:** Frontend Phase Approved — aligned to SPEC.md (PAGES.md V2, 29 sections)
+- **Version:** 1.2
+- **Status:** Frontend Phase Approved — aligned to SPEC.md (PAGES.md V2, 29 sections + Payroll & Leave Management additions)
+- **1.2 changes:** added Payroll (Module 30) and Leave Management (Module 31); role-scoped (self-service) experience for Employees; role-aware dashboard with range/team filters; create/invite employee; organization ownership transfer & deletion.

@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import Papa from "papaparse";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -18,7 +20,38 @@ import {
   monthSummary,
   type DayCell,
 } from "@/lib/mock-attendance";
+import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** Export the visible month's per-day org attendance as a CSV. */
+function exportMonthCsv(year: number, month: number, weeks: DayCell[][]) {
+  const days = weeks.flat().filter((c) => c.isWorkday && c.counts);
+  const data = days.map((c) => {
+    const k = c.counts!;
+    const rate = Math.round(((k.present + k.late) / k.total) * 100);
+    return [
+      `${c.year}-${pad2(c.month + 1)}-${pad2(c.day)}`,
+      WEEKDAY_LABELS[c.weekday],
+      k.present,
+      k.late,
+      k.leave,
+      k.absent,
+      k.total,
+      `${rate}%`,
+    ];
+  });
+  const csv = Papa.unparse({
+    fields: ["Date", "Weekday", "Present", "Late", "On leave", "Absent", "Total", "Attendance %"],
+    data,
+  });
+  const file = `attendance-${MONTH_NAMES[month].toLowerCase()}-${year}.csv`;
+  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), file);
+  toast.success("Attendance exported", {
+    description: `${file} · ${days.length} working days`,
+  });
+}
 
 interface AttendanceDate {
   year: number;
@@ -107,6 +140,15 @@ export function AttendanceCalendar({
               </button>
             ))}
           </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => exportMonthCsv(view.year, view.month, weeks)}
+          >
+            <Download className="size-4" /> Export
+          </Button>
 
           <div className="flex items-center gap-1.5">
             <Button

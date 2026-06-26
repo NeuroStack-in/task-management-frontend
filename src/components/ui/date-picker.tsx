@@ -55,21 +55,35 @@ export function DatePicker({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
   const ref = useDismiss(open, () => setOpen(false));
+  const toggle = () => {
+    setOpen((o) => {
+      const next = !o;
+      // Anchor to the trigger's right edge if the calendar (≈264px) would
+      // overflow the viewport on the right.
+      if (next && ref.current) {
+        const r = ref.current.getBoundingClientRect();
+        setAlignRight(r.left + 264 > window.innerWidth - 8);
+      }
+      return next;
+    });
+  };
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={cn(TRIGGER, className)}
-      >
+      <button type="button" onClick={toggle} className={cn(TRIGGER, className)}>
         <CalendarIcon className="size-4 text-muted-foreground" />
         <span className={value ? "text-foreground" : "text-muted-foreground"}>
           {value ? formatDate(value) : placeholder}
         </span>
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-50 mt-2">
+        <div
+          className={cn(
+            "absolute top-full z-50 mt-2",
+            alignRight ? "right-0" : "left-0",
+          )}
+        >
           <Calendar
             value={value}
             min={min}
@@ -105,12 +119,23 @@ export function TimePicker({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
   const ref = useDismiss(open, () => setOpen(false));
+  const toggle = () => {
+    setOpen((o) => {
+      const next = !o;
+      if (next && ref.current) {
+        const r = ref.current.getBoundingClientRect();
+        setAlignRight(r.left + 140 > window.innerWidth - 8);
+      }
+      return next;
+    });
+  };
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         className={cn(TRIGGER, "justify-between", className)}
       >
         <Clock className="size-4 text-muted-foreground" />
@@ -119,7 +144,12 @@ export function TimePicker({
         </span>
       </button>
       {open ? (
-        <div className="absolute left-0 top-full z-50 mt-2 w-32 rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10">
+        <div
+          className={cn(
+            "absolute top-full z-50 mt-2 w-32 rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
+            alignRight ? "right-0" : "left-0",
+          )}
+        >
           <button
             type="button"
             onClick={() => {

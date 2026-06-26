@@ -53,8 +53,8 @@ function activityTone(activity: number): string {
 function aiAnalysis(shot: Screenshot): string {
   if (shot.flagged) {
     if (shot.app === "YouTube" || shot.app === "Reddit")
-      return `Flagged: ${shot.app} is a distracting app, captured during core hours at only ${shot.activity}% activity.`;
-    return `Flagged: low engagement — ${shot.activity}% active, the screen appears idle.`;
+      return `Needs review: ${shot.app} is a distracting app, captured during core hours at only ${shot.activity}% activity.`;
+    return `Needs review: low engagement — ${shot.activity}% active, the screen appears idle.`;
   }
   if (shot.activity >= 75)
     return `Focused work — ${shot.activity}% active in ${shot.app}, well above the team average.`;
@@ -111,13 +111,13 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
         title="AI screenshot report"
         summary={`Across ${SCREENSHOT_EMPLOYEES.length} monitored employees, ${totalCaptures.toLocaleString()} screenshots were captured. ${totalFlagged} ${
           totalFlagged === 1 ? "was" : "were"
-        } auto-flagged for distracting apps or low activity${
+        } marked for review for distracting apps or low activity${
           totalFlagged ? " — review those first" : ""
         }. Average on-screen activity sits at ${avgActivity}%.`}
         metrics={[
           { label: "Monitored", value: SCREENSHOT_EMPLOYEES.length },
           { label: "Total captures", value: totalCaptures.toLocaleString() },
-          { label: "Flagged", value: totalFlagged },
+          { label: "Needs review", value: totalFlagged },
           { label: "Avg activity", value: `${avgActivity}%` },
         ]}
       />
@@ -162,7 +162,7 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
                   checked={flag === opt}
                   onChange={() => setFlag(opt)}
                 />
-                {opt === "all" ? "All" : "With flags"}
+                {opt === "all" ? "All" : "Needs review"}
               </label>
             ))}
           </div>
@@ -179,7 +179,7 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
         <EmptyState
           icon={Users}
           title="No employees match"
-          description="Try a different name, department, or clear the flagged filter."
+          description="Try a different name, department, or clear the review filter."
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -236,7 +236,7 @@ function EmployeeCard({
           {emp.latest.app}
         </div>
         {emp.flagged > 0 ? (
-          <Badge variant="destructive" className="absolute right-2 top-2 backdrop-blur-sm">
+          <Badge variant="default" className="absolute right-2 top-2 backdrop-blur-sm">
             <Flag className="size-3" /> {emp.flagged}
           </Badge>
         ) : null}
@@ -334,7 +334,7 @@ function EmployeeDetail({
             tone={activityTone(employee.avgActivity)}
           />
           <Summary
-            label="Flagged"
+            label="Needs review"
             value={employee.flagged}
             tone={employee.flagged > 0 ? "text-destructive" : undefined}
           />
@@ -346,13 +346,13 @@ function EmployeeDetail({
         title={`AI report — ${employee.user.name.split(" ")[0]}`}
         summary={`${employee.user.name.split(" ")[0]} has ${employee.total} captures this period with activity averaging ${employee.avgActivity}%. ${
           employee.flagged > 0
-            ? `${employee.flagged} were auto-flagged for distracting apps or low activity — review the highlighted captures below.`
-            : "Nothing was flagged — coverage and focus both look healthy."
+            ? `${employee.flagged} were marked for review for distracting apps or low activity — review the highlighted captures below.`
+            : "Nothing needs review — coverage and focus both look healthy."
         }`}
         signals={[
           { label: "Captures", value: `${employee.total}`, tone: "flat" },
           {
-            label: "Flagged",
+            label: "Needs review",
             value: `${employee.flagged}`,
             tone: employee.flagged > 0 ? "down" : "up",
           },
@@ -398,7 +398,7 @@ function EmployeeDetail({
                   checked={flag === opt}
                   onChange={() => setFlag(opt)}
                 />
-                {opt === "all" ? "All" : "Flagged only"}
+                {opt === "all" ? "All" : "Needs review"}
               </label>
             ))}
           </div>
@@ -515,19 +515,24 @@ function ShotCard({
   return (
     <Card
       className={cn(
-        "group cursor-pointer gap-0 overflow-hidden p-0 transition hover:ring-1 hover:ring-primary/40",
-        shot.flagged && "ring-1 ring-destructive/40",
+        "group cursor-pointer gap-0 overflow-hidden p-0 transition",
+        shot.flagged
+          ? "bg-primary/5 ring-2 ring-primary ring-offset-1 ring-offset-background hover:ring-primary"
+          : "hover:ring-1 hover:ring-primary/40",
       )}
       onClick={onOpen}
     >
       <div className="relative aspect-[16/10] overflow-hidden">
         <FauxCapture blur={blur} />
+        {shot.flagged ? (
+          <div className="pointer-events-none absolute inset-0 bg-primary/15" />
+        ) : null}
         <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
           {shot.app}
         </div>
         {shot.flagged ? (
-          <Badge variant="destructive" className="absolute right-2 top-2 backdrop-blur-sm">
-            <Flag className="size-3" /> Flagged
+          <Badge variant="default" className="absolute right-2 top-2 backdrop-blur-sm">
+            <Flag className="size-3" /> Needs review
           </Badge>
         ) : null}
         <span className="absolute bottom-2 right-2 rounded-full bg-background/85 px-2 py-0.5 font-mono text-[11px] tabular-nums backdrop-blur-sm">
@@ -535,7 +540,12 @@ function ShotCard({
         </span>
       </div>
 
-      <div className="flex items-center justify-between px-3 py-2.5 text-sm">
+      <div
+        className={cn(
+          "flex items-center justify-between px-3 py-2.5 text-sm",
+          shot.flagged && "bg-primary/10",
+        )}
+      >
         <span className="font-medium">{dayLabel(shot.date)}</span>
         <span className="font-mono text-xs tabular-nums text-muted-foreground">
           {shot.time}
@@ -562,8 +572,8 @@ function Lightbox({
               <DialogTitle className="flex items-center gap-2">
                 {shot.user.name}
                 {shot.flagged ? (
-                  <Badge variant="destructive">
-                    <Flag className="size-3" /> Flagged
+                  <Badge variant="default">
+                    <Flag className="size-3" /> Needs review
                   </Badge>
                 ) : null}
               </DialogTitle>
@@ -598,7 +608,7 @@ function Lightbox({
               </dd>
               {reason ? (
                 <>
-                  <dt className="text-muted-foreground">Flag reason</dt>
+                  <dt className="text-muted-foreground">Review reason</dt>
                   <dd className="text-right font-medium text-destructive">
                     {reason}
                   </dd>
