@@ -81,7 +81,7 @@ export function LeaveRequestsView() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="flex min-h-full flex-col gap-5">
       <PageHeader
         title="Leave"
         description="Request time off and track the status of your leave."
@@ -123,19 +123,20 @@ export function LeaveRequestsView() {
       </div>
 
       {/* Requests */}
-      <Card className="gap-0 p-0">
+      <Card className="flex-1 gap-0 p-0">
         <div className="border-b border-border px-5 py-4">
           <h2 className="font-display text-base font-semibold tracking-tight">
             My requests
           </h2>
         </div>
         {mine.length === 0 ? (
-          <EmptyState
-            icon={Plane}
-            title="No leave requests yet"
-            description="Request time off and it will appear here with its approval status."
-            className="m-5"
-          />
+          <div className="flex flex-1 items-center justify-center p-5">
+            <EmptyState
+              icon={Plane}
+              title="No leave requests yet"
+              description="Request time off and it will appear here with its approval status."
+            />
+          </div>
         ) : (
           <Table>
             <TableHeader>

@@ -294,7 +294,7 @@ export function ReportsTab() {
             </>
           ) : (
             <Button disabled={!canExport} onClick={() => exportAllPdf(REPORTS)}>
-              <Download className="size-4" /> Export all
+              <Download className="size-4" /> Download all
             </Button>
           )}
         </div>
@@ -394,18 +394,26 @@ function ReportCard({
         }
       }}
       className={cn(
-        "group flex cursor-pointer flex-col rounded-[1.4rem] bg-card p-5 shadow-soft transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        selected && "ring-2 ring-primary",
+        "group flex cursor-pointer flex-col rounded-[1.4rem] p-5 shadow-soft transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        selected
+          ? "bg-primary/[0.03] ring-2 ring-primary"
+          : "bg-card ring-1 ring-transparent",
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <Checkbox
-            checked={selected}
-            onCheckedChange={onToggleSelect}
+          {/* Wrapper isolates the checkbox so selecting never triggers the
+              card's preview-on-click. */}
+          <span
             onClick={(e) => e.stopPropagation()}
-            aria-label={`Select ${report.name}`}
-          />
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <Checkbox
+              checked={selected}
+              onCheckedChange={onToggleSelect}
+              aria-label={`Select ${report.name}`}
+            />
+          </span>
           <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
             <Icon className="size-5" />
           </span>
@@ -472,15 +480,16 @@ function ExportMenu({
         render={
           <Button
             variant="outline"
-            size="sm"
-            className="gap-1.5"
+            size="icon"
+            className="size-9"
             disabled={!canExport}
+            aria-label={`Download ${report.name}`}
+            title="Download"
             onClick={(e) => e.stopPropagation()}
           />
         }
       >
-        <Download className="size-4" /> Export
-        <ChevronDown className="size-3.5" />
+        <Download className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-auto min-w-44">
         <DropdownMenuItem

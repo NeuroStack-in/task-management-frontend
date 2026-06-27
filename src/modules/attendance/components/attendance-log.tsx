@@ -224,7 +224,7 @@ export function AttendanceLog({
 
   return (
     <Card>
-      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div>
           <CardTitle>{isToday(date) ? "Today's log" : "Attendance log"}</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">{dateLabel(date)}</p>
@@ -273,7 +273,7 @@ export function AttendanceLog({
             </DropdownMenuContent>
           </DropdownMenu>
           <Button variant="outline" size="sm" className="h-9" onClick={exportCsv}>
-            <Download className="size-4" /> Export CSV
+            <Download className="size-4" /> Download
           </Button>
         </div>
       </CardHeader>
@@ -330,7 +330,6 @@ export function AttendanceLog({
                     <TableHead>Clock out</TableHead>
                     <SortHead
                       label="Hours"
-                      align="right"
                       active={sort.key === "hours"}
                       dir={sort.dir}
                       onClick={() => toggleSort("hours")}
@@ -369,7 +368,7 @@ export function AttendanceLog({
                         <TableCell className="font-mono tabular-nums">
                           {r.clockOut}
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
+                        <TableCell className="font-mono tabular-nums">
                           {r.hours ? r.hours.toFixed(1) : "—"}
                         </TableCell>
                       </TableRow>
@@ -380,7 +379,7 @@ export function AttendanceLog({
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1">
               <p className="text-xs text-muted-foreground">
                 Showing {safePage * PAGE_SIZE + 1}–
                 {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}

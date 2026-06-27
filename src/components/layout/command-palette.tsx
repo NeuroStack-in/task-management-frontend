@@ -211,7 +211,7 @@ export function CommandPalette() {
       ),
       ...INSIGHTS_TABS.filter((t) => can(t.permission)).map((it) => ({
         item: it,
-        group: "Insights",
+        group: "Analytics",
       })),
       ...ADMIN_SECTIONS.flatMap((g) =>
         g.items

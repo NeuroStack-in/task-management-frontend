@@ -232,7 +232,7 @@ export function MonitoringTab() {
           <CardHeader>
             <CardTitle>Productivity Thresholds</CardTitle>
             <CardDescription>
-              Define the activity bands that colour-code productivity scores across Insights.
+              Define the activity bands that colour-code productivity scores across Analytics.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-0 pb-2">
@@ -314,7 +314,7 @@ export function MonitoringTab() {
           <CardHeader>
             <CardTitle>Alert Thresholds</CardTitle>
             <CardDescription>
-              Configure triggers for the anomaly alerts shown in Insights → Anomalies.
+              Configure triggers for the anomaly alerts shown in Analytics → AI Insights.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-0 pb-2">

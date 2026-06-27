@@ -174,7 +174,7 @@ const WALKTHROUGHS = [
   {
     id: "insights",
     icon: BarChart2,
-    title: "Insights & Reports",
+    title: "Analytics & Reports",
     description:
       "Navigate productivity scores, anomaly alerts, and export team reports.",
     duration: "~5 min",

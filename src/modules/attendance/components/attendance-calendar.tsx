@@ -15,6 +15,7 @@ import {
   COUNT_METRICS,
   MONTH_NAMES,
   REFERENCE_MONTH,
+  TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
   monthSummary,
@@ -59,17 +60,6 @@ interface AttendanceDate {
   day: number;
 }
 
-type CalendarMode = "simple" | "detailed";
-
-/** Background tint for the simple heatmap, scaled by attendance rate. */
-function rateTint(rate: number): string {
-  if (rate >= 92) return "bg-success/20";
-  if (rate >= 88) return "bg-success/10";
-  if (rate >= 85) return "bg-success/[0.06]";
-  if (rate >= 80) return "bg-warning/15";
-  return "bg-destructive/15";
-}
-
 export function AttendanceCalendar({
   selected,
   onSelect,
@@ -81,13 +71,14 @@ export function AttendanceCalendar({
     year: REFERENCE_MONTH.year,
     month: REFERENCE_MONTH.month,
   });
-  const [mode, setMode] = useState<CalendarMode>("simple");
 
   const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
   const summary = useMemo(() => monthSummary(view.year, view.month), [view]);
 
-  const isRefMonth =
-    view.year === REFERENCE_MONTH.year && view.month === REFERENCE_MONTH.month;
+  const goToToday = () => {
+    setView({ year: TODAY.year, month: TODAY.month });
+    onSelect({ year: TODAY.year, month: TODAY.month, day: TODAY.day });
+  };
 
   const step = (dir: -1 | 1) =>
     setView((v) => {
@@ -99,69 +90,27 @@ export function AttendanceCalendar({
 
   return (
     <Card>
-      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div>
           <CardTitle>
             {MONTH_NAMES[view.month]} {view.year}
           </CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Avg/day{" "}
-            <span className="font-medium text-success">
-              {summary.present} present
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span className="text-xs font-medium tracking-wide uppercase text-muted-foreground/80">
+              Avg / day
             </span>
-            {" · "}
-            <span className="font-medium text-primary">
-              {summary.leave} on leave
+            <AvgStat dot="bg-success" value={summary.present} label="present" />
+            <AvgStat dot="bg-primary" value={summary.leave} label="on leave" />
+            <AvgStat dot="bg-destructive" value={summary.absent} label="absent" />
+            <span className="text-muted-foreground/70">
+              across {summary.total} employees
             </span>
-            {" · "}
-            <span className="font-medium text-destructive">
-              {summary.absent} absent
-            </span>{" "}
-            across {summary.total} employees
-          </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* View switch */}
-          <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-            {(["simple", "detailed"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors",
-                  mode === m
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => exportMonthCsv(view.year, view.month, weeks)}
-          >
-            <Download className="size-4" /> Export
-          </Button>
-
           <div className="flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setView({
-                  year: REFERENCE_MONTH.year,
-                  month: REFERENCE_MONTH.month,
-                })
-              }
-              disabled={isRefMonth}
-            >
+            <Button variant="outline" size="sm" onClick={goToToday}>
               Today
             </Button>
             <Button
@@ -183,6 +132,15 @@ export function AttendanceCalendar({
               <ChevronRight className="size-4" />
             </Button>
           </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => exportMonthCsv(view.year, view.month, weeks)}
+          >
+            <Download className="size-4" /> Download
+          </Button>
         </div>
       </CardHeader>
 
@@ -205,7 +163,6 @@ export function AttendanceCalendar({
             <DayCellView
               key={i}
               cell={cell}
-              mode={mode}
               selected={selected}
               onSelect={onSelect}
             />
@@ -214,38 +171,21 @@ export function AttendanceCalendar({
 
         {/* Legend + hint */}
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1">
-          {mode === "detailed" ? (
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-              {COUNT_METRICS.map((m) => (
-                <span
-                  key={m.key}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                >
-                  <span className={cn("size-2.5 rounded-full", m.dot)} />
-                  {m.label}
-                </span>
-              ))}
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
-                Weekend / off
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {COUNT_METRICS.map((m) => (
+              <span
+                key={m.key}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
+                <span className={cn("size-2.5 rounded-full", m.dot)} />
+                {m.label}
               </span>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
-              <span>Attendance</span>
-              <span className="flex items-center gap-1">
-                <span className="size-2.5 rounded-sm bg-destructive/30" />
-                <span className="size-2.5 rounded-sm bg-warning/30" />
-                <span className="size-2.5 rounded-sm bg-success/20" />
-                <span className="size-2.5 rounded-sm bg-success/40" />
-              </span>
-              <span>low → high</span>
-              <span className="flex items-center gap-1.5">
-                <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
-                Weekend / off
-              </span>
-            </div>
-          )}
+            ))}
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
+              Weekend / off
+            </span>
+          </div>
           <span className="text-xs text-muted-foreground">
             Select a day to view its log below ↓
           </span>
@@ -255,14 +195,30 @@ export function AttendanceCalendar({
   );
 }
 
+function AvgStat({
+  dot,
+  value,
+  label,
+}: {
+  dot: string;
+  value: number;
+  label: string;
+}) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={cn("size-2 rounded-full", dot)} />
+      <span className="font-semibold tabular-nums text-foreground">{value}</span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function DayCellView({
   cell,
-  mode,
   selected,
   onSelect,
 }: {
   cell: DayCell;
-  mode: CalendarMode;
   selected: AttendanceDate;
   onSelect: (d: AttendanceDate) => void;
 }) {
@@ -271,7 +227,6 @@ function DayCellView({
       <div
         className={cn(
           "wp-hatch flex min-h-[4.25rem] flex-col rounded-xl p-2",
-          mode === "simple" && "min-h-[3.5rem]",
           !cell.inMonth && "opacity-50",
         )}
       >
@@ -304,38 +259,6 @@ function DayCellView({
 
   const title = `${cell.day}: ${present} in · ${c.leave} on leave · ${c.absent} absent`;
 
-  // ── Simple heatmap cell ──
-  if (mode === "simple") {
-    return (
-      <button
-        type="button"
-        onClick={() =>
-          onSelect({ year: cell.year, month: cell.month, day: cell.day })
-        }
-        title={title}
-        className={cn(
-          "flex min-h-[3.5rem] flex-col justify-between rounded-xl p-2 text-left ring-1 ring-border transition-all hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-          rateTint(rate),
-          cell.isToday && !isSelected && "ring-primary/60",
-          isSelected && "ring-2 ring-primary",
-        )}
-      >
-        <span
-          className={cn(
-            "text-sm font-semibold leading-none tabular-nums",
-            cell.isToday ? "text-primary" : "text-foreground",
-          )}
-        >
-          {cell.day}
-        </span>
-        <span className="text-right text-xs font-semibold tabular-nums text-foreground/70">
-          {rate}%
-        </span>
-      </button>
-    );
-  }
-
-  // ── Detailed cell ──
   return (
     <button
       type="button"
