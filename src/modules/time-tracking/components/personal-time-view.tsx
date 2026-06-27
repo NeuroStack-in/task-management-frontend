@@ -12,7 +12,6 @@ import {
 import { toast } from "sonner";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardAction,
@@ -176,12 +175,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               <TableBody>
                 {entries.map((e) => (
                   <TableRow key={e.id}>
-                    <TableCell className="py-2 pl-4">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium">{e.task}</span>
-                        {e.billable ? <Badge variant="secondary" className="px-1.5 py-0 text-[0.65rem]">Billable</Badge> : null}
-                      </div>
-                    </TableCell>
+                    <TableCell className="py-2 pl-4 font-medium">{e.task}</TableCell>
                     <TableCell className="py-2 text-sm text-muted-foreground">{e.project}</TableCell>
                     <TableCell className="py-2 font-mono text-xs tabular-nums text-muted-foreground">
                       {e.start} – {e.end ?? "…"}

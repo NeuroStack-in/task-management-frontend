@@ -13,6 +13,13 @@ import {
 } from "recharts";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Card,
   CardContent,
   CardHeader,
@@ -53,14 +60,67 @@ const GRANULARITIES: { key: Granularity; label: string }[] = [
 const dateSeed = (date: string): number =>
   [...date].reduce((s, c) => s + c.charCodeAt(0), 0);
 
+type ScopeType = "all" | "dept" | "team" | "person";
+
+const SCOPE_TYPES: { key: ScopeType; label: string }[] = [
+  { key: "all", label: "All employees" },
+  { key: "dept", label: "By department" },
+  { key: "team", label: "By team" },
+  { key: "person", label: "By individual" },
+];
+
 export function ActivityTab() {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   const [granularity, setGranularity] = useState<Granularity>("daily");
   const [date, setDate] = useState("");
+  const [scopeType, setScopeType] = useState<ScopeType>("all");
+  const [scopeValue, setScopeValue] = useState("");
+
+  // Scope option lists, derived once from the roster.
+  const { departments, teams, people } = useMemo(() => {
+    const departments = [...new Set(users.map((u) => u.department))].sort();
+    const teams = [...new Set(users.map((u) => u.team))].sort();
+    const people = [...users].sort((a, b) => a.name.localeCompare(b.name));
+    return { departments, teams, people };
+  }, []);
+
+  // Switching scope type selects a sensible first value so a scope is always valid.
+  const changeScopeType = (t: ScopeType) => {
+    setScopeType(t);
+    setScopeValue(
+      t === "dept"
+        ? (departments[0] ?? "")
+        : t === "team"
+          ? (teams[0] ?? "")
+          : t === "person"
+            ? (people[0]?.id ?? "")
+            : "",
+    );
+  };
+
+  // The population the view is scoped to (drives the live "active" counts).
+  const scopedUsers = useMemo(() => {
+    if (scopeType === "dept") return users.filter((u) => u.department === scopeValue);
+    if (scopeType === "team") return users.filter((u) => u.team === scopeValue);
+    if (scopeType === "person") return users.filter((u) => u.id === scopeValue);
+    return users;
+  }, [scopeType, scopeValue]);
+
+  const scopeLabel =
+    scopeType === "all"
+      ? "All employees"
+      : scopeType === "person"
+        ? (people.find((p) => p.id === scopeValue)?.name ?? "Individual")
+        : scopeValue;
+
+  // The mock series shifts deterministically per scope + date, so each person /
+  // team / department reads as its own activity curve.
+  const seed =
+    (scopeType === "all" ? 0 : dateSeed(scopeValue)) + (date ? dateSeed(date) : 0);
 
   const series = useMemo(
-    () => activitySeries(granularity, date ? dateSeed(date) : 0),
-    [granularity, date],
+    () => activitySeries(granularity, seed),
+    [granularity, seed],
   );
 
   const trendData = useMemo(
@@ -74,7 +134,8 @@ export function ActivityTab() {
     [series],
   );
 
-  const active = users.filter((u) => u.status === "active").length;
+  const scopedActive = scopedUsers.filter((u) => u.status === "active").length;
+  const scopedTotal = scopedUsers.length;
 
   const avgKeyboard = avg(series.keyboard);
   const avgMouse = avg(series.mouse);
@@ -86,27 +147,87 @@ export function ActivityTab() {
     (totals.distracting / (totalMin || 1)) * 100,
   );
 
+  const activityPoint =
+    scopeType === "person"
+      ? `${scopeLabel} is ${scopedActive ? "active now" : "inactive"} · averaging ${avg(series.active)}% activity`
+      : `${scopedActive} of ${scopedTotal} active now · averaging ${avg(series.active)}% activity`;
+
   return (
     <div className="space-y-4">
-      {/* Range filter: granularity + specific date */}
+      {/* Filter bar: scope (who) + granularity + date */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-2.5">
-        <div className="flex rounded-md border border-border bg-background p-0.5">
-          {GRANULARITIES.map((g) => (
-            <button
-              key={g.key}
-              type="button"
-              onClick={() => setGranularity(g.key)}
-              className={cn(
-                "rounded-sm px-3.5 py-1 text-sm font-medium transition-colors",
-                granularity === g.key
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {g.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-md border border-border bg-background p-0.5">
+            {GRANULARITIES.map((g) => (
+              <button
+                key={g.key}
+                type="button"
+                onClick={() => setGranularity(g.key)}
+                className={cn(
+                  "rounded-sm px-3.5 py-1 text-sm font-medium transition-colors",
+                  granularity === g.key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Scope — pair activity timing with a department, team, or individual. */}
+          <Select
+            value={scopeType}
+            onValueChange={(v) => changeScopeType(v as ScopeType)}
+          >
+            <SelectTrigger className="w-[9.5rem]" aria-label="Scope">
+              <SelectValue>
+                {(v) => SCOPE_TYPES.find((s) => s.key === v)?.label ?? "All employees"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {SCOPE_TYPES.map((s) => (
+                <SelectItem key={s.key} value={s.key}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {scopeType !== "all" ? (
+            <Select value={scopeValue} onValueChange={(v) => setScopeValue(v as string)}>
+              <SelectTrigger className="w-[13rem]" aria-label="Scope value">
+                <SelectValue>
+                  {(v) =>
+                    scopeType === "person"
+                      ? (people.find((p) => p.id === v)?.name ?? "")
+                      : String(v ?? "")
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {scopeType === "dept" &&
+                  departments.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                {scopeType === "team" &&
+                  teams.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                {scopeType === "person" &&
+                  people.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          ) : null}
         </div>
+
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           Date
           <DatePicker
@@ -119,13 +240,13 @@ export function ActivityTab() {
       </div>
 
       <AiInsight
-        title={`Active time tracking ${productivePct}% productive, ${distractingPct}% distracting`}
+        title={`${scopeLabel} — ${productivePct}% productive, ${distractingPct}% distracting`}
         detail="Keyboard and mouse intensity move in step with active share — no idle anomalies in this window."
         points={[
-          `${active} people active now · activity averaging ${avg(series.active)}%`,
+          activityPoint,
           `Distracting apps: ${formatMinutes(totals.distracting)} of ${Math.round(totalMin / 60)}h tracked`,
         ]}
-        basis={`${Math.round(totalMin / 60)}h of tracked application time today`}
+        basis={`${scopeLabel} · ${Math.round(totalMin / 60)}h of tracked application time`}
         action={{ label: "Ask the assistant", onClick: () => openAssistant() }}
       />
 

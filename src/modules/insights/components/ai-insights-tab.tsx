@@ -207,13 +207,8 @@ export function AiInsightsTab() {
 
       {/* Needs-attention list */}
       <Card>
-        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
-          <div className="space-y-1">
-            <CardTitle>Needs attention ({open.length})</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              {high} high priority · {burnout} burnout · {drops} productivity drops
-            </p>
-          </div>
+        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+          <CardTitle>Needs attention ({open.length})</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             {clearedCount > 0 ? (
               <span className="text-xs text-muted-foreground">
@@ -411,7 +406,7 @@ function AttentionDialog({
                   </Button>
                 </div>
 
-                {/* Trigger + detail */}
+                {/* Trigger · detail · suggested action */}
                 <dl className="space-y-3 rounded-md bg-muted/50 p-4 text-sm">
                   <div>
                     <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -425,18 +420,15 @@ function AttentionDialog({
                     </dt>
                     <dd className="mt-0.5 text-muted-foreground">{a.detail}</dd>
                   </div>
-                </dl>
-
-                {/* Suggested action */}
-                <div className="flex gap-2.5 rounded-md border border-ai/25 bg-ai-tint/50 p-3 text-sm">
-                  <Lightbulb className="mt-0.5 size-4 shrink-0 text-ai" />
                   <div>
-                    <p className="font-medium text-ai">Suggested action</p>
-                    <p className="mt-0.5 text-foreground/80">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Suggested action
+                    </dt>
+                    <dd className="mt-0.5 text-muted-foreground">
                       {KIND_ACTION[a.kind]}
-                    </p>
+                    </dd>
                   </div>
-                </div>
+                </dl>
 
                 <DialogFooter>
                   <Button

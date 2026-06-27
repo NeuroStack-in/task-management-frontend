@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CreditCard, Camera, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -76,12 +76,7 @@ export function ScreenshotsWidget({
   return (
     <Card className="justify-between transition-colors hover:border-primary/30">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-md bg-feature-tint text-primary">
-            <Camera className="size-4" />
-          </span>
-          Screenshots Captured
-        </CardTitle>
+        <CardTitle>Screenshots Captured</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="font-display text-3xl font-semibold tabular-nums">
@@ -159,12 +154,7 @@ export function BillingWidget({
   return (
     <Card className="transition-colors hover:border-primary/30">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-md bg-feature-tint text-primary">
-            <CreditCard className="size-4" />
-          </span>
-          Billing Overview
-        </CardTitle>
+        <CardTitle>Billing Overview</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-end justify-between">
@@ -193,7 +183,7 @@ export function BillingWidget({
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Next invoice on the 1st · auto-pay on
+          Next invoice on the 1st · auto-renews
         </p>
         <ViewAllLink href="/billing" label="Manage billing" />
       </CardContent>

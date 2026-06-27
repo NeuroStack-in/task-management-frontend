@@ -254,11 +254,8 @@ export function ReportsTab() {
     <div className="space-y-5">
       <AiInsight
         title={`${atRisk} projects flagged at risk this week`}
-        detail="Engineering and Product lead utilization; a small group is trending toward over-utilization. Open any report below for the detail."
-        points={[
-          `${empCount} employees · ${projCount} projects tracked`,
-          `Average utilization 78% · top department Engineering`,
-        ]}
+        detail="Open any report below for the underlying detail."
+        points={[`${empCount} employees · ${projCount} projects tracked`]}
         basis={`${REPORTS.length} report templates across ${empCount} employees`}
       />
 
@@ -429,9 +426,6 @@ function ReportCard({
           />
           <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-feature-tint text-primary">
             <Icon className="size-5" />
-          </span>
-          <span className="ml-auto rounded-sm bg-muted px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">
-            {report.rows.length} rows · {report.columns.length} cols
           </span>
         </div>
 

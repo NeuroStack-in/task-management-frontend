@@ -145,7 +145,7 @@ export function MonitoringTab() {
           </ul>
         </nav>
 
-        <div className="min-w-0 max-w-3xl flex-1 space-y-6">
+        <div className="min-w-0 flex-1 space-y-6">
           {/* ── Idle Detection ── */}
           <Card id="idle" className="scroll-mt-24 shadow-none">
             <CardHeader>

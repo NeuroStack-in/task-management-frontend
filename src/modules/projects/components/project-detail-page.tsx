@@ -69,7 +69,6 @@ import {
   isAtRisk,
   taskCounts,
   toneDot,
-  toneSoft,
   type UserMini,
 } from "../lib";
 import { MemberStack, Segmented, StatusBadge } from "./parts";
@@ -773,7 +772,7 @@ function TaskListView({
 }) {
   if (tasks.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card p-10 text-center">
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
         <p className="text-sm text-muted-foreground">No tasks yet.</p>
         <Button
           size="sm"
@@ -842,14 +841,6 @@ function TaskListView({
                     {due.text}
                   </span>
                 ) : null}
-                <span
-                  className={cn(
-                    "hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium md:inline-flex",
-                    toneSoft[prio.tone],
-                  )}
-                >
-                  {prio.label}
-                </span>
                 <StatusBadge
                   tone={status.tone}
                   label={status.label}
@@ -891,30 +882,25 @@ function TaskCardContent({
   return (
     <>
       <p className="pr-7 text-sm leading-snug font-medium">{task.title}</p>
-      <div className="mt-3 flex items-center justify-between gap-2">
+      <div className="mt-2.5 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span
-            className={cn(
-              "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[0.7rem] font-medium",
-              toneSoft[prio.tone],
-            )}
-          >
-            {prio.label}
-          </span>
+            className={cn("size-1.5 shrink-0 rounded-full", toneDot[prio.tone])}
+            title={`${prio.label} priority`}
+          />
           {task.dueDate ? (
             <span
               className={cn(
-                "inline-flex items-center gap-1 text-xs tabular-nums",
+                "text-xs tabular-nums",
                 due.overdue ? "text-destructive" : "text-muted-foreground",
               )}
             >
-              <CalendarRange className="size-3.5" />
               {due.text}
             </span>
           ) : null}
         </div>
         {assignee ? (
-          <Avatar size="sm" className="size-7 shrink-0" title={assignee.name}>
+          <Avatar size="sm" className="size-6 shrink-0" title={assignee.name}>
             {assignee.avatarUrl ? (
               <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
             ) : null}
@@ -922,11 +908,7 @@ function TaskCardContent({
               {initials(assignee.name)}
             </AvatarFallback>
           </Avatar>
-        ) : (
-          <span className="shrink-0 text-xs text-muted-foreground/60">
-            Unassigned
-          </span>
-        )}
+        ) : null}
       </div>
     </>
   );

@@ -152,22 +152,16 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg font-semibold tracking-tight">
-          Your widgets
-        </h2>
+    <div className="space-y-4">
+      <div className="flex items-center justify-end">
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="outline" size="sm" className="gap-2" />}
+            render={<Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground" />}
           >
             <SlidersHorizontal className="size-4" /> Customize
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64 p-0">
-            <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
-              Show widgets
-            </p>
-            <div className="max-h-72 overflow-y-auto px-1 pb-1">
+          <DropdownMenuContent align="end" className="w-56 p-0">
+            <div className="max-h-72 overflow-y-auto px-1 py-1">
               {ordered.map((w) => (
                 <label
                   key={w.id}
@@ -194,10 +188,9 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
       </div>
 
       {visible.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-          No widgets shown. Use{" "}
-          <span className="font-medium text-foreground">Customize</span> to add
-          some.
+        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          No widgets visible — use{" "}
+          <span className="font-medium text-foreground">Customize</span> above to enable some.
         </div>
       ) : (
         <DndContext

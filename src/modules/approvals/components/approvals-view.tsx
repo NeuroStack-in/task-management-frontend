@@ -4,7 +4,6 @@ import { useMemo, useRef, useState } from "react";
 import {
   CalendarOff,
   Check,
-  CheckCheck,
   ClipboardCheck,
   Clock,
   PencilLine,
@@ -444,12 +443,9 @@ function ApprovalDialog({
             <DialogHeader>
               <DialogTitle className="flex flex-wrap items-center gap-2">
                 {req.title}
-                <Badge variant="outline">{KIND_META[req.kind].label}</Badge>
-                <Badge className={cn("border-0 capitalize", STATUS_BADGE[req.status])}>
-                  {req.status}
-                </Badge>
+                <Badge variant="outline" className="text-xs font-normal">{KIND_META[req.kind].label}</Badge>
               </DialogTitle>
-              <DialogDescription>Submitted {req.submitted}</DialogDescription>
+              <DialogDescription>Submitted {req.submitted} · {req.requester.department}</DialogDescription>
             </DialogHeader>
 
             {/* Requester */}
@@ -477,35 +473,22 @@ function ApprovalDialog({
             </div>
 
             {/* Full description */}
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Description
-              </p>
-              <p className="text-sm leading-relaxed">{req.detail}</p>
-            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">{req.detail}</p>
 
             <DialogFooter>
               {req.status !== "pending" ? (
-                <div
-                  className={cn(
-                    "flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium",
-                    STATUS_BADGE[req.status],
-                  )}
-                >
-                  {req.status === "approved" ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <X className="size-4" />
-                  )}
-                  This request was {req.status}.
-                </div>
+                <p className={cn("text-sm font-medium", STATUS_BADGE[req.status].replace(/bg-\S+/g, "").trim())}>
+                  {req.status === "approved" ? <Check className="mr-1.5 inline size-3.5" /> : <X className="mr-1.5 inline size-3.5" />}
+                  {req.status === "approved" ? "Approved" : "Rejected"}
+                </p>
               ) : canApprove ? (
                 <>
                   <Button
                     variant="outline"
+                    className="text-destructive hover:text-destructive"
                     onClick={() => onDecide(req, "rejected")}
                   >
-                    <X className="size-4" /> Reject
+                    Reject
                   </Button>
                   <Button onClick={() => onDecide(req, "approved")}>
                     <Check className="size-4" /> Approve
@@ -513,7 +496,7 @@ function ApprovalDialog({
                 </>
               ) : (
                 <p className="w-full text-center text-sm text-muted-foreground">
-                  You have view-only access to approvals.
+                  View only — you cannot approve requests.
                 </p>
               )}
             </DialogFooter>

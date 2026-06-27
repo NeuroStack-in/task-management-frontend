@@ -700,7 +700,7 @@ export function TrackingRulesTab() {
         </div>
       )}
 
-      <div className="max-w-4xl space-y-6">
+      <div className="space-y-6">
         {/* Tab bar */}
         <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b">
           {tabs.map((tab) => {

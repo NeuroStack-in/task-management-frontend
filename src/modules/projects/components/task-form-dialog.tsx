@@ -7,7 +7,6 @@ import { z } from "zod";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -119,11 +118,6 @@ export function TaskFormDialog({
       <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit task" : "Add task"}</DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? "Update the task’s details, status, or assignee."
-              : "Add a task to this project."}
-          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4">

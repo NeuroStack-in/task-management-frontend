@@ -50,20 +50,6 @@ function activityTone(activity: number): string {
   return "text-destructive";
 }
 
-/** Per-capture AI read — deterministic from the capture's app & activity. */
-function aiAnalysis(shot: Screenshot): string {
-  if (shot.flagged) {
-    if (shot.app === "YouTube" || shot.app === "Reddit")
-      return `Needs review: ${shot.app} is a distracting app, captured during core hours at only ${shot.activity}% activity.`;
-    return `Needs review: low engagement — ${shot.activity}% active, the screen appears idle.`;
-  }
-  if (shot.activity >= 75)
-    return `Focused work — ${shot.activity}% active in ${shot.app}, well above the team average.`;
-  if (shot.activity >= 50)
-    return `Steady activity — ${shot.activity}% active in ${shot.app}, in line with the team.`;
-  return `Light activity — ${shot.activity}% active in ${shot.app}; likely a short break.`;
-}
-
 export function ScreenshotsTab() {
   const [selected, setSelected] = useState<EmployeeShots | null>(null);
 
@@ -236,17 +222,11 @@ function EmployeeCard({
       {/* Cover = latest capture */}
       <div className="relative aspect-[16/10] overflow-hidden">
         <FauxCapture blur />
-        <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
-          {emp.latest.app}
-        </div>
         {emp.flagged > 0 ? (
           <Badge variant="default" className="absolute right-2 top-2 backdrop-blur-sm">
             <Flag className="size-3" /> {emp.flagged}
           </Badge>
         ) : null}
-        <span className="absolute bottom-2 left-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
-          {emp.total} captures
-        </span>
       </div>
 
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -259,7 +239,7 @@ function EmployeeCard({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{emp.user.name}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {emp.user.department}
+            {emp.user.department} · {emp.total} captures
           </p>
         </div>
         <ChevronRight className="size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
@@ -651,13 +631,6 @@ function Lightbox({
                 </>
               ) : null}
             </dl>
-
-            {/* Per-capture AI read — derived from the capture's app & activity. */}
-            <AiInsight
-              title="Capture analysis"
-              detail={aiAnalysis(shot)}
-              basis={`${shot.app} · ${shot.activity}% on-screen activity`}
-            />
           </>
         ) : null}
       </DialogContent>

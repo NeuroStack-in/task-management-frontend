@@ -49,21 +49,25 @@ export function TopNavbar() {
         </SheetContent>
       </Sheet>
 
-      <div className="flex flex-1 items-center justify-end gap-2.5">
-      {/* Search / command palette */}
+      {/* Global search — a compact trigger that opens the ⌘K command palette
+          (jump to any page, person, project, or setting). Not an inline search
+          field; the palette is the global navigator. */}
       <button
         type="button"
         onClick={() => openCommand(true)}
-        className="flex h-10 flex-1 items-center gap-2.5 rounded-md border border-border bg-card px-4 text-sm text-muted-foreground transition-colors hover:text-foreground sm:max-w-sm"
+        aria-label="Open global search"
+        aria-keyshortcuts="Meta+K Control+K"
+        className="group inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
-        <Search className="size-4" />
-        <span className="flex-1 text-left">Search people, projects, reports…</span>
-        <kbd className="pointer-events-none hidden rounded-sm bg-muted px-2 py-0.5 text-[10px] font-medium sm:inline">
+        <Search className="size-4 shrink-0" />
+        <span className="hidden sm:inline">Search</span>
+        <kbd className="pointer-events-none ml-1 hidden rounded-sm border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium md:inline">
           {isMac ? "⌘K" : "Ctrl K"}
         </kbd>
       </button>
 
-      <div className="flex items-center gap-2.5 sm:ml-auto">
+      {/* Right cluster */}
+      <div className="ml-auto flex items-center gap-2.5">
         <div className="flex items-center gap-0.5 rounded-md border border-border bg-card p-1">
           <NotificationsMenu />
           <ThemeSwitcher />
@@ -74,7 +78,6 @@ export function TopNavbar() {
         <div className="rounded-md border border-border">
           <UserMenu />
         </div>
-      </div>
       </div>
     </header>
   );

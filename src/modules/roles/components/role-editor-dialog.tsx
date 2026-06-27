@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PERMISSION_CATEGORIES, WILDCARD, ALL_PERMISSIONS } from "@/constants/permissions";
 import { useRolesStore } from "@/stores/roles.store";
@@ -108,8 +107,8 @@ export function RoleEditorDialog({
           </DialogTitle>
           <DialogDescription>
             {readOnly
-              ? "This is a built-in system role. Its permissions cannot be changed — clone it to make a custom role you can edit."
-              : "Define a name and the permissions this role grants."}
+              ? "Built-in role — clone it to make an editable copy."
+              : "Name the role and choose the permissions it grants."}
           </DialogDescription>
         </DialogHeader>
 
@@ -139,9 +138,9 @@ export function RoleEditorDialog({
 
           <div className="flex items-center justify-between">
             <Label>Permissions</Label>
-            <Badge variant="secondary">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {hasWildcard ? "All permissions" : `${selected.size} selected`}
-            </Badge>
+            </span>
           </div>
         </div>
 

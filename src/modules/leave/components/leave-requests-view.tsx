@@ -85,7 +85,7 @@ export function LeaveRequestsView() {
     <div className="space-y-5">
       <PageHeader
         title="Leave"
-        description="Request time off yourself (no approval needed for self-service types) or submit for manager approval — track all requests here."
+        description="Request and track time off. Requests go to your manager for approval."
         actions={
           can("leave:request") ? (
             <Button onClick={() => setOpen(true)}>
@@ -109,15 +109,12 @@ export function LeaveRequestsView() {
                   / {b.allowance} days remaining
                 </span>
               </p>
-              <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-primary transition-all"
                   style={{ width: `${Math.min(100, remainingPct)}%` }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                {b.used} used · {b.remaining} left of {b.allowance}
-              </p>
             </Card>
           );
         })}

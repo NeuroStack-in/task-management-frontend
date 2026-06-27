@@ -182,15 +182,15 @@ export function FeaturesTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="divide-y">
-            {FEATURE_LIST.map((f) => {
+          <div className="grid lg:grid-cols-2 lg:divide-x">
+            {FEATURE_LIST.map((f, i) => {
               const Icon = f.icon
               const enabled = draft[f.key]
               return (
                 <div
                   key={f.key}
                   className={cn(
-                    "flex items-center gap-4 px-6 py-3 transition-opacity",
+                    "flex items-center gap-4 border-b border-border px-6 py-3 transition-opacity last:border-b-0 lg:[&:nth-last-child(2):nth-child(odd)]:border-b-0",
                     !enabled && "opacity-60",
                   )}
                 >

@@ -136,7 +136,7 @@ export function NotificationPreferences() {
     <div className="space-y-6">
       <PageHeader
         title="Notifications"
-        description="Choose what WorkPulse notifies you about and where. This controls your alerts — your full feed lives in the Notification Center."
+        description="Choose what you're notified about and where."
       />
 
       {/* ── Per-type channel matrix ── */}

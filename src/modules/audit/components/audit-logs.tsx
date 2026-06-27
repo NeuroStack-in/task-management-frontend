@@ -354,7 +354,7 @@ export function AuditLogs() {
                   <CategoryBadge category={selected.category} />
                   <StatusBadge status={selected.status} />
                 </div>
-                <SheetTitle className="text-left text-lg leading-snug">
+                <SheetTitle className="text-left text-base leading-snug">
                   {selected.action}
                 </SheetTitle>
                 <SheetDescription className="text-left">
@@ -388,9 +388,6 @@ export function AuditLogs() {
                   <span className="font-mono text-xs">{selected.ip}</span>
                 </DetailRow>
                 <DetailRow label="Device">{selected.device}</DetailRow>
-                <DetailRow label="Timestamp">
-                  <span className="tabular-nums">{selected.timestamp}</span>
-                </DetailRow>
               </dl>
             </>
           )}

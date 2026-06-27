@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ImagePlus, Upload, X, Clock } from "lucide-react"
+import { ImagePlus, Upload, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -62,20 +62,11 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Upload profile photo</DialogTitle>
+          <DialogTitle>Profile photo</DialogTitle>
           <DialogDescription>
-            Preview your selection below. Saving is not available yet — photo upload requires a backend connection (coming in a future phase).
+            Preview your selection. Saving requires a backend connection (coming in a future phase).
           </DialogDescription>
         </DialogHeader>
-
-        {/* Coming-soon notice */}
-        <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
-          <Clock className="mt-0.5 size-3.5 shrink-0 text-warning" />
-          <span>
-            <strong className="font-medium text-foreground">Coming soon.</strong>{" "}
-            You can preview a photo here, but it won&apos;t be saved until this feature launches.
-          </span>
-        </div>
 
         {preview ? (
           /* ── Preview state ── */
@@ -95,11 +86,6 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
                 <X className="size-3.5" />
               </button>
             </div>
-            {fileName && (
-              <p className="text-center text-xs text-muted-foreground truncate px-4">
-                {fileName}
-              </p>
-            )}
             <button
               onClick={() => fileRef.current?.click()}
               className="mx-auto flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
@@ -112,7 +98,7 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
           /* ── Drop-zone state ── */
           <button
             className={cn(
-              "flex w-full flex-col items-center gap-3 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors",
+              "flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors",
               dragOver
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-primary/50 hover:bg-muted/40",
@@ -122,18 +108,13 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
             onDragLeave={() => setDragOver(false)}
             onDrop={onDrop}
           >
-            <span className={cn(
-              "flex size-12 items-center justify-center rounded-full transition-colors",
-              dragOver ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
-            )}>
-              <Upload className="size-5" />
-            </span>
-            <div className="space-y-1">
+            <Upload className={cn("size-5 transition-colors", dragOver ? "text-primary" : "text-muted-foreground")} />
+            <div className="space-y-0.5">
               <p className="text-sm font-medium">
                 Click to upload or drag &amp; drop
               </p>
               <p className="text-xs text-muted-foreground">
-                PNG, JPG, GIF up to 10 MB
+                PNG, JPG, GIF · max 10 MB
               </p>
             </div>
           </button>
@@ -148,13 +129,8 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
         />
 
         <DialogFooter showCloseButton>
-          <Button
-            disabled
-            className="gap-1.5 cursor-not-allowed opacity-50"
-            title="Photo upload is not yet available"
-          >
-            <Upload className="size-3.5" />
-            Save photo (coming soon)
+          <Button disabled title="Photo upload is not yet available">
+            Save photo
           </Button>
         </DialogFooter>
       </DialogContent>

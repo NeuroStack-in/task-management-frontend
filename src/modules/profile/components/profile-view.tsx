@@ -78,114 +78,113 @@ export function ProfileView() {
         description="Your account, role, and personal productivity."
       />
 
-      {/* Identity card */}
-      <Card>
-        <CardContent className="flex flex-col items-start gap-5 px-6 sm:flex-row sm:items-center">
-
-          {/* Avatar with upload overlay */}
-          <div className="group relative shrink-0">
-            <Avatar className="size-20 ring-2 ring-border ring-offset-2 ring-offset-background">
-              <AvatarImage src={user.avatarUrl} alt={user.name} />
-              <AvatarFallback className="text-xl font-semibold">
-                {initials(user.name)}
-              </AvatarFallback>
-            </Avatar>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
-                aria-label="Edit profile photo"
-              >
-                <Camera className="size-5 text-white drop-shadow" />
-              </DropdownMenuTrigger>
-
-              <DropdownMenuContent side="bottom" align="start" sideOffset={8} className="min-w-44">
-                <DropdownMenuItem onClick={() => setUploadOpen(true)}>
-                  <ImagePlus className="size-4" />
-                  {user.avatarUrl ? "Replace photo" : "Upload photo"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* Name / title / badges */}
-          <div className="min-w-0 space-y-1.5">
-            <h2 className="font-display text-2xl font-semibold tracking-tight">
-              {user.name}
-            </h2>
-            <p className="text-sm text-muted-foreground">{user.jobTitle}</p>
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <Badge className="bg-feature-tint text-primary">
-                {role?.name ?? "No role"}
-              </Badge>
-              <Badge className={STATUS_TONE[user.status] ?? "bg-muted"}>
-                {user.status}
-              </Badge>
-            </div>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Info className="size-3 shrink-0" />
-              Name and job title are managed by your administrator.
-            </p>
-            {!user.avatarUrl && (
-              <button
-                onClick={() => setUploadOpen(true)}
-                className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
-              >
-                <Camera className="size-3" />
-                Add profile photo
-              </button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Personal stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Productivity score"
-          value={`${user.productivityScore}%`}
-          icon={TrendingUp}
-          hint="this week"
-          trend={[62, 65, 63, 70, 72, 69, user.productivityScore]}
-          featured
-        />
-        <StatCard
-          label="Avg. hours / day"
-          value={avgHours}
-          icon={Clock}
-          hint="last 30 days"
-        />
-        <StatCard
-          label="Tasks completed"
-          value={tasksDone}
-          icon={CheckSquare}
-          hint="this quarter"
-        />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        {/* Account details */}
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle>Account details</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            {details.map((d) => (
-              <div key={d.label} className="flex items-center gap-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
-                  <d.icon className="size-4" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">{d.label}</p>
-                  <p className="truncate text-sm font-medium">{d.value}</p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* Attendance + tasks pair — compact stats side by side */}
+      {/* 2-column layout on lg+: left = identity + account details, right = stat cards */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        {/* ── LEFT COLUMN ── */}
         <div className="flex flex-col gap-4">
+          {/* Identity card */}
+          <Card>
+            <CardContent className="flex flex-col items-start gap-5 px-6 sm:flex-row sm:items-center">
+              {/* Avatar with upload overlay */}
+              <div className="group relative shrink-0">
+                <Avatar className="size-20 ring-2 ring-border ring-offset-2 ring-offset-background">
+                  <AvatarImage src={user.avatarUrl} alt={user.name} />
+                  <AvatarFallback className="text-xl font-semibold">
+                    {initials(user.name)}
+                  </AvatarFallback>
+                </Avatar>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+                    aria-label="Edit profile photo"
+                  >
+                    <Camera className="size-5 text-white drop-shadow" />
+                  </DropdownMenuTrigger>
+
+                  <DropdownMenuContent side="bottom" align="start" sideOffset={8} className="min-w-44">
+                    <DropdownMenuItem onClick={() => setUploadOpen(true)}>
+                      <ImagePlus className="size-4" />
+                      {user.avatarUrl ? "Replace photo" : "Upload photo"}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              {/* Name / title / badges */}
+              <div className="min-w-0 space-y-1.5">
+                <h2 className="font-display text-2xl font-semibold tracking-tight">
+                  {user.name}
+                </h2>
+                <p className="text-sm text-muted-foreground">{user.jobTitle}</p>
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  <Badge className="bg-feature-tint text-primary">
+                    {role?.name ?? "No role"}
+                  </Badge>
+                  <Badge className={STATUS_TONE[user.status] ?? "bg-muted"}>
+                    {user.status}
+                  </Badge>
+                </div>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Info className="size-3 shrink-0" />
+                  Name and job title are managed by your administrator.
+                </p>
+                {!user.avatarUrl && (
+                  <button
+                    onClick={() => setUploadOpen(true)}
+                    className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
+                  >
+                    <Camera className="size-3" />
+                    Add profile photo
+                  </button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Account details */}
+          <Card className="flex-1">
+            <CardHeader>
+              <CardTitle>Account details</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              {details.map((d) => (
+                <div key={d.label} className="flex items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
+                    <d.icon className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">{d.label}</p>
+                    <p className="truncate text-sm font-medium">{d.value}</p>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ── RIGHT COLUMN — stat cards stacked ── */}
+        <div className="flex flex-col gap-4">
+          <StatCard
+            label="Productivity score"
+            value={`${user.productivityScore}%`}
+            icon={TrendingUp}
+            hint="this week"
+            trend={[62, 65, 63, 70, 72, 69, user.productivityScore]}
+            featured
+          />
+          <StatCard
+            label="Avg. hours / day"
+            value={avgHours}
+            icon={Clock}
+            hint="last 30 days"
+          />
+          <StatCard
+            label="Tasks completed"
+            value={tasksDone}
+            icon={CheckSquare}
+            hint="this quarter"
+          />
           <StatCard
             label="Attendance rate"
             value={`${attendance}%`}

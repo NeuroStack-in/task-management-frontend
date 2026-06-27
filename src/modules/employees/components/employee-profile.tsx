@@ -193,7 +193,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
   }));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="space-y-4">
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
@@ -225,189 +225,240 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
         </div>
       </div>
 
-      {/* Employee — identity, contact & address in ONE card */}
-      <div className="overflow-hidden rounded-xl border bg-card">
-        <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
-          <Avatar className="size-16 shrink-0 ring-4 ring-feature-tint">
-            <AvatarImage src={data.avatarUrl} alt={data.name} />
-            <AvatarFallback className="text-lg">
-              {initials(data.name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h1 className="font-display text-xl font-semibold tracking-tight">
-                {data.name}
-              </h1>
-              <span className="font-mono text-xs text-muted-foreground">
-                {data.empCode}
+      {/* 2-column layout on lg+: left = identity + projects, right = stats + chart + AI */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        {/* ── LEFT COLUMN ── */}
+        <div className="flex flex-col gap-4">
+          {/* Employee — identity, contact & address in ONE card */}
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
+              <Avatar className="size-16 shrink-0 ring-4 ring-feature-tint">
+                <AvatarImage src={data.avatarUrl} alt={data.name} />
+                <AvatarFallback className="text-lg">
+                  {initials(data.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h1 className="font-display text-xl font-semibold tracking-tight">
+                    {data.name}
+                  </h1>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {data.empCode}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {data.jobTitle} · {data.department}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge className="bg-feature-tint text-primary">
+                    {data.roleName}
+                  </Badge>
+                  <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
+                </div>
+              </div>
+            </div>
+
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5">
+              <Detail label="Phone" value={data.phone} />
+              <Detail label="Email" value={data.email} />
+              <Detail label="Team" value={data.team} />
+              <Detail label="Hire date" value={data.hireDate} />
+              <Detail label="City / State" value={data.cityState} />
+              <Detail label="Country" value={data.country} />
+            </dl>
+          </div>
+
+          {/* Projects — all projects, single accent bar, Active badge when active */}
+          <div className="flex-1 rounded-xl border bg-card p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                <FolderKanban className="size-4" />
               </span>
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {data.jobTitle} · {data.department}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge className="bg-feature-tint text-primary">
-                {data.roleName}
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Projects
+              </p>
+              <Badge className="bg-muted font-normal text-muted-foreground">
+                {data.projects.length}
               </Badge>
-              <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
             </div>
+            {data.projects.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Not assigned to any project yet.
+              </p>
+            ) : (
+              <ul className="space-y-4">
+                {data.projects.map((p) => (
+                  <li key={p.id} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="flex min-w-0 items-center gap-2 font-medium">
+                        <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
+                          {p.key}
+                        </span>
+                        <span className="truncate">{p.name}</span>
+                        {p.active ? (
+                          <Badge className="bg-success/12 text-[0.65rem] text-success">
+                            Active
+                          </Badge>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+                        {p.progress}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="wp-meter-fill h-full rounded-full bg-primary"
+                        style={{ width: `${p.progress}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {p.tasks} tasks · {p.teammates} teammates
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
 
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5 lg:grid-cols-3">
-          <Detail label="Phone" value={data.phone} />
-          <Detail label="Email" value={data.email} />
-          <Detail label="Team" value={data.team} />
-          <Detail label="Hire date" value={data.hireDate} />
-          <Detail label="City / State" value={data.cityState} />
-          <Detail label="Country" value={data.country} />
-        </dl>
-      </div>
-
-      {/* Projects — all projects, single accent bar, Active badge when active */}
-      <div className="rounded-xl border bg-card p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-            <FolderKanban className="size-4" />
-          </span>
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Projects
-          </p>
-          <Badge className="bg-muted font-normal text-muted-foreground">
-            {data.projects.length}
-          </Badge>
-        </div>
-        {data.projects.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Not assigned to any project yet.
-          </p>
-        ) : (
-          <ul className="space-y-4">
-            {data.projects.map((p) => (
-              <li key={p.id} className="space-y-1.5">
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="flex min-w-0 items-center gap-2 font-medium">
-                    <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
-                      {p.key}
-                    </span>
-                    <span className="truncate">{p.name}</span>
-                    {p.active ? (
-                      <Badge className="bg-success/12 text-[0.65rem] text-success">
-                        Active
-                      </Badge>
-                    ) : null}
-                  </span>
-                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                    {p.progress}%
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="wp-meter-fill h-full rounded-full bg-primary"
-                    style={{ width: `${p.progress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {p.tasks} tasks · {p.teammates} teammates
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* KPI chart */}
-      <div className="rounded-xl border bg-card p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-              <BarChart2 className="size-4" />
-            </span>
-            <div>
+        {/* ── RIGHT COLUMN ── */}
+        <div className="flex flex-col gap-4">
+          {/* Stat cards row */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Productivity
               </p>
-              <p className="text-xs text-muted-foreground/80">
-                Avg. productive hours / day
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.productivityScore}%
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">overall score</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Avg. completion
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.avgCompletion}%
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">task delivery rate</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Total tasks
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.totalTasks}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">in flight</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Active projects
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.projects.filter((p) => p.active).length}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                of {data.projects.length} total
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <Legend className="bg-primary" label="Last 6 months" />
-            <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
-          </div>
-        </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart
-            data={chartData}
-            margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
-          >
-            <defs>
-              <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
-                <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="var(--border)"
-              vertical={false}
-            />
-            <XAxis
-              dataKey="month"
-              tickLine={false}
-              axisLine={false}
-              tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-              dy={6}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              width={42}
-              tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-              tickFormatter={(v) => `${v}h`}
-            />
-            <Tooltip
-              cursor={{ stroke: "var(--border)" }}
-              contentStyle={{
-                borderRadius: 12,
-                border: "1px solid var(--border)",
-                background: "var(--popover)",
-                color: "var(--popover-foreground)",
-                fontSize: 12,
-              }}
-              labelStyle={{ color: "var(--muted-foreground)" }}
-              formatter={(v: number) => `${v}h`}
-            />
-            <Area
-              type="monotone"
-              dataKey="previous"
-              name="Previous 6 months"
-              stroke="var(--muted-foreground)"
-              strokeDasharray="5 5"
-              strokeOpacity={0.55}
-              strokeWidth={2}
-              fill="transparent"
-              dot={false}
-              activeDot={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="current"
-              name="Last 6 months"
-              stroke="var(--primary)"
-              strokeWidth={2.5}
-              fill="url(#kpi-current)"
-              dot={false}
-              activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
 
-      {/* Employee summary */}
-      <EmployeeSummaryInsight data={data} />
+          {/* KPI chart */}
+          <div className="flex-1 rounded-xl border bg-card p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                  <BarChart2 className="size-4" />
+                </span>
+                <div>
+                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Productivity
+                  </p>
+                  <p className="text-xs text-muted-foreground/80">
+                    Avg. productive hours / day
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <Legend className="bg-primary" label="Last 6 months" />
+                <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart
+                data={chartData}
+                margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
+              >
+                <defs>
+                  <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="var(--border)"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                  dy={6}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={42}
+                  tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                  tickFormatter={(v) => `${v}h`}
+                />
+                <Tooltip
+                  cursor={{ stroke: "var(--border)" }}
+                  contentStyle={{
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "var(--popover)",
+                    color: "var(--popover-foreground)",
+                    fontSize: 12,
+                  }}
+                  labelStyle={{ color: "var(--muted-foreground)" }}
+                  formatter={(v: number) => `${v}h`}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="previous"
+                  name="Previous 6 months"
+                  stroke="var(--muted-foreground)"
+                  strokeDasharray="5 5"
+                  strokeOpacity={0.55}
+                  strokeWidth={2}
+                  fill="transparent"
+                  dot={false}
+                  activeDot={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="current"
+                  name="Last 6 months"
+                  stroke="var(--primary)"
+                  strokeWidth={2.5}
+                  fill="url(#kpi-current)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Employee summary */}
+          <EmployeeSummaryInsight data={data} />
+        </div>
+      </div>
     </div>
   );
 }

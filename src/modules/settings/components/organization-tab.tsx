@@ -432,8 +432,8 @@ function DepartmentsTeamsSection({
       <CardHeader>
         <CardTitle>Departments &amp; Teams</CardTitle>
         <CardDescription>
-          Group employees into departments and the teams nested within them. Used
-          across the platform to filter reports and attendance.
+          Organize employees into departments and teams. Used to filter reports
+          and attendance.
         </CardDescription>
         {canManage && !addingDept && (
           <CardAction>
@@ -1063,7 +1063,7 @@ export function OrganizationTab() {
         </div>
       )}
 
-      <div className="max-w-4xl space-y-6">
+      <div className="space-y-6">
         <CompanyInfoSection
           value={draft.company}
           onChange={updateCompany}

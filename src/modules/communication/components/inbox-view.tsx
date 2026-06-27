@@ -32,7 +32,6 @@ export function InboxView() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const active = conversations.find((c) => c.id === activeId)!;
-  const totalUnread = conversations.reduce((s, c) => s + c.unread, 0);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -77,11 +76,7 @@ export function InboxView() {
     <div className="space-y-5">
       <PageHeader
         title="Inbox"
-        description={
-          totalUnread > 0
-            ? `${totalUnread} unread across your conversations`
-            : "You're all caught up"
-        }
+        description="Direct messages and team channels."
         actions={
           <Button onClick={() => toast.info("New message isn't wired up in this demo.")}>
             <Plus className="size-4" /> New message

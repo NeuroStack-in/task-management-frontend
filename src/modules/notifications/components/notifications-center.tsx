@@ -132,8 +132,8 @@ export function NotificationsCenter() {
         {visible.length === 0 ? (
           <EmptyState
             icon={BellOff}
-            title="Nothing here"
-            description="You're all caught up. New notifications will show up here."
+            title="You're all caught up"
+            description="New notifications will appear here."
           />
         ) : (
           <div className="space-y-4">

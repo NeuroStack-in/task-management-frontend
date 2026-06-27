@@ -358,12 +358,6 @@ export function AgentsManager() {
       </Card>
 
       {/* ── Agent settings ── */}
-      <div className="flex items-center gap-3 pt-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Fleet configuration
-        </span>
-        <div className="flex-1 border-t border-border" />
-      </div>
       <Card>
         <CardHeader>
           <CardTitle>Agent Settings</CardTitle>
@@ -459,23 +453,19 @@ export function AgentsManager() {
       <Dialog open={downloadOpen} onOpenChange={setDownloadOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Download the WorkPulse agent</DialogTitle>
+            <DialogTitle>Download agent</DialogTitle>
             <DialogDescription>
-              Version {LATEST_AGENT_VERSION} · install on an employee device, then
-              enroll it with the organization token below.
+              v{LATEST_AGENT_VERSION} · install on a device and enroll with the token below.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {AGENT_PLATFORMS.map((p) => (
                 <button
                   key={p.os}
                   onClick={() => toast.success(`Downloading ${p.file}`)}
-                  className="flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:border-primary/30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors hover:border-primary/30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
-                    <MonitorSmartphone className="size-4.5" />
-                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">{p.os}</p>
                     <p className="text-xs text-muted-foreground">
@@ -543,9 +533,6 @@ export function AgentsManager() {
 
                 {/* Live resource usage */}
                 <div className="space-y-3 rounded-xl border p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Resource usage
-                  </p>
                   <Meter label="CPU" value={selected.status === "offline" ? 0 : selected.cpu} />
                   <Meter label="Memory" value={selected.status === "offline" ? 0 : selected.memory} />
                   {selected.status === "offline" && (

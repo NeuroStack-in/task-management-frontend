@@ -719,9 +719,6 @@ export function HelpPage() {
                   <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
                     {video.duration}
                   </span>
-                  <span className="shrink-0 rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                    Play
-                  </span>
                 </button>
               )
             })}
@@ -772,24 +769,18 @@ export function HelpPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Guided walkthroughs
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Step-by-step in-app tours. Tours use react-joyride and will highlight the relevant UI as you follow along.
-        </p>
         <Card>
           <CardContent className="divide-y p-0">
             {WALKTHROUGHS.map((tour) => {
               const Icon = tour.icon
               return (
                 <div key={tour.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-feature-tint text-primary">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
                     <Icon className="size-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">{tour.title}</p>
-                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="size-3" />
-                      {tour.duration}
-                    </p>
+                    <p className="text-xs text-muted-foreground">{tour.duration}</p>
                   </div>
                   <Button
                     size="sm"

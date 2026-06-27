@@ -296,26 +296,20 @@ function IntegrationDetail({
           </div>
           {connected && <ConnectedBadge />}
         </div>
-        <SheetDescription className="pt-2 text-left">
+        <SheetDescription className="pt-1 text-left">
           {integration.description}
         </SheetDescription>
       </SheetHeader>
 
-      <div className="space-y-6 px-4 pb-8">
-        {/* What it does */}
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            What you can do
-          </p>
-          <ul className="space-y-2">
-            {integration.features.map((f) => (
-              <li key={f} className="flex items-start gap-2 text-sm">
-                <Check className="mt-0.5 size-4 shrink-0 text-primary" />
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
+      <div className="space-y-6 pb-8">
+        <ul className="space-y-2">
+          {integration.features.map((f) => (
+            <li key={f} className="flex items-start gap-2 text-sm">
+              <Check className="mt-0.5 size-4 shrink-0 text-primary" />
+              {f}
+            </li>
+          ))}
+        </ul>
 
         {connected ? (
           <>
@@ -338,12 +332,7 @@ function IntegrationDetail({
             {/* Settings */}
             <div className="divide-y rounded-xl border">
               <div className="flex items-center justify-between gap-4 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Send notifications</p>
-                  <p className="text-xs text-muted-foreground">
-                    Push WorkPulse alerts to {integration.name}.
-                  </p>
-                </div>
+                <p className="text-sm font-medium">Send notifications</p>
                 <Switch
                   size="sm"
                   checked={notifications}
@@ -352,12 +341,7 @@ function IntegrationDetail({
                 />
               </div>
               <div className="flex items-center justify-between gap-4 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Two-way sync</p>
-                  <p className="text-xs text-muted-foreground">
-                    Let changes flow both ways between the apps.
-                  </p>
-                </div>
+                <p className="text-sm font-medium">Two-way sync</p>
                 <Switch
                   size="sm"
                   checked={twoWaySync}
@@ -378,11 +362,6 @@ function IntegrationDetail({
           </>
         ) : (
           <>
-            <div className="rounded-xl bg-muted/60 px-4 py-3 text-xs text-muted-foreground">
-              On connecting, WorkPulse will be able to read and write data in{" "}
-              {integration.name} on your organization&apos;s behalf. You can
-              disconnect at any time.
-            </div>
             <Button
               className="w-full"
               disabled={!canManage}
@@ -390,6 +369,10 @@ function IntegrationDetail({
             >
               <Plug className="size-4" /> Connect {integration.name}
             </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              WorkPulse will read and write data on your org&apos;s behalf.
+              You can disconnect at any time.
+            </p>
           </>
         )}
       </div>

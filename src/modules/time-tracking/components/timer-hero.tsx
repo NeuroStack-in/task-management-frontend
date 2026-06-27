@@ -15,7 +15,6 @@ import { toast } from "sonner";
 import { useTimerStore } from "@/stores/timer.store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -218,20 +217,8 @@ export function TimerHero({
                   <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                     <ListChecks className="size-3.5" />
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="truncate text-sm font-medium">
-                        {opt.taskTitle}
-                      </span>
-                      {opt.billable ? (
-                        <Badge
-                          variant="secondary"
-                          className="shrink-0 px-1.5 py-0 text-[0.65rem]"
-                        >
-                          Billable
-                        </Badge>
-                      ) : null}
-                    </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {opt.taskTitle}
                   </span>
                   {isSel ? (
                     <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />

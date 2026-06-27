@@ -12,7 +12,6 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -116,9 +115,6 @@ export function RequestLeaveDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Request leave</DialogTitle>
-          <DialogDescription>
-            Submit a leave request — it goes to your manager for approval.
-          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">

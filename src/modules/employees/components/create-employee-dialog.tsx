@@ -12,7 +12,6 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -27,11 +26,6 @@ import {
 import { useRolesStore } from "@/stores/roles.store";
 import { useEmployeesStore } from "@/stores/employees.store";
 import { SYSTEM_ROLES } from "@/constants/roles";
-
-const STATUS_OPTIONS = [
-  { value: "active", label: "Active" },
-  { value: "invited", label: "Invited" },
-] as const;
 
 export function CreateEmployeeDialog({
   open,
@@ -122,10 +116,6 @@ export function CreateEmployeeDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create employee account</DialogTitle>
-          <DialogDescription>
-            Add a new member to your organization. Invited accounts receive access
-            once they accept; active accounts are enabled immediately.
-          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
@@ -189,27 +179,6 @@ export function CreateEmployeeDialog({
               />
             </Field>
           </div>
-
-          <Field label="Account status" error={errors.status?.message}>
-            <Controller
-              control={control}
-              name="status"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger className="w-full sm:w-56">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUS_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </Field>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
