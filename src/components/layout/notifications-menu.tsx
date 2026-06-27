@@ -41,7 +41,7 @@ export function NotificationsMenu() {
       >
         <Bell className="size-5" />
         {unread > 0 ? (
-          <Badge className="absolute -right-0.5 -top-0.5 size-4 justify-center rounded-full p-0 text-[10px]">
+          <Badge className="absolute -right-0.5 -top-0.5 min-w-4 justify-center rounded-sm px-1 text-[9px]">
             {unread}
           </Badge>
         ) : null}

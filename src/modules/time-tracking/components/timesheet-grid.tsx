@@ -255,8 +255,9 @@ export function TimesheetGrid({
 
   return (
     <Card className="overflow-hidden p-0">
-      {/* Toolbar: week nav + filter + search */}
-      <div className="flex flex-col gap-4 border-b p-4 sm:p-5">
+      {/* Toolbar: week nav + unified filter bar */}
+      <div className="flex flex-col gap-3 border-b p-4 sm:p-5">
+        {/* Row 1: week nav + all filters in one bar */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Week navigation */}
           <div className="flex items-center gap-2">
@@ -297,22 +298,43 @@ export function TimesheetGrid({
             ) : null}
           </div>
 
-          {/* Filter + search */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="inline-flex items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-soft">
+          {/* Unified filter bar: group toggle + status + dept + search */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Group toggle */}
+            <div className="inline-flex items-center gap-0.5 rounded-md border bg-card p-0.5">
               <FilterTab
                 active={group === "person"}
                 onClick={() => setGroup("person")}
                 icon={UserRound}
-                label="By employee"
+                label="Employees"
               />
               <FilterTab
                 active={group === "project"}
                 onClick={() => setGroup("project")}
                 icon={FolderKanban}
-                label="By project"
+                label="Projects"
               />
             </div>
+
+            {/* Status pills */}
+            <div className="flex items-center gap-1">
+              {STATUS_FILTERS.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setStatusFilter(s.value)}
+                  className={cn(
+                    "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    statusFilter === s.value
+                      ? "border-transparent bg-primary text-primary-foreground"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
             {/* Team (department) filter */}
             <Select
               value={deptFilter}
@@ -320,7 +342,7 @@ export function TimesheetGrid({
             >
               <SelectTrigger
                 aria-label="Filter by team"
-                className="h-9 w-full gap-2 sm:w-44"
+                className="h-8 min-w-[9rem] gap-2"
               >
                 <div className="flex min-w-0 items-center gap-2">
                   <Users2 className="size-4 shrink-0 text-muted-foreground" />
@@ -342,52 +364,32 @@ export function TimesheetGrid({
                 ))}
               </SelectContent>
             </Select>
-            <div className="relative sm:w-56">
+
+            {/* Search */}
+            <div className="relative min-w-[12rem]">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={
                   group === "person"
-                    ? "Search employees or ID…"
-                    : "Search projects or ID…"
+                    ? "Search employees…"
+                    : "Search projects…"
                 }
-                className="pl-8"
+                className="h-8 pl-8"
               />
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Status filter */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {STATUS_FILTERS.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                onClick={() => setStatusFilter(s.value)}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                  statusFilter === s.value
-                    ? "border-transparent bg-primary text-primary-foreground"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{approved}</span> of{" "}
-            {rows.length} {group === "person" ? "employees" : "projects"}{" "}
-            approved ·{" "}
-            <span className="font-medium text-foreground">
-              {fmtHM(grandTotal)}
-            </span>{" "}
-            total
-          </p>
-        </div>
+        {/* Summary line */}
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{approved}</span> of{" "}
+          {rows.length} {group === "person" ? "employees" : "projects"} approved
+          ·{" "}
+          <span className="font-medium text-foreground">{fmtHM(grandTotal)}</span>{" "}
+          total
+        </p>
 
         {/* Active filter tags */}
         {hasFilters ? (
@@ -616,7 +618,7 @@ function FilterTab({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+        "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:text-foreground",

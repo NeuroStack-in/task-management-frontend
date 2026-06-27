@@ -8,7 +8,6 @@ import { Check, Search, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -129,11 +128,6 @@ export function ProjectFormDialog({
       <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit project" : "New project"}</DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? "Update the project’s details, people, and timeline."
-              : "Name the project, assign its people, and set a deadline."}
-          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4">
@@ -149,7 +143,7 @@ export function ProjectFormDialog({
           <Field label="Description" error={errors.description?.message} optional>
             <textarea
               rows={3}
-              placeholder="What is this project about? Goals, scope, anything worth knowing."
+              placeholder="Brief description of goals or scope"
               aria-invalid={!!errors.description}
               className={cn(fieldClass, "h-auto resize-none py-2 leading-relaxed")}
               {...register("description")}

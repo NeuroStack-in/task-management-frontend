@@ -2,21 +2,16 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import type { LucideIcon } from "lucide-react"
 import {
   AlertTriangle,
+  ArrowUpRight,
   Check,
   Copy,
   Download,
-  Fingerprint,
-  KeyRound,
   Lock,
-  LogIn,
-  MonitorSmartphone,
   Plus,
   RefreshCw,
   ShieldCheck,
-  SlidersHorizontal,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -41,15 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { NumberStepper } from "@/components/ui/number-stepper"
-import {
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { PageHeader } from "@/components/shared/page-header"
-import { StatCard } from "@/components/shared/stat-card"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import {
@@ -60,11 +47,14 @@ import {
   SECURITY_EVENTS,
   SECURITY_OVERVIEW,
   SSO_CONNECTION,
-  type SecurityEventStatus,
-  type SecurityEventType,
   type SecurityPolicies,
 } from "@/lib/mock-security"
 import { cn } from "@/lib/utils"
+
+// Derived from the same source the Audit Logs page reads — no duplicated table.
+const FLAGGED_EVENTS = SECURITY_EVENTS.filter(
+  (e) => e.status === "flagged" || e.status === "blocked",
+).length
 
 // ── Draft / saved model ───────────────────────────────────────────────────────
 
@@ -104,7 +94,7 @@ function SettingRow({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-6 py-4 [&+&]:border-t",
+        "flex items-center justify-between gap-6 py-3 [&+&]:border-t",
         disabled && "opacity-60",
       )}
     >
@@ -153,24 +143,6 @@ function ReadOnlyField({
       </div>
     </div>
   )
-}
-
-const EVENT_STATUS_STYLE: Record<SecurityEventStatus, string> = {
-  success: "bg-success/12 text-success",
-  blocked: "bg-destructive/12 text-destructive",
-  flagged: "bg-warning/15 text-warning",
-}
-const EVENT_STATUS_LABEL: Record<SecurityEventStatus, string> = {
-  success: "Success",
-  blocked: "Blocked",
-  flagged: "Flagged",
-}
-const EVENT_TYPE_ICON: Record<SecurityEventType, LucideIcon> = {
-  login: LogIn,
-  mfa: ShieldCheck,
-  password: KeyRound,
-  sso: Fingerprint,
-  policy: SlidersHorizontal,
 }
 
 // ── IP allowlist ──────────────────────────────────────────────────────────────
@@ -290,7 +262,7 @@ export function SecurityCenter() {
       />
 
       {!canManage && (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but changing them requires the{" "}
           <span className="font-medium text-foreground">Manage Security</span>{" "}
@@ -298,34 +270,21 @@ export function SecurityCenter() {
         </div>
       )}
 
-      {/* ── Overview ── */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Security score"
-          value={SECURITY_OVERVIEW.securityScore}
-          icon={ShieldCheck}
-          hint="of 100"
-          trend={SECURITY_OVERVIEW.scoreTrend}
-          featured
-        />
-        <StatCard
-          label="MFA adoption"
-          value={`${adoptionPct}%`}
-          icon={KeyRound}
-          hint={`${SECURITY_OVERVIEW.mfaEnrolled} of ${SECURITY_OVERVIEW.mfaTotal} enrolled`}
-        />
-        <StatCard
-          label="Active sessions"
-          value={SECURITY_OVERVIEW.activeSessions}
-          icon={MonitorSmartphone}
-          hint="across the org"
-        />
-        <StatCard
-          label="Open alerts"
-          value={SECURITY_OVERVIEW.openAlerts}
-          icon={AlertTriangle}
-          hint="need attention"
-        />
+      {/* ── Overview strip (quiet, at-a-glance only) ── */}
+      <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-y-0">
+        {[
+          { label: "Security score", value: `${SECURITY_OVERVIEW.securityScore}/100` },
+          { label: "MFA adoption", value: `${adoptionPct}%` },
+          { label: "Active sessions", value: SECURITY_OVERVIEW.activeSessions },
+          { label: "Open alerts", value: SECURITY_OVERVIEW.openAlerts },
+        ].map((s) => (
+          <div key={s.label} className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">{s.label}</p>
+            <p className="mt-0.5 font-display text-lg font-semibold tabular-nums">
+              {s.value}
+            </p>
+          </div>
+        ))}
       </div>
 
       {/* ── Multi-factor authentication ── */}
@@ -338,7 +297,7 @@ export function SecurityCenter() {
         </CardHeader>
         <CardContent className="space-y-5">
           {/* Personal status */}
-          <div className="flex items-center gap-3 rounded-xl bg-success/10 px-4 py-3">
+          <div className="flex items-center gap-3 rounded-md bg-success/10 px-4 py-3">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-success/15 text-success">
               <ShieldCheck className="size-4" />
             </span>
@@ -399,11 +358,11 @@ export function SecurityCenter() {
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Allowed methods
             </p>
-            <div className="divide-y rounded-xl border">
+            <div className="divide-y divide-border rounded-md border border-border">
               {MFA_METHODS.map((m) => (
                 <div
                   key={m.key}
-                  className="flex items-center justify-between gap-4 px-4 py-3"
+                  className="flex items-center justify-between gap-4 px-4 py-2.5"
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{m.label}</p>
@@ -421,7 +380,7 @@ export function SecurityCenter() {
           </div>
 
           {/* Adoption */}
-          <div className="space-y-2 rounded-xl bg-muted/50 p-4">
+          <div className="space-y-2 rounded-md bg-muted/50 p-4">
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium">Organization enrollment</span>
               <span className="tabular-nums text-muted-foreground">
@@ -633,81 +592,51 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
-      {/* ── Security events ── */}
-      <Card>
+      {/* ── Security activity summary (full log lives in Audit Logs) ── */}
+      <Card className="shadow-none">
         <CardHeader>
-          <CardTitle>Recent Security Events</CardTitle>
+          <CardTitle>Security activity</CardTitle>
           <CardDescription>
-            Sign-ins, MFA changes, and policy updates across your organization.
+            Sign-ins, MFA changes, and policy updates are recorded in the audit
+            log.
           </CardDescription>
-          <CardAction>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span
+                className={cn(
+                  "flex size-9 shrink-0 items-center justify-center rounded-md",
+                  FLAGGED_EVENTS > 0
+                    ? "bg-warning/15 text-warning"
+                    : "bg-success/12 text-success",
+                )}
+              >
+                {FLAGGED_EVENTS > 0 ? (
+                  <AlertTriangle className="size-4" />
+                ) : (
+                  <ShieldCheck className="size-4" />
+                )}
+              </span>
+              <div>
+                <p className="text-sm font-medium">
+                  {FLAGGED_EVENTS > 0
+                    ? `${FLAGGED_EVENTS} flagged ${FLAGGED_EVENTS === 1 ? "event" : "events"} in the last 7 days`
+                    : "No flagged events in the last 7 days"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Blocked sign-ins and unusual activity needing review.
+                </p>
+              </div>
+            </div>
             <Button
+              variant="outline"
               size="sm"
-              variant="ghost"
               nativeButton={false}
               render={<Link href="/settings/audit-logs" />}
             >
-              View all
+              View audit logs <ArrowUpRight className="size-4" />
             </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-hidden border-t">
-            <table className="w-full caption-bottom text-sm">
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-6">Event</TableHead>
-                  <TableHead className="hidden sm:table-cell">User</TableHead>
-                  <TableHead className="hidden md:table-cell">IP / Location</TableHead>
-                  <TableHead className="hidden lg:table-cell">Time</TableHead>
-                  <TableHead className="pr-6 text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {SECURITY_EVENTS.map((e) => {
-                  const Icon = EVENT_TYPE_ICON[e.type]
-                  return (
-                    <TableRow key={e.id}>
-                      <TableCell className="py-3 pl-6">
-                        <div className="flex items-center gap-3">
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                            <Icon className="size-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="font-medium">{e.event}</p>
-                            <p className="text-xs text-muted-foreground sm:hidden">
-                              {e.user} · {e.time}
-                            </p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden py-3 sm:table-cell">
-                        {e.user}
-                      </TableCell>
-                      <TableCell className="hidden py-3 md:table-cell">
-                        <span className="font-mono text-xs">{e.ip}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {e.location}
-                        </span>
-                      </TableCell>
-                      <TableCell className="hidden py-3 tabular-nums text-muted-foreground lg:table-cell">
-                        {e.time}
-                      </TableCell>
-                      <TableCell className="py-3 pr-6 text-right">
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                            EVENT_STATUS_STYLE[e.status],
-                          )}
-                        >
-                          {EVENT_STATUS_LABEL[e.status]}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </table>
           </div>
         </CardContent>
       </Card>

@@ -37,7 +37,7 @@ export function NumberStepper({
   return (
     <div
       className={cn(
-        "inline-flex h-9 shrink-0 items-center overflow-hidden rounded-lg border bg-background transition-colors focus-within:ring-2 focus-within:ring-ring/50",
+        "inline-flex h-9 shrink-0 items-center overflow-hidden rounded-md border bg-background transition-colors focus-within:ring-2 focus-within:ring-ring/40",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >

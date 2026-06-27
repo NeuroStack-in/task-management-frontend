@@ -215,7 +215,7 @@ function CompanyInfoSection({
           Basic profile shown across the platform and used in exported reports.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-5">
         {/* Logo + brand identity */}
         <div className="space-y-2">
           <Label>Company logo</Label>
@@ -235,7 +235,7 @@ function CompanyInfoSection({
                 branding.logo ? "Replace company logo" : "Upload company logo"
               }
               className={cn(
-                "group relative flex h-24 w-48 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-dashed bg-muted/40 transition-colors",
+                "group relative flex h-20 w-40 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed bg-muted/40 transition-colors",
                 canManage
                   ? "cursor-pointer hover:border-primary/60 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                   : "cursor-default",
@@ -297,52 +297,52 @@ function CompanyInfoSection({
         <div className="h-px bg-border" />
 
         {/* Company details */}
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Company name</Label>
-          <Input
-            value={value.name}
-            disabled={!canManage}
-            onChange={(e) => onChange({ name: e.target.value })}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Legal name</Label>
-          <Input
-            value={value.legalName}
-            disabled={!canManage}
-            onChange={(e) => onChange({ legalName: e.target.value })}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Website</Label>
-          <Input
-            type="url"
-            value={value.website}
-            disabled={!canManage}
-            onChange={(e) => onChange({ website: e.target.value })}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Industry</Label>
-          <StyledSelect
-            value={value.industry}
-            onChange={(v) => onChange({ industry: v })}
-            disabled={!canManage}
-            className="w-full"
-            options={INDUSTRY_SELECT_OPTIONS}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Company size</Label>
-          <StyledSelect
-            value={value.size}
-            onChange={(v) => onChange({ size: v })}
-            disabled={!canManage}
-            className="w-full"
-            options={COMPANY_SIZE_SELECT_OPTIONS}
-          />
-        </div>
+            <Input
+              value={value.name}
+              disabled={!canManage}
+              onChange={(e) => onChange({ name: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Legal name</Label>
+            <Input
+              value={value.legalName}
+              disabled={!canManage}
+              onChange={(e) => onChange({ legalName: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Website</Label>
+            <Input
+              type="url"
+              value={value.website}
+              disabled={!canManage}
+              onChange={(e) => onChange({ website: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Industry</Label>
+            <StyledSelect
+              value={value.industry}
+              onChange={(v) => onChange({ industry: v })}
+              disabled={!canManage}
+              className="w-full"
+              options={INDUSTRY_SELECT_OPTIONS}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Company size</Label>
+            <StyledSelect
+              value={value.size}
+              onChange={(v) => onChange({ size: v })}
+              disabled={!canManage}
+              className="w-full"
+              options={COMPANY_SIZE_SELECT_OPTIONS}
+            />
+          </div>
           <div className="space-y-1.5">
             <Label>Primary timezone</Label>
             <StyledSelect
@@ -432,8 +432,8 @@ function DepartmentsTeamsSection({
       <CardHeader>
         <CardTitle>Departments &amp; Teams</CardTitle>
         <CardDescription>
-          Group employees into departments and the teams nested within them. Used
-          across the platform to filter reports and attendance.
+          Organize employees into departments and teams. Used to filter reports
+          and attendance.
         </CardDescription>
         {canManage && !addingDept && (
           <CardAction>
@@ -572,7 +572,7 @@ function DepartmentsTeamsSection({
                 {dept.teams.map((team) => (
                   <span
                     key={team}
-                    className="flex items-center gap-1.5 rounded-full border bg-muted px-3 py-1 text-xs"
+                    className="flex items-center gap-1.5 rounded-sm border border-border bg-muted px-2.5 py-1 text-xs"
                   >
                     {team}
                     {canManage && (
@@ -673,6 +673,7 @@ function LocationsSection({
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label={`Remove ${loc.name}`}
                         onClick={() => removeLocation(loc.id)}
                       >
                         <Trash2 className="size-4 text-muted-foreground" />
@@ -685,7 +686,7 @@ function LocationsSection({
           </Table>
         </CardContent>
         {canManage && (
-          <div className="px-6 pb-5 pt-4">
+          <div className="px-5 pb-4 pt-3">
             <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
               <Plus className="size-4" /> Add location
             </Button>
@@ -759,7 +760,7 @@ function WorkingHoursSection({
           Default schedule used for utilization calculations and overtime alerts.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-4">
         {/* Day toggles */}
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">Working days</p>
@@ -880,6 +881,7 @@ function HolidaysSection({
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label={`Remove ${h.name}`}
                         onClick={() => removeHoliday(h.id)}
                       >
                         <Trash2 className="size-4 text-muted-foreground" />
@@ -892,7 +894,7 @@ function HolidaysSection({
           </Table>
         </CardContent>
         {canManage && (
-          <div className="px-6 pb-5 pt-4">
+          <div className="px-5 pb-4 pt-3">
             <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
               <Plus className="size-4" /> Add holiday
             </Button>
@@ -957,7 +959,7 @@ function PoliciesSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="divide-y">
-        <div className="flex items-center justify-between gap-6 py-4">
+        <div className="flex items-center justify-between gap-6 py-3">
           <div>
             <p className="text-sm font-medium">Track overtime</p>
             <p className="text-xs text-muted-foreground">
@@ -970,7 +972,7 @@ function PoliciesSection({
             onCheckedChange={(v) => onChange({ overtimeEnabled: v })}
           />
         </div>
-        <div className="flex items-center justify-between gap-6 py-4">
+        <div className="flex items-center justify-between gap-6 py-3">
           <div>
             <p className="text-sm font-medium">PTO accrual method</p>
             <p className="text-xs text-muted-foreground">
@@ -985,7 +987,7 @@ function PoliciesSection({
             options={PTO_ACCRUAL_OPTIONS}
           />
         </div>
-        <div className="flex items-center justify-between gap-6 py-4">
+        <div className="flex items-center justify-between gap-6 py-3">
           <div>
             <p className="text-sm font-medium">Count idle time as break</p>
             <p className="text-xs text-muted-foreground">
@@ -1053,7 +1055,7 @@ export function OrganizationTab() {
       />
 
       {!canManage && (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
           <span className="font-medium text-foreground">Manage Settings</span>{" "}
@@ -1061,7 +1063,7 @@ export function OrganizationTab() {
         </div>
       )}
 
-      <div className="max-w-4xl space-y-6">
+      <div className="space-y-6">
         <CompanyInfoSection
           value={draft.company}
           onChange={updateCompany}

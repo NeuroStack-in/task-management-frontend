@@ -27,7 +27,7 @@ export function GlobalTimer() {
   // Idle — no timer running.
   if (!task) {
     return (
-      <div className="flex h-10 items-center gap-2 rounded-full bg-card px-3.5 text-sm text-muted-foreground shadow-soft">
+      <div className="flex h-10 items-center gap-2 px-3.5 text-sm text-muted-foreground">
         <TimerIcon className="size-4" />
         <span className="hidden font-medium md:inline">No timer</span>
       </div>
@@ -36,11 +36,11 @@ export function GlobalTimer() {
 
   const running = status === "running";
   return (
-    <div className="flex h-10 items-center gap-2.5 rounded-full bg-card px-3.5 shadow-soft">
+    <div className="flex h-10 items-center gap-2.5 px-3.5">
       <span
         className={cn(
           "size-2 shrink-0 rounded-full",
-          running ? "animate-pulse bg-success" : "bg-warning",
+          running ? "bg-success" : "bg-warning",
         )}
       />
       <span className="hidden max-w-[140px] truncate text-xs font-medium text-muted-foreground sm:inline">

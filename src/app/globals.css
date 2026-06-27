@@ -36,6 +36,24 @@
   --color-warning: var(--warning);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  /* AI accent — a restrained violet/indigo reserved for AI insight surfaces only. */
+  --color-ai: var(--ai);
+  --color-ai-foreground: var(--ai-foreground);
+  --color-ai-tint: var(--ai-tint);
+
+  /* Action + surface refinements */
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-border-muted: var(--border-muted);
+
+  /* Consistent, restrained elevation scale (refines Tailwind's shadow-sm/md/lg). */
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-md: 0 2px 8px -2px rgb(15 23 42 / 0.10);
+  --shadow-lg: 0 10px 28px -8px rgb(15 23 42 / 0.16);
 
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
@@ -62,6 +80,16 @@
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
+
+  /* Enterprise motion system — subtle, fast, consistent (Docs/REDESIGN.md §10).
+     Durations enable `duration-fast|base|slow`; easings enable `ease-enter` etc. */
+  --animate-duration-fast: 150ms;
+  --animate-duration-base: 200ms;
+  --animate-duration-slow: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* ----------------------------------------------------------------- */
@@ -73,9 +101,10 @@
 /*  Neutrals are shared across schemes; only brand tokens change.      */
 /* ----------------------------------------------------------------- */
 
-/* ---- Light base — Graphite & Indigo (default) ---- */
+/* ---- Light base — Graphite & Indigo (legacy default) ---- */
+/* Meridian (Slate & Teal) is the shipped default palette — see below + layout.tsx. */
 :root {
-  --radius: 0.85rem;
+  --radius: 0.625rem;
 
   --background: #f7f5f1;
   --foreground: #2c2a27;
@@ -102,6 +131,23 @@
   --warning: #e0922a;
   --positive: #2fa36a;
   --negative: #e5544a;
+  --info: #2563eb;
+  --info-foreground: #ffffff;
+  /* AI accent — restrained indigo-violet, used only on AI insight surfaces. */
+  --ai: #6d4ce0;
+  --ai-foreground: #ffffff;
+  --ai-tint: #efeafe;
+
+  /* Action + surface refinements (one accent, used with intent) */
+  --primary-hover: #0b5e74;
+  --primary-soft: #e2f0f4;
+  --surface-elevated: #ffffff;
+  --border-muted: #eef1f5;
+
+  /* Motion (shared, enterprise-subtle) */
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --motion-slow: 240ms;
 
   --feature: #4f46e5;
   --feature-foreground: #ffffff;
@@ -154,6 +200,16 @@
   --warning: #e0a951;
   --positive: #57c98a;
   --negative: #e5705f;
+  --info: #60a5fa;
+  --info-foreground: #04121f;
+  --ai: #a78bfa;
+  --ai-foreground: #140b29;
+  --ai-tint: #241b3a;
+
+  --primary-hover: #38b6c7;
+  --primary-soft: #152a32;
+  --surface-elevated: #1b2430;
+  --border-muted: rgb(255 255 255 / 0.05);
 
   --feature: #4f46e5;
   --feature-foreground: #ffffff;
@@ -177,6 +233,94 @@
   --sidebar-accent-foreground: #c7c4ff;
   --sidebar-border: rgb(255 255 255 / 0.07);
   --sidebar-ring: #6d74f4;
+}
+
+/* ============================================================= */
+/*  MERIDIAN — Slate & Teal (shipped default; see Docs/REDESIGN.md) */
+/*  Refined enterprise minimalism: COOL slate neutrals (unlike the  */
+/*  warm neutrals of the other palettes) + one petrol-teal accent   */
+/*  reserved for action/active/emphasis. Default applied pre-paint  */
+/*  in layout.tsx.                                                  */
+/* ============================================================= */
+[data-palette="meridian"] {
+  --background: #f7f8fa;
+  --foreground: #0f1729;
+  --card: #ffffff;
+  --card-foreground: #0f1729;
+  --popover: #ffffff;
+  --popover-foreground: #0f1729;
+  --primary: #0e7490;
+  --primary-foreground: #ffffff;
+  --secondary: #eef1f5;
+  --secondary-foreground: #28303d;
+  --muted: #f1f3f6;
+  --muted-foreground: #5b6573;
+  --accent: #e2f0f4;
+  --accent-foreground: #0b5e74;
+  --destructive: #c0392b;
+  --success: #157f5b;
+  --warning: #b7791f;
+  --positive: #157f5b;
+  --negative: #c0392b;
+  --feature: #0e7490;
+  --feature-foreground: #ffffff;
+  --feature-tint: #e2f0f4;
+  --border: #e3e7ed;
+  --input: #d7dce4;
+  --ring: #0e7490;
+  --chart-1: #0e7490;
+  --chart-2: #2563eb;
+  --chart-3: #0f766e;
+  --chart-4: #b7791f;
+  --chart-5: #7c3aed;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f1729;
+  --sidebar-primary: #0e7490;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e2f0f4;
+  --sidebar-accent-foreground: #0b5e74;
+  --sidebar-border: #e7eaef;
+  --sidebar-ring: #0e7490;
+}
+[data-palette="meridian"].dark {
+  --background: #0c111a;
+  --foreground: #e6eaf0;
+  --card: #141b26;
+  --card-foreground: #e6eaf0;
+  --popover: #141b26;
+  --popover-foreground: #e6eaf0;
+  --primary: #22a5b8;
+  --primary-foreground: #04141a;
+  --secondary: #1e2733;
+  --secondary-foreground: #e6eaf0;
+  --muted: #1a212d;
+  --muted-foreground: #97a1b0;
+  --accent: #16323b;
+  --accent-foreground: #7fd4e0;
+  --destructive: #e5705f;
+  --success: #4cc38a;
+  --warning: #e0a951;
+  --positive: #4cc38a;
+  --negative: #e5705f;
+  --feature: #0e7490;
+  --feature-foreground: #ffffff;
+  --feature-tint: #16323b;
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #22a5b8;
+  --chart-1: #2bb8c9;
+  --chart-2: #60a5fa;
+  --chart-3: #2dd4bf;
+  --chart-4: #fbbf24;
+  --chart-5: #a78bfa;
+  --sidebar: #141b26;
+  --sidebar-foreground: #e6eaf0;
+  --sidebar-primary: #22a5b8;
+  --sidebar-primary-foreground: #04141a;
+  --sidebar-accent: #16323b;
+  --sidebar-accent-foreground: #7fd4e0;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: #22a5b8;
 }
 
 /* ============================================================= */
@@ -1239,11 +1383,12 @@ input[type="date"]::-webkit-inner-spin-button {
   );
 }
 
-/* Soft elevation used by cards/panels */
+/* Crisp, low elevation — reserved for true overlays (menus, dialogs, sheets,
+   the chat panel). Meridian content cards use a hairline border, not this. */
 @utility shadow-soft {
   box-shadow:
-    0 1px 2px rgb(16 18 24 / 0.04),
-    0 10px 30px -16px rgb(16 18 24 / 0.16);
+    0 1px 2px rgb(15 23 42 / 0.05),
+    0 2px 8px -3px rgb(15 23 42 / 0.08);
 }
 
 /* ---- Live, animated meters & progress bars ---- */
@@ -1277,15 +1422,11 @@ input[type="date"]::-webkit-inner-spin-button {
   animation: wp-gauge-fill 1.15s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* A soft highlight that periodically sweeps the filled bar — the "live" cue. */
+/* The perpetual sheen sweep was decorative chart-junk (and kept pages from ever
+   settling for screenshots). Meridian keeps meters calm: the one-shot grow stays,
+   the infinite sweep is removed. Class retained so existing markup is a no-op. */
 .wp-meter-sheen {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgb(255 255 255 / 0.5) 50%,
-    transparent 100%
-  );
-  animation: wp-meter-sheen 2.8s ease-in-out 1s infinite;
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1295,5 +1436,32 @@ input[type="date"]::-webkit-inner-spin-button {
   }
   .wp-meter-sheen {
     display: none;
+  }
+}
+
+/* ---- Shared content-entrance — subtle fade + small rise on route/content mount.
+   Fast and calm (enterprise), and fully disabled under reduced-motion. ---- */
+@keyframes wp-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.wp-enter {
+  animation: wp-enter var(--motion-base) var(--ease-enter) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Honour the OS setting globally: keep opacity-only feedback, drop movement. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .wp-enter {
+    animation: none;
   }
 }

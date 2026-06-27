@@ -165,7 +165,7 @@ export function FeaturesTab() {
       />
 
       {!canManage && (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
           <span className="font-medium text-foreground">Manage Settings</span>{" "}
@@ -182,20 +182,20 @@ export function FeaturesTab() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="divide-y">
-            {FEATURE_LIST.map((f) => {
+          <div className="grid lg:grid-cols-2 lg:divide-x">
+            {FEATURE_LIST.map((f, i) => {
               const Icon = f.icon
               const enabled = draft[f.key]
               return (
                 <div
                   key={f.key}
                   className={cn(
-                    "flex items-center gap-4 px-6 py-4 transition-opacity",
+                    "flex items-center gap-4 border-b border-border px-6 py-3 transition-opacity last:border-b-0 lg:[&:nth-last-child(2):nth-child(odd)]:border-b-0",
                     !enabled && "opacity-60",
                   )}
                 >
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
-                    <Icon className="size-5 text-muted-foreground" />
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                    <Icon className="size-4 text-muted-foreground" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -211,6 +211,7 @@ export function FeaturesTab() {
                   <Switch
                     checked={enabled}
                     disabled={!canManage}
+                    aria-label={`${f.label} — ${enabled ? "enabled" : "disabled"}`}
                     onCheckedChange={(v) =>
                       setDraft((p) => ({ ...p, [f.key]: v }))
                     }

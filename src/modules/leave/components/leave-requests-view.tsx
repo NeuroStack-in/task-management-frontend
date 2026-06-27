@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plane, CalendarPlus, X } from "lucide-react";
+import { Plane, CalendarPlus, X, Clock, CheckCircle2, XCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card } from "@/components/ui/card";
@@ -27,10 +28,10 @@ import {
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
 
-const STATUS_META: Record<LeaveStatus, { label: string; cls: string }> = {
-  pending: { label: "Pending", cls: "bg-warning/15 text-warning" },
-  approved: { label: "Approved", cls: "bg-success/12 text-success" },
-  rejected: { label: "Rejected", cls: "bg-destructive/12 text-destructive" },
+const STATUS_META: Record<LeaveStatus, { label: string; cls: string; Icon: LucideIcon }> = {
+  pending: { label: "Pending", cls: "bg-warning/15 text-warning", Icon: Clock },
+  approved: { label: "Approved", cls: "bg-success/12 text-success", Icon: CheckCircle2 },
+  rejected: { label: "Rejected", cls: "bg-destructive/12 text-destructive", Icon: XCircle },
 };
 
 const SHORT_MONTH = [
@@ -84,7 +85,7 @@ export function LeaveRequestsView() {
     <div className="flex min-h-full flex-col gap-5">
       <PageHeader
         title="Leave"
-        description="Request time off and track the status of your leave."
+        description="Request and track time off. Requests go to your manager for approval."
         actions={
           can("leave:request") ? (
             <Button onClick={() => setOpen(true)}>
@@ -97,7 +98,7 @@ export function LeaveRequestsView() {
       {/* Balances */}
       <div className="grid gap-4 sm:grid-cols-3">
         {balances.map((b) => {
-          const pct = Math.round((b.used / b.allowance) * 100);
+          const remainingPct = Math.round((b.remaining / b.allowance) * 100);
           return (
             <Card key={b.value} className="gap-2 p-5">
               <p className="text-sm text-muted-foreground">{b.label}</p>
@@ -105,18 +106,15 @@ export function LeaveRequestsView() {
                 {b.remaining}
                 <span className="text-base font-normal text-muted-foreground">
                   {" "}
-                  / {b.allowance} days
+                  / {b.allowance} days remaining
                 </span>
               </p>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${Math.min(100, pct)}%` }}
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${Math.min(100, remainingPct)}%` }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                {b.used} used · {b.remaining} remaining
-              </p>
             </Card>
           );
         })}
@@ -152,7 +150,7 @@ export function LeaveRequestsView() {
             </TableHeader>
             <TableBody>
               {mine.map((r) => (
-                <TableRow key={r.id}>
+                <TableRow key={r.id} className="transition-colors hover:bg-muted/40">
                   <TableCell className="font-medium">
                     {LEAVE_TYPE_LABEL[r.type]}
                   </TableCell>
@@ -160,13 +158,22 @@ export function LeaveRequestsView() {
                     {fmtRange(r.startDate, r.endDate)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{r.days}</TableCell>
-                  <TableCell className="max-w-[16rem] truncate text-muted-foreground">
+                  <TableCell
+                    className="max-w-[16rem] truncate text-muted-foreground"
+                    title={r.reason}
+                  >
                     {r.reason}
                   </TableCell>
                   <TableCell>
-                    <Badge className={cn("font-medium", STATUS_META[r.status].cls)}>
-                      {STATUS_META[r.status].label}
-                    </Badge>
+                    {(() => {
+                      const { cls, label, Icon } = STATUS_META[r.status];
+                      return (
+                        <Badge className={cn("gap-1 rounded-sm font-medium", cls)}>
+                          <Icon className="size-3 shrink-0" />
+                          {label}
+                        </Badge>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-muted-foreground tabular-nums">
                     {fmtDay(r.submittedAt)}

@@ -43,7 +43,8 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/use-permissions";
-import { AiReportCard } from "./ai-report-card";
+import { AiInsight } from "@/components/shared/ai-insight";
+import { Sparkline } from "@/components/shared/sparkline";
 import {
   EMPLOYEE_TIME,
   PROJECT_HOURS,
@@ -245,16 +246,17 @@ export function ReportsTab() {
   const empCount = EMPLOYEE_TIME.length;
   const projCount = PROJECT_HOURS.length;
 
+  const atRisk = PROJECT_HOURS.filter((p) => !p.onTrack).length;
+  const exportAllLabel =
+    filter === "all" ? "Export all" : `Export ${reports.length}`;
+
   return (
-    <div className="space-y-6">
-      <AiReportCard
-        title="AI reporting summary"
-        summary={`Across ${empCount} employees and ${projCount} projects, Engineering and Product lead utilization this week. Two projects are flagged at risk and a small group is trending toward over-utilization — open any report below for the detail.`}
-        metrics={[
-          { label: "Utilization", value: "78%" },
-          { label: "At-risk projects", value: 2 },
-          { label: "Top dept", value: "Engineering" },
-        ]}
+    <div className="space-y-5">
+      <AiInsight
+        title={`${atRisk} projects flagged at risk this week`}
+        detail="Open any report below for the underlying detail."
+        points={[`${empCount} employees · ${projCount} projects tracked`]}
+        basis={`${REPORTS.length} report templates across ${empCount} employees`}
       />
 
       {/* Section header: title + bulk actions */}
@@ -293,8 +295,9 @@ export function ReportsTab() {
               </DropdownMenu>
             </>
           ) : (
-            <Button disabled={!canExport} onClick={() => exportAllPdf(REPORTS)}>
-              <Download className="size-4" /> Download all
+            // "Export all" respects the active category filter.
+            <Button disabled={!canExport} onClick={() => exportAllPdf(reports)}>
+              <Download className="size-4" /> {exportAllLabel}
             </Button>
           )}
         </div>
@@ -323,10 +326,10 @@ export function ReportsTab() {
               type="button"
               onClick={() => setFilter(f.key)}
               className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                "rounded-md border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                 filter === f.key
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
+                  : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground",
               )}
             >
               {f.label}
@@ -336,7 +339,7 @@ export function ReportsTab() {
       </div>
 
       {!canExport ? (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
           <Lock className="size-4" />
           You can view and preview reports, but exporting requires the{" "}
           <span className="font-medium text-foreground">Export Reports</span>{" "}
@@ -368,6 +371,24 @@ export function ReportsTab() {
 
 /* ------------------------------- report card ------------------------------- */
 
+/**
+ * A small shape-of-the-data sparkline: the first numeric column, sampled across
+ * the rows. Replaces the old decorative 3×3 mini-table (which showed the same
+ * three cells for every card) with an honest signal of the data's distribution.
+ */
+function reportSpark(report: ReportDef): number[] | null {
+  const col = report.columns.findIndex((_, ci) =>
+    report.rows.length > 0 ? typeof report.rows[0][ci] === "number" : false,
+  );
+  if (col === -1) return null;
+  const values = report.rows.map((r) => Number(r[col]) || 0);
+  if (values.length < 2) return null;
+  // Down-sample to at most 16 points so the line stays readable.
+  const step = Math.max(1, Math.ceil(values.length / 16));
+  const sampled = values.filter((_, i) => i % step === 0);
+  return sampled.length >= 2 ? sampled : values;
+}
+
 function ReportCard({
   report,
   canExport,
@@ -382,86 +403,62 @@ function ReportCard({
   onPreview: () => void;
 }) {
   const Icon = CATEGORY_ICON[report.category];
+  const spark = reportSpark(report);
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onPreview}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onPreview();
-        }
-      }}
       className={cn(
-        "group flex cursor-pointer flex-col rounded-[1.4rem] p-5 shadow-soft transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-        selected
-          ? "bg-primary/[0.03] ring-2 ring-primary"
-          : "bg-card ring-1 ring-transparent",
+        "flex flex-col rounded-lg border border-border bg-card transition-colors",
+        selected ? "border-primary ring-1 ring-primary" : "hover:border-primary/30",
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          {/* Wrapper isolates the checkbox so selecting never triggers the
-              card's preview-on-click. */}
-          <span
+      {/* Preview target — opening the card. Distinct from the Export control. */}
+      <button
+        type="button"
+        onClick={onPreview}
+        className="group flex flex-1 flex-col items-start p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <div className="flex w-full items-start gap-2.5">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={onToggleSelect}
             onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <Checkbox
-              checked={selected}
-              onCheckedChange={onToggleSelect}
-              aria-label={`Select ${report.name}`}
-            />
-          </span>
-          <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
+            aria-label={`Select ${report.name}`}
+          />
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-feature-tint text-primary">
             <Icon className="size-5" />
           </span>
         </div>
-        <ExportMenu report={report} canExport={canExport} />
-      </div>
 
-      <h3 className="mt-3 font-heading text-base font-semibold">{report.name}</h3>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        {REPORT_CATEGORY_LABEL[report.category]} · {report.period}
-      </p>
-      <p className="mt-1.5 line-clamp-2 text-sm text-muted-foreground">
-        {report.description}
-      </p>
+        <h3 className="mt-3 font-heading text-base font-semibold">
+          {report.name}
+        </h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {REPORT_CATEGORY_LABEL[report.category]} · {report.period}
+        </p>
+        <p className="mt-1.5 line-clamp-2 text-sm text-muted-foreground">
+          {report.description}
+        </p>
 
-      {/* Mini preview */}
-      <div className="mt-4 overflow-hidden rounded-xl border">
-        <table className="w-full caption-bottom text-sm">
-          <TableHeader>
-            <TableRow>
-              {report.columns.slice(0, 3).map((c) => (
-                <TableHead key={c} className="h-8 text-xs">
-                  {c}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {report.rows.slice(0, 3).map((row, ri) => (
-              <TableRow key={ri}>
-                {row.slice(0, 3).map((cell, ci) => (
-                  <TableCell key={ci} className="py-1.5 text-xs">
-                    {String(cell)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </table>
-      </div>
+        {/* Shape of the data — a sparkline, not a fake mini-table. */}
+        {spark ? (
+          <div className="mt-4 w-full">
+            <Sparkline
+              data={spark}
+              area
+              className="h-10 w-full text-chart-1"
+              height={40}
+            />
+          </div>
+        ) : null}
 
-      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          {report.rows.length} rows · {report.columns.length} columns
-        </span>
-        <span className="font-medium text-primary transition-transform group-hover:translate-x-0.5">
+        <span className="mt-3 text-xs font-medium text-primary transition-transform group-hover:translate-x-0.5">
           View report →
         </span>
+      </button>
+
+      {/* Export target — physically separate footer row. */}
+      <div className="flex items-center justify-end border-t border-border px-4 py-2.5">
+        <ExportMenu report={report} canExport={canExport} />
       </div>
     </div>
   );
@@ -480,16 +477,15 @@ function ExportMenu({
         render={
           <Button
             variant="outline"
-            size="icon"
-            className="size-9"
+            size="sm"
+            className="gap-1.5"
             disabled={!canExport}
-            aria-label={`Download ${report.name}`}
-            title="Download"
             onClick={(e) => e.stopPropagation()}
           />
         }
       >
-        <Download className="size-4" />
+        <Download className="size-4" /> Export
+        <ChevronDown className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-auto min-w-44">
         <DropdownMenuItem
@@ -533,7 +529,7 @@ function ReportPreviewDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 overflow-auto rounded-xl border">
+            <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border">
               <table className="w-full caption-bottom text-sm">
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>

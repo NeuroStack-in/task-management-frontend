@@ -6,10 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   CalendarRange,
-  ChevronRight,
   Crown,
   FileDown,
-  FolderKanban,
   ListChecks,
   Pencil,
   Plus,
@@ -71,7 +69,6 @@ import {
   isAtRisk,
   taskCounts,
   toneDot,
-  toneSoft,
   type UserMini,
 } from "../lib";
 import { MemberStack, Segmented, StatusBadge } from "./parts";
@@ -110,7 +107,6 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [taskView, setTaskView] = useState<"board" | "list">("list");
-  const [teamOpen, setTeamOpen] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
@@ -293,55 +289,34 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         </div>
       </div>
 
-      {/* Hero — filled with the active palette's feature colour */}
-      <header
-        className="relative overflow-hidden rounded-3xl border border-white/15 text-white shadow-[0_30px_80px_-40px_rgb(0_0_0/0.55)]"
-        style={{
-          backgroundImage:
-            "linear-gradient(135deg, color-mix(in oklab, var(--feature) 86%, #ffffff 14%), var(--feature) 52%, color-mix(in oklab, var(--feature), #000000 26%))",
-        }}
-      >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -top-24 -right-16 size-72 rounded-full bg-white/20 blur-3xl"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -bottom-28 left-1/3 size-72 rounded-full bg-white/10 blur-3xl"
-        />
-
-        <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
+      {/* Hero — clean enterprise header */}
+      <header className="rounded-lg border border-border bg-card">
+        <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-white/90 ring-1 ring-white/10">
+              <span className="rounded-sm bg-accent px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-accent-foreground">
                 {project.key}
               </span>
-              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[0.7rem] text-white/70 ring-1 ring-white/10">
-                ID: {project.id}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/90 ring-1 ring-white/10">
-                <span className="size-1.5 rounded-full bg-white/75" />
-                {status.label}
-              </span>
+              <StatusBadge tone={status.tone} label={status.label} />
               {atRisk ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
+                <span className="inline-flex items-center gap-1 rounded-sm bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
                   <AlertTriangle className="size-3" />
                   At risk
                 </span>
               ) : null}
             </div>
 
-            <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight sm:text-3xl">
               {project.name}
             </h1>
 
             {project.description ? (
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/80">
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
                 {project.description}
               </p>
             ) : null}
 
-            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-white/75">
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
               <span>{project.department}</span>
               <span className="inline-flex items-center gap-1.5">
                 <CalendarRange className="size-4" />
@@ -349,11 +324,11 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
               </span>
               {lead ? (
                 <span className="inline-flex items-center gap-1.5">
-                  <Avatar size="sm" className="size-5 ring-1 ring-white/15">
+                  <Avatar size="sm" className="size-5">
                     {lead.avatarUrl ? (
                       <AvatarImage src={lead.avatarUrl} alt={lead.name} />
                     ) : null}
-                    <AvatarFallback className="bg-white/10 text-[0.55rem] text-white">
+                    <AvatarFallback className="text-[0.55rem]">
                       {initials(lead.name)}
                     </AvatarFallback>
                   </Avatar>
@@ -363,44 +338,49 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
             </div>
           </div>
 
-          {/* Glassmorphic deadline card */}
-          <div className="shrink-0 rounded-2xl border border-white/20 bg-white/10 px-5 py-4 shadow-lg backdrop-blur-md">
-            <p className="text-xs font-medium tracking-wide text-white/80 uppercase">
+          {/* Deadline card */}
+          <div className="shrink-0 rounded-md border border-border bg-muted/30 px-5 py-4">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Deadline
             </p>
             <p
               className={cn(
                 "mt-1 font-heading text-2xl font-semibold tabular-nums",
-                daysLeft < 0 ? "text-rose-200" : "text-white",
+                daysLeft < 0 ? "text-destructive" : "text-foreground",
               )}
             >
               {deadlineText}
             </p>
-            <p className="mt-0.5 text-xs text-white/70">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {formatDate(project.dueDate)}
             </p>
           </div>
         </div>
       </header>
 
-      {/* KPI row */}
+      {/* KPI row — all cards stretch to the same height */}
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-5">
-          <p className="self-start text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {/* Completion gauge — fixed circular container prevents overflow/overlap */}
+        <div className="flex flex-col rounded-lg border border-border bg-card p-5">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Completion
           </p>
-          <Gauge value={project.progress} label="of work done" size={172} />
-          <p className="mt-1 text-xs text-muted-foreground">
+          <div className="flex flex-1 flex-col items-center justify-center py-2">
+            <div className="w-[172px]">
+              <Gauge value={project.progress} label="of work done" size={172} />
+            </div>
+          </div>
+          <p className="text-center text-xs text-muted-foreground">
             {completed} of {tasks.length} tasks done
           </p>
         </div>
 
-        <div className="flex flex-col rounded-2xl border bg-card p-5">
+        <div className="flex flex-col rounded-lg border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
               Tasks
             </p>
-            <span className="flex size-8 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <span className="flex size-7 items-center justify-center rounded-md bg-muted text-primary">
               <ListChecks className="size-4" />
             </span>
           </div>
@@ -420,12 +400,12 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
           </div>
         </div>
 
-        <div className="flex flex-col rounded-2xl border bg-card p-5">
+        <div className="flex flex-col rounded-lg border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Team details
+              Team size
             </p>
-            <span className="flex size-8 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <span className="flex size-7 items-center justify-center rounded-md bg-muted text-primary">
               <Users className="size-4" />
             </span>
           </div>
@@ -435,82 +415,127 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
             </span>
             <span className="text-sm text-muted-foreground">members</span>
           </div>
-          <div className="mt-auto flex items-center justify-between gap-2 pt-5">
+          <div className="mt-auto pt-5">
             <MemberStack members={teamOf(project.memberIds, userMap)} max={6} />
-            <button
-              type="button"
-              onClick={() => setTeamOpen(true)}
-              className="inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-primary transition-colors hover:text-primary/80"
-            >
-              View more
-              <ChevronRight className="size-3.5" />
-            </button>
           </div>
         </div>
       </div>
 
-      {/* Tasks — full width */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
-            Tasks
-          </h2>
-          <div className="flex items-center gap-2">
-            <Segmented
-              options={[
-                { value: "board", label: "Board" },
-                { value: "list", label: "List" },
-              ]}
-              value={taskView}
-              onChange={setTaskView}
-            />
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => openCreateTask("todo")}
-            >
-              <Plus className="size-4" />
-              Add task
-            </Button>
-          </div>
-        </div>
-
-        {taskView === "board" ? (
-          <DndContext
-            sensors={sensors}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onDragCancel={() => setActiveTaskId(null)}
-          >
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {TASK_STATUS_ORDER.map((col) => (
-                <KanbanColumn
-                  key={col}
-                  col={col}
-                  tasks={tasks.filter((t) => t.status === col)}
-                  userMap={userMap}
-                  onAdd={() => openCreateTask(col)}
-                  onEdit={openEditTask}
-                />
-              ))}
+      {/* Kanban + team rail — board takes full width until xl so columns stay
+          readable; the Details/Team rail drops below on smaller screens. */}
+      <div className="grid gap-6 xl:grid-cols-12">
+        <section className="space-y-3 xl:col-span-9">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
+              Tasks
+            </h2>
+            <div className="flex items-center gap-2">
+              <Segmented
+                options={[
+                  { value: "board", label: "Board" },
+                  { value: "list", label: "List" },
+                ]}
+                value={taskView}
+                onChange={setTaskView}
+              />
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => openCreateTask("todo")}
+              >
+                <Plus className="size-4" />
+                Add task
+              </Button>
             </div>
-            <DragOverlay dropAnimation={null}>
-              {activeTask ? (
-                <div className="w-64 rotate-2 rounded-xl border bg-card p-3 shadow-xl">
-                  <TaskCardContent task={activeTask} userMap={userMap} />
-                </div>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-        ) : (
-          <TaskListView
-            tasks={tasks}
-            userMap={userMap}
-            onEdit={openEditTask}
-            onAdd={() => openCreateTask("todo")}
-          />
-        )}
-      </section>
+          </div>
+
+          {taskView === "board" ? (
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setActiveTaskId(null)}
+            >
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {TASK_STATUS_ORDER.map((col) => (
+                  <KanbanColumn
+                    key={col}
+                    col={col}
+                    tasks={tasks.filter((t) => t.status === col)}
+                    userMap={userMap}
+                    onAdd={() => openCreateTask(col)}
+                    onEdit={openEditTask}
+                  />
+                ))}
+              </div>
+              <DragOverlay dropAnimation={null}>
+                {activeTask ? (
+                  <div className="w-[240px] rotate-1 cursor-grabbing rounded-md border border-primary/40 bg-card p-3.5 shadow-lg">
+                    <TaskCardContent task={activeTask} userMap={userMap} />
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          ) : (
+            <TaskListView
+              tasks={tasks}
+              userMap={userMap}
+              onEdit={openEditTask}
+              onAdd={() => openCreateTask("todo")}
+            />
+          )}
+        </section>
+
+        {/* Right rail — below the board until xl, where it splits Details/Team
+            across two columns so it doesn't read as one tall stack. */}
+        <aside className="grid gap-6 md:grid-cols-2 xl:col-span-3 xl:grid-cols-1">
+          <Panel title="Details">
+            <dl className="space-y-3 text-sm">
+              <DetailRow label="Key" value={<Mono>{project.key}</Mono>} />
+              <DetailRow label="Manager" value={manager?.name ?? "—"} />
+            </dl>
+          </Panel>
+
+          <Panel title="Team members">
+            <ul className="space-y-3">
+              {project.memberIds.map((mid) => {
+                const u = userMap[mid];
+                if (!u) return null;
+                const isLead = mid === project.leadUserId;
+                const isManager = mid === project.managerId;
+                return (
+                  <li key={mid} className="flex items-center gap-3">
+                    <Avatar size="sm">
+                      {u.avatarUrl ? (
+                        <AvatarImage src={u.avatarUrl} alt={u.name} />
+                      ) : null}
+                      <AvatarFallback>{initials(u.name)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 leading-tight">
+                      <p className="flex items-center gap-1 truncate text-sm font-medium">
+                        {u.name}
+                        {isLead ? (
+                          <Crown
+                            className="size-3 text-warning"
+                            aria-label="Lead"
+                          />
+                        ) : null}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {isLead
+                          ? "Project lead"
+                          : isManager
+                            ? "Project manager"
+                            : u.jobTitle}
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </Panel>
+        </aside>
+      </div>
 
       {/* Project edit dialog */}
       <ProjectFormDialog
@@ -555,131 +580,6 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Full team & details */}
-      <Dialog open={teamOpen} onOpenChange={setTeamOpen}>
-        <DialogContent className="flex max-h-[88vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
-          {/* Header band */}
-          <DialogHeader className="gap-0 border-b px-6 py-5 pr-12 text-left">
-            <div className="flex items-start gap-3">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
-                <FolderKanban className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <DialogTitle className="flex flex-wrap items-center gap-2">
-                  {project.name}
-                  <StatusBadge tone={status.tone} label={status.label} />
-                </DialogTitle>
-                <DialogDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <Mono>{project.key}</Mono>
-                  <Mono>{project.id}</Mono>
-                  <span>· {project.department}</span>
-                </DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-
-          {/* Scrollable body */}
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
-            {project.description ? (
-              <section>
-                <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  About
-                </p>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {project.description}
-                </p>
-              </section>
-            ) : null}
-
-            {/* Details */}
-            <section>
-              <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Details
-              </p>
-              <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-                <DetailRow label="Lead" value={lead?.name ?? "—"} />
-                <DetailRow label="Manager" value={manager?.name ?? "—"} />
-                <DetailRow label="Department" value={project.department} />
-                <DetailRow
-                  label="Timeline"
-                  value={`${formatDate(project.startDate)} – ${formatDate(project.dueDate)}`}
-                />
-                <DetailRow
-                  label="Status"
-                  value={<StatusBadge tone={status.tone} label={status.label} />}
-                />
-                <DetailRow
-                  label="Health"
-                  value={
-                    atRisk ? (
-                      <span className="font-medium text-warning">At risk</span>
-                    ) : (
-                      <span className="font-medium text-success">On track</span>
-                    )
-                  }
-                />
-                <DetailRow label="Key" value={<Mono>{project.key}</Mono>} />
-                <DetailRow label="Project ID" value={<Mono>{project.id}</Mono>} />
-              </dl>
-            </section>
-
-            {/* Members */}
-            <section>
-              <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Members · {project.memberIds.length}
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {project.memberIds.map((mid) => {
-                  const u = userMap[mid];
-                  if (!u) return null;
-                  const isLead = mid === project.leadUserId;
-                  const isManager = mid === project.managerId;
-                  return (
-                    <div
-                      key={mid}
-                      className="flex items-center gap-3 rounded-xl border p-3"
-                    >
-                      <Avatar size="sm">
-                        {u.avatarUrl ? (
-                          <AvatarImage src={u.avatarUrl} alt={u.name} />
-                        ) : null}
-                        <AvatarFallback>{initials(u.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1 leading-tight">
-                        <p className="flex items-center gap-1 truncate text-sm font-medium">
-                          {u.name}
-                          {isLead ? (
-                            <Crown
-                              className="size-3 text-warning"
-                              aria-label="Lead"
-                            />
-                          ) : null}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {u.jobTitle}
-                        </p>
-                      </div>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-medium",
-                          isLead
-                            ? "bg-warning/15 text-warning"
-                            : isManager
-                              ? "bg-primary/10 text-primary"
-                              : "bg-muted text-muted-foreground",
-                        )}
-                      >
-                        {isLead ? "Lead" : isManager ? "Manager" : "Member"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -711,7 +611,7 @@ function TaskStat({
   dot: string;
 }) {
   return (
-    <div className="rounded-xl border bg-muted/30 px-3 py-2.5">
+    <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5">
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className={cn("size-1.5 rounded-full", dot)} />
         {label}
@@ -719,6 +619,23 @@ function TaskStat({
       <p className="mt-1 font-heading text-xl font-semibold tabular-nums">
         {value}
       </p>
+    </div>
+  );
+}
+
+function Panel({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-5">
+      <p className="mb-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {title}
+      </p>
+      {children}
     </div>
   );
 }
@@ -757,12 +674,13 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex flex-col rounded-2xl border bg-muted/40 p-3 transition-colors",
-        isOver && "bg-primary/5 ring-2 ring-primary/40",
+        "flex min-w-0 flex-col rounded-lg border border-border bg-muted/30 p-3 transition-colors lg:min-w-[240px]",
+        isOver &&
+          "border-primary bg-primary/10 ring-2 ring-primary/50 ring-offset-2 ring-offset-background",
       )}
     >
       <div className="mb-3 flex items-center justify-between px-1">
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
           <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
           {meta.label}
           <span className="text-muted-foreground tabular-nums">
@@ -773,7 +691,7 @@ function KanbanColumn({
           type="button"
           onClick={onAdd}
           aria-label={`Add task to ${meta.label}`}
-          className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
         >
           <Plus className="size-4" />
         </button>
@@ -783,12 +701,15 @@ function KanbanColumn({
         <button
           type="button"
           onClick={onAdd}
-          className="rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className={cn(
+            "cursor-pointer rounded-md border border-dashed py-8 text-center text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:border-primary/40 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+            isOver && "border-primary/60 bg-primary/5 text-foreground",
+          )}
         >
           Add a task
         </button>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-2.5">
           {tasks.map((t) => (
             <TaskCard key={t.id} task={t} userMap={userMap} onEdit={onEdit} />
           ))}
@@ -820,8 +741,8 @@ function TaskCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "group/task relative cursor-grab touch-none rounded-xl border bg-card p-3 active:cursor-grabbing",
-        isDragging && "opacity-40",
+        "group/task relative cursor-grab touch-none rounded-md border border-border bg-card p-3.5 transition-colors hover:border-primary/30 focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none active:cursor-grabbing",
+        isDragging && "opacity-50 ring-2 ring-primary/40",
       )}
     >
       <button
@@ -829,7 +750,7 @@ function TaskCard({
         onPointerDown={(e) => e.stopPropagation()}
         onClick={() => onEdit(task)}
         aria-label="Edit task"
-        className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/task:opacity-100"
+        className="absolute top-2 right-2 flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none group-hover/task:opacity-100"
       >
         <Pencil className="size-3.5" />
       </button>
@@ -851,7 +772,7 @@ function TaskListView({
 }) {
   if (tasks.length === 0) {
     return (
-      <div className="rounded-2xl border bg-card p-10 text-center">
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
         <p className="text-sm text-muted-foreground">No tasks yet.</p>
         <Button
           size="sm"
@@ -880,16 +801,7 @@ function TaskListView({
   });
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-card">
-      {/* Column header — aligns with the fixed-width cells below */}
-      <div className="hidden items-center gap-4 border-b bg-muted/40 px-4 py-2.5 text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase sm:flex">
-        <span className="flex-1 pl-5">Task</span>
-        <span className="w-24 shrink-0">Due</span>
-        <span className="hidden w-24 shrink-0 md:block">Priority</span>
-        <span className="w-24 shrink-0">Status</span>
-        <span className="w-44 shrink-0">Assignee</span>
-      </div>
-
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
       <ul className="divide-y">
         {sorted.map((t) => {
           const prio = TASK_PRIORITY_META[t.priority];
@@ -901,84 +813,53 @@ function TaskListView({
               <button
                 type="button"
                 onClick={() => onEdit(t)}
-                className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none"
               >
-                {/* Task */}
-                <span className="flex min-w-0 flex-1 items-center gap-3">
-                  <span
-                    className={cn(
-                      "size-2 shrink-0 rounded-full",
-                      toneDot[prio.tone],
-                    )}
-                    title={`${prio.label} priority`}
-                  />
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-sm font-medium",
-                      t.status === "done" &&
-                        "text-muted-foreground line-through",
-                    )}
-                  >
-                    {t.title}
-                  </span>
-                </span>
-
-                {/* Due */}
                 <span
                   className={cn(
-                    "hidden w-24 shrink-0 text-xs tabular-nums sm:block",
-                    t.dueDate
-                      ? due.overdue
-                        ? "text-destructive"
-                        : "text-muted-foreground"
-                      : "text-muted-foreground/40",
+                    "size-2 shrink-0 rounded-full",
+                    toneDot[prio.tone],
+                  )}
+                  title={`${prio.label} priority`}
+                />
+                <p
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-sm font-medium",
+                    t.status === "done" &&
+                      "text-muted-foreground line-through",
                   )}
                 >
-                  {t.dueDate ? due.text : "—"}
-                </span>
-
-                {/* Priority */}
-                <span className="hidden w-24 shrink-0 md:block">
+                  {t.title}
+                </p>
+                {t.dueDate ? (
                   <span
                     className={cn(
-                      "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
-                      toneSoft[prio.tone],
+                      "hidden shrink-0 text-xs tabular-nums sm:block",
+                      due.overdue ? "text-destructive" : "text-muted-foreground",
                     )}
                   >
-                    {prio.label}
+                    {due.text}
                   </span>
-                </span>
-
-                {/* Status */}
-                <span className="w-24 shrink-0">
-                  <StatusBadge tone={status.tone} label={status.label} />
-                </span>
-
-                {/* Assignee — avatar from sm, name added at lg */}
-                <span className="hidden w-44 shrink-0 items-center gap-2 sm:flex">
-                  {assignee ? (
-                    <>
-                      <Avatar size="sm" className="size-6 shrink-0">
-                        {assignee.avatarUrl ? (
-                          <AvatarImage
-                            src={assignee.avatarUrl}
-                            alt={assignee.name}
-                          />
-                        ) : null}
-                        <AvatarFallback className="text-[0.55rem]">
-                          {initials(assignee.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="hidden truncate text-xs text-muted-foreground lg:inline">
-                        {assignee.name}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-xs text-muted-foreground/50">
-                      Unassigned
-                    </span>
-                  )}
-                </span>
+                ) : null}
+                <StatusBadge
+                  tone={status.tone}
+                  label={status.label}
+                  className="shrink-0"
+                />
+                {assignee ? (
+                  <Avatar size="sm" className="size-6 shrink-0">
+                    {assignee.avatarUrl ? (
+                      <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+                    ) : null}
+                    <AvatarFallback className="text-[0.55rem]">
+                      {initials(assignee.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                ) : (
+                  <span className="hidden shrink-0 text-xs text-muted-foreground/60 lg:block">
+                    Unassigned
+                  </span>
+                )}
               </button>
             </li>
           );
@@ -1000,42 +881,34 @@ function TaskCardContent({
   const due = dueLabel(task.dueDate);
   return (
     <>
-      <p className="pr-6 text-sm leading-snug font-medium">{task.title}</p>
+      <p className="pr-7 text-sm leading-snug font-medium">{task.title}</p>
       <div className="mt-2.5 flex items-center justify-between gap-2">
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium",
-            toneSoft[prio.tone],
-          )}
-        >
-          {prio.label}
-        </span>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={cn("size-1.5 shrink-0 rounded-full", toneDot[prio.tone])}
+            title={`${prio.label} priority`}
+          />
           {task.dueDate ? (
             <span
               className={cn(
-                "text-[0.7rem] tabular-nums",
+                "text-xs tabular-nums",
                 due.overdue ? "text-destructive" : "text-muted-foreground",
               )}
             >
               {due.text}
             </span>
           ) : null}
-          {assignee ? (
-            <Avatar size="sm" className="size-6">
-              {assignee.avatarUrl ? (
-                <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
-              ) : null}
-              <AvatarFallback className="text-[0.55rem]">
-                {initials(assignee.name)}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            <span className="text-[0.7rem] text-muted-foreground/60">
-              Unassigned
-            </span>
-          )}
         </div>
+        {assignee ? (
+          <Avatar size="sm" className="size-6 shrink-0" title={assignee.name}>
+            {assignee.avatarUrl ? (
+              <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+            ) : null}
+            <AvatarFallback className="text-[0.6rem]">
+              {initials(assignee.name)}
+            </AvatarFallback>
+          </Avatar>
+        ) : null}
       </div>
     </>
   );

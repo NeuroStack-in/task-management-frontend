@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Copy,
+  Eye,
   KeyRound,
   Lock,
   MoreVertical,
@@ -107,29 +108,29 @@ export function RolesManager() {
         }
       />
 
-      <div className="overflow-hidden rounded-[1.4rem] bg-card shadow-soft">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <table className="w-full caption-bottom text-sm">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="py-3 pl-6">Role</TableHead>
-              <TableHead className="hidden py-3 md:table-cell">
+              <TableHead className="py-2.5 pl-5">Role</TableHead>
+              <TableHead className="hidden py-2.5 md:table-cell">
                 Description
               </TableHead>
-              <TableHead className="py-3 text-right">Members</TableHead>
-              <TableHead className="py-3 pr-6 text-right md:pr-2">
+              <TableHead className="py-2.5 text-right">Members</TableHead>
+              <TableHead className="py-2.5 pr-5 text-right md:pr-2">
                 Permissions
               </TableHead>
-              {canManage && <TableHead className="w-12 py-3 pr-4" />}
+              <TableHead className="w-10 py-2.5 pr-3" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {roles.map((role) => (
               <TableRow key={role.id}>
                 {/* Role identity */}
-                <TableCell className="py-3 pl-6">
+                <TableCell className="py-2.5 pl-5">
                   <div className="flex items-center gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <KeyRound className="size-4.5" />
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <KeyRound className="size-4" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -156,57 +157,70 @@ export function RolesManager() {
                 </TableCell>
 
                 {/* Description */}
-                <TableCell className="hidden max-w-md py-3 whitespace-normal text-muted-foreground md:table-cell">
+                <TableCell className="hidden max-w-md py-2.5 whitespace-normal text-muted-foreground md:table-cell">
                   <span className="line-clamp-2">{role.description}</span>
                 </TableCell>
 
                 {/* Members */}
-                <TableCell className="py-3 text-right">
+                <TableCell className="py-2.5 text-right">
                   <span className="inline-flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
-                    <Users className="size-4" />
+                    <Users className="size-3.5" />
                     {userCountFor(role.id)}
                   </span>
                 </TableCell>
 
                 {/* Permissions */}
-                <TableCell className="py-3 pr-6 text-right font-medium tabular-nums md:pr-2">
+                <TableCell className="py-2.5 pr-5 text-right font-medium tabular-nums md:pr-2">
                   {role.permissions.includes(WILDCARD)
                     ? "All"
                     : permissionCount(role)}
                 </TableCell>
 
                 {/* Actions */}
-                {canManage && (
-                  <TableCell className="py-3 pr-4 text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button variant="ghost" size="icon" className="size-8" />
-                        }
-                      >
-                        <MoreVertical className="size-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleClone(role)}>
-                          <Copy className="size-4" /> Clone
+                <TableCell className="py-2.5 pr-3 text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          aria-label={`Actions for ${role.name}`}
+                        />
+                      }
+                    >
+                      <MoreVertical className="size-4" aria-hidden />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {/* System roles are read-only: view their permissions. */}
+                      {role.system ? (
+                        <DropdownMenuItem onClick={() => openEdit(role)}>
+                          <Eye className="size-4" /> View permissions
                         </DropdownMenuItem>
+                      ) : (
                         <DropdownMenuItem
-                          disabled={role.system}
+                          disabled={!canManage}
                           onClick={() => openEdit(role)}
                         >
                           <Pencil className="size-4" /> Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          disabled={role.system}
-                          onClick={() => setDeleteTarget(role)}
-                        >
-                          <Trash2 className="size-4" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                )}
+                      )}
+                      <DropdownMenuItem
+                        disabled={!canManage}
+                        onClick={() => handleClone(role)}
+                      >
+                        <Copy className="size-4" /> Clone
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={!canManage || role.system}
+                        onClick={() => setDeleteTarget(role)}
+                      >
+                        <Trash2 className="size-4" /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

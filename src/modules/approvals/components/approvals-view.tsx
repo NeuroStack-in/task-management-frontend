@@ -12,6 +12,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
+import { AiInsight } from "@/components/shared/ai-insight";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/shared/empty-state";
 import { usePermissions } from "@/hooks/use-permissions";
 import { initials } from "@/lib/format";
@@ -59,6 +65,12 @@ const STATUS_BADGE: Record<ApprovalStatus, string> = {
   rejected: "bg-destructive/12 text-destructive",
 };
 
+const STATUS_ICON: Record<ApprovalStatus, LucideIcon> = {
+  pending: Clock,
+  approved: Check,
+  rejected: X,
+};
+
 type Filter = ApprovalStatus | "all";
 const FILTERS: { value: Filter; label: string }[] = [
   { value: "pending", label: "Pending" },
@@ -67,6 +79,13 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
+/** Entries submitted outside normal hours (before 08:00 or after 20:00) */
+function isUnusualHours(submitted: string): boolean {
+  // The mock data uses relative strings like "12m ago", "1h ago", "Yesterday"
+  // Flag entries with a large time gap (>= 5h ago suggests unusual hours for a workday)
+  return submitted === "Yesterday" || submitted === "2 days ago";
+}
+
 export function ApprovalsView() {
   const { can } = usePermissions();
   const canApprove = can("approvals:approve");
@@ -74,6 +93,7 @@ export function ApprovalsView() {
   const [items, setItems] = useState<ApprovalRequest[]>(APPROVALS);
   const [filter, setFilter] = useState<Filter>("pending");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const counts = {
     all: items.length,
@@ -93,19 +113,63 @@ export function ApprovalsView() {
     [items, filter],
   );
 
+  const pendingRows = rows.filter((r) => r.status === "pending");
+  const unusualCount = items.filter(
+    (a) => a.status === "pending" && isUnusualHours(a.submitted),
+  ).length;
+
   const selected = items.find((a) => a.id === selectedId) ?? null;
 
-  // The Actions column only matters when there's something to act on.
-  const showActions = canApprove && rows.some((r) => r.status === "pending");
+  // Actions column is always reserved when canApprove; cell content depends on row status.
+  const showActionsCol = canApprove;
+
+  const allPendingSelected =
+    pendingRows.length > 0 &&
+    pendingRows.every((r) => selectedIds.has(r.id));
+
+  const toggleSelectAll = () => {
+    if (allPendingSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(pendingRows.map((r) => r.id)));
+    }
+  };
+
+  const toggleRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const decide = (req: ApprovalRequest, status: ApprovalStatus) => {
     setItems((prev) =>
       prev.map((a) => (a.id === req.id ? { ...a, status } : a)),
     );
     setSelectedId(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(req.id);
+      return next;
+    });
     toast.success(status === "approved" ? "Request approved" : "Request rejected", {
       description: `${KIND_META[req.kind].label} · ${req.requester.name}`,
     });
+  };
+
+  const bulkDecide = (status: ApprovalStatus) => {
+    const targets = [...selectedIds];
+    setItems((prev) =>
+      prev.map((a) => (targets.includes(a.id) ? { ...a, status } : a)),
+    );
+    setSelectedIds(new Set());
+    toast.success(
+      status === "approved"
+        ? `${targets.length} request${targets.length === 1 ? "" : "s"} approved`
+        : `${targets.length} request${targets.length === 1 ? "" : "s"} rejected`,
+    );
   };
 
   return (
@@ -115,8 +179,18 @@ export function ApprovalsView() {
         description={`${counts.pending} pending · review time-record changes, manual entries, and leave`}
       />
 
-      {/* Status filter */}
-      <div className="flex flex-wrap gap-2">
+      {/* AI insight — only shows when there are unusual-hours pending entries */}
+      {unusualCount > 0 && (
+        <AiInsight
+          title={`${unusualCount} request${unusualCount === 1 ? "" : "s"} submitted outside working hours`}
+          detail="Entries submitted very late or the prior day can indicate forgotten tracking or retroactive edits — review carefully before approving."
+          basis={`${items.filter((a) => a.status === "pending").length} pending requests analysed`}
+          action={{ label: "View pending", onClick: () => setFilter("pending") }}
+        />
+      )}
+
+      {/* Status filter + bulk actions */}
+      <div className="flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (
           <button
             key={f.value}
@@ -132,6 +206,29 @@ export function ApprovalsView() {
             {f.label} · {counts[f.value]}
           </button>
         ))}
+
+        {canApprove && selectedIds.size > 0 && (
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {selectedIds.size} selected
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => bulkDecide("approved")}
+            >
+              <Check className="size-3.5" /> Approve all
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => bulkDecide("rejected")}
+            >
+              <X className="size-3.5" /> Reject all
+            </Button>
+          </div>
+        )}
       </div>
 
       {rows.length === 0 ? (
@@ -143,29 +240,80 @@ export function ApprovalsView() {
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-[860px] table-fixed [&_td]:px-4 [&_th]:px-4">
+            {/*
+              Actions column always present when canApprove — fixed widths prevent
+              column-count shifts between pending/approved/rejected filter tabs.
+            */}
+            <Table
+              className={cn(
+                "table-fixed [&_td]:px-4 [&_th]:px-4",
+                showActionsCol ? "min-w-[920px]" : "min-w-[800px]",
+              )}
+            >
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[20%]">Requester</TableHead>
-                  <TableHead className="w-[13%]">Type</TableHead>
+                  {canApprove && (
+                    <TableHead className="w-10">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all pending"
+                        checked={allPendingSelected}
+                        onChange={toggleSelectAll}
+                        className="size-4 cursor-pointer accent-primary"
+                        disabled={pendingRows.length === 0}
+                      />
+                    </TableHead>
+                  )}
+                  <TableHead className="w-[22%]">Requester</TableHead>
+                  <TableHead className="w-[14%]">Type</TableHead>
                   <TableHead className="w-[26%]">Request</TableHead>
-                  <TableHead className="w-[11%] text-right">Amount</TableHead>
-                  <TableHead className="w-[12%]">Submitted</TableHead>
-                  <TableHead className="w-[10%]">Status</TableHead>
-                  {showActions ? (
-                    <TableHead className="w-[8%] text-right">Actions</TableHead>
-                  ) : null}
+                  <TableHead className="w-[12%] text-right">Amount</TableHead>
+                  <TableHead className="w-[11%]">Submitted</TableHead>
+                  <TableHead className="w-[11%]">Status</TableHead>
+                  {showActionsCol && (
+                    <TableHead className="w-[10%] text-right">Actions</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map((req) => {
                   const Icon = KIND_ICON[req.kind];
+                  const StatusIcon = STATUS_ICON[req.status];
+                  const isChecked = selectedIds.has(req.id);
                   return (
                     <TableRow
                       key={req.id}
                       onClick={() => setSelectedId(req.id)}
-                      className="group cursor-pointer"
+                      className={cn(
+                        "group cursor-pointer transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                        isChecked && "bg-accent/40",
+                      )}
+                      tabIndex={0}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          setSelectedId(req.id);
+                        }
+                      }}
+                      data-selected={isChecked || undefined}
                     >
+                      {canApprove && (
+                        <TableCell
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {req.status === "pending" ? (
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${req.requester.name}`}
+                              checked={isChecked}
+                              onChange={() => toggleRow(req.id)}
+                              className="size-4 cursor-pointer accent-primary"
+                            />
+                          ) : (
+                            <span className="inline-block size-4" />
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex min-w-0 items-center gap-2.5">
                           <Avatar className="size-7 shrink-0">
@@ -189,7 +337,16 @@ export function ApprovalsView() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="block truncate">{req.title}</span>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={<span className="block truncate" />}
+                          >
+                            {req.title}
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs">
+                            {req.title}
+                          </TooltipContent>
+                        </Tooltip>
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs font-medium tabular-nums">
                         {req.amount}
@@ -198,11 +355,17 @@ export function ApprovalsView() {
                         {req.submitted}
                       </TableCell>
                       <TableCell>
-                        <Badge className={cn("border-0 capitalize", STATUS_BADGE[req.status])}>
+                        <Badge
+                          className={cn(
+                            "gap-1 rounded-sm border-0 capitalize",
+                            STATUS_BADGE[req.status],
+                          )}
+                        >
+                          <StatusIcon className="size-3" />
                           {req.status}
                         </Badge>
                       </TableCell>
-                      {showActions ? (
+                      {showActionsCol && (
                         <TableCell className="text-right">
                           {req.status === "pending" ? (
                             <div className="flex justify-end gap-1">
@@ -232,10 +395,13 @@ export function ApprovalsView() {
                               </Button>
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
+                            /* Reserved space — keeps column width stable */
+                            <span className="inline-flex size-7 items-center justify-center text-xs text-muted-foreground">
+                              —
+                            </span>
                           )}
                         </TableCell>
-                      ) : null}
+                      )}
                     </TableRow>
                   );
                 })}
@@ -277,12 +443,9 @@ function ApprovalDialog({
             <DialogHeader>
               <DialogTitle className="flex flex-wrap items-center gap-2">
                 {req.title}
-                <Badge variant="outline">{KIND_META[req.kind].label}</Badge>
-                <Badge className={cn("border-0 capitalize", STATUS_BADGE[req.status])}>
-                  {req.status}
-                </Badge>
+                <Badge variant="outline" className="text-xs font-normal">{KIND_META[req.kind].label}</Badge>
               </DialogTitle>
-              <DialogDescription>Submitted {req.submitted}</DialogDescription>
+              <DialogDescription>Submitted {req.submitted} · {req.requester.department}</DialogDescription>
             </DialogHeader>
 
             {/* Requester */}
@@ -310,35 +473,22 @@ function ApprovalDialog({
             </div>
 
             {/* Full description */}
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Description
-              </p>
-              <p className="text-sm leading-relaxed">{req.detail}</p>
-            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">{req.detail}</p>
 
             <DialogFooter>
               {req.status !== "pending" ? (
-                <div
-                  className={cn(
-                    "flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium",
-                    STATUS_BADGE[req.status],
-                  )}
-                >
-                  {req.status === "approved" ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <X className="size-4" />
-                  )}
-                  This request was {req.status}.
-                </div>
+                <p className={cn("text-sm font-medium", STATUS_BADGE[req.status].replace(/bg-\S+/g, "").trim())}>
+                  {req.status === "approved" ? <Check className="mr-1.5 inline size-3.5" /> : <X className="mr-1.5 inline size-3.5" />}
+                  {req.status === "approved" ? "Approved" : "Rejected"}
+                </p>
               ) : canApprove ? (
                 <>
                   <Button
                     variant="outline"
+                    className="text-destructive hover:text-destructive"
                     onClick={() => onDecide(req, "rejected")}
                   >
-                    <X className="size-4" /> Reject
+                    Reject
                   </Button>
                   <Button onClick={() => onDecide(req, "approved")}>
                     <Check className="size-4" /> Approve
@@ -346,7 +496,7 @@ function ApprovalDialog({
                 </>
               ) : (
                 <p className="w-full text-center text-sm text-muted-foreground">
-                  You have view-only access to approvals.
+                  View only — you cannot approve requests.
                 </p>
               )}
             </DialogFooter>

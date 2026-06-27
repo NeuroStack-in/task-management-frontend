@@ -107,7 +107,7 @@ export function TasksView({
         className="flex-wrap"
       />
 
-      <div className="overflow-hidden rounded-2xl border bg-card">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <ul className="divide-y">
           {visible.map((t) => {
             const project = projectMap[t.projectId];
@@ -119,7 +119,7 @@ export function TasksView({
                 <button
                   type="button"
                   onClick={() => onOpenProject(t.projectId)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                  className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none"
                 >
                   <span
                     className={cn(

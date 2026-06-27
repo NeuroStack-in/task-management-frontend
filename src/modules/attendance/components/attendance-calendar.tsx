@@ -15,7 +15,6 @@ import {
   COUNT_METRICS,
   MONTH_NAMES,
   REFERENCE_MONTH,
-  TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
   monthSummary,
@@ -60,6 +59,8 @@ interface AttendanceDate {
   day: number;
 }
 
+type CalendarMode = "detailed";
+
 export function AttendanceCalendar({
   selected,
   onSelect,
@@ -71,14 +72,13 @@ export function AttendanceCalendar({
     year: REFERENCE_MONTH.year,
     month: REFERENCE_MONTH.month,
   });
+  const mode: CalendarMode = "detailed";
 
   const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
   const summary = useMemo(() => monthSummary(view.year, view.month), [view]);
 
-  const goToToday = () => {
-    setView({ year: TODAY.year, month: TODAY.month });
-    onSelect({ year: TODAY.year, month: TODAY.month, day: TODAY.day });
-  };
+  const isRefMonth =
+    view.year === REFERENCE_MONTH.year && view.month === REFERENCE_MONTH.month;
 
   const step = (dir: -1 | 1) =>
     setView((v) => {
@@ -90,27 +90,50 @@ export function AttendanceCalendar({
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div>
           <CardTitle>
             {MONTH_NAMES[view.month]} {view.year}
           </CardTitle>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <span className="text-xs font-medium tracking-wide uppercase text-muted-foreground/80">
-              Avg / day
+          <p className="mt-1 text-sm text-muted-foreground">
+            Avg/day{" "}
+            <span className="font-medium text-success">
+              {summary.present} present
             </span>
-            <AvgStat dot="bg-success" value={summary.present} label="present" />
-            <AvgStat dot="bg-primary" value={summary.leave} label="on leave" />
-            <AvgStat dot="bg-destructive" value={summary.absent} label="absent" />
-            <span className="text-muted-foreground/70">
-              across {summary.total} employees
+            {" · "}
+            <span className="font-medium text-primary">
+              {summary.leave} on leave
             </span>
-          </div>
+            {" · "}
+            <span className="font-medium text-destructive">
+              {summary.absent} absent
+            </span>{" "}
+            across {summary.total} employees
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => exportMonthCsv(view.year, view.month, weeks)}
+          >
+            <Download className="size-4" /> Export
+          </Button>
+
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" onClick={goToToday}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setView({
+                  year: REFERENCE_MONTH.year,
+                  month: REFERENCE_MONTH.month,
+                })
+              }
+              disabled={isRefMonth}
+            >
               Today
             </Button>
             <Button
@@ -132,15 +155,6 @@ export function AttendanceCalendar({
               <ChevronRight className="size-4" />
             </Button>
           </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => exportMonthCsv(view.year, view.month, weeks)}
-          >
-            <Download className="size-4" /> Download
-          </Button>
         </div>
       </CardHeader>
 
@@ -163,31 +177,27 @@ export function AttendanceCalendar({
             <DayCellView
               key={i}
               cell={cell}
+              mode={mode}
               selected={selected}
               onSelect={onSelect}
             />
           ))}
         </div>
 
-        {/* Legend + hint */}
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1">
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-            {COUNT_METRICS.map((m) => (
-              <span
-                key={m.key}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground"
-              >
-                <span className={cn("size-2.5 rounded-full", m.dot)} />
-                {m.label}
-              </span>
-            ))}
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
-              Weekend / off
+        {/* Legend */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
+          {COUNT_METRICS.map((m) => (
+            <span
+              key={m.key}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <span className={cn("size-2.5 rounded-full", m.dot)} />
+              {m.label}
             </span>
-          </div>
-          <span className="text-xs text-muted-foreground">
-            Select a day to view its log below ↓
+          ))}
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
+            Weekend / off
           </span>
         </div>
       </CardContent>
@@ -195,30 +205,14 @@ export function AttendanceCalendar({
   );
 }
 
-function AvgStat({
-  dot,
-  value,
-  label,
-}: {
-  dot: string;
-  value: number;
-  label: string;
-}) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className={cn("size-2 rounded-full", dot)} />
-      <span className="font-semibold tabular-nums text-foreground">{value}</span>
-      <span>{label}</span>
-    </span>
-  );
-}
-
 function DayCellView({
   cell,
+  mode,
   selected,
   onSelect,
 }: {
   cell: DayCell;
+  mode: CalendarMode;
   selected: AttendanceDate;
   onSelect: (d: AttendanceDate) => void;
 }) {
@@ -302,7 +296,7 @@ function DayCellView({
           </span>{" "}
           in
         </p>
-        <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
           <span className="bg-success" style={{ width: `${presentPct}%` }} />
           <span className="bg-primary" style={{ width: `${leavePct}%` }} />
           <span className="bg-destructive" style={{ width: `${absentPct}%` }} />

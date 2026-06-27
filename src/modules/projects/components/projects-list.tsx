@@ -69,13 +69,14 @@ export function ProjectsList({
         return (
           <div
             key={status}
-            className="overflow-hidden rounded-2xl border bg-card"
+            className="overflow-hidden rounded-lg border border-border bg-card"
           >
             {/* Group header */}
             <button
               type="button"
               onClick={() => toggle(status)}
-              className="flex w-full items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/40"
+              aria-expanded={open}
+              className="flex w-full cursor-pointer items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none"
             >
               <ChevronDown
                 className={cn(
@@ -85,7 +86,7 @@ export function ProjectsList({
               />
               <span
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                  "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium",
                   status === "active" && "bg-accent text-accent-foreground",
                   status === "on_hold" && "bg-warning/15 text-warning",
                   status === "completed" && "bg-success/12 text-success",
@@ -131,7 +132,7 @@ export function ProjectsList({
                       onClick={() => onOpen(p.id)}
                       className={cn(
                         ROW,
-                        "w-full border-b text-left transition-colors last:border-b-0 hover:bg-muted/40",
+                        "w-full cursor-pointer border-b text-left transition-colors last:border-b-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none",
                       )}
                     >
                       {/* Project */}

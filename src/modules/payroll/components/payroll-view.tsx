@@ -13,14 +13,18 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronsUpDown,
   Check,
   Download,
   FileText,
   Receipt,
+  AlertCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { AiInsight } from "@/components/shared/ai-insight";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -191,6 +195,16 @@ function FilterDropdown({
   );
 }
 
+type SortCol = "name" | "hours" | "net";
+type SortDir = "asc" | "desc";
+
+function SortIcon({ col, active, dir }: { col: SortCol; active: SortCol; dir: SortDir }) {
+  if (col !== active) return <ChevronsUpDown className="ml-1 inline size-3.5 text-muted-foreground/50" />;
+  return dir === "asc"
+    ? <ChevronUp className="ml-1 inline size-3.5" />
+    : <ChevronDown className="ml-1 inline size-3.5" />;
+}
+
 export function PayrollView() {
   const { can } = usePermissions();
   const [periodIndex, setPeriodIndex] = useState(0);
@@ -198,9 +212,18 @@ export function PayrollView() {
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
+  const [sortCol, setSortCol] = useState<SortCol>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const period = PAYROLL_PERIODS[periodIndex];
   const run = useMemo(() => payrollRun(period.year, period.month), [period]);
+
+  // Previous period for AiInsight variance
+  const prevPeriod = PAYROLL_PERIODS[periodIndex + 1];
+  const prevRun = useMemo(
+    () => (prevPeriod ? payrollRun(prevPeriod.year, prevPeriod.month) : null),
+    [prevPeriod],
+  );
 
   const deptOptions = useMemo(() => {
     const names = [...new Set(run.rows.map((r) => r.department))].sort();
@@ -212,7 +235,7 @@ export function PayrollView() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return run.rows.filter((r) => {
+    let rows = run.rows.filter((r) => {
       if (dept !== "all" && r.department !== dept) return false;
       if (status !== "all" && r.status !== status) return false;
       if (
@@ -222,7 +245,17 @@ export function PayrollView() {
         return false;
       return true;
     });
-  }, [run, query, dept, status]);
+
+    rows = [...rows].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === "name") cmp = a.name.localeCompare(b.name);
+      else if (sortCol === "hours") cmp = a.hours - b.hours;
+      else if (sortCol === "net") cmp = a.net - b.net;
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+
+    return rows;
+  }, [run, query, dept, status, sortCol, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -237,10 +270,34 @@ export function PayrollView() {
     setPage(0);
   };
 
+  function toggleSort(col: SortCol) {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+    setPage(0);
+  }
+
   const { totals } = run;
   const avgNet = totals.headcount
     ? Math.round(totals.net / totals.headcount)
     : 0;
+
+  const pendingCount = run.rows.filter((r) => r.status === "pending").length;
+
+  // Pay-period variance for AiInsight
+  const netVariancePct =
+    prevRun && prevRun.totals.net > 0
+      ? Math.round(((run.totals.net - prevRun.totals.net) / prevRun.totals.net) * 100)
+      : null;
+  const hoursVariancePct =
+    prevRun && prevRun.totals.hours > 0
+      ? Math.round(((run.totals.hours - prevRun.totals.hours) / prevRun.totals.hours) * 100)
+      : null;
+
+  const showInsight = netVariancePct !== null && Math.abs(netVariancePct) >= 2;
 
   return (
     <div className="space-y-5">
@@ -259,7 +316,7 @@ export function PayrollView() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-rows-[auto] gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Net payout"
           value={formatCurrency(totals.net)}
@@ -286,6 +343,34 @@ export function PayrollView() {
           hint={`avg ${formatCurrency(avgNet)} net / person`}
         />
       </div>
+
+      {/* Pending emphasis */}
+      {pendingCount > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/8 px-4 py-2.5 text-sm">
+          <AlertCircle className="size-4 shrink-0 text-warning" />
+          <span>
+            <span className="font-semibold text-warning">{pendingCount} payslip{pendingCount > 1 ? "s" : ""} pending</span>
+            {" "}— this run has not settled yet.
+          </span>
+        </div>
+      )}
+
+      {/* Pay-period variance insight */}
+      {showInsight && prevRun && netVariancePct !== null && (
+        <AiInsight
+          title={`Net payout ${netVariancePct > 0 ? "up" : "down"} ${Math.abs(netVariancePct)}% vs ${prevPeriod.label}`}
+          detail={
+            hoursVariancePct !== null
+              ? `Hours logged ${hoursVariancePct > 0 ? "increased" : "decreased"} ${Math.abs(hoursVariancePct)}% period-over-period, driving the net change. Average hourly rates are stable.`
+              : `Net payout moved from ${formatCurrency(prevRun.totals.net)} to ${formatCurrency(run.totals.net)}.`
+          }
+          points={[
+            `${prevPeriod.label}: ${formatCurrency(prevRun.totals.net)} net across ${prevRun.totals.headcount} employees`,
+            `${period.label}: ${formatCurrency(run.totals.net)} net (${netVariancePct > 0 ? "+" : ""}${netVariancePct}%)`,
+          ]}
+          basis={`Derived from ${run.totals.headcount} payslips · ${run.totals.hours.toLocaleString()} hours logged`}
+        />
+      )}
 
       <Card className="gap-0 p-0">
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -325,23 +410,59 @@ export function PayrollView() {
           <Table className="[&_td:first-child]:pl-5 [&_td:last-child]:pr-5 [&_th:first-child]:pl-5 [&_th:last-child]:pr-5">
             <TableHeader>
               <TableRow>
-                <TableHead>Employee</TableHead>
+                <TableHead
+                  className="min-w-[200px]"
+                  aria-sort={sortCol === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                >
+                  <button
+                    type="button"
+                    className="flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
+                    onClick={() => toggleSort("name")}
+                  >
+                    Employee
+                    <SortIcon col="name" active={sortCol} dir={sortDir} />
+                  </button>
+                </TableHead>
                 <TableHead>Department</TableHead>
-                <TableHead>Hours</TableHead>
-                <TableHead>Rate</TableHead>
-                <TableHead>Gross</TableHead>
-                <TableHead>Deductions</TableHead>
-                <TableHead>Net pay</TableHead>
+                <TableHead
+                  className="text-right"
+                  aria-sort={sortCol === "hours" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                >
+                  <button
+                    type="button"
+                    className="ml-auto flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
+                    onClick={() => toggleSort("hours")}
+                  >
+                    Hours
+                    <SortIcon col="hours" active={sortCol} dir={sortDir} />
+                  </button>
+                </TableHead>
+                <TableHead className="text-right">Rate</TableHead>
+                <TableHead className="text-right">Gross</TableHead>
+                <TableHead className="text-right">Deductions</TableHead>
+                <TableHead
+                  className="text-right"
+                  aria-sort={sortCol === "net" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                >
+                  <button
+                    type="button"
+                    className="ml-auto flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
+                    onClick={() => toggleSort("net")}
+                  >
+                    Net pay
+                    <SortIcon col="net" active={sortCol} dir={sortDir} />
+                  </button>
+                </TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Payslip</TableHead>
+                <TableHead className="text-right">Payslip</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pageRows.map((r) => (
-                <TableRow key={r.employeeId}>
-                  <TableCell>
+                <TableRow key={r.employeeId} className="transition-colors hover:bg-muted/40">
+                  <TableCell className="min-w-[200px]">
                     <div className="flex items-center gap-3">
-                      <Avatar className="size-8">
+                      <Avatar className="size-8 shrink-0">
                         <AvatarImage src={r.avatarUrl} alt={r.name} />
                         <AvatarFallback>{initials(r.name)}</AvatarFallback>
                       </Avatar>
@@ -356,29 +477,29 @@ export function PayrollView() {
                   <TableCell className="text-muted-foreground">
                     {r.department}
                   </TableCell>
-                  <TableCell className="tabular-nums">
+                  <TableCell className="text-right tabular-nums">
                     {r.hours.toFixed(1)}
                   </TableCell>
-                  <TableCell className="tabular-nums text-muted-foreground">
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
                     ${r.hourlyRate}/hr
                   </TableCell>
-                  <TableCell className="tabular-nums">
+                  <TableCell className="text-right tabular-nums">
                     {formatCurrency(r.gross)}
                   </TableCell>
-                  <TableCell className="tabular-nums text-muted-foreground">
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
                     -{formatCurrency(r.deductions)}
                   </TableCell>
-                  <TableCell className="font-medium tabular-nums">
+                  <TableCell className="text-right font-medium tabular-nums">
                     {formatCurrency(r.net)}
                   </TableCell>
                   <TableCell>
                     <Badge
-                      className={cn("font-medium", STATUS_META[r.status].cls)}
+                      className={cn("rounded-sm font-medium", STATUS_META[r.status].cls)}
                     >
                       {STATUS_META[r.status].label}
                     </Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-right">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -394,7 +515,7 @@ export function PayrollView() {
         )}
 
         {filtered.length > 0 ? (
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-border px-5 py-3">
+          <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
             <span className="text-sm text-muted-foreground">
               Showing {safePage * PAGE_SIZE + 1}–
               {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
