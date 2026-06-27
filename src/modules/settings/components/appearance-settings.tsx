@@ -12,7 +12,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
+import { PALETTES, applyPalette } from "@/components/layout/palette-switcher";
 import { cn } from "@/lib/utils";
+
+/** The colour palettes offered on the Appearance page. */
+const PALETTE_OPTIONS = PALETTES.filter(
+  (p) => p.id === "meridian" || p.id === "indigo",
+);
 
 interface ThemeOption {
   value: "light" | "dark" | "system";
@@ -95,10 +101,24 @@ function ThemePreview({ swatch }: { swatch: ThemeOption["swatch"] }) {
 export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [palette, setPalette] = useState("meridian");
 
-  // next-themes resolves on the client; avoid an SSR/hydration mismatch.
-  useEffect(() => setMounted(true), []);
+  // next-themes + the palette attr resolve on the client; read after mount to
+  // avoid an SSR/hydration mismatch.
+  useEffect(() => {
+    setMounted(true);
+    try {
+      setPalette(window.localStorage.getItem("wp-palette") || "meridian");
+    } catch {
+      /* storage blocked — keep the default */
+    }
+  }, []);
   const active = mounted ? theme : undefined;
+
+  const choosePalette = (id: string) => {
+    applyPalette(id);
+    setPalette(id);
+  };
 
   return (
     <div className="space-y-6">
@@ -145,6 +165,77 @@ export function AppearanceSettings() {
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {option.description}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                        selected
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-transparent",
+                      )}
+                    >
+                      <Check className="size-3" />
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Colour theme</CardTitle>
+          <CardDescription>
+            Pick the accent palette used across WorkPulse. Saved on this browser.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div
+            role="radiogroup"
+            aria-label="Colour theme"
+            className="grid gap-4 sm:grid-cols-2"
+          >
+            {PALETTE_OPTIONS.map((option) => {
+              const selected = mounted && palette === option.id;
+              return (
+                <button
+                  key={option.id}
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => choosePalette(option.id)}
+                  className={cn(
+                    "group relative flex flex-col gap-3 rounded-lg border border-border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    selected
+                      ? "border-primary ring-1 ring-primary"
+                      : "hover:border-primary/30 hover:bg-muted/50",
+                  )}
+                >
+                  <ThemePreview
+                    swatch={{
+                      canvas: option.swatch[3],
+                      card: "#ffffff",
+                      accent: option.swatch[0],
+                    }}
+                  />
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="flex items-center gap-1.5 text-sm font-medium">
+                        <span className="flex shrink-0 -space-x-1">
+                          {option.swatch.slice(0, 3).map((c, i) => (
+                            <span
+                              key={c + i}
+                              className="size-3 rounded-full border border-border/60"
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </span>
+                        {option.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {option.note}
                       </p>
                     </div>
                     <span
