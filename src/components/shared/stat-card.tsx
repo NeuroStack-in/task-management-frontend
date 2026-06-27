@@ -14,7 +14,7 @@ interface StatCardProps {
   /** Mini pulse-line series. */
   trend?: number[];
   hint?: string;
-  /** Featured sage treatment (white text on sage fill). */
+  /** Featured treatment (top accent border). */
   featured?: boolean;
   /** When set, the whole card becomes a click-through link. */
   href?: string;
@@ -33,39 +33,43 @@ export function StatCard({
   const card = (
     <Card
       className={cn(
-        "h-full justify-between border border-border transition-shadow",
+        "flex h-full flex-col justify-between gap-3 p-4 border border-border transition-shadow",
         featured && "border-t-2 border-t-primary",
         href && "hover:bg-accent/30",
       )}
     >
-      <div className="flex items-center justify-between gap-3 px-5">
-        <span className="text-sm text-muted-foreground">{label}</span>
+      {/* Top row: label + optional icon */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-muted-foreground truncate">{label}</span>
         {Icon ? (
-          <span className="flex size-7 items-center justify-center rounded-md bg-muted text-primary">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-primary">
             <Icon className="size-4" />
           </span>
         ) : null}
       </div>
 
-      <div className="flex items-end justify-between gap-3 px-5">
-        <div className="space-y-1.5">
-          <p className="font-display text-[1.75rem] font-semibold tracking-tight tabular-nums">
+      {/* Bottom row: value + sparkline */}
+      <div className="flex items-end justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-display text-2xl font-semibold tracking-tight tabular-nums leading-none">
             {value}
           </p>
-          <div className="flex items-center gap-2">
-            {delta !== undefined ? <DeltaPill value={delta} /> : null}
-            {hint ? (
-              <span className="text-xs text-muted-foreground">{hint}</span>
-            ) : null}
-          </div>
+          {(delta !== undefined || hint) ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {delta !== undefined ? <DeltaPill value={delta} /> : null}
+              {hint ? (
+                <span className="text-xs text-muted-foreground">{hint}</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         {trend ? (
           <Sparkline
             data={trend}
             area
-            width={92}
-            height={40}
-            className="text-primary"
+            width={80}
+            height={36}
+            className="shrink-0 text-primary"
           />
         ) : null}
       </div>
@@ -79,4 +83,3 @@ export function StatCard({
     </Link>
   );
 }
-

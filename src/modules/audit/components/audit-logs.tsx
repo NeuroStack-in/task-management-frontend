@@ -142,7 +142,7 @@ export function AuditLogs() {
   }
 
   return (
-    <div className="space-y-5 pt-1">
+    <div className="space-y-4 pt-1">
       <PageHeader
         title="Audit Logs"
         description="A complete record of user actions, permission changes, and login events across WorkPulse."
@@ -273,14 +273,14 @@ export function AuditLogs() {
           <table className="w-full caption-bottom text-sm">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="hidden py-3 pl-6 lg:table-cell">
+                <TableHead className="hidden py-2.5 pl-5 lg:table-cell">
                   Time
                 </TableHead>
-                <TableHead className="py-3 pl-6 lg:pl-2">Actor</TableHead>
-                <TableHead className="py-3">Action</TableHead>
-                <TableHead className="hidden py-3 md:table-cell">Category</TableHead>
-                <TableHead className="hidden py-3 xl:table-cell">Target</TableHead>
-                <TableHead className="py-3 pr-6 text-right">Status</TableHead>
+                <TableHead className="py-2.5 pl-5 lg:pl-2">Actor</TableHead>
+                <TableHead className="py-2.5">Action</TableHead>
+                <TableHead className="hidden py-2.5 md:table-cell">Category</TableHead>
+                <TableHead className="hidden py-2.5 xl:table-cell">Target</TableHead>
+                <TableHead className="py-2.5 pr-5 text-right">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -297,32 +297,32 @@ export function AuditLogs() {
                   }}
                   className="cursor-pointer transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                 >
-                  <TableCell className="hidden py-3 pl-6 tabular-nums text-muted-foreground lg:table-cell">
+                  <TableCell className="hidden py-2.5 pl-5 tabular-nums text-muted-foreground lg:table-cell">
                     {e.timestamp}
                   </TableCell>
-                  <TableCell className="py-3 pl-6 lg:pl-2">
-                    <div className="flex items-center gap-2.5">
-                      <Avatar className="size-7">
-                        <AvatarFallback className="text-[10px]">
+                  <TableCell className="py-2.5 pl-5 lg:pl-2">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="size-6">
+                        <AvatarFallback className="text-[9px]">
                           {initials(e.actorName)}
                         </AvatarFallback>
                       </Avatar>
                       <span className="font-medium">{e.actorName}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="py-3">
+                  <TableCell className="py-2.5">
                     <p className="font-medium">{e.action}</p>
                     <p className="text-xs text-muted-foreground lg:hidden">
                       {e.timestamp}
                     </p>
                   </TableCell>
-                  <TableCell className="hidden py-3 md:table-cell">
+                  <TableCell className="hidden py-2.5 md:table-cell">
                     <CategoryBadge category={e.category} />
                   </TableCell>
-                  <TableCell className="hidden max-w-[220px] truncate py-3 text-muted-foreground xl:table-cell">
+                  <TableCell className="hidden max-w-[220px] truncate py-2.5 text-muted-foreground xl:table-cell">
                     {e.target}
                   </TableCell>
-                  <TableCell className="py-3 pr-6 text-right">
+                  <TableCell className="py-2.5 pr-5 text-right">
                     <StatusBadge status={e.status} />
                   </TableCell>
                 </TableRow>

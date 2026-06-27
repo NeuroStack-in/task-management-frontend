@@ -49,7 +49,7 @@ export function ProjectCard({
         }
       }}
       className={cn(
-        "relative cursor-pointer gap-4 pl-6 outline-none transition-colors duration-150",
+        "relative flex h-full cursor-pointer flex-col gap-4 pl-6 outline-none transition-colors duration-150",
         "hover:border-primary/30",
         "focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
@@ -122,8 +122,8 @@ export function ProjectCard({
         </div>
       </div>
 
-      {/* Footer: members + pulse */}
-      <div className="flex items-center justify-between gap-3 px-5">
+      {/* Footer: members + pulse — pushed to bottom so all cards align */}
+      <div className="mt-auto flex items-center justify-between gap-3 px-5">
         <MemberStack members={members} />
         <div className="flex items-center gap-2">
           <Sparkline

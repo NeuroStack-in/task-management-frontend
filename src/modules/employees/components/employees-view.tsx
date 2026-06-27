@@ -297,7 +297,7 @@ export function EmployeesView({
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard label="Total employees" value={liveStats.total} icon={Users} hint="in this organization" featured />
         <StatCard label="Active" value={liveStats.active} icon={UserCheck} hint={`${liveStats.total - liveStats.active} inactive`} />
         <StatCard label="Avg. productivity" value={`${liveStats.avgProductivity}%`} icon={GaugeIcon} hint="across all employees" />

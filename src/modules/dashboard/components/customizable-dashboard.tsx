@@ -38,14 +38,17 @@ import { cn } from "@/lib/utils";
 import type { DashboardWidget } from "@/types";
 
 /**
- * Makes a widget card fill its (equal-height) grid cell and distribute its
- * content to fill the space: the card stretches to h-full, and its CardContent
- * grows (flex-1) and spreads its children top-to-bottom (justify-between).
+ * Makes a widget card fill its (equal-height) grid cell. The card stretches to
+ * h-full and its CardContent grows (flex-1) as a column so chart/heatmap
+ * containers can fill the remaining space below the header. We deliberately do
+ * NOT add `justify-between` here — that pushed content to the top and bottom
+ * edges and left a dead band in the middle of every chart. Children fill from
+ * the top; charts opt into `flex-1` themselves to consume the slack.
  */
 const FILL_CARD =
   "h-full [&>*]:h-full [&>*]:[--card-spacing:--spacing(4)]! " +
   "[&_[data-slot=card-content]]:flex-1 [&_[data-slot=card-content]]:flex " +
-  "[&_[data-slot=card-content]]:flex-col [&_[data-slot=card-content]]:justify-between";
+  "[&_[data-slot=card-content]]:min-h-0 [&_[data-slot=card-content]]:flex-col";
 
 function SortableWidget({
   id,
@@ -205,11 +208,11 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           onDragCancel={() => setActiveId(null)}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            {/* Bento grid: every row caps at ~22rem so chart widgets stay a
-                readable height instead of stretching into whitespace; each card
-                fills its cell (see FILL_CARD). Charts span 2 columns; drop any
-                widget anywhere — order = placement. */}
-            <div className="grid auto-rows-[minmax(0,22rem)] grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {/* Bento grid: every row is a fixed ~19rem so chart widgets fill a
+                readable, equal height instead of stretching into whitespace;
+                each card fills its cell (see FILL_CARD). Charts span 2 columns;
+                drop any widget anywhere — order = placement. */}
+            <div className="grid auto-rows-[19rem] grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {visible.map(renderWidget)}
             </div>
           </SortableContext>

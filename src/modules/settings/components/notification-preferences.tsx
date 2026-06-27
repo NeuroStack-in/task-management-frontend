@@ -149,7 +149,7 @@ export function NotificationPreferences() {
         </CardHeader>
         <CardContent className="p-0">
           {/* Channel header (desktop) */}
-          <div className="hidden items-center gap-4 border-b px-6 py-2.5 sm:flex">
+          <div className="hidden items-center gap-4 border-b px-6 py-2 sm:flex">
             <span className="flex-1" />
             <span className="w-16 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               In-app
@@ -165,7 +165,7 @@ export function NotificationPreferences() {
               return (
                 <div
                   key={type.key}
-                  className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:gap-4"
+                  className="flex flex-col gap-2 px-6 py-3 sm:flex-row sm:items-center sm:gap-4"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">{type.label}</p>
@@ -208,7 +208,7 @@ export function NotificationPreferences() {
           </CardDescription>
         </CardHeader>
         <CardContent className="divide-y">
-          <div className="flex items-center justify-between gap-6 pb-4">
+          <div className="flex items-center justify-between gap-6 py-3">
             <div>
               <p className="text-sm font-medium">Quiet hours</p>
               <p className="text-xs text-muted-foreground">
@@ -223,7 +223,7 @@ export function NotificationPreferences() {
               }
             />
           </div>
-          <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+          <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
             <div>
               <p className="text-sm font-medium">Email digest</p>
               <p className="text-xs text-muted-foreground">

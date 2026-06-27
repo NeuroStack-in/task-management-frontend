@@ -26,10 +26,10 @@ export function AttendanceOverview() {
   const absentPct = 100 - presentPct - leavePct;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid items-stretch gap-4 lg:grid-cols-2">
       {/* Today's Attendance */}
       <Card>
-        <CardContent className="space-y-4 px-5">
+        <CardContent className="flex h-full flex-col justify-between space-y-4 px-5">
           <SectionTitle icon={Flag} title="Today's Attendance" />
 
           <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ function DepartmentAttendance() {
 
   return (
     <Card>
-      <CardContent className="space-y-4 px-5">
+      <CardContent className="flex h-full flex-col justify-between space-y-4 px-5">
         <SectionTitle icon={PieChart} title="Department Attendance" />
 
         <div className="flex gap-1 overflow-x-auto rounded-full bg-muted p-1">
@@ -108,8 +108,8 @@ function DepartmentAttendance() {
           ))}
         </div>
 
-        <div className="flex justify-center py-1">
-          <TickGauge value={dept.rate} label="Attendance rate" size={184} ticks={26} />
+        <div className="flex justify-center">
+          <TickGauge value={dept.rate} label="Attendance rate" size={176} ticks={26} />
         </div>
 
         <div className="grid grid-cols-3 gap-2 border-t pt-3">

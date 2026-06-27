@@ -251,7 +251,7 @@ export function ReportsTab() {
     filter === "all" ? "Export all" : `Export ${reports.length}`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <AiInsight
         title={`${atRisk} projects flagged at risk this week`}
         detail="Engineering and Product lead utilization; a small group is trending toward over-utilization. Open any report below for the detail."

@@ -359,14 +359,19 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         </div>
       </header>
 
-      {/* KPI row */}
+      {/* KPI row — all cards stretch to the same height */}
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card p-5">
-          <p className="self-start text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {/* Completion gauge — fixed circular container prevents overflow/overlap */}
+        <div className="flex flex-col rounded-lg border border-border bg-card p-5">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Completion
           </p>
-          <Gauge value={project.progress} label="of work done" size={172} />
-          <p className="mt-1 text-xs text-muted-foreground">
+          <div className="flex flex-1 flex-col items-center justify-center py-2">
+            <div className="w-[172px]">
+              <Gauge value={project.progress} label="of work done" size={172} />
+            </div>
+          </div>
+          <p className="text-center text-xs text-muted-foreground">
             {completed} of {tasks.length} tasks done
           </p>
         </div>

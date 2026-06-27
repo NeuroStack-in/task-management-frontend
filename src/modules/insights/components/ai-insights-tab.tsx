@@ -303,8 +303,8 @@ function AttentionTrend() {
       <CardHeader>
         <CardTitle className="text-base">Attention this week</CardTitle>
       </CardHeader>
-      <CardContent className="min-h-0 flex-1">
-        <div className="h-full min-h-[176px] w-full">
+      <CardContent className="flex-1">
+        <div className="h-full min-h-44 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={ANOMALY_TREND} margin={{ left: -24, right: 4, top: 4 }}>
               <CartesianGrid vertical={false} stroke="var(--border)" />

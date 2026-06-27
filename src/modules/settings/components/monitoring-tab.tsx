@@ -54,7 +54,7 @@ function SettingRow({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-6 py-4 [&+&]:border-t border-border",
+        "flex items-center justify-between gap-6 py-3 [&+&]:border-t border-border",
         disabled && "opacity-60",
       )}
     >

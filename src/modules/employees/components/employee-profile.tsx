@@ -193,7 +193,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
   }));
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
+    <div className="mx-auto max-w-5xl space-y-4">
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
@@ -226,17 +226,17 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
       </div>
 
       {/* Employee — identity, contact & address in ONE card */}
-      <div className="overflow-hidden rounded-2xl border bg-card">
-        <div className="flex flex-col gap-5 border-b p-6 sm:flex-row sm:items-center">
-          <Avatar className="size-20 shrink-0 ring-4 ring-feature-tint">
+      <div className="overflow-hidden rounded-xl border bg-card">
+        <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
+          <Avatar className="size-16 shrink-0 ring-4 ring-feature-tint">
             <AvatarImage src={data.avatarUrl} alt={data.name} />
-            <AvatarFallback className="text-xl">
+            <AvatarFallback className="text-lg">
               {initials(data.name)}
             </AvatarFallback>
           </Avatar>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h1 className="font-display text-2xl font-semibold tracking-tight">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="font-display text-xl font-semibold tracking-tight">
                 {data.name}
               </h1>
               <span className="font-mono text-xs text-muted-foreground">
@@ -246,7 +246,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
             <p className="mt-0.5 text-sm text-muted-foreground">
               {data.jobTitle} · {data.department}
             </p>
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge className="bg-feature-tint text-primary">
                 {data.roleName}
               </Badge>
@@ -255,7 +255,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
           </div>
         </div>
 
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-5 p-6 sm:grid-cols-2 lg:grid-cols-3">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5 lg:grid-cols-3">
           <Detail label="Phone" value={data.phone} />
           <Detail label="Email" value={data.email} />
           <Detail label="Team" value={data.team} />
@@ -266,8 +266,8 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
       </div>
 
       {/* Projects — all projects, single accent bar, Active badge when active */}
-      <div className="rounded-2xl border bg-card p-6">
-        <div className="mb-5 flex items-center gap-2">
+      <div className="rounded-xl border bg-card p-5">
+        <div className="mb-4 flex items-center gap-2">
           <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
             <FolderKanban className="size-4" />
           </span>
@@ -283,9 +283,9 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
             Not assigned to any project yet.
           </p>
         ) : (
-          <ul className="space-y-5">
+          <ul className="space-y-4">
             {data.projects.map((p) => (
-              <li key={p.id} className="space-y-2">
+              <li key={p.id} className="space-y-1.5">
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className="flex min-w-0 items-center gap-2 font-medium">
                     <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
@@ -318,8 +318,8 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
       </div>
 
       {/* KPI chart */}
-      <div className="rounded-2xl border bg-card p-6">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+      <div className="rounded-xl border bg-card p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
               <BarChart2 className="size-4" />
@@ -338,7 +338,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
             <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={230}>
+        <ResponsiveContainer width="100%" height={200}>
           <AreaChart
             data={chartData}
             margin={{ top: 6, right: 8, bottom: 0, left: -16 }}

@@ -1,12 +1,18 @@
 "use client";
 
 import { jsPDF } from "jspdf";
-import { AlertCircle, Check, Clock, CreditCard, Download, type LucideIcon } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, Clock, CreditCard, Download, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   CURRENT_PLAN,
   INVOICES,
@@ -60,170 +66,152 @@ export function BillingView() {
     (CURRENT_PLAN.seatsUsed / CURRENT_PLAN.seatsTotal) * 100,
   );
 
+  // Next invoice is the first "due" invoice, or the last paid one
+  const nextInvoice =
+    INVOICES.find((i) => i.status === "due") ?? INVOICES[0];
+
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader
         title="Billing & Subscription"
-        description="Manage your plan, seats, payment method, and invoices."
+        description="Plan, seats, payment method, and invoice history."
       />
 
-      {/* Plan + payment */}
+      {/* ── Compact summary card ── */}
       <Card>
-        <CardContent className="grid gap-8 px-6 md:grid-cols-2">
-          {/* Plan */}
-          <div className="space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Current plan</p>
-                <p className="font-display text-2xl font-semibold">Business</p>
-              </div>
-              <p className="text-right">
-                <span className="font-display text-2xl font-semibold tabular-nums">
-                  {formatCurrency(monthly)}
-                </span>
-                <span className="text-sm text-muted-foreground"> /mo</span>
+        <CardContent className="p-5">
+          {/* Top row: plan name + price + primary action */}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-0.5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Current plan</p>
+              <p className="font-display text-2xl font-semibold">Business</p>
+            </div>
+            <div className="text-right">
+              <p className="font-display text-2xl font-semibold tabular-nums">
+                {formatCurrency(monthly)}
+                <span className="text-sm font-normal text-muted-foreground">/mo</span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {formatCurrency(CURRENT_PLAN.pricePerSeat)}/seat · renews {CURRENT_PLAN.renewsOn}
               </p>
             </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
-                <span>
-                  {CURRENT_PLAN.seatsUsed} of {CURRENT_PLAN.seatsTotal} seats
-                </span>
-                <span>{seatPct}%</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${seatPct}%` }}
-                />
-              </div>
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Renews {CURRENT_PLAN.renewsOn} · {CURRENT_PLAN.billingCycle}
-            </p>
-
-            {/* Stub CTA: always disabled — subscription management is a later phase */}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled
-              title="Subscription management is available in a later phase."
-            >
-              Manage subscription
-            </Button>
           </div>
 
-          {/* Payment */}
-          <div className="space-y-4 md:border-l md:pl-8">
-            <p className="text-sm text-muted-foreground">Payment method</p>
+          {/* Seats bar */}
+          <div className="mt-4 space-y-1.5">
+            <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
+              <span>Seats used</span>
+              <span>{CURRENT_PLAN.seatsUsed} / {CURRENT_PLAN.seatsTotal} ({seatPct}%)</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn("h-full rounded-full", seatPct >= 85 ? "bg-warning" : "bg-primary")}
+                style={{ width: `${seatPct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Usage meters */}
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {USAGE_METERS.map((m) => {
+              const pct = Math.round((m.used / m.total) * 100);
+              return (
+                <div key={m.label} className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{m.label}</span>
+                    <span className="tabular-nums">{m.used.toLocaleString()} / {m.total.toLocaleString()} {m.unit}</span>
+                  </div>
+                  <div className="h-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn("h-full rounded-full", pct >= 85 ? "bg-warning" : "bg-primary/60")}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
+          {/* Bottom row: payment + next invoice + actions */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Payment method */}
             <div className="flex items-center gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <CreditCard className="size-5" />
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <CreditCard className="size-4" />
               </span>
               <div>
-                <p className="font-mono text-sm tracking-wider">
-                  •••• {PAYMENT_METHOD.last4}
-                </p>
+                <p className="text-sm font-mono tracking-wider">•••• {PAYMENT_METHOD.last4}</p>
                 <p className="text-xs text-muted-foreground">
                   {PAYMENT_METHOD.brand} · Exp {PAYMENT_METHOD.expires}
                 </p>
               </div>
             </div>
-            {/* Stub CTA: always disabled — card update is a later phase */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2"
-              disabled
-              title="Updating payment method is available in a later phase."
-            >
-              Update card
-            </Button>
+
+            {/* Next invoice */}
+            {nextInvoice && (
+              <div className="text-sm">
+                <span className="text-muted-foreground">Next invoice: </span>
+                <span className="font-medium tabular-nums">{formatCurrency(nextInvoice.amount)}</span>
+                <span className="text-muted-foreground"> on {CURRENT_PLAN.renewsOn}</span>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              {/* Stub CTA: always disabled — card update is a later phase */}
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled
+                title="Updating payment method is available in a later phase."
+              >
+                Update card
+              </Button>
+              {/* Plan picker — stub, all actions disabled */}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant="outline" size="sm" className="gap-1.5" />
+                  }
+                >
+                  Change plan
+                  <ChevronDown className="size-3.5 text-muted-foreground" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  {PLAN_TIERS.map((tier) => (
+                    <DropdownMenuItem
+                      key={tier.id}
+                      disabled
+                      title={`Switching to ${tier.name} is available in a later phase.`}
+                    >
+                      <span className="flex w-full items-center justify-between gap-4">
+                        <span className="flex items-center gap-2">
+                          {tier.id === CURRENT_PLAN.tierId && (
+                            <Check className="size-3.5 text-success" />
+                          )}
+                          <span className={tier.id === CURRENT_PLAN.tierId ? "font-medium" : "pl-[22px]"}>
+                            {tier.name}
+                          </span>
+                        </span>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {formatCurrency(tier.pricePerSeat)}/seat
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Usage */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Usage this cycle
-        </h2>
-        <div className="space-y-4">
-          {USAGE_METERS.map((m) => {
-            const pct = Math.round((m.used / m.total) * 100);
-            return (
-              <div key={m.label} className="space-y-1.5">
-                <div className="flex items-baseline justify-between text-sm">
-                  <span>{m.label}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {m.used.toLocaleString()} / {m.total.toLocaleString()} {m.unit}
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      pct >= 85 ? "bg-warning" : "bg-primary",
-                    )}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Plans — current tier is collapsed to a label; only upgrades/downgrades shown */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-medium text-muted-foreground">Plans</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {PLAN_TIERS.filter((t) => t.id !== CURRENT_PLAN.tierId).map((tier) => (
-            <div
-              key={tier.id}
-              className="rounded-lg border border-border p-4"
-            >
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{tier.name}</p>
-              </div>
-              <p className="mt-1 font-display text-xl font-semibold tabular-nums">
-                {formatCurrency(tier.pricePerSeat)}
-                <span className="text-xs font-normal text-muted-foreground">
-                  {" "}
-                  /seat/mo
-                </span>
-              </p>
-              <ul className="mt-3 space-y-1.5 text-xs text-muted-foreground">
-                {tier.features.map((f) => (
-                  <li key={f} className="flex items-center gap-1.5">
-                    <Check className="size-3 shrink-0 text-success" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              {/* Stub CTA: always disabled — plan switching is a later phase */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-3 -ml-2"
-                disabled
-                title={`Switching to ${tier.name} is available in a later phase.`}
-              >
-                Switch to {tier.name}
-              </Button>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Current plan: <span className="font-medium text-foreground">Business</span> · {formatCurrency(CURRENT_PLAN.pricePerSeat)}/seat/mo
-        </p>
-      </section>
-
-      {/* Invoices */}
+      {/* ── Invoice history ── */}
       <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Invoices</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">Invoice history</h2>
         <div className="divide-y rounded-lg border border-border">
           {INVOICES.map((inv) => {
             const meta = INVOICE_STATUS_META[inv.status] ?? {
@@ -235,7 +223,7 @@ export function BillingView() {
                 key={inv.id}
                 className="flex items-center gap-4 px-4 py-3 text-sm transition-colors hover:bg-muted/40"
               >
-                <span className="font-mono text-xs text-muted-foreground">
+                <span className="font-mono text-xs text-muted-foreground w-28 shrink-0">
                   {inv.number}
                 </span>
                 <span className="flex-1 text-muted-foreground">{inv.date}</span>

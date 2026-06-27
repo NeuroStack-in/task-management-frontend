@@ -190,12 +190,12 @@ export function FeaturesTab() {
                 <div
                   key={f.key}
                   className={cn(
-                    "flex items-center gap-4 px-6 py-4 transition-opacity",
+                    "flex items-center gap-4 px-6 py-3 transition-opacity",
                     !enabled && "opacity-60",
                   )}
                 >
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
-                    <Icon className="size-5 text-muted-foreground" />
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                    <Icon className="size-4 text-muted-foreground" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">

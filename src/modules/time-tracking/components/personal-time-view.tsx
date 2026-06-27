@@ -90,7 +90,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <TimerHero onLogged={handleLogged} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -151,24 +151,24 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
             </Button>
           </CardAction>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="overflow-x-auto rounded-xl border">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="py-2 pl-4 text-xs font-medium uppercase tracking-wide">
                     Task
                   </TableHead>
-                  <TableHead className="text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="py-2 text-xs font-medium uppercase tracking-wide">
                     Project
                   </TableHead>
-                  <TableHead className="text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="py-2 text-xs font-medium uppercase tracking-wide">
                     Time
                   </TableHead>
-                  <TableHead className="w-40 text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="w-36 py-2 text-xs font-medium uppercase tracking-wide">
                     Activity
                   </TableHead>
-                  <TableHead className="text-right text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="py-2 pr-4 text-right text-xs font-medium uppercase tracking-wide">
                     Duration
                   </TableHead>
                 </TableRow>
@@ -176,20 +176,20 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               <TableBody>
                 {entries.map((e) => (
                   <TableRow key={e.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
+                    <TableCell className="py-2 pl-4">
+                      <div className="flex items-center gap-1.5">
                         <span className="font-medium">{e.task}</span>
-                        {e.billable ? <Badge variant="secondary">Billable</Badge> : null}
+                        {e.billable ? <Badge variant="secondary" className="px-1.5 py-0 text-[0.65rem]">Billable</Badge> : null}
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{e.project}</TableCell>
-                    <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                    <TableCell className="py-2 text-sm text-muted-foreground">{e.project}</TableCell>
+                    <TableCell className="py-2 font-mono text-xs tabular-nums text-muted-foreground">
                       {e.start} – {e.end ?? "…"}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-2">
                       <ActivityBar value={e.activity} />
                     </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
+                    <TableCell className="py-2 pr-4 text-right font-mono tabular-nums">
                       {formatDuration(e.durationSec)}
                     </TableCell>
                   </TableRow>
@@ -197,10 +197,10 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={4} className="font-medium">
+                  <TableCell colSpan={4} className="py-2 pl-4 font-medium">
                     Total
                   </TableCell>
-                  <TableCell className="text-right font-mono font-semibold tabular-nums">
+                  <TableCell className="py-2 pr-4 text-right font-mono font-semibold tabular-nums">
                     {formatDuration(totalSec)}
                   </TableCell>
                 </TableRow>
