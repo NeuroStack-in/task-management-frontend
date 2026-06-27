@@ -7,11 +7,13 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Sparkline } from "@/components/shared/sparkline";
 import {
   CURRENT_PLAN,
   INVOICES,
   PAYMENT_METHOD,
   PLAN_TIERS,
+  SPEND_TREND,
   USAGE_METERS,
   formatCurrency,
   type Invoice,
@@ -62,6 +64,9 @@ export function BillingView() {
 
   const nextInvoice =
     INVOICES.find((i) => i.status === "due") ?? INVOICES[0];
+
+  const planFeatures =
+    PLAN_TIERS.find((t) => t.id === CURRENT_PLAN.tierId)?.features ?? [];
 
   return (
     <div className="space-y-6">
@@ -127,6 +132,40 @@ export function BillingView() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Plan value + spend trend — anchored to the bottom so the card
+                fills the height of the payment column beside it. */}
+            <div className="mt-auto space-y-5 border-t border-border pt-5">
+              <div>
+                <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  What&apos;s included
+                </p>
+                <ul className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+                  {planFeatures.map((f) => (
+                    <li key={f} className="flex items-center gap-2 text-sm">
+                      <Check className="size-4 shrink-0 text-success" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <div className="mb-1.5 flex items-baseline justify-between">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Monthly spend
+                  </p>
+                  <span className="text-xs text-muted-foreground">last 7 months</span>
+                </div>
+                <Sparkline
+                  data={SPEND_TREND}
+                  area
+                  showDot
+                  height={52}
+                  className="w-full"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -4,11 +4,14 @@ import { useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
+  pointerWithin,
+  closestCorners,
   KeyboardSensor,
   PointerSensor,
+  useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -97,6 +100,43 @@ function SortableWidget({
   );
 }
 
+/** Sentinel id for the trailing empty-space drop target. */
+const END_ZONE_ID = "__dashboard-end__";
+
+/**
+ * A droppable that fills the empty grid cell after the last widget so a card can
+ * be dropped into the blank trailing space (= move to the end). Only rendered
+ * while a drag is in progress.
+ */
+function EndDropZone() {
+  const { setNodeRef, isOver } = useDroppable({ id: END_ZONE_ID });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex h-full items-center justify-center rounded-lg border-2 border-dashed text-xs font-medium transition-colors",
+        isOver
+          ? "border-primary/60 bg-primary/[0.06] text-primary"
+          : "border-border/70 text-muted-foreground",
+      )}
+    >
+      Drop here to move to the end
+    </div>
+  );
+}
+
+/**
+ * Pointer-first collision detection: prefer whatever the cursor is actually
+ * inside (so empty trailing space resolves to the end zone), then fall back to
+ * `closestCorners` — the dnd-kit strategy best suited to a sortable grid with
+ * mixed-width (span-1 / span-2) cells. This is what makes a drop land reliably
+ * instead of snapping back.
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  const pointer = pointerWithin(args);
+  return pointer.length > 0 ? pointer : closestCorners(args);
+};
+
 export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const widgets = useDashboardStore((s) => s.widgets);
   const toggleWidget = useDashboardStore((s) => s.toggleWidget);
@@ -133,10 +173,21 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const onDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = e;
-    if (!over || active.id === over.id) return;
+    if (!over) return;
     const oldIndex = visibleIds.indexOf(String(active.id));
+    if (oldIndex < 0) return;
+
+    // Dropped onto the trailing empty space → move the widget to the end.
+    if (over.id === END_ZONE_ID) {
+      if (oldIndex === visibleIds.length - 1) return; // already last
+      const newVisible = arrayMove(visibleIds, oldIndex, visibleIds.length - 1);
+      reorder([...newVisible, ...hiddenIds]);
+      return;
+    }
+
+    if (active.id === over.id) return;
     const newIndex = visibleIds.indexOf(String(over.id));
-    if (oldIndex < 0 || newIndex < 0) return;
+    if (newIndex < 0) return;
     const newVisible = arrayMove(visibleIds, oldIndex, newIndex);
     reorder([...newVisible, ...hiddenIds]);
   };
@@ -195,18 +246,22 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
       ) : (
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={collisionDetection}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           onDragCancel={() => setActiveId(null)}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            {/* Bento grid: every row is a fixed ~19rem so chart widgets fill a
-                readable, equal height instead of stretching into whitespace;
-                each card fills its cell (see FILL_CARD). Charts span 2 columns;
-                drop any widget anywhere — order = placement. */}
-            <div className="grid auto-rows-[19rem] grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {/* Bento grid: rows have a ~19rem floor so chart widgets fill a
+                readable, equal height, but grow to fit taller content (e.g. the
+                Top Employees list) instead of clipping it against the card's
+                bottom edge. Each card fills its cell (see FILL_CARD). Charts span
+                2 columns; drop any widget anywhere — order = placement. */}
+            <div className="grid auto-rows-[minmax(19rem,auto)] grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {visible.map(renderWidget)}
+              {/* Trailing drop target — only while dragging — so a card can land
+                  in the empty space instead of snapping back. */}
+              {activeId ? <EndDropZone /> : null}
             </div>
           </SortableContext>
           <DragOverlay>

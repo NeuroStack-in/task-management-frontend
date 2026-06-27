@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
@@ -35,8 +36,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { TablePagination } from "@/components/shared/table-pagination";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
+import { usePageTitle } from "@/stores/page-header.store";
 import { cn } from "@/lib/utils";
 
 export interface ProjectItem {
@@ -186,11 +189,28 @@ function exportEmployeePdf(d: EmployeeProfileData) {
 }
 
 export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
+  // Surface the employee's name + role in the top navbar for this detail route.
+  usePageTitle(data.name, `${data.jobTitle} · ${data.department}`);
+
   const chartData = data.kpi.months.map((m, i) => ({
     month: m,
     current: data.kpi.current[i],
     previous: data.kpi.previous[i],
   }));
+
+  // Projects list paginates so a heavily-staffed employee doesn't run a wall of
+  // bars down the card.
+  const PROJECTS_PER_PAGE = 5;
+  const [projectPage, setProjectPage] = useState(0);
+  const projectPageCount = Math.max(
+    1,
+    Math.ceil(data.projects.length / PROJECTS_PER_PAGE),
+  );
+  const safeProjectPage = Math.min(projectPage, projectPageCount - 1);
+  const pagedProjects = data.projects.slice(
+    safeProjectPage * PROJECTS_PER_PAGE,
+    safeProjectPage * PROJECTS_PER_PAGE + PROJECTS_PER_PAGE,
+  );
 
   return (
     <div className="space-y-4">
@@ -287,8 +307,9 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
                 Not assigned to any project yet.
               </p>
             ) : (
-              <ul className="space-y-4">
-                {data.projects.map((p) => (
+              <>
+                <ul className="space-y-4">
+                {pagedProjects.map((p) => (
                   <li key={p.id} className="space-y-1.5">
                     <div className="flex items-center justify-between gap-3 text-sm">
                       <span className="flex min-w-0 items-center gap-2 font-medium">
@@ -317,7 +338,18 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
                     </p>
                   </li>
                 ))}
-              </ul>
+                </ul>
+                {data.projects.length > PROJECTS_PER_PAGE ? (
+                  <TablePagination
+                    page={safeProjectPage}
+                    pageCount={projectPageCount}
+                    total={data.projects.length}
+                    pageSize={PROJECTS_PER_PAGE}
+                    onPageChange={setProjectPage}
+                    className="mt-4"
+                  />
+                ) : null}
+              </>
             )}
           </div>
         </div>
@@ -366,8 +398,8 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
             </div>
           </div>
 
-          {/* KPI chart */}
-          <div className="flex-1 rounded-xl border bg-card p-5">
+          {/* KPI chart — capped so it never balloons to match a taller left column */}
+          <div className="flex max-h-[360px] flex-1 flex-col rounded-xl border bg-card p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
@@ -387,7 +419,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
                 <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
               <AreaChart
                 data={chartData}
                 margin={{ top: 6, right: 8, bottom: 0, left: -16 }}

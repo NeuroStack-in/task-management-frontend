@@ -71,8 +71,6 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       managerId: v.managerId || undefined,
       memberIds: rosterOf(v),
       department: v.department,
-      budget: 0,
-      spent: 0,
       startDate: TODAY_ISO,
       dueDate: v.dueDate,
       velocity: [6, 9, 8, 11, 10, 13, 15],
@@ -87,7 +85,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         p.id === id
           ? {
               ...p,
-              // key, budget, spent and status are preserved (not edited here).
+              // key and status are preserved (not edited here).
               name: v.name,
               description: v.description.trim() || undefined,
               department: v.department,

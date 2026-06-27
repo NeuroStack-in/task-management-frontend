@@ -295,16 +295,6 @@ export function PayrollView() {
       <PageHeader
         title="Payroll"
         description={`${period.label} pay run · ${totals.headcount} employees · payslips from logged hours`}
-        actions={
-          <div className="flex items-center gap-2">
-            <PeriodDropdown index={periodIndex} onChange={resetPage(setPeriodIndex)} />
-            {can("payroll:export") ? (
-              <Button variant="outline" onClick={() => exportRunCsv(run)}>
-                <Download className="size-4" /> Download run
-              </Button>
-            ) : null}
-          </div>
-        }
       />
 
       <div className="grid grid-rows-[auto] gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -375,6 +365,7 @@ export function PayrollView() {
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <PeriodDropdown index={periodIndex} onChange={resetPage(setPeriodIndex)} />
             <FilterDropdown
               label="Dept"
               value={dept}
@@ -387,6 +378,11 @@ export function PayrollView() {
               options={STATUS_OPTIONS}
               onChange={resetPage(setStatus)}
             />
+            {can("payroll:export") ? (
+              <Button variant="outline" onClick={() => exportRunCsv(run)}>
+                <Download className="size-4" /> Download run
+              </Button>
+            ) : null}
           </div>
         </div>
 

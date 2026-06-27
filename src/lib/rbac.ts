@@ -87,3 +87,25 @@ export function permissionForPath(pathname: string): PermissionId | null {
   }
   return match?.permission ?? null;
 }
+
+/**
+ * Resolves the page title for a given pathname by matching the most specific
+ * nav entry (sidebar, admin hub, or Insights tab). Used to echo the active
+ * page's name in the top navbar.
+ */
+export function titleForPath(pathname: string): string | null {
+  const items: NavItem[] = [
+    ...NAV_GROUPS.flatMap((g) => g.items),
+    ...ADMIN_SECTIONS.flatMap((g) => g.items),
+    ...INSIGHTS_TABS,
+  ];
+  let match: NavItem | null = null;
+  for (const item of items) {
+    if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
+      if (!match || item.href.length > match.href.length) {
+        match = item;
+      }
+    }
+  }
+  return match?.label ?? null;
+}

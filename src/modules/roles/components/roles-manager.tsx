@@ -99,16 +99,19 @@ export function RolesManager() {
       <PageHeader
         title="Roles & Permissions"
         description="Create roles and control what each can access. The sidebar and routes adapt to these permissions."
-        actions={
-          canManage ? (
-            <Button onClick={openCreate}>
-              <Plus className="size-4" /> Create role
-            </Button>
-          ) : undefined
-        }
       />
 
       <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <span className="text-sm font-medium text-muted-foreground">
+            {roles.length} role{roles.length === 1 ? "" : "s"}
+          </span>
+          {canManage ? (
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="size-4" /> Create role
+            </Button>
+          ) : null}
+        </div>
         <table className="w-full caption-bottom text-sm">
           <TableHeader>
             <TableRow className="hover:bg-transparent">

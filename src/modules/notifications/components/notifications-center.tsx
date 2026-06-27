@@ -92,20 +92,11 @@ export function NotificationsCenter() {
       <PageHeader
         title="Notifications"
         description="Activity and alerts that need your attention."
-        actions={
-          <Button
-            variant="outline"
-            onClick={markAllRead}
-            disabled={unread === 0}
-          >
-            <CheckCheck className="size-4" /> Mark all read
-          </Button>
-        }
       />
 
       <div className="space-y-4">
         {/* Filter pills — compact row, two groups: read-state then type */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <FilterPill
             label="All"
             count={notifications.length}
@@ -127,6 +118,15 @@ export function NotificationsCenter() {
               onClick={() => setFilter(t)}
             />
           ))}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={markAllRead}
+            disabled={unread === 0}
+            className="ml-auto"
+          >
+            <CheckCheck className="size-4" /> Mark all read
+          </Button>
         </div>
 
         {visible.length === 0 ? (
