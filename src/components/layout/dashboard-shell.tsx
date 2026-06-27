@@ -40,10 +40,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNavbar />
-        {/* pb clears the fixed AI-assistant FAB (bottom-right) so it never
-            covers page content like pagination controls. The keyed wrapper gives
-            each route a subtle fade-up entrance (disabled under reduced-motion). */}
-        <main className="flex-1 px-4 pb-24 sm:px-6">
+        {/* Tight bottom padding so content ends level with the sidebar's bottom
+            edge; the translucent, draggable AI FAB overlays the corner. The keyed
+            wrapper gives each route a subtle fade-up entrance (disabled under
+            reduced-motion). */}
+        <main className="flex-1 px-4 pb-3 sm:px-6">
           <div key={pathname} className="wp-enter">
             {children}
           </div>

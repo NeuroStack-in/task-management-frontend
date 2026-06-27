@@ -23,7 +23,7 @@ import {
   Building2,
   CalendarCheck,
   Wallet,
-  Plane,
+  DoorOpen,
   SlidersHorizontal,
   Globe,
   ToggleRight,
@@ -69,7 +69,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Employees", href: "/employees", icon: Users, permission: "employees:view" },
       { label: "Attendance", href: "/attendance", icon: CalendarCheck, permission: "attendance:view" },
-      { label: "Leave", href: "/leave-requests", icon: Plane, permission: "leave:view" },
+      { label: "Leave", href: "/leave-requests", icon: DoorOpen, permission: "leave:view" },
       { label: "Approvals", href: "/approvals", icon: CheckCheck, permission: "approvals:view" },
     ],
   },
@@ -81,10 +81,10 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Insights",
+    label: "Analytics",
     items: [
       {
-        label: "Insights",
+        label: "Analytics",
         href: "/insights",
         icon: LineChart,
         permission: null,

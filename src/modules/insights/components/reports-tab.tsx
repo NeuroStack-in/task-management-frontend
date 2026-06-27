@@ -248,7 +248,7 @@ export function ReportsTab() {
 
   const atRisk = PROJECT_HOURS.filter((p) => !p.onTrack).length;
   const exportAllLabel =
-    filter === "all" ? "Export all" : `Export ${reports.length}`;
+    filter === "all" ? "Download all" : `Download ${reports.length}`;
 
   return (
     <div className="space-y-5">
@@ -477,15 +477,15 @@ function ExportMenu({
         render={
           <Button
             variant="outline"
-            size="sm"
-            className="gap-1.5"
+            size="icon"
+            className="size-8"
             disabled={!canExport}
+            aria-label={`Export ${report.name}`}
             onClick={(e) => e.stopPropagation()}
           />
         }
       >
-        <Download className="size-4" /> Export
-        <ChevronDown className="size-3.5" />
+        <Download className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-auto min-w-44">
         <DropdownMenuItem

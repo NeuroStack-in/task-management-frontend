@@ -425,28 +425,26 @@ export function PayrollView() {
                 </TableHead>
                 <TableHead>Department</TableHead>
                 <TableHead
-                  className="text-right"
                   aria-sort={sortCol === "hours" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                 >
                   <button
                     type="button"
-                    className="ml-auto flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
+                    className="flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
                     onClick={() => toggleSort("hours")}
                   >
                     Hours
                     <SortIcon col="hours" active={sortCol} dir={sortDir} />
                   </button>
                 </TableHead>
-                <TableHead className="text-right">Rate</TableHead>
-                <TableHead className="text-right">Gross</TableHead>
-                <TableHead className="text-right">Deductions</TableHead>
+                <TableHead>Rate</TableHead>
+                <TableHead>Gross</TableHead>
+                <TableHead>Deductions</TableHead>
                 <TableHead
-                  className="text-right"
                   aria-sort={sortCol === "net" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                 >
                   <button
                     type="button"
-                    className="ml-auto flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
+                    className="flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
                     onClick={() => toggleSort("net")}
                   >
                     Net pay
@@ -454,7 +452,7 @@ export function PayrollView() {
                   </button>
                 </TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Payslip</TableHead>
+                <TableHead>Payslip</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -477,19 +475,19 @@ export function PayrollView() {
                   <TableCell className="text-muted-foreground">
                     {r.department}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="tabular-nums">
                     {r.hours.toFixed(1)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                  <TableCell className="tabular-nums text-muted-foreground">
                     ${r.hourlyRate}/hr
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="tabular-nums">
                     {formatCurrency(r.gross)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                  <TableCell className="tabular-nums text-muted-foreground">
                     -{formatCurrency(r.deductions)}
                   </TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">
+                  <TableCell className="font-medium tabular-nums">
                     {formatCurrency(r.net)}
                   </TableCell>
                   <TableCell>
@@ -499,7 +497,7 @@ export function PayrollView() {
                       {STATUS_META[r.status].label}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -515,7 +513,7 @@ export function PayrollView() {
         )}
 
         {filtered.length > 0 ? (
-          <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-border px-5 py-3">
             <span className="text-sm text-muted-foreground">
               Showing {safePage * PAGE_SIZE + 1}–
               {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
