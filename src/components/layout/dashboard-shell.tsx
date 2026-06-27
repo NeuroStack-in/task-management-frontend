@@ -39,9 +39,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNavbar />
-        {/* pb clears the fixed AI-assistant FAB (bottom-right) so it never
-            covers page content like pagination controls. */}
-        <main className="flex-1 px-4 pb-24 sm:px-6">{children}</main>
+        {/* Bottom padding matches the sidebar's inset (aside p-3) so content
+            ends level with the sidebar; the translucent AI FAB overlays the
+            corner. */}
+        <main className="flex-1 px-4 pb-3 sm:px-6">{children}</main>
       </div>
       <ChatBot />
       <CommandPalette />

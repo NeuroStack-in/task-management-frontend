@@ -13,6 +13,16 @@ interface Message {
   text: string;
 }
 
+/** Floating-button geometry + persisted position. */
+const FAB_SIZE = 56; // size-14
+const FAB_MARGIN = 16; // gap from the edge after snapping
+const FAB_KEY = "wp-fab-pos";
+
+interface FabPos {
+  x: number;
+  y: number;
+}
+
 const GREETING =
   "I'm your WorkPulse assistant. Ask about productivity, your team, or the current screen.";
 
@@ -78,6 +88,114 @@ export function ChatBot() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, pendingPrompt]);
 
+  /* ── Draggable, edge-snapping floating button ──────────────────────── */
+  const [fab, setFab] = useState<FabPos | null>(null);
+  const dragRef = useRef(false);
+  const movedRef = useRef(false);
+  const startRef = useRef({ px: 0, py: 0, x: 0, y: 0 });
+
+  const clampFab = (p: FabPos): FabPos => ({
+    x: Math.min(Math.max(8, p.x), window.innerWidth - FAB_SIZE - 8),
+    y: Math.min(Math.max(8, p.y), window.innerHeight - FAB_SIZE - 8),
+  });
+
+  // Load the saved position (or default to bottom-right) once mounted, and keep
+  // it inside the viewport on resize.
+  useEffect(() => {
+    let initial: FabPos = {
+      x: window.innerWidth - FAB_SIZE - 20,
+      y: window.innerHeight - FAB_SIZE - 20,
+    };
+    try {
+      const raw = window.localStorage.getItem(FAB_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (typeof p?.x === "number" && typeof p?.y === "number") initial = p;
+      }
+    } catch {
+      /* ignore */
+    }
+    setFab(clampFab(initial));
+    const onResize = () => setFab((p) => (p ? clampFab(p) : p));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  /** Snap the button to whichever viewport edge is nearest. */
+  const snapToEdge = (p: FabPos): FabPos => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const dl = p.x;
+    const dr = vw - (p.x + FAB_SIZE);
+    const dt = p.y;
+    const db = vh - (p.y + FAB_SIZE);
+    const nearest = Math.min(dl, dr, dt, db);
+    let { x, y } = p;
+    if (nearest === dl) x = FAB_MARGIN;
+    else if (nearest === dr) x = vw - FAB_SIZE - FAB_MARGIN;
+    else if (nearest === dt) y = FAB_MARGIN;
+    else y = vh - FAB_SIZE - FAB_MARGIN;
+    return clampFab({ x, y });
+  };
+
+  const onFabPointerDown = (e: React.PointerEvent) => {
+    if (!fab) return;
+    movedRef.current = false;
+    dragRef.current = true;
+    startRef.current = { px: e.clientX, py: e.clientY, x: fab.x, y: fab.y };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onFabPointerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - startRef.current.px;
+    const dy = e.clientY - startRef.current.py;
+    if (!movedRef.current && Math.hypot(dx, dy) > 4) movedRef.current = true;
+    if (movedRef.current) {
+      setFab(clampFab({ x: startRef.current.x + dx, y: startRef.current.y + dy }));
+    }
+  };
+  const onFabPointerUp = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    dragRef.current = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (movedRef.current) {
+      setFab((p) => {
+        if (!p) return p;
+        const snapped = snapToEdge(p);
+        try {
+          window.localStorage.setItem(FAB_KEY, JSON.stringify(snapped));
+        } catch {
+          /* ignore */
+        }
+        return snapped;
+      });
+    }
+  };
+  const onFabClick = () => {
+    // Ignore the click synthesized at the end of a drag.
+    if (movedRef.current) {
+      movedRef.current = false;
+      return;
+    }
+    setOpen(!open);
+  };
+
+  // Anchor the chat panel to the button's current corner.
+  const panelStyle: React.CSSProperties | undefined = fab
+    ? (() => {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const cx = fab.x + FAB_SIZE / 2;
+        const cy = fab.y + FAB_SIZE / 2;
+        const s: React.CSSProperties = {};
+        if (cx < vw / 2) s.left = fab.x;
+        else s.right = vw - (fab.x + FAB_SIZE);
+        if (cy > vh / 2) s.bottom = vh - fab.y + 12;
+        else s.top = fab.y + FAB_SIZE + 12;
+        return s;
+      })()
+    : undefined;
+
   return (
     <>
       {/* Panel */}
@@ -85,7 +203,11 @@ export function ChatBot() {
         <div
           role="dialog"
           aria-label="WorkPulse assistant"
-          className="fixed bottom-24 right-5 z-50 flex h-[28rem] w-[min(22rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-[1.4rem] border border-border bg-popover shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-200"
+          style={panelStyle}
+          className={cn(
+            "fixed z-50 flex h-[28rem] w-[min(22rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-[1.4rem] border border-border bg-popover shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-200",
+            !panelStyle && "bottom-24 right-5",
+          )}
         >
           <header className="flex items-center gap-2.5 border-b px-4 py-3">
             <span className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -177,13 +299,21 @@ export function ChatBot() {
         </div>
       ) : null}
 
-      {/* Floating button */}
+      {/* Floating button — draggable, snaps to the nearest edge */}
       <Button
         size="icon"
         aria-label={open ? "Close assistant" : "Open assistant"}
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="fixed bottom-5 right-5 z-50 size-14 rounded-full shadow-soft transition-transform hover:scale-105"
+        style={fab ? { left: fab.x, top: fab.y } : undefined}
+        onPointerDown={onFabPointerDown}
+        onPointerMove={onFabPointerMove}
+        onPointerUp={onFabPointerUp}
+        onClick={onFabClick}
+        className={cn(
+          "fixed z-50 size-14 touch-none cursor-grab rounded-full shadow-soft transition-[opacity,transform] hover:scale-105 hover:opacity-100 active:cursor-grabbing",
+          !open && "opacity-40",
+          !fab && "bottom-5 right-5",
+        )}
       >
         {open ? <X className="size-6" /> : <Sparkles className="size-6" />}
       </Button>

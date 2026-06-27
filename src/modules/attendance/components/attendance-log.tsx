@@ -379,7 +379,7 @@ export function AttendanceLog({
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1">
               <p className="text-xs text-muted-foreground">
                 Showing {safePage * PAGE_SIZE + 1}–
                 {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}

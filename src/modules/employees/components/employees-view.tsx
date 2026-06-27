@@ -380,7 +380,7 @@ export function EmployeesView({
       </Card>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
         <span>
           {filtered.length === 0
             ? "No results"

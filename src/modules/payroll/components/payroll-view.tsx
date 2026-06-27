@@ -394,7 +394,7 @@ export function PayrollView() {
         )}
 
         {filtered.length > 0 ? (
-          <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-border px-5 py-3">
             <span className="text-sm text-muted-foreground">
               Showing {safePage * PAGE_SIZE + 1}–
               {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
