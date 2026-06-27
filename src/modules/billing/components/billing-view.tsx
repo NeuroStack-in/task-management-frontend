@@ -1,18 +1,12 @@
 "use client";
 
 import { jsPDF } from "jspdf";
-import { AlertCircle, Check, ChevronDown, Clock, CreditCard, Download, type LucideIcon } from "lucide-react";
+import { AlertCircle, Check, Clock, CreditCard, Download, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   CURRENT_PLAN,
   INVOICES,
@@ -153,9 +147,12 @@ export function BillingView() {
                     {PAYMENT_METHOD.brand} · Exp {PAYMENT_METHOD.expires}
                   </p>
                 </div>
-                <Button variant="ghost" size="sm" className="ml-auto text-xs text-muted-foreground" disabled>
-                  Update
-                </Button>
+                <span
+                  className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                  title="Editing your payment method arrives in Phase 2"
+                >
+                  Phase 2
+                </span>
               </div>
             </div>
 
@@ -176,39 +173,47 @@ export function BillingView() {
 
             <div className="border-t border-border" />
 
-            {/* Plan picker */}
+            {/* Plans — read-only catalogue; switching plans arrives in Phase 2 */}
             <div>
-              <p className="mb-2.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Change plan</p>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button variant="outline" size="sm" className="w-full justify-between gap-1.5" />
-                  }
+              <div className="mb-2.5 flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Plans</p>
+                <span
+                  className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                  title="Switching plans arrives in Phase 2"
                 >
-                  Business — current
-                  <ChevronDown className="size-3.5 text-muted-foreground" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  {PLAN_TIERS.map((tier) => (
-                    <DropdownMenuItem
+                  Phase 2
+                </span>
+              </div>
+              <ul className="space-y-1.5">
+                {PLAN_TIERS.map((tier) => {
+                  const current = tier.id === CURRENT_PLAN.tierId;
+                  return (
+                    <li
                       key={tier.id}
-                      disabled
+                      className={cn(
+                        "flex items-center justify-between gap-4 rounded-md border px-3 py-2 text-sm",
+                        current ? "border-primary/40 bg-primary/5" : "border-border",
+                      )}
                     >
-                      <span className="flex w-full items-center justify-between gap-4">
-                        <span className="flex items-center gap-2">
-                          <Check className={cn("size-3.5 text-success", tier.id === CURRENT_PLAN.tierId ? "opacity-100" : "opacity-0")} />
-                          <span className={tier.id === CURRENT_PLAN.tierId ? "font-medium" : ""}>
-                            {tier.name}
-                          </span>
-                        </span>
-                        <span className="text-xs tabular-nums text-muted-foreground">
-                          {formatCurrency(tier.pricePerSeat)}/seat
-                        </span>
+                      <span className="flex items-center gap-2">
+                        <Check
+                          className={cn(
+                            "size-3.5 text-success",
+                            current ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        <span className={current ? "font-medium" : ""}>{tier.name}</span>
+                        {current && (
+                          <span className="text-xs text-muted-foreground">· current</span>
+                        )}
                       </span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {formatCurrency(tier.pricePerSeat)}/seat
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           </CardContent>
         </Card>

@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Megaphone, Plus, Search, Send } from "lucide-react";
-import { toast } from "sonner";
+import { ArrowLeft, Megaphone, Search, Send } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -77,11 +76,6 @@ export function InboxView() {
       <PageHeader
         title="Inbox"
         description="Direct messages and team channels."
-        actions={
-          <Button onClick={() => toast.info("New message isn't wired up in this demo.")}>
-            <Plus className="size-4" /> New message
-          </Button>
-        }
       />
 
       {/*

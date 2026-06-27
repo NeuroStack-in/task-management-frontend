@@ -12,13 +12,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
-import { PALETTES, applyPalette } from "@/components/layout/palette-switcher";
+import { PALETTES, applyPalette } from "@/lib/palettes";
 import { cn } from "@/lib/utils";
 
-/** The colour palettes offered on the Appearance page. */
-const PALETTE_OPTIONS = PALETTES.filter(
-  (p) => p.id === "meridian" || p.id === "indigo",
-);
+/** The colour palettes offered on the Appearance page (the only switcher). */
+const PALETTE_OPTIONS = PALETTES;
 
 interface ThemeOption {
   value: "light" | "dark" | "system";

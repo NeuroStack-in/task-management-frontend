@@ -21,6 +21,7 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { TablePagination } from "@/components/shared/table-pagination";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -419,34 +420,13 @@ export function EmployeesView({
       </Card>
 
       {/* Pagination */}
-      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-        <span>
-          {filtered.length === 0
-            ? "No results"
-            : `${safePage * PAGE_SIZE + 1}–${Math.min(
-                (safePage + 1) * PAGE_SIZE,
-                filtered.length,
-              )} of ${filtered.length}`}
-        </span>
-        <div className="flex gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage === 0}
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage >= pageCount - 1}
-            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <TablePagination
+        page={safePage}
+        pageCount={pageCount}
+        total={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
 
       <CreateEmployeeDialog
         open={createOpen}

@@ -5,6 +5,7 @@
  * seeded user dataset so the views feel connected.
  */
 import { users } from "@/lib/data";
+import { employeeWeek } from "@/lib/employee-metrics";
 import type { User } from "@/types/user";
 
 /* --------------------------------- People -------------------------------- */
@@ -481,9 +482,10 @@ const WORKFORCE: User[] = users.filter(
 );
 
 export const EMPLOYEE_TIME: EmployeeTime[] = WORKFORCE.map((u) => {
-  const seed = [...u.id].reduce((s, c) => s + c.charCodeAt(0), 0);
-  const capacity = 40;
-  const billableHrs = 14 + (seed % 28); // 14–41h → spreads utilization across bands
+  // Hours from the shared employee-metrics source — these match the same
+  // person's numbers in Time Tracking (team view), so the app never contradicts
+  // itself across pages.
+  const ew = employeeWeek(u.id);
   return {
     id: u.id,
     name: u.name,
@@ -492,12 +494,12 @@ export const EMPLOYEE_TIME: EmployeeTime[] = WORKFORCE.map((u) => {
     jobTitle: u.jobTitle,
     avatarUrl: u.avatarUrl,
     productivity: u.productivityScore,
-    tracked: 30 + (seed % 14),
-    idle: 1 + (seed % 5),
-    billable: 45 + (seed % 50),
-    capacity,
-    billableHrs,
-    utilization: Math.min(100, Math.round((billableHrs / capacity) * 100)),
+    tracked: ew.tracked,
+    idle: ew.idle,
+    billable: ew.billablePct,
+    capacity: ew.capacity,
+    billableHrs: ew.billableHrs,
+    utilization: ew.utilization,
   };
 });
 

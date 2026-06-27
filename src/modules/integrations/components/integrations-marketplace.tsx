@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Check, Plug, Search, Sparkles } from "lucide-react"
+import { Check, Plug, Search } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -111,14 +111,6 @@ export function IntegrationsMarketplace() {
       <PageHeader
         title="Integrations Marketplace"
         description="Connect WorkPulse to the tools your team already uses."
-        actions={
-          <Button
-            variant="outline"
-            onClick={() => toast.success("Integration request sent to our team")}
-          >
-            <Sparkles className="size-4" /> Request integration
-          </Button>
-        }
       />
 
       {/* ── Toolbar ── */}

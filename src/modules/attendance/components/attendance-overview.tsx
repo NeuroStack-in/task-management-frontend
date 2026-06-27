@@ -31,7 +31,7 @@ export function AttendanceOverview() {
     DEPARTMENT_ATTENDANCE.find((d) => d.dept === activeDept) ??
     DEPARTMENT_ATTENDANCE[0];
 
-  const c = orgDayCounts(TODAY.month, TODAY.day);
+  const c = orgDayCounts(TODAY.year, TODAY.month, TODAY.day);
 
   // Both views render the same graph; only the data behind it changes.
   const stats =

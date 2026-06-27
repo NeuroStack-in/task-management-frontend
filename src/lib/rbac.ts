@@ -1,5 +1,5 @@
 import type { Role, PermissionId } from "@/types/rbac";
-import { WILDCARD } from "@/constants/permissions";
+import { WILDCARD, CONTRIBUTOR_ONLY_PERMISSIONS } from "@/constants/permissions";
 import {
   NAV_GROUPS,
   ADMIN_SECTIONS,
@@ -9,8 +9,10 @@ import {
 } from "@/constants/navigation";
 
 /**
- * Core access check (TDD §8). Returns true when the role holds the wildcard or
- * the specific permission id. A null permission is always granted.
+ * Core access check (TDD §8). A null permission is always granted. An explicit
+ * grant always wins. The wildcard "*" grants everything EXCEPT contributor-only
+ * capabilities (e.g. `time-tracking:edit`) — so oversight roles like Owner don't
+ * inherit "I track my own time". Contributor-only perms must be listed.
  */
 export function canAccess(
   role: Role | null | undefined,
@@ -18,8 +20,14 @@ export function canAccess(
 ): boolean {
   if (permission === null) return true;
   if (!role) return false;
-  if (role.permissions.includes(WILDCARD)) return true;
-  return role.permissions.includes(permission);
+  if (role.permissions.includes(permission)) return true;
+  if (
+    role.permissions.includes(WILDCARD) &&
+    !CONTRIBUTOR_ONLY_PERMISSIONS.includes(permission)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /** True if the role holds every listed permission. */

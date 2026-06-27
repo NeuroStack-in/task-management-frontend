@@ -824,9 +824,9 @@ function Footer() {
               <ul className="mt-3 space-y-2.5">
                 {c.links.map((l) => (
                   <li key={l}>
-                    <a href="#" className="text-sm transition-colors hover:opacity-70" style={{ color: "var(--m-muted)" }}>
+                    <span className="text-sm" style={{ color: "var(--m-muted)" }}>
                       {l}
-                    </a>
+                    </span>
                   </li>
                 ))}
               </ul>

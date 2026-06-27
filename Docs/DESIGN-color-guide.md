@@ -5,6 +5,44 @@
 
 ---
 
+## Implemented runtime palettes (source of truth)
+
+These are the palettes that were wired into the running app as `[data-palette="<id>"]`
+blocks in [globals.css](../src/app/globals.css), switched via the `wp-palette`
+localStorage key.
+
+**Only two ship as user-selectable** (Settings → Appearance): **Meridian — Slate & Teal**
+(the default) and **Graphite & Indigo**. The remaining twelve are kept here as design
+references; their `globals.css` blocks were removed and the multi-palette switcher
+(navbar + ⌘K cycle) was retired to keep the product surface minimal and consistent.
+To revive one, re-add its `[data-palette]` block to `globals.css` and list it in
+[`src/lib/palettes.ts`](../src/lib/palettes.ts).
+
+Swatches below are `accent · deep · dark-ink · light-surface`.
+
+| id | Name | Accent | Deep | Dark ink | Light surface | Status |
+|----|------|--------|------|----------|---------------|--------|
+| `meridian` | Meridian — Slate & Teal | `#0e7490` | `#22a5b8` | `#0f1729` | `#f7f8fa` | **Shipped · default** |
+| `indigo` | Graphite & Indigo | `#4f46e5` | `#6366f1` | `#232427` | `#f7f5f1` | **Shipped** |
+| `corporate` | Corporate Blue | `#2563eb` | `#60a5fa` | `#1f2937` | `#f5f7fa` | Archived |
+| `evergreen` | Evergreen & Mint | `#059669` | `#34d399` | `#1d2a26` | `#f5f8f6` | Archived |
+| `fireopal` | Fire Opal | `#ef6448` | `#2a2320` | `#252320` | `#f8f5f1` | Archived |
+| `teal` | Slate & Teal (alt) | `#0f9b8e` | `#16b8a6` | `#232427` | `#f7f5f1` | Archived |
+| `violet` | Cloud & Violet | `#7c3aed` | `#a78bfa` | `#232427` | `#f7f5f1` | Archived |
+| `sapphire` | Arctic & Sapphire | `#1d63c9` | `#2563eb` | `#232427` | `#f7f5f1` | Archived |
+| `dusk` | Dusk & Rose | `#7e3bd4` | `#f43f5e` | `#232427` | `#f8f5f2` | Archived |
+| `iron` | Iron & Crimson | `#3f4855` | `#6b7280` | `#dc2626` | `#f7f5f1` | Archived |
+| `navy` | Midnight Navy | `#2c4e7c` | `#4f74a8` | `#232427` | `#f5f7fa` | Archived |
+| `cobalt` | Graphite Cobalt | `#3e63b0` | `#6585c8` | `#232427` | `#f6f7f9` | Archived |
+| `burgundy` | Burgundy Wine | `#8c3f4d` | `#a86472` | `#262223` | `#faf6f5` | Archived |
+| `petrol` | Petrol Cyan | `#1b6b77` | `#3f8d97` | `#222626` | `#f4f8f8` | Archived |
+
+The schemes documented further below are the original design exploration (pre-build)
+and don't all map 1:1 to the implemented ids above; treat the table here as canonical
+for what the app actually rendered.
+
+---
+
 ## How to use this guide
 
 1. Pick one scheme as your base.

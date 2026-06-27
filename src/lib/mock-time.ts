@@ -5,6 +5,7 @@
  * and safe to compute on the server. The shape mirrors what a real timesheet
  * API would return; the mock service seam (lib/data.ts) drops in later.
  */
+import { employeeWeek } from "@/lib/employee-metrics";
 
 export interface TimeEntry {
   id: string;
@@ -232,9 +233,9 @@ export function buildTeamTimesheet(users: MinimalUser[]): TeamMemberTime[] {
     .filter((u) => u.status === "active" || u.status === "inactive")
     .map((u) => {
       const seed = [...u.id].reduce((s, c) => s + c.charCodeAt(0), 0);
-      const trackedHrs = 30 + (seed % 14); // 30–43h
-      const idleHrs = 1 + (seed % 5); // 1–5h
-      const billablePct = 55 + (seed % 38); // 55–92%
+      // Hours come from the shared employee-metrics source so they match the
+      // numbers shown in Insights → Reports for the same person.
+      const ew = employeeWeek(u.id);
       const activity = u.productivityScore;
       const status: TimesheetStatus =
         activity < 45 ? "flagged" : seed % 4 === 0 ? "pending" : "approved";
@@ -243,9 +244,9 @@ export function buildTeamTimesheet(users: MinimalUser[]): TeamMemberTime[] {
         name: u.name,
         avatarUrl: u.avatarUrl,
         department: u.department,
-        trackedHrs,
-        idleHrs,
-        billablePct,
+        trackedHrs: ew.tracked,
+        idleHrs: ew.idle,
+        billablePct: ew.billablePct,
         activity,
         status,
       };

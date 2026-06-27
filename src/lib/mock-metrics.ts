@@ -3,8 +3,9 @@
  * are stable across renders/reloads (SPEC.md §5). Server-safe.
  */
 import type { User, UserStatus } from "@/types/user";
+import { dayRecordFor, TODAY, type DayStatus } from "@/lib/mock-attendance";
 
-export type AttendanceStatus = "present" | "late" | "leave" | "absent";
+export type AttendanceStatus = DayStatus;
 
 export interface AttendanceRecord {
   status: AttendanceStatus;
@@ -13,32 +14,13 @@ export interface AttendanceRecord {
   hours: number;
 }
 
-function seedOf(id: string): number {
-  return [...id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
-}
-
-/** Deterministic per-user attendance for "today". */
+/**
+ * Per-user attendance for "today". Delegates to `dayRecordFor` — the single
+ * source of truth — so the dashboard's attendance donut agrees with the
+ * Attendance page, the log, and payroll.
+ */
 export function attendanceFor(id: string): AttendanceRecord {
-  const seed = seedOf(id);
-  const r = seed % 10;
-  const status: AttendanceStatus =
-    r < 6 ? "present" : r < 8 ? "late" : r < 9 ? "leave" : "absent";
-  const lateMin = (seed % 24) + 6;
-  const clockIn =
-    status === "present"
-      ? `09:0${seed % 6}`
-      : status === "late"
-        ? `09:${lateMin}`
-        : "—";
-  const clockOut =
-    status === "present" || status === "late" ? `17:${10 + (seed % 40)}` : "—";
-  const hours =
-    status === "present"
-      ? 8 + (seed % 5) / 10
-      : status === "late"
-        ? 7 + (seed % 6) / 10
-        : 0;
-  return { status, clockIn, clockOut, hours };
+  return dayRecordFor(id, TODAY.year, TODAY.month, TODAY.day);
 }
 
 export function attendanceCounts(

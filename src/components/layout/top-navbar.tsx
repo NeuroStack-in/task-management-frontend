@@ -9,6 +9,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { usePermissions } from "@/hooks/use-permissions";
 import { SidebarNav } from "./sidebar-nav";
 import { GlobalTimer } from "./global-timer";
 import { ThemeSwitcher } from "./theme-switcher";
@@ -17,6 +18,10 @@ import { UserMenu } from "./user-menu";
 
 export function TopNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { can } = usePermissions();
+  // The timer is only for people who log their own time — oversight roles
+  // (Owner/Admin/HR/Manager) never see it.
+  const showTimer = can("time-tracking:edit");
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md sm:px-6">
@@ -46,9 +51,11 @@ export function TopNavbar() {
           <NotificationsMenu />
           <ThemeSwitcher />
         </div>
-        <div className="rounded-md border border-border bg-card">
-          <GlobalTimer />
-        </div>
+        {showTimer ? (
+          <div className="rounded-md border border-border bg-card">
+            <GlobalTimer />
+          </div>
+        ) : null}
         <div className="rounded-md border border-border">
           <UserMenu />
         </div>

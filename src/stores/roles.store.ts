@@ -2,6 +2,13 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Role, PermissionId } from "@/types/rbac";
 import { SYSTEM_ROLES } from "@/constants/roles";
+import { WILDCARD, ALL_PERMISSIONS } from "@/constants/permissions";
+
+/** Permission ids that currently exist — used to scrub stale persisted roles. */
+const VALID_PERMISSIONS = new Set<string>([
+  WILDCARD,
+  ...ALL_PERMISSIONS.map((p) => p.id),
+]);
 
 interface RolesState {
   /** User-created roles only. System roles are merged in via getAllRoles(). */
@@ -67,6 +74,19 @@ export const useRolesStore = create<RolesState>()(
           customRoles: s.customRoles.filter((r) => r.id !== id),
         })),
     }),
-    { name: "wp-roles" },
+    {
+      name: "wp-roles",
+      version: 1,
+      // Drop any permission ids that no longer exist (e.g. a permission was
+      // renamed/removed) so a stale custom role can't grant invalid access.
+      migrate: (persisted) => {
+        const state = persisted as { customRoles?: Role[] } | undefined;
+        const customRoles = (state?.customRoles ?? []).map((r) => ({
+          ...r,
+          permissions: r.permissions.filter((p) => VALID_PERMISSIONS.has(p)),
+        }));
+        return { customRoles } as RolesState;
+      },
+    },
   ),
 );

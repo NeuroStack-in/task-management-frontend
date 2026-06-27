@@ -72,6 +72,13 @@ export const useEmployeesStore = create<EmployeesState>()(
           customEmployees: s.customEmployees.filter((e) => e.id !== id),
         })),
     }),
-    { name: "wp-employees" },
+    {
+      name: "wp-employees",
+      version: 1,
+      migrate: (persisted) =>
+        ({ customEmployees:
+          (persisted as { customEmployees?: StoredEmployee[] } | undefined)
+            ?.customEmployees ?? [] }) as EmployeesState,
+    },
   ),
 );

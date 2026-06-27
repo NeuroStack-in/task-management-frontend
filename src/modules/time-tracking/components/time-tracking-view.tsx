@@ -36,8 +36,10 @@ export function TimeTrackingView({
   const canTrack = can("time-tracking:edit");
   const showToggle = canApprove && canTrack;
 
+  // Oversight roles default to the team view (they don't log their own time);
+  // contributors default to their personal tracker.
   const [view, setView] = useState<View>(
-    canTrack ? "personal" : "team",
+    canApprove ? "team" : canTrack ? "personal" : "team",
   );
 
   const description =

@@ -101,7 +101,9 @@ export function AttendanceCalendar({
             }
           >
             <SelectTrigger aria-label="Select month" className="h-9 w-36">
-              <SelectValue />
+              <SelectValue>
+                {(v) => MONTH_NAMES[Number(v)]}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent className="min-w-36">
               {MONTH_NAMES.map((name, i) => (
