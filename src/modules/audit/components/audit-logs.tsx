@@ -149,9 +149,9 @@ export function AuditLogs() {
         actions={
           <Button
             variant="outline"
-            onClick={() => toast.success("Audit log exported (CSV)")}
+            onClick={() => toast.success("Audit log downloaded (CSV)")}
           >
-            <Download className="size-4" /> Export
+            <Download className="size-4" /> Download
           </Button>
         }
       />

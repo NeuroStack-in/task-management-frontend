@@ -277,7 +277,7 @@ export function EmployeesView({
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="outline" />}>
-                <Download className="size-4" /> Export report
+                <Download className="size-4" /> Download report
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => exportEmployeesPdf(filtered, liveStats)}>

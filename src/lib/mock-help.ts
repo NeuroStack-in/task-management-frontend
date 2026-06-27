@@ -159,11 +159,11 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     slug: "export-reports",
-    title: "Exporting reports to CSV and PDF",
+    title: "Downloading reports to CSV and PDF",
     category: "reports",
     excerpt: "Download productivity, time, and project data in CSV or PDF format.",
     readMins: 2,
-    body: "Reports can be exported from Analytics → Reports. Select the report you want and click Export CSV or Export PDF. CSV exports are formatted for import into Excel or Google Sheets. PDF exports include charts and are suitable for sharing with stakeholders. Export access requires the Export Reports permission — contact your Admin if the buttons are grayed out.",
+    body: "Reports can be downloaded from Analytics → Reports. Select the report you want and click Download CSV or Download PDF. CSV downloads are formatted for import into Excel or Google Sheets. PDF downloads include charts and are suitable for sharing with stakeholders. Download access requires the Download Reports permission — contact your Admin if the buttons are grayed out.",
   },
   {
     slug: "scheduled-reports",
@@ -259,7 +259,7 @@ export const VIDEO_TUTORIALS: VideoTutorial[] = [
   { title: "Using the global timer", duration: "2:18", category: "time-tracking" },
   { title: "Reading activity reports", duration: "4:30", category: "monitoring" },
   { title: "Configuring monitoring thresholds", duration: "6:12", category: "monitoring" },
-  { title: "Exporting and scheduling reports", duration: "3:55", category: "reports" },
+  { title: "Downloading and scheduling reports", duration: "3:55", category: "reports" },
 ]
 
 export interface SupportTicket {

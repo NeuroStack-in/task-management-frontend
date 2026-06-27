@@ -84,7 +84,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("payroll", "view", "View Payroll"),
       p("payroll", "manage", "Run Payroll"),
-      p("payroll", "export", "Export Payslips"),
+      p("payroll", "export", "Download Payslips"),
     ],
   },
   {
@@ -100,7 +100,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     label: "Reports",
     permissions: [
       p("reports", "view", "View Reports"),
-      p("reports", "export", "Export Reports"),
+      p("reports", "export", "Download Reports"),
     ],
   },
   {

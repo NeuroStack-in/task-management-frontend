@@ -309,7 +309,7 @@ export function PayrollView() {
             <PeriodDropdown index={periodIndex} onChange={resetPage(setPeriodIndex)} />
             {can("payroll:export") ? (
               <Button variant="outline" onClick={() => exportRunCsv(run)}>
-                <Download className="size-4" /> Export run
+                <Download className="size-4" /> Download run
               </Button>
             ) : null}
           </div>

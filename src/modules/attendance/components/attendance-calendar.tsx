@@ -1,16 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
-import Papa from "papaparse";
-import { toast } from "sonner";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   COUNT_METRICS,
   MONTH_NAMES,
@@ -20,38 +23,7 @@ import {
   monthSummary,
   type DayCell,
 } from "@/lib/mock-attendance";
-import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
-
-const pad2 = (n: number) => String(n).padStart(2, "0");
-
-/** Export the visible month's per-day org attendance as a CSV. */
-function exportMonthCsv(year: number, month: number, weeks: DayCell[][]) {
-  const days = weeks.flat().filter((c) => c.isWorkday && c.counts);
-  const data = days.map((c) => {
-    const k = c.counts!;
-    const rate = Math.round(((k.present + k.late) / k.total) * 100);
-    return [
-      `${c.year}-${pad2(c.month + 1)}-${pad2(c.day)}`,
-      WEEKDAY_LABELS[c.weekday],
-      k.present,
-      k.late,
-      k.leave,
-      k.absent,
-      k.total,
-      `${rate}%`,
-    ];
-  });
-  const csv = Papa.unparse({
-    fields: ["Date", "Weekday", "Present", "Late", "On leave", "Absent", "Total", "Attendance %"],
-    data,
-  });
-  const file = `attendance-${MONTH_NAMES[month].toLowerCase()}-${year}.csv`;
-  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), file);
-  toast.success("Attendance exported", {
-    description: `${file} · ${days.length} working days`,
-  });
-}
 
 interface AttendanceDate {
   year: number;
@@ -60,6 +32,12 @@ interface AttendanceDate {
 }
 
 type CalendarMode = "detailed";
+
+/** Years selectable in the calendar header, centred on the reference year. */
+const YEARS = Array.from(
+  { length: 6 },
+  (_, i) => REFERENCE_MONTH.year - 4 + i,
+);
 
 export function AttendanceCalendar({
   selected,
@@ -77,84 +55,79 @@ export function AttendanceCalendar({
   const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
   const summary = useMemo(() => monthSummary(view.year, view.month), [view]);
 
-  const isRefMonth =
-    view.year === REFERENCE_MONTH.year && view.month === REFERENCE_MONTH.month;
-
-  const step = (dir: -1 | 1) =>
-    setView((v) => {
-      const m = v.month + dir;
-      if (m < 0) return { year: v.year - 1, month: 11 };
-      if (m > 11) return { year: v.year + 1, month: 0 };
-      return { year: v.year, month: m };
-    });
-
   return (
     <Card>
-      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
         <div>
           <CardTitle>
             {MONTH_NAMES[view.month]} {view.year}
           </CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Avg/day{" "}
-            <span className="font-medium text-success">
-              {summary.present} present
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Avg / day
             </span>
-            {" · "}
-            <span className="font-medium text-primary">
-              {summary.leave} on leave
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full bg-success" />
+              <span className="font-semibold text-foreground tabular-nums">
+                {summary.present}
+              </span>
+              <span className="text-muted-foreground">present</span>
             </span>
-            {" · "}
-            <span className="font-medium text-destructive">
-              {summary.absent} absent
-            </span>{" "}
-            across {summary.total} employees
-          </p>
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full bg-primary" />
+              <span className="font-semibold text-foreground tabular-nums">
+                {summary.leave}
+              </span>
+              <span className="text-muted-foreground">on leave</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full bg-destructive" />
+              <span className="font-semibold text-foreground tabular-nums">
+                {summary.absent}
+              </span>
+              <span className="text-muted-foreground">absent</span>
+            </span>
+            <span className="text-muted-foreground">
+              across {summary.total} employees
+            </span>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => exportMonthCsv(view.year, view.month, weeks)}
+        <div className="flex items-center gap-2">
+          <Select
+            value={String(view.month)}
+            onValueChange={(v) =>
+              setView((s) => ({ ...s, month: Number(v) }))
+            }
           >
-            <Download className="size-4" /> Export
-          </Button>
-
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setView({
-                  year: REFERENCE_MONTH.year,
-                  month: REFERENCE_MONTH.month,
-                })
-              }
-              disabled={isRefMonth}
-            >
-              Today
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8"
-              aria-label="Previous month"
-              onClick={() => step(-1)}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8"
-              aria-label="Next month"
-              onClick={() => step(1)}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
+            <SelectTrigger aria-label="Select month" className="h-9 w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="min-w-36">
+              {MONTH_NAMES.map((name, i) => (
+                <SelectItem key={name} value={String(i)}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={String(view.year)}
+            onValueChange={(v) =>
+              setView((s) => ({ ...s, year: Number(v) }))
+            }
+          >
+            <SelectTrigger aria-label="Select year" className="h-9 w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="min-w-28">
+              {YEARS.map((y) => (
+                <SelectItem key={y} value={String(y)}>
+                  {y}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </CardHeader>
 
@@ -220,7 +193,7 @@ function DayCellView({
     return (
       <div
         className={cn(
-          "wp-hatch flex min-h-[4.25rem] flex-col rounded-xl p-2",
+          "wp-hatch flex min-h-[4.25rem] flex-col rounded-lg p-2",
           !cell.inMonth && "opacity-50",
         )}
       >
@@ -261,7 +234,7 @@ function DayCellView({
       }
       title={title}
       className={cn(
-        "flex min-h-[4.25rem] flex-col gap-1 rounded-xl bg-card p-2 text-left ring-1 ring-border transition-all hover:shadow-sm hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+        "flex min-h-[4.25rem] flex-col gap-1 rounded-lg bg-card p-2 text-left ring-1 ring-border transition-all hover:shadow-sm hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
         cell.isToday && !isSelected && "ring-primary/60",
         isSelected && "ring-2 ring-primary",
       )}

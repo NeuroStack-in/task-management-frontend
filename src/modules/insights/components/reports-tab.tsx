@@ -295,7 +295,7 @@ export function ReportsTab() {
               </DropdownMenu>
             </>
           ) : (
-            // "Export all" respects the active category filter.
+            // "Download all" respects the active category filter.
             <Button disabled={!canExport} onClick={() => exportAllPdf(reports)}>
               <Download className="size-4" /> {exportAllLabel}
             </Button>
@@ -341,8 +341,8 @@ export function ReportsTab() {
       {!canExport ? (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
           <Lock className="size-4" />
-          You can view and preview reports, but exporting requires the{" "}
-          <span className="font-medium text-foreground">Export Reports</span>{" "}
+          You can view and preview reports, but downloading requires the{" "}
+          <span className="font-medium text-foreground">Download Reports</span>{" "}
           permission.
         </div>
       ) : null}
@@ -480,7 +480,7 @@ function ExportMenu({
             size="icon"
             className="size-8"
             disabled={!canExport}
-            aria-label={`Export ${report.name}`}
+            aria-label={`Download ${report.name}`}
             onClick={(e) => e.stopPropagation()}
           />
         }

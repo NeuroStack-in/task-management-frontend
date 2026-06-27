@@ -146,7 +146,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               onClick={exportCsv}
               disabled={!canExport}
             >
-              <Download className="size-4" /> Export CSV
+              <Download className="size-4" /> Download CSV
             </Button>
           </CardAction>
         </CardHeader>

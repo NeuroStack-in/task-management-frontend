@@ -254,9 +254,9 @@ export function SecurityCenter() {
         actions={
           <Button
             variant="outline"
-            onClick={() => toast.success("Security report exported")}
+            onClick={() => toast.success("Security report downloaded")}
           >
-            <Download className="size-4" /> Export report
+            <Download className="size-4" /> Download report
           </Button>
         }
       />
