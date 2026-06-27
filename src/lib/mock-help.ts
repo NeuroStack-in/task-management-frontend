@@ -146,7 +146,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Configure capture frequency, blur rules, and employee notification settings.",
     readMins: 4,
-    body: "Screenshots are captured periodically by the desktop agent at the interval set in Settings → Monitoring → Screenshots. By default, employees are notified via the system tray icon whenever a screenshot is taken. You can enable Blur by Default to automatically blur screenshots before they are uploaded. Screenshots are stored for the configured retention period (default: 30 days) and then deleted automatically. Employees can view their own screenshots in Insights → Screenshots.",
+    body: "Screenshots are captured periodically by the desktop agent at the interval set in Settings → Monitoring → Screenshots. By default, employees are notified via the system tray icon whenever a screenshot is taken. You can enable Blur by Default to automatically blur screenshots before they are uploaded. Screenshots are stored for the configured retention period (default: 30 days) and then deleted automatically. Employees can view their own screenshots in Analytics → Screenshots.",
   },
   {
     slug: "productivity-scores",
@@ -163,7 +163,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: "reports",
     excerpt: "Download productivity, time, and project data in CSV or PDF format.",
     readMins: 2,
-    body: "Reports can be exported from Insights → Reports. Select the report you want and click Export CSV or Export PDF. CSV exports are formatted for import into Excel or Google Sheets. PDF exports include charts and are suitable for sharing with stakeholders. Export access requires the Export Reports permission — contact your Admin if the buttons are grayed out.",
+    body: "Reports can be exported from Analytics → Reports. Select the report you want and click Export CSV or Export PDF. CSV exports are formatted for import into Excel or Google Sheets. PDF exports include charts and are suitable for sharing with stakeholders. Export access requires the Export Reports permission — contact your Admin if the buttons are grayed out.",
   },
   {
     slug: "scheduled-reports",
@@ -172,7 +172,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Set up recurring reports delivered to your inbox on a weekly or monthly schedule.",
     readMins: 3,
-    body: "Scheduled reports let you automatically receive key metrics without logging in. Go to Insights → Reports and click the clock icon on any report card to open the schedule dialog. Choose the frequency (daily, weekly, monthly), the recipients, and the delivery format (CSV or PDF). Scheduled reports run at midnight UTC on the configured cadence. You can manage or delete schedules from the same dialog.",
+    body: "Scheduled reports let you automatically receive key metrics without logging in. Go to Analytics → Reports and click the clock icon on any report card to open the schedule dialog. Choose the frequency (daily, weekly, monthly), the recipients, and the delivery format (CSV or PDF). Scheduled reports run at midnight UTC on the configured cadence. You can manage or delete schedules from the same dialog.",
   },
   {
     slug: "change-plan",
@@ -227,7 +227,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "What data is collected by the desktop agent?",
-    a: "The agent collects: active application names and window titles, keyboard and mouse activity levels (counts only — no keylogging), periodic screenshots (configurable frequency), and time spent in each application. No keystrokes or clipboard content are recorded. Employees can view their collected data in Insights → Activity and Screenshots.",
+    a: "The agent collects: active application names and window titles, keyboard and mouse activity levels (counts only — no keylogging), periodic screenshots (configurable frequency), and time spent in each application. No keystrokes or clipboard content are recorded. Employees can view their collected data in Analytics → Activity and Screenshots.",
   },
   {
     q: "How do I add or remove seats from my plan?",
@@ -235,7 +235,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "Can I export data for a custom date range?",
-    a: "Yes. In Insights → Reports, use the date picker to select a custom range before exporting. The selected range applies to all report types on that page. CSV and PDF exports both respect the chosen date range.",
+    a: "Yes. In Analytics → Reports, use the date picker to select a custom range before exporting. The selected range applies to all report types on that page. CSV and PDF exports both respect the chosen date range.",
   },
   {
     q: "What happens if the desktop agent goes offline?",

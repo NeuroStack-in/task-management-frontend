@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, PanelLeftClose, LogOut } from "lucide-react";
+import { Activity, PanelLeftClose, LogOut, Search } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/stores/ui.store";
 import { useAuthStore } from "@/stores/auth.store";
@@ -39,12 +40,25 @@ export function SidebarNav({
   const router = useRouter();
   const { nav } = usePermissions();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const openCommand = useUiStore((s) => s.setCommandOpen);
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+
+  // Show ⌘K on macOS, Ctrl K elsewhere (detected post-mount to avoid a
+  // hydration mismatch — the server can't read the platform).
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    setIsMac(/mac/i.test(navigator.platform || navigator.userAgent));
+  }, []);
 
   const handleLogout = () => {
     logout();
     router.replace("/login");
+  };
+
+  const openSearch = () => {
+    onNavigate?.();
+    openCommand(true);
   };
 
   if (collapsed) {
@@ -65,6 +79,24 @@ export function SidebarNav({
             </span>
           </TooltipTrigger>
           <TooltipContent side="right">Expand sidebar</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={openSearch}
+                aria-label="Search"
+                className="mt-3"
+              />
+            }
+          >
+            <span className="flex size-10 items-center justify-center rounded-2xl text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+              <Search className="size-[18px]" />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="right">Search · ⌘K</TooltipContent>
         </Tooltip>
 
         <ScrollArea className="my-3 w-full min-h-0 flex-1">
@@ -158,6 +190,21 @@ export function SidebarNav({
           className="hidden size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:flex"
         >
           <PanelLeftClose className="size-4" />
+        </button>
+      </div>
+
+      {/* Global search — opens the command palette */}
+      <div className="px-3 pb-3">
+        <button
+          type="button"
+          onClick={openSearch}
+          className="flex w-full items-center gap-2.5 rounded-full border border-sidebar-border bg-sidebar-accent/40 px-3.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        >
+          <Search className="size-4 shrink-0" />
+          <span className="flex-1 text-left">Search…</span>
+          <kbd className="pointer-events-none rounded-md bg-background/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {isMac ? "⌘K" : "Ctrl K"}
+          </kbd>
         </button>
       </div>
 

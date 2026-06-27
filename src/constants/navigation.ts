@@ -65,10 +65,10 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Insights",
+    label: "Analytics",
     items: [
       {
-        label: "Insights",
+        label: "Analytics",
         href: "/insights",
         icon: LineChart,
         permission: null,
