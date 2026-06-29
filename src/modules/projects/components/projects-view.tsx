@@ -15,13 +15,6 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
 import { useAuthStore } from "@/stores/auth.store";
@@ -85,7 +78,6 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
   const [layout, setLayout] = useState<Layout>("grid");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [taskFilter, setTaskFilter] = useState<TaskStatus | "all">("all");
-  const [taskProjectFilter, setTaskProjectFilter] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [newOpen, setNewOpen] = useState(false);
 
@@ -131,14 +123,11 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
     return c;
   }, [projects]);
 
-  // Tasks matching the project filter + shared search (title or parent
-  // project name/key).
+  // Tasks matching the shared search (title or parent project name/key).
   const searchedTasks = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (!q) return visibleTasks;
     return visibleTasks.filter((t) => {
-      if (taskProjectFilter !== "all" && t.projectId !== taskProjectFilter)
-        return false;
-      if (!q) return true;
       const project = projectMap[t.projectId];
       return (
         t.title.toLowerCase().includes(q) ||
@@ -146,7 +135,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
         (project?.key.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [visibleTasks, projectMap, query, taskProjectFilter]);
+  }, [visibleTasks, projectMap, query]);
 
   const taskCounts = useMemo(() => {
     const c: Record<TaskStatus | "all", number> = {
@@ -294,38 +283,14 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative w-full sm:w-72">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by project, task, or ID…"
-              className="pl-8"
-            />
-          </div>
-
-          {view === "tasks" ? (
-            <Select
-              value={taskProjectFilter}
-              onValueChange={(v) => setTaskProjectFilter(v as string)}
-            >
-              <SelectTrigger
-                aria-label="Filter tasks by project"
-                className="h-9 w-full sm:w-60"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                <SelectItem value="all">All projects</SelectItem>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.key} · {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by project, task, or ID…"
+            className="pl-8"
+          />
         </div>
       </div>
 
