@@ -2,10 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BellOff, Check, CheckCheck, X } from "lucide-react";
+import { ArrowUpRight, BellOff, Check, CheckCheck, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useNotificationStore } from "@/stores/notification.store";
 import {
@@ -13,7 +21,7 @@ import {
   NOTIFICATION_TYPE_META,
   timeAgo,
 } from "@/lib/mock-notifications";
-import type { NotificationType } from "@/types";
+import type { AppNotification, NotificationType } from "@/types";
 import { cn } from "@/lib/utils";
 
 const TYPES: NotificationType[] = [
@@ -34,6 +42,12 @@ export function NotificationsCenter() {
   const [filter, setFilter] = useState<NotificationType | "all" | "unread">(
     "all",
   );
+  const [selected, setSelected] = useState<AppNotification | null>(null);
+
+  const openDetail = (n: AppNotification) => {
+    setSelected(n);
+    if (!n.read) markRead(n.id);
+  };
 
   // Seed if the user lands here before opening the navbar dropdown.
   useEffect(() => {
@@ -105,8 +119,17 @@ export function NotificationsCenter() {
                   return (
                     <li
                       key={n.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openDetail(n)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openDetail(n);
+                        }
+                      }}
                       className={cn(
-                        "flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50",
+                        "flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50",
                         !n.read && "bg-feature-tint/40",
                       )}
                     >
@@ -137,7 +160,10 @@ export function NotificationsCenter() {
                           {n.href ? (
                             <Link
                               href={n.href}
-                              onClick={() => markRead(n.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markRead(n.id);
+                              }}
                               className="text-xs font-medium text-primary hover:underline"
                             >
                               View
@@ -146,7 +172,10 @@ export function NotificationsCenter() {
                           {!n.read ? (
                             <button
                               type="button"
-                              onClick={() => markRead(n.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markRead(n.id);
+                              }}
                               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                             >
                               <Check className="size-3.5" /> Mark read
@@ -159,7 +188,10 @@ export function NotificationsCenter() {
                         size="icon"
                         className="size-7 shrink-0 text-muted-foreground"
                         aria-label="Dismiss"
-                        onClick={() => remove(n.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          remove(n.id);
+                        }}
                       >
                         <X className="size-4" />
                       </Button>
