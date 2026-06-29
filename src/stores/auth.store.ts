@@ -12,6 +12,8 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   setHydrated: () => void;
+  /** Update the signed-in user's avatar (e.g. after a photo upload). */
+  updateAvatar: (avatarUrl: string) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -30,6 +32,9 @@ export const useAuthStore = create<AuthState>()(
       logout: () => set({ session: null, user: null, isAuthenticated: false }),
 
       setHydrated: () => set({ hydrated: true }),
+
+      updateAvatar: (avatarUrl) =>
+        set((s) => (s.user ? { user: { ...s.user, avatarUrl } } : {})),
     }),
     {
       name: "wp-auth",
