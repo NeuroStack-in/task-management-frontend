@@ -380,7 +380,7 @@ export function PayrollView() {
             />
             {can("payroll:export") ? (
               <Button variant="outline" onClick={() => exportRunCsv(run)}>
-                <Download className="size-4" /> Download run
+                <Download className="size-4" /> Download
               </Button>
             ) : null}
           </div>

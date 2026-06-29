@@ -23,7 +23,14 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, SlidersHorizontal, RotateCcw } from "lucide-react";
+import {
+  GripVertical,
+  SlidersHorizontal,
+  RotateCcw,
+  X,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { useDashboardStore } from "@/stores/dashboard.store";
 import {
   WIDGET_REGISTRY,
@@ -56,10 +63,12 @@ const FILL_CARD =
 function SortableWidget({
   id,
   span,
+  onRemove,
   children,
 }: {
   id: string;
   span: 1 | 2;
+  onRemove: () => void;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -76,15 +85,25 @@ function SortableWidget({
       )}
     >
       {!isDragging ? (
-        <button
-          type="button"
-          aria-label="Drag to reorder widget"
-          {...attributes}
-          {...listeners}
-          className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:flex focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
-        >
-          <GripVertical className="size-4" />
-        </button>
+        <div className="absolute right-3 top-3 z-10 hidden gap-1 opacity-0 transition-opacity focus-within:flex focus-within:opacity-100 group-hover/widget:flex group-hover/widget:opacity-100">
+          <button
+            type="button"
+            aria-label="Drag to reorder widget"
+            {...attributes}
+            {...listeners}
+            className="flex size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 active:cursor-grabbing"
+          >
+            <GripVertical className="size-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Remove widget"
+            onClick={onRemove}
+            className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
       ) : null}
 
       {isDragging ? (
@@ -144,6 +163,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const reset = useDashboardStore((s) => s.reset);
 
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -161,8 +181,16 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     [widgets],
   );
   const visible = ordered.filter((w) => w.visible);
-  const visibleIds = visible.map((w) => w.id);
   const hiddenIds = ordered.filter((w) => !w.visible).map((w) => w.id);
+
+  // Collapsed view shows the first row of widgets (AI-first); the rest sit
+  // behind "Show more". Drag/reorder operates on whatever is displayed.
+  const COLLAPSED_COUNT = 6;
+  const collapsible = visible.length > COLLAPSED_COUNT;
+  const displayed =
+    showAll || !collapsible ? visible : visible.slice(0, COLLAPSED_COUNT);
+  const displayedIds = displayed.map((w) => w.id);
+  const restVisibleIds = visible.slice(displayed.length).map((w) => w.id);
 
   const activeWidget = activeId
     ? ordered.find((w) => w.id === activeId)
@@ -174,29 +202,34 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     setActiveId(null);
     const { active, over } = e;
     if (!over) return;
-    const oldIndex = visibleIds.indexOf(String(active.id));
+    const oldIndex = displayedIds.indexOf(String(active.id));
     if (oldIndex < 0) return;
 
     // Dropped onto the trailing empty space → move the widget to the end.
     if (over.id === END_ZONE_ID) {
-      if (oldIndex === visibleIds.length - 1) return; // already last
-      const newVisible = arrayMove(visibleIds, oldIndex, visibleIds.length - 1);
-      reorder([...newVisible, ...hiddenIds]);
+      if (oldIndex === displayedIds.length - 1) return; // already last
+      const newDisplayed = arrayMove(displayedIds, oldIndex, displayedIds.length - 1);
+      reorder([...newDisplayed, ...restVisibleIds, ...hiddenIds]);
       return;
     }
 
     if (active.id === over.id) return;
-    const newIndex = visibleIds.indexOf(String(over.id));
+    const newIndex = displayedIds.indexOf(String(over.id));
     if (newIndex < 0) return;
-    const newVisible = arrayMove(visibleIds, oldIndex, newIndex);
-    reorder([...newVisible, ...hiddenIds]);
+    const newDisplayed = arrayMove(displayedIds, oldIndex, newIndex);
+    reorder([...newDisplayed, ...restVisibleIds, ...hiddenIds]);
   };
 
   const renderWidget = (w: DashboardWidget) => {
     const def = WIDGET_REGISTRY[w.type];
     if (!def) return null;
     return (
-      <SortableWidget key={w.id} id={w.id} span={def.span}>
+      <SortableWidget
+        key={w.id}
+        id={w.id}
+        span={def.span}
+        onRemove={() => toggleWidget(w.id)}
+      >
         {def.render(data)}
       </SortableWidget>
     );
@@ -204,10 +237,13 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-lg font-semibold tracking-tight">
+          Your widgets
+        </h2>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground" />}
+            render={<Button variant="outline" size="sm" className="gap-2" />}
           >
             <SlidersHorizontal className="size-4" /> Customize
           </DropdownMenuTrigger>
@@ -251,14 +287,14 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           onDragEnd={onDragEnd}
           onDragCancel={() => setActiveId(null)}
         >
-          <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
+          <SortableContext items={displayedIds} strategy={rectSortingStrategy}>
             {/* Bento grid: rows have a ~19rem floor so chart widgets fill a
                 readable, equal height, but grow to fit taller content (e.g. the
                 Top Employees list) instead of clipping it against the card's
                 bottom edge. Each card fills its cell (see FILL_CARD). Charts span
                 2 columns; drop any widget anywhere — order = placement. */}
             <div className="grid auto-rows-[minmax(19rem,auto)] grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {visible.map(renderWidget)}
+              {displayed.map(renderWidget)}
               {/* Trailing drop target — only while dragging — so a card can land
                   in the empty space instead of snapping back. */}
               {activeId ? <EndDropZone /> : null}
@@ -273,6 +309,28 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           </DragOverlay>
         </DndContext>
       )}
+
+      {collapsible ? (
+        <div className="flex justify-center pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setShowAll((v) => !v)}
+          >
+            {showAll ? (
+              <>
+                <ChevronUp className="size-4" /> Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="size-4" /> Show{" "}
+                {visible.length - COLLAPSED_COUNT} more
+              </>
+            )}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

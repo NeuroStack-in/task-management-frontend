@@ -10,7 +10,7 @@ import {
 import {
   TopEmployeesWidget,
   ScreenshotsWidget,
-  DashboardInsight,
+  AiSummaryWidget,
   BillingWidget,
 } from "./components/widgets";
 import type { DashboardData } from "./lib/dashboard-data";
@@ -65,6 +65,6 @@ export const WIDGET_REGISTRY: Partial<Record<WidgetType, WidgetDef>> = {
     span: 1,
     render: (d) => <TopEmployeesWidget people={d.topPerformers} />,
   },
-  "ai-summary": { span: 2, render: (d) => <DashboardInsight data={d} /> },
+  "ai-summary": { span: 1, render: () => <AiSummaryWidget /> },
   billing: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
 };

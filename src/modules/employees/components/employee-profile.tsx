@@ -356,6 +356,9 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
 
         {/* ── RIGHT COLUMN ── */}
         <div className="flex flex-col gap-4">
+          {/* AI summary — leads the column (AI-first) */}
+          <EmployeeSummaryInsight data={data} />
+
           {/* Stat cards row */}
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-xl border bg-card p-4">
@@ -486,9 +489,6 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-
-          {/* Employee summary */}
-          <EmployeeSummaryInsight data={data} />
         </div>
       </div>
     </div>

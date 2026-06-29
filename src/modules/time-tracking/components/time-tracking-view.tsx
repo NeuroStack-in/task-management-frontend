@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Users, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useAuthStore } from "@/stores/auth.store";
 import type {
   DailyHours,
   ProjectTimesheet,
@@ -32,6 +33,8 @@ export function TimeTrackingView({
   teamWeekly: DailyHours[];
 }) {
   const { can } = usePermissions();
+  const user = useAuthStore((s) => s.user);
+  const firstName = user?.name?.split(" ")[0] ?? "there";
   const canApprove = can("time-tracking:approve");
   const canTrack = can("time-tracking:edit");
   const showToggle = canApprove && canTrack;
@@ -50,7 +53,7 @@ export function TimeTrackingView({
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Time Tracking"
+        title={`Hello, ${firstName}`}
         description={description}
         actions={
           showToggle ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Sparkles } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -11,6 +11,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sparkline } from "@/components/shared/sparkline";
 import { AiInsight } from "@/components/shared/ai-insight";
+import { useAssistantStore } from "@/stores/assistant.store";
 import { initials } from "@/lib/format";
 import type { User } from "@/types/user";
 import type { DashboardData } from "../lib/dashboard-data";
@@ -98,7 +99,44 @@ export function ScreenshotsWidget({
  * scripted copy. It flags the biggest spread between departments so the gap is
  * actionable, and grounds the claim in the basis line.
  */
+export function AiSummaryWidget() {
+  const openAssistant = useAssistantStore((s) => s.openAssistant);
+  return (
+    <Card className="bg-feature text-feature-foreground shadow-none">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="size-4" /> AI Summary
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="gap-3 text-sm leading-relaxed text-feature-foreground/90">
+        {/* flex-1 so the text grows and vertically centers, filling the card. */}
+        <p className="flex-1">
+          Productivity rose 3% this week, led by Engineering and Product, while
+          overall attendance held steady at 80% with on-time rates ticking up.
+          Average activity climbed to 84% and idle time fell 6% versus last
+          week. Two teams — Design and Backend — show early burnout signals from
+          sustained overtime, so they&apos;re worth a closer look. Screenshot
+          coverage and timesheet submissions are both healthy, and no anomalies
+          breached critical thresholds.
+        </p>
+        <button
+          type="button"
+          onClick={() =>
+            openAssistant(
+              "Summarise this week's productivity and flag any burnout risks.",
+            )
+          }
+          className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
+        >
+          Ask the assistant <ArrowUpRight className="size-3.5" />
+        </button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function DashboardInsight({ data }: { data: DashboardData }) {
+  const openAssistant = useAssistantStore((s) => s.openAssistant);
   const { teamData, kpis, attendanceCounts, rangeLabel } = data;
   const ranked = [...teamData].sort((a, b) => b.score - a.score);
   const top = ranked[0];
@@ -132,7 +170,13 @@ export function DashboardInsight({ data }: { data: DashboardData }) {
           : "Productivity is tracking close to plan across departments."
       }
       points={points}
-      action={{ label: "Open reports", href: "/insights/reports" }}
+      action={{
+        label: "Ask the assistant",
+        onClick: () =>
+          openAssistant(
+            "Summarize this week's productivity and attendance for the organization.",
+          ),
+      }}
       basis={`${teamData.length} departments · ${total} people, ${rangeLabel}`}
       className="h-full"
     />

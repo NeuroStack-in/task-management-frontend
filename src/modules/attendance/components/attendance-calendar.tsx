@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import {
@@ -22,9 +22,9 @@ import {
   COUNT_METRICS,
   MONTH_NAMES,
   REFERENCE_MONTH,
+  TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
-  monthSummary,
   type DayCell,
 } from "@/lib/mock-attendance";
 import { downloadBlob } from "@/lib/download";
@@ -88,56 +88,34 @@ export function AttendanceCalendar({
   const mode: CalendarMode = "detailed";
 
   const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
-  const summary = useMemo(() => monthSummary(view.year, view.month), [view]);
+
+  const goToToday = () => {
+    setView({ year: TODAY.year, month: TODAY.month });
+    onSelect({ year: TODAY.year, month: TODAY.month, day: TODAY.day });
+  };
+
+  const step = (dir: -1 | 1) =>
+    setView((v) => {
+      const m = v.month + dir;
+      if (m < 0) return { year: v.year - 1, month: 11 };
+      if (m > 11) return { year: v.year + 1, month: 0 };
+      return { year: v.year, month: m };
+    });
 
   return (
     <Card>
-      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
-        <div>
-          <CardTitle>
-            {MONTH_NAMES[view.month]} {view.year}
-          </CardTitle>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Avg / day
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-success" />
-              <span className="font-semibold text-foreground tabular-nums">
-                {summary.present}
-              </span>
-              <span className="text-muted-foreground">present</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-primary" />
-              <span className="font-semibold text-foreground tabular-nums">
-                {summary.leave}
-              </span>
-              <span className="text-muted-foreground">on leave</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-destructive" />
-              <span className="font-semibold text-foreground tabular-nums">
-                {summary.absent}
-              </span>
-              <span className="text-muted-foreground">absent</span>
-            </span>
-            <span className="text-muted-foreground">
-              across {summary.total} employees
-            </span>
-          </div>
+      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+        <CardTitle>
+          {MONTH_NAMES[view.month]} {view.year}
+        </CardTitle>
 
-          <div className="mt-3 flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select
             value={String(view.month)}
-            onValueChange={(v) =>
-              setView((s) => ({ ...s, month: Number(v) }))
-            }
+            onValueChange={(v) => setView((s) => ({ ...s, month: Number(v) }))}
           >
             <SelectTrigger aria-label="Select month" className="h-9 w-36">
-              <SelectValue>
-                {(v) => MONTH_NAMES[Number(v)]}
-              </SelectValue>
+              <SelectValue>{(v) => MONTH_NAMES[Number(v)]}</SelectValue>
             </SelectTrigger>
             <SelectContent className="min-w-36">
               {MONTH_NAMES.map((name, i) => (
@@ -149,9 +127,7 @@ export function AttendanceCalendar({
           </Select>
           <Select
             value={String(view.year)}
-            onValueChange={(v) =>
-              setView((s) => ({ ...s, year: Number(v) }))
-            }
+            onValueChange={(v) => setView((s) => ({ ...s, year: Number(v) }))}
           >
             <SelectTrigger aria-label="Select year" className="h-9 w-28">
               <SelectValue />
@@ -164,17 +140,40 @@ export function AttendanceCalendar({
               ))}
             </SelectContent>
           </Select>
-          </div>
-        </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => downloadMonthCsv(view.year, view.month, weeks)}
-        >
-          <Download className="size-4" /> Download
-        </Button>
+          <Button variant="outline" size="sm" onClick={goToToday}>
+            Today
+          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              aria-label="Previous month"
+              onClick={() => step(-1)}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              aria-label="Next month"
+              onClick={() => step(1)}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => downloadMonthCsv(view.year, view.month, weeks)}
+          >
+            <Download className="size-4" /> Download
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-3">
