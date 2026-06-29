@@ -44,8 +44,11 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             edge; the translucent, draggable AI FAB overlays the corner. The keyed
             wrapper gives each route a subtle fade-up entrance (disabled under
             reduced-motion). */}
-        <main className="flex-1 px-4 pt-4 pb-3 sm:px-6 sm:pt-6">
-          <div key={pathname} className="wp-enter">
+        {/* flex column so a page can opt into filling the height (min-h-full /
+            flex-1) — e.g. the Leave "My requests" card stretches to the sidebar
+            bottom instead of leaving blank space below. */}
+        <main className="flex flex-1 flex-col px-4 pt-4 pb-3 sm:px-6 sm:pt-6">
+          <div key={pathname} className="wp-enter flex flex-1 flex-col">
             {children}
           </div>
         </main>

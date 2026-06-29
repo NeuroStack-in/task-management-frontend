@@ -202,7 +202,72 @@ export function NotificationsCenter() {
             </Card>
           )}
         </div>
+
+        <NotificationDetailDialog
+          notification={selected}
+          onClose={() => setSelected(null)}
+        />
       </div>
+  );
+}
+
+function NotificationDetailDialog({
+  notification,
+  onClose,
+}: {
+  notification: AppNotification | null;
+  onClose: () => void;
+}) {
+  const meta = notification ? NOTIFICATION_TYPE_META[notification.type] : null;
+  const Icon = meta?.icon;
+  return (
+    <Dialog open={!!notification} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        {notification && meta && Icon ? (
+          <>
+            <DialogHeader>
+              <div className="flex items-start gap-3">
+                <span
+                  className={cn(
+                    "flex size-10 shrink-0 items-center justify-center rounded-full",
+                    meta.className,
+                  )}
+                >
+                  <Icon className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <DialogTitle className="text-left text-base leading-snug">
+                    {notification.title}
+                  </DialogTitle>
+                  <DialogDescription className="text-left">
+                    {meta.label} · {timeAgo(notification.createdAt)}
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {notification.message}
+            </p>
+
+            <DialogFooter>
+              {notification.href ? (
+                <Button
+                  render={<Link href={notification.href} />}
+                  nativeButton={false}
+                  onClick={onClose}
+                >
+                  View details <ArrowUpRight className="size-4" />
+                </Button>
+              ) : null}
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
