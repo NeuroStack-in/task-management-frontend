@@ -79,6 +79,12 @@ export const useLeaveStore = create<LeaveState>()(
       cancelRequest: (id) =>
         set((s) => ({ requests: s.requests.filter((r) => r.id !== id) })),
     }),
-    { name: "wp-leave-requests" },
+    {
+      name: "wp-leave-requests",
+      version: 1,
+      migrate: (persisted) =>
+        ({ requests: (persisted as { requests?: LeaveRequest[] } | undefined)
+          ?.requests ?? [] }) as LeaveState,
+    },
   ),
 );

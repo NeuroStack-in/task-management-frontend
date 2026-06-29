@@ -23,8 +23,6 @@ export interface Project {
   managerId?: string;
   memberIds: string[];
   department: string;
-  budget: number;
-  spent: number;
   /** ISO date strings (absolute — relative ranges are resolved at seed time). */
   startDate: string;
   dueDate: string;

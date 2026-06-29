@@ -52,7 +52,7 @@ export default function RootLayout({
         {/* Apply the saved colour palette before paint to avoid a flash. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var p=localStorage.getItem('wp-palette')||'meridian';if(p!=='indigo'){document.documentElement.setAttribute('data-palette',p);}}catch(e){document.documentElement.setAttribute('data-palette','meridian');}})();`,
+            __html: `(function(){try{var p=localStorage.getItem('wp-palette');if(p!=='meridian'&&p!=='indigo')p='meridian';if(p!=='indigo'){document.documentElement.setAttribute('data-palette',p);}}catch(e){document.documentElement.setAttribute('data-palette','meridian');}})();`,
           }}
         />
         <AppProviders>{children}</AppProviders>

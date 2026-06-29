@@ -165,11 +165,6 @@ export function AgentsManager() {
       <PageHeader
         title="Desktop Agents"
         description="Monitor and manage the WorkPulse agent installed on employee devices."
-        actions={
-          <Button onClick={() => setDownloadOpen(true)}>
-            <Download className="size-4" /> Download agent
-          </Button>
-        }
       />
 
       {/* ── Overview ── */}
@@ -243,6 +238,9 @@ export function AgentsManager() {
                   <SelectItem value="Linux">Linux</SelectItem>
                 </SelectContent>
               </Select>
+              <Button size="sm" onClick={() => setDownloadOpen(true)}>
+                <Download className="size-4" /> Download agent
+              </Button>
             </div>
           </div>
 

@@ -88,7 +88,13 @@ function isUnusualHours(submitted: string): boolean {
 
 export function ApprovalsView() {
   const { can } = usePermissions();
-  const canApprove = can("approvals:approve");
+  // Per-kind approval: leave requests need `leave:approve`; time-change and
+  // manual-entry need `approvals:approve`. `canApprove` = can approve at least one.
+  const canApproveTime = can("approvals:approve");
+  const canApproveLeave = can("leave:approve");
+  const canApproveKind = (k: ApprovalKind) =>
+    k === "leave" ? canApproveLeave : canApproveTime;
+  const canApprove = canApproveTime || canApproveLeave;
 
   const [items, setItems] = useState<ApprovalRequest[]>(APPROVALS);
   const [filter, setFilter] = useState<Filter>("pending");
@@ -123,15 +129,17 @@ export function ApprovalsView() {
   // Actions column is always reserved when canApprove; cell content depends on row status.
   const showActionsCol = canApprove;
 
+  // Only rows this user can actually approve are selectable for bulk actions.
+  const approvablePending = pendingRows.filter((r) => canApproveKind(r.kind));
   const allPendingSelected =
-    pendingRows.length > 0 &&
-    pendingRows.every((r) => selectedIds.has(r.id));
+    approvablePending.length > 0 &&
+    approvablePending.every((r) => selectedIds.has(r.id));
 
   const toggleSelectAll = () => {
     if (allPendingSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(pendingRows.map((r) => r.id)));
+      setSelectedIds(new Set(approvablePending.map((r) => r.id)));
     }
   };
 
@@ -260,7 +268,7 @@ export function ApprovalsView() {
                         checked={allPendingSelected}
                         onChange={toggleSelectAll}
                         className="size-4 cursor-pointer accent-primary"
-                        disabled={pendingRows.length === 0}
+                        disabled={approvablePending.length === 0}
                       />
                     </TableHead>
                   )}
@@ -301,7 +309,7 @@ export function ApprovalsView() {
                         <TableCell
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {req.status === "pending" ? (
+                          {req.status === "pending" && canApproveKind(req.kind) ? (
                             <input
                               type="checkbox"
                               aria-label={`Select ${req.requester.name}`}
@@ -367,7 +375,7 @@ export function ApprovalsView() {
                       </TableCell>
                       {showActionsCol && (
                         <TableCell className="text-right">
-                          {req.status === "pending" ? (
+                          {req.status === "pending" && canApproveKind(req.kind) ? (
                             <div className="flex justify-end gap-1">
                               <Button
                                 variant="ghost"
@@ -413,7 +421,7 @@ export function ApprovalsView() {
 
       <ApprovalDialog
         request={selected}
-        canApprove={canApprove}
+        canApprove={selected ? canApproveKind(selected.kind) : false}
         onClose={() => setSelectedId(null)}
         onDecide={decide}
       />

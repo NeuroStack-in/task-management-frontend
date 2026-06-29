@@ -16,11 +16,8 @@ import {
   type ProjectStatus,
 } from "../types";
 import {
-  budgetHealth,
   dueLabel,
-  formatMoney,
   toneDot,
-  toneText,
   type UserMini,
 } from "../lib";
 import { MemberStack, ProgressTrack } from "./parts";
@@ -112,7 +109,7 @@ export function ProjectsList({
                 >
                   <span>Project</span>
                   <span>Progress</span>
-                  <span>Budget</span>
+                  <span>Tasks</span>
                   <span className="text-right">Due</span>
                 </div>
 
@@ -121,7 +118,6 @@ export function ProjectsList({
                   const members = p.memberIds
                     .map((id) => userMap[id])
                     .filter(Boolean) as UserMini[];
-                  const health = budgetHealth(p);
                   const due = dueLabel(p.dueDate);
                   const summary = taskSummary[p.id] ?? { done: 0, total: 0 };
 
@@ -171,22 +167,14 @@ export function ProjectsList({
                         </span>
                       </div>
 
-                      {/* Budget */}
+                      {/* Tasks */}
                       <div className="hidden md:block">
                         <p className="text-sm tabular-nums">
-                          {formatMoney(p.spent)}
+                          {summary.done}
                           <span className="text-muted-foreground">
                             {" "}
-                            / {formatMoney(p.budget)}
+                            / {summary.total} done
                           </span>
-                        </p>
-                        <p
-                          className={cn(
-                            "text-xs font-medium",
-                            toneText[health.tone],
-                          )}
-                        >
-                          {health.label} · {summary.done}/{summary.total} tasks
                         </p>
                       </div>
 

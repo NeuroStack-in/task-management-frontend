@@ -36,12 +36,6 @@ export function buildUserMap(users: User[]): Record<string, UserMini> {
 
 /* ----------------------------- formatting ----------------------------- */
 
-export function formatMoney(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (n >= 1_000) return `$${Math.round(n / 1_000)}k`;
-  return `$${n}`;
-}
-
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -71,25 +65,10 @@ export function dueLabel(iso: string | null): { text: string; overdue: boolean }
 
 export type Tone = "primary" | "success" | "warning" | "muted" | "negative";
 
-export interface BudgetHealth {
-  pct: number; // spent / budget, 0..1.x
-  tone: Tone;
-  label: string;
-}
-
-export function budgetHealth(p: Project): BudgetHealth {
-  const pct = p.budget > 0 ? p.spent / p.budget : 0;
-  if (pct >= 1) return { pct, tone: "negative", label: "Over budget" };
-  if (pct >= 0.9) return { pct, tone: "warning", label: "Near limit" };
-  return { pct, tone: "success", label: "On budget" };
-}
-
-/** A project needing attention: live, but over budget or overdue & unfinished. */
+/** A project needing attention: live, but overdue & still unfinished. */
 export function isAtRisk(p: Project): boolean {
   if (p.status !== "active" && p.status !== "on_hold") return false;
-  const overBudget = p.spent > p.budget;
-  const overdue = daysUntil(p.dueDate) < 0 && p.progress < 100;
-  return overBudget || overdue;
+  return daysUntil(p.dueDate) < 0 && p.progress < 100;
 }
 
 export interface ProjectStats {

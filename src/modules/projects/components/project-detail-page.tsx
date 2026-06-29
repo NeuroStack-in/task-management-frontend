@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -56,6 +57,7 @@ import {
   type ProjectFormValues,
 } from "@/stores/projects.store";
 import { useTasksStore, type TaskFormValues } from "@/stores/tasks.store";
+import { usePageTitle } from "@/stores/page-header.store";
 import {
   PROJECT_STATUS_META,
   TASK_PRIORITY_META,
@@ -94,6 +96,9 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const updateProject = useProjectsStore((s) => s.updateProject);
   const deleteProject = useProjectsStore((s) => s.deleteProject);
 
+  // Surface the project name (and key) in the top navbar for this detail route.
+  usePageTitle(project?.name ?? null, project?.key ?? null);
+
   const allTasks = useTasksStore((s) => s.tasks);
   const createTask = useTasksStore((s) => s.createTask);
   const updateTask = useTasksStore((s) => s.updateTask);
@@ -109,7 +114,14 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [taskView, setTaskView] = useState<"board" | "list">("list");
+  const [taskView, setTaskView] = useState<"board" | "list">("board");
+
+  // The DragOverlay is portaled to <body> so its position:fixed resolves
+  // against the viewport, not the route's `.wp-enter` wrapper (whose transform
+  // animation establishes a containing block that otherwise offsets the dragged
+  // card by the scroll distance). Guard with `mounted` to avoid SSR/hydration.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [teamOpen, setTeamOpen] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -494,13 +506,18 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
                 />
               ))}
             </div>
-            <DragOverlay dropAnimation={null}>
-              {activeTask ? (
-                <div className="w-64 rotate-2 rounded-xl border bg-card p-3 shadow-xl">
-                  <TaskCardContent task={activeTask} userMap={userMap} />
-                </div>
-              ) : null}
-            </DragOverlay>
+            {mounted
+              ? createPortal(
+                  <DragOverlay dropAnimation={null}>
+                    {activeTask ? (
+                      <div className="w-full rotate-1 rounded-xl border bg-card p-3 shadow-xl">
+                        <TaskCardContent task={activeTask} userMap={userMap} />
+                      </div>
+                    ) : null}
+                  </DragOverlay>,
+                  document.body,
+                )
+              : null}
           </DndContext>
         ) : (
           <TaskListView

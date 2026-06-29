@@ -178,9 +178,9 @@ export function SignupExperience() {
             <input type="checkbox" className="sr-only" checked={agree} onChange={(e) => { setAgree(e.target.checked); if (e.target.checked) setErr((p) => ({ ...p, agree: undefined })); }} />
             <span className="text-xs leading-relaxed" style={{ color: "var(--m-muted)" }}>
               I agree to WorkPulse&apos;s{" "}
-              <a href="#" className="font-medium hover:underline" style={{ color: "var(--m-accent-ink)" }}>Terms of Service</a>{" "}
+              <span className="font-medium" style={{ color: "var(--m-accent-ink)" }}>Terms of Service</span>{" "}
               and{" "}
-              <a href="#" className="font-medium hover:underline" style={{ color: "var(--m-accent-ink)" }}>Privacy Policy</a>.
+              <span className="font-medium" style={{ color: "var(--m-accent-ink)" }}>Privacy Policy</span>.
             </span>
           </label>
           {err.agree ? (

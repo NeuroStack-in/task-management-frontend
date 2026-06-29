@@ -21,6 +21,7 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { TablePagination } from "@/components/shared/table-pagination";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -273,28 +274,6 @@ export function EmployeesView({
       <PageHeader
         title="Employees"
         description="Your organization's people, productivity, and teams."
-        actions={
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" />}>
-                <Download className="size-4" /> Download report
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => exportEmployeesPdf(filtered, liveStats)}>
-                  <FileText className="size-4" /> PDF report
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
-                  <Sheet className="size-4" /> CSV export
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {can("employees:manage") ? (
-              <Button onClick={() => setCreateOpen(true)}>
-                <UserPlus className="size-4" /> Add employee
-              </Button>
-            ) : null}
-          </div>
-        }
       />
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -305,7 +284,7 @@ export function EmployeesView({
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -333,6 +312,26 @@ export function EmployeesView({
             label: s === "all" ? "All statuses" : s[0].toUpperCase() + s.slice(1),
           }))}
         />
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" />}>
+              <Download className="size-4" /> Download report
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportEmployeesPdf(filtered, liveStats)}>
+                <FileText className="size-4" /> PDF report
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
+                <Sheet className="size-4" /> CSV export
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {can("employees:manage") ? (
+            <Button onClick={() => setCreateOpen(true)}>
+              <UserPlus className="size-4" /> Add employee
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <Card>
@@ -419,34 +418,13 @@ export function EmployeesView({
       </Card>
 
       {/* Pagination */}
-      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-        <span>
-          {filtered.length === 0
-            ? "No results"
-            : `${safePage * PAGE_SIZE + 1}–${Math.min(
-                (safePage + 1) * PAGE_SIZE,
-                filtered.length,
-              )} of ${filtered.length}`}
-        </span>
-        <div className="flex gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage === 0}
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage >= pageCount - 1}
-            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <TablePagination
+        page={safePage}
+        pageCount={pageCount}
+        total={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
 
       <CreateEmployeeDialog
         open={createOpen}

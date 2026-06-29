@@ -3,15 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
-import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Search,
-  ArrowUp,
-  ArrowDown,
-} from "lucide-react";
+import { ChevronDown, Download, Search } from "lucide-react";
 import { toast } from "sonner";
 import { users } from "@/lib/data";
 import { initials } from "@/lib/format";
@@ -46,6 +38,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/empty-state";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { SortableHead } from "@/components/shared/sortable-head";
 import { cn } from "@/lib/utils";
 
 const STATUS_META: Record<
@@ -302,27 +296,33 @@ export function AttendanceLog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <SortHead
-                      label="Employee"
-                      active={sort.key === "name"}
+                    <SortableHead
+                      col="name"
+                      active={sort.key}
                       dir={sort.dir}
-                      onClick={() => toggleSort("name")}
-                    />
+                      onSort={toggleSort}
+                    >
+                      Employee
+                    </SortableHead>
                     <TableHead>Department</TableHead>
                     <TableHead>Status</TableHead>
-                    <SortHead
-                      label="Clock in"
-                      active={sort.key === "clockIn"}
+                    <SortableHead
+                      col="clockIn"
+                      active={sort.key}
                       dir={sort.dir}
-                      onClick={() => toggleSort("clockIn")}
-                    />
+                      onSort={toggleSort}
+                    >
+                      Clock in
+                    </SortableHead>
                     <TableHead>Clock out</TableHead>
-                    <SortHead
-                      label="Hours"
-                      active={sort.key === "hours"}
+                    <SortableHead
+                      col="hours"
+                      active={sort.key}
                       dir={sort.dir}
-                      onClick={() => toggleSort("hours")}
-                    />
+                      onSort={toggleSort}
+                    >
+                      Hours
+                    </SortableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -378,38 +378,14 @@ export function AttendanceLog({
             </div>
 
             {/* Pagination */}
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1">
-              <p className="text-xs text-muted-foreground">
-                Showing {safePage * PAGE_SIZE + 1}–
-                {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
-                {filtered.length}
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-8"
-                  disabled={safePage === 0}
-                  onClick={() => setPage(safePage - 1)}
-                  aria-label="Previous page"
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  Page {safePage + 1} / {pageCount}
-                </span>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-8"
-                  disabled={safePage >= pageCount - 1}
-                  onClick={() => setPage(safePage + 1)}
-                  aria-label="Next page"
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            </div>
+            <TablePagination
+              page={safePage}
+              pageCount={pageCount}
+              total={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+              className="pt-1"
+            />
           </>
         )}
       </CardContent>
@@ -417,43 +393,4 @@ export function AttendanceLog({
   );
 }
 
-function SortHead({
-  label,
-  active,
-  dir,
-  onClick,
-  align,
-}: {
-  label: string;
-  active: boolean;
-  dir: "asc" | "desc";
-  onClick: () => void;
-  align?: "right";
-}) {
-  return (
-    <TableHead
-      className={align === "right" ? "text-right" : undefined}
-      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
-    >
-      <button
-        type="button"
-        onClick={onClick}
-        className={cn(
-          "inline-flex cursor-pointer items-center gap-1 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-          align === "right" && "flex-row-reverse",
-          active && "text-foreground",
-        )}
-      >
-        {label}
-        {active ? (
-          dir === "asc" ? (
-            <ArrowUp className="size-3.5" />
-          ) : (
-            <ArrowDown className="size-3.5" />
-          )
-        ) : null}
-      </button>
-    </TableHead>
-  );
-}
 

@@ -146,14 +146,6 @@ export function AuditLogs() {
       <PageHeader
         title="Audit Logs"
         description="A complete record of user actions, permission changes, and login events across WorkPulse."
-        actions={
-          <Button
-            variant="outline"
-            onClick={() => toast.success("Audit log downloaded (CSV)")}
-          >
-            <Download className="size-4" /> Download
-          </Button>
-        }
       />
 
       {/* ── Filter toolbar ── */}
@@ -239,6 +231,14 @@ export function AuditLogs() {
             ))}
           </SelectContent>
         </Select>
+
+        <Button
+          variant="outline"
+          className="sm:ml-auto"
+          onClick={() => toast.success("Audit log downloaded (CSV)")}
+        >
+          <Download className="size-4" /> Download
+        </Button>
       </div>
 
       {/* ── Result count ── */}

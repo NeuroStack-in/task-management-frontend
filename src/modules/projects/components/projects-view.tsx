@@ -163,15 +163,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
         description={
           selfScoped
             ? "Projects you're a member of — status, progress, and your tasks."
-            : "Every project across the organization — status, budget health, and delivery at a glance."
-        }
-        actions={
-          canCreate ? (
-            <Button onClick={() => setNewOpen(true)} className="gap-1.5">
-              <Plus />
-              New project
-            </Button>
-          ) : null
+            : "Every project across the organization — status, progress, and delivery at a glance."
         }
       />
 
@@ -236,6 +228,15 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
                 label="List view"
               />
             </div>
+          ) : null}
+          {canCreate ? (
+            <Button
+              onClick={() => setNewOpen(true)}
+              className="shrink-0 gap-1.5"
+            >
+              <Plus />
+              New project
+            </Button>
           ) : null}
         </div>
       </div>

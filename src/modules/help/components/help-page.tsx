@@ -2,22 +2,15 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
-  BarChart2,
   BookOpen,
   ChevronDown,
   Clock,
-  Compass,
   FileText,
   HelpCircle,
-  Paperclip,
-  PlayCircle,
   Search,
   Send,
-  Settings2,
   Sparkles,
   Ticket,
-  Timer,
-  Users,
 } from "lucide-react"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -55,7 +48,6 @@ import {
   HELP_ARTICLES,
   HELP_CATEGORIES,
   MOCK_TICKETS,
-  VIDEO_TUTORIALS,
   nextTicketId,
   type HelpArticle,
   type HelpCategory,
@@ -152,53 +144,6 @@ function ArticleSheet({
   )
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Guided walkthroughs data
-// ──────────────────────────────────────────────────────────────────────────────
-
-const WALKTHROUGHS = [
-  {
-    id: "getting-started",
-    icon: Compass,
-    title: "Getting Started",
-    description:
-      "A 5-step overview of the dashboard, timer, and your first project setup.",
-    duration: "~3 min",
-  },
-  {
-    id: "time-tracking",
-    icon: Timer,
-    title: "Time Tracking",
-    description:
-      "Start timers, log manual entries, and review daily work summaries.",
-    duration: "~4 min",
-  },
-  {
-    id: "insights",
-    icon: BarChart2,
-    title: "Analytics & Reports",
-    description:
-      "Navigate productivity scores, anomaly alerts, and export team reports.",
-    duration: "~5 min",
-  },
-  {
-    id: "team-management",
-    icon: Users,
-    title: "Team Management",
-    description:
-      "Add members, assign roles, and organise departments and teams.",
-    duration: "~4 min",
-  },
-  {
-    id: "monitoring-setup",
-    icon: Settings2,
-    title: "Monitoring Setup",
-    description:
-      "Configure idle detection, screenshot intervals, and alert thresholds.",
-    duration: "~3 min",
-  },
-] as const
-
 const POPULAR_SEARCHES = ["Time tracking", "Screenshots", "Reports", "Billing"]
 
 // Section ids for anchor nav
@@ -206,9 +151,7 @@ const SECTIONS = [
   { id: "support", label: "Support", icon: Ticket },
   { id: "browse", label: "Browse", icon: BookOpen },
   { id: "articles", label: "Articles", icon: FileText },
-  { id: "tutorials", label: "Tutorials", icon: PlayCircle },
   { id: "faqs", label: "FAQs", icon: HelpCircle },
-  { id: "walkthroughs", label: "Walkthroughs", icon: Compass },
 ] as const
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -492,15 +435,6 @@ export function HelpPage() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => toast.info("File attachments are coming soon")}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-                >
-                  <Paperclip className="size-3.5" />
-                  Attach screenshots or files
-                </button>
-
                 <Button type="submit" className="w-full">
                   <Send className="size-4" />
                   Submit ticket
@@ -687,45 +621,6 @@ export function HelpPage() {
         )}
       </section>
 
-      {/* ── Video tutorials ── */}
-      <section
-        id="tutorials"
-        ref={(el) => { sectionRefs.current["tutorials"] = el }}
-        className="space-y-3 scroll-mt-16"
-      >
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Video tutorials
-        </h2>
-        <Card>
-          <CardContent className="divide-y p-0">
-            {VIDEO_TUTORIALS.map((video) => {
-              const categoryLabel =
-                HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
-                video.category
-              return (
-                <button
-                  key={video.title}
-                  type="button"
-                  onClick={() => toast.info("Video player coming soon")}
-                  className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                >
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                    <PlayCircle className="size-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{video.title}</p>
-                    <p className="text-xs text-muted-foreground">{categoryLabel}</p>
-                  </div>
-                  <span className="shrink-0 tabular-nums text-xs text-muted-foreground">
-                    {video.duration}
-                  </span>
-                </button>
-              )
-            })}
-          </CardContent>
-        </Card>
-      </section>
-
       {/* ── FAQs ── */}
       <section
         id="faqs"
@@ -756,45 +651,6 @@ export function HelpPage() {
                 )}
               </div>
             ))}
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* ── Guided walkthroughs ── */}
-      <section
-        id="walkthroughs"
-        ref={(el) => { sectionRefs.current["walkthroughs"] = el }}
-        className="space-y-3 scroll-mt-16"
-      >
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Guided walkthroughs
-        </h2>
-        <Card>
-          <CardContent className="divide-y p-0">
-            {WALKTHROUGHS.map((tour) => {
-              const Icon = tour.icon
-              return (
-                <div key={tour.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                    <Icon className="size-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{tour.title}</p>
-                    <p className="text-xs text-muted-foreground">{tour.duration}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      toast.info(`"${tour.title}" tour — coming in the next release`)
-                    }
-                  >
-                    <PlayCircle className="size-4" />
-                    Start tour
-                  </Button>
-                </div>
-              )
-            })}
           </CardContent>
         </Card>
       </section>

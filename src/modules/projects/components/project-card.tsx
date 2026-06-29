@@ -9,11 +9,8 @@ import {
   type Project,
 } from "../types";
 import {
-  budgetHealth,
   dueLabel,
-  formatMoney,
   toneRail,
-  toneText,
   type UserMini,
 } from "../lib";
 import { MemberStack, ProgressTrack, StatusBadge } from "./parts";
@@ -34,7 +31,6 @@ export function ProjectCard({
   onOpen,
 }: ProjectCardProps) {
   const status = PROJECT_STATUS_META[project.status];
-  const health = budgetHealth(project);
   const due = dueLabel(project.dueDate);
 
   return (
@@ -90,31 +86,21 @@ export function ProjectCard({
         <ProgressTrack value={project.progress} />
       </div>
 
-      {/* Budget + tasks meta */}
+      {/* Tasks + due meta */}
       <div className="grid grid-cols-2 gap-3 px-5 text-xs">
         <div>
-          <p className="text-muted-foreground">Budget</p>
-          <p className="mt-0.5 font-medium tabular-nums">
-            {formatMoney(project.spent)}
-            <span className="text-muted-foreground">
-              {" "}
-              / {formatMoney(project.budget)}
-            </span>
-          </p>
-          <p className={cn("mt-0.5 font-medium", toneText[health.tone])}>
-            {health.label}
-          </p>
-        </div>
-        <div className="text-right">
           <p className="text-muted-foreground">Tasks</p>
           <p className="mt-0.5 font-medium tabular-nums">
             {doneCount}
             <span className="text-muted-foreground"> / {totalCount} done</span>
           </p>
+        </div>
+        <div className="text-right">
+          <p className="text-muted-foreground">Due</p>
           <p
             className={cn(
               "mt-0.5 font-medium",
-              due.overdue ? "text-destructive" : "text-muted-foreground",
+              due.overdue ? "text-destructive" : "text-foreground",
             )}
           >
             {due.text}

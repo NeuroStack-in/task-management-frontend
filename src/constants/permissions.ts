@@ -2,10 +2,21 @@ import type {
   Permission,
   PermissionAction,
   PermissionCategory,
+  PermissionId,
 } from "@/types/rbac";
 
 /** Wildcard permission id granting full access. */
 export const WILDCARD = "*" as const;
+
+/**
+ * Contributor-only capabilities. These belong to individual contributors who do
+ * their own work in the tool (e.g. logging their own time) — NOT to oversight
+ * roles (Owner/Admin/HR/Manager). The wildcard "*" does NOT auto-grant these;
+ * a role must list them explicitly. See rbac.ts `canAccess`.
+ */
+export const CONTRIBUTOR_ONLY_PERMISSIONS: PermissionId[] = [
+  "time-tracking:edit",
+];
 
 const p = (
   module: string,
@@ -117,6 +128,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("leave", "view", "View Leave Requests"),
       p("leave", "request", "Submit Leave Request"),
+      p("leave", "approve", "Approve Leave Requests"),
     ],
   },
   {

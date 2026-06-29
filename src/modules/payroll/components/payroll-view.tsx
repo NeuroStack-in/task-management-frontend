@@ -11,10 +11,6 @@ import {
   Clock,
   Search,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  ChevronsUpDown,
   Check,
   Download,
   FileText,
@@ -24,6 +20,8 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { SortableHead } from "@/components/shared/sortable-head";
 import { AiInsight } from "@/components/shared/ai-insight";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -198,13 +196,6 @@ function FilterDropdown({
 type SortCol = "name" | "hours" | "net";
 type SortDir = "asc" | "desc";
 
-function SortIcon({ col, active, dir }: { col: SortCol; active: SortCol; dir: SortDir }) {
-  if (col !== active) return <ChevronsUpDown className="ml-1 inline size-3.5 text-muted-foreground/50" />;
-  return dir === "asc"
-    ? <ChevronUp className="ml-1 inline size-3.5" />
-    : <ChevronDown className="ml-1 inline size-3.5" />;
-}
-
 export function PayrollView() {
   const { can } = usePermissions();
   const [periodIndex, setPeriodIndex] = useState(0);
@@ -304,16 +295,6 @@ export function PayrollView() {
       <PageHeader
         title="Payroll"
         description={`${period.label} pay run · ${totals.headcount} employees · payslips from logged hours`}
-        actions={
-          <div className="flex items-center gap-2">
-            <PeriodDropdown index={periodIndex} onChange={resetPage(setPeriodIndex)} />
-            {can("payroll:export") ? (
-              <Button variant="outline" onClick={() => exportRunCsv(run)}>
-                <Download className="size-4" /> Download run
-              </Button>
-            ) : null}
-          </div>
-        }
       />
 
       <div className="grid grid-rows-[auto] gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -384,6 +365,7 @@ export function PayrollView() {
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <PeriodDropdown index={periodIndex} onChange={resetPage(setPeriodIndex)} />
             <FilterDropdown
               label="Dept"
               value={dept}
@@ -396,6 +378,11 @@ export function PayrollView() {
               options={STATUS_OPTIONS}
               onChange={resetPage(setStatus)}
             />
+            {can("payroll:export") ? (
+              <Button variant="outline" onClick={() => exportRunCsv(run)}>
+                <Download className="size-4" /> Download run
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -410,47 +397,35 @@ export function PayrollView() {
           <Table className="[&_td:first-child]:pl-5 [&_td:last-child]:pr-5 [&_th:first-child]:pl-5 [&_th:last-child]:pr-5">
             <TableHeader>
               <TableRow>
-                <TableHead
+                <SortableHead
+                  col="name"
+                  active={sortCol}
+                  dir={sortDir}
+                  onSort={toggleSort}
                   className="min-w-[200px]"
-                  aria-sort={sortCol === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
                 >
-                  <button
-                    type="button"
-                    className="flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
-                    onClick={() => toggleSort("name")}
-                  >
-                    Employee
-                    <SortIcon col="name" active={sortCol} dir={sortDir} />
-                  </button>
-                </TableHead>
+                  Employee
+                </SortableHead>
                 <TableHead>Department</TableHead>
-                <TableHead
-                  aria-sort={sortCol === "hours" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                <SortableHead
+                  col="hours"
+                  active={sortCol}
+                  dir={sortDir}
+                  onSort={toggleSort}
                 >
-                  <button
-                    type="button"
-                    className="flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
-                    onClick={() => toggleSort("hours")}
-                  >
-                    Hours
-                    <SortIcon col="hours" active={sortCol} dir={sortDir} />
-                  </button>
-                </TableHead>
+                  Hours
+                </SortableHead>
                 <TableHead>Rate</TableHead>
                 <TableHead>Gross</TableHead>
                 <TableHead>Deductions</TableHead>
-                <TableHead
-                  aria-sort={sortCol === "net" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                <SortableHead
+                  col="net"
+                  active={sortCol}
+                  dir={sortDir}
+                  onSort={toggleSort}
                 >
-                  <button
-                    type="button"
-                    className="flex cursor-pointer items-center font-medium hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
-                    onClick={() => toggleSort("net")}
-                  >
-                    Net pay
-                    <SortIcon col="net" active={sortCol} dir={sortDir} />
-                  </button>
-                </TableHead>
+                  Net pay
+                </SortableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Payslip</TableHead>
               </TableRow>
@@ -513,34 +488,14 @@ export function PayrollView() {
         )}
 
         {filtered.length > 0 ? (
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-border px-5 py-3">
-            <span className="text-sm text-muted-foreground">
-              Showing {safePage * PAGE_SIZE + 1}–
-              {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
-              {filtered.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={safePage === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-              >
-                <ChevronLeft className="size-4" /> Prev
-              </Button>
-              <span className="text-sm tabular-nums text-muted-foreground">
-                {safePage + 1} / {pageCount}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={safePage >= pageCount - 1}
-                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-              >
-                Next <ChevronRight className="size-4" />
-              </Button>
-            </div>
-          </div>
+          <TablePagination
+            page={safePage}
+            pageCount={pageCount}
+            total={filtered.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setPage}
+            className="border-t border-border px-5 py-3"
+          />
         ) : null}
       </Card>
     </div>

@@ -86,13 +86,6 @@ export function LeaveRequestsView() {
       <PageHeader
         title="Leave"
         description="Request and track time off. Requests go to your manager for approval."
-        actions={
-          can("leave:request") ? (
-            <Button onClick={() => setOpen(true)}>
-              <CalendarPlus className="size-4" /> Request leave
-            </Button>
-          ) : null
-        }
       />
 
       {/* Balances */}
@@ -122,10 +115,15 @@ export function LeaveRequestsView() {
 
       {/* Requests */}
       <Card className="flex-1 gap-0 p-0">
-        <div className="border-b border-border px-5 py-4">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
           <h2 className="font-display text-base font-semibold tracking-tight">
             My requests
           </h2>
+          {can("leave:request") ? (
+            <Button size="sm" onClick={() => setOpen(true)}>
+              <CalendarPlus className="size-4" /> Request leave
+            </Button>
+          ) : null}
         </div>
         {mine.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-5">

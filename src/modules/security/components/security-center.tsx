@@ -251,14 +251,6 @@ export function SecurityCenter() {
       <PageHeader
         title="Security Center"
         description="Authentication, single sign-on, session policies, and security activity."
-        actions={
-          <Button
-            variant="outline"
-            onClick={() => toast.success("Security report downloaded")}
-          >
-            <Download className="size-4" /> Download report
-          </Button>
-        }
       />
 
       {!canManage && (
@@ -270,8 +262,9 @@ export function SecurityCenter() {
         </div>
       )}
 
-      {/* ── Overview strip (quiet, at-a-glance only) ── */}
-      <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-y-0">
+      {/* ── Overview strip (quiet, at-a-glance only) + report action ── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="grid flex-1 grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-y-0">
         {[
           { label: "Security score", value: `${SECURITY_OVERVIEW.securityScore}/100` },
           { label: "MFA adoption", value: `${adoptionPct}%` },
@@ -285,6 +278,14 @@ export function SecurityCenter() {
             </p>
           </div>
         ))}
+        </div>
+        <Button
+          variant="outline"
+          className="shrink-0"
+          onClick={() => toast.success("Security report downloaded")}
+        >
+          <Download className="size-4" /> Download report
+        </Button>
       </div>
 
       {/* ── Multi-factor authentication ── */}

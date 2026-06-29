@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight, Bell, CreditCard, Palette, User } from "lucide-react";
+import { ArrowUpRight, Bell, Palette, User } from "lucide-react";
 import { ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
+import { usePageHeaderStore } from "@/stores/page-header.store";
 import { cn } from "@/lib/utils";
 
 interface RailItem {
@@ -26,7 +27,6 @@ const ACCOUNT_GROUP: RailGroup = {
   label: "Account",
   items: [
     { label: "Profile", href: "/settings/profile", icon: User },
-    { label: "Billing", href: "/settings/billing", icon: CreditCard },
     { label: "Notifications", href: "/settings/notifications", icon: Bell },
     { label: "Appearance", href: "/settings/appearance", icon: Palette },
   ],
@@ -58,6 +58,18 @@ export default function SettingsLayout({
 
   const groups: RailGroup[] = [ACCOUNT_GROUP, ...adminGroups];
 
+  // The navbar now reads "Settings" everywhere, so the in-pane heading carries
+  // the active sub-section name. Derive the title from the active rail item
+  // (deterministic) and use the page's published description as the subtitle.
+  const activeLabel = groups
+    .flatMap((g) => g.items)
+    .find(
+      (it) =>
+        !it.external &&
+        (pathname === it.href || pathname.startsWith(`${it.href}/`)),
+    )?.label;
+  const description = usePageHeaderStore((s) => s.description);
+
   return (
     <div className="flex flex-col gap-6 pt-1 lg:flex-row lg:gap-10">
       {/* ── Section rail ── */}
@@ -65,9 +77,6 @@ export default function SettingsLayout({
         aria-label="Settings sections"
         className="lg:sticky lg:top-20 lg:w-60 lg:shrink-0 lg:self-start"
       >
-        <p className="mb-4 hidden font-display text-lg font-semibold tracking-tight lg:block">
-          Settings
-        </p>
         <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:max-h-[calc(100vh-7rem)] lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
           {groups.map((group) => (
             <div key={group.label} className="shrink-0 space-y-1.5">
@@ -114,7 +123,19 @@ export default function SettingsLayout({
       </nav>
 
       {/* ── Content pane ── */}
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1">
+        {activeLabel ? (
+          <div className="mb-6 space-y-1">
+            <h2 className="font-display text-xl font-semibold tracking-tight">
+              {activeLabel}
+            </h2>
+            {description ? (
+              <p className="text-sm text-muted-foreground">{description}</p>
+            ) : null}
+          </div>
+        ) : null}
+        {children}
+      </div>
     </div>
   );
 }
