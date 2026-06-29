@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { PageHeader } from "@/components/shared/page-header";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
 import { useAuthStore } from "@/stores/auth.store";
@@ -255,43 +256,51 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top bar: back + actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href="/projects"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          All projects
-        </Link>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" className="gap-1.5" onClick={downloadReport}>
-            <FileDown className="size-4" />
-            Report (PDF)
-          </Button>
-          {canManage ? (
-            <>
-              <Button
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => setEditOpen(true)}
-              >
-                <Pencil className="size-4" />
-                Edit project
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => setConfirmOpen(true)}
-              >
-                <Trash2 className="size-4" />
-                Delete
-              </Button>
-            </>
-          ) : null}
-        </div>
-      </div>
+    <div className="flex flex-col gap-6">
+      {/* Title + actions live in the top navbar; the back link stays in-page. */}
+      <PageHeader
+        title={project.name}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={downloadReport}
+            >
+              <FileDown className="size-4" />
+              Report (PDF)
+            </Button>
+            {canManage ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setEditOpen(true)}
+                >
+                  <Pencil className="size-4" />
+                  Edit project
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  <Trash2 className="size-4" />
+                  Delete
+                </Button>
+              </>
+            ) : null}
+          </>
+        }
+      />
+
+      <Link
+        href="/projects"
+        className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" />
+        All projects
+      </Link>
 
       {/* Hero — filled with the active palette's feature colour */}
       <header

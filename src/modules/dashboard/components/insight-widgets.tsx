@@ -87,14 +87,14 @@ function Donut({
     // The ring grows to fill all space above the legend (flex-1 + percentage
     // radii), so the card is used efficiently — no dead band — with the legend
     // anchored at the bottom.
-    <div className="flex h-full flex-col gap-4">
-      <div className="relative min-h-0 w-full flex-1">
+    <div className="flex h-full flex-col gap-3">
+      <div className="relative min-h-[150px] w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={slices}
               dataKey="value"
-              innerRadius="56%"
+              innerRadius="60%"
               outerRadius="82%"
               paddingAngle={2}
               stroke="none"
@@ -106,13 +106,13 @@ function Donut({
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-display text-3xl font-semibold tabular-nums">
+          <span className="font-display text-2xl font-semibold leading-none tabular-nums">
             {center}
           </span>
-          <span className="text-xs text-muted-foreground">{caption}</span>
+          <span className="mt-1 text-xs text-muted-foreground">{caption}</span>
         </div>
       </div>
-      <ul className="w-full space-y-2.5">
+      <ul className="w-full space-y-2">
         {slices.map((s) => (
           <li key={s.label} className="flex items-center gap-2 text-sm">
             <span

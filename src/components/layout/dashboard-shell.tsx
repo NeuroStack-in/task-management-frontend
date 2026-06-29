@@ -10,9 +10,10 @@ import { CommandPalette } from "./command-palette";
 import { cn } from "@/lib/utils";
 
 /**
- * Authenticated app shell. A floating, rounded sidebar panel sits on the warm
- * greige canvas; it collapses to an icon-only rail. Content cards float on the
- * same canvas. Mobile navigation lives in the navbar's sheet. See Docs/DESIGN.md.
+ * Authenticated app shell (Meridian). A full-height inset sidebar meets the
+ * viewport edge with a hairline border and collapses to an icon-only rail;
+ * content sits on the slate canvas with a subtle per-route fade-in. The global
+ * command palette (⌘K) and mobile nav sheet mount here. See Docs/REDESIGN.md.
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
@@ -39,10 +40,15 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNavbar />
-        {/* Bottom padding matches the sidebar's inset (aside p-3) so content
-            ends level with the sidebar; the translucent AI FAB overlays the
-            corner. */}
-        <main className="flex-1 px-4 pb-3 sm:px-6">{children}</main>
+        {/* Tight bottom padding so content ends level with the sidebar's bottom
+            edge; the translucent, draggable AI FAB overlays the corner. The keyed
+            wrapper gives each route a subtle fade-up entrance (disabled under
+            reduced-motion). */}
+        <main className="flex-1 px-4 pt-3 pb-3 sm:px-6 sm:pt-4">
+          <div key={pathname} className="wp-enter">
+            {children}
+          </div>
+        </main>
       </div>
       <ChatBot />
       <CommandPalette />

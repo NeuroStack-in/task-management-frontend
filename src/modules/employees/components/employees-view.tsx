@@ -249,28 +249,6 @@ export function EmployeesView({
       <PageHeader
         title="Employees"
         description="Your organization's people, productivity, and teams."
-        actions={
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" />}>
-                <Download className="size-4" /> Export report
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => exportEmployeesPdf(filtered, liveStats)}>
-                  <FileText className="size-4" /> PDF report
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
-                  <Sheet className="size-4" /> CSV export
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {can("employees:manage") ? (
-              <Button onClick={() => setInviteOpen(true)}>
-                <UserPlus className="size-4" /> Add employee
-              </Button>
-            ) : null}
-          </div>
-        }
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -309,6 +287,29 @@ export function EmployeesView({
             label: s === "all" ? "All statuses" : s[0].toUpperCase() + s.slice(1),
           }))}
         />
+
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" />}>
+              <Download className="size-4" /> Download report
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => exportEmployeesPdf(filtered, liveStats)}
+              >
+                <FileText className="size-4" /> PDF report
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
+                <Sheet className="size-4" /> CSV export
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {can("employees:manage") ? (
+            <Button onClick={() => setInviteOpen(true)}>
+              <UserPlus className="size-4" /> Add employee
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <Card>

@@ -26,9 +26,12 @@ import {
 import {
   PROJECT_STATUS_META,
   PROJECT_STATUS_ORDER,
+  TASK_STATUS_META,
+  TASK_STATUS_ORDER,
   type Project,
   type ProjectStatus,
   type Task,
+  type TaskStatus,
 } from "../types";
 import { projectStats, toneDot, type UserMini } from "../lib";
 import { ProjectCard } from "./project-card";
@@ -74,6 +77,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
   const [view, setView] = useState<View>("projects");
   const [layout, setLayout] = useState<Layout>("grid");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [taskFilter, setTaskFilter] = useState<TaskStatus | "all">("all");
   const [query, setQuery] = useState("");
   const [newOpen, setNewOpen] = useState(false);
 
@@ -118,6 +122,32 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
     for (const p of projects) c[p.status] += 1;
     return c;
   }, [projects]);
+
+  // Tasks matching the shared search (title or parent project name/key).
+  const searchedTasks = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return visibleTasks;
+    return visibleTasks.filter((t) => {
+      const project = projectMap[t.projectId];
+      return (
+        t.title.toLowerCase().includes(q) ||
+        (project?.name.toLowerCase().includes(q) ?? false) ||
+        (project?.key.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [visibleTasks, projectMap, query]);
+
+  const taskCounts = useMemo(() => {
+    const c: Record<TaskStatus | "all", number> = {
+      all: searchedTasks.length,
+      todo: 0,
+      in_progress: 0,
+      in_review: 0,
+      done: 0,
+    };
+    for (const t of searchedTasks) c[t.status] += 1;
+    return c;
+  }, [searchedTasks]);
 
   // Projects matching the search: by name/key OR by a task title inside them.
   const filteredProjects = useMemo(() => {
@@ -165,31 +195,95 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
             ? "Projects you're a member of — status, progress, and your tasks."
             : "Every project across the organization — status, budget health, and delivery at a glance."
         }
-        actions={
-          canCreate ? (
-            <Button onClick={() => setNewOpen(true)} className="gap-1.5">
-              <Plus />
-              New project
-            </Button>
-          ) : null
-        }
       />
 
       {/* KPI stat band */}
       <ProjectsStatBand stats={stats} />
 
-      {/* Projects / Tasks filter + unified search */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Segmented
-          options={[
-            { value: "projects", label: "Projects", count: projects.length },
-            { value: "tasks", label: "Tasks", count: visibleTasks.length },
-          ]}
-          value={view}
-          onChange={setView}
-        />
+      {/* Toolbar — row 1: tabs · status filters · view toggle · New project;
+          row 2: search beneath the tabs. */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Segmented
+            options={[
+              { value: "projects", label: "Projects", count: projects.length },
+              { value: "tasks", label: "Tasks", count: visibleTasks.length },
+            ]}
+            value={view}
+            onChange={setView}
+          />
 
-        <div className="relative sm:w-72">
+          {view === "projects" ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <FilterChip
+                active={statusFilter === "all"}
+                onClick={() => setStatusFilter("all")}
+                label="All"
+                count={statusCounts.all}
+              />
+              {PROJECT_STATUS_ORDER.map((s) => (
+                <FilterChip
+                  key={s}
+                  active={statusFilter === s}
+                  onClick={() => setStatusFilter(s)}
+                  label={PROJECT_STATUS_META[s].label}
+                  count={statusCounts[s]}
+                  dot={toneDot[PROJECT_STATUS_META[s].tone]}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <FilterChip
+                active={taskFilter === "all"}
+                onClick={() => setTaskFilter("all")}
+                label="All"
+                count={taskCounts.all}
+              />
+              {TASK_STATUS_ORDER.map((s) => (
+                <FilterChip
+                  key={s}
+                  active={taskFilter === s}
+                  onClick={() => setTaskFilter(s)}
+                  label={TASK_STATUS_META[s].label}
+                  count={taskCounts[s]}
+                  dot={toneDot[TASK_STATUS_META[s].tone]}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-2.5">
+            {view === "projects" ? (
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border bg-background p-0.5">
+                <LayoutToggleButton
+                  active={layout === "grid"}
+                  onClick={() => setLayout("grid")}
+                  icon={LayoutGrid}
+                  label="Grid view"
+                />
+                <LayoutToggleButton
+                  active={layout === "list"}
+                  onClick={() => setLayout("list")}
+                  icon={List}
+                  label="List view"
+                />
+              </div>
+            ) : null}
+
+            {canCreate ? (
+              <Button
+                onClick={() => setNewOpen(true)}
+                className="shrink-0 gap-1.5"
+              >
+                <Plus />
+                New project
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="relative w-full sm:w-72">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
@@ -199,45 +293,6 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
           />
         </div>
       </div>
-
-      {/* Projects tab tools */}
-      {view === "projects" ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <FilterChip
-              active={statusFilter === "all"}
-              onClick={() => setStatusFilter("all")}
-              label="All"
-              count={statusCounts.all}
-            />
-            {PROJECT_STATUS_ORDER.map((s) => (
-              <FilterChip
-                key={s}
-                active={statusFilter === s}
-                onClick={() => setStatusFilter(s)}
-                label={PROJECT_STATUS_META[s].label}
-                count={statusCounts[s]}
-                dot={toneDot[PROJECT_STATUS_META[s].tone]}
-              />
-            ))}
-          </div>
-
-          <div className="inline-flex items-center gap-0.5 self-start rounded-lg border bg-background p-0.5">
-            <LayoutToggleButton
-              active={layout === "grid"}
-              onClick={() => setLayout("grid")}
-              icon={LayoutGrid}
-              label="Grid view"
-            />
-            <LayoutToggleButton
-              active={layout === "list"}
-              onClick={() => setLayout("list")}
-              icon={List}
-              label="List view"
-            />
-          </div>
-        </div>
-      ) : null}
 
       {/* Content */}
       {view === "projects" ? (
@@ -286,7 +341,8 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
         )
       ) : (
         <TasksView
-          tasks={visibleTasks}
+          tasks={searchedTasks}
+          filter={taskFilter}
           projectMap={projectMap}
           query={query}
           onOpenProject={openProject}

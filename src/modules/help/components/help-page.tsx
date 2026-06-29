@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/sheet"
 import { EmptyState } from "@/components/shared/empty-state"
 import { useAssistantStore } from "@/stores/assistant.store"
+import { usePageTitle } from "@/stores/page-header.store"
 import {
   FAQS,
   HELP_ARTICLES,
@@ -212,6 +213,9 @@ export function HelpPage() {
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
   const askAi = () => openAssistant(search.trim() || undefined)
+
+  // Show the page title in the top navbar (this page has no PageHeader).
+  usePageTitle("Help Center", "Find answers, guides, and support.")
 
   // Ticket form
   const {

@@ -22,21 +22,25 @@ import type { DashboardData } from "./lib/dashboard-data";
 export type { DashboardData } from "./lib/dashboard-data";
 
 interface WidgetDef {
-  /** Columns spanned on the xl (3-col) bento grid. */
+  /**
+   * Columns spanned on the bento grid. All widgets are uniform (1) so the
+   * adaptive grid can always tile without gaps; charts render comfortably in a
+   * single cell. Kept as a field in case a future widget needs a wider cell.
+   */
   span: 1 | 2;
   render: (d: DashboardData) => ReactNode;
 }
 
 export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   "productivity-trends": {
-    span: 2,
+    span: 1,
     render: (d) => (
       <ProductivityChart data={d.productivityTrend} rangeLabel={d.rangeLabel} />
     ),
   },
-  heatmap: { span: 2, render: (d) => <ProductivityHeatmap data={d.heatmap} /> },
+  heatmap: { span: 1, render: (d) => <ProductivityHeatmap data={d.heatmap} /> },
   "team-comparison": {
-    span: 2,
+    span: 1,
     render: (d) => <TeamComparisonChart data={d.teamData} />,
   },
   attendance: {

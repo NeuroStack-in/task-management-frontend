@@ -162,7 +162,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               onClick={exportCsv}
               disabled={!canExport}
             >
-              <Download className="size-4" /> Export CSV
+              <Download className="size-4" /> Download CSV
             </Button>
           </CardAction>
         </CardHeader>
@@ -191,19 +191,19 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="pl-6 text-xs font-medium uppercase tracking-wide">
                     Task
                   </TableHead>
-                  <TableHead className="text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
                     Project
                   </TableHead>
-                  <TableHead className="text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
                     Time
                   </TableHead>
-                  <TableHead className="w-40 text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="w-40 text-center text-xs font-medium uppercase tracking-wide">
                     Activity
                   </TableHead>
-                  <TableHead className="text-right text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
                     Duration
                   </TableHead>
                 </TableRow>
@@ -211,20 +211,22 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               <TableBody>
                 {entries.map((e) => (
                   <TableRow key={e.id}>
-                    <TableCell>
+                    <TableCell className="pl-6">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{e.task}</span>
                         {e.billable ? <Badge variant="secondary">Billable</Badge> : null}
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{e.project}</TableCell>
-                    <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                    <TableCell className="text-center text-muted-foreground">{e.project}</TableCell>
+                    <TableCell className="text-center font-mono text-xs tabular-nums text-muted-foreground">
                       {e.start} – {e.end ?? "…"}
                     </TableCell>
                     <TableCell>
-                      <ActivityBar value={e.activity} />
+                      <div className="flex justify-center">
+                        <ActivityBar value={e.activity} />
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
+                    <TableCell className="text-center font-mono tabular-nums">
                       {formatDuration(e.durationSec)}
                     </TableCell>
                   </TableRow>
@@ -232,10 +234,9 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={4} className="font-medium">
-                    Total
-                  </TableCell>
-                  <TableCell className="text-right font-mono font-semibold tabular-nums">
+                  <TableCell className="pl-6 font-medium">Total</TableCell>
+                  <TableCell colSpan={3} />
+                  <TableCell className="text-center font-mono font-semibold tabular-nums">
                     {formatDuration(totalSec)}
                   </TableCell>
                 </TableRow>

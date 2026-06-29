@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Loader({
@@ -11,11 +10,11 @@ export function Loader({
   return (
     <div
       className={cn(
-        "flex flex-1 flex-col items-center justify-center gap-3 p-10 text-muted-foreground",
+        "flex flex-1 flex-col items-center justify-center gap-3 p-6 text-muted-foreground",
         className,
       )}
     >
-      <Loader2 className="size-6 animate-spin" />
+      <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
       {label ? <p className="text-sm">{label}</p> : null}
     </div>
   );

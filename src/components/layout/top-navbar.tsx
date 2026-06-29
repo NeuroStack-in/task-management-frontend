@@ -9,6 +9,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { usePageHeaderStore } from "@/stores/page-header.store";
 import { SidebarNav } from "./sidebar-nav";
 import { GlobalTimer } from "./global-timer";
 import { ThemeSwitcher } from "./theme-switcher";
@@ -18,9 +19,13 @@ import { UserMenu } from "./user-menu";
 
 export function TopNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Pages (e.g. the Dashboard greeting) publish their title/subtitle here so the
+  // navbar carries it at the top — the page keeps an sr-only <h1>.
+  const title = usePageHeaderStore((s) => s.title);
+  const description = usePageHeaderStore((s) => s.description);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 bg-background/85 px-4 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-30 flex h-20 items-center gap-3 bg-background/85 px-4 backdrop-blur-md sm:px-6">
       {/* Mobile sidebar trigger */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetTrigger
@@ -41,7 +46,25 @@ export function TopNavbar() {
         </SheetContent>
       </Sheet>
 
-      <div className="flex flex-1 items-center justify-end gap-2.5">
+      {/* Active page title with its subtitle beneath it; the whole block is
+          vertically centered in the bar, level with the right-hand controls. */}
+      {title ? (
+        <div className="min-w-0">
+          <span className="block truncate font-display text-3xl font-semibold leading-tight tracking-tight">
+            {title}
+          </span>
+          {description ? (
+            <span className="mt-0.5 hidden truncate text-base leading-tight text-muted-foreground sm:block">
+              {description}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="ml-auto flex items-center gap-2.5">
+        {/* Page actions (e.g. the Time Tracking My time/Team toggle) portal in
+            here, on the same row as the title. */}
+        <div id="wp-page-actions" className="flex items-center gap-2 empty:hidden" />
         <div className="rounded-full bg-card p-1 shadow-soft">
           <PaletteSwitcher />
         </div>

@@ -34,7 +34,8 @@ export function UserMenu() {
         render={
           <Button
             variant="ghost"
-            className="h-9 gap-2 px-1.5 sm:pr-3"
+            size="icon"
+            className="size-9 rounded-full"
             aria-label="Account menu"
           />
         }
@@ -45,25 +46,42 @@ export function UserMenu() {
             {initials(user.name)}
           </AvatarFallback>
         </Avatar>
-        <span className="hidden text-sm font-medium sm:inline">{user.name}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <div className="flex flex-col px-2 py-1.5">
-          <span className="truncate text-sm font-medium">{user.name}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {role?.name ?? "No role"}
-          </span>
+        <div className="flex items-center gap-2.5 px-2 py-1.5">
+          <Avatar className="size-9 shrink-0">
+            <AvatarImage src={user.avatarUrl} alt={user.name} />
+            <AvatarFallback className="text-xs">
+              {initials(user.name)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-medium">{user.name}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {role?.name ?? "No role"}
+            </span>
+          </div>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/settings/profile")}>
-          <UserIcon className="size-4" /> Profile
+        <DropdownMenuItem
+          onClick={() => router.push("/settings/profile")}
+          className="gap-3 px-2.5 py-2.5 text-base"
+        >
+          <UserIcon className="size-5" /> Profile
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/settings")}>
-          <Settings className="size-4" /> Settings
+        <DropdownMenuItem
+          onClick={() => router.push("/settings")}
+          className="gap-3 px-2.5 py-2.5 text-base"
+        >
+          <Settings className="size-5" /> Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={handleLogout}>
-          <LogOut className="size-4" /> Log out
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={handleLogout}
+          className="gap-3 px-2.5 py-2.5 text-base"
+        >
+          <LogOut className="size-5" /> Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

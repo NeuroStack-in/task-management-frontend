@@ -52,7 +52,7 @@ export function DashboardView({ users }: { users: User[] }) {
 
   if (personal) {
     return (
-      <div className="space-y-5 pt-1">
+      <div className="space-y-4 pt-1">
         <GreetingHeader />
         <PersonalDashboard />
       </div>
@@ -60,7 +60,7 @@ export function DashboardView({ users }: { users: User[] }) {
   }
 
   return (
-    <div className="space-y-5 pt-1">
+    <div className="space-y-4 pt-1">
       <GreetingHeader />
 
       <DashboardControls

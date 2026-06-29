@@ -205,12 +205,12 @@ export function ChatBot() {
           aria-label="WorkPulse assistant"
           style={panelStyle}
           className={cn(
-            "fixed z-50 flex h-[28rem] w-[min(22rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-[1.4rem] border border-border bg-popover shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-200",
+            "fixed z-50 flex h-[28rem] w-[min(22rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-200",
             !panelStyle && "bottom-24 right-5",
           )}
         >
           <header className="flex items-center gap-2.5 border-b px-4 py-3">
-            <span className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Sparkles className="size-4" />
             </span>
             <div className="flex-1">
@@ -236,7 +236,7 @@ export function ChatBot() {
                 <div
                   key={m.id}
                   className={cn(
-                    "max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed",
+                    "max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed",
                     m.role === "user"
                       ? "self-end bg-primary text-primary-foreground"
                       : "self-start bg-muted text-foreground",
@@ -246,7 +246,7 @@ export function ChatBot() {
                 </div>
               ))}
               {pending ? (
-                <div className="self-start rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">
+                <div className="self-start rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
                   <span className="inline-flex gap-1">
                     <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.2s]" />
                     <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.1s]" />
@@ -262,7 +262,7 @@ export function ChatBot() {
                       key={s}
                       type="button"
                       onClick={() => send(s)}
-                      className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                      className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
                     >
                       {s}
                     </button>
@@ -283,13 +283,13 @@ export function ChatBot() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask the assistant…"
-              className="h-10 rounded-full"
+              className="h-10 rounded-md"
               aria-label="Message"
             />
             <Button
               type="submit"
               size="icon"
-              className="size-10 shrink-0 rounded-full"
+              className="size-10 shrink-0 rounded-md"
               disabled={!input.trim() || pending}
               aria-label="Send message"
             >
@@ -310,7 +310,7 @@ export function ChatBot() {
         onPointerUp={onFabPointerUp}
         onClick={onFabClick}
         className={cn(
-          "fixed z-50 size-14 touch-none cursor-grab rounded-full shadow-soft transition-[opacity,transform] hover:scale-105 hover:opacity-100 active:cursor-grabbing",
+          "fixed z-50 size-14 touch-none cursor-grab rounded-lg shadow-soft transition-[opacity,transform] hover:scale-105 hover:opacity-100 active:cursor-grabbing",
           !open && "opacity-40",
           !fab && "bottom-5 right-5",
         )}

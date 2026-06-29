@@ -254,9 +254,9 @@ export function TimesheetGrid({
   })();
 
   return (
-    <Card className="overflow-hidden p-0">
+    <Card className="overflow-hidden p-0 [--card-spacing:0px]">
       {/* Toolbar: week nav + filter + search */}
-      <div className="flex flex-col gap-4 border-b p-4 sm:p-5">
+      <div className="flex flex-col gap-4 border-b p-4 sm:px-5 sm:py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Week navigation */}
           <div className="flex items-center gap-2">
@@ -427,14 +427,14 @@ export function TimesheetGrid({
         <table className="w-full min-w-[760px] border-collapse text-sm">
           <thead>
             <tr className="border-b bg-muted/30">
-              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2.5 text-left align-top text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2.5 text-left align-middle text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 {group === "person" ? "Employee" : "Project"}
               </th>
               {DAY_LABELS.map((d, i) => (
                 <th
                   key={d}
                   className={cn(
-                    "px-2 py-2.5 text-center align-top text-xs font-semibold tracking-wide text-muted-foreground",
+                    "px-2 py-2.5 text-center align-middle text-xs font-semibold tracking-wide text-muted-foreground",
                     i >= 5 && "bg-muted/50",
                   )}
                 >
@@ -444,7 +444,7 @@ export function TimesheetGrid({
                   </span>
                 </th>
               ))}
-              <th className="px-3 py-2.5 text-center align-top text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              <th className="px-3 py-2.5 text-center align-middle text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 Total
               </th>
             </tr>
@@ -550,21 +550,21 @@ export function TimesheetGrid({
           {rows.length > 0 ? (
             <tfoot>
               <tr className="border-t-2 bg-muted/40 font-semibold">
-                <td className="sticky left-0 z-10 bg-muted/40 px-4 py-3 text-xs tracking-wide uppercase">
+                <td className="sticky left-0 z-10 bg-muted/40 px-4 py-3 align-middle text-xs tracking-wide uppercase">
                   Total time
                 </td>
                 {colTotals.map((h, i) => (
                   <td
                     key={i}
                     className={cn(
-                      "px-2 py-3 text-center font-mono tabular-nums",
+                      "px-2 py-3 text-center align-middle font-mono tabular-nums",
                       i >= 5 && "bg-muted/50",
                     )}
                   >
                     {fmtHM(h)}
                   </td>
                 ))}
-                <td className="px-3 py-3 text-center font-mono tabular-nums text-primary">
+                <td className="px-3 py-3 text-center align-middle font-mono tabular-nums text-primary">
                   {fmtHM(grandTotal)}
                 </td>
               </tr>

@@ -12,13 +12,19 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   COUNT_METRICS,
   MONTH_NAMES,
   REFERENCE_MONTH,
   TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
-  monthSummary,
   type DayCell,
 } from "@/lib/mock-attendance";
 import { downloadBlob } from "@/lib/download";
@@ -73,7 +79,14 @@ export function AttendanceCalendar({
   });
 
   const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
-  const summary = useMemo(() => monthSummary(view.year, view.month), [view]);
+
+  // Selectable years — a range around today, always including the current view.
+  const years = useMemo(() => {
+    const set = new Set<number>();
+    for (let y = TODAY.year - 5; y <= TODAY.year + 1; y++) set.add(y);
+    set.add(view.year);
+    return [...set].sort((a, b) => a - b);
+  }, [view.year]);
 
   const goToToday = () => {
     setView({ year: TODAY.year, month: TODAY.month });
@@ -95,20 +108,45 @@ export function AttendanceCalendar({
           <CardTitle>
             {MONTH_NAMES[view.month]} {view.year}
           </CardTitle>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <span className="text-xs font-medium tracking-wide uppercase text-muted-foreground/80">
-              Avg / day
-            </span>
-            <AvgStat dot="bg-success" value={summary.present} label="present" />
-            <AvgStat dot="bg-primary" value={summary.leave} label="on leave" />
-            <AvgStat dot="bg-destructive" value={summary.absent} label="absent" />
-            <span className="text-muted-foreground/70">
-              across {summary.total} employees
-            </span>
-          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={String(view.month)}
+            onValueChange={(v) =>
+              setView((s) => ({ ...s, month: Number(v) }))
+            }
+          >
+            <SelectTrigger className="h-8 w-[8.5rem]" aria-label="Month">
+              <SelectValue>
+                {(v) => (v == null ? "" : MONTH_NAMES[Number(v)])}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {MONTH_NAMES.map((m, i) => (
+                <SelectItem key={m} value={String(i)}>
+                  {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={String(view.year)}
+            onValueChange={(v) => setView((s) => ({ ...s, year: Number(v) }))}
+          >
+            <SelectTrigger className="h-8 w-[5.5rem]" aria-label="Year">
+              <SelectValue>{(v) => (v == null ? "" : String(v))}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {years.map((y) => (
+                <SelectItem key={y} value={String(y)}>
+                  {y}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <div className="flex items-center gap-1.5">
             <Button variant="outline" size="sm" onClick={goToToday}>
               Today
@@ -192,24 +230,6 @@ export function AttendanceCalendar({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function AvgStat({
-  dot,
-  value,
-  label,
-}: {
-  dot: string;
-  value: number;
-  label: string;
-}) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className={cn("size-2 rounded-full", dot)} />
-      <span className="font-semibold tabular-nums text-foreground">{value}</span>
-      <span>{label}</span>
-    </span>
   );
 }
 

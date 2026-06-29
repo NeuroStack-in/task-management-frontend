@@ -4,8 +4,12 @@ interface SparklineProps {
   data: number[];
   /** Render a soft area fill under the line. */
   area?: boolean;
-  /** Show a dot at the latest point. Default true (turn off when stretched full-width). */
+  /** Show a dot at the latest point. Default false. */
   showDot?: boolean;
+  /**
+   * Explicit pixel width. When omitted the SVG uses width="100%" and fills
+   * its container — the recommended mode for card sparklines.
+   */
   width?: number;
   height?: number;
   strokeWidth?: number;
@@ -61,25 +65,31 @@ function monotonePath(pts: readonly (readonly [number, number])[]): string {
 
 /**
  * The pulse line — WorkPulse's signature motif (Docs/DESIGN.md). Colour comes
- * from `currentColor`; set it via a text-* class. The stroke is non-scaling so
- * it stays crisp even when the SVG is stretched to fill its container.
+ * from `currentColor`; set it via a text-* class.
+ *
+ * - Pass `width` for an explicit pixel size (e.g. inside a stat card bottom row).
+ * - Omit `width` (or pass undefined) to get `width="100%"` so the sparkline
+ *   stretches to fill its container — useful in full-width chart rows.
  */
 export function Sparkline({
   data,
   area = false,
-  showDot = true,
-  width = 120,
+  showDot = false,
+  width,
   height = 36,
-  strokeWidth = 2,
+  strokeWidth = 1.5,
   className,
 }: SparklineProps) {
   if (data.length < 2) return null;
+
+  // Use a stable internal viewBox width; the SVG scales via preserveAspectRatio.
+  const vbW = width ?? 120;
 
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
   const pad = strokeWidth + 1.5;
-  const innerW = width - pad * 2;
+  const innerW = vbW - pad * 2;
   const innerH = height - pad * 2;
 
   const points = data.map(
@@ -92,24 +102,24 @@ export function Sparkline({
 
   const d = monotonePath(points);
   const last = points[points.length - 1];
-  const gradId = `spark-${width}x${height}-${data.length}-${Math.round(data[0])}-${Math.round(max)}`;
+  const gradId = `spark-${vbW}x${height}-${data.length}-${Math.round(data[0])}-${Math.round(max)}`;
   const areaD = `${d} L ${last[0]},${height} L ${points[0][0]},${height} Z`;
 
   return (
     <svg
-      viewBox={`0 0 ${width} ${height}`}
-      width={width}
+      viewBox={`0 0 ${vbW} ${height}`}
+      width={width ?? "100%"}
       height={height}
       fill="none"
       preserveAspectRatio="none"
-      className={cn("overflow-visible text-primary", className)}
+      className={cn("block overflow-visible text-primary", className)}
       aria-hidden="true"
     >
       {area ? (
         <>
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="currentColor" stopOpacity={0.2} />
+              <stop offset="0%" stopColor="currentColor" stopOpacity={0.1} />
               <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
             </linearGradient>
           </defs>

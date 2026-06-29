@@ -42,7 +42,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
                 tickLine={false}
                 axisLine={false}
                 interval={0}
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                tick={{ fontSize: 9, fill: "var(--muted-foreground)" }}
               />
               <YAxis
                 domain={[0, 100]}

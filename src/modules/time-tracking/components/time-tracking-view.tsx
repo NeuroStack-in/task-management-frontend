@@ -46,7 +46,7 @@ export function TimeTrackingView({
       : "Track your time, review today's timesheet, and monitor your weekly hours.";
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Time Tracking"
         description={description}
