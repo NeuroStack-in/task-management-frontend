@@ -28,14 +28,14 @@ export function WeeklyHoursChart({ data }: { data: DailyHours[] }) {
 
   return (
     <Card>
-      <CardHeader className="pb-2">
+      <CardHeader>
         <CardTitle>This week</CardTitle>
         <CardDescription>Hours tracked per day · billable vs other</CardDescription>
       </CardHeader>
-      <CardContent className="p-0 pb-4 pt-0">
-        <div className="h-44 w-full px-2">
+      <CardContent>
+        <div className="h-[260px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ left: -20, right: 8, top: 8, bottom: 0 }}>
+            <BarChart data={chartData} margin={{ left: -20, right: 8, top: 4 }}>
               <CartesianGrid vertical={false} stroke="var(--border)" />
               <XAxis
                 dataKey="day"

@@ -189,6 +189,35 @@ export function AttendanceDonut({
   );
 }
 
+/* ------------------------- Active vs Inactive ------------------------- */
+
+export function ActiveInactiveRing({
+  active,
+  inactive,
+}: {
+  active: number;
+  inactive: number;
+}) {
+  const total = active + inactive || 1;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Active vs Inactive</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Donut
+          center={`${Math.round((active / total) * 100)}%`}
+          caption="active"
+          slices={[
+            { label: "Active", value: active, color: "var(--primary)" },
+            { label: "Inactive", value: inactive, color: "var(--muted-foreground)" },
+          ]}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
 /* ------------------------- Headcount by status ------------------------- */
 
 const STATUS_LABEL: Record<UserStatus, { label: string; color: string }> = {

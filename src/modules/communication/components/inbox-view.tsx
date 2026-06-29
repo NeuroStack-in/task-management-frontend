@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Megaphone, Search, Send } from "lucide-react";
+import { Megaphone, Plus, Search, Send } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,15 +23,11 @@ export function InboxView() {
   const [activeId, setActiveId] = useState(CONVERSATIONS[0].id);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
-  /**
-   * On narrow viewports (<lg) only one pane is shown at a time.
-   * "list" = conversation list, "thread" = active thread.
-   */
-  const [mobilePane, setMobilePane] = useState<"list" | "thread">("list");
   const idRef = useRef(100);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const active = conversations.find((c) => c.id === activeId)!;
+  const totalUnread = conversations.reduce((s, c) => s + c.unread, 0);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -46,7 +43,6 @@ export function InboxView() {
 
   const openConversation = (id: string) => {
     setActiveId(id);
-    setMobilePane("thread");
     setConversations((prev) =>
       prev.map((c) => (c.id === id ? { ...c, unread: 0 } : c)),
     );
@@ -75,23 +71,21 @@ export function InboxView() {
     <div className="space-y-5">
       <PageHeader
         title="Inbox"
-        description="Direct messages and team channels."
+        description={
+          totalUnread > 0
+            ? `${totalUnread} unread across your conversations`
+            : "You're all caught up"
+        }
+        actions={
+          <Button onClick={() => toast.info("New message isn't wired up in this demo.")}>
+            <Plus className="size-4" /> New message
+          </Button>
+        }
       />
 
-      {/*
-        Two-pane layout:
-        - lg+: side-by-side (320px list | 1fr thread), both always visible.
-        - <lg: single-column; mobilePane controls which is shown.
-      */}
       <Card className="grid h-[68vh] min-h-[560px] gap-0 overflow-hidden p-0 lg:grid-cols-[320px_1fr]">
         {/* Conversation list */}
-        <aside
-          className={cn(
-            "flex min-h-0 flex-col border-b lg:border-b-0 lg:border-r",
-            // Mobile: hide when viewing a thread
-            mobilePane === "thread" ? "hidden lg:flex" : "flex",
-          )}
-        >
+        <aside className="flex min-h-0 flex-col border-b lg:border-b-0 lg:border-r">
           <div className="border-b p-3">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -116,25 +110,9 @@ export function InboxView() {
         </aside>
 
         {/* Thread */}
-        <section
-          className={cn(
-            "flex min-h-0 flex-col",
-            // Mobile: hide when viewing the list
-            mobilePane === "list" ? "hidden lg:flex" : "flex",
-          )}
-        >
+        <section className="flex min-h-0 flex-col">
           {/* Thread header */}
-          <div className="flex items-center gap-3 border-b px-4 py-3">
-            {/* Back button — visible only on mobile */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8 shrink-0 lg:hidden"
-              aria-label="Back to conversations"
-              onClick={() => setMobilePane("list")}
-            >
-              <ArrowLeft className="size-4" />
-            </Button>
+          <div className="flex items-center gap-3 border-b px-5 py-3">
             <ConversationAvatar conversation={active} />
             <div className="min-w-0">
               <p className="truncate font-medium">{active.name}</p>
@@ -160,14 +138,13 @@ export function InboxView() {
 
           {/* Composer */}
           <div className="space-y-2 border-t p-3">
-            {/* Quick-reply chips: single row, scrollable, max height capped */}
-            <div className="flex max-h-8 flex-nowrap gap-1.5 overflow-x-auto overflow-y-hidden">
+            <div className="flex flex-wrap gap-1.5">
               {QUICK_REPLIES.map((q) => (
                 <button
                   key={q}
                   type="button"
                   onClick={() => send(q)}
-                  className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
                   {q}
                 </button>
@@ -218,7 +195,7 @@ function ConversationRow({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+        "flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-accent/50",
         active && "bg-feature-tint/50",
       )}
     >
