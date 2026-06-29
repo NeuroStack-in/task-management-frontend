@@ -10,9 +10,10 @@ import { CommandPalette } from "./command-palette";
 import { cn } from "@/lib/utils";
 
 /**
- * Authenticated app shell. A floating, rounded sidebar panel sits on the warm
- * greige canvas; it collapses to an icon-only rail. Content cards float on the
- * same canvas. Mobile navigation lives in the navbar's sheet. See Docs/DESIGN.md.
+ * Authenticated app shell (Meridian). A full-height inset sidebar meets the
+ * viewport edge with a hairline border and collapses to an icon-only rail;
+ * content sits on the slate canvas with a subtle per-route fade-in. The global
+ * command palette (⌘K) and mobile nav sheet mount here. See Docs/REDESIGN.md.
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
@@ -27,10 +28,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="hidden shrink-0 p-3 lg:block">
+      <aside className="hidden shrink-0 lg:block">
         <div
           className={cn(
-            "sticky top-3 h-[calc(100vh-1.5rem)] transition-[width] duration-200",
+            "sticky top-0 h-screen transition-[width] duration-200",
             collapsed ? "w-[68px]" : "w-60",
           )}
         >
@@ -39,9 +40,15 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNavbar />
-        {/* pb clears the fixed AI-assistant FAB (bottom-right) so it never
-            covers page content like pagination controls. */}
-        <main className="flex-1 px-4 pb-24 sm:px-6">{children}</main>
+        {/* Tight bottom padding so content ends level with the sidebar's bottom
+            edge; the translucent, draggable AI FAB overlays the corner. The keyed
+            wrapper gives each route a subtle fade-up entrance (disabled under
+            reduced-motion). */}
+        <main className="flex-1 px-4 pt-4 pb-3 sm:px-6 sm:pt-6">
+          <div key={pathname} className="wp-enter">
+            {children}
+          </div>
+        </main>
       </div>
       <ChatBot />
       <CommandPalette />

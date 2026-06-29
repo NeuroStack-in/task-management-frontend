@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
+  pointerWithin,
+  closestCorners,
   KeyboardSensor,
   PointerSensor,
+  useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -37,48 +40,37 @@ import {
 import { cn } from "@/lib/utils";
 import type { DashboardWidget } from "@/types";
 
-/** Vertical gap between masonry items (px) — folded into the row-span. */
-const MASONRY_GAP = 24;
+/**
+ * Makes a widget card fill its (equal-height) grid cell. The card stretches to
+ * h-full and its CardContent grows (flex-1) as a column so chart/heatmap
+ * containers can fill the remaining space below the header. We deliberately do
+ * NOT add `justify-between` here — that pushed content to the top and bottom
+ * edges and left a dead band in the middle of every chart. Children fill from
+ * the top; charts opt into `flex-1` themselves to consume the slack.
+ */
+const FILL_CARD =
+  "h-full [&>*]:h-full [&>*]:[--card-spacing:--spacing(4)]! " +
+  "[&_[data-slot=card-content]]:flex-1 [&_[data-slot=card-content]]:flex " +
+  "[&_[data-slot=card-content]]:min-h-0 [&_[data-slot=card-content]]:flex-col";
 
 function SortableWidget({
   id,
   span,
-  masonry,
   children,
 }: {
   id: string;
   span: 1 | 2;
-  /** When true, set a measured row-span so the grid packs like masonry. */
-  masonry: boolean;
   children: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id });
 
-  // Measure content height → row-span (each grid row is 1px, see container).
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [rows, setRows] = useState<number | null>(null);
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const measure = () =>
-      setRows(Math.max(1, Math.round(el.offsetHeight) + MASONRY_GAP));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   return (
     <div
       ref={setNodeRef}
-      style={{
-        transform: CSS.Translate.toString(transform),
-        transition,
-        gridRowEnd: masonry && rows ? `span ${rows}` : undefined,
-      }}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "group/widget relative",
+        "group/widget relative h-full",
         span === 2 && "sm:col-span-2",
         isDragging && "z-10",
       )}
@@ -86,32 +78,64 @@ function SortableWidget({
       {!isDragging ? (
         <button
           type="button"
-          aria-label="Drag to reorder"
+          aria-label="Drag to reorder widget"
           {...attributes}
           {...listeners}
-          className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
+          className="absolute right-3 top-3 z-10 hidden size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:flex focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/widget:flex group-hover/widget:opacity-100 active:cursor-grabbing"
         >
           <GripVertical className="size-4" />
         </button>
       ) : null}
-      <div ref={contentRef}>
-        {isDragging ? (
-          // Reserve the slot with a dashed drop-placeholder; the floating
-          // preview (DragOverlay) shows the actual widget while dragging.
-          <div className="relative">
-            <div className="invisible [&>*]:[--card-spacing:--spacing(7)]!">
-              {children}
-            </div>
-            <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
-          </div>
-        ) : (
-          // Roomier internal padding than the default card spacing.
-          <div className="[&>*]:[--card-spacing:--spacing(7)]!">{children}</div>
-        )}
-      </div>
+
+      {isDragging ? (
+        // Dashed drop-placeholder; the floating DragOverlay shows the widget.
+        <div className="relative h-full">
+          <div className={cn("invisible", FILL_CARD)}>{children}</div>
+          <div className="absolute inset-0 rounded-lg border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
+        </div>
+      ) : (
+        <div className={FILL_CARD}>{children}</div>
+      )}
     </div>
   );
 }
+
+/** Sentinel id for the trailing empty-space drop target. */
+const END_ZONE_ID = "__dashboard-end__";
+
+/**
+ * A droppable that fills the empty grid cell after the last widget so a card can
+ * be dropped into the blank trailing space (= move to the end). Only rendered
+ * while a drag is in progress.
+ */
+function EndDropZone() {
+  const { setNodeRef, isOver } = useDroppable({ id: END_ZONE_ID });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex h-full items-center justify-center rounded-lg border-2 border-dashed text-xs font-medium transition-colors",
+        isOver
+          ? "border-primary/60 bg-primary/[0.06] text-primary"
+          : "border-border/70 text-muted-foreground",
+      )}
+    >
+      Drop here to move to the end
+    </div>
+  );
+}
+
+/**
+ * Pointer-first collision detection: prefer whatever the cursor is actually
+ * inside (so empty trailing space resolves to the end zone), then fall back to
+ * `closestCorners` — the dnd-kit strategy best suited to a sortable grid with
+ * mixed-width (span-1 / span-2) cells. This is what makes a drop land reliably
+ * instead of snapping back.
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  const pointer = pointerWithin(args);
+  return pointer.length > 0 ? pointer : closestCorners(args);
+};
 
 export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const widgets = useDashboardStore((s) => s.widgets);
@@ -120,18 +144,20 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const reset = useDashboardStore((s) => s.reset);
 
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Masonry (measured row-spans) only kicks in after mount, so the server/
-  // first paint uses a plain grid and never collapses to 1px rows.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // Skip any widget whose type no longer has a registry def (e.g. the removed
+  // static ai-summary/alerts/deadlines/upcoming-tasks still present in older
+  // persisted layouts) so they never show in the grid or the Customize list.
   const ordered = useMemo(
-    () => [...widgets].sort((a, b) => a.position - b.position),
+    () =>
+      [...widgets]
+        .filter((w) => WIDGET_REGISTRY[w.type])
+        .sort((a, b) => a.position - b.position),
     [widgets],
   );
   const visible = ordered.filter((w) => w.visible);
@@ -147,10 +173,21 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const onDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = e;
-    if (!over || active.id === over.id) return;
+    if (!over) return;
     const oldIndex = visibleIds.indexOf(String(active.id));
+    if (oldIndex < 0) return;
+
+    // Dropped onto the trailing empty space → move the widget to the end.
+    if (over.id === END_ZONE_ID) {
+      if (oldIndex === visibleIds.length - 1) return; // already last
+      const newVisible = arrayMove(visibleIds, oldIndex, visibleIds.length - 1);
+      reorder([...newVisible, ...hiddenIds]);
+      return;
+    }
+
+    if (active.id === over.id) return;
     const newIndex = visibleIds.indexOf(String(over.id));
-    if (oldIndex < 0 || newIndex < 0) return;
+    if (newIndex < 0) return;
     const newVisible = arrayMove(visibleIds, oldIndex, newIndex);
     reorder([...newVisible, ...hiddenIds]);
   };
@@ -159,29 +196,23 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     const def = WIDGET_REGISTRY[w.type];
     if (!def) return null;
     return (
-      <SortableWidget key={w.id} id={w.id} span={def.span} masonry={mounted}>
+      <SortableWidget key={w.id} id={w.id} span={def.span}>
         {def.render(data)}
       </SortableWidget>
     );
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg font-semibold tracking-tight">
-          Your widgets
-        </h2>
+    <div className="space-y-4">
+      <div className="flex items-center justify-end">
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="outline" size="sm" className="gap-2" />}
+            render={<Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground" />}
           >
             <SlidersHorizontal className="size-4" /> Customize
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64 p-0">
-            <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
-              Show widgets
-            </p>
-            <div className="max-h-72 overflow-y-auto px-1 pb-1">
+          <DropdownMenuContent align="end" className="w-56 p-0">
+            <div className="max-h-72 overflow-y-auto px-1 py-1">
               {ordered.map((w) => (
                 <label
                   key={w.id}
@@ -208,36 +239,34 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
       </div>
 
       {visible.length === 0 ? (
-        <div className="rounded-[1.4rem] border border-dashed p-10 text-center text-sm text-muted-foreground">
-          No widgets shown. Use{" "}
-          <span className="font-medium text-foreground">Customize</span> to add
-          some.
+        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          No widgets visible — use{" "}
+          <span className="font-medium text-foreground">Customize</span> above to enable some.
         </div>
       ) : (
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={collisionDetection}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           onDragCancel={() => setActiveId(null)}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            {/* Masonry bento grid: each widget spans its own height (1px rows),
-                so columns pack tight with no gaps. Charts span 2 columns; drop
-                any widget anywhere — placement follows drag order. */}
-            <div
-              className={cn(
-                "grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-3",
-                !mounted && "items-start gap-y-6",
-              )}
-              style={mounted ? { gridAutoRows: "1px" } : undefined}
-            >
+            {/* Bento grid: rows have a ~19rem floor so chart widgets fill a
+                readable, equal height, but grow to fit taller content (e.g. the
+                Top Employees list) instead of clipping it against the card's
+                bottom edge. Each card fills its cell (see FILL_CARD). Charts span
+                2 columns; drop any widget anywhere — order = placement. */}
+            <div className="grid auto-rows-[minmax(19rem,auto)] grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {visible.map(renderWidget)}
+              {/* Trailing drop target — only while dragging — so a card can land
+                  in the empty space instead of snapping back. */}
+              {activeId ? <EndDropZone /> : null}
             </div>
           </SortableContext>
           <DragOverlay>
             {activeWidget ? (
-              <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(7)]!">
+              <div className="cursor-grabbing rounded-lg opacity-95 shadow-lg ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
                 {WIDGET_REGISTRY[activeWidget.type]?.render(data)}
               </div>
             ) : null}

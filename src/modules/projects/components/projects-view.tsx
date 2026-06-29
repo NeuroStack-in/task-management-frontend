@@ -163,81 +163,83 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
         description={
           selfScoped
             ? "Projects you're a member of — status, progress, and your tasks."
-            : "Every project across the organization — status, budget health, and delivery at a glance."
-        }
-        actions={
-          canCreate ? (
-            <Button onClick={() => setNewOpen(true)} className="gap-1.5">
-              <Plus />
-              New project
-            </Button>
-          ) : null
+            : "Every project across the organization — status, progress, and delivery at a glance."
         }
       />
 
       {/* KPI stat band */}
       <ProjectsStatBand stats={stats} />
 
-      {/* Projects / Tasks filter + unified search */}
+      {/* Unified filter bar: view, status, search, layout — one row */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Segmented
-          options={[
-            { value: "projects", label: "Projects", count: projects.length },
-            { value: "tasks", label: "Tasks", count: visibleTasks.length },
-          ]}
-          value={view}
-          onChange={setView}
-        />
-
-        <div className="relative sm:w-72">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by project, task, or ID…"
-            className="pl-8"
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <Segmented
+            options={[
+              { value: "projects", label: "Projects", count: projects.length },
+              { value: "tasks", label: "Tasks", count: visibleTasks.length },
+            ]}
+            value={view}
+            onChange={setView}
           />
+          {view === "projects" ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <FilterChip
+                active={statusFilter === "all"}
+                onClick={() => setStatusFilter("all")}
+                label="All"
+                count={statusCounts.all}
+              />
+              {PROJECT_STATUS_ORDER.map((s) => (
+                <FilterChip
+                  key={s}
+                  active={statusFilter === s}
+                  onClick={() => setStatusFilter(s)}
+                  label={PROJECT_STATUS_META[s].label}
+                  count={statusCounts[s]}
+                  dot={toneDot[PROJECT_STATUS_META[s].tone]}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="relative sm:w-64">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search projects or tasks…"
+              className="pl-8"
+            />
+          </div>
+          {view === "projects" ? (
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5">
+              <LayoutToggleButton
+                active={layout === "grid"}
+                onClick={() => setLayout("grid")}
+                icon={LayoutGrid}
+                label="Grid view"
+              />
+              <LayoutToggleButton
+                active={layout === "list"}
+                onClick={() => setLayout("list")}
+                icon={List}
+                label="List view"
+              />
+            </div>
+          ) : null}
+          {canCreate ? (
+            <Button
+              onClick={() => setNewOpen(true)}
+              className="shrink-0 gap-1.5"
+            >
+              <Plus />
+              New project
+            </Button>
+          ) : null}
         </div>
       </div>
-
-      {/* Projects tab tools */}
-      {view === "projects" ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <FilterChip
-              active={statusFilter === "all"}
-              onClick={() => setStatusFilter("all")}
-              label="All"
-              count={statusCounts.all}
-            />
-            {PROJECT_STATUS_ORDER.map((s) => (
-              <FilterChip
-                key={s}
-                active={statusFilter === s}
-                onClick={() => setStatusFilter(s)}
-                label={PROJECT_STATUS_META[s].label}
-                count={statusCounts[s]}
-                dot={toneDot[PROJECT_STATUS_META[s].tone]}
-              />
-            ))}
-          </div>
-
-          <div className="inline-flex items-center gap-0.5 self-start rounded-lg border bg-background p-0.5">
-            <LayoutToggleButton
-              active={layout === "grid"}
-              onClick={() => setLayout("grid")}
-              icon={LayoutGrid}
-              label="Grid view"
-            />
-            <LayoutToggleButton
-              active={layout === "list"}
-              onClick={() => setLayout("list")}
-              icon={List}
-              label="List view"
-            />
-          </div>
-        </div>
-      ) : null}
 
       {/* Content */}
       {view === "projects" ? (
@@ -325,7 +327,7 @@ function LayoutToggleButton({
       aria-pressed={active}
       title={label}
       className={cn(
-        "flex size-7 items-center justify-center rounded-md transition-colors",
+        "flex size-9 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -354,7 +356,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
         active
           ? "border-transparent bg-primary text-primary-foreground"
           : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",

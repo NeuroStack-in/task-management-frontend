@@ -16,11 +16,8 @@ import {
   type ProjectStatus,
 } from "../types";
 import {
-  budgetHealth,
   dueLabel,
-  formatMoney,
   toneDot,
-  toneText,
   type UserMini,
 } from "../lib";
 import { MemberStack, ProgressTrack } from "./parts";
@@ -69,13 +66,14 @@ export function ProjectsList({
         return (
           <div
             key={status}
-            className="overflow-hidden rounded-2xl border bg-card"
+            className="overflow-hidden rounded-lg border border-border bg-card"
           >
             {/* Group header */}
             <button
               type="button"
               onClick={() => toggle(status)}
-              className="flex w-full items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/40"
+              aria-expanded={open}
+              className="flex w-full cursor-pointer items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none"
             >
               <ChevronDown
                 className={cn(
@@ -85,7 +83,7 @@ export function ProjectsList({
               />
               <span
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                  "inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-xs font-medium",
                   status === "active" && "bg-accent text-accent-foreground",
                   status === "on_hold" && "bg-warning/15 text-warning",
                   status === "completed" && "bg-success/12 text-success",
@@ -111,7 +109,7 @@ export function ProjectsList({
                 >
                   <span>Project</span>
                   <span>Progress</span>
-                  <span>Budget</span>
+                  <span>Tasks</span>
                   <span className="text-right">Due</span>
                 </div>
 
@@ -120,7 +118,6 @@ export function ProjectsList({
                   const members = p.memberIds
                     .map((id) => userMap[id])
                     .filter(Boolean) as UserMini[];
-                  const health = budgetHealth(p);
                   const due = dueLabel(p.dueDate);
                   const summary = taskSummary[p.id] ?? { done: 0, total: 0 };
 
@@ -131,7 +128,7 @@ export function ProjectsList({
                       onClick={() => onOpen(p.id)}
                       className={cn(
                         ROW,
-                        "w-full border-b text-left transition-colors last:border-b-0 hover:bg-muted/40",
+                        "w-full cursor-pointer border-b text-left transition-colors last:border-b-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 focus-visible:outline-none",
                       )}
                     >
                       {/* Project */}
@@ -170,22 +167,14 @@ export function ProjectsList({
                         </span>
                       </div>
 
-                      {/* Budget */}
+                      {/* Tasks */}
                       <div className="hidden md:block">
                         <p className="text-sm tabular-nums">
-                          {formatMoney(p.spent)}
+                          {summary.done}
                           <span className="text-muted-foreground">
                             {" "}
-                            / {formatMoney(p.budget)}
+                            / {summary.total} done
                           </span>
-                        </p>
-                        <p
-                          className={cn(
-                            "text-xs font-medium",
-                            toneText[health.tone],
-                          )}
-                        >
-                          {health.label} · {summary.done}/{summary.total} tasks
                         </p>
                       </div>
 

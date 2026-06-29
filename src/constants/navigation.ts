@@ -23,6 +23,7 @@ import {
   Building2,
   CalendarCheck,
   Wallet,
+  DoorOpen,
   SlidersHorizontal,
   Globe,
   ToggleRight,
@@ -56,7 +57,7 @@ export interface NavGroup {
  */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: "Workspace",
+    label: "Work",
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, permission: "dashboard:view" },
       { label: "Time Tracking", href: "/time-tracking", icon: Timer, permission: "time-tracking:view" },
@@ -64,10 +65,26 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Insights",
+    label: "Manage",
+    items: [
+      { label: "Employees", href: "/employees", icon: Users, permission: "employees:view" },
+      { label: "Attendance", href: "/attendance", icon: CalendarCheck, permission: "attendance:view" },
+      { label: "Leave", href: "/leave-requests", icon: DoorOpen, permission: "leave:view" },
+      { label: "Approvals", href: "/approvals", icon: CheckCheck, permission: "approvals:view" },
+    ],
+  },
+  {
+    label: "Finance",
+    items: [
+      { label: "Payroll", href: "/payroll", icon: Wallet, permission: "payroll:view" },
+      { label: "Billing", href: "/billing", icon: CreditCard, permission: "billing:view" },
+    ],
+  },
+  {
+    label: "Analytics",
     items: [
       {
-        label: "Insights",
+        label: "Analytics",
         href: "/insights",
         icon: LineChart,
         permission: null,
@@ -81,15 +98,6 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "People",
-    items: [
-      { label: "Employees", href: "/employees", icon: Users, permission: "employees:view" },
-      { label: "Attendance", href: "/attendance", icon: CalendarCheck, permission: "attendance:view" },
-      { label: "Payroll", href: "/payroll", icon: Wallet, permission: "payroll:view" },
-      { label: "Approvals", href: "/approvals", icon: CheckCheck, permission: "approvals:view" },
-    ],
-  },
-  {
     label: "Communication",
     items: [
       { label: "Inbox", href: "/inbox", icon: Mail, permission: "communication:view" },
@@ -97,11 +105,10 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Account",
+    label: "Admin",
     items: [
-      { label: "Billing", href: "/billing", icon: CreditCard, permission: "billing:view" },
-      // Always reachable: also hosts Appearance + the admin hub. Admin cards
-      // inside are individually permission-gated.
+      // Settings is always reachable: it hosts Appearance + the permission-gated
+      // admin hub (Organization, Roles, Security, Integrations, …).
       { label: "Settings", href: "/settings", icon: Settings, permission: null },
       { label: "Help Center", href: "/help", icon: HelpCircle, permission: "help:view" },
     ],

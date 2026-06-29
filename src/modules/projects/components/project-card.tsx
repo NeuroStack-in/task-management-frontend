@@ -9,11 +9,8 @@ import {
   type Project,
 } from "../types";
 import {
-  budgetHealth,
   dueLabel,
-  formatMoney,
   toneRail,
-  toneText,
   type UserMini,
 } from "../lib";
 import { MemberStack, ProgressTrack, StatusBadge } from "./parts";
@@ -34,7 +31,6 @@ export function ProjectCard({
   onOpen,
 }: ProjectCardProps) {
   const status = PROJECT_STATUS_META[project.status];
-  const health = budgetHealth(project);
   const due = dueLabel(project.dueDate);
 
   return (
@@ -49,16 +45,16 @@ export function ProjectCard({
         }
       }}
       className={cn(
-        "relative cursor-pointer gap-4 pl-6 outline-none transition-all duration-200",
-        "hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-24px_rgb(0_0_0/0.35)]",
-        "focus-visible:ring-3 focus-visible:ring-ring/50",
+        "relative flex h-full cursor-pointer flex-col gap-4 pl-6 outline-none transition-colors duration-150",
+        "hover:border-primary/30",
+        "focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
     >
       {/* Status accent rail */}
       <span
         aria-hidden
         className={cn(
-          "absolute inset-y-3 left-2 w-1 rounded-full transition-all duration-200 group-hover/card:inset-y-2",
+          "absolute inset-y-3 left-2 w-1 rounded-full",
           toneRail[status.tone],
         )}
       />
@@ -67,14 +63,11 @@ export function ProjectCard({
       <div className="flex items-start justify-between gap-3 px-5">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
+            <span className="rounded-sm bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
               {project.key}
             </span>
-            <span className="font-mono text-[0.65rem] text-muted-foreground/70">
-              {project.id}
-            </span>
             <span className="truncate text-xs text-muted-foreground">
-              · {project.department}
+              {project.department}
             </span>
           </div>
           <h3 className="mt-1.5 truncate font-heading text-base font-semibold tracking-tight transition-colors group-hover/card:text-primary">
@@ -93,31 +86,21 @@ export function ProjectCard({
         <ProgressTrack value={project.progress} />
       </div>
 
-      {/* Budget + tasks meta */}
+      {/* Tasks + due meta */}
       <div className="grid grid-cols-2 gap-3 px-5 text-xs">
         <div>
-          <p className="text-muted-foreground">Budget</p>
-          <p className="mt-0.5 font-medium tabular-nums">
-            {formatMoney(project.spent)}
-            <span className="text-muted-foreground">
-              {" "}
-              / {formatMoney(project.budget)}
-            </span>
-          </p>
-          <p className={cn("mt-0.5 font-medium", toneText[health.tone])}>
-            {health.label}
-          </p>
-        </div>
-        <div className="text-right">
           <p className="text-muted-foreground">Tasks</p>
           <p className="mt-0.5 font-medium tabular-nums">
             {doneCount}
             <span className="text-muted-foreground"> / {totalCount} done</span>
           </p>
+        </div>
+        <div className="text-right">
+          <p className="text-muted-foreground">Due</p>
           <p
             className={cn(
               "mt-0.5 font-medium",
-              due.overdue ? "text-destructive" : "text-muted-foreground",
+              due.overdue ? "text-destructive" : "text-foreground",
             )}
           >
             {due.text}
@@ -125,8 +108,8 @@ export function ProjectCard({
         </div>
       </div>
 
-      {/* Footer: members + pulse */}
-      <div className="flex items-center justify-between gap-3 px-5">
+      {/* Footer: members + pulse — pushed to bottom so all cards align */}
+      <div className="mt-auto flex items-center justify-between gap-3 px-5">
         <MemberStack members={members} />
         <div className="flex items-center gap-2">
           <Sparkline

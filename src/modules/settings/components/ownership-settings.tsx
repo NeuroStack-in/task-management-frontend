@@ -147,7 +147,7 @@ export function OwnershipSettings() {
       />
 
       {!isOwner && (
-        <div className="flex items-center gap-2.5 rounded-2xl bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           Only the{" "}
           <span className="font-medium text-foreground">Organization Owner</span>{" "}
@@ -246,7 +246,7 @@ export function OwnershipSettings() {
           </span>
           <div className="min-w-0 space-y-1">
             <h3 className="font-heading text-base font-medium">
-              Export organization data
+              Download organization data
             </h3>
             <p className="text-sm text-muted-foreground">
               Download a complete copy of your organization — members, projects,
@@ -258,16 +258,16 @@ export function OwnershipSettings() {
         <div className="flex flex-col gap-3 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           {exported ? (
             <span className="flex items-center gap-2 text-sm font-medium text-success">
-              <CheckCircle2 className="size-4" /> Data exported
+              <CheckCircle2 className="size-4" /> Data downloaded
             </span>
           ) : (
             <span className="text-sm text-muted-foreground">
-              No export yet for this session.
+              No download yet for this session.
             </span>
           )}
           <Button variant="outline" onClick={handleExport}>
             <Download className="size-4" />
-            {exported ? "Export again" : "Export data"}
+            {exported ? "Download again" : "Download data"}
           </Button>
         </div>
       </Card>
@@ -304,7 +304,7 @@ export function OwnershipSettings() {
 
           {!exported && (
             <p className="text-sm text-muted-foreground">
-              Export your organization data above before continuing.
+              Download your organization data above before continuing.
             </p>
           )}
 

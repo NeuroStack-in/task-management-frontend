@@ -2,10 +2,21 @@ import type {
   Permission,
   PermissionAction,
   PermissionCategory,
+  PermissionId,
 } from "@/types/rbac";
 
 /** Wildcard permission id granting full access. */
 export const WILDCARD = "*" as const;
+
+/**
+ * Contributor-only capabilities. These belong to individual contributors who do
+ * their own work in the tool (e.g. logging their own time) — NOT to oversight
+ * roles (Owner/Admin/HR/Manager). The wildcard "*" does NOT auto-grant these;
+ * a role must list them explicitly. See rbac.ts `canAccess`.
+ */
+export const CONTRIBUTOR_ONLY_PERMISSIONS: PermissionId[] = [
+  "time-tracking:edit",
+];
 
 const p = (
   module: string,
@@ -84,7 +95,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("payroll", "view", "View Payroll"),
       p("payroll", "manage", "Run Payroll"),
-      p("payroll", "export", "Export Payslips"),
+      p("payroll", "export", "Download Payslips"),
     ],
   },
   {
@@ -100,7 +111,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     label: "Reports",
     permissions: [
       p("reports", "view", "View Reports"),
-      p("reports", "export", "Export Reports"),
+      p("reports", "export", "Download Reports"),
     ],
   },
   {
@@ -109,6 +120,15 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("approvals", "view", "View Approvals"),
       p("approvals", "approve", "Approve Requests"),
+    ],
+  },
+  {
+    module: "leave",
+    label: "Leave",
+    permissions: [
+      p("leave", "view", "View Leave Requests"),
+      p("leave", "request", "Submit Leave Request"),
+      p("leave", "approve", "Approve Leave Requests"),
     ],
   },
   {

@@ -49,17 +49,16 @@ export function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
 
-/** Deterministic per-person status for a given working day. */
-function personStatus(id: string, month: number, day: number): DayStatus {
-  const r = (hash(id) * 31 + day * 17 + month * 7) % 100;
-  if (r < 5) return "absent";
-  if (r < 12) return "leave";
-  if (r < 24) return "late";
-  return "present";
-}
-
-/** Organization-wide attendance counts for one working day. */
-export function orgDayCounts(month: number, day: number): DayCounts {
+/**
+ * Organization-wide attendance counts for one working day. Derives each person's
+ * status from `dayRecordFor` — the SINGLE source of truth also used by the
+ * attendance log, payroll, and the dashboard donut — so all of them agree.
+ */
+export function orgDayCounts(
+  year: number,
+  month: number,
+  day: number,
+): DayCounts {
   const counts: DayCounts = {
     present: 0,
     late: 0,
@@ -67,7 +66,8 @@ export function orgDayCounts(month: number, day: number): DayCounts {
     absent: 0,
     total: HEADCOUNT.length,
   };
-  for (const u of HEADCOUNT) counts[personStatus(u.id, month, day)] += 1;
+  for (const u of HEADCOUNT)
+    counts[dayRecordFor(u.id, year, month, day).status] += 1;
   return counts;
 }
 
@@ -146,7 +146,7 @@ export function monthMatrix(year: number, month: number): DayCell[][] {
       isWorkday,
       isToday:
         inMonth && y === TODAY.year && m === TODAY.month && d === TODAY.day,
-      counts: isWorkday ? orgDayCounts(m, d) : null,
+      counts: isWorkday ? orgDayCounts(y, m, d) : null,
     };
   };
 

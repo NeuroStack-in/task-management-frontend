@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
@@ -10,8 +11,9 @@ import {
   FileText,
   FolderKanban,
   Sheet,
-  Sparkles,
+  BarChart2,
 } from "lucide-react";
+import { AiInsight } from "@/components/shared/ai-insight";
 import {
   Area,
   AreaChart,
@@ -34,8 +36,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { TablePagination } from "@/components/shared/table-pagination";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
+import { usePageTitle } from "@/stores/page-header.store";
 import { cn } from "@/lib/utils";
 
 export interface ProjectItem {
@@ -185,14 +189,31 @@ function exportEmployeePdf(d: EmployeeProfileData) {
 }
 
 export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
+  // Surface the employee's name + role in the top navbar for this detail route.
+  usePageTitle(data.name, `${data.jobTitle} · ${data.department}`);
+
   const chartData = data.kpi.months.map((m, i) => ({
     month: m,
     current: data.kpi.current[i],
     previous: data.kpi.previous[i],
   }));
 
+  // Projects list paginates so a heavily-staffed employee doesn't run a wall of
+  // bars down the card.
+  const PROJECTS_PER_PAGE = 5;
+  const [projectPage, setProjectPage] = useState(0);
+  const projectPageCount = Math.max(
+    1,
+    Math.ceil(data.projects.length / PROJECTS_PER_PAGE),
+  );
+  const safeProjectPage = Math.min(projectPage, projectPageCount - 1);
+  const pagedProjects = data.projects.slice(
+    safeProjectPage * PROJECTS_PER_PAGE,
+    safeProjectPage * PROJECTS_PER_PAGE + PROJECTS_PER_PAGE,
+  );
+
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
+    <div className="space-y-4">
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
@@ -204,7 +225,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
         </Link>
         <div className="flex items-center gap-3">
           <nav className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
-            <span>Team</span>
+            <Link href="/employees" className="transition-colors hover:text-foreground">Employees</Link>
             <span className="text-muted-foreground/50">/</span>
             <span className="font-medium text-foreground">{data.name}</span>
           </nav>
@@ -224,197 +245,257 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
         </div>
       </div>
 
-      {/* Employee — identity, contact & address in ONE card */}
-      <div className="overflow-hidden rounded-2xl border bg-card">
-        <div className="flex flex-col gap-5 border-b p-6 sm:flex-row sm:items-center">
-          <Avatar className="size-20 shrink-0 ring-4 ring-feature-tint">
-            <AvatarImage src={data.avatarUrl} alt={data.name} />
-            <AvatarFallback className="text-xl">
-              {initials(data.name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h1 className="font-display text-2xl font-semibold tracking-tight">
-                {data.name}
-              </h1>
-              <span className="font-mono text-xs text-muted-foreground">
-                {data.empCode}
-              </span>
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {data.jobTitle} · {data.department}
-            </p>
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              <Badge className="bg-feature-tint text-primary">
-                {data.roleName}
-              </Badge>
-              <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
-            </div>
-          </div>
-        </div>
-
-        <dl className="grid grid-cols-1 gap-x-8 gap-y-5 p-6 sm:grid-cols-2 lg:grid-cols-3">
-          <Detail label="Phone" value={data.phone} />
-          <Detail label="Email" value={data.email} />
-          <Detail label="Team" value={data.team} />
-          <Detail label="Date of birth" value={data.dob} />
-          <Detail label="Hire date" value={data.hireDate} />
-          <Detail label="Country" value={data.country} />
-          <Detail label="City / State" value={data.cityState} />
-          <Detail label="Address" value={data.address} />
-          <Detail label="Postcode" value={data.postcode} />
-        </dl>
-      </div>
-
-      {/* Projects — all projects, single accent bar, Active badge when active */}
-      <div className="rounded-2xl border bg-card p-6">
-        <div className="mb-5 flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-            <FolderKanban className="size-4" />
-          </span>
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Projects
-          </p>
-          <Badge className="bg-muted font-normal text-muted-foreground">
-            {data.projects.length}
-          </Badge>
-        </div>
-        {data.projects.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Not assigned to any project yet.
-          </p>
-        ) : (
-          <ul className="space-y-5">
-            {data.projects.map((p) => (
-              <li key={p.id} className="space-y-2">
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="flex min-w-0 items-center gap-2 font-medium">
-                    <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
-                      {p.key}
-                    </span>
-                    <span className="truncate">{p.name}</span>
-                    {p.active ? (
-                      <Badge className="bg-success/12 text-[0.65rem] text-success">
-                        Active
-                      </Badge>
-                    ) : null}
-                  </span>
-                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                    {p.progress}%
+      {/* 2-column layout on lg+: left = identity + projects, right = stats + chart + AI */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        {/* ── LEFT COLUMN ── */}
+        <div className="flex flex-col gap-4">
+          {/* Employee — identity, contact & address in ONE card */}
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
+              <Avatar className="size-16 shrink-0 ring-4 ring-feature-tint">
+                <AvatarImage src={data.avatarUrl} alt={data.name} />
+                <AvatarFallback className="text-lg">
+                  {initials(data.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h1 className="font-display text-xl font-semibold tracking-tight">
+                    {data.name}
+                  </h1>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {data.empCode}
                   </span>
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="wp-meter-fill h-full rounded-full bg-primary"
-                    style={{ width: `${p.progress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {p.tasks} tasks · {p.teammates} teammates
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {data.jobTitle} · {data.department}
                 </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge className="bg-feature-tint text-primary">
+                    {data.roleName}
+                  </Badge>
+                  <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
+                </div>
+              </div>
+            </div>
 
-      {/* KPI chart */}
-      <div className="rounded-2xl border bg-card p-6">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-              <Sparkles className="size-4" />
-            </span>
-            <div>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5">
+              <Detail label="Phone" value={data.phone} />
+              <Detail label="Email" value={data.email} />
+              <Detail label="Team" value={data.team} />
+              <Detail label="Hire date" value={data.hireDate} />
+              <Detail label="City / State" value={data.cityState} />
+              <Detail label="Country" value={data.country} />
+            </dl>
+          </div>
+
+          {/* Projects — all projects, single accent bar, Active badge when active */}
+          <div className="flex-1 rounded-xl border bg-card p-5">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                <FolderKanban className="size-4" />
+              </span>
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                KPI
+                Projects
               </p>
-              <p className="text-xs text-muted-foreground/80">
-                Avg. productive hours / day
+              <Badge className="bg-muted font-normal text-muted-foreground">
+                {data.projects.length}
+              </Badge>
+            </div>
+            {data.projects.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Not assigned to any project yet.
+              </p>
+            ) : (
+              <>
+                <ul className="space-y-4">
+                {pagedProjects.map((p) => (
+                  <li key={p.id} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="flex min-w-0 items-center gap-2 font-medium">
+                        <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
+                          {p.key}
+                        </span>
+                        <span className="truncate">{p.name}</span>
+                        {p.active ? (
+                          <Badge className="bg-success/12 text-[0.65rem] text-success">
+                            Active
+                          </Badge>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+                        {p.progress}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="wp-meter-fill h-full rounded-full bg-primary"
+                        style={{ width: `${p.progress}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {p.tasks} tasks · {p.teammates} teammates
+                    </p>
+                  </li>
+                ))}
+                </ul>
+                {data.projects.length > PROJECTS_PER_PAGE ? (
+                  <TablePagination
+                    page={safeProjectPage}
+                    pageCount={projectPageCount}
+                    total={data.projects.length}
+                    pageSize={PROJECTS_PER_PAGE}
+                    onPageChange={setProjectPage}
+                    className="mt-4"
+                  />
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ── RIGHT COLUMN ── */}
+        <div className="flex flex-col gap-4">
+          {/* Stat cards row */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Productivity
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.productivityScore}%
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">overall score</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Avg. completion
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.avgCompletion}%
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">task delivery rate</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Total tasks
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.totalTasks}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">in flight</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Active projects
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.projects.filter((p) => p.active).length}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                of {data.projects.length} total
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <Legend className="bg-primary" label="Last 6 months" />
-            <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
-          </div>
-        </div>
-        <ResponsiveContainer width="100%" height={230}>
-          <AreaChart
-            data={chartData}
-            margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
-          >
-            <defs>
-              <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
-                <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="var(--border)"
-              vertical={false}
-            />
-            <XAxis
-              dataKey="month"
-              tickLine={false}
-              axisLine={false}
-              tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-              dy={6}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              width={42}
-              tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-              tickFormatter={(v) => `${v}h`}
-            />
-            <Tooltip
-              cursor={{ stroke: "var(--border)" }}
-              contentStyle={{
-                borderRadius: 12,
-                border: "1px solid var(--border)",
-                background: "var(--popover)",
-                color: "var(--popover-foreground)",
-                fontSize: 12,
-              }}
-              labelStyle={{ color: "var(--muted-foreground)" }}
-              formatter={(v: number) => `${v}h`}
-            />
-            <Area
-              type="monotone"
-              dataKey="previous"
-              name="Previous 6 months"
-              stroke="var(--muted-foreground)"
-              strokeDasharray="5 5"
-              strokeOpacity={0.55}
-              strokeWidth={2}
-              fill="transparent"
-              dot={false}
-              activeDot={false}
-            />
-            <Area
-              type="monotone"
-              dataKey="current"
-              name="Last 6 months"
-              stroke="var(--primary)"
-              strokeWidth={2.5}
-              fill="url(#kpi-current)"
-              dot={false}
-              activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
 
-      {/* Employee summary */}
-      <AiInsights data={data} />
+          {/* KPI chart — capped so it never balloons to match a taller left column */}
+          <div className="flex max-h-[360px] flex-1 flex-col rounded-xl border bg-card p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                  <BarChart2 className="size-4" />
+                </span>
+                <div>
+                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Productivity
+                  </p>
+                  <p className="text-xs text-muted-foreground/80">
+                    Avg. productive hours / day
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <Legend className="bg-primary" label="Last 6 months" />
+                <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
+              <AreaChart
+                data={chartData}
+                margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
+              >
+                <defs>
+                  <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="var(--border)"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                  dy={6}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={42}
+                  tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                  tickFormatter={(v) => `${v}h`}
+                />
+                <Tooltip
+                  cursor={{ stroke: "var(--border)" }}
+                  contentStyle={{
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "var(--popover)",
+                    color: "var(--popover-foreground)",
+                    fontSize: 12,
+                  }}
+                  labelStyle={{ color: "var(--muted-foreground)" }}
+                  formatter={(v: number) => `${v}h`}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="previous"
+                  name="Previous 6 months"
+                  stroke="var(--muted-foreground)"
+                  strokeDasharray="5 5"
+                  strokeOpacity={0.55}
+                  strokeWidth={2}
+                  fill="transparent"
+                  dot={false}
+                  activeDot={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="current"
+                  name="Last 6 months"
+                  stroke="var(--primary)"
+                  strokeWidth={2.5}
+                  fill="url(#kpi-current)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Employee summary */}
+          <EmployeeSummaryInsight data={data} />
+        </div>
+      </div>
     </div>
   );
 }
 
-function AiInsights({ data }: { data: EmployeeProfileData }) {
+function EmployeeSummaryInsight({ data }: { data: EmployeeProfileData }) {
   const first = data.name.split(" ")[0];
   const total = data.projects.length;
   const activeCount = data.projects.filter((p) => p.active).length;
@@ -429,7 +510,9 @@ function AiInsights({ data }: { data: EmployeeProfileData }) {
     data.kpi.previous[data.kpi.previous.length - 1];
   const top = [...data.projects].sort((a, b) => b.progress - a.progress)[0];
 
-  const summary = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""}. Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks in flight.`;
+  const title = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""}.`;
+
+  const detail = `Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks in flight.`;
 
   const points: string[] = [
     trendUp
@@ -447,28 +530,13 @@ function AiInsights({ data }: { data: EmployeeProfileData }) {
   ];
 
   return (
-    <div className="rounded-2xl border bg-card p-6">
-      <div className="flex items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
-          <Sparkles className="size-4" />
-        </span>
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Employee summary
-        </p>
-        <Badge className="ml-auto bg-feature-tint text-primary">AI · Beta</Badge>
-      </div>
-
-      <p className="mt-3 text-sm leading-relaxed">{summary}</p>
-
-      <ul className="mt-4 space-y-2">
-        {points.map((p, i) => (
-          <li key={i} className="flex gap-2.5 text-sm text-muted-foreground">
-            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-            <span className="leading-relaxed">{p}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <AiInsight
+      label="Employee summary"
+      title={title}
+      detail={detail}
+      points={points}
+      basis={`${data.totalTasks} tasks · ${total} projects · 6-month KPI trend`}
+    />
   );
 }
 

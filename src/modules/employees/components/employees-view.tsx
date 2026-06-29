@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
@@ -21,7 +21,9 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { TablePagination } from "@/components/shared/table-pagination";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,7 +46,7 @@ import { useEmployeesStore } from "@/stores/employees.store";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
-import { InviteDialog } from "./invite-dialog";
+import { CreateEmployeeDialog } from "./create-employee-dialog";
 
 export interface EmployeeRow {
   id: string;
@@ -161,10 +163,33 @@ function FilterDropdown({
   );
 }
 
+const STATUS_BADGE: Record<EmployeeRow["status"], string> = {
+  active: "bg-success/12 text-success",
+  inactive: "bg-muted text-muted-foreground",
+  invited: "bg-warning/15 text-warning",
+  suspended: "bg-destructive/12 text-destructive",
+};
+
+const STATUS_ICON: Record<EmployeeRow["status"], React.ReactNode> = {
+  active: <span className="inline-block size-1.5 rounded-full bg-success" />,
+  inactive: <span className="inline-block size-1.5 rounded-full bg-muted-foreground" />,
+  invited: <span className="inline-block size-1.5 rounded-full bg-warning" />,
+  suspended: <span className="inline-block size-1.5 rounded-full bg-destructive" />,
+};
+
+function StatusBadge({ status }: { status: EmployeeRow["status"] }) {
+  return (
+    <Badge className={cn("gap-1.5 capitalize rounded-sm", STATUS_BADGE[status])}>
+      {STATUS_ICON[status]}
+      {status}
+    </Badge>
+  );
+}
+
 function ProductivityCell({ value }: { value: number }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
             "h-full rounded-full",
@@ -196,7 +221,7 @@ export function EmployeesView({
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   // Runtime-created accounts (persisted store) sit on top of the seed users.
   const allEmployees = useMemo(
@@ -249,39 +274,17 @@ export function EmployeesView({
       <PageHeader
         title="Employees"
         description="Your organization's people, productivity, and teams."
-        actions={
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" />}>
-                <Download className="size-4" /> Export report
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => exportEmployeesPdf(filtered, liveStats)}>
-                  <FileText className="size-4" /> PDF report
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
-                  <Sheet className="size-4" /> CSV export
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {can("employees:manage") ? (
-              <Button onClick={() => setInviteOpen(true)}>
-                <UserPlus className="size-4" /> Add employee
-              </Button>
-            ) : null}
-          </div>
-        }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard label="Total employees" value={liveStats.total} icon={Users} hint="in this organization" featured />
-        <StatCard label="Active" value={liveStats.active} icon={UserCheck} delta={4} />
-        <StatCard label="Avg. productivity" value={`${liveStats.avgProductivity}%`} icon={GaugeIcon} delta={3} />
+        <StatCard label="Active" value={liveStats.active} icon={UserCheck} hint={`${liveStats.total - liveStats.active} inactive`} />
+        <StatCard label="Avg. productivity" value={`${liveStats.avgProductivity}%`} icon={GaugeIcon} hint="across all employees" />
         <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -309,6 +312,26 @@ export function EmployeesView({
             label: s === "all" ? "All statuses" : s[0].toUpperCase() + s.slice(1),
           }))}
         />
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" />}>
+              <Download className="size-4" /> Download report
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportEmployeesPdf(filtered, liveStats)}>
+                <FileText className="size-4" /> PDF report
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
+                <Sheet className="size-4" /> CSV export
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {can("employees:manage") ? (
+            <Button onClick={() => setCreateOpen(true)}>
+              <UserPlus className="size-4" /> Add employee
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <Card>
@@ -328,19 +351,31 @@ export function EmployeesView({
                     <TableHead>Employee</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead>Department</TableHead>
-                    <TableHead className="w-40">Productivity</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-44">Productivity</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((e) => (
                     <TableRow
                       key={e.id}
-                      className={cn(!customIds.has(e.id) && "cursor-pointer")}
+                      tabIndex={!customIds.has(e.id) ? 0 : undefined}
+                      className={cn(
+                        "transition-colors",
+                        !customIds.has(e.id) &&
+                          "cursor-pointer hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                      )}
                       onClick={() =>
                         customIds.has(e.id)
                           ? undefined
                           : router.push(`/employees/${e.id}`)
                       }
+                      onKeyDown={(ev) => {
+                        if (!customIds.has(e.id) && (ev.key === "Enter" || ev.key === " ")) {
+                          ev.preventDefault();
+                          router.push(`/employees/${e.id}`);
+                        }
+                      }}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -368,6 +403,9 @@ export function EmployeesView({
                         {e.department} · {e.team}
                       </TableCell>
                       <TableCell>
+                        <StatusBadge status={e.status} />
+                      </TableCell>
+                      <TableCell>
                         <ProductivityCell value={e.productivityScore} />
                       </TableCell>
                     </TableRow>
@@ -380,39 +418,19 @@ export function EmployeesView({
       </Card>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {filtered.length === 0
-            ? "No results"
-            : `${safePage * PAGE_SIZE + 1}–${Math.min(
-                (safePage + 1) * PAGE_SIZE,
-                filtered.length,
-              )} of ${filtered.length}`}
-        </span>
-        <div className="flex gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage === 0}
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={safePage >= pageCount - 1}
-            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <TablePagination
+        page={safePage}
+        pageCount={pageCount}
+        total={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
 
-      <InviteDialog
-        open={inviteOpen}
-        onOpenChange={setInviteOpen}
+      <CreateEmployeeDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
         departments={departments}
+        existingEmails={allEmployees.map((e) => e.email)}
       />
     </div>
   );

@@ -1,17 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-  AtSign,
-  CheckCheck,
-  CreditCard,
-  Megaphone,
-  ShieldAlert,
-  Timer,
-  TriangleAlert,
-  UserPlus,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -30,7 +19,6 @@ type DigestValue = "off" | "daily" | "weekly";
 
 interface NotificationType {
   key: string;
-  icon: LucideIcon;
   label: string;
   description: string;
   defaults: Record<Channel, boolean>;
@@ -39,56 +27,48 @@ interface NotificationType {
 const NOTIFICATION_TYPES: NotificationType[] = [
   {
     key: "task-assignments",
-    icon: UserPlus,
     label: "Task assignments",
     description: "When a task or project is assigned to you.",
     defaults: { inApp: true, email: true },
   },
   {
     key: "approvals",
-    icon: CheckCheck,
     label: "Approvals",
     description: "Decisions on your time-off requests and timesheets.",
     defaults: { inApp: true, email: true },
   },
   {
     key: "anomalies",
-    icon: TriangleAlert,
     label: "Productivity anomalies",
     description: "Inactivity, productivity drops, and burnout alerts for your team.",
     defaults: { inApp: true, email: false },
   },
   {
     key: "timesheet-reminders",
-    icon: Timer,
     label: "Timesheet reminders",
     description: "Nudges to submit your weekly timesheet before the deadline.",
     defaults: { inApp: true, email: true },
   },
   {
     key: "mentions",
-    icon: AtSign,
     label: "Mentions & messages",
     description: "When someone @mentions you or sends a direct message.",
     defaults: { inApp: true, email: false },
   },
   {
     key: "billing",
-    icon: CreditCard,
     label: "Billing & account",
     description: "Invoices, payment issues, and seat changes.",
     defaults: { inApp: true, email: true },
   },
   {
     key: "security",
-    icon: ShieldAlert,
     label: "Security alerts",
     description: "New sign-ins, MFA changes, and suspicious activity.",
     defaults: { inApp: true, email: true },
   },
   {
     key: "product-updates",
-    icon: Megaphone,
     label: "Product updates",
     description: "New features, tips, and occasional announcements.",
     defaults: { inApp: false, email: false },
@@ -156,7 +136,7 @@ export function NotificationPreferences() {
     <div className="space-y-6">
       <PageHeader
         title="Notifications"
-        description="Choose what WorkPulse notifies you about and where. This controls your alerts — your full feed lives in the Notification Center."
+        description="Choose what you're notified about and where."
       />
 
       {/* ── Per-type channel matrix ── */}
@@ -169,7 +149,7 @@ export function NotificationPreferences() {
         </CardHeader>
         <CardContent className="p-0">
           {/* Channel header (desktop) */}
-          <div className="hidden items-center gap-4 border-b px-6 py-2.5 sm:flex">
+          <div className="hidden items-center gap-4 border-b px-6 py-2 sm:flex">
             <span className="flex-1" />
             <span className="w-16 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               In-app
@@ -181,25 +161,19 @@ export function NotificationPreferences() {
 
           <div className="divide-y">
             {NOTIFICATION_TYPES.map((type) => {
-              const Icon = type.icon;
               const row = draft.channels[type.key];
               return (
                 <div
                   key={type.key}
-                  className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:gap-4"
+                  className="flex flex-col gap-2 px-6 py-3 sm:flex-row sm:items-center sm:gap-4"
                 >
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                      <Icon className="size-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{type.label}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {type.description}
-                      </p>
-                    </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{type.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {type.description}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-4 pl-12 sm:pl-0">
+                  <div className="flex items-center gap-4 sm:pl-0">
                     {(["inApp", "email"] as Channel[]).map((channel) => (
                       <div
                         key={channel}
@@ -234,7 +208,7 @@ export function NotificationPreferences() {
           </CardDescription>
         </CardHeader>
         <CardContent className="divide-y">
-          <div className="flex items-center justify-between gap-6 pb-4">
+          <div className="flex items-center justify-between gap-6 py-3">
             <div>
               <p className="text-sm font-medium">Quiet hours</p>
               <p className="text-xs text-muted-foreground">
@@ -249,7 +223,7 @@ export function NotificationPreferences() {
               }
             />
           </div>
-          <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+          <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
             <div>
               <p className="text-sm font-medium">Email digest</p>
               <p className="text-xs text-muted-foreground">

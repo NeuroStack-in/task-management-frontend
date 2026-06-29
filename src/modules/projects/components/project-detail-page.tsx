@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   CalendarRange,
+  ChevronRight,
   Crown,
   FileDown,
+  FolderKanban,
   ListChecks,
   Pencil,
   Plus,
@@ -54,6 +57,7 @@ import {
   type ProjectFormValues,
 } from "@/stores/projects.store";
 import { useTasksStore, type TaskFormValues } from "@/stores/tasks.store";
+import { usePageTitle } from "@/stores/page-header.store";
 import {
   PROJECT_STATUS_META,
   TASK_PRIORITY_META,
@@ -92,6 +96,9 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const updateProject = useProjectsStore((s) => s.updateProject);
   const deleteProject = useProjectsStore((s) => s.deleteProject);
 
+  // Surface the project name (and key) in the top navbar for this detail route.
+  usePageTitle(project?.name ?? null, project?.key ?? null);
+
   const allTasks = useTasksStore((s) => s.tasks);
   const createTask = useTasksStore((s) => s.createTask);
   const updateTask = useTasksStore((s) => s.updateTask);
@@ -107,7 +114,15 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [taskView, setTaskView] = useState<"board" | "list">("list");
+  const [taskView, setTaskView] = useState<"board" | "list">("board");
+
+  // The DragOverlay is portaled to <body> so its position:fixed resolves
+  // against the viewport, not the route's `.wp-enter` wrapper (whose transform
+  // animation establishes a containing block that otherwise offsets the dragged
+  // card by the scroll distance). Guard with `mounted` to avoid SSR/hydration.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const [teamOpen, setTeamOpen] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
@@ -420,7 +435,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         <div className="flex flex-col rounded-2xl border bg-card p-5">
           <div className="flex items-center justify-between">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Team size
+              Team details
             </p>
             <span className="flex size-8 items-center justify-center rounded-full bg-feature-tint text-primary">
               <Users className="size-4" />
@@ -432,142 +447,87 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
             </span>
             <span className="text-sm text-muted-foreground">members</span>
           </div>
-          <div className="mt-auto pt-5">
+          <div className="mt-auto flex items-center justify-between gap-2 pt-5">
             <MemberStack members={teamOf(project.memberIds, userMap)} max={6} />
+            <button
+              type="button"
+              onClick={() => setTeamOpen(true)}
+              className="inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-primary transition-colors hover:text-primary/80"
+            >
+              View more
+              <ChevronRight className="size-3.5" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Kanban + team rail */}
-      <div className="grid gap-6 lg:grid-cols-12">
-        <section className="space-y-3 lg:col-span-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
-              Tasks
-            </h2>
-            <div className="flex items-center gap-2">
-              <Segmented
-                options={[
-                  { value: "board", label: "Board" },
-                  { value: "list", label: "List" },
-                ]}
-                value={taskView}
-                onChange={setTaskView}
-              />
-              <Button
-                size="sm"
-                className="gap-1.5"
-                onClick={() => openCreateTask("todo")}
-              >
-                <Plus className="size-4" />
-                Add task
-              </Button>
-            </div>
-          </div>
-
-          {taskView === "board" ? (
-            <DndContext
-              sensors={sensors}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              onDragCancel={() => setActiveTaskId(null)}
-            >
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {TASK_STATUS_ORDER.map((col) => (
-                  <KanbanColumn
-                    key={col}
-                    col={col}
-                    tasks={tasks.filter((t) => t.status === col)}
-                    userMap={userMap}
-                    onAdd={() => openCreateTask(col)}
-                    onEdit={openEditTask}
-                  />
-                ))}
-              </div>
-              <DragOverlay dropAnimation={null}>
-                {activeTask ? (
-                  <div className="w-64 rotate-2 rounded-xl border bg-card p-3 shadow-xl">
-                    <TaskCardContent task={activeTask} userMap={userMap} />
-                  </div>
-                ) : null}
-              </DragOverlay>
-            </DndContext>
-          ) : (
-            <TaskListView
-              tasks={tasks}
-              userMap={userMap}
-              onEdit={openEditTask}
-              onAdd={() => openCreateTask("todo")}
+      {/* Tasks — full width */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
+            Tasks
+          </h2>
+          <div className="flex items-center gap-2">
+            <Segmented
+              options={[
+                { value: "board", label: "Board" },
+                { value: "list", label: "List" },
+              ]}
+              value={taskView}
+              onChange={setTaskView}
             />
-          )}
-        </section>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => openCreateTask("todo")}
+            >
+              <Plus className="size-4" />
+              Add task
+            </Button>
+          </div>
+        </div>
 
-        {/* Right rail */}
-        <aside className="space-y-6 lg:col-span-4">
-          <Panel title="Team details">
-            <dl className="space-y-3 text-sm">
-              <DetailRow label="Project ID" value={<Mono>{project.id}</Mono>} />
-              <DetailRow label="Key" value={<Mono>{project.key}</Mono>} />
-              <DetailRow label="Lead" value={lead?.name ?? "—"} />
-              {manager ? (
-                <DetailRow label="Manager" value={manager.name} />
-              ) : null}
-              <DetailRow label="Department" value={project.department} />
-              <DetailRow
-                label="Team size"
-                value={`${project.memberIds.length} members`}
-              />
-              <DetailRow
-                label="Status"
-                value={<StatusBadge tone={status.tone} label={status.label} />}
-              />
-              <DetailRow
-                label="Timeline"
-                value={`${formatDate(project.startDate)} – ${formatDate(project.dueDate)}`}
-              />
-            </dl>
-          </Panel>
-
-          <Panel title="Team members">
-            <ul className="space-y-3">
-              {project.memberIds.map((mid) => {
-                const u = userMap[mid];
-                if (!u) return null;
-                const isLead = mid === project.leadUserId;
-                const isManager = mid === project.managerId;
-                return (
-                  <li key={mid} className="flex items-center gap-3">
-                    <Avatar size="sm">
-                      {u.avatarUrl ? (
-                        <AvatarImage src={u.avatarUrl} alt={u.name} />
-                      ) : null}
-                      <AvatarFallback>{initials(u.name)}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 leading-tight">
-                      <p className="flex items-center gap-1 truncate text-sm font-medium">
-                        {u.name}
-                        {isLead ? (
-                          <Crown
-                            className="size-3 text-warning"
-                            aria-label="Lead"
-                          />
-                        ) : null}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {isLead
-                          ? "Project lead"
-                          : isManager
-                            ? "Project manager"
-                            : u.jobTitle}
-                      </p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </Panel>
-        </aside>
-      </div>
+        {taskView === "board" ? (
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setActiveTaskId(null)}
+          >
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {TASK_STATUS_ORDER.map((col) => (
+                <KanbanColumn
+                  key={col}
+                  col={col}
+                  tasks={tasks.filter((t) => t.status === col)}
+                  userMap={userMap}
+                  onAdd={() => openCreateTask(col)}
+                  onEdit={openEditTask}
+                />
+              ))}
+            </div>
+            {mounted
+              ? createPortal(
+                  <DragOverlay dropAnimation={null}>
+                    {activeTask ? (
+                      <div className="w-full rotate-1 rounded-xl border bg-card p-3 shadow-xl">
+                        <TaskCardContent task={activeTask} userMap={userMap} />
+                      </div>
+                    ) : null}
+                  </DragOverlay>,
+                  document.body,
+                )
+              : null}
+          </DndContext>
+        ) : (
+          <TaskListView
+            tasks={tasks}
+            userMap={userMap}
+            onEdit={openEditTask}
+            onAdd={() => openCreateTask("todo")}
+          />
+        )}
+      </section>
 
       {/* Project edit dialog */}
       <ProjectFormDialog
@@ -612,6 +572,131 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Full team & details */}
+      <Dialog open={teamOpen} onOpenChange={setTeamOpen}>
+        <DialogContent className="flex max-h-[88vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          {/* Header band */}
+          <DialogHeader className="gap-0 border-b px-6 py-5 pr-12 text-left">
+            <div className="flex items-start gap-3">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
+                <FolderKanban className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <DialogTitle className="flex flex-wrap items-center gap-2">
+                  {project.name}
+                  <StatusBadge tone={status.tone} label={status.label} />
+                </DialogTitle>
+                <DialogDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <Mono>{project.key}</Mono>
+                  <Mono>{project.id}</Mono>
+                  <span>· {project.department}</span>
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {/* Scrollable body */}
+          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
+            {project.description ? (
+              <section>
+                <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  About
+                </p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {project.description}
+                </p>
+              </section>
+            ) : null}
+
+            {/* Details */}
+            <section>
+              <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Details
+              </p>
+              <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+                <DetailRow label="Lead" value={lead?.name ?? "—"} />
+                <DetailRow label="Manager" value={manager?.name ?? "—"} />
+                <DetailRow label="Department" value={project.department} />
+                <DetailRow
+                  label="Timeline"
+                  value={`${formatDate(project.startDate)} – ${formatDate(project.dueDate)}`}
+                />
+                <DetailRow
+                  label="Status"
+                  value={<StatusBadge tone={status.tone} label={status.label} />}
+                />
+                <DetailRow
+                  label="Health"
+                  value={
+                    atRisk ? (
+                      <span className="font-medium text-warning">At risk</span>
+                    ) : (
+                      <span className="font-medium text-success">On track</span>
+                    )
+                  }
+                />
+                <DetailRow label="Key" value={<Mono>{project.key}</Mono>} />
+                <DetailRow label="Project ID" value={<Mono>{project.id}</Mono>} />
+              </dl>
+            </section>
+
+            {/* Members */}
+            <section>
+              <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Members · {project.memberIds.length}
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {project.memberIds.map((mid) => {
+                  const u = userMap[mid];
+                  if (!u) return null;
+                  const isLead = mid === project.leadUserId;
+                  const isManager = mid === project.managerId;
+                  return (
+                    <div
+                      key={mid}
+                      className="flex items-center gap-3 rounded-xl border p-3"
+                    >
+                      <Avatar size="sm">
+                        {u.avatarUrl ? (
+                          <AvatarImage src={u.avatarUrl} alt={u.name} />
+                        ) : null}
+                        <AvatarFallback>{initials(u.name)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1 leading-tight">
+                        <p className="flex items-center gap-1 truncate text-sm font-medium">
+                          {u.name}
+                          {isLead ? (
+                            <Crown
+                              className="size-3 text-warning"
+                              aria-label="Lead"
+                            />
+                          ) : null}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {u.jobTitle}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-medium",
+                          isLead
+                            ? "bg-warning/15 text-warning"
+                            : isManager
+                              ? "bg-primary/10 text-primary"
+                              : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {isLead ? "Lead" : isManager ? "Manager" : "Member"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -651,23 +736,6 @@ function TaskStat({
       <p className="mt-1 font-heading text-xl font-semibold tabular-nums">
         {value}
       </p>
-    </div>
-  );
-}
-
-function Panel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border bg-card p-5">
-      <p className="mb-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {title}
-      </p>
-      {children}
     </div>
   );
 }
@@ -830,6 +898,15 @@ function TaskListView({
 
   return (
     <div className="overflow-hidden rounded-2xl border bg-card">
+      {/* Column header — aligns with the fixed-width cells below */}
+      <div className="hidden items-center gap-4 border-b bg-muted/40 px-4 py-2.5 text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase sm:flex">
+        <span className="flex-1 pl-5">Task</span>
+        <span className="w-24 shrink-0">Due</span>
+        <span className="hidden w-24 shrink-0 md:block">Priority</span>
+        <span className="w-24 shrink-0">Status</span>
+        <span className="w-44 shrink-0">Assignee</span>
+      </div>
+
       <ul className="divide-y">
         {sorted.map((t) => {
           const prio = TASK_PRIORITY_META[t.priority];
@@ -841,61 +918,84 @@ function TaskListView({
               <button
                 type="button"
                 onClick={() => onEdit(t)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50"
               >
-                <span
-                  className={cn(
-                    "size-2 shrink-0 rounded-full",
-                    toneDot[prio.tone],
-                  )}
-                  title={`${prio.label} priority`}
-                />
-                <p
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-sm font-medium",
-                    t.status === "done" &&
-                      "text-muted-foreground line-through",
-                  )}
-                >
-                  {t.title}
-                </p>
-                {t.dueDate ? (
+                {/* Task */}
+                <span className="flex min-w-0 flex-1 items-center gap-3">
                   <span
                     className={cn(
-                      "hidden shrink-0 text-xs tabular-nums sm:block",
-                      due.overdue ? "text-destructive" : "text-muted-foreground",
+                      "size-2 shrink-0 rounded-full",
+                      toneDot[prio.tone],
+                    )}
+                    title={`${prio.label} priority`}
+                  />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-sm font-medium",
+                      t.status === "done" &&
+                        "text-muted-foreground line-through",
                     )}
                   >
-                    {due.text}
+                    {t.title}
                   </span>
-                ) : null}
+                </span>
+
+                {/* Due */}
                 <span
                   className={cn(
-                    "hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium md:inline-flex",
-                    toneSoft[prio.tone],
+                    "hidden w-24 shrink-0 text-xs tabular-nums sm:block",
+                    t.dueDate
+                      ? due.overdue
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                      : "text-muted-foreground/40",
                   )}
                 >
-                  {prio.label}
+                  {t.dueDate ? due.text : "—"}
                 </span>
-                <StatusBadge
-                  tone={status.tone}
-                  label={status.label}
-                  className="shrink-0"
-                />
-                {assignee ? (
-                  <Avatar size="sm" className="size-6 shrink-0">
-                    {assignee.avatarUrl ? (
-                      <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
-                    ) : null}
-                    <AvatarFallback className="text-[0.55rem]">
-                      {initials(assignee.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                ) : (
-                  <span className="hidden shrink-0 text-xs text-muted-foreground/60 lg:block">
-                    Unassigned
+
+                {/* Priority */}
+                <span className="hidden w-24 shrink-0 md:block">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+                      toneSoft[prio.tone],
+                    )}
+                  >
+                    {prio.label}
                   </span>
-                )}
+                </span>
+
+                {/* Status */}
+                <span className="w-24 shrink-0">
+                  <StatusBadge tone={status.tone} label={status.label} />
+                </span>
+
+                {/* Assignee — avatar from sm, name added at lg */}
+                <span className="hidden w-44 shrink-0 items-center gap-2 sm:flex">
+                  {assignee ? (
+                    <>
+                      <Avatar size="sm" className="size-6 shrink-0">
+                        {assignee.avatarUrl ? (
+                          <AvatarImage
+                            src={assignee.avatarUrl}
+                            alt={assignee.name}
+                          />
+                        ) : null}
+                        <AvatarFallback className="text-[0.55rem]">
+                          {initials(assignee.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="hidden truncate text-xs text-muted-foreground lg:inline">
+                        {assignee.name}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/50">
+                      Unassigned
+                    </span>
+                  )}
+                </span>
               </button>
             </li>
           );

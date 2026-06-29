@@ -3,27 +3,15 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
-import {
-  CalendarDays,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Search,
-  ArrowUp,
-  ArrowDown,
-} from "lucide-react";
+import { ChevronDown, Download, Search } from "lucide-react";
 import { toast } from "sonner";
 import { users } from "@/lib/data";
 import { initials } from "@/lib/format";
 import { type AttendanceStatus } from "@/lib/mock-metrics";
 import {
   dayRecordFor,
-  isFutureDate,
-  monthMatrix,
   MONTH_NAMES,
   TODAY,
-  WEEKDAY_LABELS,
 } from "@/lib/mock-attendance";
 import {
   Card,
@@ -50,6 +38,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/empty-state";
+import { TablePagination } from "@/components/shared/table-pagination";
+import { SortableHead } from "@/components/shared/sortable-head";
 import { cn } from "@/lib/utils";
 
 const STATUS_META: Record<
@@ -110,7 +100,7 @@ const dateLabel = (d: SelectedDate) =>
 
 export function AttendanceLog({
   date,
-  onDateChange,
+  onDateChange: _onDateChange,
 }: {
   date: SelectedDate;
   onDateChange: (d: SelectedDate) => void;
@@ -224,19 +214,12 @@ export function AttendanceLog({
 
   return (
     <Card>
-      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div>
           <CardTitle>{isToday(date) ? "Today's log" : "Attendance log"}</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">{dateLabel(date)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <LogDatePicker
-            value={date}
-            onChange={(d) => {
-              onDateChange(d);
-              resetPage();
-            }}
-          />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -273,7 +256,7 @@ export function AttendanceLog({
             </DropdownMenuContent>
           </DropdownMenu>
           <Button variant="outline" size="sm" className="h-9" onClick={exportCsv}>
-            <Download className="size-4" /> Export CSV
+            <Download className="size-4" /> Download
           </Button>
         </div>
       </CardHeader>
@@ -313,28 +296,33 @@ export function AttendanceLog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <SortHead
-                      label="Employee"
-                      active={sort.key === "name"}
+                    <SortableHead
+                      col="name"
+                      active={sort.key}
                       dir={sort.dir}
-                      onClick={() => toggleSort("name")}
-                    />
+                      onSort={toggleSort}
+                    >
+                      Employee
+                    </SortableHead>
                     <TableHead>Department</TableHead>
                     <TableHead>Status</TableHead>
-                    <SortHead
-                      label="Clock in"
-                      active={sort.key === "clockIn"}
+                    <SortableHead
+                      col="clockIn"
+                      active={sort.key}
                       dir={sort.dir}
-                      onClick={() => toggleSort("clockIn")}
-                    />
+                      onSort={toggleSort}
+                    >
+                      Clock in
+                    </SortableHead>
                     <TableHead>Clock out</TableHead>
-                    <SortHead
-                      label="Hours"
-                      align="right"
-                      active={sort.key === "hours"}
+                    <SortableHead
+                      col="hours"
+                      active={sort.key}
                       dir={sort.dir}
-                      onClick={() => toggleSort("hours")}
-                    />
+                      onSort={toggleSort}
+                    >
+                      Hours
+                    </SortableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -343,8 +331,18 @@ export function AttendanceLog({
                     return (
                       <TableRow
                         key={r.id}
+                        tabIndex={0}
                         onClick={() => router.push(`/employees/${r.id}`)}
-                        className={cn("cursor-pointer", meta.row)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter" || ev.key === " ") {
+                            ev.preventDefault();
+                            router.push(`/employees/${r.id}`);
+                          }
+                        }}
+                        className={cn(
+                          "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                          meta.row,
+                        )}
                       >
                         <TableCell>
                           <div className="flex items-center gap-3">
@@ -361,7 +359,7 @@ export function AttendanceLog({
                           {r.department}
                         </TableCell>
                         <TableCell>
-                          <Badge className={meta.badge}>{meta.label}</Badge>
+                          <Badge className={cn("rounded-sm", meta.badge)}>{meta.label}</Badge>
                         </TableCell>
                         <TableCell className="font-mono tabular-nums">
                           {r.clockIn}
@@ -369,7 +367,7 @@ export function AttendanceLog({
                         <TableCell className="font-mono tabular-nums">
                           {r.clockOut}
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
+                        <TableCell className="font-mono tabular-nums">
                           {r.hours ? r.hours.toFixed(1) : "—"}
                         </TableCell>
                       </TableRow>
@@ -380,38 +378,14 @@ export function AttendanceLog({
             </div>
 
             {/* Pagination */}
-            <div className="flex items-center justify-between pt-1">
-              <p className="text-xs text-muted-foreground">
-                Showing {safePage * PAGE_SIZE + 1}–
-                {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
-                {filtered.length}
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-8"
-                  disabled={safePage === 0}
-                  onClick={() => setPage(safePage - 1)}
-                  aria-label="Previous page"
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  Page {safePage + 1} / {pageCount}
-                </span>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-8"
-                  disabled={safePage >= pageCount - 1}
-                  onClick={() => setPage(safePage + 1)}
-                  aria-label="Next page"
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            </div>
+            <TablePagination
+              page={safePage}
+              pageCount={pageCount}
+              total={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+              className="pt-1"
+            />
           </>
         )}
       </CardContent>
@@ -419,140 +393,4 @@ export function AttendanceLog({
   );
 }
 
-function SortHead({
-  label,
-  active,
-  dir,
-  onClick,
-  align,
-}: {
-  label: string;
-  active: boolean;
-  dir: "asc" | "desc";
-  onClick: () => void;
-  align?: "right";
-}) {
-  return (
-    <TableHead className={align === "right" ? "text-right" : undefined}>
-      <button
-        type="button"
-        onClick={onClick}
-        className={cn(
-          "inline-flex items-center gap-1 transition-colors hover:text-foreground",
-          align === "right" && "flex-row-reverse",
-          active && "text-foreground",
-        )}
-      >
-        {label}
-        {active ? (
-          dir === "asc" ? (
-            <ArrowUp className="size-3.5" />
-          ) : (
-            <ArrowDown className="size-3.5" />
-          )
-        ) : null}
-      </button>
-    </TableHead>
-  );
-}
 
-function LogDatePicker({
-  value,
-  onChange,
-}: {
-  value: SelectedDate;
-  onChange: (d: SelectedDate) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [view, setView] = useState({ year: value.year, month: value.month });
-
-  const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
-
-  const step = (dir: -1 | 1) =>
-    setView((v) => {
-      const m = v.month + dir;
-      if (m < 0) return { year: v.year - 1, month: 11 };
-      if (m > 11) return { year: v.year + 1, month: 0 };
-      return { year: v.year, month: m };
-    });
-
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger
-        render={<Button variant="outline" size="sm" className="h-9 gap-1.5" />}
-      >
-        <CalendarDays className="size-4" />
-        {dateLabel(value)}
-        <ChevronDown className="size-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72 p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => step(-1)}
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Previous month"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-          <span className="text-sm font-medium">
-            {MONTH_NAMES[view.month]} {view.year}
-          </span>
-          <button
-            type="button"
-            onClick={() => step(1)}
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Next month"
-          >
-            <ChevronRight className="size-4" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-muted-foreground">
-          {WEEKDAY_LABELS.map((d) => (
-            <span key={d}>{d[0]}</span>
-          ))}
-        </div>
-
-        <div className="mt-1 grid grid-cols-7 gap-1">
-          {weeks.flat().map((cell, i) => {
-            const selected =
-              cell.inMonth &&
-              cell.year === value.year &&
-              cell.month === value.month &&
-              cell.day === value.day;
-            const disabled =
-              !cell.inMonth || isFutureDate(cell.year, cell.month, cell.day);
-            return (
-              <button
-                key={i}
-                type="button"
-                disabled={disabled}
-                onClick={() => {
-                  onChange({
-                    year: cell.year,
-                    month: cell.month,
-                    day: cell.day,
-                  });
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex aspect-square items-center justify-center rounded-md text-xs tabular-nums transition-colors",
-                  selected
-                    ? "bg-primary font-semibold text-primary-foreground"
-                    : disabled
-                      ? "cursor-default text-muted-foreground/40"
-                      : cell.isToday
-                        ? "text-primary ring-1 ring-primary hover:bg-muted"
-                        : "hover:bg-muted",
-                )}
-              >
-                {cell.day}
-              </button>
-            );
-          })}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}

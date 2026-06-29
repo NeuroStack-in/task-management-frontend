@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -59,7 +58,6 @@ export function InviteDialog({
   const [form, setForm] = useState({
     name: "",
     email: "",
-    empId: "",
     role: "Member",
     department: "",
   });
@@ -93,10 +91,7 @@ export function InviteDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add an employee</DialogTitle>
-          <DialogDescription>
-            Add their details, then invite them to {organization.name}.
-          </DialogDescription>
+          <DialogTitle>Invite an employee</DialogTitle>
         </DialogHeader>
 
         {/* 1 — Employee details */}
@@ -111,9 +106,6 @@ export function InviteDialog({
               onChange={(e) => set("email")(e.target.value)}
               placeholder="jordan@acme.test"
             />
-          </Field>
-          <Field label="Employee ID">
-            <Input value={form.empId} onChange={(e) => set("empId")(e.target.value)} placeholder="EMP-2048" />
           </Field>
           <Field label="Role">
             <Select value={form.role} onValueChange={(v) => set("role")(v as string)}>
@@ -150,7 +142,7 @@ export function InviteDialog({
         {/* Divider */}
         <div className="flex items-center gap-3">
           <span className="h-px flex-1 bg-border" />
-          <span className="text-xs text-muted-foreground">invite this employee</span>
+          <span className="text-xs text-muted-foreground">Send invite</span>
           <span className="h-px flex-1 bg-border" />
         </div>
 
@@ -178,10 +170,6 @@ export function InviteDialog({
             color="var(--foreground)"
           />
         </div>
-        <p className="-mt-1 text-center text-xs text-muted-foreground">
-          “Share link” copies the workspace invite link to your clipboard.
-        </p>
-
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Done

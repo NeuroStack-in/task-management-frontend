@@ -25,7 +25,7 @@ export function AttendanceView() {
 
   if (selfScoped) return <PersonalAttendanceView />;
 
-  const today = orgDayCounts(TODAY.month, TODAY.day);
+  const today = orgDayCounts(TODAY.year, TODAY.month, TODAY.day);
   const presentPct = Math.round(
     ((today.present + today.late) / today.total) * 100,
   );

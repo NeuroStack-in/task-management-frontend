@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import {
   FolderKanban,
   Moon,
-  Palette,
   Search,
   Square,
   Sun,
@@ -32,7 +31,6 @@ import {
 import { users, projects } from "@/lib/data";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { PALETTES, applyPalette } from "./palette-switcher";
 
 interface Result {
   id: string;
@@ -92,14 +90,6 @@ export function CommandPalette() {
     close();
   };
 
-  const cyclePalette = () => {
-    const cur = document.documentElement.getAttribute("data-palette") ?? "indigo";
-    const idx = PALETTES.findIndex((p) => p.id === cur);
-    const next = PALETTES[(idx + 1) % PALETTES.length];
-    applyPalette(next.id);
-    toast.success(`Palette: ${next.name}`);
-  };
-
   const results = useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
     const out: Result[] = [];
@@ -148,16 +138,6 @@ export function CommandPalette() {
         icon: Moon,
         run: () => {
           setTheme("dark");
-          close();
-        },
-      },
-      {
-        id: "a-palette",
-        label: "Switch colour palette",
-        group: "Actions",
-        icon: Palette,
-        run: () => {
-          cyclePalette();
           close();
         },
       },
@@ -211,7 +191,7 @@ export function CommandPalette() {
       ),
       ...INSIGHTS_TABS.filter((t) => can(t.permission)).map((it) => ({
         item: it,
-        group: "Insights",
+        group: "Analytics",
       })),
       ...ADMIN_SECTIONS.flatMap((g) =>
         g.items
@@ -241,7 +221,7 @@ export function CommandPalette() {
     out.push(...pageResults);
 
     return out;
-    // close/go/cyclePalette are stable enough for this derived list.
+    // close/go are stable enough for this derived list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, role, nav, can, timerTask, timerStatus]);
 
@@ -318,7 +298,7 @@ export function CommandPalette() {
                       onMouseMove={() => setActive(i)}
                       onClick={() => r.run()}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors",
+                        "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
                         i === activeIdx ? "bg-accent" : "hover:bg-muted/60",
                       )}
                     >
@@ -330,7 +310,7 @@ export function CommandPalette() {
                           </AvatarFallback>
                         </Avatar>
                       ) : Icon ? (
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-primary">
                           <Icon className="size-4" />
                         </span>
                       ) : null}

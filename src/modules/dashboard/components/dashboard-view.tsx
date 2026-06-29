@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Gauge,
   Users,
-  UserMinus,
   Timer,
   Clock,
   BadgeDollarSign,
@@ -97,12 +96,13 @@ export function DashboardView({ users }: { users: User[] }) {
               href="/employees"
             />
             <StatCard
-              label="Inactive Users"
-              value={kpis.inactive.value}
-              icon={UserMinus}
-              delta={kpis.inactive.deltaPct}
-              trend={kpis.inactive.trend}
-              href="/employees"
+              label="Hours Tracked"
+              value={`${kpis.hours.value.toLocaleString()}h`}
+              icon={Clock}
+              hint="today"
+              delta={kpis.hours.deltaPct}
+              trend={kpis.hours.trend}
+              href="/time-tracking"
             />
             <StatCard
               label="Running Timers"

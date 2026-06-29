@@ -32,8 +32,10 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
         <CardTitle>Team Comparison</CardTitle>
         <CardDescription>Average productivity by department</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="h-[260px] w-full">
+      <CardContent className="flex flex-col">
+        {/* flex-1 + min-h-0 lets the chart fill the card below the header so the
+            bars span the full height/width — no dead band above the bars. */}
+        <div className="min-h-[160px] w-full flex-1">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ left: -18, right: 8, top: 4 }}>
               <CartesianGrid vertical={false} stroke="var(--border)" />

@@ -1,6 +1,5 @@
 import { Construction } from "lucide-react";
 import { PageHeader } from "./page-header";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "./empty-state";
 
 interface ComingSoonProps {
@@ -22,7 +21,11 @@ export function ComingSoon({ title, description, phase }: ComingSoonProps) {
         title={title}
         description={description}
         actions={
-          phase ? <Badge variant="secondary">Phase {phase}</Badge> : undefined
+          phase ? (
+            <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+              Phase {phase}
+            </span>
+          ) : undefined
         }
       />
       <EmptyState
