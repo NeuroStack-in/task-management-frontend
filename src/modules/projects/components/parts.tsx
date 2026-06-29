@@ -31,7 +31,7 @@ export function StatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
         toneSoft[tone],
         className,
       )}
@@ -148,7 +148,7 @@ export function Segmented<T extends string>({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border border-border bg-muted p-0.5",
+        "inline-flex items-center gap-1 rounded-xl bg-muted p-1",
         className,
       )}
     >
@@ -160,9 +160,9 @@ export function Segmented<T extends string>({
             type="button"
             onClick={() => onChange(o.value)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
               active
-                ? "bg-background text-foreground"
+                ? "shadow-soft bg-background text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -170,7 +170,7 @@ export function Segmented<T extends string>({
             {o.count !== undefined ? (
               <span
                 className={cn(
-                  "rounded-sm px-1.5 text-xs tabular-nums",
+                  "rounded-full px-1.5 text-xs tabular-nums",
                   active
                     ? "bg-accent text-accent-foreground"
                     : "bg-background/70 text-muted-foreground",

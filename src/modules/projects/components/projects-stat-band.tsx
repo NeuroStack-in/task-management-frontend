@@ -1,12 +1,7 @@
 "use client";
 
-import {
-  Activity,
-  AlertTriangle,
-  FolderKanban,
-  Gauge,
-  type LucideIcon,
-} from "lucide-react";
+import { Activity, FolderKanban, Gauge, type LucideIcon } from "lucide-react";
+import { Sparkline } from "@/components/shared/sparkline";
 import { cn } from "@/lib/utils";
 import type { ProjectStats } from "../lib";
 
@@ -17,12 +12,14 @@ interface Segment {
   sub: string;
   icon: LucideIcon;
   chip: string;
-  alert?: boolean;
+  primary?: boolean;
+  spark?: number[];
 }
 
 /**
  * A single connected KPI band (not four floating cards) — reads as an admin
- * control strip. 1px gaps over a border-coloured parent form the dividers.
+ * control strip. The primary cell carries the indigo feature tint + the
+ * aggregate project pulse; 1px gaps over a border-coloured parent form the dividers.
  */
 export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
   const segments: Segment[] = [
@@ -32,7 +29,9 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
       value: stats.total,
       sub: "across the organization",
       icon: FolderKanban,
-      chip: "bg-muted text-primary",
+      chip: "bg-primary/10 text-primary",
+      primary: true,
+      spark: stats.pulse,
     },
     {
       key: "active",
@@ -40,7 +39,7 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
       value: stats.active,
       sub: "currently underway",
       icon: Activity,
-      chip: "bg-muted text-primary",
+      chip: "bg-feature-tint text-primary",
     },
     {
       key: "avg",
@@ -48,49 +47,50 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
       value: `${stats.avgProgress}%`,
       sub: "live projects",
       icon: Gauge,
-      chip: "bg-muted text-primary",
-    },
-    {
-      key: "atRisk",
-      label: "At risk",
-      value: stats.atRisk,
-      sub: "overdue & unfinished",
-      icon: AlertTriangle,
-      chip:
-        stats.atRisk > 0
-          ? "bg-warning/15 text-warning"
-          : "bg-muted text-muted-foreground",
-      alert: stats.atRisk > 0,
+      chip: "bg-feature-tint text-primary",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border bg-border sm:grid-cols-3">
       {segments.map((s) => {
         const Icon = s.icon;
         return (
-          <div key={s.key} className="flex flex-col gap-4 bg-card p-4">
+          <div
+            key={s.key}
+            className={cn(
+              "flex flex-col gap-4 bg-card p-5",
+              s.primary && "bg-feature-tint/60",
+            )}
+          >
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm text-muted-foreground">{s.label}</span>
               <span
                 className={cn(
-                  "flex size-7 items-center justify-center rounded-md",
+                  "flex size-8 items-center justify-center rounded-full",
                   s.chip,
                 )}
               >
                 <Icon className="size-4" />
               </span>
             </div>
-            <div className="space-y-1">
-              <p
-                className={cn(
-                  "font-display text-3xl leading-none font-semibold tracking-tight tabular-nums",
-                  s.alert && "text-warning",
-                )}
-              >
-                {s.value}
-              </p>
-              <p className="text-xs text-muted-foreground">{s.sub}</p>
+            <div className="flex items-end justify-between gap-2">
+              <div className="space-y-1">
+                <p className="font-display text-3xl leading-none font-semibold tracking-tight tabular-nums">
+                  {s.value}
+                </p>
+                <p className="text-xs text-muted-foreground">{s.sub}</p>
+              </div>
+              {s.spark ? (
+                <Sparkline
+                  data={s.spark}
+                  width={84}
+                  height={36}
+                  area
+                  showDot={false}
+                  className="text-primary"
+                />
+              ) : null}
             </div>
           </div>
         );
