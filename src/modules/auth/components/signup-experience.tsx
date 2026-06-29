@@ -94,18 +94,18 @@ export function SignupExperience() {
         </div>
 
         <div className="relative">
-          <div className="mb-8 w-60 rounded-2xl border border-white/20 bg-white/12 p-4">
+          <div
+            className="mb-8 w-60 rounded-2xl border border-white/20 bg-white/12 p-4 backdrop-blur-md"
+            style={{ animation: "m-float 6s ease-in-out infinite" }}
+          >
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-white/80">Team pulse</span>
-              <span className="rounded-sm bg-white/20 px-2 py-0.5 text-[0.65rem] tracking-wide uppercase">
-                Sample
-              </span>
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[0.65rem]">+4%</span>
             </div>
             <p className="mt-2 font-display text-3xl font-semibold">92%</p>
-            <svg viewBox="0 0 220 44" className="mt-2 w-full" fill="none" aria-hidden="true">
+            <svg viewBox="0 0 220 44" className="mt-2 w-full" fill="none">
               <path d="M2 34 C 30 28, 45 12, 70 18 S 120 38, 150 20 S 200 8, 218 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
             </svg>
-            <p className="mt-2 text-[0.65rem] text-white/60">Illustrative preview</p>
           </div>
           <h2 className="m-display max-w-xs text-3xl leading-tight font-semibold">
             Set your whole organization in motion.
@@ -163,6 +163,12 @@ export function SignupExperience() {
             <Field id="confirm" label="Confirm password" type={showPw ? "text" : "password"} value={acct.confirm} onChange={setA("confirm")} error={err.confirm} autoComplete="new-password" />
           </div>
 
+          {Object.values(err).filter(Boolean)[0] ? (
+            <p className="mt-3 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
+              {Object.values(err).filter(Boolean)[0]}
+            </p>
+          ) : null}
+
           {/* Terms & Conditions checkbox */}
           <label className="mt-4 flex cursor-pointer items-start gap-2.5">
             <span
@@ -178,16 +184,11 @@ export function SignupExperience() {
             <input type="checkbox" className="sr-only" checked={agree} onChange={(e) => { setAgree(e.target.checked); if (e.target.checked) setErr((p) => ({ ...p, agree: undefined })); }} />
             <span className="text-xs leading-relaxed" style={{ color: "var(--m-muted)" }}>
               I agree to WorkPulse&apos;s{" "}
-              <span className="font-medium" style={{ color: "var(--m-accent-ink)" }}>Terms of Service</span>{" "}
+              <a href="#" className="font-medium hover:underline" style={{ color: "var(--m-accent-ink)" }}>Terms of Service</a>{" "}
               and{" "}
-              <span className="font-medium" style={{ color: "var(--m-accent-ink)" }}>Privacy Policy</span>.
+              <a href="#" className="font-medium hover:underline" style={{ color: "var(--m-accent-ink)" }}>Privacy Policy</a>.
             </span>
           </label>
-          {err.agree ? (
-            <p className="mt-1 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
-              {err.agree}
-            </p>
-          ) : null}
 
           <button type="submit" className="m-btn m-btn-primary mt-4 w-full">
             Continue <ArrowRight className="size-4" />
@@ -258,27 +259,19 @@ function Field({
   autoComplete?: string;
 }) {
   return (
-    <div>
-      <div className={`m-field ${error ? "m-error" : ""}`}>
-        <input
-          id={id}
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder=" "
-          autoComplete={autoComplete}
-          aria-invalid={!!error}
-          aria-describedby={error ? `${id}-error` : undefined}
-          style={toggle ? { paddingRight: "44px" } : undefined}
-        />
-        <label htmlFor={id}>{label}</label>
-        {toggle}
-      </div>
-      {error ? (
-        <p id={`${id}-error`} className="mt-1 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
-          {error}
-        </p>
-      ) : null}
+    <div className={`m-field ${error ? "m-error" : ""}`}>
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder=" "
+        autoComplete={autoComplete}
+        aria-invalid={!!error}
+        style={toggle ? { paddingRight: "44px" } : undefined}
+      />
+      <label htmlFor={id}>{label}</label>
+      {toggle}
     </div>
   );
 }

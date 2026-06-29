@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Gauge,
   Users,
+  UserMinus,
   Timer,
   Clock,
   BadgeDollarSign,
@@ -51,7 +52,7 @@ export function DashboardView({ users }: { users: User[] }) {
 
   if (personal) {
     return (
-      <div className="space-y-5 pt-1">
+      <div className="space-y-4 pt-1">
         <GreetingHeader />
         <PersonalDashboard />
       </div>
@@ -59,7 +60,7 @@ export function DashboardView({ users }: { users: User[] }) {
   }
 
   return (
-    <div className="space-y-5 pt-1">
+    <div className="space-y-4 pt-1">
       <GreetingHeader />
 
       <DashboardControls
@@ -96,13 +97,12 @@ export function DashboardView({ users }: { users: User[] }) {
               href="/employees"
             />
             <StatCard
-              label="Hours Tracked"
-              value={`${kpis.hours.value.toLocaleString()}h`}
-              icon={Clock}
-              hint="today"
-              delta={kpis.hours.deltaPct}
-              trend={kpis.hours.trend}
-              href="/time-tracking"
+              label="Inactive Users"
+              value={kpis.inactive.value}
+              icon={UserMinus}
+              delta={kpis.inactive.deltaPct}
+              trend={kpis.inactive.trend}
+              href="/employees"
             />
             <StatCard
               label="Running Timers"

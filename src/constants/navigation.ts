@@ -12,7 +12,6 @@ import {
   LineChart,
   Mail,
   Bell,
-  CreditCard,
   ShieldCheck,
   MonitorSmartphone,
   Headset,
@@ -71,18 +70,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Attendance", href: "/attendance", icon: CalendarCheck, permission: "attendance:view" },
       { label: "Leave", href: "/leave-requests", icon: DoorOpen, permission: "leave:view" },
       { label: "Approvals", href: "/approvals", icon: CheckCheck, permission: "approvals:view" },
-    ],
-  },
-  {
-    label: "Finance",
-    items: [
       { label: "Payroll", href: "/payroll", icon: Wallet, permission: "payroll:view" },
-      { label: "Billing", href: "/billing", icon: CreditCard, permission: "billing:view" },
-    ],
-  },
-  {
-    label: "Analytics",
-    items: [
       {
         label: "Analytics",
         href: "/insights",

@@ -17,7 +17,7 @@ const plexSans = IBM_Plex_Sans({
 const display = IBM_Plex_Sans({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700"],
   display: "swap",
 });
 

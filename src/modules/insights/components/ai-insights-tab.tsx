@@ -36,7 +36,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
-import { AiInsight } from "@/components/shared/ai-insight";
 import { initials } from "@/lib/format";
 import {
   ANOMALIES,
@@ -48,6 +47,7 @@ import {
   type AnomalyKind,
   type AnomalySeverity,
 } from "@/lib/mock-insights";
+import { AiReportCard, type AiSignal } from "./ai-report-card";
 import { cn } from "@/lib/utils";
 
 const KIND_ICON: Record<AnomalyKind, LucideIcon> = {
@@ -111,6 +111,11 @@ function buildRecommendations(open: Anomaly[]) {
       title: "Review after-hours work",
       detail: `${afterHours[0].user.name} logged late hours — confirm it's intended, not overload.`,
     });
+  recs.push({
+    id: "rec-recognize",
+    title: "Recognize top performers",
+    detail: "Five people sustained 90%+ productivity this week — recognition keeps momentum.",
+  });
   return recs.slice(0, 4);
 }
 
@@ -140,21 +145,24 @@ export function AiInsightsTab() {
 
   const recommendations = useMemo(() => buildRecommendations(open), [open]);
 
-  const insightTitle =
+  const signals: AiSignal[] = [
+    { label: "Productivity", value: "+3% WoW", tone: "up" },
+    {
+      label: "Burnout risks",
+      value: String(burnout),
+      tone: burnout > 0 ? "down" : "up",
+    },
+    {
+      label: "Needs attention",
+      value: String(open.length),
+      tone: open.length > 0 ? "down" : "up",
+    },
+  ];
+
+  const summary =
     open.length === 0
-      ? "Productivity up 3% WoW — nothing needs attention"
-      : `${open.length} ${open.length === 1 ? "person needs" : "people need"} a closer look${high ? `, ${high} high-priority` : ""}`;
-  const insightDetail =
-    open.length === 0
-      ? "Productivity rose 3% week-over-week. Everything reviewed — the team looks healthy."
-      : "Productivity rose 3% week-over-week, led by Engineering and Product. Open each item below to review and resolve.";
-  const insightPoints =
-    open.length === 0
-      ? undefined
-      : [
-          `${burnout} burnout risk${burnout === 1 ? "" : "s"} · ${drops} productivity drop${drops === 1 ? "" : "s"}`,
-          `${high} high-priority of ${open.length} open`,
-        ];
+      ? "Productivity rose 3% week-over-week. Nothing needs your attention right now — the team looks healthy."
+      : `Productivity rose 3% week-over-week, led by Engineering and Product. ${open.length} ${open.length === 1 ? "person needs" : "people need"} a closer look${high ? `, ${high} high-priority` : ""} — see below.`;
 
   const decide = (a: Anomaly, next: Status) => {
     setStatus((s) => ({ ...s, [a.id]: next }));
@@ -166,14 +174,9 @@ export function AiInsightsTab() {
 
   return (
     <div className="space-y-4">
-      <AiInsight
-        title={insightTitle}
-        detail={insightDetail}
-        points={insightPoints}
-        basis={`${attention.length} people-health signals reviewed this week`}
-      />
+      <AiReportCard title="Weekly summary" summary={summary} signals={signals} />
 
-      <div className="grid items-stretch gap-4 lg:grid-cols-3">
+      <div className="grid items-start gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -181,24 +184,12 @@ export function AiInsightsTab() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
-            {recommendations.length === 0 ? (
-              <p className="text-sm text-muted-foreground sm:col-span-2">
-                No recommendations right now — every open signal is being tracked
-                below.
-              </p>
-            ) : (
-              recommendations.map((r) => (
-                <div
-                  key={r.id}
-                  className="rounded-md border border-border p-3"
-                >
-                  <p className="text-sm font-medium">{r.title}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {r.detail}
-                  </p>
-                </div>
-              ))
-            )}
+            {recommendations.map((r) => (
+              <div key={r.id} className="rounded-lg border p-3">
+                <p className="text-sm font-medium">{r.title}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{r.detail}</p>
+              </div>
+            ))}
           </CardContent>
         </Card>
 
@@ -207,8 +198,13 @@ export function AiInsightsTab() {
 
       {/* Needs-attention list */}
       <Card>
-        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-          <CardTitle>Needs attention ({open.length})</CardTitle>
+        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+          <div className="space-y-1">
+            <CardTitle>Needs attention ({open.length})</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {high} high priority · {burnout} burnout · {drops} productivity drops
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {clearedCount > 0 ? (
               <span className="text-xs text-muted-foreground">
@@ -221,7 +217,7 @@ export function AiInsightsTab() {
                 type="button"
                 onClick={() => setSeverity(s)}
                 className={cn(
-                  "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
                   severity === s
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground",
@@ -254,7 +250,7 @@ export function AiInsightsTab() {
                     key={a.id}
                     type="button"
                     onClick={() => setActive(a)}
-                    className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+                    className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-accent/50"
                   >
                     <span className={`mt-1.5 size-2 shrink-0 rounded-full ${sev.dot}`} />
                     <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-feature-tint text-primary">
@@ -294,12 +290,12 @@ export function AiInsightsTab() {
 
 function AttentionTrend() {
   return (
-    <Card className="flex flex-col">
+    <Card>
       <CardHeader>
         <CardTitle className="text-base">Attention this week</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1">
-        <div className="h-full min-h-44 w-full">
+      <CardContent>
+        <div className="h-[176px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={ANOMALY_TREND} margin={{ left: -24, right: 4, top: 4 }}>
               <CartesianGrid vertical={false} stroke="var(--border)" />
@@ -364,10 +360,10 @@ function AttentionDialog({
                   <div className="flex items-start gap-3">
                     <span
                       className={cn(
-                        "flex size-10 shrink-0 items-center justify-center rounded-md",
+                        "flex size-10 shrink-0 items-center justify-center rounded-xl",
                         a.severity === "high"
                           ? "bg-destructive/12 text-destructive"
-                          : "bg-ai-tint text-ai",
+                          : "bg-feature-tint text-primary",
                       )}
                     >
                       <Icon className="size-5" />
@@ -385,7 +381,7 @@ function AttentionDialog({
                 </DialogHeader>
 
                 {/* Person */}
-                <div className="flex items-center gap-3 rounded-md border border-border p-3">
+                <div className="flex items-center gap-3 rounded-xl border p-3">
                   <Avatar className="size-10">
                     <AvatarImage src={a.user.avatarUrl} alt={a.user.name} />
                     <AvatarFallback>{initials(a.user.name)}</AvatarFallback>
@@ -406,8 +402,8 @@ function AttentionDialog({
                   </Button>
                 </div>
 
-                {/* Trigger · detail · suggested action */}
-                <dl className="space-y-3 rounded-md bg-muted/50 p-4 text-sm">
+                {/* Trigger + detail */}
+                <dl className="space-y-3 rounded-xl bg-muted/50 p-4 text-sm">
                   <div>
                     <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       What triggered it
@@ -420,15 +416,18 @@ function AttentionDialog({
                     </dt>
                     <dd className="mt-0.5 text-muted-foreground">{a.detail}</dd>
                   </div>
-                  <div>
-                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Suggested action
-                    </dt>
-                    <dd className="mt-0.5 text-muted-foreground">
-                      {KIND_ACTION[a.kind]}
-                    </dd>
-                  </div>
                 </dl>
+
+                {/* Suggested action */}
+                <div className="flex gap-2.5 rounded-xl bg-feature-tint p-3 text-sm">
+                  <Lightbulb className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div>
+                    <p className="font-medium text-primary">Suggested action</p>
+                    <p className="mt-0.5 text-foreground/80">
+                      {KIND_ACTION[a.kind]}
+                    </p>
+                  </div>
+                </div>
 
                 <DialogFooter>
                   <Button

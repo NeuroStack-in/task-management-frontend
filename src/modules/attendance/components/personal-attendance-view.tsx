@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, CalendarCheck, Clock, CalendarOff, Umbrella, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarCheck, Clock, CalendarOff, Plane } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,7 +104,7 @@ export function PersonalAttendanceView() {
         description="Your own clock-ins, hours, and time off — only you can see this."
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Attendance rate"
           value={`${rate}%`}
@@ -125,16 +125,10 @@ export function PersonalAttendanceView() {
           hint="this month"
         />
         <StatCard
-          label="On leave"
-          value={summary.leave}
-          icon={Umbrella}
-          hint="approved leave days"
-        />
-        <StatCard
-          label="Absent"
-          value={summary.absent}
-          icon={AlertCircle}
-          hint="unexcused absences"
+          label="Time off"
+          value={summary.leave + summary.absent}
+          icon={Plane}
+          hint={`${summary.leave} leave · ${summary.absent} absent`}
         />
       </div>
 

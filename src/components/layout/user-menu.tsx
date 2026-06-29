@@ -34,7 +34,8 @@ export function UserMenu() {
         render={
           <Button
             variant="ghost"
-            className="h-9 gap-2 rounded-md border border-border px-1.5 sm:pr-3"
+            size="icon"
+            className="size-9 rounded-full border border-border p-0"
             aria-label="Account menu"
           />
         }
@@ -45,7 +46,6 @@ export function UserMenu() {
             {initials(user.name)}
           </AvatarFallback>
         </Avatar>
-        <span className="hidden text-sm font-medium sm:inline">{user.name}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <div className="flex flex-col px-2 py-1.5">

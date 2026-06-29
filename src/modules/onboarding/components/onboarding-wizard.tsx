@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -49,38 +49,47 @@ function CheckRow({ label, defaultOn }: { label: string; defaultOn?: boolean }) 
   );
 }
 
-function InviteStep() {
-  const [rows, setRows] = useState(3);
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="space-y-1.5">
-          <Label htmlFor={`ob-invite-${i}`} className="sr-only">
-            Teammate email {i + 1}
-          </Label>
-          <Input
-            id={`ob-invite-${i}`}
-            type="email"
-            placeholder="teammate@acme.com"
-          />
-        </div>
-      ))}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setRows((n) => n + 1)}
-      >
-        <Plus className="size-4" /> Add another
-      </Button>
-    </div>
-  );
-}
-
 function StepContent({ index }: { index: number }) {
   switch (ONBOARDING_STEPS[index].key) {
+    case "org":
+      return (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ob-company">Company name</Label>
+            <Input id="ob-company" placeholder="Acme Inc." defaultValue="Acme Corporation" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ob-tz">Timezone</Label>
+              <Input id="ob-tz" defaultValue="America/New_York" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ob-site">Website</Label>
+              <Input id="ob-site" placeholder="acme.com" />
+            </div>
+          </div>
+        </div>
+      );
     case "team":
-      return <InviteStep />;
+      return (
+        <div className="space-y-3">
+          {["", "", ""].map((_, i) => (
+            <div key={i} className="space-y-1.5">
+              <Label htmlFor={`ob-invite-${i}`} className="sr-only">
+                Teammate email {i + 1}
+              </Label>
+              <Input
+                id={`ob-invite-${i}`}
+                type="email"
+                placeholder="teammate@acme.com"
+              />
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm">
+            + Add another
+          </Button>
+        </div>
+      );
     case "roles":
       return (
         <div className="grid gap-2.5 sm:grid-cols-2">

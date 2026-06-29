@@ -21,22 +21,16 @@ export function LoginExperience() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
-  // Per-field errors so every problem shows at once; `form` is a top-level
-  // auth failure (e.g. unknown account) returned by the login service.
-  const [fieldErr, setFieldErr] = useState<{ email?: string; password?: string }>({});
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
 
   const onSignin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const fe: { email?: string; password?: string } = {};
-    if (!email.trim()) fe.email = "Enter your email.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
-      fe.email = "Enter a valid email address.";
-    if (!password) fe.password = "Enter your password.";
-    setFieldErr(fe);
-    if (Object.keys(fe).length) return;
+    if (!email.trim() || !password) {
+      setError("Enter your email and password.");
+      return;
+    }
     setStatus("loading");
     try {
       await login(email.trim(), password);
@@ -54,12 +48,10 @@ export function LoginExperience() {
 
   const onReset = (e: React.FormEvent) => {
     e.preventDefault();
-    const fe: { email?: string } = {};
-    if (!email.trim()) fe.email = "Enter your email.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
-      fe.email = "Enter a valid email address.";
-    setFieldErr(fe);
-    if (Object.keys(fe).length) return;
+    if (!email.trim()) {
+      setError("Enter your email.");
+      return;
+    }
     setSent(true);
   };
 
@@ -112,7 +104,7 @@ export function LoginExperience() {
                 type="email"
                 value={email}
                 onChange={setEmail}
-                error={fieldErr.email}
+                error={!!error}
               />
               <div>
                 <Field
@@ -121,7 +113,7 @@ export function LoginExperience() {
                   type={showPw ? "text" : "password"}
                   value={password}
                   onChange={setPassword}
-                  error={fieldErr.password}
+                  error={!!error}
                   toggle={
                     <button
                       type="button"
@@ -141,7 +133,6 @@ export function LoginExperience() {
                     onClick={() => {
                       setMode("reset");
                       setError(null);
-                      setFieldErr({});
                     }}
                     className="text-xs font-medium hover:underline"
                     style={{ color: "var(--m-accent-ink)" }}
@@ -193,19 +184,15 @@ export function LoginExperience() {
               </span>
               <span className="h-px flex-1" style={{ background: "var(--m-border)" }} />
             </div>
-            <div className="grid gap-2.5 sm:grid-cols-2">
+            <div className="grid grid-cols-3 gap-3">
               <button type="button" className="m-social" aria-label="Continue with Google">
-                <GoogleIcon /> Google
+                <GoogleIcon />
               </button>
               <button type="button" className="m-social" aria-label="Continue with Microsoft">
-                <MicrosoftIcon /> Microsoft
+                <MicrosoftIcon />
               </button>
-              <button
-                type="button"
-                className="m-social sm:col-span-2"
-                aria-label="Continue with SAML or enterprise single sign-on"
-              >
-                <KeyRound className="size-[18px]" /> SAML / Enterprise SSO
+              <button type="button" className="m-social" aria-label="Single sign-on">
+                <KeyRound className="size-[18px]" />
               </button>
             </div>
 
@@ -257,9 +244,14 @@ export function LoginExperience() {
                     type="email"
                     value={email}
                     onChange={setEmail}
-                    error={fieldErr.email}
+                    error={!!error}
                   />
                 </div>
+                {error ? (
+                  <p className="mt-3 text-xs" style={{ color: "var(--m-danger)" }}>
+                    {error}
+                  </p>
+                ) : null}
                 <button type="submit" className="m-btn m-btn-primary mt-6 w-full">
                   Send reset link
                 </button>
@@ -272,7 +264,6 @@ export function LoginExperience() {
                 setMode("signin");
                 setSent(false);
                 setError(null);
-                setFieldErr({});
               }}
               className="mt-6 inline-flex items-center gap-1.5 text-sm hover:underline"
               style={{ color: "var(--m-muted)" }}
@@ -301,31 +292,22 @@ function Field({
   type: string;
   value: string;
   onChange: (v: string) => void;
-  error?: string;
+  error?: boolean;
   toggle?: React.ReactNode;
 }) {
   return (
-    <div>
-      <div className={`m-field ${error ? "m-error" : ""}`}>
-        <input
-          id={id}
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder=" "
-          autoComplete={type === "password" ? "current-password" : "email"}
-          aria-invalid={!!error}
-          aria-describedby={error ? `${id}-error` : undefined}
-          style={toggle ? { paddingRight: "44px" } : undefined}
-        />
-        <label htmlFor={id}>{label}</label>
-        {toggle}
-      </div>
-      {error ? (
-        <p id={`${id}-error`} className="mt-1.5 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
-          {error}
-        </p>
-      ) : null}
+    <div className={`m-field ${error ? "m-error" : ""}`}>
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder=" "
+        autoComplete={type === "password" ? "current-password" : "email"}
+        style={toggle ? { paddingRight: "44px" } : undefined}
+      />
+      <label htmlFor={id}>{label}</label>
+      {toggle}
     </div>
   );
 }
