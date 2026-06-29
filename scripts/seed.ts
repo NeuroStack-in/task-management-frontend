@@ -45,6 +45,20 @@ const DEMO_EMPLOYEE: User = {
   organizationId: ORG_ID,
 };
 
+/** A fixed Admin account for the demo login (email: admin@acme.test, any password). */
+const DEMO_ADMIN: User = {
+  id: "user-admin",
+  name: "Jordan Avery",
+  email: "admin@acme.test",
+  roleId: "role-admin",
+  jobTitle: "IT Administrator",
+  department: "People Ops",
+  team: "HR",
+  status: "active",
+  productivityScore: 84,
+  organizationId: ORG_ID,
+};
+
 const DEPARTMENTS = [
   "Engineering",
   "Product",
@@ -381,8 +395,13 @@ const seededUsers = generateUsers(120);
 const seededProjects = generateProjects(40, seededUsers);
 const seededTasks = generateTasks(seededProjects);
 assignDemoEmployee(seededProjects, seededTasks);
-// Insert the fixed demo Employee right after the Owner for users.json.
-writeJson("users.json", [seededUsers[0], DEMO_EMPLOYEE, ...seededUsers.slice(1)]);
+// Insert the fixed demo Employee + Admin right after the Owner for users.json.
+writeJson("users.json", [
+  seededUsers[0],
+  DEMO_EMPLOYEE,
+  DEMO_ADMIN,
+  ...seededUsers.slice(1),
+]);
 writeJson("projects.json", seededProjects);
 writeJson("tasks.json", seededTasks);
 console.log("Done.");

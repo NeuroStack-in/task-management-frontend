@@ -10,12 +10,15 @@ export const WILDCARD = "*" as const;
 
 /**
  * Contributor-only capabilities. These belong to individual contributors who do
- * their own work in the tool (e.g. logging their own time) — NOT to oversight
- * roles (Owner/Admin/HR/Manager). The wildcard "*" does NOT auto-grant these;
- * a role must list them explicitly. See rbac.ts `canAccess`.
+ * their own work in the tool (e.g. logging their own time, requesting their own
+ * leave) — NOT to oversight roles (Owner/Admin/HR/Manager). The wildcard "*"
+ * does NOT auto-grant these; a role must list them explicitly. See rbac.ts
+ * `canAccess`. (Oversight roles still approve leave via `leave:approve`.)
  */
 export const CONTRIBUTOR_ONLY_PERMISSIONS: PermissionId[] = [
   "time-tracking:edit",
+  "leave:view",
+  "leave:request",
 ];
 
 const p = (

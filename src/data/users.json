@@ -25,6 +25,18 @@
     "organizationId": "org-acme"
   },
   {
+    "id": "user-admin",
+    "name": "Jordan Avery",
+    "email": "admin@acme.test",
+    "roleId": "role-admin",
+    "jobTitle": "IT Administrator",
+    "department": "People Ops",
+    "team": "HR",
+    "status": "active",
+    "productivityScore": 84,
+    "organizationId": "org-acme"
+  },
+  {
     "id": "user-0001",
     "name": "Carole Ryan",
     "email": "carole_ryan40@acme.test",

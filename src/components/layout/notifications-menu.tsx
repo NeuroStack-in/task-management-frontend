@@ -11,7 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { DEMO_NOTIFICATIONS, timeAgo } from "@/lib/mock-notifications";
+import { usePermissions } from "@/hooks/use-permissions";
+import { notificationsFor, timeAgo } from "@/lib/mock-notifications";
 import { cn } from "@/lib/utils";
 
 export function NotificationsMenu() {
@@ -19,13 +20,13 @@ export function NotificationsMenu() {
   const unread = notifications.filter((n) => !n.read).length;
   const markAllRead = useNotificationStore((s) => s.markAllRead);
   const markRead = useNotificationStore((s) => s.markRead);
-  const seed = useNotificationStore((s) => s.seed);
+  const seedFor = useNotificationStore((s) => s.seedFor);
+  const { can, role } = usePermissions();
 
+  // Re-scope to the active role (re-seeds on role switch, idempotent otherwise).
   useEffect(() => {
-    if (useNotificationStore.getState().notifications.length === 0) {
-      seed(DEMO_NOTIFICATIONS);
-    }
-  }, [seed]);
+    seedFor(role?.id ?? "anon", notificationsFor(can));
+  }, [seedFor, role, can]);
 
   return (
     <DropdownMenu>

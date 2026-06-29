@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useNotificationStore } from "@/stores/notification.store";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
-  DEMO_NOTIFICATIONS,
+  notificationsFor,
   NOTIFICATION_TYPE_META,
   timeAgo,
 } from "@/lib/mock-notifications";
@@ -37,7 +38,8 @@ export function NotificationsCenter() {
   const markRead = useNotificationStore((s) => s.markRead);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
   const remove = useNotificationStore((s) => s.remove);
-  const seed = useNotificationStore((s) => s.seed);
+  const seedFor = useNotificationStore((s) => s.seedFor);
+  const { can, role } = usePermissions();
 
   const [filter, setFilter] = useState<NotificationType | "all" | "unread">(
     "all",
@@ -49,12 +51,10 @@ export function NotificationsCenter() {
     if (!n.read) markRead(n.id);
   };
 
-  // Seed if the user lands here before opening the navbar dropdown.
+  // Re-scope notifications to the active role (re-seeds on role switch).
   useEffect(() => {
-    if (useNotificationStore.getState().notifications.length === 0) {
-      seed(DEMO_NOTIFICATIONS);
-    }
-  }, [seed]);
+    seedFor(role?.id ?? "anon", notificationsFor(can));
+  }, [seedFor, role, can]);
 
   const unread = notifications.filter((n) => !n.read).length;
 
