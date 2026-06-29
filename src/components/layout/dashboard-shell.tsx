@@ -28,7 +28,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <aside className="hidden shrink-0 p-3 lg:block">
+      <aside className="hidden shrink-0 py-3 pl-3 lg:block">
         <div
           className={cn(
             "sticky top-3 h-[calc(100vh-1.5rem)] transition-[width] duration-200",

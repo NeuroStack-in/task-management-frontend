@@ -20,14 +20,13 @@ import {
 import { toast } from "sonner";
 import {
   DndContext,
-  DragOverlay,
   PointerSensor,
+  closestCorners,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragStartEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -109,8 +108,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
   const [taskOpen, setTaskOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [taskView, setTaskView] = useState<"board" | "list">("list");
+  const [taskView, setTaskView] = useState<"board" | "list">("board");
   const [teamOpen, setTeamOpen] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -233,15 +231,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
     );
   };
 
-  const activeTask = activeTaskId
-    ? (tasks.find((t) => t.id === activeTaskId) ?? null)
-    : null;
-
-  const handleDragStart = (e: DragStartEvent) =>
-    setActiveTaskId(e.active.id as string);
-
   const handleDragEnd = (e: DragEndEvent) => {
-    setActiveTaskId(null);
     const { active, over } = e;
     if (!over) return;
     const target = over.id as TaskStatus;
@@ -487,9 +477,8 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
         {taskView === "board" ? (
           <DndContext
             sensors={sensors}
-            onDragStart={handleDragStart}
+            collisionDetection={closestCorners}
             onDragEnd={handleDragEnd}
-            onDragCancel={() => setActiveTaskId(null)}
           >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {TASK_STATUS_ORDER.map((col) => (
@@ -503,13 +492,6 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
                 />
               ))}
             </div>
-            <DragOverlay dropAnimation={null}>
-              {activeTask ? (
-                <div className="w-64 rotate-2 rounded-xl border bg-card p-3 shadow-xl">
-                  <TaskCardContent task={activeTask} userMap={userMap} />
-                </div>
-              ) : null}
-            </DragOverlay>
           </DndContext>
         ) : (
           <TaskListView
@@ -766,7 +748,7 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex flex-col rounded-2xl border bg-muted/40 p-3 transition-colors",
+        "flex min-h-[140px] flex-col rounded-2xl border bg-muted/40 p-3 transition-colors",
         isOver && "bg-primary/5 ring-2 ring-primary/40",
       )}
     >
@@ -819,7 +801,10 @@ function TaskCard({
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: task.id });
   const style = transform
-    ? { transform: CSS.Translate.toString(transform), zIndex: 50 }
+    ? {
+        transform: `${CSS.Translate.toString(transform)} rotate(2deg)`,
+        zIndex: 50,
+      }
     : undefined;
 
   return (
@@ -830,7 +815,7 @@ function TaskCard({
       {...listeners}
       className={cn(
         "group/task relative cursor-grab touch-none rounded-xl border bg-card p-3 active:cursor-grabbing",
-        isDragging && "opacity-40",
+        isDragging && "shadow-xl ring-2 ring-primary/30",
       )}
     >
       <button

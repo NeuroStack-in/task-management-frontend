@@ -89,7 +89,6 @@ export function ProjectsList({
                   status === "active" && "bg-accent text-accent-foreground",
                   status === "on_hold" && "bg-warning/15 text-warning",
                   status === "completed" && "bg-success/12 text-success",
-                  status === "archived" && "bg-muted text-muted-foreground",
                 )}
               >
                 <span className={cn("size-1.5 rounded-full", toneDot[meta.tone])} />

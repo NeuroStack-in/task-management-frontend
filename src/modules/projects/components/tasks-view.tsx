@@ -11,10 +11,10 @@ import {
   type Task,
   type TaskStatus,
 } from "../types";
-import { dueLabel, toneDot, toneSoft } from "../lib";
+import { dueLabel, isTaskOverdue, toneDot, toneSoft } from "../lib";
 import { StatusBadge } from "./parts";
 
-type Filter = TaskStatus | "all";
+type Filter = TaskStatus | "all" | "overdue";
 
 interface TasksViewProps {
   /** Tasks already narrowed by the shared search in the parent toolbar. */
@@ -36,7 +36,11 @@ export function TasksView({
 }: TasksViewProps) {
   const visible = useMemo(() => {
     const list =
-      filter === "all" ? tasks : tasks.filter((t) => t.status === filter);
+      filter === "all"
+        ? tasks
+        : filter === "overdue"
+          ? tasks.filter(isTaskOverdue)
+          : tasks.filter((t) => t.status === filter);
     // Open work first, then by due date (undated last), high priority breaks ties.
     const prioRank = { high: 0, medium: 1, low: 2 };
     return [...list].sort((a, b) => {

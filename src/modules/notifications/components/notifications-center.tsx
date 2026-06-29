@@ -1,11 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { BellOff, Check, CheckCheck, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { BellOff, Check, CheckCheck, X, ArrowUpRight } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useNotificationStore } from "@/stores/notification.store";
 import {
@@ -13,7 +20,7 @@ import {
   NOTIFICATION_TYPE_META,
   timeAgo,
 } from "@/lib/mock-notifications";
-import type { NotificationType } from "@/types";
+import type { AppNotification, NotificationType } from "@/types";
 import { cn } from "@/lib/utils";
 
 const TYPES: NotificationType[] = [
@@ -34,6 +41,9 @@ export function NotificationsCenter() {
   const [filter, setFilter] = useState<NotificationType | "all" | "unread">(
     "all",
   );
+
+  const router = useRouter();
+  const [selected, setSelected] = useState<AppNotification | null>(null);
 
   // Seed if the user lands here before opening the navbar dropdown.
   useEffect(() => {
@@ -134,15 +144,16 @@ export function NotificationsCenter() {
                           {n.message}
                         </p>
                         <div className="mt-1.5 flex items-center gap-3">
-                          {n.href ? (
-                            <Link
-                              href={n.href}
-                              onClick={() => markRead(n.id)}
-                              className="text-xs font-medium text-primary hover:underline"
-                            >
-                              View
-                            </Link>
-                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              markRead(n.id);
+                              setSelected(n);
+                            }}
+                            className="text-xs font-medium text-primary hover:underline"
+                          >
+                            View
+                          </button>
                           {!n.read ? (
                             <button
                               type="button"
@@ -170,7 +181,64 @@ export function NotificationsCenter() {
             </Card>
           )}
         </div>
+
+        <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+          {selected ? (
+            <NotificationDialog
+              notification={selected}
+              onView={() => {
+                if (selected.href) router.push(selected.href);
+                setSelected(null);
+              }}
+            />
+          ) : null}
+        </Dialog>
       </div>
+  );
+}
+
+function NotificationDialog({
+  notification,
+  onView,
+}: {
+  notification: AppNotification;
+  onView: () => void;
+}) {
+  const meta = NOTIFICATION_TYPE_META[notification.type];
+  const Icon = meta.icon;
+  return (
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <div className="flex items-start gap-3">
+          <span
+            className={cn(
+              "flex size-9 shrink-0 items-center justify-center rounded-full",
+              meta.className,
+            )}
+          >
+            <Icon className="size-4" />
+          </span>
+          <div className="min-w-0 space-y-0.5">
+            <DialogTitle className="text-base leading-snug">
+              {notification.title}
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              {meta.label} · {timeAgo(notification.createdAt)}
+            </p>
+          </div>
+        </div>
+      </DialogHeader>
+
+      <p className="text-sm text-muted-foreground">{notification.message}</p>
+
+      <DialogFooter showCloseButton>
+        {notification.href ? (
+          <Button onClick={onView}>
+            View details <ArrowUpRight className="size-4" />
+          </Button>
+        ) : null}
+      </DialogFooter>
+    </DialogContent>
   );
 }
 

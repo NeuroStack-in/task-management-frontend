@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Plane, CalendarPlus, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -51,9 +51,15 @@ export function LeaveRequestsView() {
   const user = useAuthStore((s) => s.user);
   const requests = useLeaveStore((s) => s.requests);
   const cancelRequest = useLeaveStore((s) => s.cancelRequest);
+  const seedFor = useLeaveStore((s) => s.seedFor);
   const [open, setOpen] = useState(false);
 
   const userId = user?.id ?? "";
+
+  // Give a fresh demo user some leave history so the page isn't blank (once).
+  useEffect(() => {
+    if (user?.id) seedFor(user.id, user.name);
+  }, [user?.id, user?.name, seedFor]);
   const mine = useMemo(
     () =>
       requests
@@ -139,25 +145,25 @@ export function LeaveRequestsView() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Type</TableHead>
+                <TableHead className="pl-5">Type</TableHead>
                 <TableHead>Dates</TableHead>
-                <TableHead className="text-right">Days</TableHead>
+                <TableHead className="pr-6 text-right">Days</TableHead>
                 <TableHead>Reason</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Submitted</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead className="pr-5 text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {mine.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell className="font-medium">
+                  <TableCell className="pl-5 font-medium">
                     {LEAVE_TYPE_LABEL[r.type]}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {fmtRange(r.startDate, r.endDate)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{r.days}</TableCell>
+                  <TableCell className="pr-6 text-right tabular-nums">{r.days}</TableCell>
                   <TableCell className="max-w-[16rem] truncate text-muted-foreground">
                     {r.reason}
                   </TableCell>
@@ -169,7 +175,7 @@ export function LeaveRequestsView() {
                   <TableCell className="text-muted-foreground tabular-nums">
                     {fmtDay(r.submittedAt)}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="pr-5 text-right">
                     {r.status === "pending" ? (
                       <Button
                         variant="ghost"

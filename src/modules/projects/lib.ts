@@ -122,6 +122,12 @@ export function projectStats(projects: Project[]): ProjectStats {
   };
 }
 
+/** An open task whose due date has already passed (excludes done & undated). */
+export function isTaskOverdue(t: Task): boolean {
+  if (!t.dueDate || t.status === "done") return false;
+  return daysUntil(t.dueDate) < 0;
+}
+
 /** Counts per task status for one project's tasks. */
 export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
   const counts: Record<TaskStatus, number> = {

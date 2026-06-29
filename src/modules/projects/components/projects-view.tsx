@@ -33,7 +33,7 @@ import {
   type Task,
   type TaskStatus,
 } from "../types";
-import { projectStats, toneDot, type UserMini } from "../lib";
+import { isTaskOverdue, projectStats, toneDot, type UserMini } from "../lib";
 import { ProjectCard } from "./project-card";
 import { ProjectsList } from "./projects-list";
 import { ProjectsStatBand } from "./projects-stat-band";
@@ -43,7 +43,7 @@ import { Segmented } from "./parts";
 
 type View = "projects" | "tasks";
 type Layout = "grid" | "list";
-type StatusFilter = ProjectStatus | "all";
+type StatusFilter = ProjectStatus | "all" | "overdue";
 
 interface ProjectsViewProps {
   tasks: Task[];
@@ -77,7 +77,9 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
   const [view, setView] = useState<View>("projects");
   const [layout, setLayout] = useState<Layout>("grid");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [taskFilter, setTaskFilter] = useState<TaskStatus | "all">("all");
+  const [taskFilter, setTaskFilter] = useState<TaskStatus | "all" | "overdue">(
+    "all",
+  );
   const [query, setQuery] = useState("");
   const [newOpen, setNewOpen] = useState(false);
 
@@ -111,17 +113,27 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
     return map;
   }, [projects, tasksByProject]);
 
+  // Projects carrying at least one open, past-due task.
+  const overdueProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of projects) {
+      const list = tasksByProject.get(p.id) ?? [];
+      if (list.some(isTaskOverdue)) ids.add(p.id);
+    }
+    return ids;
+  }, [projects, tasksByProject]);
+
   const statusCounts = useMemo(() => {
     const c: Record<StatusFilter, number> = {
       all: projects.length,
       active: 0,
       on_hold: 0,
       completed: 0,
-      archived: 0,
+      overdue: overdueProjectIds.size,
     };
     for (const p of projects) c[p.status] += 1;
     return c;
-  }, [projects]);
+  }, [projects, overdueProjectIds]);
 
   // Tasks matching the shared search (title or parent project name/key).
   const searchedTasks = useMemo(() => {
@@ -138,14 +150,18 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
   }, [visibleTasks, projectMap, query]);
 
   const taskCounts = useMemo(() => {
-    const c: Record<TaskStatus | "all", number> = {
+    const c: Record<TaskStatus | "all" | "overdue", number> = {
       all: searchedTasks.length,
       todo: 0,
       in_progress: 0,
       in_review: 0,
       done: 0,
+      overdue: 0,
     };
-    for (const t of searchedTasks) c[t.status] += 1;
+    for (const t of searchedTasks) {
+      c[t.status] += 1;
+      if (isTaskOverdue(t)) c.overdue += 1;
+    }
     return c;
   }, [searchedTasks]);
 
@@ -153,7 +169,11 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
   const filteredProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
     return projects.filter((p) => {
-      if (statusFilter !== "all" && p.status !== statusFilter) return false;
+      if (statusFilter === "overdue") {
+        if (!overdueProjectIds.has(p.id)) return false;
+      } else if (statusFilter !== "all" && p.status !== statusFilter) {
+        return false;
+      }
       if (!q) return true;
       if (
         p.name.toLowerCase().includes(q) ||
@@ -164,7 +184,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
       const list = tasksByProject.get(p.id) ?? [];
       return list.some((t) => t.title.toLowerCase().includes(q));
     });
-  }, [projects, statusFilter, query, tasksByProject]);
+  }, [projects, statusFilter, query, tasksByProject, overdueProjectIds]);
 
   const leads = useMemo(
     () => Object.values(userMap).sort((a, b) => a.name.localeCompare(b.name)),
@@ -231,6 +251,13 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
                   dot={toneDot[PROJECT_STATUS_META[s].tone]}
                 />
               ))}
+              <FilterChip
+                active={statusFilter === "overdue"}
+                onClick={() => setStatusFilter("overdue")}
+                label="Overdue"
+                count={statusCounts.overdue}
+                dot="bg-destructive"
+              />
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -250,6 +277,13 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
                   dot={toneDot[TASK_STATUS_META[s].tone]}
                 />
               ))}
+              <FilterChip
+                active={taskFilter === "overdue"}
+                onClick={() => setTaskFilter("overdue")}
+                label="Overdue"
+                count={taskCounts.overdue}
+                dot="bg-destructive"
+              />
             </div>
           )}
 

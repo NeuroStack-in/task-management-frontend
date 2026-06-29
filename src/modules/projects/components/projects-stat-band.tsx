@@ -1,6 +1,12 @@
 "use client";
 
-import { Activity, FolderKanban, Gauge, type LucideIcon } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  FolderKanban,
+  Gauge,
+  type LucideIcon,
+} from "lucide-react";
 import { Sparkline } from "@/components/shared/sparkline";
 import { cn } from "@/lib/utils";
 import type { ProjectStats } from "../lib";
@@ -14,6 +20,8 @@ interface Segment {
   chip: string;
   primary?: boolean;
   spark?: number[];
+  /** Optional accent colour for the value (e.g. amber for at-risk). */
+  accent?: string;
 }
 
 /**
@@ -49,10 +57,19 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
       icon: Gauge,
       chip: "bg-feature-tint text-primary",
     },
+    {
+      key: "atRisk",
+      label: "At risk",
+      value: stats.atRisk,
+      sub: "over budget or overdue",
+      icon: AlertTriangle,
+      chip: "bg-warning/15 text-warning",
+      accent: "text-warning",
+    },
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border bg-border sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border bg-border sm:grid-cols-2 lg:grid-cols-4">
       {segments.map((s) => {
         const Icon = s.icon;
         return (
@@ -76,7 +93,12 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
             </div>
             <div className="flex items-end justify-between gap-2">
               <div className="space-y-1">
-                <p className="font-display text-3xl leading-none font-semibold tracking-tight tabular-nums">
+                <p
+                  className={cn(
+                    "font-display text-3xl leading-none font-semibold tracking-tight tabular-nums",
+                    s.accent,
+                  )}
+                >
                   {s.value}
                 </p>
                 <p className="text-xs text-muted-foreground">{s.sub}</p>

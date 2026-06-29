@@ -6,7 +6,7 @@
  * script, the data accessors, and the UI.
  */
 
-export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
+export type ProjectStatus = "active" | "on_hold" | "completed";
 
 export interface Project {
   id: string;
@@ -61,14 +61,12 @@ export const PROJECT_STATUS_META: Record<ProjectStatus, StatusMeta> = {
   active: { label: "Active", tone: "primary" },
   on_hold: { label: "On hold", tone: "warning" },
   completed: { label: "Completed", tone: "success" },
-  archived: { label: "Archived", tone: "muted" },
 };
 
 export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
   "active",
   "on_hold",
   "completed",
-  "archived",
 ];
 
 export interface TaskStatusMeta {

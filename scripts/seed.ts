@@ -178,8 +178,7 @@ const TASK_VERB = [
 const PROJECT_STATUS_WEIGHTS: { value: ProjectStatus; weight: number }[] = [
   { value: "active", weight: 58 },
   { value: "on_hold", weight: 14 },
-  { value: "completed", weight: 21 },
-  { value: "archived", weight: 7 },
+  { value: "completed", weight: 28 },
 ];
 
 /** A trended 7-point pulse derived from a baseline + bounded jitter. */
@@ -197,8 +196,6 @@ function progressForStatus(status: ProjectStatus): number {
   switch (status) {
     case "completed":
       return 100;
-    case "archived":
-      return faker.number.int({ min: 35, max: 95 });
     case "on_hold":
       return faker.number.int({ min: 15, max: 70 });
     default:
@@ -254,7 +251,7 @@ function generateProjects(count: number, users: User[]): Project[] {
     const startOffset = -faker.number.int({ min: 20, max: 210 });
     const span = faker.number.int({ min: 45, max: 170 });
     const dueOffset =
-      status === "completed" || status === "archived"
+      status === "completed"
         ? startOffset + faker.number.int({ min: 30, max: span })
         : startOffset + span;
 
@@ -285,11 +282,6 @@ function taskStatusFor(project: Project): TaskStatus {
       { value: "done", weight: 88 },
       { value: "in_review", weight: 8 },
       { value: "in_progress", weight: 4 },
-    ]);
-  if (project.status === "archived")
-    return faker.helpers.weightedArrayElement([
-      { value: "done", weight: 70 },
-      { value: "todo", weight: 30 },
     ]);
   return faker.helpers.weightedArrayElement([
     { value: "todo", weight: 34 },

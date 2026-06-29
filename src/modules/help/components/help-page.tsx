@@ -259,7 +259,30 @@ export function HelpPage() {
   return (
     <div className="space-y-10">
       {/* ── Hero ── */}
-      <section className="relative overflow-hidden rounded-[1.6rem] bg-feature px-6 py-12 text-center text-feature-foreground sm:py-16">
+      <section className="relative overflow-hidden rounded-[1.6rem] bg-feature px-6 py-12 text-center shadow-xl shadow-primary/15 ring-1 ring-inset ring-white/10 sm:py-16">
+        {/* Depth: a bright crown highlight fading into a deeper base. */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(120% 90% at 50% -10%, rgba(255,255,255,0.20), rgba(255,255,255,0) 55%), linear-gradient(180deg, rgba(0,0,0,0) 38%, rgba(0,0,0,0.34) 100%)",
+          }}
+        />
+        {/* Soft top glow. */}
+        <div className="pointer-events-none absolute -top-28 left-1/2 size-80 -translate-x-1/2 rounded-full bg-white/10 blur-3xl" />
+        {/* Barely-there grid texture, masked to fade out toward the edges. */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.05]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.9) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+            maskImage: "radial-gradient(80% 70% at 50% 0%, black, transparent)",
+            WebkitMaskImage: "radial-gradient(80% 70% at 50% 0%, black, transparent)",
+          }}
+        />
+
+        <div className="relative z-10 text-feature-foreground">
         <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
           How can we help?
         </h1>
@@ -298,6 +321,7 @@ export function HelpPage() {
               {term}
             </button>
           ))}
+        </div>
         </div>
       </section>
 

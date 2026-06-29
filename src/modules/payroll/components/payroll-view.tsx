@@ -15,10 +15,11 @@ import {
   ChevronRight,
   Check,
   Download,
-  FileText,
+  AlertCircle,
   Receipt,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { AiInsight } from "@/components/shared/ai-insight";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -202,6 +203,13 @@ export function PayrollView() {
   const period = PAYROLL_PERIODS[periodIndex];
   const run = useMemo(() => payrollRun(period.year, period.month), [period]);
 
+  // Previous period for the AI variance insight.
+  const prevPeriod = PAYROLL_PERIODS[periodIndex + 1];
+  const prevRun = useMemo(
+    () => (prevPeriod ? payrollRun(prevPeriod.year, prevPeriod.month) : null),
+    [prevPeriod],
+  );
+
   const deptOptions = useMemo(() => {
     const names = [...new Set(run.rows.map((r) => r.department))].sort();
     return [
@@ -242,6 +250,24 @@ export function PayrollView() {
     ? Math.round(totals.net / totals.headcount)
     : 0;
 
+  const pendingCount = run.rows.filter((r) => r.status === "pending").length;
+
+  // Pay-period variance for the AI insight.
+  const netVariancePct =
+    prevRun && prevRun.totals.net > 0
+      ? Math.round(
+          ((run.totals.net - prevRun.totals.net) / prevRun.totals.net) * 100,
+        )
+      : null;
+  const hoursVariancePct =
+    prevRun && prevRun.totals.hours > 0
+      ? Math.round(
+          ((run.totals.hours - prevRun.totals.hours) / prevRun.totals.hours) *
+            100,
+        )
+      : null;
+  const showInsight = netVariancePct !== null && Math.abs(netVariancePct) >= 2;
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -276,6 +302,50 @@ export function PayrollView() {
           hint={`avg ${formatCurrency(avgNet)} net / person`}
         />
       </div>
+
+      {/* Pending emphasis */}
+      {pendingCount > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/8 px-4 py-2.5 text-sm">
+          <AlertCircle className="size-4 shrink-0 text-warning" />
+          <span>
+            <span className="font-semibold text-warning">
+              {pendingCount} payslip{pendingCount > 1 ? "s" : ""} pending
+            </span>{" "}
+            — this run has not settled yet.
+          </span>
+        </div>
+      )}
+
+      {/* Pay-period variance insight */}
+      {showInsight && prevRun && netVariancePct !== null && (
+        <AiInsight
+          title={`Net payout ${netVariancePct > 0 ? "up" : "down"} ${Math.abs(
+            netVariancePct,
+          )}% vs ${prevPeriod.label}`}
+          detail={
+            hoursVariancePct !== null
+              ? `Hours logged ${
+                  hoursVariancePct > 0 ? "increased" : "decreased"
+                } ${Math.abs(
+                  hoursVariancePct,
+                )}% period-over-period, driving the net change. Average hourly rates are stable.`
+              : `Net payout moved from ${formatCurrency(
+                  prevRun.totals.net,
+                )} to ${formatCurrency(run.totals.net)}.`
+          }
+          points={[
+            `${prevPeriod.label}: ${formatCurrency(
+              prevRun.totals.net,
+            )} net across ${prevRun.totals.headcount} employees`,
+            `${period.label}: ${formatCurrency(run.totals.net)} net (${
+              netVariancePct > 0 ? "+" : ""
+            }${netVariancePct}%)`,
+          ]}
+          basis={`Derived from ${
+            run.totals.headcount
+          } payslips · ${run.totals.hours.toLocaleString()} hours logged`}
+        />
+      )}
 
       <Card className="p-0 [--card-spacing:0px]">
         <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -383,7 +453,7 @@ export function PayrollView() {
                       size="sm"
                       onClick={() => downloadPayslipPdf(r, period.label)}
                     >
-                      <FileText className="size-4" /> PDF
+                      <Download className="size-4" /> PDF
                     </Button>
                   </TableCell>
                 </TableRow>

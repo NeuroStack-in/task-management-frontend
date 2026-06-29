@@ -104,10 +104,28 @@ export function AttendanceCalendar({
   return (
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-        <div>
-          <CardTitle>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Previous month"
+            onClick={() => step(-1)}
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <CardTitle className="min-w-[10rem] text-center">
             {MONTH_NAMES[view.month]} {view.year}
           </CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Next month"
+            onClick={() => step(1)}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -147,29 +165,9 @@ export function AttendanceCalendar({
             </SelectContent>
           </Select>
 
-          <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" onClick={goToToday}>
-              Today
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8"
-              aria-label="Previous month"
-              onClick={() => step(-1)}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-8"
-              aria-label="Next month"
-              onClick={() => step(1)}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" onClick={goToToday}>
+            Today
+          </Button>
 
           <Button
             variant="outline"
