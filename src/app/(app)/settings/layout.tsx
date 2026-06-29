@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { ArrowUpRight, Bell, CreditCard, Palette, User } from "lucide-react";
 import { ADMIN_SECTIONS } from "@/constants/navigation";
+import type { PermissionId } from "@/types/rbac";
 import { usePermissions } from "@/hooks/use-permissions";
 import { usePageHeaderStore } from "@/stores/page-header.store";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,8 @@ interface RailItem {
   icon: LucideIcon;
   /** Navigates to a full standalone page outside the settings shell. */
   external?: boolean;
+  /** Required permission to see this item (undefined = always visible). */
+  permission?: PermissionId;
 }
 
 interface RailGroup {
@@ -22,12 +25,17 @@ interface RailGroup {
   items: RailItem[];
 }
 
-/** Personal account sections — always available, rendered in-pane. */
+/** Personal account sections — rendered in-pane (Billing is permission-gated). */
 const ACCOUNT_GROUP: RailGroup = {
   label: "Account",
   items: [
     { label: "Profile", href: "/settings/profile", icon: User },
-    { label: "Billing", href: "/settings/billing", icon: CreditCard },
+    {
+      label: "Billing",
+      href: "/settings/billing",
+      icon: CreditCard,
+      permission: "billing:view",
+    },
     { label: "Notifications", href: "/settings/notifications", icon: Bell },
     { label: "Appearance", href: "/settings/appearance", icon: Palette },
   ],
@@ -57,7 +65,14 @@ export default function SettingsLayout({
       })),
   })).filter((group) => group.items.length > 0);
 
-  const groups: RailGroup[] = [ACCOUNT_GROUP, ...adminGroups];
+  const accountGroup: RailGroup = {
+    ...ACCOUNT_GROUP,
+    items: ACCOUNT_GROUP.items.filter(
+      (it) => !it.permission || can(it.permission),
+    ),
+  };
+
+  const groups: RailGroup[] = [accountGroup, ...adminGroups];
 
   // The navbar now reads "Settings" everywhere, so the in-pane heading carries
   // the active sub-section name. Derive the title from the active rail item

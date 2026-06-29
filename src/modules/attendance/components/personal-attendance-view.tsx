@@ -1,11 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, CalendarCheck, Clock, CalendarOff, Plane } from "lucide-react";
+import Papa from "papaparse";
+import { toast } from "sonner";
+import { ChevronLeft, ChevronRight, CalendarCheck, Clock, CalendarOff, Download, Plane } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { downloadBlob } from "@/lib/download";
 import { useAuthStore } from "@/stores/auth.store";
 import {
   MONTH_NAMES,
@@ -31,6 +41,38 @@ const STATUS: Record<
 };
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** Export the current user's working days for the viewed month as CSV. */
+function exportPersonalCsv(
+  year: number,
+  month: number,
+  weeks: DayCell[][],
+  userId: string,
+) {
+  const days = weeks.flat().filter((c) => c.month === month && c.isWorkday);
+  const data = days.map((c) => {
+    const rec = dayRecordFor(userId, c.year, c.month, c.day);
+    return [
+      `${c.year}-${pad2(c.month + 1)}-${pad2(c.day)}`,
+      WEEKDAY_LABELS[c.weekday],
+      STATUS[rec.status].label,
+      rec.clockIn || "—",
+      rec.clockOut || "—",
+      rec.hours,
+    ];
+  });
+  const csv = Papa.unparse({
+    fields: ["Date", "Weekday", "Status", "Clock in", "Clock out", "Hours"],
+    data,
+  });
+  const file = `my-attendance-${MONTH_NAMES[month].toLowerCase()}-${year}.csv`;
+  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), file);
+  toast.success("Attendance exported", {
+    description: `${file} · ${days.length} working days`,
+  });
+}
 
 export function PersonalAttendanceView() {
   const user = useAuthStore((s) => s.user);
@@ -84,9 +126,6 @@ export function PersonalAttendanceView() {
     return out;
   }, [userId]);
 
-  const isRefMonth =
-    view.year === REFERENCE_MONTH.year && view.month === REFERENCE_MONTH.month;
-
   const step = (dir: -1 | 1) =>
     setView((v) => {
       const m = v.month + dir;
@@ -94,6 +133,17 @@ export function PersonalAttendanceView() {
       if (m > 11) return { year: v.year + 1, month: 0 };
       return { year: v.year, month: m };
     });
+
+  // Selectable years — a range around today, always including the current view.
+  const years = useMemo(() => {
+    const set = new Set<number>();
+    for (let y = TODAY.year - 5; y <= TODAY.year + 1; y++) set.add(y);
+    set.add(view.year);
+    return [...set].sort((a, b) => a - b);
+  }, [view.year]);
+
+  const goToToday = () =>
+    setView({ year: REFERENCE_MONTH.year, month: REFERENCE_MONTH.month });
 
   if (!user) return null;
 
@@ -134,26 +184,8 @@ export function PersonalAttendanceView() {
 
       {/* Personal calendar */}
       <Card>
-        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-          <div>
-            <CardTitle>
-              {MONTH_NAMES[view.month]} {view.year}
-            </CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your daily attendance for the month.
-            </p>
-          </div>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
           <div className="flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setView({ year: REFERENCE_MONTH.year, month: REFERENCE_MONTH.month })
-              }
-              disabled={isRefMonth}
-            >
-              Today
-            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -163,6 +195,9 @@ export function PersonalAttendanceView() {
             >
               <ChevronLeft className="size-4" />
             </Button>
+            <CardTitle>
+              {MONTH_NAMES[view.month]} {view.year}
+            </CardTitle>
             <Button
               variant="ghost"
               size="icon"
@@ -171,6 +206,55 @@ export function PersonalAttendanceView() {
               onClick={() => step(1)}
             >
               <ChevronRight className="size-4" />
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={String(view.month)}
+              onValueChange={(v) => setView((s) => ({ ...s, month: Number(v) }))}
+            >
+              <SelectTrigger className="h-8 w-[8.5rem]" aria-label="Month">
+                <SelectValue>
+                  {(v) => (v == null ? "" : MONTH_NAMES[Number(v)])}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {MONTH_NAMES.map((m, i) => (
+                  <SelectItem key={m} value={String(i)}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={String(view.year)}
+              onValueChange={(v) => setView((s) => ({ ...s, year: Number(v) }))}
+            >
+              <SelectTrigger className="h-8 w-[5.5rem]" aria-label="Year">
+                <SelectValue>{(v) => (v == null ? "" : String(v))}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {years.map((y) => (
+                  <SelectItem key={y} value={String(y)}>
+                    {y}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button variant="outline" size="sm" onClick={goToToday}>
+              Today
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => exportPersonalCsv(view.year, view.month, weeks, userId)}
+            >
+              <Download className="size-4" /> Download
             </Button>
           </div>
         </CardHeader>
