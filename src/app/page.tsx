@@ -13,28 +13,39 @@ import {
   Activity,
   ArrowRight,
   BarChart3,
+  Bell,
+  Briefcase,
   CalendarCheck,
   Check,
   CheckCheck,
   ChevronDown,
   Clock,
+  CreditCard,
+  DollarSign,
+  Fingerprint,
   FolderKanban,
+  Gauge,
+  Globe,
+  Headset,
   HeartPulse,
-  Menu,
+  KeyRound,
+  LayoutDashboard,
+  LineChart,
+  Mail,
   Minus,
+  MonitorSmartphone,
+  ScrollText,
+  Search,
   ShieldCheck,
   Star,
-  X,
+  Sun,
+  Users,
+  Wallet,
 } from "lucide-react";
-import { Logo } from "@/modules/marketing/logo";
+import { MarketingNav } from "@/modules/marketing/marketing-nav";
+import { MarketingFooter } from "@/modules/marketing/marketing-footer";
+import { productHref } from "@/modules/marketing/products";
 import { Reveal } from "@/modules/marketing/reveal";
-
-const NAV_LINKS = [
-  { label: "Product", href: "#features" },
-  { label: "Solutions", href: "#solutions" },
-  { label: "Pricing", href: "#pricing" },
-  { label: "Resources", href: "#faq" },
-];
 
 const HEADLINE = [
   ["Your", "workforce,"],
@@ -42,10 +53,10 @@ const HEADLINE = [
 ];
 
 const STATS = [
-  { value: "12M+", label: "hours tracked" },
-  { value: "4.8/5", label: "average rating" },
-  { value: "60+", label: "countries" },
-  { value: "99.9%", label: "uptime" },
+  { value: "29", label: "modules, one platform" },
+  { value: "1-tap", label: "time tracking, anywhere" },
+  { value: "SOC 2", label: "Type II · GDPR ready" },
+  { value: "99.9%", label: "uptime SLA" },
 ];
 
 const FEATURES = [
@@ -56,6 +67,7 @@ const FEATURES = [
     body: "A one-tap timer on web, desktop, and mobile turns into clean, automatic timesheets — ready for approval, payroll, and billing.",
     bullets: ["One-tap & idle-aware timer", "Automatic timesheets", "Approvals & corrections"],
     mock: "timer" as const,
+    slug: "time-tracking",
   },
   {
     eyebrow: "Activity & productivity",
@@ -64,6 +76,7 @@ const FEATURES = [
     body: "Active vs. idle time, app & site usage, and a productivity score per person and team — context, not surveillance theatre.",
     bullets: ["Active vs. idle analysis", "App & website usage", "Productivity score"],
     mock: "heatmap" as const,
+    slug: "activity-monitoring",
   },
   {
     eyebrow: "Projects & attendance",
@@ -72,6 +85,7 @@ const FEATURES = [
     body: "Kanban boards, attendance, schedules, and leave live next to the time data — so delivery and capacity are always in view.",
     bullets: ["Kanban projects & tasks", "Attendance & schedules", "Leave & approvals"],
     mock: "kanban" as const,
+    slug: "projects",
   },
   {
     eyebrow: "Reports & insights",
@@ -80,6 +94,7 @@ const FEATURES = [
     body: "Live dashboards, scheduled exports, and AI anomaly detection surface burnout, overtime, and drift before they become problems.",
     bullets: ["Live dashboards & exports", "Burnout & anomaly alerts", "Role-based insights"],
     mock: "chart" as const,
+    slug: "reports",
   },
 ];
 
@@ -137,9 +152,67 @@ const FAQS = [
   { q: "Can I import from my current tool?", a: "Yes — import people, projects, and historical time from common tools, or use the API to bring everything across." },
 ];
 
+const MODULE_GROUPS = [
+  {
+    icon: Clock,
+    title: "Time & projects",
+    items: [
+      "One-tap timer & timesheets",
+      "Attendance & schedules",
+      "Kanban projects & tasks",
+      "Leave & approvals",
+    ],
+  },
+  {
+    icon: Users,
+    title: "People & payroll",
+    items: [
+      "Employee directory & profiles",
+      "Payroll periods & exports",
+      "Departments, teams & roles",
+      "Org settings & working hours",
+    ],
+  },
+  {
+    icon: Activity,
+    title: "Monitoring & insights",
+    items: [
+      "Active vs. idle & app usage",
+      "Screenshots & timelines",
+      "Live dashboards & reports",
+      "AI summaries & anomalies",
+    ],
+  },
+  {
+    icon: ShieldCheck,
+    title: "Control & security",
+    items: [
+      "Roles & permissions (RBAC)",
+      "SSO / SAML, SCIM & MFA",
+      "Audit logs & approvals",
+      "Desktop agents & remote support",
+    ],
+  },
+];
+
+const INTEGRATIONS = [
+  "Slack", "Microsoft Teams", "Jira", "GitHub",
+  "Google Workspace", "Asana", "Zoom", "Notion",
+  "Outlook", "GitLab", "Trello", "Zapier",
+];
+
+const ENTERPRISE = [
+  { icon: KeyRound, title: "SSO / SAML & SCIM", body: "One-click sign-on and automated user provisioning for your whole org." },
+  { icon: Fingerprint, title: "MFA & session policies", body: "Enforce two-factor, session limits, and device-level controls." },
+  { icon: ScrollText, title: "Audit logs", body: "Every action, permission change, and login — captured and searchable." },
+  { icon: Globe, title: "Data residency & DPA", body: "Choose where data lives; encrypted in transit and at rest." },
+  { icon: Headset, title: "Approval-gated remote support", body: "Consent-based remote sessions with a full audit trail." },
+  { icon: MonitorSmartphone, title: "Desktop agent management", body: "Roll out, configure, and monitor agent health at scale." },
+];
+
+const COMPLIANCE = ["SOC 2", "GDPR", "ISO 27001", "DPA"];
+
 export default function LandingPage() {
-  const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -148,7 +221,6 @@ export default function LandingPage() {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         const y = window.scrollY;
-        setScrolled(y > 60);
         const el = heroRef.current;
         if (el) {
           const p = Math.min(1, y / 600);
@@ -168,111 +240,27 @@ export default function LandingPage() {
 
   return (
     <div className="m-root min-h-screen overflow-x-hidden">
-      {/* ---------------- Navigation ---------------- */}
-      <header
-        className="fixed inset-x-0 top-0 z-50 transition-[background,backdrop-filter] duration-300"
-        style={{
-          background: scrolled
-            ? "color-mix(in srgb, var(--m-bg) 78%, transparent)"
-            : "transparent",
-          backdropFilter: scrolled ? "blur(14px)" : "none",
-          WebkitBackdropFilter: scrolled ? "blur(14px)" : "none",
-          borderBottom: scrolled
-            ? "1px solid var(--m-border)"
-            : "1px solid transparent",
-        }}
-      >
-        <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-5 sm:px-8">
-          <Link href="/" aria-label="WorkPulse home" className="shrink-0">
-            <Logo />
-          </Link>
-          <ul className="hidden items-center gap-8 md:flex">
-            {NAV_LINKS.map((l) => (
-              <li key={l.label}>
-                <a
-                  href={l.href}
-                  className="group relative text-sm"
-                  style={{ color: "var(--m-muted)" }}
-                >
-                  {l.label}
-                  <span className="absolute -bottom-1.5 left-0 h-px w-0 bg-current transition-all duration-300 group-hover:w-full" />
-                </a>
-              </li>
-            ))}
-          </ul>
-          <div className="hidden shrink-0 items-center gap-2 md:flex">
-            <Link href="/login" className="m-btn m-btn-ghost text-sm">
-              Log in
-            </Link>
-            <Link href="/register" className="m-btn m-btn-primary text-sm">
-              Get started
-            </Link>
-          </div>
-          {/* Plain button (not .m-btn) so md:hidden isn't overridden by .m-btn display */}
-          <button
-            type="button"
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-label="Toggle menu"
-            className="flex size-10 shrink-0 items-center justify-center rounded-full border md:hidden"
-            style={{ borderColor: "var(--m-border-strong)", color: "var(--m-text)" }}
-          >
-            {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
-          </button>
-        </nav>
-        {menuOpen ? (
-          <div
-            className="border-t md:hidden"
-            style={{
-              borderColor: "var(--m-border)",
-              background: "color-mix(in srgb, var(--m-bg) 92%, transparent)",
-              backdropFilter: "blur(14px)",
-            }}
-          >
-            <ul className="space-y-1 px-5 py-4">
-              {[...NAV_LINKS, { label: "Log in", href: "/login" }].map((l, i) => (
-                <li
-                  key={l.label}
-                  className="m-enter-up"
-                  style={{ animationDelay: `${i * 60}ms` }}
-                >
-                  <a
-                    href={l.href}
-                    onClick={() => setMenuOpen(false)}
-                    className="block rounded-lg px-3 py-2.5 text-sm"
-                    style={{ color: "var(--m-text)" }}
-                  >
-                    {l.label}
-                  </a>
-                </li>
-              ))}
-              <li className="m-enter-up pt-1" style={{ animationDelay: "300ms" }}>
-                <Link
-                  href="/register"
-                  onClick={() => setMenuOpen(false)}
-                  className="m-btn m-btn-primary w-full"
-                >
-                  Get started
-                </Link>
-              </li>
-            </ul>
-          </div>
-        ) : null}
-      </header>
+      <MarketingNav onDark />
 
       {/* ---------------- Hero ---------------- */}
-      <section className="relative overflow-hidden px-5 pt-32 pb-10 sm:pt-40">
-        <div className="m-aurora" aria-hidden="true">
-          <span style={{ width: "46vw", height: "46vw", left: "6%", top: "2%", background: "var(--m-accent)", animation: "m-drift-a 26s ease-in-out infinite" }} />
-          <span style={{ width: "40vw", height: "40vw", right: "2%", top: "-4%", background: "var(--m-accent-2)", animation: "m-drift-b 32s ease-in-out infinite" }} />
-          <span style={{ width: "36vw", height: "36vw", left: "34%", top: "20%", background: "var(--m-accent-3)", animation: "m-drift-c 30s ease-in-out infinite" }} />
+      <section className="relative overflow-hidden px-5 pt-36 pb-12 sm:pt-44 sm:pb-16">
+        {/* Dusk gradient backdrop — fades into the page */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          aria-hidden="true"
+          style={{
+            background:
+              "linear-gradient(180deg, #0a3a38 0%, #0e524b 16%, #147066 34%, #2c8579 50%, #6aa89f 66%, color-mix(in srgb, var(--m-bg) 50%, #c4e2db) 82%, var(--m-bg) 100%)",
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+          <span className="absolute rounded-full" style={{ width: "60vw", height: "60vw", left: "-12%", top: "-22%", background: "radial-gradient(circle, rgba(150,206,198,0.55), transparent 62%)", mixBlendMode: "screen", animation: "m-drift-a 28s ease-in-out infinite" }} />
+          <span className="absolute rounded-full" style={{ width: "52vw", height: "52vw", right: "-14%", top: "-6%", background: "radial-gradient(circle, rgba(244,176,150,0.42), transparent 62%)", mixBlendMode: "screen", animation: "m-drift-c 34s ease-in-out infinite" }} />
+          <span className="absolute rounded-full" style={{ width: "46vw", height: "46vw", left: "32%", top: "4%", background: "radial-gradient(circle, rgba(120,190,180,0.5), transparent 62%)", mixBlendMode: "screen", animation: "m-drift-b 30s ease-in-out infinite" }} />
         </div>
 
         <div ref={heroRef} className="relative z-10 mx-auto max-w-3xl text-center" style={{ willChange: "transform, opacity" }}>
-          <div className="m-enter-up mb-6 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs" style={{ borderColor: "var(--m-border-strong)", color: "var(--m-muted)" }}>
-            <span className="size-1.5 rounded-full" style={{ background: "var(--m-success)" }} />
-            Workforce activity &amp; productivity · now in beta
-          </div>
-          <h1 className="m-display text-[clamp(2.6rem,8vw,5.2rem)] leading-[0.98] font-semibold">
+          <h1 className="m-display font-light tracking-tight text-white text-[clamp(2.9rem,8.5vw,5.6rem)] leading-[1.0]">
             {HEADLINE.map((line, li) => {
               const before = HEADLINE.slice(0, li).reduce((n, l) => n + l.length, 0);
               return (
@@ -287,27 +275,32 @@ export default function LandingPage() {
               );
             })}
           </h1>
-          <p className="m-enter-up mx-auto mt-7 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "var(--m-muted)", animationDelay: `${wordCount * 80 + 220}ms` }}>
+          <p className="m-enter-up mx-auto mt-6 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "rgb(255 255 255 / 0.84)", animationDelay: `${wordCount * 80 + 220}ms` }}>
             Time tracking, attendance, activity, and projects in one platform —
             turned into a single clear signal so you can run a healthier, more
             productive team.
           </p>
           <div className="m-enter-up mt-9 flex flex-wrap items-center justify-center gap-3" style={{ animationDelay: `${wordCount * 80 + 360}ms` }}>
-            <Link href="/register" className="m-btn m-btn-primary">
+            <Link href="/register" className="m-btn" style={{ background: "#ffffff", color: "var(--m-accent-ink)" }}>
               Get started free <ArrowRight className="size-4" />
             </Link>
-            <Link href="/login" className="m-btn m-btn-ghost">
-              Log in
+            <Link href="/login" className="m-btn" style={{ background: "rgb(255 255 255 / 0.14)", color: "#fff", border: "1px solid rgb(255 255 255 / 0.34)", backdropFilter: "blur(6px)" }}>
+              Book a demo
             </Link>
           </div>
-          <p className="m-enter-up mt-4 text-xs" style={{ color: "var(--m-muted)", animationDelay: `${wordCount * 80 + 460}ms` }}>
+          <p className="m-enter-up mt-4 text-xs" style={{ color: "rgb(255 255 255 / 0.7)", animationDelay: `${wordCount * 80 + 460}ms` }}>
             No credit card required · 14-day free trial
           </p>
         </div>
 
         {/* Product preview — hero scales behind it on scroll */}
-        <Reveal className="relative z-0 mx-auto mt-16 max-w-5xl">
-          <DashboardMock />
+        <Reveal className="relative z-10 mx-auto mt-14 max-w-5xl sm:mt-16">
+          <div
+            className="rounded-[20px] p-2"
+            style={{ background: "rgb(255 255 255 / 0.4)", border: "1px solid rgb(255 255 255 / 0.6)", backdropFilter: "blur(6px)", boxShadow: "0 50px 120px -40px rgb(8 30 28 / 0.6)" }}
+          >
+            <DashboardMock />
+          </div>
         </Reveal>
       </section>
 
@@ -382,8 +375,60 @@ export default function LandingPage() {
                           </li>
                         ))}
                       </ul>
+                      <Link
+                        href={productHref(f.slug)}
+                        className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium"
+                        style={{ color: "var(--m-accent-ink)" }}
+                      >
+                        Explore {f.eyebrow} <ArrowRight className="size-4" />
+                      </Link>
                     </div>
                     <FeatureMock kind={f.mock} />
+                  </div>
+                </Reveal>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ---------------- Everything included (module grid) ---------------- */}
+      <section
+        id="platform"
+        className="px-5 py-20 sm:py-28"
+        style={{ borderTop: "1px solid var(--m-border)" }}
+      >
+        <div className="mx-auto max-w-6xl">
+          <Reveal>
+            <p className="text-center text-sm font-medium tracking-wide uppercase" style={{ color: "var(--m-accent-ink)" }}>
+              One platform, every workflow
+            </p>
+            <h2 className="m-display mx-auto mt-3 max-w-2xl text-center text-3xl font-semibold sm:text-4xl">
+              Everything your organization runs on — in one place.
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl text-center text-base leading-relaxed" style={{ color: "var(--m-muted)" }}>
+              Replace a stack of point tools with one workforce platform. Time,
+              projects, people, monitoring, insights, and controls — all connected.
+            </p>
+          </Reveal>
+          <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {MODULE_GROUPS.map((g, i) => {
+              const Icon = g.icon;
+              return (
+                <Reveal key={g.title} delay={i * 80}>
+                  <div className="m-card h-full p-6">
+                    <span className="inline-flex size-11 items-center justify-center rounded-xl" style={{ background: "color-mix(in srgb, var(--m-accent) 16%, transparent)", color: "var(--m-accent)" }}>
+                      <Icon className="size-5" />
+                    </span>
+                    <h3 className="m-display mt-4 text-base font-semibold">{g.title}</h3>
+                    <ul className="mt-3 space-y-2">
+                      {g.items.map((it) => (
+                        <li key={it} className="flex items-start gap-2 text-sm" style={{ color: "var(--m-muted)" }}>
+                          <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--m-accent)" }} />
+                          <span>{it}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </Reveal>
               );
@@ -450,6 +495,85 @@ export default function LandingPage() {
               );
             })}
           </div>
+        </div>
+      </section>
+
+      {/* ---------------- Integrations ---------------- */}
+      <section id="integrations" className="px-5 py-20 sm:py-28" style={{ background: "var(--m-surface)" }}>
+        <div className="mx-auto max-w-6xl">
+          <Reveal>
+            <p className="text-center text-sm font-medium tracking-wide uppercase" style={{ color: "var(--m-accent-ink)" }}>
+              Integrations
+            </p>
+            <h2 className="m-display mx-auto mt-3 max-w-xl text-center text-3xl font-semibold sm:text-4xl">
+              Works with the tools your teams already use.
+            </h2>
+          </Reveal>
+          <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {INTEGRATIONS.map((name, i) => (
+              <Reveal key={name} delay={i * 40}>
+                <div className="m-card flex items-center gap-3 p-4 transition-transform duration-300 hover:-translate-y-0.5">
+                  <span
+                    className="flex size-10 shrink-0 items-center justify-center rounded-xl text-xs font-semibold"
+                    style={{ background: "color-mix(in srgb, var(--m-accent) 14%, transparent)", color: "var(--m-accent-ink)" }}
+                  >
+                    {name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
+                  </span>
+                  <span className="truncate text-sm font-medium">{name}</span>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+          <Reveal>
+            <p className="mt-8 text-center text-sm" style={{ color: "var(--m-muted)" }}>
+              Plus a REST API and webhooks — bring your own workflow.
+            </p>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ---------------- Enterprise & security ---------------- */}
+      <section id="security" className="px-5 py-20 sm:py-28">
+        <div className="mx-auto max-w-6xl">
+          <Reveal>
+            <p className="text-sm font-medium tracking-wide uppercase" style={{ color: "var(--m-accent-ink)" }}>
+              Enterprise &amp; security
+            </p>
+            <h2 className="m-display mt-3 max-w-2xl text-3xl font-semibold sm:text-4xl">
+              Built for IT, trusted by the business.
+            </h2>
+          </Reveal>
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {ENTERPRISE.map((e, i) => {
+              const Icon = e.icon;
+              return (
+                <Reveal key={e.title} delay={i * 70}>
+                  <div className="m-card h-full p-6">
+                    <span className="inline-flex size-11 items-center justify-center rounded-xl" style={{ background: "color-mix(in srgb, var(--m-accent) 16%, transparent)", color: "var(--m-accent)" }}>
+                      <Icon className="size-5" />
+                    </span>
+                    <h3 className="m-display mt-4 text-base font-semibold">{e.title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--m-muted)" }}>
+                      {e.body}
+                    </p>
+                  </div>
+                </Reveal>
+              );
+            })}
+          </div>
+          <Reveal>
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+              {COMPLIANCE.map((c) => (
+                <span
+                  key={c}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium"
+                  style={{ borderColor: "var(--m-border-strong)", color: "var(--m-muted)" }}
+                >
+                  <ShieldCheck className="size-3.5" style={{ color: "var(--m-accent)" }} /> {c}
+                </span>
+              ))}
+            </div>
+          </Reveal>
         </div>
       </section>
 
@@ -595,7 +719,7 @@ export default function LandingPage() {
       </section>
 
       {/* ---------------- Footer ---------------- */}
-      <Footer />
+      <MarketingFooter />
     </div>
   );
 }
@@ -626,63 +750,232 @@ function ProofLogo({ seed }: { seed: number }) {
   );
 }
 
-/* Faux app dashboard (CSS/SVG only — no images) */
+/* Glassmorphic dashboard mock — mirrors the real WorkPulse dashboard. */
+const MOCK_NAV = [
+  { group: "Work", items: [
+    { label: "Dashboard", icon: LayoutDashboard, active: true },
+    { label: "Time Tracking", icon: Clock },
+    { label: "Projects", icon: FolderKanban },
+  ] },
+  { group: "Manage", items: [
+    { label: "Employees", icon: Users },
+    { label: "Attendance", icon: CalendarCheck },
+    { label: "Leave", icon: Briefcase },
+    { label: "Approvals", icon: CheckCheck },
+  ] },
+  { group: "Finance", items: [
+    { label: "Payroll", icon: Wallet },
+    { label: "Billing", icon: CreditCard },
+  ] },
+  { group: "Analytics", items: [{ label: "Analytics", icon: LineChart }] },
+  { group: "Comms", items: [{ label: "Inbox", icon: Mail }] },
+];
+
+const MOCK_KPIS = [
+  { label: "Productivity Score", value: "69%", delta: "3%", up: false, icon: Gauge, d: "M0 18 L11 14 L22 19 L33 9 L44 15 L55 7" },
+  { label: "Hours Tracked", value: "4,477h", delta: "12%", up: true, icon: Clock, d: "M0 20 L11 16 L22 18 L33 8 L44 11 L55 6" },
+  { label: "Billable", value: "80%", delta: "5%", up: true, icon: DollarSign, d: "M0 14 L11 18 L22 12 L33 16 L44 8 L55 12" },
+  { label: "Avg Activity", value: "84%", delta: "7%", up: true, icon: Activity, d: "M0 16 L11 10 L22 18 L33 12 L44 15 L55 6" },
+];
+
+const DONUT = [
+  { label: "Present", n: 87, pct: "72%", len: 190, off: 0, color: "var(--m-success)" },
+  { label: "Late", n: 13, pct: "11%", len: 29, off: -190, color: "#e0922a" },
+  { label: "On leave", n: 10, pct: "8%", len: 21, off: -219, color: "#94a3a5" },
+  { label: "Absent", n: 11, pct: "9%", len: 24, off: -240, color: "var(--m-danger)" },
+];
+
+const glassCard = {
+  background: "rgb(255 255 255 / 0.55)",
+  border: "1px solid rgb(255 255 255 / 0.6)",
+  backdropFilter: "blur(8px)",
+} as const;
+
 function DashboardMock() {
   return (
-    <div className="m-card overflow-hidden" style={{ boxShadow: "0 50px 120px -50px rgb(0 0 0 / 0.55)" }}>
-      {/* window bar */}
-      <div className="flex items-center gap-1.5 border-b px-4 py-3" style={{ borderColor: "var(--m-border)" }}>
-        <span className="size-2.5 rounded-full" style={{ background: "#ff5f57" }} />
-        <span className="size-2.5 rounded-full" style={{ background: "#febc2e" }} />
-        <span className="size-2.5 rounded-full" style={{ background: "#28c840" }} />
-        <span className="ml-3 text-xs" style={{ color: "var(--m-muted)" }}>
-          app.workpulse.io/dashboard
-        </span>
-      </div>
-      <div className="grid grid-cols-[180px_1fr]">
-        {/* sidebar */}
-        <div className="hidden flex-col gap-2 border-r p-4 sm:flex" style={{ borderColor: "var(--m-border)" }}>
-          <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium" style={{ background: "color-mix(in srgb, var(--m-accent) 16%, transparent)", color: "var(--m-accent)" }}>
-            <Activity className="size-3.5" /> Dashboard
-          </div>
-          {["Time tracking", "Projects", "Employees", "Reports"].map((s) => (
-            <div key={s} className="px-2 py-1.5 text-xs" style={{ color: "var(--m-muted)" }}>
-              {s}
+    <div
+      className="grid grid-cols-1 overflow-hidden rounded-2xl text-[11px] sm:grid-cols-[150px_1fr]"
+      style={{
+        background: "linear-gradient(180deg, rgb(255 255 255 / 0.66), rgb(255 255 255 / 0.5))",
+        border: "1px solid rgb(255 255 255 / 0.6)",
+        backdropFilter: "blur(16px)",
+        color: "var(--m-text)",
+      }}
+    >
+      {/* Sidebar */}
+      <aside className="hidden flex-col gap-3 p-3 sm:flex" style={{ background: "rgb(255 255 255 / 0.26)", borderRight: "1px solid rgb(255 255 255 / 0.5)" }}>
+        <div className="flex items-center gap-2 px-1">
+          <span className="flex size-6 items-center justify-center rounded-lg" style={{ background: "var(--m-accent)" }}>
+            <Activity className="size-3.5 text-white" />
+          </span>
+          <span className="m-display text-[13px] font-semibold">WorkPulse</span>
+        </div>
+        <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5" style={{ background: "rgb(255 255 255 / 0.5)", color: "var(--m-muted)" }}>
+          <Search className="size-3" /> <span className="text-[10px]">Search…</span>
+          <span className="ml-auto rounded px-1 text-[8px]" style={{ background: "rgb(255 255 255 / 0.7)" }}>⌘K</span>
+        </div>
+        <nav className="flex flex-col gap-2.5">
+          {MOCK_NAV.map((grp) => (
+            <div key={grp.group}>
+              <p className="mb-1 px-2 text-[8px] font-semibold tracking-wider uppercase" style={{ color: "var(--m-faint)" }}>{grp.group}</p>
+              <ul className="space-y-0.5">
+                {grp.items.map((it) => {
+                  const Icon = it.icon;
+                  return (
+                    <li
+                      key={it.label}
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5"
+                      style={it.active
+                        ? { background: "var(--m-accent)", color: "#fff" }
+                        : { color: "var(--m-muted)" }}
+                    >
+                      <Icon className="size-3.5 shrink-0" />
+                      <span className="truncate text-[10.5px] font-medium">{it.label}</span>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           ))}
+        </nav>
+      </aside>
+
+      {/* Main */}
+      <div className="p-4 sm:p-5">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="m-display text-base font-semibold">Hello, Alex</p>
+            <p className="text-[10px]" style={{ color: "var(--m-muted)" }}>Monday 29 June · Here&apos;s your organization at a glance.</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="relative flex size-7 items-center justify-center rounded-full" style={glassCard}>
+              <Bell className="size-3.5" style={{ color: "var(--m-muted)" }} />
+              <span className="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full text-[7px] font-semibold text-white" style={{ background: "var(--m-accent)" }}>4</span>
+            </span>
+            <span className="flex size-7 items-center justify-center rounded-full" style={glassCard}>
+              <Sun className="size-3.5" style={{ color: "var(--m-muted)" }} />
+            </span>
+            <span className="flex items-center gap-1.5 rounded-full py-1 pr-2 pl-1" style={glassCard}>
+              <span className="flex size-5 items-center justify-center rounded-full text-[8px] font-semibold text-white" style={{ background: "var(--m-accent)" }}>AM</span>
+              <span className="text-[10px] font-medium">Alex Morgan</span>
+            </span>
+          </div>
         </div>
-        {/* main */}
-        <div className="p-5">
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { k: "Hours today", v: "1,284" },
-              { k: "Productive", v: "82%" },
-              { k: "On time", v: "96%" },
-            ].map((c) => (
-              <div key={c.k} className="rounded-xl border p-3" style={{ borderColor: "var(--m-border)" }}>
-                <p className="text-[0.65rem]" style={{ color: "var(--m-muted)" }}>
-                  {c.k}
-                </p>
-                <p className="m-display mt-1 text-lg font-semibold">{c.v}</p>
+
+        {/* Toolbar */}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <div className="inline-flex rounded-full p-0.5" style={glassCard}>
+            {["Today", "7 days", "30 days", "Quarter"].map((t) => (
+              <span
+                key={t}
+                className="rounded-full px-2.5 py-1 text-[10px] font-medium"
+                style={t === "7 days" ? { background: "var(--m-accent)", color: "#fff" } : { color: "var(--m-muted)" }}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+          <div className="hidden items-center gap-2 sm:flex">
+            <span className="text-[10px]" style={{ color: "var(--m-muted)" }}>Updated 20:03</span>
+            <span className="flex items-center gap-1 rounded-full px-2.5 py-1" style={glassCard}>
+              <Users className="size-3" style={{ color: "var(--m-muted)" }} />
+              <span className="text-[10px] font-medium">All teams</span>
+              <ChevronDown className="size-3" style={{ color: "var(--m-muted)" }} />
+            </span>
+          </div>
+        </div>
+
+        {/* KPI cards */}
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {MOCK_KPIS.map((k) => {
+            const Icon = k.icon;
+            return (
+              <div key={k.label} className="rounded-xl p-3" style={glassCard}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px]" style={{ color: "var(--m-muted)" }}>{k.label}</span>
+                  <span className="flex size-6 items-center justify-center rounded-full" style={{ background: "color-mix(in srgb, var(--m-accent) 14%, transparent)", color: "var(--m-accent)" }}>
+                    <Icon className="size-3" />
+                  </span>
+                </div>
+                <p className="m-display mt-1.5 text-xl font-semibold">{k.value}</p>
+                <div className="mt-1.5 flex items-center justify-between">
+                  <span
+                    className="rounded px-1 py-0.5 text-[9px] font-semibold"
+                    style={k.up
+                      ? { background: "color-mix(in srgb, var(--m-success) 16%, transparent)", color: "var(--m-success)" }
+                      : { background: "color-mix(in srgb, var(--m-danger) 16%, transparent)", color: "var(--m-danger)" }}
+                  >
+                    {k.up ? "↑" : "↓"} {k.delta}
+                  </span>
+                  <svg viewBox="0 0 55 24" className="h-5 w-14" fill="none" aria-hidden>
+                    <path d={k.d} stroke="var(--m-accent)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
               </div>
-            ))}
-          </div>
-          {/* bar chart */}
-          <div className="mt-4 flex h-28 items-end gap-2 rounded-xl border p-3" style={{ borderColor: "var(--m-border)" }}>
-            {[42, 58, 50, 70, 64, 30, 16].map((h, i) => (
-              <div key={i} className="flex-1 rounded-t" style={{ height: `${h}%`, background: i === 3 ? "var(--m-accent)" : "color-mix(in srgb, var(--m-accent) 35%, transparent)" }} />
-            ))}
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <div className="rounded-xl border p-3" style={{ borderColor: "var(--m-border)" }}>
-              <p className="text-[0.65rem]" style={{ color: "var(--m-muted)" }}>Team pulse</p>
-              <svg viewBox="0 0 200 40" className="mt-2 w-full" fill="none">
-                <path d="M2 30 C 30 24, 45 10, 70 16 S 120 34, 150 18 S 190 8, 198 12" stroke="var(--m-accent)" strokeWidth="2.5" strokeLinecap="round" />
-              </svg>
+            );
+          })}
+        </div>
+
+        {/* Charts row */}
+        <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1.6fr_1fr]">
+          {/* Productivity Trends */}
+          <div className="rounded-xl p-3.5" style={glassCard}>
+            <p className="text-[11px] font-semibold">Productivity Trends</p>
+            <p className="text-[9px]" style={{ color: "var(--m-muted)" }}>Active vs. productive time · this week</p>
+            <svg viewBox="0 0 320 130" className="mt-2 w-full" fill="none">
+              <defs>
+                <linearGradient id="mk-active" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--m-accent)" stopOpacity="0.28" />
+                  <stop offset="100%" stopColor="var(--m-accent)" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id="mk-prod" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#5b8def" stopOpacity="0.4" />
+                  <stop offset="100%" stopColor="#5b8def" stopOpacity="0.05" />
+                </linearGradient>
+              </defs>
+              <path d="M6 42 C 60 34, 110 32, 160 36 S 260 42, 314 32 L314 120 L6 120 Z" fill="url(#mk-active)" />
+              <path d="M6 42 C 60 34, 110 32, 160 36 S 260 42, 314 32" stroke="var(--m-accent)" strokeWidth="2" />
+              <path d="M6 66 C 60 72, 110 74, 160 66 S 260 56, 314 56 L314 120 L6 120 Z" fill="url(#mk-prod)" />
+              <path d="M6 66 C 60 72, 110 74, 160 66 S 260 56, 314 56" stroke="#5b8def" strokeWidth="2" />
+              <line x1="150" y1="20" x2="150" y2="120" stroke="var(--m-border-strong)" strokeWidth="1" strokeDasharray="3 3" />
+            </svg>
+            <div className="mt-1 flex justify-between px-1 text-[8px]" style={{ color: "var(--m-faint)" }}>
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <span key={d}>{d}</span>)}
             </div>
-            <div className="rounded-xl border p-3" style={{ borderColor: "var(--m-border)" }}>
-              <p className="text-[0.65rem]" style={{ color: "var(--m-muted)" }}>Approvals</p>
-              <p className="m-display mt-1 text-lg font-semibold">8 pending</p>
+          </div>
+
+          {/* Attendance */}
+          <div className="rounded-xl p-3.5" style={glassCard}>
+            <p className="text-[11px] font-semibold">Attendance</p>
+            <div className="mt-1 flex items-center gap-3">
+              <div className="relative size-[88px] shrink-0">
+                <svg viewBox="0 0 120 120" className="size-full -rotate-90">
+                  {DONUT.map((s) => (
+                    <circle
+                      key={s.label}
+                      cx="60" cy="60" r="42" fill="none"
+                      stroke={s.color} strokeWidth="13"
+                      strokeDasharray={`${s.len} ${264 - s.len}`}
+                      strokeDashoffset={s.off}
+                    />
+                  ))}
+                </svg>
+                <span className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="m-display text-base font-semibold leading-none">83%</span>
+                  <span className="text-[8px]" style={{ color: "var(--m-muted)" }}>clocked in</span>
+                </span>
+              </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                {DONUT.map((s) => (
+                  <div key={s.label} className="flex items-center gap-1.5 text-[9.5px]">
+                    <span className="size-1.5 rounded-full" style={{ background: s.color }} />
+                    <span style={{ color: "var(--m-muted)" }}>{s.label}</span>
+                    <span className="ml-auto font-semibold">{s.n}</span>
+                    <span className="w-6 text-right" style={{ color: "var(--m-faint)" }}>{s.pct}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -793,55 +1086,3 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   );
 }
 
-function Footer() {
-  const cols = [
-    { h: "Product", links: ["Time tracking", "Activity", "Projects", "Reports", "Integrations"] },
-    { h: "Solutions", links: ["Field service", "Remote teams", "Agencies", "Construction"] },
-    { h: "Company", links: ["About", "Careers", "Blog", "Contact"] },
-    { h: "Resources", links: ["Help center", "API docs", "Status", "Security"] },
-    { h: "Legal", links: ["Privacy", "Terms", "Cookies", "DPA"] },
-  ];
-  return (
-    <footer className="border-t px-5 pt-16 pb-10" style={{ borderColor: "var(--m-border)" }}>
-      <div className="mx-auto max-w-6xl">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(5,1fr)]">
-          <div>
-            <Logo />
-            <p className="mt-4 max-w-xs text-sm" style={{ color: "var(--m-muted)" }}>
-              Workforce activity &amp; productivity — one clear pulse for the
-              whole organization.
-            </p>
-            <div className="mt-5 flex gap-2.5">
-              <CheckCheck className="size-4" style={{ color: "var(--m-muted)" }} />
-              <span className="text-xs" style={{ color: "var(--m-muted)" }}>SOC 2 · GDPR ready</span>
-            </div>
-          </div>
-          {cols.map((c) => (
-            <div key={c.h}>
-              <p className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--m-text)" }}>
-                {c.h}
-              </p>
-              <ul className="mt-3 space-y-2.5">
-                {c.links.map((l) => (
-                  <li key={l}>
-                    <span className="text-sm" style={{ color: "var(--m-muted)" }}>
-                      {l}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t pt-6 sm:flex-row" style={{ borderColor: "var(--m-border)" }}>
-          <p className="text-xs" style={{ color: "var(--m-muted)" }}>
-            © 2026 WorkPulse. All rights reserved.
-          </p>
-          <p className="text-xs" style={{ color: "var(--m-muted)" }}>
-            Made for teams that run on rhythm.
-          </p>
-        </div>
-      </div>
-    </footer>
-  );
-}
