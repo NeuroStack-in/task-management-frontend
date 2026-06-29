@@ -13,7 +13,6 @@ import {
   ChevronDown,
   Check,
   Download,
-  FileText,
   Receipt,
   AlertCircle,
 } from "lucide-react";
@@ -478,7 +477,7 @@ export function PayrollView() {
                       size="sm"
                       onClick={() => downloadPayslipPdf(r, period.label)}
                     >
-                      <FileText className="size-4" /> PDF
+                      <Download className="size-4" /> PDF
                     </Button>
                   </TableCell>
                 </TableRow>
