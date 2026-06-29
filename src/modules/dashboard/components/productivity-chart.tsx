@@ -33,10 +33,8 @@ export function ProductivityChart({
           Active vs. productive time · {rangeLabel}
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col">
-        {/* flex-1 + min-h-0 lets the chart fill the card so the area spans the
-            full height/width with no dead band. */}
-        <div className="min-h-[160px] w-full flex-1">
+      <CardContent>
+        <div className="h-full min-h-[150px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ left: -16, right: 8, top: 4 }}>
               <defs>

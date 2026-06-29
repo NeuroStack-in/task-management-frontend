@@ -58,6 +58,7 @@ import {
 } from "@/stores/projects.store";
 import { useTasksStore, type TaskFormValues } from "@/stores/tasks.store";
 import { usePageTitle } from "@/stores/page-header.store";
+import { NavbarActions } from "@/components/shared/navbar-actions";
 import {
   PROJECT_STATUS_META,
   TASK_PRIORITY_META,
@@ -277,7 +278,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
           <ArrowLeft className="size-4" />
           All projects
         </Link>
-        <div className="flex flex-wrap items-center gap-2">
+        <NavbarActions>
           <Button variant="outline" className="gap-1.5" onClick={downloadReport}>
             <FileDown className="size-4" />
             Report (PDF)
@@ -302,7 +303,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
               </Button>
             </>
           ) : null}
-        </div>
+        </NavbarActions>
       </div>
 
       {/* Hero — filled with the active palette's feature colour */}

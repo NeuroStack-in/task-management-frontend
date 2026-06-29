@@ -170,74 +170,79 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
       {/* KPI stat band */}
       <ProjectsStatBand stats={stats} />
 
-      {/* Unified filter bar: view, status, search, layout — one row */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
-          <Segmented
-            options={[
-              { value: "projects", label: "Projects", count: projects.length },
-              { value: "tasks", label: "Tasks", count: visibleTasks.length },
-            ]}
-            value={view}
-            onChange={setView}
-          />
-          {view === "projects" ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <FilterChip
-                active={statusFilter === "all"}
-                onClick={() => setStatusFilter("all")}
-                label="All"
-                count={statusCounts.all}
-              />
-              {PROJECT_STATUS_ORDER.map((s) => (
+      {/* Toolbar: tabs + status pills + view toggle + New project on one row;
+          search sits on its own row below. */}
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-1 flex-wrap items-center gap-2">
+            <Segmented
+              options={[
+                { value: "projects", label: "Projects", count: projects.length },
+                { value: "tasks", label: "Tasks", count: visibleTasks.length },
+              ]}
+              value={view}
+              onChange={setView}
+            />
+            {view === "projects" ? (
+              <div className="flex flex-wrap items-center gap-1.5">
                 <FilterChip
-                  key={s}
-                  active={statusFilter === s}
-                  onClick={() => setStatusFilter(s)}
-                  label={PROJECT_STATUS_META[s].label}
-                  count={statusCounts[s]}
-                  dot={toneDot[PROJECT_STATUS_META[s].tone]}
+                  active={statusFilter === "all"}
+                  onClick={() => setStatusFilter("all")}
+                  label="All"
+                  count={statusCounts.all}
                 />
-              ))}
-            </div>
-          ) : null}
+                {PROJECT_STATUS_ORDER.map((s) => (
+                  <FilterChip
+                    key={s}
+                    active={statusFilter === s}
+                    onClick={() => setStatusFilter(s)}
+                    label={PROJECT_STATUS_META[s].label}
+                    count={statusCounts[s]}
+                    dot={toneDot[PROJECT_STATUS_META[s].tone]}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {view === "projects" ? (
+              <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5">
+                <LayoutToggleButton
+                  active={layout === "grid"}
+                  onClick={() => setLayout("grid")}
+                  icon={LayoutGrid}
+                  label="Grid view"
+                />
+                <LayoutToggleButton
+                  active={layout === "list"}
+                  onClick={() => setLayout("list")}
+                  icon={List}
+                  label="List view"
+                />
+              </div>
+            ) : null}
+            {canCreate ? (
+              <Button
+                onClick={() => setNewOpen(true)}
+                className="shrink-0 gap-1.5"
+              >
+                <Plus />
+                New project
+              </Button>
+            ) : null}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="relative sm:w-64">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search projects or tasks…"
-              className="pl-8"
-            />
-          </div>
-          {view === "projects" ? (
-            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5">
-              <LayoutToggleButton
-                active={layout === "grid"}
-                onClick={() => setLayout("grid")}
-                icon={LayoutGrid}
-                label="Grid view"
-              />
-              <LayoutToggleButton
-                active={layout === "list"}
-                onClick={() => setLayout("list")}
-                icon={List}
-                label="List view"
-              />
-            </div>
-          ) : null}
-          {canCreate ? (
-            <Button
-              onClick={() => setNewOpen(true)}
-              className="shrink-0 gap-1.5"
-            >
-              <Plus />
-              New project
-            </Button>
-          ) : null}
+        {/* Search — own row */}
+        <div className="relative sm:max-w-sm">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search projects or tasks…"
+            className="pl-8"
+          />
         </div>
       </div>
 

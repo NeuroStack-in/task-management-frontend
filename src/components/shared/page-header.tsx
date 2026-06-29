@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePageTitle } from "@/stores/page-header.store";
-import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
   title: string;
@@ -10,31 +11,24 @@ interface PageHeaderProps {
   className?: string;
 }
 
-export function PageHeader({
-  title,
-  description,
-  actions,
-  className,
-}: PageHeaderProps) {
-  // The visible title + subtitle now live in the top navbar; publish them there.
+/**
+ * The page title + subtitle are published to the top navbar, and any page
+ * actions are portalled into the navbar's action slot (#wp-page-actions) so
+ * they sit on the same row as the title. The page body starts directly at its
+ * content; only an sr-only <h1> stays in-page for semantics/landmarks.
+ */
+export function PageHeader({ title, description, actions }: PageHeaderProps) {
   usePageTitle(title, description);
 
-  // Keep an sr-only <h1> for semantics/landmarks on every page.
-  const heading = <h1 className="sr-only">{title}</h1>;
-
-  // Only actions remain in-page. With nothing to show, render no bar at all
-  // (avoids a stray bordered line on title-only pages).
-  if (!actions) return heading;
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setSlot(document.getElementById("wp-page-actions"));
+  }, []);
 
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-end",
-        className,
-      )}
-    >
-      {heading}
-      <div className="flex items-center gap-2">{actions}</div>
-    </div>
+    <>
+      <h1 className="sr-only">{title}</h1>
+      {actions && slot ? createPortal(actions, slot) : null}
+    </>
   );
 }

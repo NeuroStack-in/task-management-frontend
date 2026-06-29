@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight, Bell, Palette, User } from "lucide-react";
+import { ArrowUpRight, Bell, CreditCard, Palette, User } from "lucide-react";
 import { ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { usePageHeaderStore } from "@/stores/page-header.store";
@@ -27,6 +27,7 @@ const ACCOUNT_GROUP: RailGroup = {
   label: "Account",
   items: [
     { label: "Profile", href: "/settings/profile", icon: User },
+    { label: "Billing", href: "/settings/billing", icon: CreditCard },
     { label: "Notifications", href: "/settings/notifications", icon: Bell },
     { label: "Appearance", href: "/settings/appearance", icon: Palette },
   ],

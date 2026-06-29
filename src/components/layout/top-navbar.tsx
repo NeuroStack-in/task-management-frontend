@@ -10,18 +10,17 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { usePermissions } from "@/hooks/use-permissions";
 import { titleForPath } from "@/lib/rbac";
 import { usePageHeaderStore } from "@/stores/page-header.store";
 import { SidebarNav } from "./sidebar-nav";
 import { GlobalTimer } from "./global-timer";
+import { PaletteSwitcher } from "./palette-switcher";
 import { ThemeSwitcher } from "./theme-switcher";
 import { NotificationsMenu } from "./notifications-menu";
 import { UserMenu } from "./user-menu";
 
 export function TopNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { can } = usePermissions();
   const pathname = usePathname();
   // Pages publish their title/subtitle (incl. record names on detail routes);
   // fall back to the route's nav label before the page mounts.
@@ -34,9 +33,6 @@ export function TopNavbar() {
   const isSettings = pathname.startsWith("/settings");
   const title = isSettings ? "Settings" : (pageTitle ?? titleForPath(pathname));
   const description = isSettings ? null : pageDescription;
-  // The timer is only for people who log their own time — oversight roles
-  // (Owner/Admin/HR/Manager) never see it.
-  const showTimer = can("time-tracking:edit");
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md sm:px-6">
@@ -76,15 +72,22 @@ export function TopNavbar() {
 
       {/* Right cluster (search lives in the sidebar) */}
       <div className="ml-auto flex items-center gap-2.5">
+        {/* Page actions portal in here (PageHeader actions, page toggles), on
+            the same row as the title. */}
+        <div
+          id="wp-page-actions"
+          className="flex items-center gap-2 empty:hidden"
+        />
+        <div className="rounded-md border border-border bg-card p-1">
+          <PaletteSwitcher />
+        </div>
+        <div className="rounded-md border border-border bg-card">
+          <GlobalTimer />
+        </div>
         <div className="flex items-center gap-0.5 rounded-md border border-border bg-card p-1">
           <NotificationsMenu />
           <ThemeSwitcher />
         </div>
-        {showTimer ? (
-          <div className="rounded-md border border-border bg-card">
-            <GlobalTimer />
-          </div>
-        ) : null}
         <div className="rounded-md border border-border">
           <UserMenu />
         </div>

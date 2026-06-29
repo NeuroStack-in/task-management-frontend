@@ -1,16 +1,21 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import {
-  BookOpen,
+  BarChart2,
   ChevronDown,
   Clock,
-  FileText,
-  HelpCircle,
+  Compass,
+  Paperclip,
+  Play,
+  PlayCircle,
   Search,
   Send,
+  Settings2,
   Sparkles,
   Ticket,
+  Timer,
+  Users,
 } from "lucide-react"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -43,11 +48,13 @@ import {
 } from "@/components/ui/sheet"
 import { EmptyState } from "@/components/shared/empty-state"
 import { useAssistantStore } from "@/stores/assistant.store"
+import { usePageTitle } from "@/stores/page-header.store"
 import {
   FAQS,
   HELP_ARTICLES,
   HELP_CATEGORIES,
   MOCK_TICKETS,
+  VIDEO_TUTORIALS,
   nextTicketId,
   type HelpArticle,
   type HelpCategory,
@@ -144,15 +151,54 @@ function ArticleSheet({
   )
 }
 
-const POPULAR_SEARCHES = ["Time tracking", "Screenshots", "Reports", "Billing"]
+// ──────────────────────────────────────────────────────────────────────────────
+// Guided walkthroughs data
+// ──────────────────────────────────────────────────────────────────────────────
 
-// Section ids for anchor nav
-const SECTIONS = [
-  { id: "support", label: "Support", icon: Ticket },
-  { id: "browse", label: "Browse", icon: BookOpen },
-  { id: "articles", label: "Articles", icon: FileText },
-  { id: "faqs", label: "FAQs", icon: HelpCircle },
+const WALKTHROUGHS = [
+  {
+    id: "getting-started",
+    icon: Compass,
+    title: "Getting Started",
+    description:
+      "A 5-step overview of the dashboard, timer, and your first project setup.",
+    duration: "~3 min",
+  },
+  {
+    id: "time-tracking",
+    icon: Timer,
+    title: "Time Tracking",
+    description:
+      "Start timers, log manual entries, and review daily work summaries.",
+    duration: "~4 min",
+  },
+  {
+    id: "insights",
+    icon: BarChart2,
+    title: "Analytics & Reports",
+    description:
+      "Navigate productivity scores, anomaly alerts, and export team reports.",
+    duration: "~5 min",
+  },
+  {
+    id: "team-management",
+    icon: Users,
+    title: "Team Management",
+    description:
+      "Add members, assign roles, and organise departments and teams.",
+    duration: "~4 min",
+  },
+  {
+    id: "monitoring-setup",
+    icon: Settings2,
+    title: "Monitoring Setup",
+    description:
+      "Configure idle detection, screenshot intervals, and alert thresholds.",
+    duration: "~3 min",
+  },
 ] as const
+
+const POPULAR_SEARCHES = ["Time tracking", "Screenshots", "Reports", "Billing"]
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Help page root
@@ -164,32 +210,12 @@ export function HelpPage() {
   const [selectedArticle, setSelectedArticle] = useState<HelpArticle | null>(null)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [tickets, setTickets] = useState<SupportTicket[]>([...MOCK_TICKETS])
-  const [activeSection, setActiveSection] = useState<string>("support")
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
   const askAi = () => openAssistant(search.trim() || undefined)
 
-  // Update active section on scroll
-  useEffect(() => {
-    function onScroll() {
-      const scrollY = window.scrollY + 120
-      for (const sec of [...SECTIONS].reverse()) {
-        const el = sectionRefs.current[sec.id]
-        if (el && el.offsetTop <= scrollY) {
-          setActiveSection(sec.id)
-          break
-        }
-      }
-    }
-    window.addEventListener("scroll", onScroll, { passive: true })
-    return () => window.removeEventListener("scroll", onScroll)
-  }, [])
-
-  function scrollTo(id: string) {
-    const el = sectionRefs.current[id]
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" })
-  }
+  // Show the page title in the top navbar (this page has no PageHeader).
+  usePageTitle("Help Center", "Find answers, guides, and support.")
 
   // Ticket form
   const {
@@ -233,7 +259,7 @@ export function HelpPage() {
   return (
     <div className="space-y-10">
       {/* ── Hero ── */}
-      <section className="rounded-lg border border-border bg-feature px-6 py-10 text-center text-feature-foreground sm:py-14">
+      <section className="relative overflow-hidden rounded-[1.6rem] bg-feature px-6 py-12 text-center text-feature-foreground sm:py-16">
         <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
           How can we help?
         </h1>
@@ -275,35 +301,8 @@ export function HelpPage() {
         </div>
       </section>
 
-      {/* ── Sticky anchor nav ── */}
-      <nav className="sticky top-0 z-20 -mx-1 flex gap-1 overflow-x-auto border-b border-border bg-background/95 pb-0 pt-1 backdrop-blur-sm">
-        {SECTIONS.map((sec) => {
-          const Icon = sec.icon
-          const active = activeSection === sec.id
-          return (
-            <button
-              key={sec.id}
-              onClick={() => scrollTo(sec.id)}
-              className={cn(
-                "flex shrink-0 items-center gap-1.5 border-b-2 px-3 pb-2 pt-1 text-xs font-medium transition-colors",
-                active
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Icon className="size-3.5" />
-              {sec.label}
-            </button>
-          )
-        })}
-      </nav>
-
       {/* ── Support tickets ── */}
-      <section
-        id="support"
-        ref={(el) => { sectionRefs.current["support"] = el }}
-        className="space-y-6 scroll-mt-16"
-      >
+      <section className="space-y-6">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Support
         </h2>
@@ -435,6 +434,15 @@ export function HelpPage() {
                   )}
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => toast.info("File attachments are coming soon")}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+                >
+                  <Paperclip className="size-3.5" />
+                  Attach screenshots or files
+                </button>
+
                 <Button type="submit" className="w-full">
                   <Send className="size-4" />
                   Submit ticket
@@ -504,15 +512,11 @@ export function HelpPage() {
       </section>
 
       {/* ── Quick links / categories ── */}
-      <section
-        id="browse"
-        ref={(el) => { sectionRefs.current["browse"] = el }}
-        className="space-y-3 scroll-mt-16"
-      >
+      <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Browse by category
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
           {HELP_CATEGORIES.map((cat) => {
             const Icon = cat.icon
             const active = selectedCategory === cat.key
@@ -523,24 +527,22 @@ export function HelpPage() {
                   setSelectedCategory(active ? null : cat.key)
                 }
                 className={cn(
-                  "flex items-center gap-3 rounded-md border p-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  "flex flex-col items-center gap-2 rounded-2xl border p-3 text-center text-xs font-medium transition-colors",
                   active
                     ? "border-primary bg-primary/5 text-primary"
-                    : "border-border bg-card text-foreground hover:border-primary/30 hover:bg-muted",
+                    : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <div
                   className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-md",
+                    "flex size-9 items-center justify-center rounded-xl",
                     active ? "bg-primary/10" : "bg-muted",
                   )}
                 >
                   <Icon className="size-4" />
                 </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{cat.label}</p>
-                  <p className="text-xs text-muted-foreground">{cat.count} articles</p>
-                </div>
+                <span className="leading-tight">{cat.label}</span>
+                <span className="text-[10px] text-muted-foreground">{cat.count} articles</span>
               </button>
             )
           })}
@@ -548,11 +550,7 @@ export function HelpPage() {
       </section>
 
       {/* ── Articles ── */}
-      <section
-        id="articles"
-        ref={(el) => { sectionRefs.current["articles"] = el }}
-        className="space-y-3 scroll-mt-16"
-      >
+      <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
             Documentation &amp; guides
@@ -597,7 +595,7 @@ export function HelpPage() {
                 <button
                   key={article.slug}
                   onClick={() => setSelectedArticle(article)}
-                  className="group flex cursor-pointer flex-col items-start gap-2 rounded-2xl border bg-card p-4 text-left transition-colors hover:border-primary/30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  className="group flex flex-col items-start gap-2 rounded-2xl border bg-card p-4 text-left transition-colors hover:bg-muted"
                 >
                   <div className="flex w-full items-center justify-between gap-2">
                     <Badge variant="secondary" className="text-xs capitalize">
@@ -621,12 +619,50 @@ export function HelpPage() {
         )}
       </section>
 
+      {/* ── Video tutorials ── */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Video tutorials
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {VIDEO_TUTORIALS.map((video, i) => {
+            const hue = [210, 160, 280, 30, 190, 320][i % 6]
+            return (
+              <button
+                key={video.title}
+                onClick={() => toast.info("Video player coming soon")}
+                className="group relative overflow-hidden rounded-2xl border text-left"
+              >
+                {/* Gradient thumbnail */}
+                <div
+                  className="flex h-36 items-center justify-center"
+                  style={{
+                    background: `linear-gradient(135deg, hsl(${hue} 60% 30%), hsl(${hue + 40} 70% 50%))`,
+                  }}
+                >
+                  <div className="flex size-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110">
+                    <Play className="size-5 fill-white text-white" />
+                  </div>
+                </div>
+                {/* Duration badge */}
+                <div className="absolute top-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
+                  {video.duration}
+                </div>
+                <div className="p-3">
+                  <p className="text-sm font-medium leading-snug">{video.title}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground capitalize">
+                    {HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
+                      video.category}
+                  </p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
       {/* ── FAQs ── */}
-      <section
-        id="faqs"
-        ref={(el) => { sectionRefs.current["faqs"] = el }}
-        className="space-y-3 scroll-mt-16"
-      >
+      <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Frequently asked questions
         </h2>
@@ -635,13 +671,13 @@ export function HelpPage() {
             {FAQS.map((faq, i) => (
               <div key={i}>
                 <button
-                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left text-sm font-medium transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left text-sm font-medium transition-colors hover:bg-muted/50"
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
                 >
                   {faq.q}
                   <ChevronDown
                     className={cn(
-                      "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
+                      "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
                       openFaq === i && "rotate-180",
                     )}
                   />
@@ -653,6 +689,49 @@ export function HelpPage() {
             ))}
           </CardContent>
         </Card>
+      </section>
+
+      {/* ── Guided walkthroughs ── */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Guided walkthroughs
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Interactive step-by-step tours that walk you through key features in context.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {WALKTHROUGHS.map((tour) => {
+            const Icon = tour.icon
+            return (
+              <Card key={tour.id} className="flex flex-col">
+                <CardContent className="flex flex-1 flex-col gap-3 pt-5">
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
+                    <Icon className="size-5" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium">{tour.title}</p>
+                    <p className="text-xs text-muted-foreground">{tour.description}</p>
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="size-3" />
+                      {tour.duration}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => toast.success(`"${tour.title}" tour started`)}
+                    >
+                      <PlayCircle className="size-4" />
+                      Start tour
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
       </section>
 
       {/* Article reader sheet */}

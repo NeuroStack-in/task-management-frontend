@@ -8,10 +8,14 @@ import {
   BadgeDollarSign,
   Activity,
   Download,
+  Timer,
+  FolderKanban,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardAction,
@@ -48,6 +52,18 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
     () => entries.reduce((s, e) => s + e.durationSec, 0),
     [entries],
   );
+  const dayStats = useMemo(
+    () => ({
+      billable: formatHours(
+        entries.filter((e) => e.billable).reduce((s, e) => s + e.durationSec, 0) / 3600,
+      ),
+      focus: `${summary.avgActivity}%`,
+      longest: formatDuration(entries.reduce((m, e) => Math.max(m, e.durationSec), 0)),
+      projects: String(new Set(entries.map((e) => e.project)).size),
+    }),
+    [entries, summary.avgActivity],
+  );
+
   // Resolve the date on the client to avoid an SSR/hydration mismatch.
   const [today, setToday] = useState("");
   useEffect(() => {
@@ -89,7 +105,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <TimerHero onLogged={handleLogged} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -150,24 +166,44 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
             </Button>
           </CardAction>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-xl border sm:grid-cols-4 sm:divide-y-0">
+            <SummaryCell
+              icon={BadgeDollarSign}
+              label="Billable today"
+              value={dayStats.billable}
+              tone="success"
+            />
+            <SummaryCell icon={Activity} label="Focus" value={dayStats.focus} />
+            <SummaryCell
+              icon={Timer}
+              label="Longest session"
+              value={dayStats.longest}
+            />
+            <SummaryCell
+              icon={FolderKanban}
+              label="Projects touched"
+              value={dayStats.projects}
+            />
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="py-2 pl-4 text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="pl-6 text-xs font-medium uppercase tracking-wide">
                     Task
                   </TableHead>
-                  <TableHead className="py-2 text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
                     Project
                   </TableHead>
-                  <TableHead className="py-2 text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
                     Time
                   </TableHead>
-                  <TableHead className="w-36 py-2 text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="w-40 text-center text-xs font-medium uppercase tracking-wide">
                     Activity
                   </TableHead>
-                  <TableHead className="py-2 pr-4 text-right text-xs font-medium uppercase tracking-wide">
+                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
                     Duration
                   </TableHead>
                 </TableRow>
@@ -175,15 +211,22 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               <TableBody>
                 {entries.map((e) => (
                   <TableRow key={e.id}>
-                    <TableCell className="py-2 pl-4 font-medium">{e.task}</TableCell>
-                    <TableCell className="py-2 text-sm text-muted-foreground">{e.project}</TableCell>
-                    <TableCell className="py-2 font-mono text-xs tabular-nums text-muted-foreground">
+                    <TableCell className="pl-6">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{e.task}</span>
+                        {e.billable ? <Badge variant="secondary">Billable</Badge> : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center text-muted-foreground">{e.project}</TableCell>
+                    <TableCell className="text-center font-mono text-xs tabular-nums text-muted-foreground">
                       {e.start} – {e.end ?? "…"}
                     </TableCell>
-                    <TableCell className="py-2">
-                      <ActivityBar value={e.activity} />
+                    <TableCell>
+                      <div className="flex justify-center">
+                        <ActivityBar value={e.activity} />
+                      </div>
                     </TableCell>
-                    <TableCell className="py-2 pr-4 text-right font-mono tabular-nums">
+                    <TableCell className="text-center font-mono tabular-nums">
                       {formatDuration(e.durationSec)}
                     </TableCell>
                   </TableRow>
@@ -191,10 +234,9 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={4} className="py-2 pl-4 font-medium">
-                    Total
-                  </TableCell>
-                  <TableCell className="py-2 pr-4 text-right font-mono font-semibold tabular-nums">
+                  <TableCell className="pl-6 font-medium">Total</TableCell>
+                  <TableCell colSpan={3} />
+                  <TableCell className="text-center font-mono font-semibold tabular-nums">
                     {formatDuration(totalSec)}
                   </TableCell>
                 </TableRow>
@@ -207,10 +249,43 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   );
 }
 
+function SummaryCell({
+  icon: Icon,
+  label,
+  value,
+  tone = "default",
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  tone?: "default" | "success";
+}) {
+  return (
+    <div className="flex items-center gap-3 bg-card px-4 py-3.5">
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-lg",
+          tone === "success"
+            ? "bg-success/10 text-success"
+            : "bg-primary/10 text-primary",
+        )}
+      >
+        <Icon className="size-[1.15rem]" />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        <p className="text-lg font-semibold leading-tight tabular-nums">{value}</p>
+      </div>
+    </div>
+  );
+}
+
 function ActivityBar({ value }: { value: number }) {
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
+      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
             "h-full rounded-full",

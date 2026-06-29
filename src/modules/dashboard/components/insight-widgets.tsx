@@ -23,32 +23,27 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
       <CardHeader>
         <CardTitle>Productivity Heatmap</CardTitle>
       </CardHeader>
-      {/* flex-col so the grid of cells grows to fill the full card height and
-          width — the day rows flex-1 to consume vertical slack (no dead space)
-          and each cell flex-1 to span the full width. */}
-      <CardContent className="flex flex-col gap-1.5">
-        <div className="flex flex-1 flex-col gap-1">
-          {data.map((row, d) => (
-            <div key={HEATMAP_DAYS[d]} className="flex flex-1 items-stretch gap-2">
-              <span className="flex w-8 shrink-0 items-center text-xs text-muted-foreground">
-                {HEATMAP_DAYS[d]}
-              </span>
-              <div className="flex flex-1 gap-1">
-                {row.map((v, h) => (
-                  <div
-                    key={h}
-                    title={`${HEATMAP_DAYS[d]} · ${v}%`}
-                    className="min-h-4 flex-1 rounded-[4px]"
-                    style={{
-                      backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,
-                    }}
-                  />
-                ))}
-              </div>
+      <CardContent className="space-y-1.5">
+        {data.map((row, d) => (
+          <div key={HEATMAP_DAYS[d]} className="flex items-center gap-2">
+            <span className="w-8 shrink-0 text-xs text-muted-foreground">
+              {HEATMAP_DAYS[d]}
+            </span>
+            <div className="flex flex-1 gap-1">
+              {row.map((v, h) => (
+                <div
+                  key={h}
+                  title={`${HEATMAP_DAYS[d]} · ${v}%`}
+                  className="h-4 flex-1 rounded-[4px]"
+                  style={{
+                    backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,
+                  }}
+                />
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 pl-10">
+          </div>
+        ))}
+        <div className="flex items-center gap-2 pt-1 pl-10">
           {HEATMAP_HOURS.map((h, i) => (
             <span
               key={i}
@@ -58,7 +53,7 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
             </span>
           ))}
         </div>
-        <div className="flex items-center justify-end gap-1.5 text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-end gap-1.5 pt-1 text-[10px] text-muted-foreground">
           <span>Less</span>
           {[18, 40, 62, 84, 100].map((v) => (
             <span
@@ -89,18 +84,18 @@ function Donut({
 }) {
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3">
-      {/* Fixed 140px square ring so the center text always fits the hole with
-          safe padding — no variable flex box, no overlap with the arc. Pixel
-          radii keep a consistent ~46px inner hole for the value. */}
-      <div className="relative size-[140px] shrink-0">
+    // The ring grows to fill all space above the legend (flex-1 + percentage
+    // radii), so the card is used efficiently — no dead band — with the legend
+    // anchored at the bottom.
+    <div className="flex h-full flex-col gap-3">
+      <div className="relative min-h-[150px] w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={slices}
               dataKey="value"
-              innerRadius={48}
-              outerRadius={68}
+              innerRadius="60%"
+              outerRadius="82%"
               paddingAngle={2}
               stroke="none"
             >
@@ -114,21 +109,17 @@ function Donut({
           <span className="font-display text-2xl font-semibold leading-none tabular-nums">
             {center}
           </span>
-          <span className="mt-0.5 text-[11px] leading-none text-muted-foreground">
-            {caption}
-          </span>
+          <span className="mt-1 text-xs text-muted-foreground">{caption}</span>
         </div>
       </div>
-      <ul className="w-full space-y-1.5">
+      <ul className="w-full space-y-2">
         {slices.map((s) => (
           <li key={s.label} className="flex items-center gap-2 text-sm">
             <span
               className="size-2.5 shrink-0 rounded-full"
               style={{ backgroundColor: s.color }}
             />
-            <span className="flex-1 truncate text-muted-foreground">
-              {s.label}
-            </span>
+            <span className="flex-1 text-muted-foreground">{s.label}</span>
             <span className="font-medium tabular-nums">{s.value}</span>
             <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">
               {Math.round((s.value / total) * 100)}%
@@ -142,30 +133,19 @@ function Donut({
 
 /* --------------------------- Attendance donut --------------------------- */
 
-/**
- * Attendance + activity in one card. The donut shows the attendance breakdown
- * (present/late/leave/absent) and a footer line carries the active-vs-inactive
- * split — folding in what used to be a near-duplicate "Active vs Inactive"
- * ring instead of repeating a second donut of the same population.
- */
 export function AttendanceDonut({
   counts,
-  active,
-  inactive,
 }: {
   counts: Record<AttendanceStatus, number>;
-  active: number;
-  inactive: number;
 }) {
   const total = counts.present + counts.late + counts.leave + counts.absent;
   const presentPct = Math.round(((counts.present + counts.late) / (total || 1)) * 100);
-  const activePct = Math.round((active / (active + inactive || 1)) * 100);
   return (
     <Card>
       <CardHeader>
         <CardTitle>Attendance</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col">
+      <CardContent>
         <Donut
           center={`${presentPct}%`}
           caption="clocked in"
@@ -176,14 +156,35 @@ export function AttendanceDonut({
             { label: "Absent", value: counts.absent, color: "var(--destructive)" },
           ]}
         />
-        <div className="mt-3 flex items-center justify-between border-t border-border pt-3 text-xs">
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-full bg-primary" /> Active now
-          </span>
-          <span className="font-medium tabular-nums">
-            {active} active · {inactive} inactive ({activePct}%)
-          </span>
-        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ------------------------- Active vs inactive ring ------------------------- */
+
+export function ActiveInactiveRing({
+  active,
+  inactive,
+}: {
+  active: number;
+  inactive: number;
+}) {
+  const total = active + inactive || 1;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Active vs Inactive</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Donut
+          center={`${Math.round((active / total) * 100)}%`}
+          caption="active"
+          slices={[
+            { label: "Active", value: active, color: "var(--primary)" },
+            { label: "Inactive", value: inactive, color: "var(--muted-foreground)" },
+          ]}
+        />
       </CardContent>
     </Card>
   );
