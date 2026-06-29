@@ -16,9 +16,9 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "top-employees", title: "Top Employees", type: "top-employees", position: 3, visible: true },
   { id: "screenshots", title: "Screenshots Captured", type: "screenshots", position: 4, visible: true },
   { id: "productivity-trends", title: "Productivity Trends", type: "productivity-trends", position: 5, visible: true },
-  { id: "heatmap", title: "Productivity Heatmap", type: "heatmap", position: 6, visible: false },
-  { id: "headcount", title: "Headcount by Status", type: "headcount", position: 7, visible: false },
-  { id: "billing", title: "Billing Overview", type: "billing", position: 8, visible: false },
+  { id: "heatmap", title: "Productivity Heatmap", type: "heatmap", position: 6, visible: true },
+  { id: "headcount", title: "Headcount by Status", type: "headcount", position: 7, visible: true },
+  { id: "billing", title: "Billing Overview", type: "billing", position: 8, visible: true },
 ];
 
 interface DashboardState {
@@ -55,7 +55,7 @@ export const useDashboardStore = create<DashboardState>()(
       // Bumped when the widget set or default order changed shape; older
       // persisted layouts are discarded so everyone picks up the new AI-first
       // default order.
-      version: 9,
+      version: 10,
       migrate: () => ({ widgets: DEFAULT_WIDGETS }) as DashboardState,
     },
   ),
