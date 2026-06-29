@@ -5,12 +5,16 @@ import { TeamComparisonChart } from "./components/team-comparison-chart";
 import {
   ProductivityHeatmap,
   AttendanceDonut,
+  ActiveInactiveRing,
   HeadcountStatus,
 } from "./components/insight-widgets";
 import {
   TopEmployeesWidget,
   ScreenshotsWidget,
   AiSummaryWidget,
+  AlertsWidget,
+  DeadlineWidget,
+  UpcomingTasksWidget,
   BillingWidget,
 } from "./components/widgets";
 import type { DashboardData } from "./lib/dashboard-data";
@@ -18,37 +22,35 @@ import type { DashboardData } from "./lib/dashboard-data";
 export type { DashboardData } from "./lib/dashboard-data";
 
 interface WidgetDef {
-  /** Columns spanned on the xl (3-col) bento grid. */
+  /**
+   * Columns spanned on the bento grid. All widgets are uniform (1) so the
+   * adaptive grid can always tile without gaps; charts render comfortably in a
+   * single cell. Kept as a field in case a future widget needs a wider cell.
+   */
   span: 1 | 2;
   render: (d: DashboardData) => ReactNode;
 }
 
-/**
- * Only widgets backed by real, derived data live here. Static placeholder
- * cards (the old ai-summary / alerts / deadlines / upcoming-tasks) were
- * removed. The registry is Partial so layouts persisted before that pruning
- * (which may still list removed types) resolve to no def and are skipped.
- */
-export const WIDGET_REGISTRY: Partial<Record<WidgetType, WidgetDef>> = {
+export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   "productivity-trends": {
-    span: 2,
+    span: 1,
     render: (d) => (
       <ProductivityChart data={d.productivityTrend} rangeLabel={d.rangeLabel} />
     ),
   },
-  heatmap: { span: 2, render: (d) => <ProductivityHeatmap data={d.heatmap} /> },
+  heatmap: { span: 1, render: (d) => <ProductivityHeatmap data={d.heatmap} /> },
   "team-comparison": {
-    span: 2,
+    span: 1,
     render: (d) => <TeamComparisonChart data={d.teamData} />,
   },
   attendance: {
     span: 1,
+    render: (d) => <AttendanceDonut counts={d.attendanceCounts} />,
+  },
+  "active-inactive": {
+    span: 1,
     render: (d) => (
-      <AttendanceDonut
-        counts={d.attendanceCounts}
-        active={d.activeCount}
-        inactive={d.inactiveCount}
-      />
+      <ActiveInactiveRing active={d.activeCount} inactive={d.inactiveCount} />
     ),
   },
   headcount: {
@@ -67,4 +69,7 @@ export const WIDGET_REGISTRY: Partial<Record<WidgetType, WidgetDef>> = {
   },
   "ai-summary": { span: 1, render: () => <AiSummaryWidget /> },
   billing: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
+  alerts: { span: 1, render: () => <AlertsWidget /> },
+  deadlines: { span: 1, render: () => <DeadlineWidget /> },
+  "upcoming-tasks": { span: 1, render: () => <UpcomingTasksWidget /> },
 };

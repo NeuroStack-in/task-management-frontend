@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  Sparkles,
+  CreditCard,
+  Camera,
+  CircleDot,
+  ArrowUpRight,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -10,11 +18,10 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sparkline } from "@/components/shared/sparkline";
-import { AiInsight } from "@/components/shared/ai-insight";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { initials } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
-import type { DashboardData } from "../lib/dashboard-data";
 
 /** Subtle footer link that routes a widget to its canonical page. */
 function ViewAllLink({ href, label = "View all" }: { href: string; label?: string }) {
@@ -75,9 +82,14 @@ export function ScreenshotsWidget({
   trend: number[];
 }) {
   return (
-    <Card className="justify-between transition-colors hover:border-primary/30">
+    <Card className="justify-between">
       <CardHeader>
-        <CardTitle>Screenshots Captured</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <Camera className="size-4" />
+          </span>
+          Screenshots Captured
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="font-display text-3xl font-semibold tabular-nums">
@@ -91,14 +103,8 @@ export function ScreenshotsWidget({
   );
 }
 
-/* ------------------------------ AI insight ------------------------------ */
+/* ------------------------------ AI Summary ------------------------------ */
 
-/**
- * The single AI surface on the dashboard. Everything here is derived from the
- * live `DashboardData` (team scores, productivity delta, attendance) — no
- * scripted copy. It flags the biggest spread between departments so the gap is
- * actionable, and grounds the claim in the basis line.
- */
 export function AiSummaryWidget() {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   return (
@@ -135,51 +141,118 @@ export function AiSummaryWidget() {
   );
 }
 
-export function DashboardInsight({ data }: { data: DashboardData }) {
-  const openAssistant = useAssistantStore((s) => s.openAssistant);
-  const { teamData, kpis, attendanceCounts, rangeLabel } = data;
-  const ranked = [...teamData].sort((a, b) => b.score - a.score);
-  const top = ranked[0];
-  const bottom = ranked[ranked.length - 1];
-  const delta = kpis.productivity.deltaPct;
-  const present = attendanceCounts.present + attendanceCounts.late;
-  const total =
-    present + attendanceCounts.leave + attendanceCounts.absent || 1;
-  const attendancePct = Math.round((present / total) * 100);
+/* ---------------------------- Recent Alerts ---------------------------- */
 
-  const trendDir = delta >= 0 ? "up" : "down";
-  const title =
-    top && bottom && top.team !== bottom.team
-      ? `${bottom.team} trails ${top.team} by ${top.score - bottom.score} pts`
-      : `Productivity ${trendDir} ${Math.abs(delta)}% ${rangeLabel}`;
+const ALERTS = [
+  { tone: "danger", title: "Low productivity", detail: "Backend team · −8% today" },
+  { tone: "warning", title: "Missing screenshots", detail: "3 agents offline > 2h" },
+  { tone: "warning", title: "Long inactivity", detail: "J. Cannan idle 47m" },
+  { tone: "danger", title: "Burnout risk", detail: "Design · 2 people flagged" },
+] as const;
 
-  const points = [
-    `Productivity ${kpis.productivity.value}% overall, ${delta >= 0 ? "+" : ""}${delta}% vs prior period`,
-    top && bottom
-      ? `${top.team} leads at ${top.score}%; ${bottom.team} lowest at ${bottom.score}%`
-      : null,
-    `Attendance holding at ${attendancePct}% clocked in`,
-  ].filter(Boolean) as string[];
-
+export function AlertsWidget() {
   return (
-    <AiInsight
-      title={title}
-      detail={
-        bottom
-          ? `${bottom.team} is the widest gap to close — review its workload and blockers before it drags the org average.`
-          : "Productivity is tracking close to plan across departments."
-      }
-      points={points}
-      action={{
-        label: "Ask the assistant",
-        onClick: () =>
-          openAssistant(
-            "Summarize this week's productivity and attendance for the organization.",
-          ),
-      }}
-      basis={`${teamData.length} departments · ${total} people, ${rangeLabel}`}
-      className="h-full"
-    />
+    <Card>
+      <CardHeader>
+        <CardTitle>Recent Alerts</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {ALERTS.map((a) => (
+          <div key={a.title} className="flex items-start gap-3">
+            <span
+              className={cn(
+                "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
+                a.tone === "danger"
+                  ? "bg-destructive/12 text-destructive"
+                  : "bg-warning/15 text-warning",
+              )}
+            >
+              <AlertTriangle className="size-3.5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{a.title}</p>
+              <p className="truncate text-xs text-muted-foreground">{a.detail}</p>
+            </div>
+          </div>
+        ))}
+        <ViewAllLink href="/insights/anomalies" label="View all alerts" />
+      </CardContent>
+    </Card>
+  );
+}
+
+/* -------------------------- Deadline Warnings -------------------------- */
+
+const DEADLINES = [
+  { task: "Q3 productivity report", due: "Due in 2h", urgent: true },
+  { task: "Onboard 3 new hires", due: "Due today", urgent: true },
+  { task: "Client billing review", due: "Tomorrow", urgent: false },
+  { task: "Security policy update", due: "In 3 days", urgent: false },
+];
+
+export function DeadlineWidget() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Deadline Warnings</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {DEADLINES.map((d) => (
+          <div key={d.task} className="flex items-center gap-3">
+            <CalendarClock
+              className={cn(
+                "size-4 shrink-0",
+                d.urgent ? "text-destructive" : "text-muted-foreground",
+              )}
+            />
+            <p className="min-w-0 flex-1 truncate text-sm">{d.task}</p>
+            <span
+              className={cn(
+                "shrink-0 text-xs font-medium",
+                d.urgent ? "text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {d.due}
+            </span>
+          </div>
+        ))}
+        <ViewAllLink href="/projects" label="View all deadlines" />
+      </CardContent>
+    </Card>
+  );
+}
+
+/* --------------------------- Upcoming Tasks --------------------------- */
+
+const TASKS = [
+  { title: "Review design tokens", project: "WEB-12", time: "9:30" },
+  { title: "Sync with Platform team", project: "PLT-4", time: "11:00" },
+  { title: "Draft hiring plan", project: "HR-7", time: "14:00" },
+  { title: "Approve timesheets", project: "OPS-2", time: "16:30" },
+];
+
+export function UpcomingTasksWidget() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Upcoming Tasks</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {TASKS.map((t) => (
+          <div key={t.title} className="flex items-center gap-3">
+            <CircleDot className="size-4 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{t.title}</p>
+              <p className="text-xs text-muted-foreground">{t.project}</p>
+            </div>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+              {t.time}
+            </span>
+          </div>
+        ))}
+        <ViewAllLink href="/projects" label="View my tasks" />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -196,9 +269,14 @@ export function BillingWidget({
 }) {
   const pct = Math.round((seatsUsed / seatsTotal) * 100);
   return (
-    <Card className="transition-colors hover:border-primary/30">
+    <Card>
       <CardHeader>
-        <CardTitle>Billing Overview</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <CreditCard className="size-4" />
+          </span>
+          Billing Overview
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-end justify-between">
@@ -227,7 +305,7 @@ export function BillingWidget({
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Next invoice on the 1st · auto-renews
+          Next invoice on the 1st · auto-pay on
         </p>
         <ViewAllLink href="/billing" label="Manage billing" />
       </CardContent>

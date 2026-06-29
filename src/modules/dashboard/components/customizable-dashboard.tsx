@@ -4,14 +4,11 @@ import { useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
-  pointerWithin,
-  closestCorners,
+  closestCenter,
   KeyboardSensor,
   PointerSensor,
-  useDroppable,
   useSensor,
   useSensors,
-  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -27,9 +24,9 @@ import {
   GripVertical,
   SlidersHorizontal,
   RotateCcw,
-  X,
   ChevronDown,
   ChevronUp,
+  X,
 } from "lucide-react";
 import { useDashboardStore } from "@/stores/dashboard.store";
 import {
@@ -48,26 +45,49 @@ import { cn } from "@/lib/utils";
 import type { DashboardWidget } from "@/types";
 
 /**
- * Makes a widget card fill its (equal-height) grid cell. The card stretches to
- * h-full and its CardContent grows (flex-1) as a column so chart/heatmap
- * containers can fill the remaining space below the header. We deliberately do
- * NOT add `justify-between` here — that pushed content to the top and bottom
- * edges and left a dead band in the middle of every chart. Children fill from
- * the top; charts opt into `flex-1` themselves to consume the slack.
+ * Makes a widget card fill its tile and distribute its content top-to-bottom:
+ * the card stretches to h-full and its CardContent grows (flex-1, justify-between).
  */
 const FILL_CARD =
   "h-full [&>*]:h-full [&>*]:[--card-spacing:--spacing(4)]! " +
   "[&_[data-slot=card-content]]:flex-1 [&_[data-slot=card-content]]:flex " +
-  "[&_[data-slot=card-content]]:min-h-0 [&_[data-slot=card-content]]:flex-col";
+  "[&_[data-slot=card-content]]:flex-col [&_[data-slot=card-content]]:justify-between";
+
+/**
+ * Tile width: three per row on desktop (two on tablet, one on mobile). `grow`
+ * lets the cards on a partial LAST row expand to fill the width — a lone last
+ * card spans the whole row, two split it in half — while every complete row
+ * stays a clean 3-up. (-0.02px guards against sub-pixel rounding wrapping a full
+ * row early; the gap is 1.25rem = gap-5.)
+ */
+const TILE =
+  "grow min-w-0 basis-full " +
+  "sm:basis-[calc((100%-1.25rem)/2-0.02px)] " +
+  "xl:basis-[calc((100%-2.5rem)/3-0.02px)]";
+
+/**
+ * Widgets shown before "Show more". Six by default (two rows); the rest are
+ * revealed by the toggle.
+ */
+const COLLAPSED_COUNT = 6;
+
+/**
+ * The first row (3 widgets on desktop) stretches to fill the viewport down to the
+ * sidebar's bottom edge, so the second row sits just below the fold instead of
+ * peeking. This is the height from the top of the widget grid to that edge — tune
+ * the rem if the row doesn't land exactly on the sidebar's bottom.
+ */
+const HERO_ROW_FILL = "xl:min-h-[calc(99vh-22rem)]";
 
 function SortableWidget({
   id,
-  span,
+  heroFill,
   onRemove,
   children,
 }: {
   id: string;
-  span: 1 | 2;
+  /** First-row tile: stretch to fill the viewport down to the sidebar bottom. */
+  heroFill?: boolean;
   onRemove: () => void;
   children: React.ReactNode;
 }) {
@@ -79,19 +99,20 @@ function SortableWidget({
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "group/widget relative h-full",
-        span === 2 && "sm:col-span-2",
+        "group/widget relative flex flex-col",
+        TILE,
+        heroFill && HERO_ROW_FILL,
         isDragging && "z-10",
       )}
     >
       {!isDragging ? (
-        <div className="absolute right-3 top-3 z-10 hidden gap-1 opacity-0 transition-opacity focus-within:flex focus-within:opacity-100 group-hover/widget:flex group-hover/widget:opacity-100">
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/widget:opacity-100">
           <button
             type="button"
-            aria-label="Drag to reorder widget"
+            aria-label="Drag to reorder"
             {...attributes}
             {...listeners}
-            className="flex size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 active:cursor-grabbing"
+            className="flex size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground active:cursor-grabbing"
           >
             <GripVertical className="size-4" />
           </button>
@@ -99,7 +120,7 @@ function SortableWidget({
             type="button"
             aria-label="Remove widget"
             onClick={onRemove}
-            className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           >
             <X className="size-4" />
           </button>
@@ -110,7 +131,7 @@ function SortableWidget({
         // Dashed drop-placeholder; the floating DragOverlay shows the widget.
         <div className="relative h-full">
           <div className={cn("invisible", FILL_CARD)}>{children}</div>
-          <div className="absolute inset-0 rounded-lg border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
+          <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
         </div>
       ) : (
         <div className={FILL_CARD}>{children}</div>
@@ -119,43 +140,6 @@ function SortableWidget({
   );
 }
 
-/** Sentinel id for the trailing empty-space drop target. */
-const END_ZONE_ID = "__dashboard-end__";
-
-/**
- * A droppable that fills the empty grid cell after the last widget so a card can
- * be dropped into the blank trailing space (= move to the end). Only rendered
- * while a drag is in progress.
- */
-function EndDropZone() {
-  const { setNodeRef, isOver } = useDroppable({ id: END_ZONE_ID });
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "flex h-full items-center justify-center rounded-lg border-2 border-dashed text-xs font-medium transition-colors",
-        isOver
-          ? "border-primary/60 bg-primary/[0.06] text-primary"
-          : "border-border/70 text-muted-foreground",
-      )}
-    >
-      Drop here to move to the end
-    </div>
-  );
-}
-
-/**
- * Pointer-first collision detection: prefer whatever the cursor is actually
- * inside (so empty trailing space resolves to the end zone), then fall back to
- * `closestCorners` — the dnd-kit strategy best suited to a sortable grid with
- * mixed-width (span-1 / span-2) cells. This is what makes a drop land reliably
- * instead of snapping back.
- */
-const collisionDetection: CollisionDetection = (args) => {
-  const pointer = pointerWithin(args);
-  return pointer.length > 0 ? pointer : closestCorners(args);
-};
-
 export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const widgets = useDashboardStore((s) => s.widgets);
   const toggleWidget = useDashboardStore((s) => s.toggleWidget);
@@ -163,34 +147,25 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const reset = useDashboardStore((s) => s.reset);
 
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Skip any widget whose type no longer has a registry def (e.g. the removed
-  // static ai-summary/alerts/deadlines/upcoming-tasks still present in older
-  // persisted layouts) so they never show in the grid or the Customize list.
   const ordered = useMemo(
-    () =>
-      [...widgets]
-        .filter((w) => WIDGET_REGISTRY[w.type])
-        .sort((a, b) => a.position - b.position),
+    () => [...widgets].sort((a, b) => a.position - b.position),
     [widgets],
   );
   const visible = ordered.filter((w) => w.visible);
+  const visibleIds = visible.map((w) => w.id);
   const hiddenIds = ordered.filter((w) => !w.visible).map((w) => w.id);
 
-  // Collapsed view shows the first row of widgets (AI-first); the rest sit
-  // behind "Show more". Drag/reorder operates on whatever is displayed.
-  const COLLAPSED_COUNT = 6;
-  const collapsible = visible.length > COLLAPSED_COUNT;
-  const displayed =
-    showAll || !collapsible ? visible : visible.slice(0, COLLAPSED_COUNT);
-  const displayedIds = displayed.map((w) => w.id);
-  const restVisibleIds = visible.slice(displayed.length).map((w) => w.id);
+  // Collapsed view shows only the first N widgets; "Show more" reveals the rest.
+  const canCollapse = visible.length > COLLAPSED_COUNT;
+  const shown = canCollapse && !expanded ? visible.slice(0, COLLAPSED_COUNT) : visible;
+  const shownIds = shown.map((w) => w.id);
 
   const activeWidget = activeId
     ? ordered.find((w) => w.id === activeId)
@@ -201,33 +176,25 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const onDragEnd = (e: DragEndEvent) => {
     setActiveId(null);
     const { active, over } = e;
-    if (!over) return;
-    const oldIndex = displayedIds.indexOf(String(active.id));
-    if (oldIndex < 0) return;
-
-    // Dropped onto the trailing empty space → move the widget to the end.
-    if (over.id === END_ZONE_ID) {
-      if (oldIndex === displayedIds.length - 1) return; // already last
-      const newDisplayed = arrayMove(displayedIds, oldIndex, displayedIds.length - 1);
-      reorder([...newDisplayed, ...restVisibleIds, ...hiddenIds]);
-      return;
-    }
-
-    if (active.id === over.id) return;
-    const newIndex = displayedIds.indexOf(String(over.id));
-    if (newIndex < 0) return;
-    const newDisplayed = arrayMove(displayedIds, oldIndex, newIndex);
-    reorder([...newDisplayed, ...restVisibleIds, ...hiddenIds]);
+    if (!over || active.id === over.id) return;
+    const oldIndex = shownIds.indexOf(String(active.id));
+    const newIndex = shownIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const newShown = arrayMove(shownIds, oldIndex, newIndex);
+    // Reorder within the shown set; keep the still-collapsed visible tail and the
+    // hidden widgets in their existing relative order behind it.
+    const restVisible = visibleIds.filter((id) => !shownIds.includes(id));
+    reorder([...newShown, ...restVisible, ...hiddenIds]);
   };
 
-  const renderWidget = (w: DashboardWidget) => {
+  const renderWidget = (w: DashboardWidget, heroFill: boolean) => {
     const def = WIDGET_REGISTRY[w.type];
     if (!def) return null;
     return (
       <SortableWidget
         key={w.id}
         id={w.id}
-        span={def.span}
+        heroFill={heroFill}
         onRemove={() => toggleWidget(w.id)}
       >
         {def.render(data)}
@@ -247,8 +214,11 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           >
             <SlidersHorizontal className="size-4" /> Customize
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 p-0">
-            <div className="max-h-72 overflow-y-auto px-1 py-1">
+          <DropdownMenuContent align="end" className="w-64 p-0">
+            <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
+              Show widgets
+            </p>
+            <div className="max-h-72 overflow-y-auto px-1 pb-1">
               {ordered.map((w) => (
                 <label
                   key={w.id}
@@ -275,34 +245,31 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
       </div>
 
       {visible.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No widgets visible — use{" "}
-          <span className="font-medium text-foreground">Customize</span> above to enable some.
+        <div className="rounded-[1.4rem] border border-dashed p-10 text-center text-sm text-muted-foreground">
+          No widgets shown. Use{" "}
+          <span className="font-medium text-foreground">Customize</span> to add
+          some.
         </div>
       ) : (
         <DndContext
           sensors={sensors}
-          collisionDetection={collisionDetection}
+          collisionDetection={closestCenter}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           onDragCancel={() => setActiveId(null)}
         >
-          <SortableContext items={displayedIds} strategy={rectSortingStrategy}>
-            {/* Bento grid: rows have a ~19rem floor so chart widgets fill a
-                readable, equal height, but grow to fit taller content (e.g. the
-                Top Employees list) instead of clipping it against the card's
-                bottom edge. Each card fills its cell (see FILL_CARD). Charts span
-                2 columns; drop any widget anywhere — order = placement. */}
-            <div className="grid auto-rows-[minmax(19rem,auto)] grid-flow-row-dense grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {displayed.map(renderWidget)}
-              {/* Trailing drop target — only while dragging — so a card can land
-                  in the empty space instead of snapping back. */}
-              {activeId ? <EndDropZone /> : null}
+          <SortableContext items={shownIds} strategy={rectSortingStrategy}>
+            {/* Three-up rows; the partial last row's cards grow to fill the width
+                (1 card → full row, 2 cards → half each), so a row never leaves an
+                empty cell. The first row stretches to the sidebar's bottom edge
+                (HERO_ROW_FILL) so the second row sits just below the fold. */}
+            <div className="flex flex-wrap items-stretch gap-5">
+              {shown.map((w, i) => renderWidget(w, i < 3))}
             </div>
           </SortableContext>
           <DragOverlay>
             {activeWidget ? (
-              <div className="cursor-grabbing rounded-lg opacity-95 shadow-lg ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
+              <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
                 {WIDGET_REGISTRY[activeWidget.type]?.render(data)}
               </div>
             ) : null}
@@ -310,22 +277,23 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
         </DndContext>
       )}
 
-      {collapsible ? (
-        <div className="flex justify-center pt-1">
+      {/* Show more / less — keeps the initial view inside the viewport. */}
+      {canCollapse ? (
+        <div className="flex justify-center">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="gap-1.5"
-            onClick={() => setShowAll((v) => !v)}
+            onClick={() => setExpanded((v) => !v)}
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
           >
-            {showAll ? (
+            {expanded ? (
               <>
-                <ChevronUp className="size-4" /> Show less
+                Show less <ChevronUp className="size-4" />
               </>
             ) : (
               <>
-                <ChevronDown className="size-4" /> Show{" "}
-                {visible.length - COLLAPSED_COUNT} more
+                Show {visible.length - COLLAPSED_COUNT} more{" "}
+                <ChevronDown className="size-4" />
               </>
             )}
           </Button>
