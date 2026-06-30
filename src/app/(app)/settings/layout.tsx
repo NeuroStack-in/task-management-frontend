@@ -65,13 +65,13 @@ export default function SettingsLayout({
   const groups: RailGroup[] = [ACCOUNT_GROUP, ...adminGroups];
 
   return (
-    <div className="flex flex-col gap-6 pt-1 lg:flex-row lg:gap-10">
+    <div className="flex flex-col gap-6 pt-1 lg:h-[calc(100vh-7rem)] lg:flex-row lg:gap-10">
       {/* ── Section rail ── */}
       <nav
         aria-label="Settings sections"
-        className="lg:sticky lg:top-20 lg:w-60 lg:shrink-0 lg:self-start"
+        className="lg:h-full lg:w-60 lg:shrink-0"
       >
-        <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:max-h-[calc(100vh-7.5rem)] lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
+        <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:h-full lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
           {groups.map((group) => (
             <div key={group.label} className="shrink-0 space-y-1.5">
               <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -119,7 +119,9 @@ export default function SettingsLayout({
       {/* ── Content pane ── */}
       {/* Sub-pages render their header in-pane; the navbar shows "Settings". */}
       <InPaneHeaderContext.Provider value={true}>
-        <div className="min-w-0 flex-1">{children}</div>
+        <div className="min-w-0 flex-1 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+          {children}
+        </div>
       </InPaneHeaderContext.Provider>
     </div>
   );
