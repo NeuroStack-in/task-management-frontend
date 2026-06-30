@@ -71,9 +71,6 @@ export default function SettingsLayout({
         aria-label="Settings sections"
         className="lg:sticky lg:top-20 lg:w-60 lg:shrink-0 lg:self-start"
       >
-        <p className="mb-4 hidden font-display text-lg font-semibold tracking-tight lg:block">
-          Settings
-        </p>
         <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:max-h-[calc(100vh-7.5rem)] lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
           {groups.map((group) => (
             <div key={group.label} className="shrink-0 space-y-1.5">
