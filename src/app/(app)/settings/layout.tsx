@@ -6,6 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowUpRight, Bell, CreditCard, Lock, Palette, User } from "lucide-react";
 import { ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
+import { isManagement } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 interface RailItem {
@@ -21,17 +22,29 @@ interface RailGroup {
   items: RailItem[];
 }
 
-/** Personal account sections — always available, rendered in-pane. */
-const ACCOUNT_GROUP: RailGroup = {
-  label: "Account",
-  items: [
-    { label: "Profile", href: "/settings/profile", icon: User },
-    { label: "Login & security", href: "/settings/login-security", icon: Lock },
-    { label: "Billing", href: "/settings/billing", icon: CreditCard },
-    { label: "Notifications", href: "/settings/notifications", icon: Bell },
-    { label: "Appearance", href: "/settings/appearance", icon: Palette },
-  ],
-};
+/**
+ * Personal account sections, rendered in-pane. The employee interface gets a
+ * trimmed set — no Billing, and "Security" instead of "Login & security" — while
+ * management roles keep the full labelling (see `isManagement`).
+ */
+function accountGroup(management: boolean): RailGroup {
+  return {
+    label: "Account",
+    items: [
+      { label: "Profile", href: "/settings/profile", icon: User },
+      {
+        label: management ? "Login & security" : "Security",
+        href: "/settings/login-security",
+        icon: Lock,
+      },
+      ...(management
+        ? [{ label: "Billing", href: "/settings/billing", icon: CreditCard }]
+        : []),
+      { label: "Notifications", href: "/settings/notifications", icon: Bell },
+      { label: "Appearance", href: "/settings/appearance", icon: Palette },
+    ],
+  };
+}
 
 export default function SettingsLayout({
   children,
@@ -39,7 +52,8 @@ export default function SettingsLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { can } = usePermissions();
+  const { can, role } = usePermissions();
+  const management = isManagement(role);
 
   // Admin/config groups come from the shared constants and stay
   // permission-filtered. Items under /settings/* render in-pane; the rest
@@ -57,7 +71,7 @@ export default function SettingsLayout({
       })),
   })).filter((group) => group.items.length > 0);
 
-  const groups: RailGroup[] = [ACCOUNT_GROUP, ...adminGroups];
+  const groups: RailGroup[] = [accountGroup(management), ...adminGroups];
 
   return (
     <div className="flex flex-col gap-6 pt-1 lg:flex-row lg:gap-10">

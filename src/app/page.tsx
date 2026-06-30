@@ -209,8 +209,6 @@ const ENTERPRISE = [
   { icon: MonitorSmartphone, title: "Desktop agent management", body: "Roll out, configure, and monitor agent health at scale." },
 ];
 
-const COMPLIANCE = ["SOC 2", "GDPR", "ISO 27001", "DPA"];
-
 export default function LandingPage() {
   const heroRef = useRef<HTMLDivElement>(null);
 
@@ -585,19 +583,6 @@ export default function LandingPage() {
               );
             })}
           </div>
-          <Reveal>
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-              {COMPLIANCE.map((c) => (
-                <span
-                  key={c}
-                  className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium"
-                  style={{ borderColor: "var(--m-border-strong)", color: "var(--m-muted)" }}
-                >
-                  <ShieldCheck className="size-3.5" style={{ color: "var(--m-accent)" }} /> {c}
-                </span>
-              ))}
-            </div>
-          </Reveal>
         </div>
       </section>
 

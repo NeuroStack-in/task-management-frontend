@@ -11,7 +11,6 @@ import {
   Square,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { toast } from "sonner";
 import { useTimerStore } from "@/stores/timer.store";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,40 +24,48 @@ import {
 import { formatDuration } from "@/lib/format";
 import { TASK_OPTIONS, type TaskOption, type TimeEntry } from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
-
-const pad = (n: number) => n.toString().padStart(2, "0");
+import { useTimeLogger } from "../use-time-logger";
 
 const PROJECTS = Array.from(new Set(TASK_OPTIONS.map((o) => o.projectName)));
 const tasksForProject = (project: string) =>
   TASK_OPTIONS.filter((o) => o.projectName === project);
+const optionForEntry = (task: string, project: string) =>
+  TASK_OPTIONS.find((o) => o.taskTitle === task && o.projectName === project);
+
+interface SessionRow {
+  opt: TaskOption;
+  totalSec: number;
+  /** Recency key for sorting (later = more recent). */
+  order: number;
+}
 
 /**
- * The live timer — Time Tracking's hero. Pick a project, then a task, and
- * start. Each continuous run is logged as its own entry: pausing (and stopping)
- * appends the segment to today's sheet. While paused you can switch the
- * project/task and resume against the new one. Drives the same persisted timer
- * store as the navbar timer, so the two stay in lock-step.
+ * The live timer — Time Tracking's hero. The Task picker doubles as the
+ * "Today's sessions" list: its top group shows every task worked today (with
+ * its day total) so a tap resumes or switches to it; the bottom group lists all
+ * assignable tasks to start something new. Pause/stop log each run segment, and
+ * the per-task day clock lives in the persisted timer store (shared with the
+ * navbar timer).
  */
 export function TimerHero({
+  entries,
   onLogged,
 }: {
+  entries: TimeEntry[];
   onLogged: (entry: TimeEntry) => void;
 }) {
   const task = useTimerStore((s) => s.task);
   const status = useTimerStore((s) => s.status);
-  const segmentStartedAt = useTimerStore((s) => s.segmentStartedAt);
-  const start = useTimerStore((s) => s.start);
-  const pause = useTimerStore((s) => s.pause);
-  const resume = useTimerStore((s) => s.resume);
-  const stop = useTimerStore((s) => s.stop);
-  const switchTask = useTimerStore((s) => s.switchTask);
+  const taskSeconds = useTimerStore((s) => s.taskSeconds);
   const elapsed = useTimerStore((s) => s.elapsed);
+  const { startTask, resumeTask, pauseAndLog, stopAndLog } =
+    useTimeLogger(onLogged);
 
   const [selProject, setSelProject] = useState(TASK_OPTIONS[0].projectName);
   const [selTask, setSelTask] = useState<TaskOption>(TASK_OPTIONS[0]);
   const [, setTick] = useState(0);
 
-  // Tick once per second while running so the clock animates.
+  // Tick once per second while running so the clock (and live session) animate.
   useEffect(() => {
     if (status !== "running") return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
@@ -66,7 +73,7 @@ export function TimerHero({
   }, [status]);
 
   // Keep the pickers in sync when a known task is the active one (e.g. after a
-  // reload while a timer is running).
+  // reload while a timer is running, or after switching from the list).
   useEffect(() => {
     if (!task) return;
     const opt = TASK_OPTIONS.find((o) => o.taskId === task.taskId);
@@ -78,70 +85,63 @@ export function TimerHero({
 
   const running = status === "running";
   const active = Boolean(task);
-  const locked = running; // can only change the task when idle or paused
+
+  // Today's sessions, rolled up per task from logged entries, with the active
+  // task's live (unlogged) portion folded in so its row ticks. Most recent first.
+  const sessionMap = new Map<string, SessionRow>();
+  entries.forEach((e, i) => {
+    const opt = optionForEntry(e.task, e.project);
+    if (!opt) return;
+    const cur = sessionMap.get(opt.taskId);
+    if (cur) {
+      cur.totalSec += e.durationSec;
+      cur.order = i;
+    } else {
+      sessionMap.set(opt.taskId, { opt, totalSec: e.durationSec, order: i });
+    }
+  });
+  if (task) {
+    const opt = TASK_OPTIONS.find((o) => o.taskId === task.taskId);
+    if (opt) {
+      const banked = taskSeconds[task.taskId] ?? 0;
+      const live = running ? Math.max(0, elapsed() - banked) : 0;
+      const cur = sessionMap.get(task.taskId);
+      if (cur) {
+        cur.totalSec += live;
+        cur.order = entries.length;
+      } else {
+        sessionMap.set(task.taskId, { opt, totalSec: live, order: entries.length });
+      }
+    }
+  }
+  const sessions = [...sessionMap.values()].sort((a, b) => b.order - a.order);
+  const sessionsTotal = sessions.reduce((s, x) => s + x.totalSec, 0);
 
   const chooseProject = (project: string) => {
     setSelProject(project);
     setSelTask(tasksForProject(project)[0]);
   };
 
-  /** Log the just-finished run segment (between resume/start and now). */
-  const logSegment = (): number => {
-    if (!task || segmentStartedAt === null) return 0;
-    const end = new Date();
-    const begin = new Date(segmentStartedAt);
-    const sec = Math.max(0, Math.floor((end.getTime() - begin.getTime()) / 1000));
-    if (sec < 1) return 0;
-    const matched = TASK_OPTIONS.find((o) => o.taskId === task.taskId);
-    onLogged({
-      id: `te-live-${end.getTime()}`,
-      task: task.taskTitle,
-      project: task.projectName ?? "",
-      start: `${pad(begin.getHours())}:${pad(begin.getMinutes())}`,
-      end: `${pad(end.getHours())}:${pad(end.getMinutes())}`,
-      durationSec: sec,
-      billable: matched?.billable ?? true,
-      activity: 68 + (sec % 28),
-    });
-    return sec;
-  };
-
-  const handleStart = () =>
-    start({
-      taskId: selTask.taskId,
-      taskTitle: selTask.taskTitle,
-      projectName: selTask.projectName,
-    });
-
-  const handlePause = () => {
-    const sec = logSegment();
-    pause();
-    if (sec)
-      toast.success("Segment logged", {
-        description: `${formatDuration(sec)} on “${task?.taskTitle}”.`,
-      });
-  };
-
-  const handleResume = () => {
-    if (task && selTask.taskId !== task.taskId) {
-      switchTask({
-        taskId: selTask.taskId,
-        taskTitle: selTask.taskTitle,
-        projectName: selTask.projectName,
-      });
-      toast.success("Switched task", { description: selTask.taskTitle });
-    } else {
-      resume();
+  // Picking from the Task menu. A "Today's sessions" tap resumes/switches to
+  // that task right away; an "All tasks" tap selects it to start (or, while
+  // running, switches immediately — so the menu is never a dead-end).
+  const pickTask = (opt: TaskOption, fromSessions: boolean) => {
+    if (running) {
+      if (!task || opt.taskId !== task.taskId) resumeTask(opt);
+      return;
     }
+    if (fromSessions) {
+      resumeTask(opt);
+      return;
+    }
+    setSelProject(opt.projectName);
+    setSelTask(opt);
   };
 
-  const handleStop = () => {
-    logSegment();
-    stop();
-    toast.success("Timer stopped", {
-      description: "Today’s timesheet is up to date.",
-    });
-  };
+  const handleStart = () => startTask(selTask);
+  const handlePause = pauseAndLog;
+  const handleResume = () => resumeTask(selTask);
+  const handleStop = stopAndLog;
 
   return (
     <Card className="bg-feature text-feature-foreground shadow-none">
@@ -164,14 +164,9 @@ export function TimerHero({
             </span>
           </div>
 
-          {/* Project + Task pickers */}
+          {/* Project + Task pickers (Task doubles as Today's sessions) */}
           <div className="flex flex-wrap items-center gap-2.5">
-            <HeroPicker
-              icon={FolderKanban}
-              label={selProject}
-              disabled={locked}
-              width="w-64"
-            >
+            <HeroPicker icon={FolderKanban} label={selProject} width="w-64">
               <p className="px-1.5 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">
                 Project
               </p>
@@ -200,22 +195,92 @@ export function TimerHero({
 
             <HeroPicker
               icon={ListChecks}
-              label={selTask.taskTitle}
-              disabled={locked}
-              width="w-80"
+              label={active ? task!.taskTitle : selTask.taskTitle}
+              width="w-[22rem]"
             >
+              {/* ── Today's sessions ── */}
+              {sessions.length > 0 ? (
+                <>
+                  <p className="flex items-center justify-between gap-2 px-1.5 pt-0.5 pb-1">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Today&apos;s sessions
+                    </span>
+                    <span className="font-mono text-[0.7rem] tabular-nums text-muted-foreground">
+                      {formatDuration(sessionsTotal)}
+                    </span>
+                  </p>
+                  {sessions.map(({ opt, totalSec }) => {
+                    const isActive = task?.taskId === opt.taskId;
+                    const isRunning = isActive && running;
+                    return (
+                      <DropdownMenuItem
+                        key={`session-${opt.taskId}`}
+                        onClick={() => pickTask(opt, true)}
+                        className={cn(
+                          "items-center gap-2.5 rounded-lg px-1.5 py-1.5",
+                          isActive && "bg-accent/60",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex size-7 shrink-0 items-center justify-center rounded-md",
+                            isRunning
+                              ? "bg-success/15 text-success"
+                              : "bg-primary/10 text-primary",
+                          )}
+                        >
+                          {isRunning ? (
+                            <span className="size-2 animate-pulse rounded-full bg-success" />
+                          ) : (
+                            <Play className="size-3.5 fill-current" />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="truncate font-medium">
+                              {opt.taskTitle}
+                            </span>
+                            {opt.billable ? (
+                              <Badge
+                                variant="secondary"
+                                className="shrink-0 px-1.5 py-0 text-[0.65rem]"
+                              >
+                                Billable
+                              </Badge>
+                            ) : null}
+                          </span>
+                          <span className="block truncate text-[0.7rem] text-muted-foreground">
+                            {opt.projectName}
+                          </span>
+                        </span>
+                        <span
+                          className={cn(
+                            "shrink-0 font-mono text-xs tabular-nums",
+                            isRunning ? "text-success" : "text-muted-foreground",
+                          )}
+                        >
+                          {formatDuration(totalSec)}
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  <div className="my-1 h-px bg-border" />
+                </>
+              ) : null}
+
+              {/* ── All tasks (start something new) ── */}
               <p className="flex items-center gap-1.5 px-1.5 pt-0.5 pb-1 text-xs font-medium text-muted-foreground">
-                Task
+                All tasks
                 <span className="font-normal text-muted-foreground/70">
                   · {selProject}
                 </span>
               </p>
               {tasksForProject(selProject).map((opt) => {
-                const isSel = opt.taskId === selTask.taskId;
+                const isSel = !active && opt.taskId === selTask.taskId;
                 return (
                   <DropdownMenuItem
                     key={opt.taskId}
-                    onClick={() => setSelTask(opt)}
+                    onClick={() => pickTask(opt, false)}
                     className={cn(
                       "items-start gap-2.5 rounded-lg px-1.5 py-1.5",
                       isSel && "bg-accent/60",
@@ -253,9 +318,15 @@ export function TimerHero({
 
           {active && !running ? (
             <p className="text-xs text-feature-foreground/70">
-              Paused — switch the project or task above, then resume.
+              Paused — pick a task from the menu to switch, or resume below.
             </p>
-          ) : null}
+          ) : (
+            <p className="text-xs text-feature-foreground/70">
+              {active
+                ? "Tracking — open the task menu to switch to another session."
+                : "Pick a task to start, or resume one from today’s sessions."}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-5">
@@ -343,7 +414,7 @@ function HeroPicker({
       <DropdownMenuContent
         align="start"
         sideOffset={8}
-        className={cn("max-h-80 overflow-y-auto p-1.5", width)}
+        className={cn("max-h-96 overflow-y-auto p-1.5", width)}
       >
         {children}
       </DropdownMenuContent>

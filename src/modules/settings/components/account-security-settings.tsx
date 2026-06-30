@@ -25,6 +25,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAccountSecurityStore } from "@/stores/account-security.store";
+import { useCurrentRole } from "@/hooks/use-permissions";
+import { isManagement } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 /** Demo authenticator secret + recovery codes (frontend-only stand-in). */
@@ -71,6 +73,15 @@ export function AccountSecuritySettings() {
   const enabled = useAccountSecurityStore((s) => s.twoFactorEnabled);
   const setTwoFactor = useAccountSecurityStore((s) => s.setTwoFactor);
 
+  // The employee interface uses "Security" + "Multi-factor authentication";
+  // management keeps "Login & security" + "Two-factor authentication".
+  const management = isManagement(useCurrentRole());
+  const heading = management ? "Login & security" : "Security";
+  const mfa = management
+    ? "Two-factor authentication"
+    : "Multi-factor authentication";
+  const mfaLower = mfa.toLowerCase();
+
   const [setupOpen, setSetupOpen] = useState(false);
   const [code, setCode] = useState("");
   const [showCodes, setShowCodes] = useState(false);
@@ -82,12 +93,12 @@ export function AccountSecuritySettings() {
     setSetupOpen(false);
     setCode("");
     setShowCodes(true);
-    toast.success("Two-factor authentication enabled");
+    toast.success(`${mfa} enabled`);
   };
 
   const disable = () => {
     setTwoFactor(false);
-    toast.success("Two-factor authentication turned off");
+    toast.success(`${mfa} turned off`);
   };
 
   const savePassword = () => {
@@ -110,8 +121,8 @@ export function AccountSecuritySettings() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Login & security"
-        description="Protect your account with two-factor authentication and a strong password."
+        title={heading}
+        description={`Protect your account with ${mfaLower} and a strong password.`}
       />
 
       {/* ── Two-factor authentication ── */}
@@ -123,7 +134,7 @@ export function AccountSecuritySettings() {
             </span>
             <div className="space-y-0.5">
               <p className="flex items-center gap-2 font-medium">
-                Two-factor authentication
+                {mfa}
                 <Badge
                   className={cn(
                     enabled
@@ -274,7 +285,7 @@ export function AccountSecuritySettings() {
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Set up two-factor authentication</DialogTitle>
+            <DialogTitle>Set up {mfaLower}</DialogTitle>
             <DialogDescription>
               Add the secret to your authenticator app, then enter the 6-digit
               code it shows.
