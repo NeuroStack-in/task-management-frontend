@@ -9,6 +9,7 @@ import {
   FileBarChart,
   CheckCheck,
   Sparkles,
+  WandSparkles,
   LineChart,
   Mail,
   Bell,
@@ -137,6 +138,14 @@ export const INSIGHTS_TABS: NavItem[] = [
     icon: FileBarChart,
     permission: "reports:view",
     description: "Productivity, time, project, and AI reports with export.",
+  },
+  {
+    label: "AI Insights & Reports",
+    href: "/insights/ai-reports",
+    icon: WandSparkles,
+    permission: "reports:view",
+    description:
+      "AI briefing, workforce health, attention signals, and exportable reports in one place.",
   },
 ];
 

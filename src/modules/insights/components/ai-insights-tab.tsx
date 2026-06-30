@@ -50,7 +50,7 @@ import {
 import { AiReportCard, type AiSignal } from "./ai-report-card";
 import { cn } from "@/lib/utils";
 
-const KIND_ICON: Record<AnomalyKind, LucideIcon> = {
+export const KIND_ICON: Record<AnomalyKind, LucideIcon> = {
   inactivity: Clock,
   "productivity-drop": TrendingDown,
   burnout: BatteryWarning,
@@ -75,13 +75,13 @@ const KIND_ACTION: Record<AnomalyKind, string> = {
  * (idle time, offline agents, distracting-site spikes) are intentionally left
  * out of this view — they belong to a manager/admin scope, not the exec one.
  */
-const ATTENTION_KINDS: AnomalyKind[] = [
+export const ATTENTION_KINDS: AnomalyKind[] = [
   "burnout",
   "productivity-drop",
   "after-hours",
 ];
 
-type Status = "open" | "resolved" | "dismissed";
+export type Status = "open" | "resolved" | "dismissed";
 type SeverityFilter = AnomalySeverity | "all";
 
 const SEVERITY_FILTERS: SeverityFilter[] = ["all", "high", "medium", "low"];
@@ -343,7 +343,7 @@ function AttentionTrend() {
   );
 }
 
-function AttentionDialog({
+export function AttentionDialog({
   anomaly: a,
   onClose,
   onDecide,
