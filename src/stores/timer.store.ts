@@ -85,6 +85,19 @@ export const useTimerStore = create<TimerState>()(
         return accumulatedSeconds + liveSegment(segmentStartedAt);
       },
     }),
-    { name: "wp-timer" },
+    {
+      name: "wp-timer",
+      // Bumped when the persisted shape changed; reset the timer on any version
+      // mismatch so a stale/half-finished segment never carries over (and to
+      // silence zustand's "no migrate function" warning).
+      version: 1,
+      migrate: () =>
+        ({
+          task: null,
+          status: "idle",
+          accumulatedSeconds: 0,
+          segmentStartedAt: null,
+        }) as TimerState,
+    },
   ),
 );
