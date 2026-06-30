@@ -20,14 +20,22 @@ export const usePageHeaderStore = create<PageHeaderState>((set) => ({
  * Publish the active page's title + subtitle to the top navbar. Pages call this
  * (directly, or via <PageHeader>) so the navbar can echo the page name — and the
  * real record name on dynamic detail routes. Clears on unmount.
+ *
+ * Pass `{ publish: false }` to opt out — used when a parent shell owns the
+ * navbar title (e.g. the Settings shell pins it to "Settings" and lets each
+ * sub-page render its own header in-pane). When disabled the hook touches the
+ * store on neither mount nor unmount, so it never clobbers the shell's title.
  */
 export function usePageTitle(
   title: string | null,
   description?: string | null,
+  options?: { publish?: boolean },
 ) {
+  const publish = options?.publish ?? true;
   const setHeader = usePageHeaderStore((s) => s.setHeader);
   useEffect(() => {
+    if (!publish) return;
     setHeader({ title, description: description ?? null });
     return () => setHeader({ title: null, description: null });
-  }, [title, description, setHeader]);
+  }, [title, description, publish, setHeader]);
 }

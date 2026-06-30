@@ -374,7 +374,10 @@ function DepartmentsTeamsSection({
   const [newDept, setNewDept] = useState("")
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState("")
-  const [teamInputs, setTeamInputs] = useState<Record<string, string>>({})
+  // Inline "add team" only opens for the department being edited (no persistent
+  // input box on every row) — keeps the section quiet until you act.
+  const [addingTeamFor, setAddingTeamFor] = useState<string | null>(null)
+  const [teamDraft, setTeamDraft] = useState("")
 
   const exists = (name: string) =>
     value.some((d) => d.name.toLowerCase() === name.trim().toLowerCase())
@@ -401,7 +404,7 @@ function DepartmentsTeamsSection({
   }
 
   function addTeam(deptName: string) {
-    const team = (teamInputs[deptName] ?? "").trim()
+    const team = teamDraft.trim()
     const dept = value.find((d) => d.name === deptName)
     if (
       !team ||
@@ -414,7 +417,7 @@ function DepartmentsTeamsSection({
         d.name === deptName ? { ...d, teams: [...d.teams, team] } : d,
       ),
     )
-    setTeamInputs((p) => ({ ...p, [deptName]: "" }))
+    setTeamDraft("") // keep the input open for quick successive adds
   }
 
   function removeTeam(deptName: string, team: string) {
@@ -489,7 +492,7 @@ function DepartmentsTeamsSection({
           </p>
         ) : (
           value.map((dept) => (
-            <div key={dept.name} className="space-y-3 px-6 py-4">
+            <div key={dept.name} className="group/dept px-6 py-3.5">
               {/* Department header */}
               {renaming === dept.name ? (
                 <div className="flex items-center gap-2">
@@ -529,17 +532,17 @@ function DepartmentsTeamsSection({
                   </Button>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <p className="font-medium">{dept.name}</p>
+                <div className="flex min-h-8 items-center gap-2.5">
+                  <p className="text-sm font-medium">{dept.name}</p>
                   <span className="text-xs text-muted-foreground">
                     {dept.teams.length} {dept.teams.length === 1 ? "team" : "teams"}
                   </span>
                   {canManage && (
-                    <div className="ml-auto flex items-center gap-1">
+                    <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover/dept:opacity-100 focus-within:opacity-100">
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="size-8 text-muted-foreground"
+                        className="size-7 text-muted-foreground"
                         onClick={() => {
                           setRenaming(dept.name)
                           setRenameDraft(dept.name)
@@ -551,7 +554,7 @@ function DepartmentsTeamsSection({
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="size-8 text-muted-foreground hover:text-destructive"
+                        className="size-7 text-muted-foreground hover:text-destructive"
                         onClick={() => removeDept(dept.name)}
                         aria-label={`Delete ${dept.name}`}
                       >
@@ -562,23 +565,18 @@ function DepartmentsTeamsSection({
                 </div>
               )}
 
-              {/* Teams */}
-              <div className="flex flex-wrap gap-2">
-                {dept.teams.length === 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    No teams yet.
-                  </span>
-                )}
+              {/* Teams — soft pills in one row, ending with the add affordance */}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {dept.teams.map((team) => (
                   <span
                     key={team}
-                    className="flex items-center gap-1.5 rounded-sm border border-border bg-muted px-2.5 py-1 text-xs"
+                    className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-foreground"
                   >
                     {team}
                     {canManage && (
                       <button
                         onClick={() => removeTeam(dept.name, team)}
-                        className="text-muted-foreground transition-colors hover:text-foreground"
+                        className="-mr-0.5 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
                         aria-label={`Remove ${team}`}
                       >
                         <X className="size-3" />
@@ -586,29 +584,42 @@ function DepartmentsTeamsSection({
                     )}
                   </span>
                 ))}
-              </div>
 
-              {/* Add team */}
-              {canManage && (
-                <div className="flex max-w-md gap-2">
-                  <Input
-                    placeholder="Add team…"
-                    value={teamInputs[dept.name] ?? ""}
-                    onChange={(e) =>
-                      setTeamInputs((p) => ({ ...p, [dept.name]: e.target.value }))
-                    }
-                    onKeyDown={(e) => e.key === "Enter" && addTeam(dept.name)}
-                    className="h-8 text-xs"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => addTeam(dept.name)}
-                  >
-                    <Plus className="size-3.5" />
-                  </Button>
-                </div>
-              )}
+                {canManage ? (
+                  addingTeamFor === dept.name ? (
+                    <Input
+                      autoFocus
+                      placeholder="Team name"
+                      value={teamDraft}
+                      onChange={(e) => setTeamDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") addTeam(dept.name)
+                        if (e.key === "Escape") {
+                          setAddingTeamFor(null)
+                          setTeamDraft("")
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!teamDraft.trim()) setAddingTeamFor(null)
+                      }}
+                      className="h-7 w-32 rounded-full px-3 text-xs"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingTeamFor(dept.name)
+                        setTeamDraft("")
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+                    >
+                      <Plus className="size-3" /> Add team
+                    </button>
+                  )
+                ) : dept.teams.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">No teams</span>
+                ) : null}
+              </div>
             </div>
           ))
         )}

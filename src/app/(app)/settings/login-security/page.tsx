@@ -1,8 +1,7 @@
-import type { Metadata } from "next";
-import { AccountSecuritySettings } from "@/modules/settings/components/account-security-settings";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Login & security · Settings" };
-
-export default function Page() {
-  return <AccountSecuritySettings />;
+// Personal login & security (password + active sessions) was consolidated into
+// the organization Security Center. Keep the old route working.
+export default function LoginSecurityPage() {
+  redirect("/settings/security");
 }

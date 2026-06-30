@@ -202,7 +202,7 @@ const MODULE_GROUPS = [
 
 const ENTERPRISE = [
   { icon: KeyRound, title: "SSO / SAML & SCIM", body: "One-click sign-on and automated user provisioning for your whole org." },
-  { icon: Fingerprint, title: "MFA & session policies", body: "Enforce two-factor, session limits, and device-level controls." },
+  { icon: Fingerprint, title: "MFA & session policies", body: "Enforce multi-factor, session limits, and device-level controls." },
   { icon: ScrollText, title: "Audit logs", body: "Every action, permission change, and login — captured and searchable." },
   { icon: Globe, title: "Data residency & DPA", body: "Choose where data lives; encrypted in transit and at rest." },
   { icon: Headset, title: "Approval-gated remote support", body: "Consent-based remote sessions with a full audit trail." },

@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight, Bell, CreditCard, Lock, Palette, User } from "lucide-react";
-import { ADMIN_SECTIONS } from "@/constants/navigation";
+import { ArrowUpRight } from "lucide-react";
+import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
+import { InPaneHeaderContext } from "@/components/shared/page-header";
+import { usePageTitle } from "@/stores/page-header.store";
 import { cn } from "@/lib/utils";
 
 interface RailItem {
@@ -21,16 +23,15 @@ interface RailGroup {
   items: RailItem[];
 }
 
-/** Personal account sections — always available, rendered in-pane. */
+/** Personal account sections — always available, rendered in-pane. Sourced
+ * from the shared catalog so global search and the rail stay in sync. */
 const ACCOUNT_GROUP: RailGroup = {
   label: "Account",
-  items: [
-    { label: "Profile", href: "/settings/profile", icon: User },
-    { label: "Login & security", href: "/settings/login-security", icon: Lock },
-    { label: "Billing", href: "/settings/billing", icon: CreditCard },
-    { label: "Notifications", href: "/settings/notifications", icon: Bell },
-    { label: "Appearance", href: "/settings/appearance", icon: Palette },
-  ],
+  items: ACCOUNT_SECTIONS.map((it) => ({
+    label: it.label,
+    href: it.href,
+    icon: it.icon,
+  })),
 };
 
 export default function SettingsLayout({
@@ -40,6 +41,10 @@ export default function SettingsLayout({
 }) {
   const pathname = usePathname();
   const { can } = usePermissions();
+
+  // The navbar stays pinned to "Settings" across every sub-section; each
+  // sub-page renders its own title/subtitle in-pane (via InPaneHeaderContext).
+  usePageTitle("Settings", "Manage your account, organization, and access.");
 
   // Admin/config groups come from the shared constants and stay
   // permission-filtered. Items under /settings/* render in-pane; the rest
@@ -115,7 +120,10 @@ export default function SettingsLayout({
       </nav>
 
       {/* ── Content pane ── */}
-      <div className="min-w-0 flex-1">{children}</div>
+      {/* Sub-pages render their header in-pane; the navbar shows "Settings". */}
+      <InPaneHeaderContext.Provider value={true}>
+        <div className="min-w-0 flex-1">{children}</div>
+      </InPaneHeaderContext.Provider>
     </div>
   );
 }

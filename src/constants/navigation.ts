@@ -186,6 +186,39 @@ export const ACCOUNT_SECTIONS: NavItem[] = [
 ];
 
 /**
+ * Deep-link search targets — individual cards/sections WITHIN a settings page.
+ * The href carries an `#anchor` that matches an element id on the page, so
+ * global search lands on the exact section, not just the top of the page.
+ */
+export const SETTINGS_SUBSECTIONS: NavItem[] = [
+  {
+    label: "Multi-factor authentication",
+    href: "/settings/security#mfa",
+    icon: ShieldCheck,
+    permission: "security:view",
+    description: "Two-factor / authenticator setup and policy.",
+    keywords:
+      "mfa 2fa multifactor multi-factor two-factor authenticator otp passkey two step verification",
+  },
+  {
+    label: "Single sign-on (SSO)",
+    href: "/settings/security#sso",
+    icon: ShieldCheck,
+    permission: "security:view",
+    description: "SAML / SSO identity provider connection.",
+    keywords: "sso single sign-on saml okta azure identity provider idp",
+  },
+  {
+    label: "Session & access policies",
+    href: "/settings/security#sessions",
+    icon: ShieldCheck,
+    permission: "security:view",
+    description: "Session timeout, device limits, and trusted devices.",
+    keywords: "session timeout concurrent device trusted remember access policy",
+  },
+];
+
+/**
  * Admin & configuration sections — relocated out of the sidebar into the
  * Settings hub. Still routed and permission-gated: permissionForPath() scans
  * these too, and the hub filters cards by the active role's permissions.
@@ -258,8 +291,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: ShieldCheck,
         permission: "security:view",
         description: "MFA, SSO, session policies, and security events.",
-        keywords:
-          "mfa 2fa multifactor multi-factor two-factor authentication authenticator otp sso single sign-on session policy password passkey login security events two step",
+        keywords: "security center protect compliance events policy",
       },
       {
         label: "Audit Logs",

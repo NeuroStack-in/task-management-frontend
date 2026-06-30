@@ -16,7 +16,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
-import { useCurrentRole } from "@/hooks/use-permissions";
+import { useCurrentRole, usePermissions } from "@/hooks/use-permissions";
 import { initials } from "@/lib/format";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
@@ -42,10 +42,16 @@ const STATUS_TONE: Record<string, string> = {
 export function ProfileView() {
   const user = useAuthStore((s) => s.user);
   const role = useCurrentRole();
+  const { can } = usePermissions();
 
   const [uploadOpen, setUploadOpen] = useState(false);
 
   if (!user) return <Loader label="Loading profile…" />;
+
+  // Personal-activity metrics (productivity, hours, tasks, attendance) only
+  // apply to people who log their own time. Oversight roles (Owner/Admin/
+  // managers) manage others and don't generate these, so we hide them.
+  const tracksOwnTime = can("time-tracking:edit");
 
   // Deterministic personal stats from the user id (no randomness in render)
   const seed = [...user.id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
@@ -92,7 +98,11 @@ export function ProfileView() {
     <div className="flex flex-col gap-4 lg:max-h-[calc(100vh-6.75rem)] lg:overflow-hidden">
       <PageHeader
         title="Profile"
-        description="Your account, role, and personal productivity."
+        description={
+          tracksOwnTime
+            ? "Your account, role, and personal productivity."
+            : "Your account, role, and organization access."
+        }
       />
 
       {/* Identity card */}
@@ -155,33 +165,37 @@ export function ProfileView() {
         </CardContent>
       </Card>
 
-      {/* Personal stats */}
-      <div className="grid shrink-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard
-          label="Productivity"
-          value={`${user.productivityScore}%`}
-          icon={CheckSquare}
-          hint="this week"
-          trend={[62, 65, 63, 70, 72, 69, user.productivityScore]}
-          featured
-        />
-        <StatCard
-          label="Avg. hours / day"
-          value={avgHours}
-          icon={Clock}
-          hint="last 30 days"
-        />
-        <StatCard
-          label="Tasks completed"
-          value={tasksDone}
-          icon={CheckSquare}
-          hint="this quarter"
-        />
-      </div>
+      {/* Personal stats — only for people who log their own time */}
+      {tracksOwnTime ? (
+        <div className="grid shrink-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <StatCard
+            label="Productivity"
+            value={`${user.productivityScore}%`}
+            icon={CheckSquare}
+            hint="this week"
+            trend={[62, 65, 63, 70, 72, 69, user.productivityScore]}
+            featured
+          />
+          <StatCard
+            label="Avg. hours / day"
+            value={avgHours}
+            icon={Clock}
+            hint="last 30 days"
+          />
+          <StatCard
+            label="Tasks completed"
+            value={tasksDone}
+            icon={CheckSquare}
+            hint="this quarter"
+          />
+        </div>
+      ) : null}
 
       {/* Unified detail + attendance panel */}
       <Card className="p-0 lg:min-h-0">
-        <div className="grid lg:grid-cols-[1.7fr_1fr]">
+        <div
+          className={`grid${tracksOwnTime ? " lg:grid-cols-[1.7fr_1fr]" : ""}`}
+        >
           {/* ── Account details ── */}
           <section className="flex min-w-0 flex-col gap-4 p-5 sm:p-6">
             <div className="flex items-center justify-between">
@@ -214,7 +228,8 @@ export function ProfileView() {
             </dl>
           </section>
 
-          {/* ── Attendance ── */}
+          {/* ── Attendance — personal metric, hidden for oversight roles ── */}
+          {tracksOwnTime ? (
           <section className="flex flex-col gap-5 border-t bg-muted/30 p-5 sm:p-6 lg:border-l lg:border-t-0">
             <div className="flex items-baseline justify-between">
               <h3 className="font-heading text-base font-medium">Attendance</h3>
@@ -302,6 +317,7 @@ export function ProfileView() {
               </div>
             </div>
           </section>
+          ) : null}
         </div>
       </Card>
 

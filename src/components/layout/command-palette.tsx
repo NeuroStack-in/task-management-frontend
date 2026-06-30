@@ -29,9 +29,11 @@ import {
   ACCOUNT_SECTIONS,
   ADMIN_SECTIONS,
   INSIGHTS_TABS,
+  SETTINGS_SUBSECTIONS,
 } from "@/constants/navigation";
 import { users, projects } from "@/lib/data";
 import { initials } from "@/lib/format";
+import { scrollToHashAfterNav } from "@/lib/scroll-to-hash";
 import { cn } from "@/lib/utils";
 import { PALETTES, applyPalette } from "./palette-switcher";
 
@@ -90,6 +92,7 @@ export function CommandPalette() {
   const close = () => setOpen(false);
   const go = (href: string) => {
     router.push(href);
+    scrollToHashAfterNav(href);
     close();
   };
 
@@ -106,32 +109,42 @@ export function CommandPalette() {
     const out: Result[] = [];
 
     // ── Actions ──
+    // Personal timer controls only for people who log their own time;
+    // oversight roles manage their team's timers, not a personal one.
     const running = timerTask && timerStatus === "running";
+    const timerActions: Result[] = can("time-tracking:edit")
+      ? [
+          running
+            ? {
+                id: "a-stop",
+                label: "Stop timer",
+                sub: timerTask?.taskTitle,
+                group: "Actions",
+                icon: Square,
+                run: () => {
+                  stopTimer();
+                  toast.success("Timer stopped");
+                  close();
+                },
+              }
+            : {
+                id: "a-start",
+                label: "Start timer",
+                group: "Actions",
+                icon: TimerIcon,
+                run: () => {
+                  startTimer({
+                    taskId: "demo-task",
+                    taskTitle: "Focus session",
+                  });
+                  toast.success("Timer started");
+                  close();
+                },
+              },
+        ]
+      : [];
     const actions: Result[] = [
-      running
-        ? {
-            id: "a-stop",
-            label: "Stop timer",
-            sub: timerTask?.taskTitle,
-            group: "Actions",
-            icon: Square,
-            run: () => {
-              stopTimer();
-              toast.success("Timer stopped");
-              close();
-            },
-          }
-        : {
-            id: "a-start",
-            label: "Start timer",
-            group: "Actions",
-            icon: TimerIcon,
-            run: () => {
-              startTimer({ taskId: "demo-task", taskTitle: "Focus session" });
-              toast.success("Timer started");
-              close();
-            },
-          },
+      ...timerActions,
       {
         id: "a-light",
         label: "Theme: Light",
@@ -221,6 +234,10 @@ export function CommandPalette() {
       ),
       // Personal account settings — always accessible, so no permission filter.
       ...ACCOUNT_SECTIONS.map((it) => ({ item: it, group: "Account" })),
+      // Deep-link sub-sections within a settings page (e.g. Security → MFA).
+      ...SETTINGS_SUBSECTIONS.filter((it) => isNavItemVisible(role, it)).map(
+        (it) => ({ item: it, group: "Settings" }),
+      ),
     ];
     const seen = new Set<string>();
     let pageResults = pages
