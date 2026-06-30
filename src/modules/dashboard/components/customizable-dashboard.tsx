@@ -24,8 +24,6 @@ import {
   GripVertical,
   SlidersHorizontal,
   RotateCcw,
-  ChevronDown,
-  ChevronUp,
   X,
 } from "lucide-react";
 import { useDashboardStore } from "@/stores/dashboard.store";
@@ -66,16 +64,11 @@ const TILE =
   "xl:basis-[calc((100%-2.5rem)/3-0.02px)]";
 
 /**
- * Widgets shown before "Show more". Six by default (two rows); the rest are
- * revealed by the toggle.
- */
-const COLLAPSED_COUNT = 6;
-
-/**
  * The first row (3 widgets on desktop) stretches to fill the viewport down to the
- * sidebar's bottom edge, so the second row sits just below the fold instead of
- * peeking. This is the height from the top of the widget grid to that edge — tune
- * the rem if the row doesn't land exactly on the sidebar's bottom.
+ * sidebar's bottom edge, so its bottom lands flush on the sidebar's bottom edge and
+ * the rows below sit just under the fold (scroll to reveal — no view-more toggle).
+ * This is the height from the top of the widget grid to that edge — tune the rem if
+ * the row doesn't land exactly on the sidebar's bottom.
  */
 const HERO_ROW_FILL = "xl:min-h-[calc(99vh-22rem)]";
 
@@ -147,7 +140,6 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const reset = useDashboardStore((s) => s.reset);
 
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -162,11 +154,6 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const visibleIds = visible.map((w) => w.id);
   const hiddenIds = ordered.filter((w) => !w.visible).map((w) => w.id);
 
-  // Collapsed view shows only the first N widgets; "Show more" reveals the rest.
-  const canCollapse = visible.length > COLLAPSED_COUNT;
-  const shown = canCollapse && !expanded ? visible.slice(0, COLLAPSED_COUNT) : visible;
-  const shownIds = shown.map((w) => w.id);
-
   const activeWidget = activeId
     ? ordered.find((w) => w.id === activeId)
     : null;
@@ -177,14 +164,12 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     setActiveId(null);
     const { active, over } = e;
     if (!over || active.id === over.id) return;
-    const oldIndex = shownIds.indexOf(String(active.id));
-    const newIndex = shownIds.indexOf(String(over.id));
+    const oldIndex = visibleIds.indexOf(String(active.id));
+    const newIndex = visibleIds.indexOf(String(over.id));
     if (oldIndex < 0 || newIndex < 0) return;
-    const newShown = arrayMove(shownIds, oldIndex, newIndex);
-    // Reorder within the shown set; keep the still-collapsed visible tail and the
-    // hidden widgets in their existing relative order behind it.
-    const restVisible = visibleIds.filter((id) => !shownIds.includes(id));
-    reorder([...newShown, ...restVisible, ...hiddenIds]);
+    const newVisible = arrayMove(visibleIds, oldIndex, newIndex);
+    // Reorder within the visible set; hidden widgets keep their order behind it.
+    reorder([...newVisible, ...hiddenIds]);
   };
 
   const renderWidget = (w: DashboardWidget, heroFill: boolean) => {
@@ -258,13 +243,13 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           onDragEnd={onDragEnd}
           onDragCancel={() => setActiveId(null)}
         >
-          <SortableContext items={shownIds} strategy={rectSortingStrategy}>
+          <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
             {/* Three-up rows; the partial last row's cards grow to fill the width
                 (1 card → full row, 2 cards → half each), so a row never leaves an
                 empty cell. The first row stretches to the sidebar's bottom edge
-                (HERO_ROW_FILL) so the second row sits just below the fold. */}
+                (HERO_ROW_FILL); rows below sit under the fold (scroll to reveal). */}
             <div className="flex flex-wrap items-stretch gap-5">
-              {shown.map((w, i) => renderWidget(w, i < 3))}
+              {visible.map((w, i) => renderWidget(w, i < 3))}
             </div>
           </SortableContext>
           <DragOverlay>
@@ -276,29 +261,6 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           </DragOverlay>
         </DndContext>
       )}
-
-      {/* Show more / less — keeps the initial view inside the viewport. */}
-      {canCollapse ? (
-        <div className="flex justify-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setExpanded((v) => !v)}
-            className="gap-1.5 text-muted-foreground hover:text-foreground"
-          >
-            {expanded ? (
-              <>
-                Show less <ChevronUp className="size-4" />
-              </>
-            ) : (
-              <>
-                Show {visible.length - COLLAPSED_COUNT} more{" "}
-                <ChevronDown className="size-4" />
-              </>
-            )}
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }

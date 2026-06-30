@@ -10,6 +10,13 @@ interface UiState {
   commandOpen: boolean;
   setCommandOpen: (open: boolean) => void;
   toggleCommand: () => void;
+  /**
+   * Monotonic counter bumped to ask the inline sidebar search to focus itself.
+   * Used when the collapsed rail's search button expands the sidebar — the
+   * SidebarSearch input watches this and grabs focus on change. Not persisted.
+   */
+  searchFocusNonce: number;
+  requestSearchFocus: () => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -22,6 +29,9 @@ export const useUiStore = create<UiState>()(
       commandOpen: false,
       setCommandOpen: (open) => set({ commandOpen: open }),
       toggleCommand: () => set((s) => ({ commandOpen: !s.commandOpen })),
+      searchFocusNonce: 0,
+      requestSearchFocus: () =>
+        set((s) => ({ searchFocusNonce: s.searchFocusNonce + 1 })),
     }),
     {
       name: "wp-ui",

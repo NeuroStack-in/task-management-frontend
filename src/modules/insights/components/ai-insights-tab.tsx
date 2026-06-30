@@ -321,13 +321,18 @@ function AttentionTrend() {
                   color: "var(--popover-foreground)",
                 }}
               />
-              <Bar dataKey="high" stackId="a" name="High" fill="var(--destructive)" />
-              <Bar dataKey="medium" stackId="a" name="Medium" fill="var(--warning)" />
+              <Bar dataKey="high" stackId="a" name="High" fill="var(--primary)" />
+              <Bar
+                dataKey="medium"
+                stackId="a"
+                name="Medium"
+                fill="color-mix(in srgb, var(--primary) 55%, var(--muted))"
+              />
               <Bar
                 dataKey="low"
                 stackId="a"
                 name="Low"
-                fill="var(--muted-foreground)"
+                fill="color-mix(in srgb, var(--primary) 28%, var(--muted))"
                 radius={[4, 4, 0, 0]}
               />
             </BarChart>

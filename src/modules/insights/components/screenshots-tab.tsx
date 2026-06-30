@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker, TimePicker } from "@/components/ui/date-picker";
-import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Dialog,
@@ -231,12 +230,12 @@ function EmployeeCard({
     >
       {/* Cover = latest capture */}
       <div className="relative aspect-[16/10] overflow-hidden">
-        <FauxCapture blur />
+        <FauxCapture />
         <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
           {emp.latest.app}
         </div>
         {emp.flagged > 0 ? (
-          <Badge variant="default" className="absolute right-2 top-2 backdrop-blur-sm">
+          <Badge className="absolute right-2 top-2 border-destructive/20 bg-destructive/12 text-destructive backdrop-blur-sm">
             <Flag className="size-3" /> {emp.flagged}
           </Badge>
         ) : null}
@@ -273,7 +272,6 @@ function EmployeeDetail({
   employee: EmployeeShots;
   onBack: () => void;
 }) {
-  const [blur, setBlur] = useState(true);
   const [day, setDay] = useState<string>(""); // ISO date, "" = any
   const [from, setFrom] = useState<string>(""); // "HH:MM", "" = open start
   const [to, setTo] = useState<string>(""); // "HH:MM", "" = open end
@@ -364,7 +362,7 @@ function EmployeeDetail({
         ]}
       />
 
-      {/* Filters: calendar date · time range · flagged radio · privacy blur */}
+      {/* Filters: calendar date · time range · flagged radio */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
         <Field label="Date">
           <DatePicker
@@ -410,10 +408,6 @@ function EmployeeDetail({
               Clear
             </Button>
           ) : null}
-          <label className="flex items-center gap-2 text-sm">
-            <Switch checked={blur} onCheckedChange={setBlur} />
-            Privacy blur
-          </label>
         </div>
       </div>
 
@@ -434,7 +428,6 @@ function EmployeeDetail({
             <ShotCard
               key={shot.id}
               shot={shot}
-              blur={blur}
               onOpen={() => setLightbox(shot)}
             />
           ))}
@@ -483,13 +476,10 @@ function Field({
 /* ------------------------------- Shared bits ------------------------------- */
 
 /** The faux capture surface (no real images in Phase 1). */
-function FauxCapture({ blur }: { blur: boolean }) {
+function FauxCapture() {
   return (
     <div
-      className={cn(
-        "flex h-full w-full flex-col gap-1.5 bg-gradient-to-br from-feature-tint to-muted p-3 transition",
-        blur && "blur-[6px] saturate-75",
-      )}
+      className="flex h-full w-full flex-col gap-1.5 bg-gradient-to-br from-feature-tint to-muted p-3 transition"
       aria-hidden="true"
     >
       <div className="h-2 w-1/3 rounded-full bg-primary/30" />
@@ -505,11 +495,9 @@ function FauxCapture({ blur }: { blur: boolean }) {
 
 function ShotCard({
   shot,
-  blur,
   onOpen,
 }: {
   shot: Screenshot;
-  blur: boolean;
   onOpen: () => void;
 }) {
   return (
@@ -517,21 +505,21 @@ function ShotCard({
       className={cn(
         "group cursor-pointer gap-0 overflow-hidden p-0 transition",
         shot.flagged
-          ? "bg-primary/5 ring-2 ring-primary ring-offset-1 ring-offset-background hover:ring-primary"
+          ? "bg-destructive/5 ring-2 ring-destructive/60 ring-offset-1 ring-offset-background hover:ring-destructive/75"
           : "hover:ring-1 hover:ring-primary/40",
       )}
       onClick={onOpen}
     >
       <div className="relative aspect-[16/10] overflow-hidden">
-        <FauxCapture blur={blur} />
+        <FauxCapture />
         {shot.flagged ? (
-          <div className="pointer-events-none absolute inset-0 bg-primary/15" />
+          <div className="pointer-events-none absolute inset-0 bg-destructive/10" />
         ) : null}
         <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
           {shot.app}
         </div>
         {shot.flagged ? (
-          <Badge variant="default" className="absolute right-2 top-2 backdrop-blur-sm">
+          <Badge className="absolute right-2 top-2 border-destructive/20 bg-destructive/12 text-destructive backdrop-blur-sm">
             <Flag className="size-3" /> Needs review
           </Badge>
         ) : null}
@@ -543,7 +531,7 @@ function ShotCard({
       <div
         className={cn(
           "flex items-center justify-between px-3 py-2.5 text-sm",
-          shot.flagged && "bg-primary/10",
+          shot.flagged && "bg-destructive/10",
         )}
       >
         <span className="font-medium">{dayLabel(shot.date)}</span>
@@ -582,9 +570,9 @@ function Lightbox({
               </DialogDescription>
             </DialogHeader>
 
-            {/* Full capture — unblurred for review */}
+            {/* Full capture */}
             <div className="relative aspect-[16/10] overflow-hidden rounded-lg border">
-              <FauxCapture blur={false} />
+              <FauxCapture />
               <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
                 {shot.app}
               </div>

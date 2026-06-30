@@ -40,7 +40,8 @@ export function SidebarNav({
   const router = useRouter();
   const { nav } = usePermissions();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
-  const openCommand = useUiStore((s) => s.setCommandOpen);
+  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
+  const requestSearchFocus = useUiStore((s) => s.requestSearchFocus);
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
@@ -49,9 +50,12 @@ export function SidebarNav({
     router.replace("/login");
   };
 
+  // Collapsed rail: expand the sidebar and focus its inline search field rather
+  // than opening the command palette (the inline search shows live suggestions).
   const openSearch = () => {
     onNavigate?.();
-    openCommand(true);
+    setSidebarCollapsed(false);
+    requestSearchFocus();
   };
 
   if (collapsed) {
@@ -89,7 +93,7 @@ export function SidebarNav({
               <Search className="size-[18px]" />
             </span>
           </TooltipTrigger>
-          <TooltipContent side="right">Search · ⌘K</TooltipContent>
+          <TooltipContent side="right">Search</TooltipContent>
         </Tooltip>
 
         <ScrollArea className="my-3 w-full min-h-0 flex-1">

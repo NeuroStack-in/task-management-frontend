@@ -14,7 +14,7 @@ interface StatCardProps {
   /** Mini pulse-line series. */
   trend?: number[];
   hint?: string;
-  /** Featured treatment (top accent border). */
+  /** Featured treatment (white text on the filled `--feature` accent surface). */
   featured?: boolean;
   /** When set, the whole card becomes a click-through link. */
   href?: string;
@@ -33,16 +33,32 @@ export function StatCard({
   const card = (
     <Card
       className={cn(
-        "flex h-full flex-col justify-between gap-3 p-4 border border-border transition-shadow",
-        featured && "border-t-2 border-t-primary",
-        href && "hover:bg-accent/30",
+        "flex h-full flex-col justify-between gap-3 p-4 transition-shadow",
+        featured
+          ? "border-transparent bg-feature text-feature-foreground shadow-none"
+          : "border border-border",
+        href && (featured ? "hover:bg-feature/90" : "hover:bg-accent/30"),
       )}
     >
       {/* Top row: label + optional icon */}
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-muted-foreground truncate">{label}</span>
+        <span
+          className={cn(
+            "truncate text-sm",
+            featured ? "text-feature-foreground/85" : "text-muted-foreground",
+          )}
+        >
+          {label}
+        </span>
         {Icon ? (
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-primary">
+          <span
+            className={cn(
+              "flex size-7 shrink-0 items-center justify-center rounded-md",
+              featured
+                ? "bg-white/15 text-feature-foreground"
+                : "bg-muted text-primary",
+            )}
+          >
             <Icon className="size-4" />
           </span>
         ) : null}
@@ -56,9 +72,27 @@ export function StatCard({
           </p>
           {(delta !== undefined || hint) ? (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {delta !== undefined ? <DeltaPill value={delta} /> : null}
+              {delta !== undefined ? (
+                <DeltaPill
+                  value={delta}
+                  className={
+                    featured
+                      ? "rounded-full border-transparent bg-white/15 text-feature-foreground"
+                      : undefined
+                  }
+                />
+              ) : null}
               {hint ? (
-                <span className="text-xs text-muted-foreground">{hint}</span>
+                <span
+                  className={cn(
+                    "text-xs",
+                    featured
+                      ? "text-feature-foreground/80"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {hint}
+                </span>
               ) : null}
             </div>
           ) : null}
@@ -69,7 +103,10 @@ export function StatCard({
             area
             width={80}
             height={36}
-            className="shrink-0 text-primary"
+            className={cn(
+              "shrink-0",
+              featured ? "text-feature-foreground" : "text-primary",
+            )}
           />
         ) : null}
       </div>

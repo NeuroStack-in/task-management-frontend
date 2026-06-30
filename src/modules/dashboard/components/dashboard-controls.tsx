@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 
 export function DashboardControls({
@@ -21,6 +22,10 @@ export function DashboardControls({
   onTeamChange,
   teams,
   lastUpdated,
+  start,
+  end,
+  onStartChange,
+  onEndChange,
 }: {
   range: DashboardRange;
   onRangeChange: (r: DashboardRange) => void;
@@ -28,26 +33,50 @@ export function DashboardControls({
   onTeamChange: (t: string) => void;
   teams: string[];
   lastUpdated: string;
+  start: string;
+  end: string;
+  onStartChange: (v: string) => void;
+  onEndChange: (v: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      {/* Range segmented control */}
-      <div className="inline-flex items-center gap-0.5 self-start rounded-full border bg-card p-0.5 shadow-soft">
-        {RANGE_OPTIONS.map((r) => (
-          <button
-            key={r.value}
-            type="button"
-            onClick={() => onRangeChange(r.value)}
-            className={cn(
-              "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              range === r.value
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {r.label}
-          </button>
-        ))}
+      {/* Range segmented control + custom-range pickers */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="inline-flex items-center gap-0.5 self-start rounded-full border bg-card p-0.5 shadow-soft">
+          {RANGE_OPTIONS.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => onRangeChange(r.value)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                range === r.value
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        {range === "range" ? (
+          <div className="flex items-center gap-2 self-start">
+            <DatePicker
+              value={start}
+              onChange={onStartChange}
+              max={end || undefined}
+              placeholder="Start date"
+            />
+            <span className="text-sm text-muted-foreground">–</span>
+            <DatePicker
+              value={end}
+              onChange={onEndChange}
+              min={start || undefined}
+              placeholder="End date"
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center gap-3">

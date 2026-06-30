@@ -149,7 +149,7 @@ export function ApprovalsView() {
                   <TableHead className="w-[20%]">Requester</TableHead>
                   <TableHead className="w-[13%]">Type</TableHead>
                   <TableHead className="w-[26%]">Request</TableHead>
-                  <TableHead className="w-[11%] text-right">Amount</TableHead>
+                  <TableHead className="w-[11%]">Duration</TableHead>
                   <TableHead className="w-[12%]">Submitted</TableHead>
                   <TableHead className="w-[10%]">Status</TableHead>
                   {showActions ? (
@@ -191,7 +191,7 @@ export function ApprovalsView() {
                       <TableCell>
                         <span className="block truncate">{req.title}</span>
                       </TableCell>
-                      <TableCell className="text-right font-mono text-xs font-medium tabular-nums">
+                      <TableCell className="font-mono text-xs font-medium tabular-nums">
                         {req.amount}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">

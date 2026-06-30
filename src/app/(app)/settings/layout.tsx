@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight, Bell, CreditCard, Palette, User } from "lucide-react";
+import { ArrowUpRight, Bell, CreditCard, Lock, Palette, User } from "lucide-react";
 import { ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ const ACCOUNT_GROUP: RailGroup = {
   label: "Account",
   items: [
     { label: "Profile", href: "/settings/profile", icon: User },
+    { label: "Login & security", href: "/settings/login-security", icon: Lock },
     { label: "Billing", href: "/settings/billing", icon: CreditCard },
     { label: "Notifications", href: "/settings/notifications", icon: Bell },
     { label: "Appearance", href: "/settings/appearance", icon: Palette },
@@ -68,7 +69,7 @@ export default function SettingsLayout({
         <p className="mb-4 hidden font-display text-lg font-semibold tracking-tight lg:block">
           Settings
         </p>
-        <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:max-h-[calc(100vh-7rem)] lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
+        <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:max-h-[calc(100vh-7.5rem)] lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
           {groups.map((group) => (
             <div key={group.label} className="shrink-0 space-y-1.5">
               <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">

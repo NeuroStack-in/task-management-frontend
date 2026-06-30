@@ -147,7 +147,7 @@ export function LeaveRequestsView() {
               <TableRow>
                 <TableHead className="pl-5">Type</TableHead>
                 <TableHead>Dates</TableHead>
-                <TableHead className="pr-6 text-right">Days</TableHead>
+                <TableHead className="text-center">Days</TableHead>
                 <TableHead>Reason</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Submitted</TableHead>
@@ -163,7 +163,7 @@ export function LeaveRequestsView() {
                   <TableCell className="text-muted-foreground">
                     {fmtRange(r.startDate, r.endDate)}
                   </TableCell>
-                  <TableCell className="pr-6 text-right tabular-nums">{r.days}</TableCell>
+                  <TableCell className="text-center tabular-nums">{r.days}</TableCell>
                   <TableCell className="max-w-[16rem] truncate text-muted-foreground">
                     {r.reason}
                   </TableCell>

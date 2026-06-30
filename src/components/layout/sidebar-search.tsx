@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FolderKanban, Search, X, type LucideIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useUiStore } from "@/stores/ui.store";
 import { isNavItemVisible } from "@/lib/rbac";
 import { INSIGHTS_TABS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { users, projects } from "@/lib/data";
@@ -39,6 +40,14 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   const [active, setActive] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus the field when the collapsed rail's search button asks for it (after
+  // it expands the sidebar). Skips the initial mount (nonce starts at 0).
+  const searchFocusNonce = useUiStore((s) => s.searchFocusNonce);
+  useEffect(() => {
+    if (searchFocusNonce > 0) inputRef.current?.focus();
+  }, [searchFocusNonce]);
 
   // Close the suggestions when clicking outside the search.
   useEffect(() => {
@@ -175,6 +184,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
       <div className="flex items-center gap-2.5 rounded-full border border-sidebar-border bg-sidebar-accent/40 px-3.5 transition-colors focus-within:border-primary/40">
         <Search className="size-4 shrink-0 text-muted-foreground" />
         <input
+          ref={inputRef}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);

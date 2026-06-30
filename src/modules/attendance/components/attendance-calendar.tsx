@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Papa from "papaparse";
 import { toast } from "sonner";
@@ -21,13 +21,13 @@ import {
 import {
   COUNT_METRICS,
   MONTH_NAMES,
-  REFERENCE_MONTH,
   TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
   type DayCell,
 } from "@/lib/mock-attendance";
 import { downloadBlob } from "@/lib/download";
+import { LogDatePicker } from "./attendance-log";
 import { cn } from "@/lib/utils";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -69,37 +69,41 @@ interface AttendanceDate {
 export function AttendanceCalendar({
   selected,
   onSelect,
+  dept,
+  onDeptChange,
+  departments,
 }: {
   selected: AttendanceDate;
   onSelect: (d: AttendanceDate) => void;
+  dept: string;
+  onDeptChange: (d: string) => void;
+  departments: string[];
 }) {
-  const [view, setView] = useState({
-    year: REFERENCE_MONTH.year,
-    month: REFERENCE_MONTH.month,
-  });
+  // The displayed month follows the selected date — single source of truth, now
+  // that the header date picker is the only month/date control.
+  const view = { year: selected.year, month: selected.month };
+  const weeks = useMemo(
+    () => monthMatrix(view.year, view.month),
+    [view.year, view.month],
+  );
 
-  const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
+  const goToToday = () => onSelect({ ...TODAY });
 
-  // Selectable years — a range around today, always including the current view.
-  const years = useMemo(() => {
-    const set = new Set<number>();
-    for (let y = TODAY.year - 5; y <= TODAY.year + 1; y++) set.add(y);
-    set.add(view.year);
-    return [...set].sort((a, b) => a - b);
-  }, [view.year]);
-
-  const goToToday = () => {
-    setView({ year: TODAY.year, month: TODAY.month });
-    onSelect({ year: TODAY.year, month: TODAY.month, day: TODAY.day });
+  // Prev/next move the selection by one month, clamping the day to the new
+  // month's length; the grid follows because the view derives from the selection.
+  const step = (dir: -1 | 1) => {
+    let m = selected.month + dir;
+    let y = selected.year;
+    if (m < 0) {
+      m = 11;
+      y -= 1;
+    } else if (m > 11) {
+      m = 0;
+      y += 1;
+    }
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    onSelect({ year: y, month: m, day: Math.min(selected.day, lastDay) });
   };
-
-  const step = (dir: -1 | 1) =>
-    setView((v) => {
-      const m = v.month + dir;
-      if (m < 0) return { year: v.year - 1, month: 11 };
-      if (m > 11) return { year: v.year + 1, month: 0 };
-      return { year: v.year, month: m };
-    });
 
   return (
     <Card>
@@ -129,41 +133,24 @@ export function AttendanceCalendar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={String(view.month)}
-            onValueChange={(v) =>
-              setView((s) => ({ ...s, month: Number(v) }))
-            }
-          >
-            <SelectTrigger className="h-8 w-[8.5rem]" aria-label="Month">
+          <Select value={dept} onValueChange={(v) => onDeptChange(v as string)}>
+            <SelectTrigger className="h-8 w-[10.5rem]" aria-label="Department">
               <SelectValue>
-                {(v) => (v == null ? "" : MONTH_NAMES[Number(v)])}
+                {(v) =>
+                  v == null || v === "all" ? "All departments" : String(v)
+                }
               </SelectValue>
             </SelectTrigger>
-            <SelectContent>
-              {MONTH_NAMES.map((m, i) => (
-                <SelectItem key={m} value={String(i)}>
-                  {m}
+            <SelectContent className="max-h-72">
+              {departments.map((d) => (
+                <SelectItem key={d} value={d}>
+                  {d === "all" ? "All departments" : d}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          <Select
-            value={String(view.year)}
-            onValueChange={(v) => setView((s) => ({ ...s, year: Number(v) }))}
-          >
-            <SelectTrigger className="h-8 w-[5.5rem]" aria-label="Year">
-              <SelectValue>{(v) => (v == null ? "" : String(v))}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <LogDatePicker value={selected} onChange={onSelect} />
 
           <Button variant="outline" size="sm" onClick={goToToday}>
             Today

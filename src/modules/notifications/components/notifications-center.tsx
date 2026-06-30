@@ -107,7 +107,7 @@ export function NotificationsCenter() {
               description="You're all caught up. New notifications will show up here."
             />
           ) : (
-            <Card className="p-0">
+            <Card className="p-0 [--card-spacing:0px]">
               <ul className="divide-y">
                 {visible.map((n) => {
                   const meta = NOTIFICATION_TYPE_META[n.type];
@@ -115,8 +115,21 @@ export function NotificationsCenter() {
                   return (
                     <li
                       key={n.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        markRead(n.id);
+                        setSelected(n);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          markRead(n.id);
+                          setSelected(n);
+                        }
+                      }}
                       className={cn(
-                        "flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50",
+                        "flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none",
                         !n.read && "bg-feature-tint/40",
                       )}
                     >
@@ -146,7 +159,8 @@ export function NotificationsCenter() {
                         <div className="mt-1.5 flex items-center gap-3">
                           <button
                             type="button"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               markRead(n.id);
                               setSelected(n);
                             }}
@@ -157,7 +171,10 @@ export function NotificationsCenter() {
                           {!n.read ? (
                             <button
                               type="button"
-                              onClick={() => markRead(n.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markRead(n.id);
+                              }}
                               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                             >
                               <Check className="size-3.5" /> Mark read
@@ -170,7 +187,10 @@ export function NotificationsCenter() {
                         size="icon"
                         className="size-7 shrink-0 text-muted-foreground"
                         aria-label="Dismiss"
-                        onClick={() => remove(n.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          remove(n.id);
+                        }}
                       >
                         <X className="size-4" />
                       </Button>

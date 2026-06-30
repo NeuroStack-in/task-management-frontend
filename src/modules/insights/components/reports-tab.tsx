@@ -41,6 +41,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/use-permissions";
 import { AiReportCard } from "./ai-report-card";
@@ -257,12 +264,46 @@ export function ReportsTab() {
         ]}
       />
 
-      {/* Section header: title + bulk actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
-          Report templates
-        </h2>
-        <div className="flex items-center gap-2">
+      {/* Section header */}
+      <h2 className="font-heading text-sm font-semibold tracking-wide uppercase">
+        Reports
+      </h2>
+
+      {/* Toolbar: select-all + count (left) · category filter (right) */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <label className="flex cursor-pointer items-center gap-2 select-none">
+            <Checkbox
+              checked={allFilteredSelected}
+              onCheckedChange={toggleSelectAll}
+              aria-label="Select all reports"
+            />
+            Select all
+          </label>
+          <span>
+            <span className="font-medium text-foreground">{reports.length}</span> of{" "}
+            {REPORTS.length} reports
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
+            <SelectTrigger className="h-9 w-48" aria-label="Filter by category">
+              <SelectValue>
+                {(v) =>
+                  FILTERS.find((f) => f.key === v)?.label ?? "All reports"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="end">
+              {FILTERS.map((f) => (
+                <SelectItem key={f.key} value={f.key}>
+                  {f.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Bulk download — sits next to the filter */}
           {selected.size > 0 ? (
             <>
               <span className="text-sm text-muted-foreground">
@@ -297,41 +338,6 @@ export function ReportsTab() {
               <Download className="size-4" /> Download all
             </Button>
           )}
-        </div>
-      </div>
-
-      {/* Toolbar: select-all + count (left) · category filter (right) */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <label className="flex cursor-pointer items-center gap-2 select-none">
-            <Checkbox
-              checked={allFilteredSelected}
-              onCheckedChange={toggleSelectAll}
-              aria-label="Select all reports"
-            />
-            Select all
-          </label>
-          <span>
-            <span className="font-medium text-foreground">{reports.length}</span> of{" "}
-            {REPORTS.length} reports
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                filter === f.key
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
         </div>
       </div>
 

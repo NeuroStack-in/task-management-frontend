@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import {
@@ -46,7 +46,6 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -110,10 +109,10 @@ const dateLabel = (d: SelectedDate) =>
 
 export function AttendanceLog({
   date,
-  onDateChange,
+  dept,
 }: {
   date: SelectedDate;
-  onDateChange: (d: SelectedDate) => void;
+  dept: string;
 }) {
   const router = useRouter();
 
@@ -135,19 +134,16 @@ export function AttendanceLog({
     [date],
   );
 
-  const departments = useMemo(
-    () => ["all", ...[...new Set(allRows.map((r) => r.department))].sort()],
-    [allRows],
-  );
-
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AttendanceStatus | "all">("all");
-  const [dept, setDept] = useState("all");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "name",
     dir: "asc",
   });
   const [page, setPage] = useState(0);
+
+  // Reset to the first page when the selected day or department changes.
+  useEffect(() => setPage(0), [date, dept]);
 
   const statusCounts = useMemo(() => {
     const base = { all: allRows.length } as Record<string, number>;
@@ -230,13 +226,6 @@ export function AttendanceLog({
           <p className="mt-1 text-sm text-muted-foreground">{dateLabel(date)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <LogDatePicker
-            value={date}
-            onChange={(d) => {
-              onDateChange(d);
-              resetPage();
-            }}
-          />
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -249,29 +238,6 @@ export function AttendanceLog({
               className="h-9 w-44 pl-8"
             />
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="outline" size="sm" className="h-9 gap-1.5" />
-              }
-            >
-              {dept === "all" ? "All departments" : dept}
-              <ChevronDown className="size-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
-              {departments.map((d) => (
-                <DropdownMenuItem
-                  key={d}
-                  onClick={() => {
-                    setDept(d);
-                    resetPage();
-                  }}
-                >
-                  {d === "all" ? "All departments" : d}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
           <Button variant="outline" size="sm" className="h-9" onClick={exportCsv}>
             <Download className="size-4" /> Download
           </Button>
@@ -455,7 +421,7 @@ function SortHead({
   );
 }
 
-function LogDatePicker({
+export function LogDatePicker({
   value,
   onChange,
 }: {
@@ -478,7 +444,7 @@ function LogDatePicker({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
-        render={<Button variant="outline" size="sm" className="h-9 gap-1.5" />}
+        render={<Button variant="outline" size="sm" className="h-8 gap-1.5" />}
       >
         <CalendarDays className="size-4" />
         {dateLabel(value)}

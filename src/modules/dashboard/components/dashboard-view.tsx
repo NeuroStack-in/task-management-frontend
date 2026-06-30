@@ -29,12 +29,14 @@ export function DashboardView({ users }: { users: User[] }) {
 
   const [range, setRange] = useState<DashboardRange>("7d");
   const [team, setTeam] = useState("all");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
 
   const teams = useMemo(() => teamsOf(users), [users]);
   const data = useMemo(
-    () => buildDashboardData(users, { range, team }),
-    [users, range, team],
+    () => buildDashboardData(users, { range, team, start, end }),
+    [users, range, team, start, end],
   );
 
   // Stamp the refresh time on the client (and whenever the filters change) so we
@@ -46,7 +48,7 @@ export function DashboardView({ users }: { users: User[] }) {
         minute: "2-digit",
       }),
     );
-  }, [range, team]);
+  }, [range, team, start, end]);
 
   const { kpis, rangeLabel } = data;
 
@@ -70,6 +72,10 @@ export function DashboardView({ users }: { users: User[] }) {
         onTeamChange={setTeam}
         teams={teams}
         lastUpdated={lastUpdated}
+        start={start}
+        end={end}
+        onStartChange={setStart}
+        onEndChange={setEnd}
       />
 
       {/* KPI strip — reactive to the active range/team. The "Today" range shows

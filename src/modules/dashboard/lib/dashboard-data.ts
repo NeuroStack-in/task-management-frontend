@@ -8,18 +8,21 @@ import {
 
 /* --------------------------------- filters -------------------------------- */
 
-export type DashboardRange = "today" | "7d" | "30d" | "quarter";
+export type DashboardRange = "today" | "7d" | "30d" | "range";
 
 export const RANGE_OPTIONS: { value: DashboardRange; label: string }[] = [
   { value: "today", label: "Today" },
   { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-  { value: "quarter", label: "Quarter" },
+  { value: "30d", label: "Month" },
+  { value: "range", label: "Range" },
 ];
 
 export interface DashboardFilters {
   range: DashboardRange;
   team: string; // "all" or a department name
+  /** ISO "YYYY-MM-DD" bounds, only used when range === "range". */
+  start?: string;
+  end?: string;
 }
 
 interface RangeMeta {
@@ -33,7 +36,7 @@ interface RangeMeta {
   workdays: number;
 }
 
-const RANGE_META: Record<DashboardRange, RangeMeta> = {
+const RANGE_META: Record<Exclude<DashboardRange, "range">, RangeMeta> = {
   today: {
     labels: ["9a", "11a", "1p", "3p", "5p", "7p", "now"],
     unit: "today",
@@ -52,13 +55,36 @@ const RANGE_META: Record<DashboardRange, RangeMeta> = {
     screenshotBase: 5400,
     workdays: 22,
   },
-  quarter: {
-    labels: ["Apr", "May", "Jun"],
-    unit: "this quarter",
-    screenshotBase: 16800,
-    workdays: 64,
-  },
 };
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/**
+ * Builds range meta for a user-picked custom window (range === "range"). Pure and
+ * deterministic — parses the explicit ISO bounds (no Date.now()). Falls back to a
+ * month-like window until both ends are chosen. ~245 screenshots/workday and ~7.4
+ * tracked hours/workday match the fixed-range ratios above.
+ */
+function customRangeMeta(start?: string, end?: string): RangeMeta {
+  if (!start || !end) {
+    return { labels: ["W1", "W2", "W3", "W4"], unit: "selected range", screenshotBase: 5000, workdays: 20 };
+  }
+  const s = new Date(`${start}T00:00:00`);
+  const e = new Date(`${end}T00:00:00`);
+  const days = Math.max(1, Math.round((e.getTime() - s.getTime()) / 86_400_000) + 1);
+  const workdays = Math.max(1, Math.round((days * 5) / 7));
+  const ticks = Math.min(6, days);
+  const labels = Array.from({ length: ticks }, (_, i) => {
+    const offset = ticks > 1 ? Math.round((i * (days - 1)) / (ticks - 1)) : 0;
+    const d = new Date(s.getTime() + offset * 86_400_000);
+    return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  });
+  const unit = `${MONTHS[s.getMonth()]} ${s.getDate()} – ${MONTHS[e.getMonth()]} ${e.getDate()}`;
+  return { labels, unit, screenshotBase: workdays * 245, workdays };
+}
 
 /* ------------------------------- determinism ------------------------------ */
 
@@ -116,7 +142,7 @@ export interface DashboardData {
     active: KpiSeries;
     inactive: KpiSeries;
     timers: KpiSeries;
-    // Period aggregates (shown for 7d / 30d / quarter)
+    // Period aggregates (shown for 7d / 30d / range)
     hours: KpiSeries;
     billable: KpiSeries;
     activity: KpiSeries;
@@ -153,9 +179,12 @@ export function buildDashboardData(
   filters: DashboardFilters,
 ): DashboardData {
   const { range, team } = filters;
-  const meta = RANGE_META[range];
+  const meta =
+    range === "range" ? customRangeMeta(filters.start, filters.end) : RANGE_META[range];
   const scope = team === "all" ? users : users.filter((u) => u.department === team);
-  const key = (k: string) => `${range}:${team}:${k}`;
+  // Seed includes the custom bounds so changing the picked range re-derives data.
+  const key = (k: string) =>
+    `${range}:${filters.start ?? ""}:${filters.end ?? ""}:${team}:${k}`;
 
   const active = scope.filter((u) => u.status === "active").length;
   const inactive = scope.filter((u) => u.status === "inactive").length;

@@ -129,9 +129,14 @@ export function TimesheetGrid({
 }) {
   const [group, setGroup] = useState<GroupBy>("person");
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | TimesheetStatus>(
-    "all",
-  );
+  // Multi-select status filter; an empty list means no filter (all statuses).
+  const [statuses, setStatuses] = useState<TimesheetStatus[]>([]);
+  const toggleStatus = (value: "all" | TimesheetStatus) => {
+    if (value === "all") return setStatuses([]);
+    setStatuses((prev) =>
+      prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value],
+    );
+  };
   const [deptFilter, setDeptFilter] = useState("all");
   const [weekOffset, setWeekOffset] = useState(0);
   const [selection, setSelection] = useState<
@@ -208,15 +213,15 @@ export function TimesheetGrid({
         const total = days.reduce((s, h) => s + h, 0);
         return { ...r, days, total };
       })
-      .filter((r) => statusFilter === "all" || r.status === statusFilter)
+      .filter((r) => statuses.length === 0 || statuses.includes(r.status))
       .sort((a, b) => b.total - a.total);
-  }, [baseRows, query, deptFilter, statusFilter, weekOffset]);
+  }, [baseRows, query, deptFilter, statuses, weekOffset]);
 
   const hasFilters =
-    deptFilter !== "all" || statusFilter !== "all" || query.trim() !== "";
+    deptFilter !== "all" || statuses.length > 0 || query.trim() !== "";
   const clearFilters = () => {
     setDeptFilter("all");
-    setStatusFilter("all");
+    setStatuses([]);
     setQuery("");
   };
 
@@ -258,37 +263,38 @@ export function TimesheetGrid({
       {/* Toolbar: week nav + filter + search */}
       <div className="flex flex-col gap-4 border-b p-4 sm:px-5 sm:py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          {/* Week navigation */}
-          <div className="flex items-center gap-2">
-            <div className="leading-tight">
+          {/* Week navigation — prev/next arrows flank the centered title
+              (mirrors the Attendance calendar's month nav). */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Previous week"
+              onClick={() => setWeekOffset((w) => w - 1)}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <div className="min-w-[10rem] text-center leading-tight">
               <p className="font-heading text-base font-semibold">
                 {weekOffset === 0 ? "This Week" : "Week of"}
               </p>
               <p className="text-xs text-muted-foreground">{weekRange}</p>
             </div>
-            <div className="ml-1 flex items-center gap-1 rounded-lg border p-0.5">
-              <button
-                type="button"
-                onClick={() => setWeekOffset((w) => w - 1)}
-                aria-label="Previous week"
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setWeekOffset((w) => w + 1)}
-                aria-label="Next week"
-                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <ChevronRight className="size-4" />
-              </button>
-            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              aria-label="Next week"
+              onClick={() => setWeekOffset((w) => w + 1)}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
             {weekOffset !== 0 ? (
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5"
+                className="ml-1 h-8 gap-1.5"
                 onClick={() => setWeekOffset(0)}
               >
                 <CalendarCheck className="size-4" />
@@ -361,21 +367,28 @@ export function TimesheetGrid({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Status filter */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {STATUS_FILTERS.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                onClick={() => setStatusFilter(s.value)}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                  statusFilter === s.value
-                    ? "border-transparent bg-primary text-primary-foreground"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {s.label}
-              </button>
-            ))}
+            {STATUS_FILTERS.map((s) => {
+              const active =
+                s.value === "all"
+                  ? statuses.length === 0
+                  : statuses.includes(s.value);
+              return (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => toggleStatus(s.value)}
+                  aria-pressed={active}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                    active
+                      ? "border-transparent bg-primary text-primary-foreground"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -399,12 +412,15 @@ export function TimesheetGrid({
                 onClear={() => setDeptFilter("all")}
               />
             ) : null}
-            {statusFilter !== "all" ? (
+            {statuses.map((st) => (
               <FilterTagChip
-                label={`Status: ${STATUS_META[statusFilter as TimesheetStatus].label}`}
-                onClear={() => setStatusFilter("all")}
+                key={st}
+                label={`Status: ${STATUS_META[st].label}`}
+                onClear={() =>
+                  setStatuses((prev) => prev.filter((s) => s !== st))
+                }
               />
-            ) : null}
+            ))}
             {query.trim() ? (
               <FilterTagChip
                 label={`Search: ${query.trim()}`}

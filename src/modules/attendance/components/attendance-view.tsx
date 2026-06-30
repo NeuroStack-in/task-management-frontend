@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { TODAY, orgDayCounts } from "@/lib/mock-attendance";
+import { users } from "@/lib/data";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
 import { AttendanceOverview } from "./attendance-overview";
 import { AttendanceCalendar } from "./attendance-calendar";
@@ -15,13 +16,20 @@ export interface AttendanceDate {
   day: number;
 }
 
+/** Distinct departments for the shared filter (static — users is seed data). */
+const DEPARTMENTS = [
+  "all",
+  ...[...new Set(users.map((u) => u.department))].sort(),
+];
+
 export function AttendanceView() {
   // Self-scoped roles (Employee) see only their own attendance, never the org.
   const selfScoped = useIsSelfScoped();
 
   // Shared selected day — the calendar drives the log below it.
   const [date, setDate] = useState<AttendanceDate>({ ...TODAY });
-  const logRef = useRef<HTMLDivElement>(null);
+  // Shared department filter — lives in the calendar header, narrows the log.
+  const [dept, setDept] = useState("all");
 
   if (selfScoped) return <PersonalAttendanceView />;
 
@@ -29,14 +37,6 @@ export function AttendanceView() {
   const presentPct = Math.round(
     ((today.present + today.late) / today.total) * 100,
   );
-
-  // Picking a day on the calendar updates the log and scrolls down to it.
-  const selectDay = (d: AttendanceDate) => {
-    setDate(d);
-    requestAnimationFrame(() =>
-      logRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    );
-  };
 
   return (
     <div className="space-y-5 pt-1">
@@ -47,11 +47,15 @@ export function AttendanceView() {
 
       <AttendanceOverview />
 
-      <AttendanceCalendar selected={date} onSelect={selectDay} />
+      <AttendanceCalendar
+        selected={date}
+        onSelect={setDate}
+        dept={dept}
+        onDeptChange={setDept}
+        departments={DEPARTMENTS}
+      />
 
-      <div ref={logRef} className="scroll-mt-4">
-        <AttendanceLog date={date} onDateChange={setDate} />
-      </div>
+      <AttendanceLog date={date} dept={dept} />
     </div>
   );
 }

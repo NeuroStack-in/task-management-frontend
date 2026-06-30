@@ -219,15 +219,6 @@ export function ChatBot() {
                 AI productivity assistant
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              aria-label="Close assistant"
-              onClick={() => setOpen(false)}
-            >
-              <X className="size-4" />
-            </Button>
           </header>
 
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">

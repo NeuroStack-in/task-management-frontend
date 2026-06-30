@@ -1361,6 +1361,15 @@ input[type="date"]::-webkit-inner-spin-button {
   display: none;
 }
 
+/* Hide the native scrollbar's up/down arrow buttons app-wide (Chromium). On
+   some Windows/Chrome configs these render as a floating ▲/▼ widget at the edge
+   of a scroll area; the track + thumb stay so scrolling is unaffected. */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Themed thin scrollbar for the Settings rail's independent scroll. Scoped —
    does not affect the rest of the app's native scrollbars. */
 .wp-rail-scroll {
