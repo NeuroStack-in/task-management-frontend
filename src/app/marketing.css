@@ -98,6 +98,25 @@
     transform: rotate(360deg);
   }
 }
+/* Connector "data flow" — dashes travel toward the hub */
+@keyframes m-flow {
+  to {
+    stroke-dashoffset: -17;
+  }
+}
+/* Feature-mock micro-animations */
+@keyframes m-bar {
+  0%, 100% { transform: scaleY(0.78); }
+  50% { transform: scaleY(1); }
+}
+@keyframes m-sweep {
+  0% { transform: translateX(-130%); }
+  100% { transform: translateX(360%); }
+}
+@keyframes m-scan {
+  0%, 100% { left: 4%; }
+  50% { left: 93%; }
+}
 @keyframes m-shake {
   0%,
   100% {
