@@ -26,6 +26,7 @@ import { useTimerStore } from "@/stores/timer.store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { isNavItemVisible } from "@/lib/rbac";
 import {
+  ACCOUNT_SECTIONS,
   ADMIN_SECTIONS,
   INSIGHTS_TABS,
 } from "@/constants/navigation";
@@ -218,6 +219,8 @@ export function CommandPalette() {
           .filter((it) => isNavItemVisible(role, it))
           .map((it) => ({ item: it, group: g.label })),
       ),
+      // Personal account settings — always accessible, so no permission filter.
+      ...ACCOUNT_SECTIONS.map((it) => ({ item: it, group: "Account" })),
     ];
     const seen = new Set<string>();
     let pageResults = pages
@@ -227,7 +230,11 @@ export function CommandPalette() {
         return true;
       })
       .filter(({ item, group }) =>
-        q === "" ? true : `${item.label} ${group}`.toLowerCase().includes(q),
+        q === ""
+          ? true
+          : `${item.label} ${group} ${item.description ?? ""} ${item.keywords ?? ""}`
+              .toLowerCase()
+              .includes(q),
       )
       .map<Result>(({ item, group }) => ({
         id: `nav-${item.href}`,

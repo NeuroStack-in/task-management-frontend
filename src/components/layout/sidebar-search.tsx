@@ -7,7 +7,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/stores/ui.store";
 import { isNavItemVisible } from "@/lib/rbac";
-import { INSIGHTS_TABS, ADMIN_SECTIONS } from "@/constants/navigation";
+import {
+  INSIGHTS_TABS,
+  ADMIN_SECTIONS,
+  ACCOUNT_SECTIONS,
+} from "@/constants/navigation";
 import { users, projects } from "@/lib/data";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -112,6 +116,8 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           .filter((it) => isNavItemVisible(role, it))
           .map((it) => ({ item: it, group: g.label })),
       ),
+      // Personal account settings — always accessible, so no permission filter.
+      ...ACCOUNT_SECTIONS.map((it) => ({ item: it, group: "Account" })),
     ];
     const seen = new Set<string>();
     out.push(
@@ -122,7 +128,9 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           return true;
         })
         .filter(({ item, group }) =>
-          `${item.label} ${group}`.toLowerCase().includes(q),
+          `${item.label} ${group} ${item.description ?? ""} ${item.keywords ?? ""}`
+            .toLowerCase()
+            .includes(q),
         )
         .slice(0, MAX_PAGES)
         .map<Result>(({ item, group }) => ({
