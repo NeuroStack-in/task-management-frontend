@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Lock } from "lucide-react";
 import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { InPaneHeaderContext } from "@/components/shared/page-header";
@@ -27,17 +27,24 @@ interface RailGroup {
 /**
  * Personal account sections, rendered in-pane. Sourced from the shared catalog
  * (kept in sync with global search). The employee interface gets a trimmed set
- * — no Billing — while management roles keep the full list (see `isManagement`).
- * Account-level security lives in the org Security Center, so it isn't a
- * separate rail entry here.
+ * — no Billing, and "Security" instead of "Login & security" — while management
+ * roles keep the full list (see `isManagement`). Personal login & security sits
+ * right after Profile.
  */
 function accountGroup(management: boolean): RailGroup {
-  return {
-    label: "Account",
-    items: ACCOUNT_SECTIONS.filter(
-      (it) => management || it.href !== "/settings/billing",
-    ).map((it) => ({ label: it.label, href: it.href, icon: it.icon })),
-  };
+  const items: RailItem[] = [];
+  for (const it of ACCOUNT_SECTIONS) {
+    if (!management && it.href === "/settings/billing") continue;
+    items.push({ label: it.label, href: it.href, icon: it.icon });
+    if (it.href === "/settings/profile") {
+      items.push({
+        label: management ? "Login & security" : "Security",
+        href: "/settings/login-security",
+        icon: Lock,
+      });
+    }
+  }
+  return { label: "Account", items };
 }
 
 export default function SettingsLayout({
