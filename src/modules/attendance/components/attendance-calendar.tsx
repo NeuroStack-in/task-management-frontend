@@ -12,13 +12,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   COUNT_METRICS,
   MONTH_NAMES,
   TODAY,
@@ -70,14 +63,10 @@ export function AttendanceCalendar({
   selected,
   onSelect,
   dept,
-  onDeptChange,
-  departments,
 }: {
   selected: AttendanceDate;
   onSelect: (d: AttendanceDate) => void;
   dept: string;
-  onDeptChange: (d: string) => void;
-  departments: string[];
 }) {
   // The displayed month follows the selected date — single source of truth, now
   // that the header date picker is the only month/date control.
@@ -133,22 +122,10 @@ export function AttendanceCalendar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={dept} onValueChange={(v) => onDeptChange(v as string)}>
-            <SelectTrigger className="h-8 w-[10.5rem]" aria-label="Department">
-              <SelectValue>
-                {(v) =>
-                  v == null || v === "all" ? "All departments" : String(v)
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {departments.map((d) => (
-                <SelectItem key={d} value={d}>
-                  {d === "all" ? "All departments" : d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-card px-3 text-sm">
+            <span className="text-muted-foreground">Department:</span>
+            <span className="font-medium text-foreground">{dept}</span>
+          </span>
 
           <LogDatePicker value={selected} onChange={onSelect} />
 

@@ -196,7 +196,7 @@ export function EmployeesView({
   const assignments = useEmployeesStore((s) => s.assignments);
   const { ids: scopeIds } = useDataScope();
   const [query, setQuery] = useState("");
-  const [dept, setDept] = useState("all");
+  const [dept, setDept] = useState("Design");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -284,10 +284,7 @@ export function EmployeesView({
           label="Dept"
           value={dept}
           onChange={resetPage(setDept)}
-          options={[
-            { value: "all", label: "All departments" },
-            ...departments.map((d) => ({ value: d, label: d })),
-          ]}
+          options={[{ value: "Design", label: "Design" }]}
         />
         <FilterDropdown
           label="Status"
