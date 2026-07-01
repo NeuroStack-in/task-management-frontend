@@ -46,6 +46,28 @@ export function canAny(
   return permissions.some((perm) => canAccess(role, perm));
 }
 
+/**
+ * Capabilities that only oversight/management roles hold. An individual
+ * contributor (the Employee role) has none of these, which lets the UI tailor
+ * personal settings (e.g. a simpler "Security" section without Billing) for the
+ * employee interface while leaving the management interface unchanged.
+ */
+const MANAGEMENT_PERMISSIONS: PermissionId[] = [
+  "settings:manage",
+  "billing:view",
+  "employees:manage",
+  "roles:view",
+  "security:view",
+  "payroll:view",
+  "time-tracking:approve",
+  "approvals:view",
+];
+
+/** True for management/oversight roles; false for an individual contributor. */
+export function isManagement(role: Role | null | undefined): boolean {
+  return canAny(role, MANAGEMENT_PERMISSIONS);
+}
+
 /** Visibility for a nav item: by `anyPermissions` if present, else by `permission`. */
 export function isNavItemVisible(
   role: Role | null | undefined,

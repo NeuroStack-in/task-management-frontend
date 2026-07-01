@@ -8,6 +8,7 @@ import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { InPaneHeaderContext } from "@/components/shared/page-header";
 import { usePageTitle } from "@/stores/page-header.store";
+import { isManagement } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 interface RailItem {
@@ -23,16 +24,21 @@ interface RailGroup {
   items: RailItem[];
 }
 
-/** Personal account sections — always available, rendered in-pane. Sourced
- * from the shared catalog so global search and the rail stay in sync. */
-const ACCOUNT_GROUP: RailGroup = {
-  label: "Account",
-  items: ACCOUNT_SECTIONS.map((it) => ({
-    label: it.label,
-    href: it.href,
-    icon: it.icon,
-  })),
-};
+/**
+ * Personal account sections, rendered in-pane. Sourced from the shared catalog
+ * (kept in sync with global search). The employee interface gets a trimmed set
+ * — no Billing — while management roles keep the full list (see `isManagement`).
+ * Account-level security lives in the org Security Center, so it isn't a
+ * separate rail entry here.
+ */
+function accountGroup(management: boolean): RailGroup {
+  return {
+    label: "Account",
+    items: ACCOUNT_SECTIONS.filter(
+      (it) => management || it.href !== "/settings/billing",
+    ).map((it) => ({ label: it.label, href: it.href, icon: it.icon })),
+  };
+}
 
 export default function SettingsLayout({
   children,
@@ -40,7 +46,8 @@ export default function SettingsLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { can } = usePermissions();
+  const { can, role } = usePermissions();
+  const management = isManagement(role);
 
   // The navbar stays pinned to "Settings" across every sub-section; each
   // sub-page renders its own title/subtitle in-pane (via InPaneHeaderContext).
@@ -62,7 +69,7 @@ export default function SettingsLayout({
       })),
   })).filter((group) => group.items.length > 0);
 
-  const groups: RailGroup[] = [ACCOUNT_GROUP, ...adminGroups];
+  const groups: RailGroup[] = [accountGroup(management), ...adminGroups];
 
   return (
     <div className="flex flex-col gap-6 pt-1 lg:h-[calc(100vh-7rem)] lg:flex-row lg:gap-10">

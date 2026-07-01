@@ -137,6 +137,27 @@ export const WEEKLY_HOURS: DailyHours[] = [
   { day: "Sun", hours: 0, billable: 0 },
 ];
 
+const WEEK_DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/**
+ * Deterministic tracked hours for a given week offset (0 = this week, -1 = last
+ * week, …). Offset 0 returns the canonical WEEKLY_HOURS; earlier weeks are
+ * generated from the offset so the bar chart stays stable as you page back.
+ */
+export function weeklyHoursFor(offset: number): DailyHours[] {
+  if (offset === 0) return WEEKLY_HOURS;
+  const k = Math.abs(offset);
+  return WEEK_DAY_LABELS.map((day, i) => {
+    const weekday = i < 5;
+    const seed = (i + 2) * 17 + k * 29 + 7;
+    const hours = weekday
+      ? Math.round((5.4 + (seed % 38) / 10) * 10) / 10 // ~5.4–9.2h
+      : Math.round(((seed % 16) / 10) * 10) / 10; // weekend 0–1.5h
+    const billable = Math.round(hours * (0.5 + (seed % 35) / 100) * 10) / 10;
+    return { day, hours, billable: Math.min(billable, hours) };
+  });
+}
+
 export interface TimeSummary {
   todaySec: number;
   weekHours: number;

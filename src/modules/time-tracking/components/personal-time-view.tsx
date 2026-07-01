@@ -3,17 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import {
-  Clock,
   CalendarDays,
   BadgeDollarSign,
   Activity,
   Download,
   Timer,
-  FolderKanban,
+  ListChecks,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { StatCard } from "@/components/shared/stat-card";
+import { useTimerStore } from "@/stores/timer.store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { formatDuration } from "@/lib/format";
 import {
+  TASK_OPTIONS,
   TODAYS_ENTRIES,
   WEEKLY_HOURS,
   formatHours,
@@ -60,9 +60,29 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
       focus: `${summary.avgActivity}%`,
       longest: formatDuration(entries.reduce((m, e) => Math.max(m, e.durationSec), 0)),
       projects: String(new Set(entries.map((e) => e.project)).size),
+      tasks: String(new Set(entries.map((e) => e.task)).size),
     }),
     [entries, summary.avgActivity],
   );
+
+  // Seed the per-task day clocks from today's logged time once, so restarting a
+  // task resumes from its full day total (matching its Today's sessions row).
+  // Keyed by taskId; no-op after the first run on a given day (see the store).
+  const seedDay = useTimerStore((s) => s.seedDay);
+  useEffect(() => {
+    const totals: Record<string, number> = {};
+    for (const e of TODAYS_ENTRIES) {
+      const opt = TASK_OPTIONS.find(
+        (o) => o.taskTitle === e.task && o.projectName === e.project,
+      );
+      if (opt) totals[opt.taskId] = (totals[opt.taskId] ?? 0) + e.durationSec;
+    }
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate(),
+    ).padStart(2, "0")}`;
+    seedDay(totals, day);
+  }, [seedDay]);
 
   // Resolve the date on the client to avoid an SSR/hydration mismatch.
   const [today, setToday] = useState("");
@@ -106,41 +126,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
 
   return (
     <div className="space-y-6">
-      <TimerHero onLogged={handleLogged} />
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Today"
-          value={formatDuration(summary.todaySec)}
-          icon={Clock}
-          hint="tracked"
-          trend={summary.trends.today}
-          featured
-        />
-        <StatCard
-          label="This week"
-          value={formatHours(summary.weekHours)}
-          icon={CalendarDays}
-          delta={6}
-          trend={summary.trends.week}
-        />
-        <StatCard
-          label="Billable"
-          value={`${summary.billablePct}%`}
-          icon={BadgeDollarSign}
-          delta={3}
-          trend={summary.trends.billable}
-        />
-        <StatCard
-          label="Avg activity"
-          value={`${summary.avgActivity}%`}
-          icon={Activity}
-          hint="today"
-          trend={summary.trends.activity}
-        />
-      </div>
-
-      <WeeklyHoursChart data={WEEKLY_HOURS} />
+      <TimerHero entries={entries} onLogged={handleLogged} />
 
       <Card>
         <CardHeader>
@@ -181,9 +167,9 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               value={dayStats.longest}
             />
             <SummaryCell
-              icon={FolderKanban}
-              label="Projects touched"
-              value={dayStats.projects}
+              icon={ListChecks}
+              label="Tasks tracked"
+              value={dayStats.tasks}
             />
           </div>
 
@@ -245,6 +231,8 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
           </div>
         </CardContent>
       </Card>
+
+      <WeeklyHoursChart />
     </div>
   );
 }

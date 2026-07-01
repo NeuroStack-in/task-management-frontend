@@ -11,6 +11,8 @@ interface AuthState {
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Patch the signed-in user (self-service profile edits). Persisted. */
+  updateUser: (patch: Partial<User>) => void;
   setHydrated: () => void;
 }
 
@@ -28,6 +30,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => set({ session: null, user: null, isAuthenticated: false }),
+
+      updateUser: (patch) =>
+        set((s) => (s.user ? { user: { ...s.user, ...patch } } : s)),
 
       setHydrated: () => set({ hydrated: true }),
     }),
