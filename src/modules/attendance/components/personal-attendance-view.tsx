@@ -9,15 +9,16 @@ import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth.store";
 import {
   MONTH_NAMES,
-  REFERENCE_MONTH,
   TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
+  daysInMonth,
   dayRecordFor,
   isFutureDate,
   type DayStatus,
   type DayCell,
 } from "@/lib/mock-attendance";
+import { LogDatePicker } from "./attendance-log";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<
@@ -36,12 +37,15 @@ export function PersonalAttendanceView() {
   const user = useAuthStore((s) => s.user);
   const userId = user?.id ?? "";
 
-  const [view, setView] = useState({
-    year: REFERENCE_MONTH.year,
-    month: REFERENCE_MONTH.month,
-  });
+  // The displayed month follows the selected date (mirrors the management
+  // calendar), so the header date picker and chevrons share one source of truth.
+  const [selected, setSelected] = useState({ ...TODAY });
+  const view = { year: selected.year, month: selected.month };
 
-  const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
+  const weeks = useMemo(
+    () => monthMatrix(view.year, view.month),
+    [view.year, view.month],
+  );
 
   // The current user's own tally for the viewed month (elapsed workdays only).
   const summary = useMemo(() => {
@@ -84,15 +88,21 @@ export function PersonalAttendanceView() {
     return out;
   }, [userId]);
 
-  const isRefMonth =
-    view.year === REFERENCE_MONTH.year && view.month === REFERENCE_MONTH.month;
-
+  // Prev/next move the selection by one month, clamping the day to the new
+  // month's length; the grid follows because the view derives from the selection.
   const step = (dir: -1 | 1) =>
-    setView((v) => {
-      const m = v.month + dir;
-      if (m < 0) return { year: v.year - 1, month: 11 };
-      if (m > 11) return { year: v.year + 1, month: 0 };
-      return { year: v.year, month: m };
+    setSelected((s) => {
+      let m = s.month + dir;
+      let y = s.year;
+      if (m < 0) {
+        m = 11;
+        y -= 1;
+      } else if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+      const lastDay = daysInMonth(y, m);
+      return { year: y, month: m, day: Math.min(s.day, lastDay) };
     });
 
   if (!user) return null;
@@ -134,26 +144,8 @@ export function PersonalAttendanceView() {
 
       {/* Personal calendar */}
       <Card>
-        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-          <div>
-            <CardTitle>
-              {MONTH_NAMES[view.month]} {view.year}
-            </CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your daily attendance for the month.
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setView({ year: REFERENCE_MONTH.year, month: REFERENCE_MONTH.month })
-              }
-              disabled={isRefMonth}
-            >
-              Today
-            </Button>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
@@ -163,6 +155,9 @@ export function PersonalAttendanceView() {
             >
               <ChevronLeft className="size-4" />
             </Button>
+            <CardTitle className="min-w-[10rem] text-center">
+              {MONTH_NAMES[view.month]} {view.year}
+            </CardTitle>
             <Button
               variant="ghost"
               size="icon"
@@ -171,6 +166,17 @@ export function PersonalAttendanceView() {
               onClick={() => step(1)}
             >
               <ChevronRight className="size-4" />
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <LogDatePicker value={selected} onChange={setSelected} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelected({ ...TODAY })}
+            >
+              Today
             </Button>
           </div>
         </CardHeader>
@@ -212,7 +218,7 @@ export function PersonalAttendanceView() {
       </Card>
 
       {/* Personal recent log */}
-      <Card className="gap-0 p-0">
+      <Card className="gap-0 p-0 [--card-spacing:0px]">
         <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <CalendarOff className="size-4 text-muted-foreground" />
           <h2 className="font-display text-base font-semibold tracking-tight">

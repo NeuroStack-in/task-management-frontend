@@ -12,6 +12,7 @@ export const SYSTEM_ROLES: Role[] = [
     name: "Organization Owner",
     description: "Full, unrestricted access to the entire platform.",
     system: true,
+    scope: "org",
     permissions: [WILDCARD],
   },
   {
@@ -19,6 +20,7 @@ export const SYSTEM_ROLES: Role[] = [
     name: "Admin",
     description: "Organization administration across most modules.",
     system: true,
+    scope: "org",
     permissions: [
       "dashboard:view",
       "dashboard:edit",
@@ -71,11 +73,15 @@ export const SYSTEM_ROLES: Role[] = [
   {
     id: "role-manager",
     name: "Manager",
-    description: "Team management, projects, approvals, and reporting.",
+    description:
+      "Team lead — their own time plus oversight of their team's time, activity, and screenshots.",
     system: true,
+    scope: "team",
     permissions: [
       "dashboard:view",
       "time-tracking:view",
+      // A team lead tracks their own time (personal timer) AND reviews the team.
+      "time-tracking:edit",
       "time-tracking:approve",
       "tasks:view",
       "tasks:create",
@@ -108,6 +114,7 @@ export const SYSTEM_ROLES: Role[] = [
     name: "HR",
     description: "Employee management, hiring, and approvals.",
     system: true,
+    scope: "org",
     permissions: [
       "dashboard:view",
       "employees:view",
@@ -132,6 +139,7 @@ export const SYSTEM_ROLES: Role[] = [
     name: "Finance",
     description: "Billing, invoices, and financial reporting.",
     system: true,
+    scope: "org",
     permissions: [
       "dashboard:view",
       "billing:view",
@@ -152,6 +160,7 @@ export const SYSTEM_ROLES: Role[] = [
     name: "Employee",
     description: "Personal workspace: time tracking, tasks, and reports.",
     system: true,
+    scope: "self",
     permissions: [
       "dashboard:view",
       "time-tracking:view",

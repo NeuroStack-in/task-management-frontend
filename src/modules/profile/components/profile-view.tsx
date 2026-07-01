@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import type { CSSProperties } from "react";
+import { useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   Camera,
   Mail,
+  Building,
   Building2,
   Users as UsersIcon,
   Clock,
@@ -15,6 +16,9 @@ import {
   ShieldCheck,
   Briefcase,
   MapPin,
+  Phone,
+  Cake,
+  Pencil,
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
@@ -27,7 +31,24 @@ import { Gauge } from "@/components/shared/gauge";
 import { Loader } from "@/components/shared/loader";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,6 +72,18 @@ interface DetailRow {
   icon: LucideIcon;
   label: string;
   value: string;
+}
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** "1994-03-14" → "Mar 14, 1994" (no Date, so no timezone drift). */
+function formatDob(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${MONTHS[m - 1]} ${d}, ${y}`;
 }
 
 /** Deterministic personal facts seeded from the user id (no randomness). */
@@ -77,18 +110,96 @@ export function ProfileView() {
   if (!user) return <Loader label="Loading profile…" />;
 
   // One unified profile pattern for every role — identity hero, productivity,
-  // and attendance.
-  return <RichProfile user={user} roleName={role?.name ?? "—"} />;
+  // and (for tracked roles) attendance. Org leadership (Owner/Admin/HR/Finance)
+  // aren't time-tracked, so the personal attendance card is dropped for them.
+  const showAttendance = role?.scope !== "org";
+  return (
+    <RichProfile
+      user={user}
+      roleName={role?.name ?? "—"}
+      showAttendance={showAttendance}
+    />
+  );
 }
 
 /* ──────────────────────────── Profile ──────────────────────────── */
 
-/** The full profile — identity band + productivity + attendance, shown to
- *  every role. */
-function RichProfile({ user, roleName }: { user: User; roleName: string }) {
+/** The full profile — identity band + productivity + (optionally) attendance.
+ *  Personal details are editable in-session via the Edit profile dialog. */
+function RichProfile({
+  user,
+  roleName,
+  showAttendance,
+}: {
+  user: User;
+  roleName: string;
+  showAttendance: boolean;
+}) {
+  const updateUser = useAuthStore((s) => s.updateUser);
   const [uploadOpen, setUploadOpen] = useState(false);
   const facts = personalFacts(user);
   const productivity = user.productivityScore;
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  // Fields with no backing user record yet live here (self-edited, in-session).
+  const [local, setLocal] = useState({
+    phone: facts.phone,
+    dob: facts.dobISO,
+    location: facts.location,
+    workMode: facts.workMode,
+  });
+  const [form, setForm] = useState({
+    name: user.name,
+    email: user.email,
+    phone: facts.phone,
+    dob: facts.dobISO,
+    location: facts.location,
+    workMode: facts.workMode,
+  });
+  // Pending photo: undefined = unchanged, string = new data URL, null = removed.
+  const [photo, setPhoto] = useState<string | null | undefined>(undefined);
+  const set = (k: keyof typeof form) => (v: string) =>
+    setForm((s) => ({ ...s, [k]: v }));
+
+  const openEdit = () => {
+    setForm({
+      name: user.name,
+      email: user.email,
+      phone: local.phone,
+      dob: local.dob,
+      location: local.location,
+      workMode: local.workMode,
+    });
+    setPhoto(undefined);
+    setEditOpen(true);
+  };
+  const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhoto(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+  const save = () => {
+    const patch: Partial<User> = {
+      name: form.name.trim() || user.name,
+      email: form.email.trim() || user.email,
+    };
+    if (photo !== undefined) patch.avatarUrl = photo ?? undefined;
+    updateUser(patch);
+    setLocal({
+      phone: form.phone,
+      dob: form.dob,
+      location: form.location,
+      workMode: form.workMode,
+    });
+    setEditOpen(false);
+  };
+
+  // Avatar shown inside the dialog reflects the pending choice.
+  const previewSrc = photo === undefined ? user.avatarUrl : (photo ?? undefined);
 
   const presentDays = Math.round((facts.attendance / 100) * 30);
   const lateDays = Math.round((30 - presentDays) * 0.6);
@@ -97,16 +208,23 @@ function RichProfile({ user, roleName }: { user: User; roleName: string }) {
 
   const contact: DetailRow[] = [
     { icon: Mail, label: "Email", value: user.email },
-    { icon: MapPin, label: "Location", value: facts.location },
-    { icon: Briefcase, label: "Work mode", value: facts.workMode },
+    { icon: Phone, label: "Contact number", value: local.phone },
+    { icon: Cake, label: "Date of birth", value: formatDob(local.dob) },
+    { icon: MapPin, label: "Location", value: local.location },
+    { icon: Building, label: "Work mode", value: local.workMode },
   ];
   const employment: DetailRow[] = [
     { icon: Hash, label: "Employee ID", value: facts.employeeId },
+    { icon: Briefcase, label: "Job title", value: user.jobTitle },
     { icon: Building2, label: "Department", value: user.department },
     { icon: UsersIcon, label: "Team", value: user.team },
     { icon: ShieldCheck, label: "Role", value: roleName },
     { icon: CalendarCheck, label: "Member since", value: "Jan 2024" },
   ];
+  const onTime =
+    presentDays + lateDays > 0
+      ? Math.round((presentDays / (presentDays + lateDays)) * 100)
+      : 100;
 
   return (
     <div className="flex flex-col gap-5 pb-2">
@@ -207,60 +325,172 @@ function RichProfile({ user, roleName }: { user: User; roleName: string }) {
         </div>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+      <div
+        className={cn(
+          "grid gap-5",
+          showAttendance && "lg:grid-cols-[1.6fr_1fr]",
+        )}
+      >
         <Card
-          className="animate-in fade-in slide-in-from-bottom-3 p-6 duration-500 sm:p-7"
+          className="animate-in fade-in slide-in-from-bottom-3 p-6 duration-500 sm:p-7 [--card-spacing:--spacing(3)]"
           style={{ animationDelay: "80ms", animationFillMode: "backwards" } as CSSProperties}
         >
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-5 flex items-center justify-between gap-3">
             <h3 className="font-heading text-base font-medium">Account details</h3>
-            <span className="font-mono text-xs text-muted-foreground">{facts.employeeId}</span>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-xs text-muted-foreground">{facts.employeeId}</span>
+              <Button variant="outline" size="sm" onClick={openEdit}>
+                <Pencil className="size-4" /> Edit profile
+              </Button>
+            </div>
           </div>
           <ManagerGroup label="Contact" rows={contact} />
           <div className="my-5 h-px bg-border" />
           <ManagerGroup label="Employment" rows={employment} />
         </Card>
 
-        <Card
-          className="animate-in fade-in slide-in-from-bottom-3 flex flex-col gap-5 p-6 duration-500 sm:p-7"
-          style={{ animationDelay: "160ms", animationFillMode: "backwards" } as CSSProperties}
-        >
-          <div className="flex items-baseline justify-between">
-            <h3 className="font-heading text-base font-medium">Attendance</h3>
-            <span className="text-xs text-muted-foreground">last 30 days</span>
-          </div>
-          <div className="flex justify-center">
-            <Gauge value={facts.attendance} label="present" size={168} />
-          </div>
-          <div className="space-y-3">
-            <div className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-muted">
-              <span className="bg-success" style={{ width: `${(presentDays / 30) * 100}%` }} />
-              <span className="bg-warning" style={{ width: `${(lateDays / 30) * 100}%` }} />
-              <span className="bg-destructive" style={{ width: `${(absentDays / 30) * 100}%` }} />
+        {showAttendance ? (
+          <Card
+            className="animate-in fade-in slide-in-from-bottom-3 flex flex-col gap-5 p-6 duration-500 sm:p-7 [--card-spacing:--spacing(3)]"
+            style={{ animationDelay: "160ms", animationFillMode: "backwards" } as CSSProperties}
+          >
+            <div className="flex items-baseline justify-between">
+              <h3 className="font-heading text-base font-medium">Attendance</h3>
+              <span className="text-xs text-muted-foreground">last 30 days</span>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              {[
-                { label: "Present", value: presentDays, tone: "bg-success", text: "text-success" },
-                { label: "Late", value: lateDays, tone: "bg-warning", text: "text-warning" },
-                { label: "Absent", value: absentDays, tone: "bg-destructive", text: "text-destructive" },
-              ].map((s) => (
-                <div key={s.label}>
-                  <p className={cn("text-lg font-semibold tabular-nums", s.text)}>{s.value}</p>
-                  <span className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                    <span className={cn("size-1.5 rounded-full", s.tone)} />
-                    {s.label}
-                  </span>
-                </div>
-              ))}
+            <div className="flex justify-center">
+              <Gauge value={facts.attendance} label="present" size={168} />
             </div>
-          </div>
-          <div className="h-px bg-border" />
-          <div className="grid grid-cols-2 gap-3">
-            <MiniStat icon={Clock} label="Avg. hours / day" value={facts.avgHours} hint="last 30 days" />
-            <MiniStat icon={CheckSquare} label="Tasks done" value={String(facts.tasksDone)} hint="this quarter" />
-          </div>
-        </Card>
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                {[
+                  { label: "Present", value: presentDays, tone: "bg-success", text: "text-success" },
+                  { label: "Late", value: lateDays, tone: "bg-warning", text: "text-warning" },
+                  { label: "Absent", value: absentDays, tone: "bg-destructive", text: "text-destructive" },
+                ].map((s) => (
+                  <div key={s.label}>
+                    <p className={cn("text-lg font-semibold tabular-nums", s.text)}>{s.value}</p>
+                    <span className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                      <span className={cn("size-1.5 rounded-full", s.tone)} />
+                      {s.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="h-px bg-border" />
+            <div className="grid grid-cols-2 gap-3">
+              <MiniStat icon={Clock} label="Avg. hours / day" value={facts.avgHours} hint="last 30 days" />
+              <MiniStat icon={CheckSquare} label="Tasks done" value={String(facts.tasksDone)} hint="this quarter" />
+              <MiniStat icon={CalendarCheck} label="On-time rate" value={`${onTime}%`} hint="last 30 days" />
+              <MiniStat icon={TrendingUp} label="Productivity" value={`${productivity}%`} hint="this week" />
+            </div>
+          </Card>
+        ) : null}
       </div>
+
+      {/* Edit dialog — photo + personal fields (available to every role) */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit profile</DialogTitle>
+          </DialogHeader>
+
+          {/* Photo */}
+          <div className="flex items-center gap-4">
+            <Avatar className="size-16 ring-2 ring-border">
+              <AvatarImage src={previewSrc} alt="" />
+              <AvatarFallback className="text-lg font-semibold">
+                {initials(form.name || user.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <ImagePlus className="size-4" /> Change photo
+                </Button>
+                {previewSrc ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPhoto(null)}
+                  >
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">PNG, JPG or GIF, up to 10 MB.</p>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={onPickPhoto}
+            />
+          </div>
+
+          <div className="h-px bg-border" />
+
+          {/* Fields */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <DialogField label="Full name">
+              <Input value={form.name} onChange={(e) => set("name")(e.target.value)} />
+            </DialogField>
+            <DialogField label="Email">
+              <Input
+                type="email"
+                value={form.email}
+                onChange={(e) => set("email")(e.target.value)}
+              />
+            </DialogField>
+            <DialogField label="Contact number">
+              <Input
+                type="tel"
+                value={form.phone}
+                onChange={(e) => set("phone")(e.target.value)}
+              />
+            </DialogField>
+            <DialogField label="Date of birth">
+              <Input
+                type="date"
+                value={form.dob}
+                onChange={(e) => set("dob")(e.target.value)}
+              />
+            </DialogField>
+            <DialogField label="Location">
+              <Input value={form.location} onChange={(e) => set("location")(e.target.value)} />
+            </DialogField>
+            <DialogField label="Work mode">
+              <Select value={form.workMode} onValueChange={(v) => set("workMode")(v as string)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {WORK_MODES.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </DialogField>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={save}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <PhotoEditor open={uploadOpen} onClose={() => setUploadOpen(false)} />
     </div>
@@ -291,6 +521,23 @@ function ManagerGroup({ label, rows }: { label: string; rows: DetailRow[] }) {
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+function DialogField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <Label className="text-sm">{label}</Label>
+      {children}
     </div>
   );
 }

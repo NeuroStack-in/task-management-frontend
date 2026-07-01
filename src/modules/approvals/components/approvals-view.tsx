@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useDataScope } from "@/hooks/use-data-scope";
 import { initials } from "@/lib/format";
 import {
   APPROVALS,
@@ -70,10 +71,16 @@ const FILTERS: { value: Filter; label: string }[] = [
 export function ApprovalsView() {
   const { can } = usePermissions();
   const canApprove = can("approvals:approve");
+  const { ids: scopeIds } = useDataScope();
 
-  const [items, setItems] = useState<ApprovalRequest[]>(APPROVALS);
+  const [allItems, setItems] = useState<ApprovalRequest[]>(APPROVALS);
   const [filter, setFilter] = useState<Filter>("pending");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Team leads only review their own team's requests; org roles see everyone.
+  const items = allItems.filter(
+    (a) => scopeIds === null || scopeIds.has(a.requester.id),
+  );
 
   const counts = {
     all: items.length,

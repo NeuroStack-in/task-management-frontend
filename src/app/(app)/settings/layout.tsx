@@ -8,7 +8,6 @@ import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { InPaneHeaderContext } from "@/components/shared/page-header";
 import { usePageTitle } from "@/stores/page-header.store";
-import { isManagement } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 
 interface RailItem {
@@ -26,19 +25,25 @@ interface RailGroup {
 
 /**
  * Personal account sections, rendered in-pane. Sourced from the shared catalog
- * (kept in sync with global search). The employee interface gets a trimmed set
- * — no Billing, and "Security" instead of "Login & security" — while management
- * roles keep the full list (see `isManagement`). Personal login & security sits
- * right after Profile.
+ * (kept in sync with global search). Billing shows only for roles that can view
+ * billing (Owner/Admin/Finance). The personal "Security" entry (after Profile)
+ * shows for roles WITHOUT the org Security Center — Owner/Admin reach security
+ * there instead.
  */
-function accountGroup(management: boolean): RailGroup {
+function accountGroup(opts: {
+  canBilling: boolean;
+  canSecurity: boolean;
+}): RailGroup {
   const items: RailItem[] = [];
   for (const it of ACCOUNT_SECTIONS) {
-    if (!management && it.href === "/settings/billing") continue;
+    // Billing is org-level — only roles that can view billing get it.
+    if (it.href === "/settings/billing" && !opts.canBilling) continue;
     items.push({ label: it.label, href: it.href, icon: it.icon });
-    if (it.href === "/settings/profile") {
+    // Personal login & security sits after Profile for roles WITHOUT the org
+    // Security Center (Owner/Admin reach security there instead).
+    if (it.href === "/settings/profile" && !opts.canSecurity) {
       items.push({
-        label: management ? "Login & security" : "Security",
+        label: "Security",
         href: "/settings/login-security",
         icon: Lock,
       });
@@ -53,8 +58,7 @@ export default function SettingsLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { can, role } = usePermissions();
-  const management = isManagement(role);
+  const { can } = usePermissions();
 
   // The navbar stays pinned to "Settings" across every sub-section; each
   // sub-page renders its own title/subtitle in-pane (via InPaneHeaderContext).
@@ -76,7 +80,13 @@ export default function SettingsLayout({
       })),
   })).filter((group) => group.items.length > 0);
 
-  const groups: RailGroup[] = [accountGroup(management), ...adminGroups];
+  const groups: RailGroup[] = [
+    accountGroup({
+      canBilling: can("billing:view"),
+      canSecurity: can("security:view"),
+    }),
+    ...adminGroups,
+  ];
 
   return (
     <div className="flex flex-col gap-6 pt-1 lg:h-[calc(100vh-7rem)] lg:flex-row lg:gap-10">

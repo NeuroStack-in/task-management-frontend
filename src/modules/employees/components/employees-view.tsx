@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useEmployeesStore } from "@/stores/employees.store";
+import { useDataScope } from "@/hooks/use-data-scope";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
@@ -193,6 +194,7 @@ export function EmployeesView({
   const router = useRouter();
   const customEmployees = useEmployeesStore((s) => s.customEmployees);
   const assignments = useEmployeesStore((s) => s.assignments);
+  const { ids: scopeIds } = useDataScope();
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
@@ -203,11 +205,14 @@ export function EmployeesView({
   // and any department/team reassignments are applied over the top.
   const allEmployees = useMemo(
     () =>
-      [...customEmployees, ...employees].map((e) => {
-        const a = assignments[e.id];
-        return a ? { ...e, department: a.department, team: a.team } : e;
-      }),
-    [customEmployees, employees, assignments],
+      [...customEmployees, ...employees]
+        // Team leads only see their own team; org roles see everyone.
+        .filter((e) => scopeIds === null || scopeIds.has(e.id))
+        .map((e) => {
+          const a = assignments[e.id];
+          return a ? { ...e, department: a.department, team: a.team } : e;
+        }),
+    [customEmployees, employees, assignments, scopeIds],
   );
   // Created accounts have no seed-backed profile page, so their rows don't link.
   const customIds = useMemo(

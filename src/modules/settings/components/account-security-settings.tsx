@@ -25,8 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAccountSecurityStore } from "@/stores/account-security.store";
-import { useCurrentRole } from "@/hooks/use-permissions";
-import { isManagement } from "@/lib/rbac";
+import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
 
 /** Demo authenticator secret + recovery codes (frontend-only stand-in). */
@@ -73,11 +72,14 @@ export function AccountSecuritySettings() {
   const enabled = useAccountSecurityStore((s) => s.twoFactorEnabled);
   const setTwoFactor = useAccountSecurityStore((s) => s.setTwoFactor);
 
-  // The employee interface uses "Security" + "Multi-factor authentication";
-  // management keeps "Login & security" + "Two-factor authentication".
-  const management = isManagement(useCurrentRole());
-  const heading = management ? "Login & security" : "Security";
-  const mfa = management
+  // Roles WITH the org Security Center (Owner/Admin) keep "Login & security" +
+  // "Two-factor authentication"; everyone reaching this via the personal rail
+  // (Employee, Manager/Team Lead, …) sees "Security" + "Multi-factor
+  // authentication". Matches the settings rail label.
+  const { can } = usePermissions();
+  const orgSecurity = can("security:view");
+  const heading = orgSecurity ? "Login & security" : "Security";
+  const mfa = orgSecurity
     ? "Two-factor authentication"
     : "Multi-factor authentication";
   const mfaLower = mfa.toLowerCase();
@@ -176,8 +178,10 @@ export function AccountSecuritySettings() {
         </CardContent>
       </Card>
 
-      {/* ── Password ── */}
-      <Card>
+      {/* Password + active sessions, side by side on large screens. */}
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        {/* ── Password ── */}
+        <Card>
         <CardContent className="space-y-3 p-5">
           <div className="flex items-center gap-2">
             <KeyRound className="size-4 text-muted-foreground" />
@@ -271,7 +275,8 @@ export function AccountSecuritySettings() {
             })}
           </div>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
 
       {/* 2FA setup dialog */}
       <Dialog

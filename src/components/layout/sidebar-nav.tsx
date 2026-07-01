@@ -230,6 +230,18 @@ export function SidebarNav({
           ))}
         </nav>
       </ScrollArea>
+
+      {/* Log out — pinned to the foot of the sidebar */}
+      <div className="border-t border-sidebar-border p-3">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <LogOut className="size-4 shrink-0" />
+          <span className="truncate">Log out</span>
+        </button>
+      </div>
     </div>
   );
 }

@@ -115,10 +115,8 @@ export function RolesManager() {
               <TableHead className="hidden py-3 md:table-cell">
                 Description
               </TableHead>
-              <TableHead className="py-3 text-right">Members</TableHead>
-              <TableHead className="py-3 pr-6 text-right md:pr-2">
-                Permissions
-              </TableHead>
+              <TableHead className="py-3">Members</TableHead>
+              <TableHead className="py-3 pr-6 md:pr-2">Permissions</TableHead>
               {canManage && <TableHead className="w-12 py-3 pr-4" />}
             </TableRow>
           </TableHeader>
@@ -161,15 +159,15 @@ export function RolesManager() {
                 </TableCell>
 
                 {/* Members */}
-                <TableCell className="py-3 text-right">
-                  <span className="inline-flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
+                <TableCell className="py-3">
+                  <span className="inline-flex items-center gap-1.5 tabular-nums text-muted-foreground">
                     <Users className="size-4" />
                     {userCountFor(role.id)}
                   </span>
                 </TableCell>
 
                 {/* Permissions */}
-                <TableCell className="py-3 pr-6 text-right font-medium tabular-nums md:pr-2">
+                <TableCell className="py-3 pr-6 font-medium tabular-nums md:pr-2">
                   {role.permissions.includes(WILDCARD)
                     ? "All"
                     : permissionCount(role)}

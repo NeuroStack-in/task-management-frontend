@@ -24,10 +24,22 @@ export interface ApprovalRequest {
   status: ApprovalStatus;
 }
 
-const PEOPLE = [...users]
-  .filter((u) => u.status === "active")
-  .sort((a, b) => a.id.localeCompare(b.id))
-  .slice(0, 8);
+// Lead with the demo manager's team (Design / Product Design) so a team lead
+// has requests to review, then fill with other active people for org roles.
+const APPROVAL_TEAM = users.filter(
+  (u) =>
+    u.department === "Design" &&
+    u.team === "Product Design" &&
+    u.roleId !== "role-manager" &&
+    u.status === "active",
+);
+const APPROVAL_TEAM_IDS = new Set(APPROVAL_TEAM.map((u) => u.id));
+const PEOPLE = [
+  ...[...APPROVAL_TEAM].sort((a, b) => a.id.localeCompare(b.id)),
+  ...[...users]
+    .filter((u) => u.status === "active" && !APPROVAL_TEAM_IDS.has(u.id))
+    .sort((a, b) => a.id.localeCompare(b.id)),
+].slice(0, 8);
 
 export const KIND_META: Record<ApprovalKind, { label: string }> = {
   "time-change": { label: "Time change" },

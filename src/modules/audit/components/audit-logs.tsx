@@ -138,14 +138,6 @@ export function AuditLogs() {
       <PageHeader
         title="Audit Logs"
         description="A complete record of user actions, permission changes, and login events across WorkPulse."
-        actions={
-          <Button
-            variant="outline"
-            onClick={() => toast.success("Audit log exported (CSV)")}
-          >
-            <Download className="size-4" /> Export
-          </Button>
-        }
       />
 
       {/* ── Filter toolbar ── */}
@@ -231,6 +223,14 @@ export function AuditLogs() {
             ))}
           </SelectContent>
         </Select>
+
+        <Button
+          variant="outline"
+          className="w-full gap-1.5 sm:w-auto"
+          onClick={() => toast.success("Audit log exported (CSV)")}
+        >
+          <Download className="size-4" /> Download report
+        </Button>
       </div>
 
       {/* ── Result count ── */}
@@ -268,7 +268,7 @@ export function AuditLogs() {
                 <TableHead className="hidden py-3 pl-6 lg:table-cell">
                   Time
                 </TableHead>
-                <TableHead className="py-3 pl-6 lg:pl-2">Actor</TableHead>
+                <TableHead className="py-3 pl-6 lg:pl-2">User</TableHead>
                 <TableHead className="py-3">Action</TableHead>
                 <TableHead className="hidden py-3 md:table-cell">Category</TableHead>
                 <TableHead className="hidden py-3 xl:table-cell">Target</TableHead>
@@ -350,7 +350,7 @@ export function AuditLogs() {
                 <DetailRow label="Event ID">
                   <span className="font-mono text-xs">{selected.id}</span>
                 </DetailRow>
-                <DetailRow label="Actor">
+                <DetailRow label="User">
                   <div className="flex items-center gap-2">
                     <Avatar className="size-6">
                       <AvatarFallback className="text-[9px]">

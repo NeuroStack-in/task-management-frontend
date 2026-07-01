@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Timer,
 } from "lucide-react"
+import type { PermissionId } from "@/types/rbac"
 
 export type HelpCategory =
   | "getting-started"
@@ -206,6 +207,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
 export interface Faq {
   q: string
   a: string
+  /** If set, only roles holding this permission see the FAQ (e.g. admin-only). */
+  permission?: PermissionId
 }
 
 export const FAQS: Faq[] = [
@@ -232,10 +235,12 @@ export const FAQS: Faq[] = [
   {
     q: "How do I add or remove seats from my plan?",
     a: "Go to Billing → Subscription and click Add Seats or Remove Seats. Changes take effect immediately. Upgrades are prorated for the current billing cycle; downgrades take effect at the start of the next cycle. Suspended users and pending invitations do not count toward your seat limit.",
+    permission: "billing:view",
   },
   {
     q: "Can I export data for a custom date range?",
     a: "Yes. In Analytics → Reports, use the date picker to select a custom range before exporting. The selected range applies to all report types on that page. CSV and PDF exports both respect the chosen date range.",
+    permission: "reports:view",
   },
   {
     q: "What happens if the desktop agent goes offline?",

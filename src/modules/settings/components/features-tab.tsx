@@ -183,7 +183,7 @@ export function FeaturesTab() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="grid lg:grid-cols-2 lg:divide-x">
-            {FEATURE_LIST.map((f, i) => {
+            {FEATURE_LIST.map((f) => {
               const Icon = f.icon
               const enabled = draft[f.key]
               return (

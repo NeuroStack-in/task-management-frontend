@@ -25,6 +25,19 @@
     "organizationId": "org-acme"
   },
   {
+    "id": "user-manager",
+    "name": "Jordan Blake",
+    "email": "manager@acme.test",
+    "avatarUrl": "https://avatars.githubusercontent.com/u/1024025",
+    "roleId": "role-manager",
+    "jobTitle": "Design Team Lead",
+    "department": "Design",
+    "team": "Product Design",
+    "status": "active",
+    "productivityScore": 86,
+    "organizationId": "org-acme"
+  },
+  {
     "id": "user-0001",
     "name": "Carole Ryan",
     "email": "carole_ryan40@acme.test",

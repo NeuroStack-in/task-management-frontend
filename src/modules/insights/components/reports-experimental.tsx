@@ -12,8 +12,6 @@ import {
   FileText,
   FolderKanban,
   Gauge as GaugeIcon,
-  LayoutGrid,
-  List,
   Lock,
   MonitorSmartphone,
   Search,
@@ -26,9 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,11 +46,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Sparkline } from "@/components/shared/sparkline";
 import { DeltaPill } from "@/components/shared/delta-pill";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantStore } from "@/stores/assistant.store";
+import { useDataScope } from "@/hooks/use-data-scope";
 import { PeopleAttentionCard } from "./people-attention";
 import {
   exportAllPdf,
@@ -63,12 +59,8 @@ import {
   exportSelectedCsv,
 } from "@/modules/insights/lib/report-export";
 import {
-  ACTIVITY_BY_DAY,
-  ACTIVITY_BY_WEEK,
   ANOMALIES,
   EMPLOYEE_TIME,
-  KEYBOARD_BY_DAY,
-  MOUSE_BY_DAY,
   PROJECT_HOURS,
   REPORTS,
   REPORT_CATEGORY_LABEL,
@@ -131,27 +123,11 @@ const SMART_GROUPS: {
 
 const byId = (id: string) => REPORTS.find((r) => r.id === id);
 
+/** Which smart collection a report belongs to (by its category). */
+const collectionOf = (r: ReportDef) =>
+  SMART_GROUPS.find((g) => g.categories.includes(r.category))?.id ?? "other";
+
 /* ------------------------------- derivations ------------------------------ */
-
-function numericColIndex(report: ReportDef): number {
-  return report.columns.findIndex(
-    (_, ci) =>
-      report.rows.length > 0 && typeof report.rows[0]?.[ci] === "number",
-  );
-}
-
-/** Small deterministic sparkline series from a report's first numeric column. */
-function reportTrend(report: ReportDef, points = 12): number[] | undefined {
-  const ci = numericColIndex(report);
-  if (ci === -1) return undefined;
-  const values = report.rows
-    .map((r) => r[ci])
-    .filter((v): v is number => typeof v === "number");
-  if (values.length < 2) return undefined;
-  if (values.length <= points) return values;
-  const step = (values.length - 1) / (points - 1);
-  return Array.from({ length: points }, (_, i) => values[Math.round(i * step)]);
-}
 
 const mean = (xs: number[]) =>
   xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0;
@@ -176,29 +152,62 @@ export function ReportsExperimental() {
   const { can } = usePermissions();
   const canExport = can("reports:export");
   const openAssistant = useAssistantStore((s) => s.openAssistant);
+  const { ids: scopeIds } = useDataScope();
 
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<ReportDef | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [view, setView] = useState<"list" | "board">("board");
+  const [collection, setCollection] = useState<string>("all");
 
   const searching = query.trim().length > 0;
 
-  /* ----- executive metrics (real, derived data) ----- */
+  /* ----- executive metrics (real, derived data, scoped to the role) ----- */
   const kpis = useMemo(() => {
-    const avgUtil = mean(EMPLOYEE_TIME.map((e) => e.utilization));
-    const avgProd = mean(EMPLOYEE_TIME.map((e) => e.productivity));
-    const tracked = EMPLOYEE_TIME.reduce((a, e) => a + e.tracked, 0);
+    // Team leads see only their team's people; org roles see the whole workforce.
+    const emp = EMPLOYEE_TIME.filter(
+      (e) => scopeIds === null || scopeIds.has(e.id),
+    );
+    const flags = ANOMALIES.filter(
+      (a) => scopeIds === null || scopeIds.has(a.user.id),
+    );
+
+    const avgUtil = mean(emp.map((e) => e.utilization));
+    const avgProd = mean(emp.map((e) => e.productivity));
+    const tracked = emp.reduce((a, e) => a + e.tracked, 0);
     const atRisk = PROJECT_HOURS.filter((p) => !p.onTrack).length;
     const atRiskPct = Math.round((atRisk / (PROJECT_HOURS.length || 1)) * 100);
-    const highFlags = ANOMALIES.filter((a) => a.severity === "high").length;
+    const highFlags = flags.filter((a) => a.severity === "high").length;
+
+    // Wellbeing / engagement signals — distinct from the utilization/productivity
+    // figures already shown in the AI summary and KPIs above.
+    const focus = mean(
+      emp.map((e) =>
+        e.tracked > 0 ? Math.round(((e.tracked - e.idle) / e.tracked) * 100) : 0,
+      ),
+    );
+    const billable = mean(emp.map((e) => e.billable));
+    const burnout = flags.filter((a) => a.kind === "burnout").length;
+    const afterHours = flags.filter((a) => a.kind === "after-hours").length;
+
     // Composite "health" — a weighted blend of the four drivers.
     const score = Math.round(
       0.4 * avgProd + 0.35 * avgUtil + 0.25 * (100 - atRiskPct),
     );
-    return { avgUtil, avgProd, tracked, atRisk, atRiskPct, highFlags, score };
-  }, []);
+    return {
+      empCount: emp.length,
+      avgUtil,
+      avgProd,
+      tracked,
+      atRisk,
+      atRiskPct,
+      highFlags,
+      focus,
+      billable,
+      burnout,
+      afterHours,
+      score,
+    };
+  }, [scopeIds]);
 
   const band = healthBand(kpis.score);
 
@@ -239,17 +248,32 @@ export function ReportsExperimental() {
     );
   }, [query]);
 
-  const matchIds = useMemo(() => new Set(matches.map((r) => r.id)), [matches]);
+  // Per-collection counts (within the current search) drive the filter chips.
+  const collectionCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of matches) {
+      const id = collectionOf(r);
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return counts;
+  }, [matches]);
 
-  const groups = useMemo(
+  const shownGroups = SMART_GROUPS.filter(
+    (g) => (collectionCounts[g.id] ?? 0) > 0,
+  );
+  // If a search hides the active collection, fall back to "All".
+  const activeCollection =
+    collection !== "all" && !shownGroups.some((g) => g.id === collection)
+      ? "all"
+      : collection;
+
+  const visibleReports = useMemo(
     () =>
-      SMART_GROUPS.map((g) => ({
-        ...g,
-        reports: REPORTS.filter(
-          (r) => g.categories.includes(r.category) && matchIds.has(r.id),
-        ),
-      })).filter((g) => g.reports.length > 0),
-    [matchIds],
+      matches.filter(
+        (r) =>
+          activeCollection === "all" || collectionOf(r) === activeCollection,
+      ),
+    [matches, activeCollection],
   );
 
   const selectedReports = useMemo(
@@ -265,46 +289,23 @@ export function ReportsExperimental() {
       return next;
     });
 
-  const toggleGroup = (id: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   return (
     <div className="wp-enter space-y-8">
-      {/* ============================ COMMAND BAR ============================ */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h2 className="font-display text-xl font-semibold tracking-tight">
-            Reports workspace
-          </h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Your AI analyst has organized everything — read the brief, act on
-            what matters.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 lg:flex-none">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search all reports…"
-              aria-label="Search reports"
-              className="h-9 w-full pl-8 lg:w-72"
-            />
-          </div>
-          <DownloadAllButton canExport={canExport} />
-        </div>
+      {/* ================================ HEADER =============================== */}
+      <div>
+        <h2 className="font-display text-xl font-semibold tracking-tight">
+          Insights & Reports
+        </h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Your AI analyst has organized everything — read the brief, act on what
+          matters.
+        </p>
       </div>
 
       {/* ========================= EXECUTIVE OVERVIEW ======================== */}
       <section className="grid gap-4 xl:grid-cols-12">
         <AiBriefing
-          empCount={EMPLOYEE_TIME.length}
+          empCount={kpis.empCount}
           projCount={PROJECT_HOURS.length}
           atRisk={kpis.atRisk}
           attention={attention}
@@ -317,13 +318,13 @@ export function ReportsExperimental() {
       {/* ====================== PEOPLE TO CHECK IN ON ====================== */}
       <PeopleAttentionCard title="People to check in on" />
 
-      {/* ===================== ALL REPORTS — SMART GROUPS =================== */}
+      {/* ============================ ALL REPORTS ========================== */}
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <SectionLabel icon={Search} title="All reports">
             {searching
               ? `${matches.length} ${matches.length === 1 ? "match" : "matches"} for “${query.trim()}”`
-              : "Smart collections — every report, organized by purpose"}
+              : "Every report, organized by purpose"}
           </SectionLabel>
           <div className="flex items-center gap-2">
             {selected.size > 0 ? (
@@ -334,7 +335,7 @@ export function ReportsExperimental() {
                 onClear={() => setSelected(new Set())}
               />
             ) : null}
-            <ViewToggle view={view} onChange={setView} />
+            <DownloadAllButton canExport={canExport} />
           </div>
         </div>
 
@@ -347,84 +348,46 @@ export function ReportsExperimental() {
           </div>
         ) : null}
 
-        {groups.length === 0 ? (
-          <EmptyResults query={query.trim()} onReset={() => setQuery("")} />
+        {/* Collection filter chips */}
+        <div className="flex flex-wrap items-center gap-2">
+          <CollectionChip
+            active={activeCollection === "all"}
+            onClick={() => setCollection("all")}
+            label="All"
+            count={matches.length}
+          />
+          {shownGroups.map((g) => (
+            <CollectionChip
+              key={g.id}
+              active={activeCollection === g.id}
+              onClick={() => setCollection(g.id)}
+              label={g.title}
+              count={collectionCounts[g.id] ?? 0}
+              icon={g.icon}
+            />
+          ))}
+        </div>
+
+        {visibleReports.length === 0 ? (
+          <EmptyResults
+            query={query.trim()}
+            onReset={() => {
+              setQuery("");
+              setCollection("all");
+            }}
+          />
         ) : (
-          <div className="space-y-3">
-            {groups.map((group) => {
-              const open = searching || !collapsed.has(group.id);
-              return (
-                <div
-                  key={group.id}
-                  className="overflow-hidden rounded-2xl border border-border bg-card"
-                >
-                  <button
-                    type="button"
-                    onClick={() => !searching && toggleGroup(group.id)}
-                    aria-expanded={open}
-                    className={cn(
-                      "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
-                      !searching && "hover:bg-accent/30",
-                    )}
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
-                      <group.icon className="size-4.5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-heading text-sm font-semibold">
-                          {group.title}
-                        </h4>
-                        <Badge variant="secondary" className="rounded-full">
-                          {group.reports.length}
-                        </Badge>
-                      </div>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {group.blurb}
-                      </p>
-                    </div>
-                    {!searching ? (
-                      <ChevronDown
-                        className={cn(
-                          "size-4 shrink-0 text-muted-foreground transition-transform",
-                          open && "rotate-180",
-                        )}
-                      />
-                    ) : null}
-                  </button>
-                  {open ? (
-                    <div className="border-t border-border">
-                      {view === "board" ? (
-                        <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
-                          {group.reports.map((report) => (
-                            <ReportCard
-                              key={report.id}
-                              report={report}
-                              canExport={canExport}
-                              selected={selected.has(report.id)}
-                              onToggleSelect={() => toggleSelect(report.id)}
-                              onOpen={() => setPreview(report)}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        group.reports.map((report, i) => (
-                          <ReportRow
-                            key={report.id}
-                            report={report}
-                            canExport={canExport}
-                            selected={selected.has(report.id)}
-                            onToggleSelect={() => toggleSelect(report.id)}
-                            onOpen={() => setPreview(report)}
-                            divider={i > 0}
-                          />
-                        ))
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
+          <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {visibleReports.map((report) => (
+              <ReportCard
+                key={report.id}
+                report={report}
+                canExport={canExport}
+                selected={selected.has(report.id)}
+                onToggleSelect={() => toggleSelect(report.id)}
+                onOpen={() => setPreview(report)}
+              />
+            ))}
           </div>
         )}
       </section>
@@ -545,43 +508,36 @@ function HealthScoreCard({
   band,
 }: {
   kpis: {
-    avgUtil: number;
-    avgProd: number;
-    tracked: number;
-    atRisk: number;
+    focus: number;
+    billable: number;
+    burnout: number;
+    afterHours: number;
     score: number;
   };
   band: { label: string; color: string; text: string };
 }) {
-  const drivers = [
+  const drivers: {
+    label: string;
+    value: string;
+    delta?: number;
+    unit?: string;
+  }[] = [
+    { label: "Focus rate", value: `${kpis.focus}%`, delta: 2 },
+    { label: "Billable", value: `${kpis.billable}%`, delta: 4 },
     {
-      label: "Utilization",
-      value: `${kpis.avgUtil}%`,
-      delta: 3,
-      trend: ACTIVITY_BY_DAY,
+      label: "Burnout risk",
+      value: `${kpis.burnout}`,
+      unit: kpis.burnout === 1 ? "person" : "people",
     },
     {
-      label: "Productivity",
-      value: `${kpis.avgProd}%`,
-      delta: 2,
-      trend: MOUSE_BY_DAY,
-    },
-    {
-      label: "Tracked hrs",
-      value: kpis.tracked.toLocaleString(),
-      delta: 5,
-      trend: KEYBOARD_BY_DAY,
-    },
-    {
-      label: "At-risk",
-      value: `${kpis.atRisk}`,
-      delta: -12,
-      trend: ACTIVITY_BY_WEEK,
+      label: "After-hours",
+      value: `${kpis.afterHours}`,
+      unit: kpis.afterHours === 1 ? "person" : "people",
     },
   ];
 
   return (
-    <div className="flex flex-col gap-5 rounded-3xl border border-border bg-card p-6 shadow-soft xl:col-span-4">
+    <div className="flex flex-col gap-5 self-start rounded-3xl border border-border bg-card p-6 shadow-soft xl:col-span-4">
       <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
         <Sparkles className="size-4 text-primary" /> AI workforce health
       </div>
@@ -593,8 +549,8 @@ function HealthScoreCard({
             {band.label}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            A blended read of utilization, productivity, tracked time and project
-            risk.
+            A blended read of engagement, wellbeing, and value delivered across
+            your workforce.
           </p>
         </div>
       </div>
@@ -607,7 +563,11 @@ function HealthScoreCard({
               <span className="font-display text-lg font-semibold tabular-nums">
                 {d.value}
               </span>
-              <DeltaPill value={d.delta} className="border-transparent px-1" />
+              {d.delta !== undefined ? (
+                <DeltaPill value={d.delta} className="border-transparent px-1" />
+              ) : d.unit ? (
+                <span className="text-xs text-muted-foreground">{d.unit}</span>
+              ) : null}
             </div>
           </div>
         ))}
@@ -661,129 +621,44 @@ function RadialScore({ value, color }: { value: number; color: string }) {
   );
 }
 
-/* -------------------------------- report row ------------------------------ */
+/* ----------------------------- collection chip ---------------------------- */
 
-function ReportRow({
-  report,
-  canExport,
-  selected,
-  onToggleSelect,
-  onOpen,
-  divider,
+function CollectionChip({
+  active,
+  onClick,
+  label,
+  count,
+  icon: Icon,
 }: {
-  report: ReportDef;
-  canExport: boolean;
-  selected: boolean;
-  onToggleSelect: () => void;
-  onOpen: () => void;
-  divider: boolean;
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  icon?: LucideIcon;
 }) {
-  const Icon = CATEGORY_ICON[report.category];
-  const trend = reportTrend(report, 12);
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        "group flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors hover:bg-accent/30 focus-visible:bg-accent/30 focus-visible:outline-none",
-        divider && "border-t border-border",
-        selected && "bg-primary/[0.04]",
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-card text-muted-foreground hover:text-foreground",
       )}
     >
+      {Icon ? <Icon className="size-4" /> : null}
+      {label}
       <span
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
+        className={cn(
+          "rounded-full px-1.5 text-xs tabular-nums",
+          active ? "bg-white/20" : "bg-muted text-muted-foreground",
+        )}
       >
-        <Checkbox
-          checked={selected}
-          onCheckedChange={onToggleSelect}
-          aria-label={`Select ${report.name}`}
-        />
+        {count}
       </span>
-
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-primary">
-        <Icon className="size-4.5" />
-      </span>
-
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <h4 className="truncate text-sm font-medium">{report.name}</h4>
-          <Badge
-            variant="outline"
-            className="hidden shrink-0 rounded-full sm:inline-flex"
-          >
-            {report.period}
-          </Badge>
-        </div>
-        <p className="mt-0.5 line-clamp-1 text-sm text-muted-foreground">
-          {report.description}
-        </p>
-      </div>
-
-      {trend ? (
-        <div className="hidden w-20 shrink-0 text-primary md:block">
-          <Sparkline data={trend} height={26} strokeWidth={1.75} />
-        </div>
-      ) : null}
-
-      <div className="hidden shrink-0 text-right text-xs text-muted-foreground lg:block">
-        <p className="tabular-nums">{report.rows.length} rows</p>
-        <p className="tabular-nums">{report.columns.length} cols</p>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1">
-        <span className="hidden text-sm font-medium text-primary transition-transform group-hover:translate-x-0.5 sm:inline">
-          View →
-        </span>
-        <ExportMenu report={report} canExport={canExport} />
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------- view toggle ------------------------------ */
-
-function ViewToggle({
-  view,
-  onChange,
-}: {
-  view: "list" | "board";
-  onChange: (v: "list" | "board") => void;
-}) {
-  const options = [
-    { key: "list" as const, icon: List, label: "List" },
-    { key: "board" as const, icon: LayoutGrid, label: "Board" },
-  ];
-  return (
-    <div className="flex shrink-0 rounded-lg border border-border bg-card p-0.5">
-      {options.map((o) => {
-        const active = view === o.key;
-        return (
-          <button
-            key={o.key}
-            type="button"
-            onClick={() => onChange(o.key)}
-            aria-pressed={active}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
-              active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <o.icon className="size-4" />
-            <span className="hidden sm:inline">{o.label}</span>
-          </button>
-        );
-      })}
-    </div>
+    </button>
   );
 }
 
@@ -815,7 +690,7 @@ function ReportCard({
         }
       }}
       className={cn(
-        "group flex cursor-pointer flex-col rounded-2xl border bg-card p-5 transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+        "group flex h-full cursor-pointer flex-col rounded-2xl border bg-card p-5 transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
         selected ? "border-primary/40 bg-primary/[0.04]" : "border-border",
       )}
     >
@@ -846,7 +721,7 @@ function ReportCard({
       <p className="mt-0.5 text-xs text-muted-foreground">
         {REPORT_CATEGORY_LABEL[report.category]} · {report.period}
       </p>
-      <p className="mt-1.5 line-clamp-2 text-sm text-muted-foreground">
+      <p className="mt-1.5 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
         {report.description}
       </p>
 
@@ -876,7 +751,7 @@ function ReportCard({
         </table>
       </div>
 
-      <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+      <div className="mt-auto flex items-center justify-between pt-3 text-xs text-muted-foreground">
         <span>
           {report.rows.length} rows · {report.columns.length} columns
         </span>
@@ -943,7 +818,7 @@ function DownloadAllButton({ canExport }: { canExport: boolean }) {
       <DropdownMenuTrigger
         render={<Button size="lg" disabled={!canExport} className="gap-1.5" />}
       >
-        <Download className="size-4" /> Export all
+        <Download className="size-4" /> Download all
         <ChevronDown className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-48">

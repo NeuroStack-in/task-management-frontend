@@ -215,11 +215,70 @@ function CompanyInfoSection({
           Basic profile shown across the platform and used in exported reports.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
-        {/* Logo + brand identity */}
-        <div className="space-y-2">
-          <Label>Company logo</Label>
-          <div className="flex flex-wrap items-center gap-4">
+      <CardContent>
+        <div className="grid gap-6 lg:grid-cols-[1fr_16rem]">
+          {/* Company details */}
+          <div className="grid content-start gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Company name</Label>
+              <Input
+                value={value.name}
+                disabled={!canManage}
+                onChange={(e) => onChange({ name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Legal name</Label>
+              <Input
+                value={value.legalName}
+                disabled={!canManage}
+                onChange={(e) => onChange({ legalName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Website</Label>
+              <Input
+                type="url"
+                value={value.website}
+                disabled={!canManage}
+                onChange={(e) => onChange({ website: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Industry</Label>
+              <StyledSelect
+                value={value.industry}
+                onChange={(v) => onChange({ industry: v })}
+                disabled={!canManage}
+                className="w-full"
+                options={INDUSTRY_SELECT_OPTIONS}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Company size</Label>
+              <StyledSelect
+                value={value.size}
+                onChange={(v) => onChange({ size: v })}
+                disabled={!canManage}
+                className="w-full"
+                options={COMPANY_SIZE_SELECT_OPTIONS}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Primary timezone</Label>
+              <StyledSelect
+                value={value.timezone}
+                onChange={(v) => onChange({ timezone: v })}
+                disabled={!canManage}
+                className="w-full"
+                options={COMMON_TIMEZONES}
+              />
+            </div>
+          </div>
+
+          {/* Company logo — right rail, uses the open space beside the fields */}
+          <div className="space-y-2 lg:border-l lg:border-border lg:pl-6">
+            <Label>Company logo</Label>
             {/* Clickable drag-and-drop upload zone (doubles as the preview) */}
             <button
               type="button"
@@ -235,7 +294,7 @@ function CompanyInfoSection({
                 branding.logo ? "Replace company logo" : "Upload company logo"
               }
               className={cn(
-                "group relative flex h-20 w-40 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed bg-muted/40 transition-colors",
+                "group relative flex h-28 w-full items-center justify-center overflow-hidden rounded-lg border border-dashed bg-muted/40 transition-colors",
                 canManage
                   ? "cursor-pointer hover:border-primary/60 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                   : "cursor-default",
@@ -267,90 +326,26 @@ function CompanyInfoSection({
                 </span>
               )}
             </button>
-
-            <div className="space-y-3">
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                PNG, SVG or JPG · recommended 200 × 50 px · up to 2 MB.
-              </p>
-              {canManage && branding.logo && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onBrandingChange({ logo: null })}
-                  className="gap-1.5 text-destructive hover:text-destructive"
-                >
-                  <X className="size-3.5" />
-                  Remove logo
-                </Button>
-              )}
-            </div>
-          </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            onChange={handleLogoChange}
-          />
-        </div>
-
-        <div className="h-px bg-border" />
-
-        {/* Company details */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>Company name</Label>
-            <Input
-              value={value.name}
-              disabled={!canManage}
-              onChange={(e) => onChange({ name: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Legal name</Label>
-            <Input
-              value={value.legalName}
-              disabled={!canManage}
-              onChange={(e) => onChange({ legalName: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Website</Label>
-            <Input
-              type="url"
-              value={value.website}
-              disabled={!canManage}
-              onChange={(e) => onChange({ website: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Industry</Label>
-            <StyledSelect
-              value={value.industry}
-              onChange={(v) => onChange({ industry: v })}
-              disabled={!canManage}
-              className="w-full"
-              options={INDUSTRY_SELECT_OPTIONS}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Company size</Label>
-            <StyledSelect
-              value={value.size}
-              onChange={(v) => onChange({ size: v })}
-              disabled={!canManage}
-              className="w-full"
-              options={COMPANY_SIZE_SELECT_OPTIONS}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Primary timezone</Label>
-            <StyledSelect
-              value={value.timezone}
-              onChange={(v) => onChange({ timezone: v })}
-              disabled={!canManage}
-              className="w-full"
-              options={COMMON_TIMEZONES}
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              PNG, SVG or JPG · recommended 200 × 50 px · up to 2 MB.
+            </p>
+            {canManage && branding.logo && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onBrandingChange({ logo: null })}
+                className="gap-1.5 text-destructive hover:text-destructive"
+              >
+                <X className="size-3.5" />
+                Remove logo
+              </Button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={handleLogoChange}
             />
           </div>
         </div>

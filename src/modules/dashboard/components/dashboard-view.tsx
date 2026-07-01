@@ -17,6 +17,7 @@ import { DashboardControls } from "./dashboard-controls";
 import { CustomizableDashboard } from "./customizable-dashboard";
 import { PersonalDashboard } from "./personal-dashboard";
 import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
+import { useDataScope } from "@/hooks/use-data-scope";
 import {
   buildDashboardData,
   teamsOf,
@@ -26,6 +27,12 @@ import {
 export function DashboardView({ users }: { users: User[] }) {
   // Self-scoped roles (Employee) get a personal dashboard, never org aggregates.
   const personal = useIsPersonalDashboard();
+  // Team leads see aggregates for their own team only; org roles see everyone.
+  const { ids: scopeIds } = useDataScope();
+  const scopedUsers = useMemo(
+    () => users.filter((u) => scopeIds === null || scopeIds.has(u.id)),
+    [users, scopeIds],
+  );
 
   const [range, setRange] = useState<DashboardRange>("7d");
   const [team, setTeam] = useState("all");
@@ -33,10 +40,10 @@ export function DashboardView({ users }: { users: User[] }) {
   const [end, setEnd] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
 
-  const teams = useMemo(() => teamsOf(users), [users]);
+  const teams = useMemo(() => teamsOf(scopedUsers), [scopedUsers]);
   const data = useMemo(
-    () => buildDashboardData(users, { range, team, start, end }),
-    [users, range, team, start, end],
+    () => buildDashboardData(scopedUsers, { range, team, start, end }),
+    [scopedUsers, range, team, start, end],
   );
 
   // Stamp the refresh time on the client (and whenever the filters change) so we

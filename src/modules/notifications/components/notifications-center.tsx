@@ -15,12 +15,14 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useNotificationStore } from "@/stores/notification.store";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
   DEMO_NOTIFICATIONS,
   NOTIFICATION_TYPE_META,
   timeAgo,
 } from "@/lib/mock-notifications";
 import type { AppNotification, NotificationType } from "@/types";
+import type { PermissionId } from "@/types/rbac";
 import { cn } from "@/lib/utils";
 
 const TYPES: NotificationType[] = [
@@ -31,12 +33,27 @@ const TYPES: NotificationType[] = [
   "system",
 ];
 
+/**
+ * Which permission each notification type requires to be shown. `null` = visible
+ * to everyone. This keeps the feed role-based — e.g. an employee doesn't hold
+ * `approvals:view` / `billing:view` / `reports:view`, so those org-level alerts
+ * (and their filter tabs) never appear for them.
+ */
+const TYPE_PERMISSION: Record<NotificationType, PermissionId | null> = {
+  task: null,
+  system: null,
+  approval: "approvals:view",
+  productivity: "reports:view",
+  billing: "billing:view",
+};
+
 export function NotificationsCenter() {
   const notifications = useNotificationStore((s) => s.notifications);
   const markRead = useNotificationStore((s) => s.markRead);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
   const remove = useNotificationStore((s) => s.remove);
   const seed = useNotificationStore((s) => s.seed);
+  const { can } = usePermissions();
 
   const [filter, setFilter] = useState<NotificationType | "all" | "unread">(
     "all",
@@ -52,9 +69,16 @@ export function NotificationsCenter() {
     }
   }, [seed]);
 
-  const unread = notifications.filter((n) => !n.read).length;
+  const canType = (t: NotificationType) => {
+    const perm = TYPE_PERMISSION[t];
+    return perm === null || can(perm);
+  };
 
-  const visible = notifications.filter((n) => {
+  // Restrict the feed to notification types the current role may see.
+  const allowed = notifications.filter((n) => canType(n.type));
+  const unread = allowed.filter((n) => !n.read).length;
+
+  const visible = allowed.filter((n) => {
     if (filter === "all") return true;
     if (filter === "unread") return !n.read;
     return n.type === filter;
@@ -81,7 +105,7 @@ export function NotificationsCenter() {
         {/* Filter pills */}
           <div className="flex flex-wrap gap-2">
             <FilterPill
-              label={`All${notifications.length ? ` · ${notifications.length}` : ""}`}
+              label={`All${allowed.length ? ` · ${allowed.length}` : ""}`}
               active={filter === "all"}
               onClick={() => setFilter("all")}
             />
@@ -90,7 +114,7 @@ export function NotificationsCenter() {
               active={filter === "unread"}
               onClick={() => setFilter("unread")}
             />
-            {TYPES.map((t) => (
+            {TYPES.filter(canType).map((t) => (
               <FilterPill
                 key={t}
                 label={NOTIFICATION_TYPE_META[t].label}

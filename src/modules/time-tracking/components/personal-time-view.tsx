@@ -5,7 +5,7 @@ import Papa from "papaparse";
 import {
   CalendarDays,
   BadgeDollarSign,
-  Activity,
+  Clock,
   Download,
   Timer,
   ListChecks,
@@ -138,7 +138,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
             </span>
             <span>
               · {entries.length} {entries.length === 1 ? "entry" : "entries"} ·{" "}
-              {formatDuration(totalSec)} tracked
+              {dayStats.focus} focus
             </span>
           </CardDescription>
           <CardAction>
@@ -160,7 +160,11 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               value={dayStats.billable}
               tone="success"
             />
-            <SummaryCell icon={Activity} label="Focus" value={dayStats.focus} />
+            <SummaryCell
+              icon={Clock}
+              label="Total tracked"
+              value={formatDuration(totalSec)}
+            />
             <SummaryCell
               icon={Timer}
               label="Longest session"
