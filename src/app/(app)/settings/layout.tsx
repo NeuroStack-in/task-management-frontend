@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight, Bell, CreditCard, Lock, Palette, User } from "lucide-react";
-import { ADMIN_SECTIONS } from "@/constants/navigation";
+import { ArrowUpRight } from "lucide-react";
+import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
+import { InPaneHeaderContext } from "@/components/shared/page-header";
+import { usePageTitle } from "@/stores/page-header.store";
 import { cn } from "@/lib/utils";
 
 interface RailItem {
@@ -21,16 +23,15 @@ interface RailGroup {
   items: RailItem[];
 }
 
-/** Personal account sections — always available, rendered in-pane. */
+/** Personal account sections — always available, rendered in-pane. Sourced
+ * from the shared catalog so global search and the rail stay in sync. */
 const ACCOUNT_GROUP: RailGroup = {
   label: "Account",
-  items: [
-    { label: "Profile", href: "/settings/profile", icon: User },
-    { label: "Login & security", href: "/settings/login-security", icon: Lock },
-    { label: "Billing", href: "/settings/billing", icon: CreditCard },
-    { label: "Notifications", href: "/settings/notifications", icon: Bell },
-    { label: "Appearance", href: "/settings/appearance", icon: Palette },
-  ],
+  items: ACCOUNT_SECTIONS.map((it) => ({
+    label: it.label,
+    href: it.href,
+    icon: it.icon,
+  })),
 };
 
 export default function SettingsLayout({
@@ -40,6 +41,10 @@ export default function SettingsLayout({
 }) {
   const pathname = usePathname();
   const { can } = usePermissions();
+
+  // The navbar stays pinned to "Settings" across every sub-section; each
+  // sub-page renders its own title/subtitle in-pane (via InPaneHeaderContext).
+  usePageTitle("Settings", "Manage your account, organization, and access.");
 
   // Admin/config groups come from the shared constants and stay
   // permission-filtered. Items under /settings/* render in-pane; the rest
@@ -60,16 +65,13 @@ export default function SettingsLayout({
   const groups: RailGroup[] = [ACCOUNT_GROUP, ...adminGroups];
 
   return (
-    <div className="flex flex-col gap-6 pt-1 lg:flex-row lg:gap-10">
+    <div className="flex flex-col gap-6 pt-1 lg:h-[calc(100vh-7rem)] lg:flex-row lg:gap-10">
       {/* ── Section rail ── */}
       <nav
         aria-label="Settings sections"
-        className="lg:sticky lg:top-20 lg:w-60 lg:shrink-0 lg:self-start"
+        className="lg:h-full lg:w-60 lg:shrink-0"
       >
-        <p className="mb-4 hidden font-display text-lg font-semibold tracking-tight lg:block">
-          Settings
-        </p>
-        <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:max-h-[calc(100vh-7.5rem)] lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
+        <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:h-full lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
           {groups.map((group) => (
             <div key={group.label} className="shrink-0 space-y-1.5">
               <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -115,7 +117,12 @@ export default function SettingsLayout({
       </nav>
 
       {/* ── Content pane ── */}
-      <div className="min-w-0 flex-1">{children}</div>
+      {/* Sub-pages render their header in-pane; the navbar shows "Settings". */}
+      <InPaneHeaderContext.Provider value={true}>
+        <div className="min-w-0 flex-1 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+          {children}
+        </div>
+      </InPaneHeaderContext.Provider>
     </div>
   );
 }

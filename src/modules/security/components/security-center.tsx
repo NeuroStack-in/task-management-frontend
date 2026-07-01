@@ -8,11 +8,15 @@ import {
   Check,
   Copy,
   Download,
+  KeyRound,
+  Laptop,
   Lock,
   Plus,
   RefreshCw,
   ShieldCheck,
+  Smartphone,
   X,
+  type LucideIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -29,6 +33,14 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -39,6 +51,7 @@ import { NumberStepper } from "@/components/ui/number-stepper"
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
+import { useAuthStore } from "@/stores/auth.store"
 import {
   MFA_GRACE_OPTIONS,
   MFA_METHODS,
@@ -55,6 +68,48 @@ import { cn } from "@/lib/utils"
 const FLAGGED_EVENTS = SECURITY_EVENTS.filter(
   (e) => e.status === "flagged" || e.status === "blocked",
 ).length
+
+// ── Active sessions (your signed-in devices) ──────────────────────────────────
+
+interface SessionRow {
+  id: string
+  device: string
+  location: string
+  lastActive: string
+  current?: boolean
+  icon: LucideIcon
+}
+
+const SESSIONS: SessionRow[] = [
+  {
+    id: "s1",
+    device: "Chrome on Windows",
+    location: "Bengaluru, IN",
+    lastActive: "Active now",
+    current: true,
+    icon: Laptop,
+  },
+  {
+    id: "s2",
+    device: "Safari on iPhone",
+    location: "Bengaluru, IN",
+    lastActive: "2 days ago",
+    icon: Smartphone,
+  },
+]
+
+// ── Personal MFA enrollment (frontend-only stand-ins) ─────────────────────────
+const TOTP_SECRET = "JBSW Y3DP EHPK 3PXP"
+const RECOVERY_CODES = [
+  "4F2K-9QX7",
+  "B8M3-7TLP",
+  "Z1C6-2WD9",
+  "9HRA-5NK2",
+  "Q3VE-8YB4",
+  "L7XP-1MD6",
+  "T2KF-6RZ8",
+  "C9WN-3JQ5",
+]
 
 // ── Draft / saved model ───────────────────────────────────────────────────────
 
@@ -221,6 +276,55 @@ export function SecurityCenter() {
   const [saving, setSaving] = useState(false)
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
 
+  // Personal account actions (available to every member, not gated by canManage).
+  const userEmail = useAuthStore((s) => s.user?.email)
+  const [pw, setPw] = useState({ current: "", next: "", confirm: "" })
+
+  // Personal MFA enrollment (your own authenticator), separate from the org policy.
+  // Starts not-enrolled so first-time setup is discoverable; once enrolled, the
+  // banner exposes "Reconfigure" to re-run setup without turning MFA off first.
+  const [mfaEnabled, setMfaEnabled] = useState(false)
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [otp, setOtp] = useState("")
+  const [codesOpen, setCodesOpen] = useState(false)
+
+  function verifyMfa() {
+    if (otp.length !== 6) return
+    setMfaEnabled(true)
+    setSetupOpen(false)
+    setOtp("")
+    setCodesOpen(true)
+    toast.success("Multi-factor authentication enabled")
+  }
+
+  function disableMfa() {
+    setMfaEnabled(false)
+    toast.success("Multi-factor authentication turned off")
+  }
+
+  function sendResetLink() {
+    toast.success(
+      `Password reset link sent to ${userEmail ?? "your email"}`,
+    )
+  }
+
+  function savePassword() {
+    if (!pw.current || !pw.next) {
+      toast.error("Enter your current and new password")
+      return
+    }
+    if (pw.next.length < 8) {
+      toast.error("New password must be at least 8 characters")
+      return
+    }
+    if (pw.next !== pw.confirm) {
+      toast.error("New passwords don't match")
+      return
+    }
+    setPw({ current: "", next: "", confirm: "" })
+    toast.success("Password updated")
+  }
+
   const updatePolicy = (patch: Partial<SecurityPolicies>) =>
     setDraft((d) => ({ ...d, policies: { ...d.policies, ...patch } }))
   const toggleMethod = (key: string) =>
@@ -289,7 +393,7 @@ export function SecurityCenter() {
       </div>
 
       {/* ── Multi-factor authentication ── */}
-      <Card>
+      <Card id="mfa" className="scroll-mt-24">
         <CardHeader>
           <CardTitle>Multi-Factor Authentication</CardTitle>
           <CardDescription>
@@ -297,24 +401,54 @@ export function SecurityCenter() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          {/* Personal status */}
-          <div className="flex items-center gap-3 rounded-md bg-success/10 px-4 py-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-success/15 text-success">
-              <ShieldCheck className="size-4" />
-            </span>
-            <p className="text-sm">
-              <span className="font-medium">Your account is protected</span> with an
-              authenticator app.
-            </p>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="ml-auto shrink-0"
-              onClick={() => toast.success("Recovery codes downloaded")}
-            >
-              Recovery codes
-            </Button>
-          </div>
+          {/* Personal enrollment status + setup */}
+          {mfaEnabled ? (
+            <div className="flex flex-col gap-3 rounded-md bg-success/10 px-4 py-3 sm:flex-row sm:items-center">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-success/15 text-success">
+                <ShieldCheck className="size-4" />
+              </span>
+              <p className="text-sm">
+                <span className="font-medium">Your account is protected</span> with
+                an authenticator app.
+              </p>
+              <div className="flex shrink-0 flex-wrap gap-2 sm:ml-auto">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setCodesOpen(true)}
+                >
+                  Recovery codes
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSetupOpen(true)}
+                >
+                  <RefreshCw className="size-3.5" /> Reconfigure
+                </Button>
+                <Button size="sm" variant="outline" onClick={disableMfa}>
+                  Turn off
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 rounded-md bg-warning/10 px-4 py-3 sm:flex-row sm:items-center">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+                <AlertTriangle className="size-4" />
+              </span>
+              <p className="text-sm">
+                <span className="font-medium">Two-step protection is off.</span> Set
+                up an authenticator app to secure your account.
+              </p>
+              <Button
+                size="sm"
+                className="shrink-0 sm:ml-auto"
+                onClick={() => setSetupOpen(true)}
+              >
+                Set up authenticator
+              </Button>
+            </div>
+          )}
 
           <div>
             <SettingRow
@@ -400,7 +534,7 @@ export function SecurityCenter() {
       </Card>
 
       {/* ── Single sign-on ── */}
-      <Card>
+      <Card id="sso" className="scroll-mt-24">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             Single Sign-On (SSO)
@@ -469,7 +603,7 @@ export function SecurityCenter() {
       </Card>
 
       {/* ── Session & access ── */}
-      <Card>
+      <Card id="sessions" className="scroll-mt-24">
         <CardHeader>
           <CardTitle>Session & Access</CardTitle>
           <CardDescription>
@@ -534,6 +668,55 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
+      {/* ── Active sessions (your devices) ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Active Sessions</CardTitle>
+          <CardDescription>
+            Devices currently signed in to your account.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2.5">
+          {SESSIONS.map((s) => {
+            const Icon = s.icon
+            return (
+              <div
+                key={s.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Icon className="size-4" />
+                  </span>
+                  <div>
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      {s.device}
+                      {s.current ? (
+                        <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
+                          This device
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {s.location} · {s.lastActive}
+                    </p>
+                  </div>
+                </div>
+                {!s.current ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toast.success(`Signed out ${s.device}`)}
+                  >
+                    Sign out
+                  </Button>
+                ) : null}
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
+
       {/* ── Password policy ── */}
       <Card>
         <CardHeader>
@@ -590,6 +773,72 @@ export function SecurityCenter() {
               </SelectContent>
             </Select>
           </SettingRow>
+        </CardContent>
+      </Card>
+
+      {/* ── Change your password (personal) ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="size-4 text-muted-foreground" />
+            Change Password
+          </CardTitle>
+          <CardDescription>
+            Update the password for your own account. Use at least 8 characters.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="grid flex-1 gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="cur-pw">Current password</Label>
+                  <button
+                    type="button"
+                    onClick={sendResetLink}
+                    className="text-xs font-medium text-primary transition-colors hover:underline"
+                  >
+                    Forgot?
+                  </button>
+                </div>
+                <Input
+                  id="cur-pw"
+                  type="password"
+                  value={pw.current}
+                  onChange={(e) =>
+                    setPw((p) => ({ ...p, current: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="new-pw">New password</Label>
+                <Input
+                  id="new-pw"
+                  type="password"
+                  value={pw.next}
+                  onChange={(e) => setPw((p) => ({ ...p, next: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cf-pw">Confirm new password</Label>
+                <Input
+                  id="cf-pw"
+                  type="password"
+                  value={pw.confirm}
+                  onChange={(e) =>
+                    setPw((p) => ({ ...p, confirm: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={savePassword}
+              className="shrink-0 sm:mb-0.5"
+            >
+              Update password
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -650,6 +899,88 @@ export function SecurityCenter() {
           onReset={handleReset}
         />
       )}
+
+      {/* MFA setup dialog */}
+      <Dialog
+        open={setupOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setSetupOpen(false)
+            setOtp("")
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set up multi-factor authentication</DialogTitle>
+            <DialogDescription>
+              Add the secret to your authenticator app, then enter the 6-digit
+              code it shows.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-center">
+              <p className="text-xs text-muted-foreground">Authenticator secret</p>
+              <p className="mt-1 font-mono text-sm font-semibold tracking-widest">
+                {TOTP_SECRET}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="mfa-otp">6-digit code</Label>
+              <Input
+                id="mfa-otp"
+                inputMode="numeric"
+                maxLength={6}
+                value={otp}
+                onChange={(e) =>
+                  setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                placeholder="123456"
+                className="tracking-[0.4em]"
+              />
+            </div>
+          </div>
+          <DialogFooter showCloseButton>
+            <Button onClick={verifyMfa} disabled={otp.length !== 6}>
+              Verify &amp; enable
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Recovery codes dialog */}
+      <Dialog open={codesOpen} onOpenChange={setCodesOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Recovery codes</DialogTitle>
+            <DialogDescription>
+              Save these somewhere safe. Each can be used once if you lose your
+              device.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-2">
+            {RECOVERY_CODES.map((c) => (
+              <code
+                key={c}
+                className="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-center font-mono text-sm"
+              >
+                {c}
+              </code>
+            ))}
+          </div>
+          <DialogFooter showCloseButton>
+            <Button
+              variant="outline"
+              onClick={() => {
+                navigator.clipboard?.writeText(RECOVERY_CODES.join("\n"))
+                toast.success("Recovery codes copied")
+              }}
+            >
+              <Copy className="size-4" /> Copy codes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -7,9 +7,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/stores/ui.store";
 import { isNavItemVisible } from "@/lib/rbac";
-import { INSIGHTS_TABS, ADMIN_SECTIONS } from "@/constants/navigation";
+import {
+  INSIGHTS_TABS,
+  ADMIN_SECTIONS,
+  ACCOUNT_SECTIONS,
+  SETTINGS_SUBSECTIONS,
+} from "@/constants/navigation";
 import { users, projects } from "@/lib/data";
 import { initials } from "@/lib/format";
+import { scrollToHashAfterNav } from "@/lib/scroll-to-hash";
 import { cn } from "@/lib/utils";
 
 interface Result {
@@ -112,6 +118,12 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           .filter((it) => isNavItemVisible(role, it))
           .map((it) => ({ item: it, group: g.label })),
       ),
+      // Personal account settings — always accessible, so no permission filter.
+      ...ACCOUNT_SECTIONS.map((it) => ({ item: it, group: "Account" })),
+      // Deep-link sub-sections within a settings page (e.g. Security → MFA).
+      ...SETTINGS_SUBSECTIONS.filter((it) => isNavItemVisible(role, it)).map(
+        (it) => ({ item: it, group: "Settings" }),
+      ),
     ];
     const seen = new Set<string>();
     out.push(
@@ -122,7 +134,9 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           return true;
         })
         .filter(({ item, group }) =>
-          `${item.label} ${group}`.toLowerCase().includes(q),
+          `${item.label} ${group} ${item.description ?? ""} ${item.keywords ?? ""}`
+            .toLowerCase()
+            .includes(q),
         )
         .slice(0, MAX_PAGES)
         .map<Result>(({ item, group }) => ({
@@ -152,6 +166,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
 
   const select = (href: string) => {
     router.push(href);
+    scrollToHashAfterNav(href);
     setQuery("");
     setOpen(false);
     onNavigate?.();

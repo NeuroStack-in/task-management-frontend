@@ -15,7 +15,6 @@ import {
   Bell,
   ShieldCheck,
   MonitorSmartphone,
-  Headset,
   KeyRound,
   ScrollText,
   Settings,
@@ -29,6 +28,9 @@ import {
   ToggleRight,
   Plug,
   TriangleAlert,
+  User,
+  CreditCard,
+  Palette,
 } from "lucide-react";
 import type { PermissionId } from "@/types/rbac";
 
@@ -42,6 +44,9 @@ export interface NavItem {
   anyPermissions?: PermissionId[];
   /** Short description, shown in the Settings/admin hub or Insights tabs. */
   description?: string;
+  /** Extra search synonyms (e.g. "mfa 2fa multifactor") so global search finds
+   *  a section by what it contains, not just its label. */
+  keywords?: string;
 }
 
 export interface NavGroup {
@@ -150,6 +155,79 @@ export const INSIGHTS_TABS: NavItem[] = [
 ];
 
 /**
+ * Personal account settings sub-sections — the Settings hub's "Account" rail
+ * group. Shared so global search can surface them and the settings layout can
+ * build its rail from a single source. Always accessible (permission: null).
+ */
+export const ACCOUNT_SECTIONS: NavItem[] = [
+  {
+    label: "Profile",
+    href: "/settings/profile",
+    icon: User,
+    permission: null,
+    description: "Your account and personal details.",
+    keywords: "name email avatar photo personal account details job title",
+  },
+  {
+    label: "Billing",
+    href: "/settings/billing",
+    icon: CreditCard,
+    permission: null,
+    description: "Plan, payment method, and invoices.",
+    keywords: "invoice payment plan subscription card receipt billing cancel",
+  },
+  {
+    label: "Notifications",
+    href: "/settings/notifications",
+    icon: Bell,
+    permission: null,
+    description: "Email and in-app notification preferences.",
+    keywords: "alerts email digest preferences push reminders",
+  },
+  {
+    label: "Appearance",
+    href: "/settings/appearance",
+    icon: Palette,
+    permission: null,
+    description: "Theme, palette, and display density.",
+    keywords: "theme palette colour color dark light mode density font",
+  },
+];
+
+/**
+ * Deep-link search targets — individual cards/sections WITHIN a settings page.
+ * The href carries an `#anchor` that matches an element id on the page, so
+ * global search lands on the exact section, not just the top of the page.
+ */
+export const SETTINGS_SUBSECTIONS: NavItem[] = [
+  {
+    label: "Multi-factor authentication",
+    href: "/settings/security#mfa",
+    icon: ShieldCheck,
+    permission: "security:view",
+    description: "Two-factor / authenticator setup and policy.",
+    keywords:
+      "mfa 2fa multifactor multi-factor two-factor authenticator otp passkey two step verification",
+  },
+  {
+    label: "Single sign-on (SSO)",
+    href: "/settings/security#sso",
+    icon: ShieldCheck,
+    permission: "security:view",
+    description: "SAML / SSO identity provider connection.",
+    keywords: "sso single sign-on saml okta azure identity provider idp",
+  },
+  {
+    label: "Session & access policies",
+    href: "/settings/security#sessions",
+    icon: ShieldCheck,
+    permission: "security:view",
+    description: "Session timeout, device limits, and trusted devices.",
+    keywords: "session timeout concurrent device trusted remember access policy",
+  },
+];
+
+/**
  * Admin & configuration sections — relocated out of the sidebar into the
  * Settings hub. Still routed and permission-gated: permissionForPath() scans
  * these too, and the hub filters cards by the active role's permissions.
@@ -164,6 +242,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: Building2,
         permission: "settings:view",
         description: "Company info, departments, teams, working hours, and branding.",
+        keywords: "company department team workspace working hours branding logo timezone",
       },
       {
         label: "Feature management",
@@ -171,6 +250,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: ToggleRight,
         permission: "settings:view",
         description: "Turn modules on or off for the whole organization.",
+        keywords: "modules toggle enable disable features flags",
       },
       {
         label: "Ownership & deletion",
@@ -178,6 +258,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: TriangleAlert,
         permission: "settings:manage",
         description: "Transfer ownership, export data, or close the organization.",
+        keywords: "transfer ownership export data close delete danger zone",
       },
     ],
   },
@@ -190,6 +271,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: SlidersHorizontal,
         permission: "settings:view",
         description: "Idle, screenshot, and productivity thresholds.",
+        keywords: "idle screenshot productivity threshold tracking monitoring",
       },
       {
         label: "Application & URL rules",
@@ -197,6 +279,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: Globe,
         permission: "settings:view",
         description: "Allow lists, block lists, and productivity scoring.",
+        keywords: "allow list block list apps url website productivity scoring rules",
       },
     ],
   },
@@ -209,6 +292,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: KeyRound,
         permission: "roles:view",
         description: "Create roles and control what each can access.",
+        keywords: "rbac access permissions role custom grant",
       },
       {
         label: "Security",
@@ -216,6 +300,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: ShieldCheck,
         permission: "security:view",
         description: "MFA, SSO, session policies, and security events.",
+        keywords: "security center protect compliance events policy",
       },
       {
         label: "Audit Logs",
@@ -223,6 +308,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: ScrollText,
         permission: "audit-logs:view",
         description: "User actions, permission changes, and login events.",
+        keywords: "activity log history events sign-in audit trail",
       },
     ],
   },
@@ -235,13 +321,6 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: Plug,
         permission: "integrations:view",
         description: "Slack, Teams, Jira, GitHub, and more.",
-      },
-      {
-        label: "Remote Support",
-        href: "/settings/remote-support",
-        icon: Headset,
-        permission: "remote-support:view",
-        description: "Approval-gated remote support sessions and diagnostics.",
       },
       {
         label: "Desktop Agents",

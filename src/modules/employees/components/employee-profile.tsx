@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
@@ -12,6 +12,7 @@ import {
   FolderKanban,
   Sheet,
   BarChart2,
+  Pencil,
 } from "lucide-react";
 import { AiInsight } from "@/components/shared/ai-insight";
 import {
@@ -30,16 +31,36 @@ import {
 } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TablePagination } from "@/components/shared/table-pagination";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
+import { useEmployeesStore } from "@/stores/employees.store";
+import { usePermissions } from "@/hooks/use-permissions";
+import { DEPARTMENTS, TEAMS_BY_DEPT } from "@/lib/mock-org";
+import { TeamSelect } from "./team-select";
 import { cn } from "@/lib/utils";
 
 export interface ProjectItem {
@@ -188,9 +209,112 @@ function exportEmployeePdf(d: EmployeeProfileData) {
   toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.pdf` });
 }
 
+/** Move a member to a different department/team (persisted via the store). */
+function ReassignDialog({
+  open,
+  onOpenChange,
+  employeeId,
+  name,
+  department,
+  team,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  employeeId: string;
+  name: string;
+  department: string;
+  team: string;
+}) {
+  const reassignEmployee = useEmployeesStore((s) => s.reassignEmployee);
+  const [dept, setDept] = useState(department);
+  const [teamDraft, setTeamDraft] = useState(team);
+
+  // Re-seed the drafts to the current values each time the dialog opens.
+  useEffect(() => {
+    if (open) {
+      setDept(department);
+      setTeamDraft(team);
+    }
+  }, [open, department, team]);
+
+  const teamsForDept = dept ? (TEAMS_BY_DEPT[dept] ?? []) : [];
+
+  function save() {
+    const d = dept.trim();
+    const t = teamDraft.trim();
+    if (!d || !t) {
+      toast.error("Pick a department and a team");
+      return;
+    }
+    reassignEmployee(employeeId, d, t);
+    toast.success("Member moved", { description: `${name} → ${d} · ${t}` });
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Move {name}</DialogTitle>
+          <DialogDescription>
+            Change this member&apos;s department and team.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Department</Label>
+            <Select
+              value={dept}
+              onValueChange={(v) => {
+                setDept(v as string);
+                setTeamDraft(""); // reset team to match the new department
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a department" />
+              </SelectTrigger>
+              <SelectContent>
+                {DEPARTMENTS.map((d) => (
+                  <SelectItem key={d} value={d}>
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Team</Label>
+            <TeamSelect
+              teams={teamsForDept}
+              value={teamDraft}
+              onChange={setTeamDraft}
+              disabled={!dept}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={save}>Save changes</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
+  const { can } = usePermissions();
+  const canManage = can("employees:manage");
+
+  // Apply any reassignment override on top of the seed-built profile data.
+  const override = useEmployeesStore((s) => s.assignments[data.id]);
+  const department = override?.department ?? data.department;
+  const team = override?.team ?? data.team;
+  const [reassignOpen, setReassignOpen] = useState(false);
+
   // Surface the employee's name + role in the top navbar for this detail route.
-  usePageTitle(data.name, `${data.jobTitle} · ${data.department}`);
+  usePageTitle(data.name, `${data.jobTitle} · ${department}`);
 
   const chartData = data.kpi.months.map((m, i) => ({
     month: m,
@@ -245,6 +369,17 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
         </div>
       </div>
 
+      {canManage ? (
+        <ReassignDialog
+          open={reassignOpen}
+          onOpenChange={setReassignOpen}
+          employeeId={data.id}
+          name={data.name}
+          department={department}
+          team={team}
+        />
+      ) : null}
+
       {/* 2-column layout on lg+: left = identity + projects, right = stats + chart + AI */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         {/* ── LEFT COLUMN ── */}
@@ -268,7 +403,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
                   </span>
                 </div>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  {data.jobTitle} · {data.department}
+                  {data.jobTitle} · {department}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Badge className="bg-feature-tint text-primary">
@@ -277,12 +412,23 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
                   <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
                 </div>
               </div>
+              {canManage ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 self-start sm:self-center"
+                  onClick={() => setReassignOpen(true)}
+                >
+                  <Pencil className="size-4" /> Move team
+                </Button>
+              ) : null}
             </div>
 
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5">
+              <Detail label="Department" value={department} />
+              <Detail label="Team" value={team} />
               <Detail label="Phone" value={data.phone} />
               <Detail label="Email" value={data.email} />
-              <Detail label="Team" value={data.team} />
               <Detail label="Hire date" value={data.hireDate} />
               <Detail label="City / State" value={data.cityState} />
               <Detail label="Country" value={data.country} />

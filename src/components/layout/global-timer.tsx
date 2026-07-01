@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Timer as TimerIcon } from "lucide-react";
 import { useTimerStore } from "@/stores/timer.store";
+import { usePermissions } from "@/hooks/use-permissions";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ import { cn } from "@/lib/utils";
  * Time Tracking page; this only mirrors the persisted timer store.
  */
 export function GlobalTimer() {
+  const { can } = usePermissions();
   const task = useTimerStore((s) => s.task);
   const status = useTimerStore((s) => s.status);
   const elapsed = useTimerStore((s) => s.elapsed);
@@ -23,6 +25,11 @@ export function GlobalTimer() {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, [status]);
+
+  // Oversight roles (Owner/Admin/managers) don't run a personal timer — they
+  // manage their team's. The personal indicator only applies to people who
+  // log their own time (`time-tracking:edit`, a contributor-only permission).
+  if (!can("time-tracking:edit")) return null;
 
   // Idle — no timer running.
   if (!task) {

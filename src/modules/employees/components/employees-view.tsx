@@ -192,16 +192,22 @@ export function EmployeesView({
   const { can } = usePermissions();
   const router = useRouter();
   const customEmployees = useEmployeesStore((s) => s.customEmployees);
+  const assignments = useEmployeesStore((s) => s.assignments);
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  // Runtime-created accounts (persisted store) sit on top of the seed users.
+  // Runtime-created accounts (persisted store) sit on top of the seed users,
+  // and any department/team reassignments are applied over the top.
   const allEmployees = useMemo(
-    () => [...customEmployees, ...employees],
-    [customEmployees, employees],
+    () =>
+      [...customEmployees, ...employees].map((e) => {
+        const a = assignments[e.id];
+        return a ? { ...e, department: a.department, team: a.team } : e;
+      }),
+    [customEmployees, employees, assignments],
   );
   // Created accounts have no seed-backed profile page, so their rows don't link.
   const customIds = useMemo(
