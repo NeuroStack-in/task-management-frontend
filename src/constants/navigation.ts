@@ -153,14 +153,6 @@ export const ACCOUNT_SECTIONS: NavItem[] = [
     keywords: "name email avatar photo personal account details job title",
   },
   {
-    label: "Billing",
-    href: "/settings/billing",
-    icon: CreditCard,
-    permission: null,
-    description: "Plan, payment method, and invoices.",
-    keywords: "invoice payment plan subscription card receipt billing cancel",
-  },
-  {
     label: "Notifications",
     href: "/settings/notifications",
     icon: Bell,
@@ -235,6 +227,14 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         permission: "settings:view",
         description: "Turn modules on or off for the whole organization.",
         keywords: "modules toggle enable disable features flags",
+      },
+      {
+        label: "Billing",
+        href: "/settings/billing",
+        icon: CreditCard,
+        permission: "billing:view",
+        description: "Plan, seats, payment method, and invoices.",
+        keywords: "invoice payment plan subscription seats card receipt billing cancel",
       },
       {
         label: "Ownership & deletion",

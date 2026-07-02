@@ -596,7 +596,8 @@ function OverlayDetail({
 /**
  * Full-screen gallery viewer. The capture fills the screen; the member's
  * details and per-capture AI read are overlaid on top. Left/right arrows (and
- * ←/→ keys) move through the currently-filtered captures, wrapping around.
+ * ←/→ keys) move through the currently-filtered captures; they stop at the
+ * first/last capture (no wrap-around) to match the "N / total" position.
  */
 function Lightbox({
   shots,
@@ -613,24 +614,28 @@ function Lightbox({
   const shot = index !== null ? (shots[index] ?? null) : null;
   const open = shot !== null;
 
-  // ←/→ to move through the gallery while it's open.
+  const atStart = index === 0;
+  const atEnd = index !== null && index === count - 1;
+
+  const step = (delta: number) => {
+    if (index === null) return;
+    const next = index + delta;
+    if (next < 0 || next >= count) return; // clamp at the ends, no wrap
+    onIndexChange(next);
+  };
+
+  // ←/→ to move through the gallery while it's open (stops at the ends).
   useEffect(() => {
-    if (!open || index === null || count === 0) return;
+    if (!open || index === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight")
-        onIndexChange((index + 1) % count);
-      else if (e.key === "ArrowLeft")
-        onIndexChange((index - 1 + count) % count);
+      if (e.key === "ArrowRight" && index < count - 1) onIndexChange(index + 1);
+      else if (e.key === "ArrowLeft" && index > 0) onIndexChange(index - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, index, count, onIndexChange]);
 
   const reason = shot ? flagReason(shot) : null;
-  const step = (delta: number) => {
-    if (index === null || count === 0) return;
-    onIndexChange((index + delta + count) % count);
-  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -685,22 +690,24 @@ function Lightbox({
               className="max-h-[100dvh] max-w-full object-contain"
             />
 
-            {/* Prev / next arrows */}
+            {/* Prev / next arrows — disabled at the first / last capture */}
             {count > 1 ? (
               <>
                 <button
                   type="button"
                   onClick={() => step(-1)}
+                  disabled={atStart}
                   aria-label="Previous screenshot"
-                  className="absolute left-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25 sm:left-5"
+                  className="absolute left-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25 disabled:pointer-events-none disabled:opacity-30 sm:left-5"
                 >
                   <ChevronLeft className="size-6" />
                 </button>
                 <button
                   type="button"
                   onClick={() => step(1)}
+                  disabled={atEnd}
                   aria-label="Next screenshot"
-                  className="absolute right-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25 sm:right-5"
+                  className="absolute right-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25 disabled:pointer-events-none disabled:opacity-30 sm:right-5"
                 >
                   <ChevronRight className="size-6" />
                 </button>

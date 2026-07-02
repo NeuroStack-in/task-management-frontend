@@ -9,7 +9,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
-import { AuthError, DEMO_EMAIL } from "@/modules/auth/services/auth.service";
+import {
+  AuthError,
+  DEMO_ACCOUNTS,
+  DEMO_PASSWORD,
+} from "@/modules/auth/services/auth.service";
 import { SsoButtons } from "./sso-buttons";
 import {
   Card,
@@ -63,9 +67,9 @@ export function LoginForm() {
     }
   };
 
-  const fillDemo = () => {
-    setValue("email", DEMO_EMAIL);
-    setValue("password", "demo1234");
+  const fillDemo = (email: string) => {
+    setValue("email", email);
+    setValue("password", DEMO_PASSWORD);
   };
 
   return (
@@ -140,17 +144,20 @@ export function LoginForm() {
 
           <div className="rounded-xl border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">Demo mode</p>
-            <p className="mt-0.5">
-              Use{" "}
-              <button
-                type="button"
-                onClick={fillDemo}
-                className="font-medium text-primary underline-offset-2 hover:underline"
-              >
-                {DEMO_EMAIL}
-              </button>{" "}
-              with any password.
-            </p>
+            <p className="mt-0.5">Pick a login — any password works.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {DEMO_ACCOUNTS.map((acct) => (
+                <button
+                  key={acct.email}
+                  type="button"
+                  onClick={() => fillDemo(acct.email)}
+                  className="rounded-full border bg-background px-3 py-1 font-medium text-primary transition-colors hover:bg-primary/5"
+                  title={acct.hint}
+                >
+                  {acct.label}
+                </button>
+              ))}
+            </div>
           </div>
         </CardContent>
         <CardFooter className="flex-col gap-3">

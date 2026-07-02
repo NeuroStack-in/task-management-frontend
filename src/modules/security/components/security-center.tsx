@@ -11,9 +11,9 @@ import {
   KeyRound,
   Laptop,
   Lock,
-  Maximize2,
   Monitor,
   Plus,
+  QrCode,
   RefreshCw,
   ShieldCheck,
   Smartphone,
@@ -56,6 +56,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useAuthStore } from "@/stores/auth.store"
+import { isIpOrCidr } from "@/lib/validation"
 import {
   MFA_GRACE_OPTIONS,
   MFA_METHODS,
@@ -234,6 +235,10 @@ function IpAllowlist({
   function add() {
     const val = input.trim()
     if (!val) return
+    if (!isIpOrCidr(val)) {
+      toast.error("Enter a valid IPv4 address or CIDR, e.g. 203.0.113.0/24")
+      return
+    }
     if (!items.includes(val)) onChange([...items, val])
     setInput("")
   }
@@ -305,7 +310,9 @@ export function SecurityCenter() {
   const [setupOpen, setSetupOpen] = useState(false)
   const [otp, setOtp] = useState("")
   const [codesOpen, setCodesOpen] = useState(false)
-  const [qrLarge, setQrLarge] = useState(false)
+  // The QR encodes the secret, so keep it hidden until the user reveals it
+  // (avoids exposure in screen-shares / screenshots), mirroring AWS MFA setup.
+  const [qrShown, setQrShown] = useState(false)
 
   // otpauth URI for authenticator apps (Google Authenticator, Authy, …). Built
   // from the static demo secret + the signed-in email; deterministic (no
@@ -934,7 +941,7 @@ export function SecurityCenter() {
           if (!v) {
             setSetupOpen(false)
             setOtp("")
-            setQrLarge(false)
+            setQrShown(false)
           }
         }}
       >
@@ -947,33 +954,40 @@ export function SecurityCenter() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {/* Scannable QR. High-contrast literal colours (not theme tokens) so
-                it stays white-on-black and scannable in dark mode too. Click to
-                enlarge for easier scanning. */}
+            {/* Scannable QR, hidden until revealed (it encodes the secret). When
+                shown it uses high-contrast literal colours (not theme tokens) so
+                it stays white-on-black and scannable in dark mode too. */}
             <div className="flex flex-col items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setQrLarge((v) => !v)}
-                aria-label={qrLarge ? "Shrink QR code" : "Enlarge QR code"}
-                title={qrLarge ? "Click to shrink" : "Click to enlarge"}
-                className="group relative rounded-lg border border-border bg-white p-3 transition hover:ring-2 hover:ring-primary/50 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
-              >
-                <QRCodeSVG
-                  value={otpauthUri}
-                  size={qrLarge ? 264 : 168}
-                  level="M"
-                  bgColor="#ffffff"
-                  fgColor="#0a0a0a"
-                />
-                <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-md bg-black/70 text-white opacity-70 transition-opacity group-hover:opacity-100">
-                  <Maximize2 className="size-3.5" />
-                </span>
-              </button>
+              {qrShown ? (
+                <button
+                  type="button"
+                  onClick={() => setQrShown(false)}
+                  aria-label="Hide QR code"
+                  title="Click to hide"
+                  className="rounded-lg border border-border bg-white p-3 transition hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
+                >
+                  <QRCodeSVG
+                    value={otpauthUri}
+                    size={192}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#0a0a0a"
+                  />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setQrShown(true)}
+                  className="flex size-[218px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                >
+                  <QrCode className="size-8" />
+                  <span className="text-sm font-medium">Show QR code</span>
+                </button>
+              )}
               <p className="text-xs text-muted-foreground">
-                Scan with Google Authenticator, Authy, or 1Password ·{" "}
-                <span className="font-medium text-foreground">
-                  {qrLarge ? "click to shrink" : "click to enlarge"}
-                </span>
+                {qrShown
+                  ? "Scan with Google Authenticator, Authy, or 1Password · click to hide"
+                  : "Reveal the code to scan it with your authenticator app."}
               </p>
             </div>
 

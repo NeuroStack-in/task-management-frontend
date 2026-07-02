@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PERMISSION_CATEGORIES } from "@/constants/permissions";
+import { SYSTEM_ROLES } from "@/constants/roles";
 import { useRolesStore } from "@/stores/roles.store";
 import type { PermissionId, Role } from "@/types/rbac";
 
@@ -34,6 +35,7 @@ export function RoleEditorDialog({
 }: RoleEditorDialogProps) {
   const createRole = useRolesStore((s) => s.createRole);
   const updateRole = useRolesStore((s) => s.updateRole);
+  const customRoles = useRolesStore((s) => s.customRoles);
 
   const isEdit = Boolean(role);
   const [name, setName] = useState("");
@@ -64,17 +66,42 @@ export function RoleEditorDialog({
     });
 
   const handleSave = () => {
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       toast.error("Role name is required.");
       return;
     }
+    if (trimmedName.length > 40) {
+      toast.error("Role name must be 40 characters or fewer.");
+      return;
+    }
+    if (description.trim().length > 200) {
+      toast.error("Description must be 200 characters or fewer.");
+      return;
+    }
+    // No two roles (system or custom) may share a name — case-insensitive,
+    // excluding the role currently being edited.
+    const nameTaken = [...SYSTEM_ROLES, ...customRoles].some(
+      (r) =>
+        r.id !== role?.id &&
+        r.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+    );
+    if (nameTaken) {
+      toast.error(`A role named “${trimmedName}” already exists.`);
+      return;
+    }
+    if (selected.size === 0) {
+      toast.error("Select at least one permission for this role.");
+      return;
+    }
     const permissions = [...selected];
+    const desc = description.trim();
     if (isEdit && role) {
-      updateRole(role.id, { name: name.trim(), description, permissions });
-      toast.success(`Role “${name}” updated.`);
+      updateRole(role.id, { name: trimmedName, description: desc, permissions });
+      toast.success(`Role “${trimmedName}” updated.`);
     } else {
-      createRole({ name: name.trim(), description, permissions });
-      toast.success(`Role “${name}” created.`);
+      createRole({ name: trimmedName, description: desc, permissions });
+      toast.success(`Role “${trimmedName}” created.`);
     }
     onOpenChange(false);
   };

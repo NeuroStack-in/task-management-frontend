@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { organization } from "@/lib/data";
+import { isEmail } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 
 const ROLES = ["Member", "Manager", "Admin"];
@@ -80,7 +81,11 @@ export function InviteDialog({
   const shareWhatsApp = () =>
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
 
-  const shareEmail = () =>
+  const shareEmail = () => {
+    if (!isEmail(form.email)) {
+      toast.error("Enter a valid work email to send the invite.");
+      return;
+    }
     window.open(
       `mailto:${encodeURIComponent(form.email.trim())}?subject=${encodeURIComponent(
         `Join ${organization.name} on WorkPulse`,
@@ -88,6 +93,7 @@ export function InviteDialog({
       "_blank",
       "noopener,noreferrer",
     );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

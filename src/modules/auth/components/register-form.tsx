@@ -24,9 +24,9 @@ import { cn } from "@/lib/utils";
 import { SsoButtons } from "./sso-buttons";
 
 const schema = z.object({
-  name: z.string().min(2, "Enter your full name."),
-  email: z.string().email("Enter a valid work email."),
-  company: z.string().min(2, "Enter your company name."),
+  name: z.string().trim().min(2, "Enter your full name."),
+  email: z.string().trim().email("Enter a valid work email."),
+  company: z.string().trim().min(2, "Enter your company name."),
   password: z.string().min(8, "Use at least 8 characters."),
   terms: z.literal(true, {
     errorMap: () => ({ message: "Please accept the terms to continue." }),

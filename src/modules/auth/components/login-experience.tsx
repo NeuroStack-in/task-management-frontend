@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
-import { AuthError, DEMO_EMAIL } from "@/modules/auth/services/auth.service";
+import {
+  AuthError,
+  DEMO_ACCOUNTS,
+  DEMO_PASSWORD,
+} from "@/modules/auth/services/auth.service";
 import Image from "next/image";
 import { Logo } from "@/modules/marketing/logo";
 
@@ -228,21 +232,29 @@ export function LoginExperience() {
               <KeyRound className="size-[18px]" /> Continue with SSO
             </button>
 
-            <p className="mt-6 text-center text-xs" style={{ color: "var(--m-muted)" }}>
-              Demo:{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail(DEMO_EMAIL);
-                  setPassword("demo1234");
-                }}
-                className="font-medium hover:underline"
-                style={{ color: "var(--m-accent-ink)" }}
-              >
-                {DEMO_EMAIL}
-              </button>{" "}
-              · any password
-            </p>
+            <div className="mt-6 text-center text-xs" style={{ color: "var(--m-muted)" }}>
+              <p className="mb-2">Demo logins · any password</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {DEMO_ACCOUNTS.map((acct) => (
+                  <button
+                    key={acct.email}
+                    type="button"
+                    onClick={() => {
+                      setEmail(acct.email);
+                      setPassword(DEMO_PASSWORD);
+                    }}
+                    className="rounded-full border px-3 py-1 font-medium transition-colors hover:bg-black/5"
+                    style={{
+                      borderColor: "var(--m-border)",
+                      color: "var(--m-accent-ink)",
+                    }}
+                    title={acct.hint}
+                  >
+                    {acct.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <p className="mt-4 text-center text-sm" style={{ color: "var(--m-muted)" }}>
               Don&apos;t have an account?{" "}
