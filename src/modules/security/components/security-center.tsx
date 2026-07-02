@@ -813,7 +813,8 @@ export function SecurityCenter() {
               Devices currently signed in to your account.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2.5">
+          {/* ~3 sessions visible; the rest scroll so the card stays compact. */}
+          <CardContent className="max-h-56 space-y-2.5 overflow-y-auto">
             {SESSIONS.map((s) => {
               const Icon = s.icon
               return (
