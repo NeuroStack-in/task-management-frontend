@@ -6,12 +6,14 @@ import {
   ArrowRight,
   ArrowUpRight,
   CalendarCheck,
+  Check,
   ChevronDown,
   Clock,
   Download,
   FileText,
   FolderKanban,
   Gauge as GaugeIcon,
+  ListFilter,
   Lock,
   MonitorSmartphone,
   Search,
@@ -29,6 +31,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -157,7 +160,8 @@ export function ReportsExperimental() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<ReportDef | null>(null);
-  const [collection, setCollection] = useState<string>("all");
+  // Selected category collections (empty = show all).
+  const [cats, setCats] = useState<Set<string>>(new Set());
 
   const searching = query.trim().length > 0;
 
@@ -261,20 +265,28 @@ export function ReportsExperimental() {
   const shownGroups = SMART_GROUPS.filter(
     (g) => (collectionCounts[g.id] ?? 0) > 0,
   );
-  // If a search hides the active collection, fall back to "All".
-  const activeCollection =
-    collection !== "all" && !shownGroups.some((g) => g.id === collection)
-      ? "all"
-      : collection;
+
+  const toggleCat = (id: string) =>
+    setCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const visibleReports = useMemo(
-    () =>
-      matches.filter(
-        (r) =>
-          activeCollection === "all" || collectionOf(r) === activeCollection,
-      ),
-    [matches, activeCollection],
+    () => matches.filter((r) => cats.size === 0 || cats.has(collectionOf(r))),
+    [matches, cats],
   );
+
+  // Trigger summary label for the category dropdown.
+  const catLabel =
+    cats.size === 0
+      ? "All categories"
+      : cats.size === 1
+        ? (SMART_GROUPS.find((g) => g.id === [...cats][0])?.title ??
+          "1 category")
+        : `${cats.size} categories`;
 
   const selectedReports = useMemo(
     () => REPORTS.filter((r) => selected.has(r.id)),
@@ -348,32 +360,73 @@ export function ReportsExperimental() {
           </div>
         ) : null}
 
-        {/* Collection filter chips */}
-        <div className="flex flex-wrap items-center gap-2">
-          <CollectionChip
-            active={activeCollection === "all"}
-            onClick={() => setCollection("all")}
-            label="All"
-            count={matches.length}
-          />
-          {shownGroups.map((g) => (
-            <CollectionChip
-              key={g.id}
-              active={activeCollection === g.id}
-              onClick={() => setCollection(g.id)}
-              label={g.title}
-              count={collectionCounts[g.id] ?? 0}
-              icon={g.icon}
-            />
-          ))}
-        </div>
+        {/* Category filter — one dropdown, multi-select (no checkboxes) */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="sm" className="gap-2" />}
+          >
+            <ListFilter className="size-4" />
+            {catLabel}
+            <ChevronDown className="size-4 opacity-60" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="flex w-64 flex-col gap-0.5 p-1.5">
+            <DropdownMenuItem
+              closeOnClick={false}
+              onClick={() => setCats(new Set())}
+              className="justify-between gap-2 rounded-lg px-2 py-2"
+            >
+              <span className="font-medium">All categories</span>
+              <span className="flex items-center gap-2">
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {matches.length}
+                </span>
+                {cats.size === 0 ? (
+                  <Check className="size-4 text-primary" />
+                ) : (
+                  <span className="size-4" />
+                )}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {shownGroups.map((g) => {
+              const on = cats.has(g.id);
+              const Icon = g.icon;
+              return (
+                <DropdownMenuItem
+                  key={g.id}
+                  closeOnClick={false}
+                  onClick={() => toggleCat(g.id)}
+                  className={cn(
+                    "justify-between gap-2 rounded-lg px-2 py-2",
+                    on && "bg-accent/60",
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Icon className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate font-medium">{g.title}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {collectionCounts[g.id] ?? 0}
+                    </span>
+                    {on ? (
+                      <Check className="size-4 text-primary" />
+                    ) : (
+                      <span className="size-4" />
+                    )}
+                  </span>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {visibleReports.length === 0 ? (
           <EmptyResults
             query={query.trim()}
             onReset={() => {
               setQuery("");
-              setCollection("all");
+              setCats(new Set());
             }}
           />
         ) : (
@@ -618,47 +671,6 @@ function RadialScore({ value, color }: { value: number; color: string }) {
         </span>
       </div>
     </div>
-  );
-}
-
-/* ----------------------------- collection chip ---------------------------- */
-
-function CollectionChip({
-  active,
-  onClick,
-  label,
-  count,
-  icon: Icon,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count: number;
-  icon?: LucideIcon;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
-        active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-card text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {Icon ? <Icon className="size-4" /> : null}
-      {label}
-      <span
-        className={cn(
-          "rounded-full px-1.5 text-xs tabular-nums",
-          active ? "bg-white/20" : "bg-muted text-muted-foreground",
-        )}
-      >
-        {count}
-      </span>
-    </button>
   );
 }
 
