@@ -235,7 +235,9 @@ export function AccountSecuritySettings() {
           <p className="-mt-1 text-sm text-muted-foreground">
             Devices currently signed in to your account.
           </p>
-          <div className="space-y-2.5">
+          {/* Show ~3 sessions; the rest scroll within this fixed height so the
+              card never grows tall. */}
+          <div className="max-h-56 space-y-2.5 overflow-y-auto pr-1">
             {SESSIONS.map((s) => {
               const Icon = s.icon;
               return (
