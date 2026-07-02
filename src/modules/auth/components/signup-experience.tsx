@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { ArrowRight, Check, Eye, EyeOff, KeyRound } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { DEMO_EMAIL } from "@/modules/auth/services/auth.service";
@@ -72,72 +73,81 @@ export function SignupExperience() {
   };
 
   return (
-    <div className="m-root grid min-h-screen lg:grid-cols-[0.82fr_1fr]">
-      {/* ---- Brand panel ---- */}
+    <div className="m-root min-h-screen w-full lg:grid lg:grid-cols-[1fr_1.05fr]">
+      {/* ── Right: immersive brand panel (mirror of login) ── */}
       <aside
-        className="m-enter-left relative hidden flex-col justify-between overflow-hidden p-10 lg:flex xl:p-12"
+        className="relative order-none hidden overflow-hidden text-white lg:order-2 lg:flex lg:flex-col lg:justify-between lg:p-14"
         style={{
           background:
-            "linear-gradient(155deg, color-mix(in srgb, var(--m-accent), #000 8%), color-mix(in srgb, var(--m-accent), #000 60%))",
-          color: "#fff",
+            "radial-gradient(120% 90% at 88% 8%, rgba(47,157,146,0.42), transparent 52%)," +
+            "radial-gradient(110% 90% at 8% 96%, rgba(15,118,110,0.55), transparent 58%)," +
+            "linear-gradient(200deg, #07100f 0%, #0a1a18 55%, #071312 100%)",
         }}
       >
-        <div className="m-aurora" aria-hidden style={{ opacity: 0.5 }}>
-          <span style={{ width: "60%", height: "60%", left: "-10%", top: "0%", background: "#fff", mixBlendMode: "screen", animation: "m-drift-a 26s ease-in-out infinite" }} />
-          <span style={{ width: "55%", height: "55%", right: "-8%", bottom: "-6%", background: "var(--m-accent-2)", mixBlendMode: "screen", animation: "m-drift-c 30s ease-in-out infinite" }} />
-        </div>
-
-        <div className="relative">
-          <Link href="/">
-            <Logo className="[&_span]:text-white" />
-          </Link>
-        </div>
-
-        <div className="relative">
+        {/* Workforce illustration — fills the panel, people to the right */}
+        <div className="pointer-events-none absolute inset-0 z-0">
+          <Image
+            src="/logindesign.png"
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 1024px) 52vw, 0px"
+            className="object-cover object-right"
+          />
+          {/* left scrim so the headline stays legible over the artwork */}
           <div
-            className="mb-8 w-60 rounded-2xl border border-white/20 bg-white/12 p-4 backdrop-blur-md"
-            style={{ animation: "m-float 6s ease-in-out infinite" }}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-white/80">Team pulse</span>
-              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[0.65rem]">+4%</span>
-            </div>
-            <p className="mt-2 font-display text-3xl font-semibold">92%</p>
-            <svg viewBox="0 0 220 44" className="mt-2 w-full" fill="none">
-              <path d="M2 34 C 30 28, 45 12, 70 18 S 120 38, 150 20 S 200 8, 218 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
-            </svg>
-          </div>
-          <h2 className="m-display max-w-xs text-3xl leading-tight font-semibold">
-            Set your whole organization in motion.
-          </h2>
-          <ul className="mt-5 space-y-2.5 text-sm text-white/85">
-            {[
-              "Time tracking, attendance & timesheets",
-              "Activity & productivity insights",
-              "Projects, tasks & approvals in one place",
-              "Enterprise SSO, audit logs & roles",
-            ].map((t) => (
-              <li key={t} className="flex items-center gap-2.5">
-                <span className="flex size-5 items-center justify-center rounded-full bg-white/20">
-                  <Check className="size-3" />
-                </span>
-                {t}
-              </li>
-            ))}
-          </ul>
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(90deg, rgba(6,15,14,0.88) 0%, rgba(6,15,14,0.5) 38%, rgba(6,15,14,0.05) 66%, transparent 100%)",
+            }}
+          />
         </div>
 
-        <p className="relative text-xs text-white/60">© 2026 WorkPulse · SOC 2 · GDPR</p>
+        {/* Top — brand */}
+        <Link
+          href="/"
+          className="m-enter-up relative z-10 inline-flex w-fit text-white"
+          style={{ animationDelay: "60ms" }}
+        >
+          <Logo />
+        </Link>
+
+        {/* Middle — headline */}
+        <div
+          className="m-enter-right relative z-10 max-w-md"
+          style={{ animationDelay: "160ms" }}
+        >
+          <h2 className="m-display text-[2.6rem] font-semibold leading-[1.08] tracking-tight">
+            Set your whole
+            <br />
+            organization in motion.
+          </h2>
+          <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-white/70">
+            Time, attendance, tasks, and productivity — one calm place for the
+            whole team, from first clock-in to payroll-ready timesheets.
+          </p>
+        </div>
+
+        {/* Spacer keeps the headline vertically centred in the panel */}
+        <div aria-hidden />
       </aside>
 
-      {/* ---- Account form ---- */}
-      <main className="flex items-center justify-center p-6 sm:p-10">
-        <form onSubmit={submitAccount} className="m-enter-right w-full max-w-[440px]">
-          <Link href="/" className="mb-6 inline-block lg:hidden">
+      {/* ── Left: account form ── */}
+      <main
+        className="order-none flex min-h-screen items-center justify-center px-6 py-10 sm:px-10 lg:order-1"
+        style={{ background: "var(--m-bg)" }}
+      >
+        <form
+          onSubmit={submitAccount}
+          className="m-enter-left w-full max-w-[400px]"
+          style={{ animationDelay: "120ms" }}
+        >
+          <Link href="/" className="mb-9 inline-flex lg:hidden">
             <Logo />
           </Link>
 
-          <h1 className="m-display text-3xl font-semibold">Create your account</h1>
+          <h1 className="m-display text-2xl font-semibold">Create your account</h1>
           <p className="mt-1.5 text-sm" style={{ color: "var(--m-muted)" }}>
             Start a free WorkPulse workspace for your team.
           </p>

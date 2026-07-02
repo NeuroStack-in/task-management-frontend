@@ -537,7 +537,7 @@ function HealthScoreCard({
   ];
 
   return (
-    <div className="flex flex-col gap-5 self-start rounded-3xl border border-border bg-card p-6 shadow-soft xl:col-span-4">
+    <div className="flex flex-col gap-5 rounded-3xl border border-border bg-card p-6 shadow-soft xl:col-span-4">
       <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
         <Sparkles className="size-4 text-primary" /> AI workforce health
       </div>
@@ -555,7 +555,7 @@ function HealthScoreCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
+      <div className="mt-auto grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
         {drivers.map((d) => (
           <div key={d.label} className="min-w-0">
             <p className="truncate text-xs text-muted-foreground">{d.label}</p>
