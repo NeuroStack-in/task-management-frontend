@@ -22,9 +22,11 @@ import {
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
 import { initials } from "@/lib/format";
+import { isEmail, isWithinSize, MB } from "@/lib/validation";
 import { PageHeader } from "@/components/shared/page-header";
 import { Sparkline } from "@/components/shared/sparkline";
 import { Gauge } from "@/components/shared/gauge";
@@ -178,15 +180,26 @@ function RichProfile({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !file.type.startsWith("image/")) return;
+    if (!isWithinSize(file, 10 * MB)) {
+      toast.error("Image must be 10 MB or smaller.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => setPhoto(reader.result as string);
     reader.readAsDataURL(file);
   };
   const save = () => {
-    const patch: Partial<User> = {
-      name: form.name.trim() || user.name,
-      email: form.email.trim() || user.email,
-    };
+    const name = form.name.trim();
+    const email = form.email.trim();
+    if (!name) {
+      toast.error("Name can't be empty.");
+      return;
+    }
+    if (!isEmail(email)) {
+      toast.error("Enter a valid email address.");
+      return;
+    }
+    const patch: Partial<User> = { name, email };
     if (photo !== undefined) patch.avatarUrl = photo ?? undefined;
     updateUser(patch);
     setLocal({

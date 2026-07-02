@@ -1,8 +1,7 @@
-import type { Metadata } from "next";
-import { ReportsTab } from "@/modules/insights/components/reports-tab";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Reports · Analytics" };
-
+// The Reports tab was merged into /insights/ai-reports (gated by `reports:view`).
+// Redirect this legacy route there so it isn't reachable fail-open by direct URL.
 export default function Page() {
-  return <ReportsTab />;
+  redirect("/insights/ai-reports");
 }

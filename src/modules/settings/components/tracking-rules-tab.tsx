@@ -50,6 +50,7 @@ import {
   type UsageItem,
 } from "@/lib/mock-insights"
 import { initials } from "@/lib/format"
+import { isDomain } from "@/lib/validation"
 import { cn } from "@/lib/utils"
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -518,7 +519,7 @@ function DomainListCard({
   function add() {
     const val = input.trim().toLowerCase()
     if (!val) return
-    if (!val.includes(".")) {
+    if (!isDomain(val)) {
       toast.error("Enter a valid domain, e.g. example.com")
       return
     }

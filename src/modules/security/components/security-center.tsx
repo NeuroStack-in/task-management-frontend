@@ -13,6 +13,7 @@ import {
   Lock,
   Monitor,
   Plus,
+  QrCode,
   RefreshCw,
   ShieldCheck,
   Smartphone,
@@ -21,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { toast } from "sonner"
+import { QRCodeSVG } from "qrcode.react"
 import {
   Card,
   CardAction,
@@ -54,6 +56,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useAuthStore } from "@/stores/auth.store"
+import { isIpOrCidr } from "@/lib/validation"
 import {
   MFA_GRACE_OPTIONS,
   MFA_METHODS,
@@ -232,6 +235,10 @@ function IpAllowlist({
   function add() {
     const val = input.trim()
     if (!val) return
+    if (!isIpOrCidr(val)) {
+      toast.error("Enter a valid IPv4 address or CIDR, e.g. 203.0.113.0/24")
+      return
+    }
     if (!items.includes(val)) onChange([...items, val])
     setInput("")
   }
@@ -303,6 +310,19 @@ export function SecurityCenter() {
   const [setupOpen, setSetupOpen] = useState(false)
   const [otp, setOtp] = useState("")
   const [codesOpen, setCodesOpen] = useState(false)
+  // The QR encodes the secret, so keep it hidden until the user reveals it
+  // (avoids exposure in screen-shares / screenshots), mirroring AWS MFA setup.
+  const [qrShown, setQrShown] = useState(false)
+
+  // otpauth URI for authenticator apps (Google Authenticator, Authy, …). Built
+  // from the static demo secret + the signed-in email; deterministic (no
+  // Date.now/random). The secret is stored with spaces for readability — strip
+  // them for the URI.
+  const account = userEmail ?? "member@workpulse.app"
+  const otpauthUri =
+    `otpauth://totp/WorkPulse:${encodeURIComponent(account)}` +
+    `?secret=${TOTP_SECRET.replace(/\s/g, "")}` +
+    `&issuer=WorkPulse&algorithm=SHA1&digits=6&period=30`
 
   function verifyMfa() {
     if (otp.length !== 6) return
@@ -813,7 +833,8 @@ export function SecurityCenter() {
               Devices currently signed in to your account.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2.5">
+          {/* ~3 sessions visible; the rest scroll so the card stays compact. */}
+          <CardContent className="max-h-56 space-y-2.5 overflow-y-auto">
             {SESSIONS.map((s) => {
               const Icon = s.icon
               return (
@@ -920,6 +941,7 @@ export function SecurityCenter() {
           if (!v) {
             setSetupOpen(false)
             setOtp("")
+            setQrShown(false)
           }
         }}
       >
@@ -927,13 +949,53 @@ export function SecurityCenter() {
           <DialogHeader>
             <DialogTitle>Set up multi-factor authentication</DialogTitle>
             <DialogDescription>
-              Add the secret to your authenticator app, then enter the 6-digit
-              code it shows.
+              Scan the QR code with your authenticator app, then enter the
+              6-digit code it shows.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Scannable QR, hidden until revealed (it encodes the secret). When
+                shown it uses high-contrast literal colours (not theme tokens) so
+                it stays white-on-black and scannable in dark mode too. */}
+            <div className="flex flex-col items-center gap-2">
+              {qrShown ? (
+                <button
+                  type="button"
+                  onClick={() => setQrShown(false)}
+                  aria-label="Hide QR code"
+                  title="Click to hide"
+                  className="rounded-lg border border-border bg-white p-3 transition hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
+                >
+                  <QRCodeSVG
+                    value={otpauthUri}
+                    size={192}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#0a0a0a"
+                  />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setQrShown(true)}
+                  className="flex size-[218px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                >
+                  <QrCode className="size-8" />
+                  <span className="text-sm font-medium">Show QR code</span>
+                </button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {qrShown
+                  ? "Scan with Google Authenticator, Authy, or 1Password · click to hide"
+                  : "Reveal the code to scan it with your authenticator app."}
+              </p>
+            </div>
+
+            {/* Manual fallback for anyone who can't scan */}
             <div className="rounded-lg border border-border bg-muted/40 p-3 text-center">
-              <p className="text-xs text-muted-foreground">Authenticator secret</p>
+              <p className="text-xs text-muted-foreground">
+                Can&apos;t scan? Enter this code manually
+              </p>
               <p className="mt-1 font-mono text-sm font-semibold tracking-widest">
                 {TOTP_SECRET}
               </p>
