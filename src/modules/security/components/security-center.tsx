@@ -11,10 +11,12 @@ import {
   KeyRound,
   Laptop,
   Lock,
+  Monitor,
   Plus,
   RefreshCw,
   ShieldCheck,
   Smartphone,
+  Tablet,
   X,
   type LucideIcon,
 } from "lucide-react"
@@ -95,6 +97,20 @@ const SESSIONS: SessionRow[] = [
     location: "Bengaluru, IN",
     lastActive: "2 days ago",
     icon: Smartphone,
+  },
+  {
+    id: "s3",
+    device: "Firefox on macOS",
+    location: "Mumbai, IN",
+    lastActive: "5 days ago",
+    icon: Monitor,
+  },
+  {
+    id: "s4",
+    device: "Chrome on iPad",
+    location: "Hyderabad, IN",
+    lastActive: "1 week ago",
+    icon: Tablet,
   },
 ]
 
@@ -352,10 +368,19 @@ export function SecurityCenter() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Security Center"
-        description="Authentication, single sign-on, session policies, and security activity."
-      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <PageHeader
+          title="Security Center"
+          description="Authentication, single sign-on, session policies, and security activity."
+        />
+        <Button
+          variant="outline"
+          className="shrink-0 gap-1.5"
+          onClick={() => toast.success("Security report downloaded")}
+        >
+          <Download className="size-4" /> Download report
+        </Button>
+      </div>
 
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
@@ -366,9 +391,8 @@ export function SecurityCenter() {
         </div>
       )}
 
-      {/* ── Overview strip (quiet, at-a-glance only) + report action ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="grid flex-1 grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-y-0">
+      {/* ── At-a-glance overview strip ── */}
+      <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-y-0">
         {[
           { label: "Security score", value: `${SECURITY_OVERVIEW.securityScore}/100` },
           { label: "MFA adoption", value: `${adoptionPct}%` },
@@ -382,14 +406,6 @@ export function SecurityCenter() {
             </p>
           </div>
         ))}
-        </div>
-        <Button
-          variant="outline"
-          className="shrink-0"
-          onClick={() => toast.success("Security report downloaded")}
-        >
-          <Download className="size-4" /> Download report
-        </Button>
       </div>
 
       {/* ── Multi-factor authentication ── */}
@@ -668,55 +684,6 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
-      {/* ── Active sessions (your devices) ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Active Sessions</CardTitle>
-          <CardDescription>
-            Devices currently signed in to your account.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2.5">
-          {SESSIONS.map((s) => {
-            const Icon = s.icon
-            return (
-              <div
-                key={s.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Icon className="size-4" />
-                  </span>
-                  <div>
-                    <p className="flex items-center gap-2 text-sm font-medium">
-                      {s.device}
-                      {s.current ? (
-                        <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
-                          This device
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {s.location} · {s.lastActive}
-                    </p>
-                  </div>
-                </div>
-                {!s.current ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => toast.success(`Signed out ${s.device}`)}
-                  >
-                    Sign out
-                  </Button>
-                ) : null}
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
-
       {/* ── Password policy ── */}
       <Card>
         <CardHeader>
@@ -776,20 +743,21 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
-      {/* ── Change your password (personal) ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="size-4 text-muted-foreground" />
-            Change Password
-          </CardTitle>
-          <CardDescription>
-            Update the password for your own account. Use at least 8 characters.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-            <div className="grid flex-1 gap-3 sm:grid-cols-3">
+      {/* ── Change password + active sessions (split view) ── */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Change your password (personal) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="size-4 text-muted-foreground" />
+              Change Password
+            </CardTitle>
+            <CardDescription>
+              Update the password for your own account. Use at least 8 characters.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <Label htmlFor="cur-pw">Current password</Label>
@@ -830,17 +798,62 @@ export function SecurityCenter() {
                   }
                 />
               </div>
+              <Button size="sm" onClick={savePassword}>
+                Update password
+              </Button>
             </div>
-            <Button
-              size="sm"
-              onClick={savePassword}
-              className="shrink-0 sm:mb-0.5"
-            >
-              Update password
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        {/* Active sessions (your devices) */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Active Sessions</CardTitle>
+            <CardDescription>
+              Devices currently signed in to your account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            {SESSIONS.map((s) => {
+              const Icon = s.icon
+              return (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <Icon className="size-4" />
+                    </span>
+                    <div>
+                      <p className="flex items-center gap-2 text-sm font-medium">
+                        {s.device}
+                        {s.current ? (
+                          <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
+                            This device
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {s.location} · {s.lastActive}
+                      </p>
+                    </div>
+                  </div>
+                  {!s.current ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => toast.success(`Signed out ${s.device}`)}
+                    >
+                      Sign out
+                    </Button>
+                  ) : null}
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* ── Security activity summary (full log lives in Audit Logs) ── */}
       <Card className="shadow-none">

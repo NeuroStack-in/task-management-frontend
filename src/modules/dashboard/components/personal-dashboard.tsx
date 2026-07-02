@@ -8,6 +8,7 @@ import {
   ListChecks,
   FolderKanban,
   ArrowRight,
+  CheckCircle2,
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card } from "@/components/ui/card";
@@ -113,47 +114,56 @@ export function PersonalDashboard() {
           hint="this week"
           trend={trend}
           featured
+          href="/time-tracking"
         />
         <StatCard
           label="Hours Today"
           value={hoursToday.toFixed(1)}
           icon={Clock}
           hint={`${weekHours}h this week`}
+          href="/time-tracking"
         />
         <StatCard
           label="Open Tasks"
           value={openTasks.length}
           icon={ListChecks}
           hint={`${doneCount} completed`}
+          href="/projects"
         />
         <StatCard
           label="My Projects"
           value={myProjects.length}
           icon={FolderKanban}
           hint="you're a member of"
+          href="/projects"
         />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
         {/* My tasks */}
-        <Card className="gap-0 p-0 xl:col-span-2">
+        <Card className="gap-0 p-0 [--card-spacing:0px] xl:col-span-2">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">
               My tasks
             </h2>
             <Link
               href="/projects"
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
             >
               View all <ArrowRight className="size-3.5" />
             </Link>
           </div>
           {openTasks.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-muted-foreground">
-              You&apos;re all caught up — no open tasks assigned to you.
-            </p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center">
+              <CheckCircle2 className="size-6 text-success/70" />
+              <p className="text-sm font-medium">You&apos;re all caught up</p>
+              <p className="text-xs text-muted-foreground">
+                No open tasks assigned to you right now.
+              </p>
+            </div>
           ) : (
-            <ul className="divide-y divide-border">
+            <div className="flex flex-1 flex-col">
+              <ul className="divide-y divide-border">
               {openTasks.slice(0, 6).map((t) => {
                 const project = projectById.get(t.projectId);
                 const meta = TASK_STATUS_META[t.status as TaskStatus];
@@ -170,28 +180,49 @@ export function PersonalDashboard() {
                     <span className="min-w-0 flex-1 truncate font-medium">
                       {t.title}
                     </span>
-                    <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                    <span className="hidden w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:inline">
                       {formatDue(t.dueDate)}
                     </span>
-                    <Badge className={cn("shrink-0 font-medium", TONE[meta.tone])}>
-                      {meta.label}
-                    </Badge>
+                    <span className="flex w-28 shrink-0 justify-end">
+                      <Badge className={cn("font-medium", TONE[meta.tone])}>
+                        {meta.label}
+                      </Badge>
+                    </span>
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+              {/* Fill any leftover space (card stretches to match "This week")
+                  with a friendly note instead of blank space. */}
+              <div className="flex flex-1 items-center justify-center gap-2 px-5 py-4 text-center text-sm text-muted-foreground">
+                {openTasks.length > 6 ? (
+                  <>
+                    <ListChecks className="size-4 shrink-0" />
+                    <span>
+                      {openTasks.length - 6} more open{" "}
+                      {openTasks.length - 6 === 1 ? "task" : "tasks"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="size-4 shrink-0 text-success/70" />
+                    <span>That&apos;s all your open tasks right now.</span>
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </Card>
 
         {/* This week's attendance */}
-        <Card className="gap-0 p-0">
+        <Card className="gap-0 p-0 [--card-spacing:0px]">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">
               This week
             </h2>
             <Link
               href="/attendance"
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
             >
               Details <ArrowRight className="size-3.5" />
             </Link>
@@ -222,14 +253,14 @@ export function PersonalDashboard() {
         </Card>
 
         {/* My projects */}
-        <Card className="gap-0 p-0 xl:col-span-3">
+        <Card className="gap-0 p-0 [--card-spacing:0px] xl:col-span-3">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">
               My projects
             </h2>
             <Link
               href="/projects"
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
             >
               View all <ArrowRight className="size-3.5" />
             </Link>

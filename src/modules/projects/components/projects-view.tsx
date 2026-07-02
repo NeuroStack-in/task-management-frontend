@@ -213,7 +213,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
         description={
           selfScoped
             ? "Projects you're a member of — status, progress, and your tasks."
-            : "Every project across the organization — status, budget health, and delivery at a glance."
+            : "Every project across the organization — status, progress, and delivery at a glance."
         }
       />
 

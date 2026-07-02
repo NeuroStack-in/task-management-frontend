@@ -6,9 +6,8 @@ import {
   Users,
   Activity,
   Camera,
-  FileBarChart,
   CheckCheck,
-  Sparkles,
+  WandSparkles,
   LineChart,
   Mail,
   Bell,
@@ -130,18 +129,12 @@ export const INSIGHTS_TABS: NavItem[] = [
     description: "Screenshot gallery, timeline, and risk analysis.",
   },
   {
-    label: "AI Insights",
-    href: "/insights/anomalies",
-    icon: Sparkles,
-    permission: "ai:view",
-    description: "AI summaries, recommendations, and people who need attention.",
-  },
-  {
-    label: "Reports",
-    href: "/insights/reports",
-    icon: FileBarChart,
+    label: "AI Insights & Reports",
+    href: "/insights/ai-reports",
+    icon: WandSparkles,
     permission: "reports:view",
-    description: "Productivity, time, project, and AI reports with export.",
+    description:
+      "AI briefing, workforce health, attention signals, and exportable reports in one place.",
   },
 ];
 

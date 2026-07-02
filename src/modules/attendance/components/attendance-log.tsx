@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { users } from "@/lib/data";
 import { initials } from "@/lib/format";
+import { useDataScope } from "@/hooks/use-data-scope";
 import { type AttendanceStatus } from "@/lib/mock-metrics";
 import {
   dayRecordFor,
@@ -115,23 +116,27 @@ export function AttendanceLog({
   dept: string;
 }) {
   const router = useRouter();
+  const { ids: scopeIds } = useDataScope();
 
   const allRows: Row[] = useMemo(
     () =>
-      users.map((u) => {
-        const a = dayRecordFor(u.id, date.year, date.month, date.day);
-        return {
-          id: u.id,
-          name: u.name,
-          avatarUrl: u.avatarUrl,
-          department: u.department,
-          status: a.status,
-          clockIn: a.clockIn,
-          clockOut: a.clockOut,
-          hours: a.hours,
-        };
-      }),
-    [date],
+      users
+        // Team leads only see their own team's attendance; org roles see all.
+        .filter((u) => scopeIds === null || scopeIds.has(u.id))
+        .map((u) => {
+          const a = dayRecordFor(u.id, date.year, date.month, date.day);
+          return {
+            id: u.id,
+            name: u.name,
+            avatarUrl: u.avatarUrl,
+            department: u.department,
+            status: a.status,
+            clockIn: a.clockIn,
+            clockOut: a.clockOut,
+            hours: a.hours,
+          };
+        }),
+    [date, scopeIds],
   );
 
   const [query, setQuery] = useState("");

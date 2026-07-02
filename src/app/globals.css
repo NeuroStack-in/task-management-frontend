@@ -1361,9 +1361,28 @@ input[type="date"]::-webkit-inner-spin-button {
   display: none;
 }
 
-/* Hide the native scrollbar's up/down arrow buttons app-wide (Chromium). On
-   some Windows/Chrome configs these render as a floating ▲/▼ widget at the edge
-   of a scroll area; the track + thumb stay so scrolling is unaffected. */
+/* App-wide slim scrollbar. Chromium only honours ::-webkit-scrollbar-button
+   once the scrollbar itself is customised, so defining the scrollbar/track/thumb
+   is what actually removes the floating ▲/▼ arrow-button widget that some
+   Windows/Chrome configs render at the edge of a scroll area. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
 ::-webkit-scrollbar-button {
   display: none;
   width: 0;

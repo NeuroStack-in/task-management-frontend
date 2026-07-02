@@ -17,11 +17,18 @@ import { cn } from "@/lib/utils"
 interface PhotoEditorProps {
   open: boolean
   onClose: () => void
+  /**
+   * When provided, the chosen image is applied immediately (as a data URL) —
+   * used by the employee's editable profile. Without it the dialog is a
+   * backend-pending stub.
+   */
+  onApply?: (dataUrl: string) => void
 }
 
-export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
+export function PhotoEditor({ open, onClose, onApply }: PhotoEditorProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [file, setFile] = useState<File | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
@@ -29,6 +36,7 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
   useEffect(() => {
     if (!open) {
       setPreview(null)
+      setFile(null)
       setFileName(null)
       setDragOver(false)
     }
@@ -36,9 +44,25 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
 
   function loadFile(file: File) {
     if (!file.type.startsWith("image/")) return
+    setFile(file)
     setFileName(file.name)
     const url = URL.createObjectURL(file)
     setPreview(url)
+  }
+
+  function apply() {
+    if (!file) return
+    if (!onApply) {
+      toast.info("Photo upload will be available once the backend is connected.")
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      onApply(reader.result as string)
+      toast.success("Profile photo updated")
+      onClose()
+    }
+    reader.readAsDataURL(file)
   }
 
   function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -65,7 +89,9 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
         <DialogHeader>
           <DialogTitle>Upload profile photo</DialogTitle>
           <DialogDescription>
-            Photo upload will be saved to AWS S3 once the backend is connected.
+            {onApply
+              ? "Choose an image to use as your profile photo."
+              : "Photo upload will be saved to AWS S3 once the backend is connected."}
           </DialogDescription>
         </DialogHeader>
 
@@ -140,15 +166,9 @@ export function PhotoEditor({ open, onClose }: PhotoEditorProps) {
         />
 
         <DialogFooter showCloseButton>
-          <Button
-            disabled={!preview}
-            className="gap-1.5"
-            onClick={() =>
-              toast.info("Photo upload will be available once the backend is connected.")
-            }
-          >
+          <Button disabled={!preview} className="gap-1.5" onClick={apply}>
             <Upload className="size-3.5" />
-            Upload photo
+            {onApply ? "Save photo" : "Upload photo"}
           </Button>
         </DialogFooter>
       </DialogContent>

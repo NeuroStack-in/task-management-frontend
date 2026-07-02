@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Lock } from "lucide-react";
 import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { InPaneHeaderContext } from "@/components/shared/page-header";
@@ -23,16 +23,34 @@ interface RailGroup {
   items: RailItem[];
 }
 
-/** Personal account sections — always available, rendered in-pane. Sourced
- * from the shared catalog so global search and the rail stay in sync. */
-const ACCOUNT_GROUP: RailGroup = {
-  label: "Account",
-  items: ACCOUNT_SECTIONS.map((it) => ({
-    label: it.label,
-    href: it.href,
-    icon: it.icon,
-  })),
-};
+/**
+ * Personal account sections, rendered in-pane. Sourced from the shared catalog
+ * (kept in sync with global search). Billing shows only for roles that can view
+ * billing (Owner/Admin/Finance). The personal "Security" entry (after Profile)
+ * shows for roles WITHOUT the org Security Center — Owner/Admin reach security
+ * there instead.
+ */
+function accountGroup(opts: {
+  canBilling: boolean;
+  canSecurity: boolean;
+}): RailGroup {
+  const items: RailItem[] = [];
+  for (const it of ACCOUNT_SECTIONS) {
+    // Billing is org-level — only roles that can view billing get it.
+    if (it.href === "/settings/billing" && !opts.canBilling) continue;
+    items.push({ label: it.label, href: it.href, icon: it.icon });
+    // Personal login & security sits after Profile for roles WITHOUT the org
+    // Security Center (Owner/Admin reach security there instead).
+    if (it.href === "/settings/profile" && !opts.canSecurity) {
+      items.push({
+        label: "Security",
+        href: "/settings/login-security",
+        icon: Lock,
+      });
+    }
+  }
+  return { label: "Account", items };
+}
 
 export default function SettingsLayout({
   children,
@@ -62,7 +80,13 @@ export default function SettingsLayout({
       })),
   })).filter((group) => group.items.length > 0);
 
-  const groups: RailGroup[] = [ACCOUNT_GROUP, ...adminGroups];
+  const groups: RailGroup[] = [
+    accountGroup({
+      canBilling: can("billing:view"),
+      canSecurity: can("security:view"),
+    }),
+    ...adminGroups,
+  ];
 
   return (
     <div className="flex flex-col gap-6 pt-1 lg:h-[calc(100vh-7rem)] lg:flex-row lg:gap-10">

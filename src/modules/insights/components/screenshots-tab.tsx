@@ -6,6 +6,7 @@ import {
   Camera,
   ChevronRight,
   Flag,
+  Maximize2,
   Search,
   Sparkles,
   Users,
@@ -14,6 +15,13 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -24,9 +32,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { useDataScope } from "@/hooks/use-data-scope";
 import { initials } from "@/lib/format";
 import {
-  SCREENSHOTS,
   SCREENSHOT_EMPLOYEES,
   dayLabel,
   type EmployeeShots,
@@ -78,43 +86,44 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [flag, setFlag] = useState<"all" | "flagged">("all");
+  const { inScope } = useDataScope();
 
-  const totalCaptures = SCREENSHOTS.length;
-  const totalFlagged = SCREENSHOT_EMPLOYEES.reduce((a, e) => a + e.flagged, 0);
-  const avgActivity = Math.round(
-    SCREENSHOT_EMPLOYEES.reduce((a, e) => a + e.avgActivity, 0) /
-      SCREENSHOT_EMPLOYEES.length,
+  // Team leads only see their own team's monitored people; org roles see all.
+  const scoped = SCREENSHOT_EMPLOYEES.filter((e) => inScope(e.user.id));
+
+  const totalCaptures = scoped.reduce((a, e) => a + e.total, 0);
+  const totalFlagged = scoped.reduce((a, e) => a + e.flagged, 0);
+  const avgActivity = scoped.length
+    ? Math.round(
+        scoped.reduce((a, e) => a + e.avgActivity, 0) / scoped.length,
+      )
+    : 0;
+
+  const departments = Array.from(
+    new Set(scoped.map((e) => e.user.department)),
+  ).sort();
+
+  const q = query.trim().toLowerCase();
+  const employees = scoped.filter(
+    (e) =>
+      (dept === "all" || e.user.department === dept) &&
+      (flag === "all" || e.flagged > 0) &&
+      (q === "" || e.user.name.toLowerCase().includes(q)),
   );
-
-  const departments = useMemo(
-    () =>
-      Array.from(
-        new Set(SCREENSHOT_EMPLOYEES.map((e) => e.user.department)),
-      ).sort(),
-    [],
-  );
-
-  const employees = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return SCREENSHOT_EMPLOYEES.filter(
-      (e) =>
-        (dept === "all" || e.user.department === dept) &&
-        (flag === "all" || e.flagged > 0) &&
-        (q === "" || e.user.name.toLowerCase().includes(q)),
-    );
-  }, [query, dept, flag]);
 
   return (
     <div className="space-y-5">
       <AiReportCard
         title="AI screenshot report"
-        summary={`Across ${SCREENSHOT_EMPLOYEES.length} monitored employees, ${totalCaptures.toLocaleString()} screenshots were captured. ${totalFlagged} ${
+        summary={`Across ${scoped.length} monitored ${
+          scoped.length === 1 ? "employee" : "employees"
+        }, ${totalCaptures.toLocaleString()} screenshots were captured. ${totalFlagged} ${
           totalFlagged === 1 ? "was" : "were"
         } marked for review for distracting apps or low activity${
           totalFlagged ? " — review those first" : ""
         }. Average on-screen activity sits at ${avgActivity}%.`}
         metrics={[
-          { label: "Monitored", value: SCREENSHOT_EMPLOYEES.length },
+          { label: "Monitored", value: scoped.length },
           { label: "Total captures", value: totalCaptures.toLocaleString() },
           { label: "Needs review", value: totalFlagged },
           { label: "Avg activity", value: `${avgActivity}%` },
@@ -136,16 +145,23 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
         </Field>
 
         <Field label="Department">
-          <div className="flex h-8 flex-wrap items-center gap-1.5">
-            <Pill active={dept === "all"} onClick={() => setDept("all")}>
-              All
-            </Pill>
-            {departments.map((d) => (
-              <Pill key={d} active={dept === d} onClick={() => setDept(d)}>
-                {d}
-              </Pill>
-            ))}
-          </div>
+          <Select value={dept} onValueChange={(v) => setDept(v as string)}>
+            <SelectTrigger className="h-8 w-48" aria-label="Department">
+              <SelectValue>
+                {(v) =>
+                  v == null || v === "all" ? "All departments" : String(v)
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              <SelectItem value="all">All departments</SelectItem>
+              {departments.map((d) => (
+                <SelectItem key={d} value={d}>
+                  {d}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
 
         <fieldset className="flex flex-col gap-1.5">
@@ -191,31 +207,6 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
   );
 }
 
-function Pill({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-        active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 function EmployeeCard({
   emp,
   onOpen,
@@ -230,12 +221,15 @@ function EmployeeCard({
     >
       {/* Cover = latest capture */}
       <div className="relative aspect-[16/10] overflow-hidden">
-        <FauxCapture />
+        <CaptureImage
+          seed={emp.latest.id}
+          alt={`${emp.user.name} — ${emp.latest.app}`}
+        />
         <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
           {emp.latest.app}
         </div>
         {emp.flagged > 0 ? (
-          <Badge className="absolute right-2 top-2 border-destructive/20 bg-destructive/12 text-destructive backdrop-blur-sm">
+          <Badge className="absolute right-2 top-2 border-transparent bg-destructive text-white shadow-sm">
             <Flag className="size-3" /> {emp.flagged}
           </Badge>
         ) : null}
@@ -493,6 +487,33 @@ function FauxCapture() {
   );
 }
 
+/** Number of mock screenshots in public/screenshots (ss-1.png … ss-N.png). */
+const CAPTURE_COUNT = 10;
+
+/** Deterministic mock capture image — cycles through the local screenshot set
+ *  in public/screenshots, keyed by id so each capture is stable. */
+function captureUrl(seed: string): string {
+  const hash = [...seed].reduce((sum, c) => sum + c.charCodeAt(0), 0);
+  return `/screenshots/ss-${(hash % CAPTURE_COUNT) + 1}.png`;
+}
+
+/** A real screenshot image with the skeleton behind it as a load/offline
+ *  fallback. Fills its (aspect-ratio) parent. */
+function CaptureImage({ seed, alt }: { seed: string; alt: string }) {
+  return (
+    <>
+      <FauxCapture />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={captureUrl(seed)}
+        alt={alt}
+        loading="lazy"
+        className="absolute inset-0 size-full object-cover"
+      />
+    </>
+  );
+}
+
 function ShotCard({
   shot,
   onOpen,
@@ -511,7 +532,7 @@ function ShotCard({
       onClick={onOpen}
     >
       <div className="relative aspect-[16/10] overflow-hidden">
-        <FauxCapture />
+        <CaptureImage seed={shot.id} alt={`${shot.app} screenshot`} />
         {shot.flagged ? (
           <div className="pointer-events-none absolute inset-0 bg-destructive/10" />
         ) : null}
@@ -519,7 +540,7 @@ function ShotCard({
           {shot.app}
         </div>
         {shot.flagged ? (
-          <Badge className="absolute right-2 top-2 border-destructive/20 bg-destructive/12 text-destructive backdrop-blur-sm">
+          <Badge className="absolute right-2 top-2 border-transparent bg-destructive text-white shadow-sm">
             <Flag className="size-3" /> Needs review
           </Badge>
         ) : null}
@@ -551,8 +572,18 @@ function Lightbox({
   onClose: () => void;
 }) {
   const reason = shot ? flagReason(shot) : null;
+  const [full, setFull] = useState(false);
   return (
-    <Dialog open={!!shot} onOpenChange={(open) => !open && onClose()}>
+    <>
+    <Dialog
+      open={!!shot}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+          setFull(false);
+        }
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         {shot ? (
           <>
@@ -570,9 +601,19 @@ function Lightbox({
               </DialogDescription>
             </DialogHeader>
 
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFull(true)}
+              >
+                <Maximize2 className="size-4" /> View full screenshot
+              </Button>
+            </div>
+
             {/* Full capture */}
             <div className="relative aspect-[16/10] overflow-hidden rounded-lg border">
-              <FauxCapture />
+              <CaptureImage seed={shot.id} alt={`${shot.app} screenshot`} />
               <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
                 {shot.app}
               </div>
@@ -616,5 +657,26 @@ function Lightbox({
         ) : null}
       </DialogContent>
     </Dialog>
+
+    {/* Full-screen viewer — opens the capture large, in-app, with a close button */}
+    <Dialog open={full} onOpenChange={setFull}>
+      <DialogContent className="max-w-[96vw] border-0 bg-transparent p-0 shadow-none sm:max-w-5xl">
+        <DialogHeader className="sr-only">
+          <DialogTitle>Full screenshot</DialogTitle>
+          <DialogDescription>
+            {shot ? `${shot.app} — ${shot.user.name}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+        {shot ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={captureUrl(shot.id)}
+            alt={`${shot.app} screenshot`}
+            className="max-h-[85vh] w-full rounded-lg object-contain"
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

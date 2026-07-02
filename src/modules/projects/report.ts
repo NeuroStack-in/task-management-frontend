@@ -6,9 +6,7 @@ import {
   TASK_STATUS_ORDER,
 } from "./types";
 import {
-  budgetHealth,
   formatDate,
-  formatMoney,
   taskCounts,
   type UserMini,
 } from "./lib";
@@ -30,7 +28,6 @@ export async function generateProjectReportPdf(
   const right = pageW - 48;
   let y = 56;
 
-  const health = budgetHealth(project);
   const counts = taskCounts(tasks);
   const done = counts.done;
   const lead = userMap[project.leadUserId]?.name ?? "—";
@@ -86,10 +83,6 @@ export async function generateProjectReportPdf(
   kv("Manager", manager);
   kv("Timeline", `${formatDate(project.startDate)} – ${formatDate(project.dueDate)}`);
   kv("Progress", `${project.progress}%  (${done} of ${tasks.length} tasks done)`);
-  kv(
-    "Budget",
-    `${formatMoney(project.spent)} / ${formatMoney(project.budget)}  ·  ${health.label}`,
-  );
   kv("Team size", `${project.memberIds.length} members`);
   line(4);
   rule();

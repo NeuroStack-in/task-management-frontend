@@ -49,6 +49,8 @@ import {
 import { EmptyState } from "@/components/shared/empty-state"
 import { useAssistantStore } from "@/stores/assistant.store"
 import { usePageTitle } from "@/stores/page-header.store"
+import { usePermissions } from "@/hooks/use-permissions"
+import type { PermissionId } from "@/types/rbac"
 import {
   FAQS,
   HELP_ARTICLES,
@@ -198,7 +200,40 @@ const WALKTHROUGHS = [
   },
 ] as const
 
-const POPULAR_SEARCHES = ["Time tracking", "Screenshots", "Reports", "Billing"]
+const POPULAR_SEARCHES: { term: string; category: HelpCategory }[] = [
+  { term: "Time tracking", category: "time-tracking" },
+  { term: "Timesheets", category: "time-tracking" },
+  { term: "MFA", category: "security" },
+  { term: "Screenshots", category: "monitoring" },
+  { term: "Reports", category: "reports" },
+  { term: "Billing", category: "billing" },
+]
+
+/**
+ * Role-based visibility. A category with a `null` permission is visible to
+ * everyone; the rest require the matching permission — so employees (who don't
+ * hold settings/reports/billing/integrations access) never see admin help
+ * content. The support ticket section stays common to all roles.
+ */
+const CATEGORY_PERMISSION: Record<HelpCategory, PermissionId | null> = {
+  "getting-started": null,
+  "time-tracking": null,
+  security: null,
+  general: null,
+  monitoring: "settings:view",
+  reports: "reports:view",
+  billing: "billing:view",
+  integrations: "integrations:view",
+}
+
+/** Same idea for guided walkthroughs (keyed by their own ids). */
+const WALKTHROUGH_PERMISSION: Record<string, PermissionId | null> = {
+  "getting-started": null,
+  "time-tracking": null,
+  insights: "reports:view",
+  "team-management": "employees:view",
+  "monitoring-setup": "settings:view",
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Help page root
@@ -210,9 +245,11 @@ export function HelpPage() {
   const [selectedArticle, setSelectedArticle] = useState<HelpArticle | null>(null)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [tickets, setTickets] = useState<SupportTicket[]>([...MOCK_TICKETS])
+  const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
   const askAi = () => openAssistant(search.trim() || undefined)
+  const { can } = usePermissions()
 
   // Show the page title in the top navbar (this page has no PageHeader).
   usePageTitle("Help Center", "Find answers, guides, and support.")
@@ -246,8 +283,23 @@ export function HelpPage() {
     toast.success(`Ticket submitted — ${id}`)
   }
 
-  // Filtered articles
+  // Role-based visibility — admin-only categories/content are filtered out.
+  const canCategory = (c: HelpCategory) => {
+    const perm = CATEGORY_PERMISSION[c]
+    return perm === null || can(perm)
+  }
+  const visibleCategories = HELP_CATEGORIES.filter((c) => canCategory(c.key))
+  const visibleVideos = VIDEO_TUTORIALS.filter((v) => canCategory(v.category))
+  const visibleWalkthroughs = WALKTHROUGHS.filter((t) => {
+    const perm = WALKTHROUGH_PERMISSION[t.id]
+    return !perm || can(perm)
+  })
+  const visibleFaqs = FAQS.filter((f) => !f.permission || can(f.permission))
+  const visiblePopular = POPULAR_SEARCHES.filter((p) => canCategory(p.category))
+
+  // Filtered articles (also gated by role via canCategory)
   const filteredArticles = HELP_ARTICLES.filter((a) => {
+    if (!canCategory(a.category)) return false
     const matchesSearch =
       !search ||
       a.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -259,29 +311,41 @@ export function HelpPage() {
   return (
     <div className="space-y-10">
       {/* ── Hero ── */}
-      <section className="relative overflow-hidden rounded-[1.6rem] bg-feature px-6 py-12 text-center shadow-xl shadow-primary/15 ring-1 ring-inset ring-white/10 sm:py-16">
-        {/* Depth: a bright crown highlight fading into a deeper base. */}
+      <section className="relative isolate overflow-hidden rounded-[1.6rem] bg-feature px-6 py-10 text-center ring-1 ring-inset ring-white/15 duration-700 animate-in fade-in slide-in-from-bottom-2 sm:py-14">
+        {/* Static teal base (bg-feature) — no gradient. */}
+        {/* Dotted texture, anchored to the left & right edges (fades to centre). */}
         <div
-          className="pointer-events-none absolute inset-0"
+          className="pointer-events-none absolute inset-0 opacity-60"
           style={{
             backgroundImage:
-              "radial-gradient(120% 90% at 50% -10%, rgba(255,255,255,0.20), rgba(255,255,255,0) 55%), linear-gradient(180deg, rgba(0,0,0,0) 38%, rgba(0,0,0,0.34) 100%)",
+              "radial-gradient(rgba(255,255,255,0.55) 1px, transparent 1.6px)",
+            backgroundSize: "20px 20px",
+            maskImage:
+              "linear-gradient(90deg, black 0%, black 9%, transparent 30%, transparent 70%, black 91%, black 100%)",
+            WebkitMaskImage:
+              "linear-gradient(90deg, black 0%, black 9%, transparent 30%, transparent 70%, black 91%, black 100%)",
           }}
         />
-        {/* Soft top glow. */}
-        <div className="pointer-events-none absolute -top-28 left-1/2 size-80 -translate-x-1/2 rounded-full bg-white/10 blur-3xl" />
-        {/* Barely-there grid texture, masked to fade out toward the edges. */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.05]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.9) 1px, transparent 1px)",
-            backgroundSize: "48px 48px",
-            maskImage: "radial-gradient(80% 70% at 50% 0%, black, transparent)",
-            WebkitMaskImage: "radial-gradient(80% 70% at 50% 0%, black, transparent)",
-          }}
-        />
-
+        {/* Soft flowing wave lines. */}
+        <svg
+          aria-hidden
+          viewBox="0 0 1200 320"
+          preserveAspectRatio="none"
+          fill="none"
+          className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.16]"
+        >
+          <path
+            d="M0 205 C 240 150 380 245 620 205 S 1000 128 1200 188"
+            stroke="white"
+            strokeWidth="1.4"
+          />
+          <path
+            d="M0 248 C 260 198 430 288 660 248 S 1030 178 1200 232"
+            stroke="white"
+            strokeWidth="1"
+            opacity="0.55"
+          />
+        </svg>
         <div className="relative z-10 text-feature-foreground">
         <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
           How can we help?
@@ -293,18 +357,18 @@ export function HelpPage() {
 
         <div className="mx-auto mt-7 flex max-w-xl flex-col gap-2.5 sm:flex-row">
           <div className="relative flex-1">
-            <Search className="absolute top-1/2 left-3.5 size-4.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute top-1/2 left-3.5 size-4.5 -translate-y-1/2 text-slate-500" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search for answers…"
-              className="h-12 rounded-xl border-transparent bg-card pl-10 text-foreground shadow-sm placeholder:text-muted-foreground"
+              className="h-12 rounded-xl border-transparent bg-white pl-10 text-slate-900 shadow-sm placeholder:text-slate-500 dark:bg-white"
             />
           </div>
           <Button
             type="button"
             onClick={askAi}
-            className="h-12 gap-2 rounded-xl bg-card text-foreground hover:bg-card/90"
+            className="h-12 gap-2 rounded-xl bg-white text-slate-900 hover:bg-white/90"
           >
             <Sparkles className="size-4 text-primary" /> Ask AI
           </Button>
@@ -312,13 +376,13 @@ export function HelpPage() {
 
         <div className="mx-auto mt-4 flex flex-wrap items-center justify-center gap-2">
           <span className="text-xs text-feature-foreground/70">Popular:</span>
-          {POPULAR_SEARCHES.map((term) => (
+          {visiblePopular.map((p) => (
             <button
-              key={term}
-              onClick={() => setSearch(term)}
+              key={p.term}
+              onClick={() => setSearch(p.term)}
               className="rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-feature-foreground transition-colors hover:bg-white/25"
             >
-              {term}
+              {p.term}
             </button>
           ))}
         </div>
@@ -372,7 +436,7 @@ export function HelpPage() {
                             <SelectValue placeholder="Select a category…" />
                           </SelectTrigger>
                           <SelectContent>
-                            {HELP_CATEGORIES.map((cat) => (
+                            {visibleCategories.map((cat) => (
                               <SelectItem key={cat.key} value={cat.key}>
                                 {cat.label}
                               </SelectItem>
@@ -541,7 +605,7 @@ export function HelpPage() {
           Browse by category
         </h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-          {HELP_CATEGORIES.map((cat) => {
+          {visibleCategories.map((cat) => {
             const Icon = cat.icon
             const active = selectedCategory === cat.key
             return (
@@ -643,46 +707,112 @@ export function HelpPage() {
         )}
       </section>
 
-      {/* ── Video tutorials ── */}
+      {/* ── Tutorials: videos / guided walkthroughs (toggle) ── */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Video tutorials
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {VIDEO_TUTORIALS.map((video, i) => {
-            const hue = [210, 160, 280, 30, 190, 320][i % 6]
-            return (
-              <button
-                key={video.title}
-                onClick={() => toast.info("Video player coming soon")}
-                className="group relative overflow-hidden rounded-2xl border text-left"
-              >
-                {/* Gradient thumbnail */}
-                <div
-                  className="flex h-36 items-center justify-center"
-                  style={{
-                    background: `linear-gradient(135deg, hsl(${hue} 60% 30%), hsl(${hue + 40} 70% 50%))`,
-                  }}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Tutorials
+          </h2>
+          <div className="flex rounded-lg border border-border bg-card p-0.5">
+            {(
+              [
+                { k: "videos", label: "Videos", icon: PlayCircle },
+                { k: "walkthroughs", label: "Walkthroughs", icon: Compass },
+              ] as const
+            ).map((o) => {
+              const activeTab = mediaTab === o.k
+              return (
+                <button
+                  key={o.k}
+                  type="button"
+                  onClick={() => setMediaTab(o.k)}
+                  aria-pressed={activeTab}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    activeTab
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
                 >
-                  <div className="flex size-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110">
-                    <Play className="size-5 fill-white text-white" />
-                  </div>
-                </div>
-                {/* Duration badge */}
-                <div className="absolute top-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
-                  {video.duration}
-                </div>
-                <div className="p-3">
-                  <p className="text-sm font-medium leading-snug">{video.title}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground capitalize">
-                    {HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
-                      video.category}
-                  </p>
-                </div>
-              </button>
-            )
-          })}
+                  <o.icon className="size-4" />
+                  {o.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
+
+        {mediaTab === "videos" ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleVideos.map((video, i) => {
+              const hue = [210, 160, 280, 30, 190, 320][i % 6]
+              return (
+                <button
+                  key={video.title}
+                  onClick={() => toast.info("Video player coming soon")}
+                  className="group relative overflow-hidden rounded-2xl border text-left"
+                >
+                  {/* Gradient thumbnail */}
+                  <div
+                    className="flex h-36 items-center justify-center"
+                    style={{
+                      background: `linear-gradient(135deg, hsl(${hue} 60% 30%), hsl(${hue + 40} 70% 50%))`,
+                    }}
+                  >
+                    <div className="flex size-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110">
+                      <Play className="size-5 fill-white text-white" />
+                    </div>
+                  </div>
+                  {/* Duration badge */}
+                  <div className="absolute top-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
+                    {video.duration}
+                  </div>
+                  <div className="p-3">
+                    <p className="text-sm font-medium leading-snug">{video.title}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground capitalize">
+                      {HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
+                        video.category}
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleWalkthroughs.map((tour) => {
+              const Icon = tour.icon
+              return (
+                <Card key={tour.id} className="flex flex-col">
+                  <CardContent className="flex flex-1 flex-col gap-3 pt-5">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
+                      <Icon className="size-5" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-medium">{tour.title}</p>
+                      <p className="text-xs text-muted-foreground">{tour.description}</p>
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="size-3" />
+                        {tour.duration}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => toast.success(`"${tour.title}" tour started`)}
+                      >
+                        <PlayCircle className="size-4" />
+                        Start tour
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </section>
 
       {/* ── FAQs ── */}
@@ -692,7 +822,7 @@ export function HelpPage() {
         </h2>
         <Card>
           <CardContent className="divide-y p-0">
-            {FAQS.map((faq, i) => (
+            {visibleFaqs.map((faq, i) => (
               <div key={i}>
                 <button
                   className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left text-sm font-medium transition-colors hover:bg-muted/50"
@@ -713,49 +843,6 @@ export function HelpPage() {
             ))}
           </CardContent>
         </Card>
-      </section>
-
-      {/* ── Guided walkthroughs ── */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Guided walkthroughs
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Interactive step-by-step tours that walk you through key features in context.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {WALKTHROUGHS.map((tour) => {
-            const Icon = tour.icon
-            return (
-              <Card key={tour.id} className="flex flex-col">
-                <CardContent className="flex flex-1 flex-col gap-3 pt-5">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
-                    <Icon className="size-5" />
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-medium">{tour.title}</p>
-                    <p className="text-xs text-muted-foreground">{tour.description}</p>
-                  </div>
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="size-3" />
-                      {tour.duration}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5"
-                      onClick={() => toast.success(`"${tour.title}" tour started`)}
-                    >
-                      <PlayCircle className="size-4" />
-                      Start tour
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
       </section>
 
       {/* Article reader sheet */}

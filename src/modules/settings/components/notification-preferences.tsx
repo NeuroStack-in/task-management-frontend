@@ -140,17 +140,19 @@ export function NotificationPreferences() {
       />
 
       {/* ── Per-type channel matrix ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Notification types</CardTitle>
-          <CardDescription>
-            Pick a delivery channel for each kind of event.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          {/* Channel header (desktop) */}
-          <div className="hidden items-center gap-4 border-b px-6 py-2 sm:flex">
-            <span className="flex-1" />
+      <Card className="gap-0 overflow-hidden p-0 [--card-spacing:0px]">
+        {/* Heading + column labels share one bordered row, so the divider sits
+            directly beneath the heading (no stray flex-gap above it). */}
+        <div className="flex items-end justify-between gap-4 border-b border-border px-5 pt-5 pb-4">
+          <div>
+            <h3 className="font-heading text-base font-medium leading-snug">
+              Notification types
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Pick a delivery channel for each kind of event.
+            </p>
+          </div>
+          <div className="hidden shrink-0 items-center gap-4 sm:flex">
             <span className="w-16 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               In-app
             </span>
@@ -158,45 +160,45 @@ export function NotificationPreferences() {
               Email
             </span>
           </div>
+        </div>
 
-          <div className="divide-y">
-            {NOTIFICATION_TYPES.map((type) => {
-              const row = draft.channels[type.key];
-              return (
-                <div
-                  key={type.key}
-                  className="flex flex-col gap-2 px-6 py-3 sm:flex-row sm:items-center sm:gap-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{type.label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {type.description}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4 sm:pl-0">
-                    {(["inApp", "email"] as Channel[]).map((channel) => (
-                      <div
-                        key={channel}
-                        className="flex w-16 items-center justify-start gap-2 sm:justify-center"
-                      >
-                        <span className="text-xs text-muted-foreground sm:hidden">
-                          {channel === "inApp" ? "In-app" : "Email"}
-                        </span>
-                        <Switch
-                          checked={row[channel]}
-                          onCheckedChange={() => toggleChannel(type.key, channel)}
-                          aria-label={`${type.label} — ${
-                            channel === "inApp" ? "in-app" : "email"
-                          }`}
-                        />
-                      </div>
-                    ))}
-                  </div>
+        <div className="divide-y">
+          {NOTIFICATION_TYPES.map((type) => {
+            const row = draft.channels[type.key];
+            return (
+              <div
+                key={type.key}
+                className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:gap-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{type.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {type.description}
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-        </CardContent>
+                <div className="flex items-center gap-4 sm:pl-0">
+                  {(["inApp", "email"] as Channel[]).map((channel) => (
+                    <div
+                      key={channel}
+                      className="flex w-16 items-center justify-start gap-2 sm:justify-center"
+                    >
+                      <span className="text-xs text-muted-foreground sm:hidden">
+                        {channel === "inApp" ? "In-app" : "Email"}
+                      </span>
+                      <Switch
+                        checked={row[channel]}
+                        onCheckedChange={() => toggleChannel(type.key, channel)}
+                        aria-label={`${type.label} — ${
+                          channel === "inApp" ? "in-app" : "email"
+                        }`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </Card>
 
       {/* ── Delivery preferences ── */}
