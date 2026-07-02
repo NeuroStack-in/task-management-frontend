@@ -196,7 +196,7 @@ export function EmployeesView({
   const assignments = useEmployeesStore((s) => s.assignments);
   const { ids: scopeIds } = useDataScope();
   const [query, setQuery] = useState("");
-  const [dept, setDept] = useState("Design");
+  const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -218,6 +218,14 @@ export function EmployeesView({
   const customIds = useMemo(
     () => new Set(customEmployees.map((e) => e.id)),
     [customEmployees],
+  );
+
+  // Department filter options are derived from the employees the current user
+  // can actually see — the full org for Owner/Admin, just their team for a
+  // team-scoped role — so the dropdown never lists empty departments.
+  const deptOptions = useMemo(
+    () => [...new Set(allEmployees.map((e) => e.department))].sort(),
+    [allEmployees],
   );
 
   // Stats stay in sync as accounts are added this session.
@@ -284,7 +292,10 @@ export function EmployeesView({
           label="Dept"
           value={dept}
           onChange={resetPage(setDept)}
-          options={[{ value: "Design", label: "Design" }]}
+          options={[
+            { value: "all", label: "All departments" },
+            ...deptOptions.map((d) => ({ value: d, label: d })),
+          ]}
         />
         <FilterDropdown
           label="Status"

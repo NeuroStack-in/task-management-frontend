@@ -6,10 +6,6 @@ interface UiState {
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
-  /** Global ⌘K command palette open state (not persisted). */
-  commandOpen: boolean;
-  setCommandOpen: (open: boolean) => void;
-  toggleCommand: () => void;
   /**
    * Monotonic counter bumped to ask the inline sidebar search to focus itself.
    * Used when the collapsed rail's search button expands the sidebar — the
@@ -26,16 +22,13 @@ export const useUiStore = create<UiState>()(
       toggleSidebar: () =>
         set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-      commandOpen: false,
-      setCommandOpen: (open) => set({ commandOpen: open }),
-      toggleCommand: () => set((s) => ({ commandOpen: !s.commandOpen })),
       searchFocusNonce: 0,
       requestSearchFocus: () =>
         set((s) => ({ searchFocusNonce: s.searchFocusNonce + 1 })),
     }),
     {
       name: "wp-ui",
-      // Only the sidebar preference persists; the palette always starts closed.
+      // Only the sidebar preference persists.
       partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed }),
     },
   ),

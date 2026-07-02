@@ -11,10 +11,12 @@ import {
   KeyRound,
   Laptop,
   Lock,
+  Monitor,
   Plus,
   RefreshCw,
   ShieldCheck,
   Smartphone,
+  Tablet,
   X,
   type LucideIcon,
 } from "lucide-react"
@@ -95,6 +97,20 @@ const SESSIONS: SessionRow[] = [
     location: "Bengaluru, IN",
     lastActive: "2 days ago",
     icon: Smartphone,
+  },
+  {
+    id: "s3",
+    device: "Firefox on macOS",
+    location: "Mumbai, IN",
+    lastActive: "5 days ago",
+    icon: Monitor,
+  },
+  {
+    id: "s4",
+    device: "Chrome on iPad",
+    location: "Hyderabad, IN",
+    lastActive: "1 week ago",
+    icon: Tablet,
   },
 ]
 
@@ -728,7 +744,7 @@ export function SecurityCenter() {
       </Card>
 
       {/* ── Change password + active sessions (split view) ── */}
-      <div className="grid items-start gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
         {/* Change your password (personal) */}
         <Card>
           <CardHeader>
