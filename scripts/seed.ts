@@ -112,13 +112,10 @@ function generateUsers(count: number): User[] {
   for (let i = 1; i < count; i++) {
     const department = faker.helpers.arrayElement(DEPARTMENTS);
     const team = faker.helpers.arrayElement(TEAMS_BY_DEPT[department]);
-    // Weight heavily toward employees, with a sprinkling of other roles.
+    // Weight heavily toward employees, with a sprinkling of admins.
     const roleId = faker.helpers.weightedArrayElement([
-      { value: "role-employee", weight: 70 },
-      { value: "role-manager", weight: 14 },
-      { value: "role-admin", weight: 6 },
-      { value: "role-hr", weight: 5 },
-      { value: "role-finance", weight: 5 },
+      { value: "role-employee", weight: 88 },
+      { value: "role-admin", weight: 12 },
     ]);
     void nonOwnerRoles;
     const firstName = faker.person.firstName();
@@ -207,7 +204,7 @@ function generateProjects(count: number, users: User[]): Project[] {
   const leadPool = users.filter(
     (u) =>
       u.status === "active" &&
-      ["role-owner", "role-admin", "role-manager"].includes(u.roleId),
+      ["role-owner", "role-admin"].includes(u.roleId),
   );
   const memberPool = users.filter((u) => u.status !== "suspended");
   const usedNames = new Set<string>();

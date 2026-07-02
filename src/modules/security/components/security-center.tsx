@@ -11,6 +11,7 @@ import {
   KeyRound,
   Laptop,
   Lock,
+  Maximize2,
   Monitor,
   Plus,
   RefreshCw,
@@ -21,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { toast } from "sonner"
+import { QRCodeSVG } from "qrcode.react"
 import {
   Card,
   CardAction,
@@ -303,6 +305,17 @@ export function SecurityCenter() {
   const [setupOpen, setSetupOpen] = useState(false)
   const [otp, setOtp] = useState("")
   const [codesOpen, setCodesOpen] = useState(false)
+  const [qrLarge, setQrLarge] = useState(false)
+
+  // otpauth URI for authenticator apps (Google Authenticator, Authy, …). Built
+  // from the static demo secret + the signed-in email; deterministic (no
+  // Date.now/random). The secret is stored with spaces for readability — strip
+  // them for the URI.
+  const account = userEmail ?? "member@workpulse.app"
+  const otpauthUri =
+    `otpauth://totp/WorkPulse:${encodeURIComponent(account)}` +
+    `?secret=${TOTP_SECRET.replace(/\s/g, "")}` +
+    `&issuer=WorkPulse&algorithm=SHA1&digits=6&period=30`
 
   function verifyMfa() {
     if (otp.length !== 6) return
@@ -921,6 +934,7 @@ export function SecurityCenter() {
           if (!v) {
             setSetupOpen(false)
             setOtp("")
+            setQrLarge(false)
           }
         }}
       >
@@ -928,13 +942,46 @@ export function SecurityCenter() {
           <DialogHeader>
             <DialogTitle>Set up multi-factor authentication</DialogTitle>
             <DialogDescription>
-              Add the secret to your authenticator app, then enter the 6-digit
-              code it shows.
+              Scan the QR code with your authenticator app, then enter the
+              6-digit code it shows.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {/* Scannable QR. High-contrast literal colours (not theme tokens) so
+                it stays white-on-black and scannable in dark mode too. Click to
+                enlarge for easier scanning. */}
+            <div className="flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setQrLarge((v) => !v)}
+                aria-label={qrLarge ? "Shrink QR code" : "Enlarge QR code"}
+                title={qrLarge ? "Click to shrink" : "Click to enlarge"}
+                className="group relative rounded-lg border border-border bg-white p-3 transition hover:ring-2 hover:ring-primary/50 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
+              >
+                <QRCodeSVG
+                  value={otpauthUri}
+                  size={qrLarge ? 264 : 168}
+                  level="M"
+                  bgColor="#ffffff"
+                  fgColor="#0a0a0a"
+                />
+                <span className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-md bg-black/70 text-white opacity-70 transition-opacity group-hover:opacity-100">
+                  <Maximize2 className="size-3.5" />
+                </span>
+              </button>
+              <p className="text-xs text-muted-foreground">
+                Scan with Google Authenticator, Authy, or 1Password ·{" "}
+                <span className="font-medium text-foreground">
+                  {qrLarge ? "click to shrink" : "click to enlarge"}
+                </span>
+              </p>
+            </div>
+
+            {/* Manual fallback for anyone who can't scan */}
             <div className="rounded-lg border border-border bg-muted/40 p-3 text-center">
-              <p className="text-xs text-muted-foreground">Authenticator secret</p>
+              <p className="text-xs text-muted-foreground">
+                Can&apos;t scan? Enter this code manually
+              </p>
               <p className="mt-1 font-mono text-sm font-semibold tracking-widest">
                 {TOTP_SECRET}
               </p>
