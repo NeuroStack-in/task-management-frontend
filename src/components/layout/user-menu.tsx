@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOut, User as UserIcon } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
 import { initials } from "@/lib/format";
@@ -62,13 +62,6 @@ export function UserMenu() {
             </span>
           </div>
         </div>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => router.push("/settings/profile")}
-          className="gap-3 px-2.5 py-2.5 text-base"
-        >
-          <UserIcon className="size-5" /> Profile &amp; settings
-        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"

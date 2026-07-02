@@ -16,8 +16,6 @@
       "user-0107"
     ],
     "department": "Design",
-    "budget": 123000,
-    "spent": 123585,
     "startDate": "2026-06-02",
     "dueDate": "2026-07-31",
     "velocity": [
@@ -48,8 +46,6 @@
       "user-employee"
     ],
     "department": "Customer Success",
-    "budget": 161000,
-    "spent": 96636,
     "startDate": "2026-01-09",
     "dueDate": "2026-04-22",
     "velocity": [
@@ -78,8 +74,6 @@
       "user-0055"
     ],
     "department": "Finance",
-    "budget": 41000,
-    "spent": 21287,
     "startDate": "2026-01-03",
     "dueDate": "2026-02-23",
     "velocity": [
@@ -110,8 +104,6 @@
       "user-0087"
     ],
     "department": "Customer Success",
-    "budget": 178000,
-    "spent": 192692,
     "startDate": "2026-04-05",
     "dueDate": "2026-05-26",
     "velocity": [
@@ -140,8 +132,6 @@
       "user-employee"
     ],
     "department": "Design",
-    "budget": 185000,
-    "spent": 133459,
     "startDate": "2026-02-05",
     "dueDate": "2026-07-15",
     "velocity": [
@@ -172,8 +162,6 @@
       "user-employee"
     ],
     "department": "Finance",
-    "budget": 424000,
-    "spent": 84399,
     "startDate": "2026-03-09",
     "dueDate": "2026-05-04",
     "velocity": [
@@ -205,8 +193,6 @@
       "user-0093"
     ],
     "department": "Sales",
-    "budget": 49000,
-    "spent": 54115,
     "startDate": "2026-04-18",
     "dueDate": "2026-06-03",
     "velocity": [
@@ -234,8 +220,6 @@
       "user-0062"
     ],
     "department": "Engineering",
-    "budget": 282000,
-    "spent": 17681,
     "startDate": "2026-04-30",
     "dueDate": "2026-10-05",
     "velocity": [
@@ -264,8 +248,6 @@
       "user-0056"
     ],
     "department": "Design",
-    "budget": 111000,
-    "spent": 60887,
     "startDate": "2025-11-25",
     "dueDate": "2026-03-08",
     "velocity": [
@@ -299,8 +281,6 @@
       "user-0103"
     ],
     "department": "Marketing",
-    "budget": 159000,
-    "spent": 150110,
     "startDate": "2026-05-14",
     "dueDate": "2026-07-12",
     "velocity": [
@@ -333,8 +313,6 @@
       "user-0119"
     ],
     "department": "Sales",
-    "budget": 319000,
-    "spent": 228706,
     "startDate": "2025-12-20",
     "dueDate": "2026-05-18",
     "velocity": [
@@ -362,8 +340,6 @@
       "user-0010"
     ],
     "department": "Product",
-    "budget": 43000,
-    "spent": 44857,
     "startDate": "2025-11-30",
     "dueDate": "2026-01-29",
     "velocity": [
@@ -393,8 +369,6 @@
       "user-0093"
     ],
     "department": "Design",
-    "budget": 31000,
-    "spent": 7975,
     "startDate": "2026-01-19",
     "dueDate": "2026-06-25",
     "velocity": [
@@ -421,8 +395,6 @@
       "user-0081"
     ],
     "department": "Customer Success",
-    "budget": 251000,
-    "spent": 246820,
     "startDate": "2026-03-14",
     "dueDate": "2026-06-13",
     "velocity": [
@@ -453,8 +425,6 @@
       "user-0111"
     ],
     "department": "Sales",
-    "budget": 408000,
-    "spent": 311476,
     "startDate": "2026-01-27",
     "dueDate": "2026-04-07",
     "velocity": [
@@ -481,8 +451,6 @@
       "user-0059"
     ],
     "department": "Finance",
-    "budget": 207000,
-    "spent": 139332,
     "startDate": "2026-05-18",
     "dueDate": "2026-07-28",
     "velocity": [
@@ -509,8 +477,6 @@
       "user-0054"
     ],
     "department": "Design",
-    "budget": 272000,
-    "spent": 68704,
     "startDate": "2026-01-06",
     "dueDate": "2026-02-20",
     "velocity": [
@@ -541,8 +507,6 @@
       "user-0081"
     ],
     "department": "People Ops",
-    "budget": 180000,
-    "spent": 88167,
     "startDate": "2026-01-05",
     "dueDate": "2026-03-10",
     "velocity": [
@@ -575,8 +539,6 @@
       "user-0001"
     ],
     "department": "Engineering",
-    "budget": 264000,
-    "spent": 262029,
     "startDate": "2026-03-06",
     "dueDate": "2026-04-09",
     "velocity": [
@@ -607,8 +569,6 @@
       "user-0071"
     ],
     "department": "Engineering",
-    "budget": 308000,
-    "spent": 162757,
     "startDate": "2025-12-06",
     "dueDate": "2026-02-07",
     "velocity": [
@@ -641,8 +601,6 @@
       "user-0031"
     ],
     "department": "Marketing",
-    "budget": 240000,
-    "spent": 86253,
     "startDate": "2025-11-25",
     "dueDate": "2026-02-20",
     "velocity": [
@@ -671,8 +629,6 @@
       "user-0056"
     ],
     "department": "Customer Success",
-    "budget": 422000,
-    "spent": 107584,
     "startDate": "2026-01-27",
     "dueDate": "2026-05-19",
     "velocity": [
@@ -701,8 +657,6 @@
       "user-0027"
     ],
     "department": "Finance",
-    "budget": 382000,
-    "spent": 370936,
     "startDate": "2026-04-16",
     "dueDate": "2026-05-22",
     "velocity": [
@@ -729,8 +683,6 @@
       "user-0057"
     ],
     "department": "Product",
-    "budget": 355000,
-    "spent": 393096,
     "startDate": "2026-02-19",
     "dueDate": "2026-04-07",
     "velocity": [
@@ -760,8 +712,6 @@
       "user-0084"
     ],
     "department": "Marketing",
-    "budget": 347000,
-    "spent": 213634,
     "startDate": "2026-05-28",
     "dueDate": "2026-09-13",
     "velocity": [
@@ -793,8 +743,6 @@
       "user-0034"
     ],
     "department": "Finance",
-    "budget": 194000,
-    "spent": 148186,
     "startDate": "2026-02-06",
     "dueDate": "2026-06-11",
     "velocity": [
@@ -822,8 +770,6 @@
       "user-0073"
     ],
     "department": "People Ops",
-    "budget": 421000,
-    "spent": 298614,
     "startDate": "2026-03-13",
     "dueDate": "2026-07-21",
     "velocity": [
@@ -851,8 +797,6 @@
       "user-0061"
     ],
     "department": "Engineering",
-    "budget": 262000,
-    "spent": 42130,
     "startDate": "2026-04-19",
     "dueDate": "2026-09-24",
     "velocity": [
@@ -878,8 +822,6 @@
       "user-0106"
     ],
     "department": "Sales",
-    "budget": 290000,
-    "spent": 280692,
     "startDate": "2026-01-25",
     "dueDate": "2026-05-05",
     "velocity": [
@@ -906,8 +848,6 @@
       "user-0090"
     ],
     "department": "Design",
-    "budget": 386000,
-    "spent": 225522,
     "startDate": "2025-12-26",
     "dueDate": "2026-06-03",
     "velocity": [
@@ -934,8 +874,6 @@
       "user-0010"
     ],
     "department": "Marketing",
-    "budget": 52000,
-    "spent": 55552,
     "startDate": "2026-02-28",
     "dueDate": "2026-05-26",
     "velocity": [
@@ -963,8 +901,6 @@
       "user-0059"
     ],
     "department": "Product",
-    "budget": 27000,
-    "spent": 28543,
     "startDate": "2026-05-29",
     "dueDate": "2026-08-16",
     "velocity": [
@@ -997,8 +933,6 @@
       "user-0009"
     ],
     "department": "People Ops",
-    "budget": 201000,
-    "spent": 48664,
     "startDate": "2026-03-08",
     "dueDate": "2026-04-23",
     "velocity": [
@@ -1030,8 +964,6 @@
       "user-0018"
     ],
     "department": "Customer Success",
-    "budget": 352000,
-    "spent": 96924,
     "startDate": "2026-01-13",
     "dueDate": "2026-06-15",
     "velocity": [
@@ -1064,8 +996,6 @@
       "user-0080"
     ],
     "department": "Product",
-    "budget": 300000,
-    "spent": 282598,
     "startDate": "2026-03-26",
     "dueDate": "2026-05-30",
     "velocity": [
@@ -1094,8 +1024,6 @@
       "user-0107"
     ],
     "department": "Design",
-    "budget": 401000,
-    "spent": 356509,
     "startDate": "2026-01-07",
     "dueDate": "2026-03-24",
     "velocity": [
@@ -1124,8 +1052,6 @@
       "user-0053"
     ],
     "department": "Design",
-    "budget": 314000,
-    "spent": 239953,
     "startDate": "2026-04-27",
     "dueDate": "2026-07-11",
     "velocity": [
@@ -1157,8 +1083,6 @@
       "user-0055"
     ],
     "department": "Sales",
-    "budget": 166000,
-    "spent": 91292,
     "startDate": "2025-12-20",
     "dueDate": "2026-05-31",
     "velocity": [
@@ -1186,8 +1110,6 @@
       "user-0046"
     ],
     "department": "Marketing",
-    "budget": 209000,
-    "spent": 58166,
     "startDate": "2026-04-30",
     "dueDate": "2026-08-30",
     "velocity": [
@@ -1215,8 +1137,6 @@
       "user-0047"
     ],
     "department": "Design",
-    "budget": 77000,
-    "spent": 42129,
     "startDate": "2026-03-01",
     "dueDate": "2026-07-27",
     "velocity": [

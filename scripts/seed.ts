@@ -243,11 +243,6 @@ function generateProjects(count: number, users: User[]): Project[] {
     if (i < 12 && !members.includes("user-owner")) members.unshift("user-owner");
     if (!members.includes(lead.id)) members.unshift(lead.id);
 
-    const budget = faker.number.int({ min: 20, max: 480 }) * 1000;
-    // Spent tracks progress, with a slice of projects intentionally over budget.
-    const burn = progress / 100 + faker.number.float({ min: -0.12, max: 0.18 });
-    const spent = Math.round(budget * Math.max(0, Math.min(1.22, burn)));
-
     const startOffset = -faker.number.int({ min: 20, max: 210 });
     const span = faker.number.int({ min: 45, max: 170 });
     const dueOffset =
@@ -264,8 +259,6 @@ function generateProjects(count: number, users: User[]): Project[] {
       leadUserId: lead.id,
       memberIds: [...new Set(members)],
       department: faker.helpers.arrayElement(DEPARTMENTS),
-      budget,
-      spent,
       startDate: isoFromOffsetDays(startOffset),
       dueDate: isoFromOffsetDays(dueOffset),
       velocity: generateVelocity(faker.number.int({ min: 20, max: 70 })),
