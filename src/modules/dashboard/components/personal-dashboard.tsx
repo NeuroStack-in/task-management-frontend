@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Gauge,
@@ -13,10 +13,15 @@ import {
 import { StatCard } from "@/components/shared/stat-card";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTasksStore } from "@/stores/tasks.store";
 import { projects } from "@/lib/data";
 import { dayRecordFor, TODAY, type DayStatus } from "@/lib/mock-attendance";
+import {
+  RANGE_OPTIONS,
+  type DashboardRange,
+} from "@/modules/dashboard/lib/dashboard-data";
 import { TASK_STATUS_META, type TaskStatus } from "@/modules/projects/types";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +52,12 @@ function formatDue(iso: string | null): string {
   return `${SHORT_MONTH[m - 1]} ${d}`;
 }
 
+/** Parse an ISO "YYYY-MM-DD" as a local date (avoids UTC off-by-one). */
+function parseIso(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
 export function PersonalDashboard() {
@@ -54,6 +65,13 @@ export function PersonalDashboard() {
   const tasks = useTasksStore((s) => s.tasks);
 
   const userId = user?.id ?? "";
+
+  // Time window for the hours + attendance sections.
+  const [range, setRange] = useState<DashboardRange>("7d");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const rangeLabel =
+    RANGE_OPTIONS.find((r) => r.value === range)?.label ?? "Week";
 
   const projectById = useMemo(
     () => new Map(projects.map((p) => [p.id, p])),
@@ -77,27 +95,51 @@ export function PersonalDashboard() {
     return { openTasks: open, doneCount: mine.length - open.length };
   }, [tasks, userId]);
 
-  // This week's attendance (last 7 calendar days ending on the demo "today").
-  const week = useMemo(() => {
+  // The days covered by the selected range, ending on the demo "today".
+  const days = useMemo(() => {
     const base = new Date(TODAY.year, TODAY.month, TODAY.day);
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(base);
-      d.setDate(base.getDate() - (6 - i));
-      return {
-        key: d.toISOString().slice(0, 10),
-        label: SHORT_DAY[d.getDay()],
-        record: dayRecordFor(userId, d.getFullYear(), d.getMonth(), d.getDate()),
-      };
-    });
-  }, [userId]);
+    const lastN = (n: number) =>
+      Array.from({ length: n }, (_, i) => {
+        const d = new Date(base);
+        d.setDate(base.getDate() - (n - 1 - i));
+        return d;
+      });
+
+    let list: Date[];
+    if (range === "today") list = [base];
+    else if (range === "7d") list = lastN(7);
+    else if (range === "30d") list = lastN(30);
+    else if (start && end) {
+      // Custom range (capped so the list stays reasonable).
+      const s = parseIso(start);
+      const e = parseIso(end);
+      const out: Date[] = [];
+      const cur = new Date(s);
+      while (cur <= e && out.length < 120) {
+        out.push(new Date(cur));
+        cur.setDate(cur.getDate() + 1);
+      }
+      list = out.length ? out : [base];
+    } else {
+      list = lastN(7); // "Custom" before dates are picked
+    }
+
+    const longRange = range === "30d" || range === "range";
+    return list.map((d) => ({
+      key: d.toISOString().slice(0, 10),
+      label: longRange
+        ? `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`
+        : SHORT_DAY[d.getDay()],
+      record: dayRecordFor(userId, d.getFullYear(), d.getMonth(), d.getDate()),
+    }));
+  }, [range, start, end, userId]);
 
   if (!user) return null;
 
-  const hoursToday = week[week.length - 1].record.hours;
-  const weekHours =
-    Math.round(week.reduce((sum, w) => sum + w.record.hours, 0) * 10) / 10;
-  const daysPresent = week.filter(
-    (w) => w.record.status === "present" || w.record.status === "late",
+  const totalHours =
+    Math.round(days.reduce((sum, d) => sum + d.record.hours, 0) * 10) / 10;
+  const daysPresent = days.filter(
+    (d) => d.record.status === "present" || d.record.status === "late",
   ).length;
 
   const score = user.productivityScore;
@@ -105,22 +147,64 @@ export function PersonalDashboard() {
 
   return (
     <>
+      {/* Range control */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="inline-flex items-center gap-0.5 self-start rounded-full border bg-card p-0.5 shadow-soft">
+          {RANGE_OPTIONS.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => setRange(r.value)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                range === r.value
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        {range === "range" ? (
+          <div className="flex items-center gap-2 self-start">
+            <DatePicker
+              value={start}
+              onChange={setStart}
+              max={end || undefined}
+              placeholder="Start date"
+            />
+            <span className="text-sm text-muted-foreground">–</span>
+            <DatePicker
+              value={end}
+              onChange={setEnd}
+              min={start || undefined}
+              placeholder="End date"
+            />
+          </div>
+        ) : null}
+      </div>
+
       {/* Personal KPI strip */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="My Productivity"
           value={`${score}%`}
           icon={Gauge}
-          hint="this week"
+          hint={rangeLabel.toLowerCase()}
           trend={trend}
           featured
           href="/time-tracking"
         />
         <StatCard
-          label="Hours Today"
-          value={hoursToday.toFixed(1)}
+          label={range === "today" ? "Hours Today" : "Hours Logged"}
+          value={totalHours.toFixed(1)}
           icon={Clock}
-          hint={`${weekHours}h this week`}
+          hint={
+            range === "today"
+              ? "today"
+              : `${rangeLabel.toLowerCase()} · ${daysPresent}/${days.length} present`
+          }
           href="/time-tracking"
         />
         <StatCard
@@ -214,11 +298,11 @@ export function PersonalDashboard() {
           )}
         </Card>
 
-        {/* This week's attendance */}
+        {/* Attendance for the selected range */}
         <Card className="gap-0 p-0 [--card-spacing:0px]">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">
-              This week
+              Attendance
             </h2>
             <Link
               href="/attendance"
@@ -227,12 +311,12 @@ export function PersonalDashboard() {
               Details <ArrowRight className="size-3.5" />
             </Link>
           </div>
-          <div className="space-y-2.5 px-5 py-4">
-            {week.map((w) => {
+          <div className="max-h-[280px] space-y-2.5 overflow-y-auto px-5 py-4">
+            {days.map((w) => {
               const att = ATTENDANCE[w.record.status];
               return (
                 <div key={w.key} className="flex items-center gap-3 text-sm">
-                  <span className="w-9 shrink-0 text-muted-foreground">
+                  <span className="w-14 shrink-0 text-muted-foreground">
                     {w.label}
                   </span>
                   <span className={cn("size-2 shrink-0 rounded-full", att.dot)} />
@@ -246,9 +330,9 @@ export function PersonalDashboard() {
           </div>
           <div className="flex items-center justify-between border-t border-border px-5 py-3 text-sm">
             <span className="text-muted-foreground">
-              {daysPresent}/7 days present
+              {daysPresent}/{days.length} days present
             </span>
-            <span className="font-medium tabular-nums">{weekHours}h total</span>
+            <span className="font-medium tabular-nums">{totalHours}h total</span>
           </div>
         </Card>
 
