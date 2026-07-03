@@ -12,9 +12,9 @@ export type DashboardRange = "today" | "7d" | "30d" | "range";
 
 export const RANGE_OPTIONS: { value: DashboardRange; label: string }[] = [
   { value: "today", label: "Today" },
-  { value: "7d", label: "7 days" },
+  { value: "7d", label: "Week" },
   { value: "30d", label: "Month" },
-  { value: "range", label: "Range" },
+  { value: "range", label: "Custom" },
 ];
 
 export interface DashboardFilters {

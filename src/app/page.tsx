@@ -9,6 +9,8 @@
 import "./marketing.css";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/stores/auth.store";
 import {
   Activity,
   AlarmClock,
@@ -211,6 +213,15 @@ const ENTERPRISE = [
 
 export default function LandingPage() {
   const heroRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const hydrated = useAuthStore((s) => s.hydrated);
+
+  // Signed-in visitors (e.g. via the browser back button) go straight to the
+  // app — the marketing home shouldn't read as a logged-out state.
+  useEffect(() => {
+    if (hydrated && isAuthenticated) router.replace("/dashboard");
+  }, [hydrated, isAuthenticated, router]);
 
   useEffect(() => {
     let raf = 0;
@@ -234,6 +245,9 @@ export default function LandingPage() {
   }, []);
 
   const wordCount = HEADLINE.flat().length;
+
+  // Redirect in flight — don't flash the marketing home to a signed-in user.
+  if (hydrated && isAuthenticated) return null;
 
   return (
     <div className="m-root min-h-screen overflow-x-hidden">

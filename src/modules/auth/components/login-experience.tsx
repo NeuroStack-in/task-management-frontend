@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
@@ -19,6 +19,8 @@ export function LoginExperience() {
   const router = useRouter();
   const params = useSearchParams();
   const login = useAuthStore((s) => s.login);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const hydrated = useAuthStore((s) => s.hydrated);
 
   const [mode, setMode] = useState<"signin" | "reset">("signin");
   const [email, setEmail] = useState("");
@@ -27,6 +29,15 @@ export function LoginExperience() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+
+  // Already signed in (e.g. arrived here via the browser back button)? Send them
+  // to the app instead of the login form — going back shouldn't feel like a logout.
+  useEffect(() => {
+    if (hydrated && isAuthenticated) {
+      const from = params.get("from");
+      router.replace(from && from.startsWith("/") ? from : "/dashboard");
+    }
+  }, [hydrated, isAuthenticated, params, router]);
 
   const onSignin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +69,9 @@ export function LoginExperience() {
     }
     setSent(true);
   };
+
+  // Redirect in flight — don't flash the login form to a signed-in user.
+  if (hydrated && isAuthenticated) return null;
 
   return (
     <div className="m-root min-h-screen w-full lg:grid lg:grid-cols-[1.05fr_1fr]">
