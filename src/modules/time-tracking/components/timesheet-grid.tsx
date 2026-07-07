@@ -35,15 +35,6 @@ import type {
 import { cn } from "@/lib/utils";
 import { ActivityDialog, type ActivityView } from "./timesheet-detail";
 
-const STATUS_META: Record<
-  TimesheetStatus,
-  { label: string; className: string }
-> = {
-  approved: { label: "Approved", className: "bg-success/12 text-success" },
-  pending: { label: "Pending", className: "bg-warning/15 text-warning" },
-  flagged: { label: "Flagged", className: "bg-destructive/12 text-destructive" },
-};
-
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -51,12 +42,6 @@ const MONTHS = [
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const DAY_FULL = [
   "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
-];
-const STATUS_FILTERS: { value: "all" | TimesheetStatus; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "approved", label: "Approved" },
-  { value: "pending", label: "Pending" },
-  { value: "flagged", label: "Flagged" },
 ];
 /** Relative weekday load Mon→Sun (weekends light). */
 const WEEKDAY_WEIGHT = [1, 1.05, 0.95, 1.02, 0.9, 0.28, 0.12];
@@ -129,14 +114,6 @@ export function TimesheetGrid({
 }) {
   const [group, setGroup] = useState<GroupBy>("person");
   const [query, setQuery] = useState("");
-  // Multi-select status filter; an empty list means no filter (all statuses).
-  const [statuses, setStatuses] = useState<TimesheetStatus[]>([]);
-  const toggleStatus = (value: "all" | TimesheetStatus) => {
-    if (value === "all") return setStatuses([]);
-    setStatuses((prev) =>
-      prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value],
-    );
-  };
   const [deptFilter, setDeptFilter] = useState("all");
   const [weekOffset, setWeekOffset] = useState(0);
   const [selection, setSelection] = useState<
@@ -213,15 +190,12 @@ export function TimesheetGrid({
         const total = days.reduce((s, h) => s + h, 0);
         return { ...r, days, total };
       })
-      .filter((r) => statuses.length === 0 || statuses.includes(r.status))
       .sort((a, b) => b.total - a.total);
-  }, [baseRows, query, deptFilter, statuses, weekOffset]);
+  }, [baseRows, query, deptFilter, weekOffset]);
 
-  const hasFilters =
-    deptFilter !== "all" || statuses.length > 0 || query.trim() !== "";
+  const hasFilters = deptFilter !== "all" || query.trim() !== "";
   const clearFilters = () => {
     setDeptFilter("all");
-    setStatuses([]);
     setQuery("");
   };
 
@@ -231,7 +205,6 @@ export function TimesheetGrid({
     return totals;
   }, [rows]);
   const grandTotal = colTotals.reduce((s, h) => s + h, 0);
-  const approved = rows.filter((r) => r.status === "approved").length;
 
   // Resolve the open drill-down (day or week) from the current rows.
   const activeView: ActivityView | null = (() => {
@@ -364,44 +337,6 @@ export function TimesheetGrid({
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Status filter */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {STATUS_FILTERS.map((s) => {
-              const active =
-                s.value === "all"
-                  ? statuses.length === 0
-                  : statuses.includes(s.value);
-              return (
-                <button
-                  key={s.value}
-                  type="button"
-                  onClick={() => toggleStatus(s.value)}
-                  aria-pressed={active}
-                  className={cn(
-                    "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                    active
-                      ? "border-transparent bg-primary text-primary-foreground"
-                      : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                >
-                  {s.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{approved}</span> of{" "}
-            {rows.length} {group === "person" ? "employees" : "projects"}{" "}
-            approved ·{" "}
-            <span className="font-medium text-foreground">
-              {fmtHM(grandTotal)}
-            </span>{" "}
-            total
-          </p>
-        </div>
-
         {/* Active filter tags */}
         {hasFilters ? (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -412,15 +347,6 @@ export function TimesheetGrid({
                 onClear={() => setDeptFilter("all")}
               />
             ) : null}
-            {statuses.map((st) => (
-              <FilterTagChip
-                key={st}
-                label={`Status: ${STATUS_META[st].label}`}
-                onClear={() =>
-                  setStatuses((prev) => prev.filter((s) => s !== st))
-                }
-              />
-            ))}
             {query.trim() ? (
               <FilterTagChip
                 label={`Search: ${query.trim()}`}

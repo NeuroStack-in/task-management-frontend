@@ -35,8 +35,14 @@ export interface StoredEmployee {
 interface EmployeesState {
   /** Accounts created in-app. Seed users live in users.json (lib/data). */
   customEmployees: StoredEmployee[];
+  /**
+   * Department/team reassignments applied on top of any employee (seed or
+   * custom) by id. Lets a member be moved between teams without a real backend.
+   */
+  assignments: Record<string, { department: string; team: string }>;
   createEmployee: (input: CreateEmployeeInput) => StoredEmployee;
   removeEmployee: (id: string) => void;
+  reassignEmployee: (id: string, department: string, team: string) => void;
 }
 
 let employeeCounter = 0;
@@ -49,6 +55,7 @@ export const useEmployeesStore = create<EmployeesState>()(
   persist(
     (set) => ({
       customEmployees: [],
+      assignments: {},
 
       createEmployee: (input) => {
         const employee: StoredEmployee = {
@@ -70,6 +77,15 @@ export const useEmployeesStore = create<EmployeesState>()(
       removeEmployee: (id) =>
         set((s) => ({
           customEmployees: s.customEmployees.filter((e) => e.id !== id),
+        })),
+
+      reassignEmployee: (id, department, team) =>
+        set((s) => ({
+          assignments: { ...s.assignments, [id]: { department, team } },
+          // Keep in-store (custom) employees directly in sync too.
+          customEmployees: s.customEmployees.map((e) =>
+            e.id === id ? { ...e, department, team } : e,
+          ),
         })),
     }),
     { name: "wp-employees" },

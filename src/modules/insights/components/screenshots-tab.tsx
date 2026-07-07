@@ -1,19 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Camera,
+  ChevronLeft,
   ChevronRight,
   Flag,
   Search,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -24,9 +33,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { useDataScope } from "@/hooks/use-data-scope";
 import { initials } from "@/lib/format";
 import {
-  SCREENSHOTS,
   SCREENSHOT_EMPLOYEES,
   dayLabel,
   type EmployeeShots,
@@ -78,43 +87,44 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [flag, setFlag] = useState<"all" | "flagged">("all");
+  const { inScope } = useDataScope();
 
-  const totalCaptures = SCREENSHOTS.length;
-  const totalFlagged = SCREENSHOT_EMPLOYEES.reduce((a, e) => a + e.flagged, 0);
-  const avgActivity = Math.round(
-    SCREENSHOT_EMPLOYEES.reduce((a, e) => a + e.avgActivity, 0) /
-      SCREENSHOT_EMPLOYEES.length,
+  // Team leads only see their own team's monitored people; org roles see all.
+  const scoped = SCREENSHOT_EMPLOYEES.filter((e) => inScope(e.user.id));
+
+  const totalCaptures = scoped.reduce((a, e) => a + e.total, 0);
+  const totalFlagged = scoped.reduce((a, e) => a + e.flagged, 0);
+  const avgActivity = scoped.length
+    ? Math.round(
+        scoped.reduce((a, e) => a + e.avgActivity, 0) / scoped.length,
+      )
+    : 0;
+
+  const departments = Array.from(
+    new Set(scoped.map((e) => e.user.department)),
+  ).sort();
+
+  const q = query.trim().toLowerCase();
+  const employees = scoped.filter(
+    (e) =>
+      (dept === "all" || e.user.department === dept) &&
+      (flag === "all" || e.flagged > 0) &&
+      (q === "" || e.user.name.toLowerCase().includes(q)),
   );
-
-  const departments = useMemo(
-    () =>
-      Array.from(
-        new Set(SCREENSHOT_EMPLOYEES.map((e) => e.user.department)),
-      ).sort(),
-    [],
-  );
-
-  const employees = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return SCREENSHOT_EMPLOYEES.filter(
-      (e) =>
-        (dept === "all" || e.user.department === dept) &&
-        (flag === "all" || e.flagged > 0) &&
-        (q === "" || e.user.name.toLowerCase().includes(q)),
-    );
-  }, [query, dept, flag]);
 
   return (
     <div className="space-y-5">
       <AiReportCard
         title="AI screenshot report"
-        summary={`Across ${SCREENSHOT_EMPLOYEES.length} monitored employees, ${totalCaptures.toLocaleString()} screenshots were captured. ${totalFlagged} ${
+        summary={`Across ${scoped.length} monitored ${
+          scoped.length === 1 ? "employee" : "employees"
+        }, ${totalCaptures.toLocaleString()} screenshots were captured. ${totalFlagged} ${
           totalFlagged === 1 ? "was" : "were"
         } marked for review for distracting apps or low activity${
           totalFlagged ? " — review those first" : ""
         }. Average on-screen activity sits at ${avgActivity}%.`}
         metrics={[
-          { label: "Monitored", value: SCREENSHOT_EMPLOYEES.length },
+          { label: "Monitored", value: scoped.length },
           { label: "Total captures", value: totalCaptures.toLocaleString() },
           { label: "Needs review", value: totalFlagged },
           { label: "Avg activity", value: `${avgActivity}%` },
@@ -136,16 +146,23 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
         </Field>
 
         <Field label="Department">
-          <div className="flex h-8 flex-wrap items-center gap-1.5">
-            <Pill active={dept === "all"} onClick={() => setDept("all")}>
-              All
-            </Pill>
-            {departments.map((d) => (
-              <Pill key={d} active={dept === d} onClick={() => setDept(d)}>
-                {d}
-              </Pill>
-            ))}
-          </div>
+          <Select value={dept} onValueChange={(v) => setDept(v as string)}>
+            <SelectTrigger className="h-8 w-48" aria-label="Department">
+              <SelectValue>
+                {(v) =>
+                  v == null || v === "all" ? "All departments" : String(v)
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              <SelectItem value="all">All departments</SelectItem>
+              {departments.map((d) => (
+                <SelectItem key={d} value={d}>
+                  {d}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
 
         <fieldset className="flex flex-col gap-1.5">
@@ -191,31 +208,6 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
   );
 }
 
-function Pill({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-        active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 function EmployeeCard({
   emp,
   onOpen,
@@ -230,12 +222,15 @@ function EmployeeCard({
     >
       {/* Cover = latest capture */}
       <div className="relative aspect-[16/10] overflow-hidden">
-        <FauxCapture />
+        <CaptureImage
+          seed={emp.latest.id}
+          alt={`${emp.user.name} — ${emp.latest.app}`}
+        />
         <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
           {emp.latest.app}
         </div>
         {emp.flagged > 0 ? (
-          <Badge className="absolute right-2 top-2 border-destructive/20 bg-destructive/12 text-destructive backdrop-blur-sm">
+          <Badge className="absolute right-2 top-2 border-transparent bg-destructive text-white shadow-sm">
             <Flag className="size-3" /> {emp.flagged}
           </Badge>
         ) : null}
@@ -276,7 +271,8 @@ function EmployeeDetail({
   const [from, setFrom] = useState<string>(""); // "HH:MM", "" = open start
   const [to, setTo] = useState<string>(""); // "HH:MM", "" = open end
   const [flag, setFlag] = useState<"all" | "flagged">("all");
-  const [lightbox, setLightbox] = useState<Screenshot | null>(null);
+  // Index into the currently-filtered `shots` list, for the gallery lightbox.
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
 
   // Calendar bounds = the window this employee actually has captures in.
   const [minDate, maxDate] = useMemo(() => {
@@ -424,17 +420,22 @@ function EmployeeDetail({
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {shots.map((shot) => (
+          {shots.map((shot, i) => (
             <ShotCard
               key={shot.id}
               shot={shot}
-              onOpen={() => setLightbox(shot)}
+              onOpen={() => setLightboxIdx(i)}
             />
           ))}
         </div>
       )}
 
-      <Lightbox shot={lightbox} onClose={() => setLightbox(null)} />
+      <Lightbox
+        shots={shots}
+        index={lightboxIdx}
+        onIndexChange={setLightboxIdx}
+        onClose={() => setLightboxIdx(null)}
+      />
     </div>
   );
 }
@@ -493,6 +494,33 @@ function FauxCapture() {
   );
 }
 
+/** Number of mock screenshots in public/screenshots (ss-1.png … ss-N.png). */
+const CAPTURE_COUNT = 10;
+
+/** Deterministic mock capture image — cycles through the local screenshot set
+ *  in public/screenshots, keyed by id so each capture is stable. */
+function captureUrl(seed: string): string {
+  const hash = [...seed].reduce((sum, c) => sum + c.charCodeAt(0), 0);
+  return `/screenshots/ss-${(hash % CAPTURE_COUNT) + 1}.png`;
+}
+
+/** A real screenshot image with the skeleton behind it as a load/offline
+ *  fallback. Fills its (aspect-ratio) parent. */
+function CaptureImage({ seed, alt }: { seed: string; alt: string }) {
+  return (
+    <>
+      <FauxCapture />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={captureUrl(seed)}
+        alt={alt}
+        loading="lazy"
+        className="absolute inset-0 size-full object-cover"
+      />
+    </>
+  );
+}
+
 function ShotCard({
   shot,
   onOpen,
@@ -511,7 +539,7 @@ function ShotCard({
       onClick={onOpen}
     >
       <div className="relative aspect-[16/10] overflow-hidden">
-        <FauxCapture />
+        <CaptureImage seed={shot.id} alt={`${shot.app} screenshot`} />
         {shot.flagged ? (
           <div className="pointer-events-none absolute inset-0 bg-destructive/10" />
         ) : null}
@@ -519,7 +547,7 @@ function ShotCard({
           {shot.app}
         </div>
         {shot.flagged ? (
-          <Badge className="absolute right-2 top-2 border-destructive/20 bg-destructive/12 text-destructive backdrop-blur-sm">
+          <Badge className="absolute right-2 top-2 border-transparent bg-destructive text-white shadow-sm">
             <Flag className="size-3" /> Needs review
           </Badge>
         ) : null}
@@ -543,73 +571,186 @@ function ShotCard({
   );
 }
 
+/** One overlaid detail (label + value) for the full-screen viewer. */
+function OverlayDetail({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-white/60">
+        {label}
+      </dt>
+      <dd className={cn("truncate font-medium text-white", className)}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Full-screen gallery viewer. The capture fills the screen; the member's
+ * details and per-capture AI read are overlaid on top. Left/right arrows (and
+ * ←/→ keys) move through the currently-filtered captures; they stop at the
+ * first/last capture (no wrap-around) to match the "N / total" position.
+ */
 function Lightbox({
-  shot,
+  shots,
+  index,
+  onIndexChange,
   onClose,
 }: {
-  shot: Screenshot | null;
+  shots: Screenshot[];
+  index: number | null;
+  onIndexChange: (i: number) => void;
   onClose: () => void;
 }) {
+  const count = shots.length;
+  const shot = index !== null ? (shots[index] ?? null) : null;
+  const open = shot !== null;
+
+  const atStart = index === 0;
+  const atEnd = index !== null && index === count - 1;
+
+  const step = (delta: number) => {
+    if (index === null) return;
+    const next = index + delta;
+    if (next < 0 || next >= count) return; // clamp at the ends, no wrap
+    onIndexChange(next);
+  };
+
+  // ←/→ to move through the gallery while it's open (stops at the ends).
+  useEffect(() => {
+    if (!open || index === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight" && index < count - 1) onIndexChange(index + 1);
+      else if (e.key === "ArrowLeft" && index > 0) onIndexChange(index - 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, index, count, onIndexChange]);
+
   const reason = shot ? flagReason(shot) : null;
+
   return (
-    <Dialog open={!!shot} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[100dvh] max-h-none w-screen max-w-none items-center justify-center gap-0 rounded-none border-0 bg-black/95 p-0 ring-0 sm:max-w-none"
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>Screenshot viewer</DialogTitle>
+          <DialogDescription>
+            {shot ? `${shot.app} — ${shot.user.name}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
         {shot ? (
           <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                {shot.user.name}
-                {shot.flagged ? (
-                  <Badge variant="default">
-                    <Flag className="size-3" /> Needs review
-                  </Badge>
-                ) : null}
-              </DialogTitle>
-              <DialogDescription>
-                {shot.user.department} · {dayLabel(shot.date)} at {shot.time}
-              </DialogDescription>
-            </DialogHeader>
-
-            {/* Full capture */}
-            <div className="relative aspect-[16/10] overflow-hidden rounded-lg border">
-              <FauxCapture />
-              <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
-                {shot.app}
+            {/* Top overlay — member + timestamp, counter, close */}
+            <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 bg-gradient-to-b from-black/70 to-transparent p-4 sm:p-5">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-base font-semibold text-white">
+                  <span className="truncate">{shot.user.name}</span>
+                  {shot.flagged ? (
+                    <Badge className="border-transparent bg-destructive text-white">
+                      <Flag className="size-3" /> Needs review
+                    </Badge>
+                  ) : null}
+                </p>
+                <p className="truncate text-xs text-white/70">
+                  {shot.user.department} · {dayLabel(shot.date)} at {shot.time}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="text-xs font-medium tabular-nums text-white/70">
+                  {(index ?? 0) + 1} / {count}
+                </span>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close"
+                  className="flex size-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+                >
+                  <X className="size-5" />
+                </button>
               </div>
             </div>
 
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">Application</dt>
-              <dd className="text-right font-medium">{shot.app}</dd>
-              <dt className="text-muted-foreground">Activity</dt>
-              <dd
-                className={cn(
-                  "text-right font-mono font-medium tabular-nums",
-                  activityTone(shot.activity),
-                )}
-              >
-                {shot.activity}%
-              </dd>
-              <dt className="text-muted-foreground">Captured</dt>
-              <dd className="text-right font-medium">
-                {dayLabel(shot.date)} · {shot.time}
-              </dd>
-              {reason ? (
-                <>
-                  <dt className="text-muted-foreground">Review reason</dt>
-                  <dd className="text-right font-medium text-destructive">
-                    {reason}
-                  </dd>
-                </>
-              ) : null}
-            </dl>
+            {/* The capture */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={captureUrl(shot.id)}
+              alt={`${shot.app} screenshot`}
+              className="max-h-[100dvh] max-w-full object-contain"
+            />
 
-            {/* Per-capture AI analysis */}
-            <div className="flex gap-2 rounded-xl bg-feature-tint p-3 text-sm">
-              <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-              <div>
-                <p className="font-medium text-primary">AI analysis</p>
-                <p className="mt-0.5 text-foreground/80">{aiAnalysis(shot)}</p>
+            {/* Prev / next arrows — disabled at the first / last capture */}
+            {count > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => step(-1)}
+                  disabled={atStart}
+                  aria-label="Previous screenshot"
+                  className="absolute left-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25 disabled:pointer-events-none disabled:opacity-30 sm:left-5"
+                >
+                  <ChevronLeft className="size-6" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => step(1)}
+                  disabled={atEnd}
+                  aria-label="Next screenshot"
+                  className="absolute right-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25 disabled:pointer-events-none disabled:opacity-30 sm:right-5"
+                >
+                  <ChevronRight className="size-6" />
+                </button>
+              </>
+            ) : null}
+
+            {/* Bottom overlay — details + AI analysis */}
+            <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/55 to-transparent p-4 pt-16 sm:p-5 sm:pt-20">
+              <div className="mx-auto flex max-w-5xl flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm sm:flex sm:flex-wrap sm:items-end">
+                  <OverlayDetail label="Application" value={shot.app} />
+                  <OverlayDetail
+                    label="Activity"
+                    value={`${shot.activity}%`}
+                    className={cn(
+                      "font-mono tabular-nums",
+                      shot.activity >= 60
+                        ? "text-success"
+                        : shot.activity >= 40
+                          ? "text-warning"
+                          : "text-destructive",
+                    )}
+                  />
+                  <OverlayDetail
+                    label="Captured"
+                    value={`${dayLabel(shot.date)} · ${shot.time}`}
+                  />
+                  {reason ? (
+                    <OverlayDetail
+                      label="Review reason"
+                      value={reason}
+                      className="text-destructive"
+                    />
+                  ) : null}
+                </dl>
+
+                <div className="flex max-w-md gap-2 rounded-xl bg-white/10 p-3 text-sm text-white backdrop-blur-sm">
+                  <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div className="min-w-0">
+                    <p className="font-medium">AI analysis</p>
+                    <p className="mt-0.5 text-white/80">{aiAnalysis(shot)}</p>
+                  </div>
+                </div>
               </div>
             </div>
           </>

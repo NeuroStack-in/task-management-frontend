@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Select,
@@ -23,6 +24,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { NumberStepper } from "@/components/ui/number-stepper"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   TableBody,
   TableCell,
@@ -43,19 +50,16 @@ import {
   type UsageItem,
 } from "@/lib/mock-insights"
 import { initials } from "@/lib/format"
+import { isDomain } from "@/lib/validation"
 import { cn } from "@/lib/utils"
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types & state
 // ──────────────────────────────────────────────────────────────────────────────
 
-type TabKey =
-  | "categories"
-  | "apps"
-  | "websites"
-  | "allowblock"
-  | "scoring"
-  | "exceptions"
+type TabKey = "categories" | "items" | "allowblock" | "exceptions"
+
+type ItemKind = "app" | "website"
 
 interface TrackableItem extends UsageItem {
   tracked: boolean
@@ -211,43 +215,71 @@ function LogoIcon({ name }: { name: string }) {
 
 function CategoriesPanel({
   descriptions,
-  onChange,
+  weights,
+  onDescriptions,
+  onWeights,
   canManage,
 }: {
   descriptions: Record<UsageCategory, string>
-  onChange: (next: Record<UsageCategory, string>) => void
+  weights: Record<UsageCategory, number>
+  onDescriptions: (next: Record<UsageCategory, string>) => void
+  onWeights: (next: Record<UsageCategory, number>) => void
   canManage: boolean
 }) {
   return (
     <div className="space-y-4">
-      {CATEGORIES.map((cat) => (
-        <div
-          key={cat}
-          className="flex items-stretch overflow-hidden rounded-lg border border-border bg-card"
-        >
-          <span
-            className="w-1.5 shrink-0"
-            style={{ backgroundColor: CATEGORY_COLOR[cat] }}
-          />
-          <div className="flex-1 space-y-2 p-5">
-            <div className="flex items-center gap-2">
-              <CategoryDot category={cat} />
-              <p className="text-sm font-medium">{CATEGORY_LABEL[cat]}</p>
+      <div className="space-y-3">
+        {CATEGORIES.map((cat) => (
+          <div
+            key={cat}
+            className="flex items-stretch overflow-hidden rounded-lg border border-border bg-card"
+          >
+            <span
+              className="w-1.5 shrink-0"
+              style={{ backgroundColor: CATEGORY_COLOR[cat] }}
+            />
+            <div className="flex flex-1 flex-col gap-3 p-4 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2 sm:w-36 sm:shrink-0">
+                <CategoryDot category={cat} />
+                <p className="text-sm font-medium">{CATEGORY_LABEL[cat]}</p>
+              </div>
+              {canManage ? (
+                <Input
+                  value={descriptions[cat]}
+                  onChange={(e) =>
+                    onDescriptions({ ...descriptions, [cat]: e.target.value })
+                  }
+                  placeholder="What belongs in this category"
+                  className="flex-1 text-sm"
+                />
+              ) : (
+                <p className="flex-1 text-xs text-muted-foreground">
+                  {descriptions[cat]}
+                </p>
+              )}
+              <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+                <span className="text-xs text-muted-foreground">
+                  Score weight
+                </span>
+                <NumberStepper
+                  value={weights[cat]}
+                  min={0}
+                  max={5}
+                  valueWidthClassName="w-10"
+                  disabled={!canManage}
+                  onChange={(v) => onWeights({ ...weights, [cat]: v })}
+                />
+              </div>
             </div>
-            {canManage ? (
-              <Input
-                value={descriptions[cat]}
-                onChange={(e) =>
-                  onChange({ ...descriptions, [cat]: e.target.value })
-                }
-                className="text-sm"
-              />
-            ) : (
-              <p className="text-xs text-muted-foreground">{descriptions[cat]}</p>
-            )}
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Productivity score = (productive minutes × weight + neutral minutes ×
+        weight) ÷ total tracked minutes × 100. Distracting time doesn&apos;t
+        contribute; a higher weight strengthens that category&apos;s effect
+        (0 = no impact, 5 = maximum).
+      </p>
     </div>
   )
 }
@@ -257,51 +289,110 @@ function CategoriesPanel({
 // ──────────────────────────────────────────────────────────────────────────────
 
 function ItemsPanel({
-  title,
-  nameLabel,
-  items,
-  onChange,
+  apps,
+  websites,
+  onApps,
+  onWebsites,
   canManage,
 }: {
-  title: string
-  nameLabel: string
-  items: TrackableItem[]
-  onChange: (next: TrackableItem[]) => void
+  apps: TrackableItem[]
+  websites: TrackableItem[]
+  onApps: (next: TrackableItem[]) => void
+  onWebsites: (next: TrackableItem[]) => void
   canManage: boolean
 }) {
   const [query, setQuery] = useState("")
-  const filtered = items.filter((it) =>
-    it.name.toLowerCase().includes(query.toLowerCase()),
+  const [kind, setKind] = useState<"all" | ItemKind>("all")
+
+  // Apps and websites are classified the same way; merge them into one table
+  // with a kind tag so updates route back to the right list.
+  const combined = [
+    ...apps.map((it) => ({ ...it, kind: "app" as ItemKind })),
+    ...websites.map((it) => ({ ...it, kind: "website" as ItemKind })),
+  ]
+  const q = query.trim().toLowerCase()
+  const filtered = combined.filter(
+    (it) =>
+      (kind === "all" || it.kind === kind) && it.name.toLowerCase().includes(q),
   )
 
-  function updateItem(name: string, patch: Partial<TrackableItem>) {
-    onChange(items.map((it) => (it.name === name ? { ...it, ...patch } : it)))
+  function updateItem(
+    itemKind: ItemKind,
+    name: string,
+    patch: Partial<TrackableItem>,
+  ) {
+    if (itemKind === "app") {
+      onApps(apps.map((it) => (it.name === name ? { ...it, ...patch } : it)))
+    } else {
+      onWebsites(
+        websites.map((it) => (it.name === name ? { ...it, ...patch } : it)),
+      )
+    }
   }
+
+  const FILTERS: { key: "all" | ItemKind; label: string; count: number }[] = [
+    { key: "all", label: "All", count: combined.length },
+    { key: "app", label: "Apps", count: apps.length },
+    { key: "website", label: "Websites", count: websites.length },
+  ]
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle>Apps &amp; Websites</CardTitle>
         <CardDescription>
-          Classify each {nameLabel.toLowerCase()} and choose whether it&apos;s tracked.
+          Classify each application and website, and choose whether it&apos;s
+          tracked.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="relative">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={`Search ${nameLabel.toLowerCase()}…`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* Type filter */}
+          <div className="inline-flex items-center gap-0.5 self-start rounded-full border bg-card p-0.5 shadow-soft">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setKind(f.key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                  kind === f.key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {f.label}
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
+                    kind === f.key
+                      ? "bg-primary-foreground/20"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {f.count}
+                </span>
+              </button>
+            ))}
+          </div>
+          {/* Search */}
+          <div className="relative sm:w-64">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search apps or websites…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
 
         <div className="overflow-hidden rounded-md border border-border">
           <table className="w-full caption-bottom text-sm">
             <TableHeader>
               <TableRow>
-                <TableHead>{nameLabel}</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">Time</TableHead>
                 <TableHead className="text-right">Tracked</TableHead>
@@ -311,16 +402,16 @@ function ItemsPanel({
               {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={4}
+                    colSpan={5}
                     className="py-8 text-center text-sm text-muted-foreground"
                   >
-                    No matches for “{query}”.
+                    No matches{q ? ` for “${query.trim()}”` : ""}.
                   </TableCell>
                 </TableRow>
               ) : (
                 filtered.map((item) => (
                   <TableRow
-                    key={item.name}
+                    key={`${item.kind}-${item.name}`}
                     className={cn(!item.tracked && "opacity-50")}
                   >
                     <TableCell>
@@ -330,9 +421,16 @@ function ItemsPanel({
                       </div>
                     </TableCell>
                     <TableCell>
+                      <Badge className="bg-muted font-normal text-muted-foreground">
+                        {item.kind === "app" ? "App" : "Website"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
                       <CategorySelect
                         value={item.category}
-                        onChange={(v) => updateItem(item.name, { category: v })}
+                        onChange={(v) =>
+                          updateItem(item.kind, item.name, { category: v })
+                        }
                         disabled={!canManage}
                       />
                     </TableCell>
@@ -345,7 +443,9 @@ function ItemsPanel({
                         checked={item.tracked}
                         disabled={!canManage}
                         onCheckedChange={() =>
-                          updateItem(item.name, { tracked: !item.tracked })
+                          updateItem(item.kind, item.name, {
+                            tracked: !item.tracked,
+                          })
                         }
                       />
                     </TableCell>
@@ -419,7 +519,7 @@ function DomainListCard({
   function add() {
     const val = input.trim().toLowerCase()
     if (!val) return
-    if (!val.includes(".")) {
+    if (!isDomain(val)) {
       toast.error("Enter a valid domain, e.g. example.com")
       return
     }
@@ -505,60 +605,6 @@ function AllowBlockPanel({
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Scoring panel
-// ──────────────────────────────────────────────────────────────────────────────
-
-const WEIGHT_DESCRIPTIONS: Record<UsageCategory, string> = {
-  productive: "Productive — boosts the score (higher = stronger lift)",
-  neutral: "Neutral — moderate positive contribution",
-  distracting: "Distracting — no contribution; higher values penalise the score",
-}
-
-function ScoringPanel({
-  weights,
-  onChange,
-  canManage,
-}: {
-  weights: Record<UsageCategory, number>
-  onChange: (next: Record<UsageCategory, number>) => void
-  canManage: boolean
-}) {
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Category Weights</CardTitle>
-          <CardDescription>
-            Adjust how each category contributes to the productivity score (0 = no
-            impact, 5 = maximum).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="divide-y">
-          {CATEGORIES.map((cat) => (
-            <div key={cat} className="flex items-center gap-4 py-4">
-              <CategoryDot category={cat} />
-              <p className="min-w-0 flex-1 text-sm">{WEIGHT_DESCRIPTIONS[cat]}</p>
-              <NumberStepper
-                value={weights[cat]}
-                min={0}
-                max={5}
-                valueWidthClassName="w-10"
-                disabled={!canManage}
-                onChange={(v) => onChange({ ...weights, [cat]: v })}
-              />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-      <p className="text-xs text-muted-foreground">
-        Score = (productive minutes × weight + neutral minutes × weight) ÷ total
-        tracked minutes × 100. Distracting time does not contribute to the numerator.
-      </p>
-    </div>
-  )
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // Exceptions panel
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -584,21 +630,42 @@ function ExceptionsPanel({
         </CardDescription>
         {canManage && available.length > 0 && (
           <CardAction>
-            <Select
-              value=""
-              onValueChange={(v) => v && onChange([...exceptionIds, v as string])}
-            >
-              <SelectTrigger size="sm" className="w-44">
-                <SelectValue placeholder="Add exception…" />
-              </SelectTrigger>
-              <SelectContent>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button size="sm" variant="outline" className="gap-1.5" />
+                }
+              >
+                <Plus className="size-4" /> Add exception
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-72 w-60 overflow-y-auto"
+              >
                 {available.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
+                  <DropdownMenuItem
+                    key={p.id}
+                    className="gap-2.5"
+                    onClick={() => onChange([...exceptionIds, p.id])}
+                  >
+                    <Avatar className="size-6">
+                      <AvatarImage src={p.avatarUrl} alt={p.name} />
+                      <AvatarFallback className="text-[10px]">
+                        {initials(p.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">
+                        {p.name}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {p.jobTitle}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
                 ))}
-              </SelectContent>
-            </Select>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </CardAction>
         )}
       </CardHeader>
@@ -673,14 +740,16 @@ export function TrackingRulesTab() {
 
   const tabs: { key: TabKey; label: string; count?: number }[] = [
     { key: "categories", label: "Categories" },
-    { key: "apps", label: "Applications", count: draft.apps.length },
-    { key: "websites", label: "Websites / URLs", count: draft.websites.length },
+    {
+      key: "items",
+      label: "Apps & Websites",
+      count: draft.apps.length + draft.websites.length,
+    },
     {
       key: "allowblock",
       label: "Allow / Block",
       count: draft.allowList.length + draft.blockList.length,
     },
-    { key: "scoring", label: "Scoring Rules" },
     { key: "exceptions", label: "Exceptions", count: draft.exceptionIds.length },
   ]
 
@@ -738,25 +807,18 @@ export function TrackingRulesTab() {
         {activeTab === "categories" && (
           <CategoriesPanel
             descriptions={draft.descriptions}
-            onChange={(v) => patch("descriptions", v)}
+            weights={draft.weights}
+            onDescriptions={(v) => patch("descriptions", v)}
+            onWeights={(v) => patch("weights", v)}
             canManage={canManage}
           />
         )}
-        {activeTab === "apps" && (
+        {activeTab === "items" && (
           <ItemsPanel
-            title="Applications"
-            nameLabel="Application"
-            items={draft.apps}
-            onChange={(v) => patch("apps", v)}
-            canManage={canManage}
-          />
-        )}
-        {activeTab === "websites" && (
-          <ItemsPanel
-            title="Websites & URLs"
-            nameLabel="Domain / URL"
-            items={draft.websites}
-            onChange={(v) => patch("websites", v)}
+            apps={draft.apps}
+            websites={draft.websites}
+            onApps={(v) => patch("apps", v)}
+            onWebsites={(v) => patch("websites", v)}
             canManage={canManage}
           />
         )}
@@ -766,13 +828,6 @@ export function TrackingRulesTab() {
             blockList={draft.blockList}
             onAllow={(v) => patch("allowList", v)}
             onBlock={(v) => patch("blockList", v)}
-            canManage={canManage}
-          />
-        )}
-        {activeTab === "scoring" && (
-          <ScoringPanel
-            weights={draft.weights}
-            onChange={(v) => patch("weights", v)}
             canManage={canManage}
           />
         )}

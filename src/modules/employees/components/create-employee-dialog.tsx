@@ -27,6 +27,8 @@ import {
 import { useRolesStore } from "@/stores/roles.store";
 import { useEmployeesStore } from "@/stores/employees.store";
 import { SYSTEM_ROLES } from "@/constants/roles";
+import { TEAMS_BY_DEPT } from "@/lib/mock-org";
+import { TeamSelect } from "./team-select";
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -86,6 +88,8 @@ export function CreateEmployeeDialog({
     handleSubmit,
     control,
     reset,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -99,6 +103,15 @@ export function CreateEmployeeDialog({
       status: "active",
     },
   });
+
+  // Team options follow the selected department (from the org's Departments &
+  // Teams taxonomy). The field stays free-text via a datalist, so a brand-new
+  // team can still be typed in.
+  const department = watch("department");
+  const teamsForDept = useMemo(
+    () => (department ? (TEAMS_BY_DEPT[department] ?? []) : []),
+    [department],
+  );
 
   function close() {
     reset();
@@ -143,16 +156,21 @@ export function CreateEmployeeDialog({
             <Field label="Job title" error={errors.jobTitle?.message}>
               <Input placeholder="Product Designer" {...register("jobTitle")} />
             </Field>
-            <Field label="Team" error={errors.team?.message}>
-              <Input placeholder="Design" {...register("team")} />
-            </Field>
 
             <Field label="Department" error={errors.department?.message}>
               <Controller
                 control={control}
                 name="department"
                 render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
+                  <Select
+                    value={field.value}
+                    onValueChange={(v) => {
+                      field.onChange(v);
+                      // Clear team so a stale value from another department
+                      // can't carry over.
+                      setValue("team", "", { shouldValidate: false });
+                    }}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select a department" />
                     </SelectTrigger>
@@ -164,6 +182,21 @@ export function CreateEmployeeDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                )}
+              />
+            </Field>
+
+            <Field label="Team" error={errors.team?.message}>
+              <Controller
+                control={control}
+                name="team"
+                render={({ field }) => (
+                  <TeamSelect
+                    teams={teamsForDept}
+                    value={field.value}
+                    onChange={field.onChange}
+                    disabled={!department}
+                  />
                 )}
               />
             </Field>

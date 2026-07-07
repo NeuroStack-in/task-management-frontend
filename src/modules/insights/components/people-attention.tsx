@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { useDataScope } from "@/hooks/use-data-scope";
 import {
   ANOMALIES,
   SEVERITY_META,
@@ -38,10 +39,17 @@ export function PeopleAttentionCard({
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [severity, setSeverity] = useState<SeverityFilter>("all");
   const [active, setActive] = useState<Anomaly | null>(null);
+  const { ids: scopeIds } = useDataScope();
 
+  // Team leads only see their own team's flagged people; org roles see all.
   const attention = useMemo(
-    () => ANOMALIES.filter((a) => ATTENTION_KINDS.includes(a.kind)),
-    [],
+    () =>
+      ANOMALIES.filter(
+        (a) =>
+          ATTENTION_KINDS.includes(a.kind) &&
+          (scopeIds === null || scopeIds.has(a.user.id)),
+      ),
+    [scopeIds],
   );
 
   const open = useMemo(

@@ -6,14 +6,13 @@ import { useUiStore } from "@/stores/ui.store";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
 import { ChatBot } from "./chat-bot";
-import { CommandPalette } from "./command-palette";
 import { cn } from "@/lib/utils";
 
 /**
  * Authenticated app shell (Meridian). A full-height inset sidebar meets the
  * viewport edge with a hairline border and collapses to an icon-only rail;
- * content sits on the slate canvas with a subtle per-route fade-in. The global
- * command palette (⌘K) and mobile nav sheet mount here. See Docs/REDESIGN.md.
+ * content sits on the slate canvas with a subtle per-route fade-in. The mobile
+ * nav sheet mounts here. See Docs/REDESIGN.md.
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
@@ -51,7 +50,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
       <ChatBot />
-      <CommandPalette />
     </div>
   );
 }

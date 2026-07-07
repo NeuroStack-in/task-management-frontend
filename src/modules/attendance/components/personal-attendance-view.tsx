@@ -9,15 +9,16 @@ import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth.store";
 import {
   MONTH_NAMES,
-  REFERENCE_MONTH,
   TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
+  daysInMonth,
   dayRecordFor,
   isFutureDate,
   type DayStatus,
   type DayCell,
 } from "@/lib/mock-attendance";
+import { LogDatePicker } from "./attendance-log";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<
@@ -32,16 +33,31 @@ const STATUS: Record<
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Fixed axis for the "working window" timeline: 06:00 → 20:00 (in minutes).
+const DAY_START = 6 * 60;
+const DAY_END = 20 * 60;
+const DAY_SPAN = DAY_END - DAY_START;
+
+/** "HH:MM" → position (0–100%) along the day axis, clamped. */
+function axisPct(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  const mins = h * 60 + m;
+  return Math.max(0, Math.min(100, ((mins - DAY_START) / DAY_SPAN) * 100));
+}
+
 export function PersonalAttendanceView() {
   const user = useAuthStore((s) => s.user);
   const userId = user?.id ?? "";
 
-  const [view, setView] = useState({
-    year: REFERENCE_MONTH.year,
-    month: REFERENCE_MONTH.month,
-  });
+  // The displayed month follows the selected date (mirrors the management
+  // calendar), so the header date picker and chevrons share one source of truth.
+  const [selected, setSelected] = useState({ ...TODAY });
+  const view = { year: selected.year, month: selected.month };
 
-  const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
+  const weeks = useMemo(
+    () => monthMatrix(view.year, view.month),
+    [view.year, view.month],
+  );
 
   // The current user's own tally for the viewed month (elapsed workdays only).
   const summary = useMemo(() => {
@@ -84,15 +100,21 @@ export function PersonalAttendanceView() {
     return out;
   }, [userId]);
 
-  const isRefMonth =
-    view.year === REFERENCE_MONTH.year && view.month === REFERENCE_MONTH.month;
-
+  // Prev/next move the selection by one month, clamping the day to the new
+  // month's length; the grid follows because the view derives from the selection.
   const step = (dir: -1 | 1) =>
-    setView((v) => {
-      const m = v.month + dir;
-      if (m < 0) return { year: v.year - 1, month: 11 };
-      if (m > 11) return { year: v.year + 1, month: 0 };
-      return { year: v.year, month: m };
+    setSelected((s) => {
+      let m = s.month + dir;
+      let y = s.year;
+      if (m < 0) {
+        m = 11;
+        y -= 1;
+      } else if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+      const lastDay = daysInMonth(y, m);
+      return { year: y, month: m, day: Math.min(s.day, lastDay) };
     });
 
   if (!user) return null;
@@ -134,26 +156,8 @@ export function PersonalAttendanceView() {
 
       {/* Personal calendar */}
       <Card>
-        <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-          <div>
-            <CardTitle>
-              {MONTH_NAMES[view.month]} {view.year}
-            </CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your daily attendance for the month.
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setView({ year: REFERENCE_MONTH.year, month: REFERENCE_MONTH.month })
-              }
-              disabled={isRefMonth}
-            >
-              Today
-            </Button>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
@@ -163,6 +167,9 @@ export function PersonalAttendanceView() {
             >
               <ChevronLeft className="size-4" />
             </Button>
+            <CardTitle className="min-w-[10rem] text-center">
+              {MONTH_NAMES[view.month]} {view.year}
+            </CardTitle>
             <Button
               variant="ghost"
               size="icon"
@@ -171,6 +178,17 @@ export function PersonalAttendanceView() {
               onClick={() => step(1)}
             >
               <ChevronRight className="size-4" />
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <LogDatePicker value={selected} onChange={setSelected} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelected({ ...TODAY })}
+            >
+              Today
             </Button>
           </div>
         </CardHeader>
@@ -212,33 +230,89 @@ export function PersonalAttendanceView() {
       </Card>
 
       {/* Personal recent log */}
-      <Card className="gap-0 p-0">
+      <Card className="gap-0 p-0 [--card-spacing:0px]">
         <div className="flex items-center gap-2 border-b border-border px-5 py-4">
           <CalendarOff className="size-4 text-muted-foreground" />
           <h2 className="font-display text-base font-semibold tracking-tight">
             Recent days
           </h2>
         </div>
-        <ul className="divide-y divide-border">
-          {recent.map((r) => {
-            const meta = STATUS[r.status];
-            return (
-              <li key={r.key} className="flex items-center gap-3 px-5 py-3 text-sm">
-                <span className="w-28 shrink-0 font-medium">{r.label}</span>
-                <span className="flex items-center gap-1.5">
-                  <span className={cn("size-2 rounded-full", meta.dot)} />
-                  <span className="text-muted-foreground">{meta.label}</span>
-                </span>
-                <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
-                  {r.clockIn} – {r.clockOut}
-                </span>
-                <span className="w-12 shrink-0 text-right tabular-nums">
-                  {r.hours > 0 ? `${r.hours.toFixed(1)}h` : "—"}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 font-medium">
+                  Date
+                </th>
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="w-full px-3 py-2.5 font-medium">
+                  Working window
+                </th>
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
+                  Clock in
+                </th>
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
+                  Clock out
+                </th>
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
+                  Hours
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {recent.map((r) => {
+                const meta = STATUS[r.status];
+                const logged = r.hours > 0 && r.clockIn && r.clockOut;
+                const left = logged ? axisPct(r.clockIn) : 0;
+                const right = logged ? axisPct(r.clockOut) : 0;
+                return (
+                  <tr key={r.key} className="transition-colors hover:bg-muted/40">
+                    <td className="whitespace-nowrap px-5 py-3 font-medium">
+                      {r.label}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3">
+                      <span className="flex items-center gap-1.5">
+                        <span className={cn("size-2 rounded-full", meta.dot)} />
+                        <span className="text-muted-foreground">{meta.label}</span>
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="relative h-1.5 w-full min-w-[7rem] overflow-hidden rounded-full bg-muted">
+                        {logged ? (
+                          <div
+                            className={cn(
+                              "absolute inset-y-0 rounded-full",
+                              meta.dot,
+                            )}
+                            style={{
+                              left: `${left}%`,
+                              width: `${Math.max(right - left, 2)}%`,
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
+                      {logged ? r.clockIn : "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
+                      {logged ? r.clockOut : "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums">
+                      {logged ? (
+                        <span className="font-medium">{r.hours.toFixed(1)}h</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

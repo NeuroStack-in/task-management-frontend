@@ -40,7 +40,7 @@ import { toneDot, type UserMini } from "../lib";
 import type { TaskFormValues } from "@/stores/tasks.store";
 
 const schema = z.object({
-  title: z.string().min(2, "Give the task a title"),
+  title: z.string().trim().min(2, "Give the task a title"),
   status: z.enum(["todo", "in_progress", "in_review", "done"]),
   assigneeId: z.string(),
   priority: z.enum(["low", "medium", "high"]),

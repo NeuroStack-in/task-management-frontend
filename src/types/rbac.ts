@@ -35,6 +35,15 @@ export interface PermissionCategory {
   permissions: Permission[];
 }
 
+/**
+ * Data-visibility scope for a role:
+ * - `self` — only the user's own data (Employee).
+ * - `team` — the user's own team (same department + team), e.g. a Team Lead / Manager.
+ * - `org`  — the whole organisation (Owner / Admin / HR / Finance).
+ * Defaults to `org` when unset.
+ */
+export type RoleScope = "self" | "team" | "org";
+
 export interface Role {
   id: string;
   name: string;
@@ -43,4 +52,6 @@ export interface Role {
   system: boolean;
   /** Permission ids, or ["*"] for full access. */
   permissions: PermissionId[];
+  /** How much of the org's data this role can see. Defaults to `org`. */
+  scope?: RoleScope;
 }

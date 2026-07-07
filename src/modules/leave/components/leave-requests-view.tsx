@@ -147,11 +147,11 @@ export function LeaveRequestsView() {
               <TableRow>
                 <TableHead className="pl-5">Type</TableHead>
                 <TableHead>Dates</TableHead>
-                <TableHead className="text-center">Days</TableHead>
+                <TableHead>Days</TableHead>
                 <TableHead>Reason</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Submitted</TableHead>
-                <TableHead className="pr-5 text-right">Action</TableHead>
+                <TableHead className="pr-5">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -163,7 +163,7 @@ export function LeaveRequestsView() {
                   <TableCell className="text-muted-foreground">
                     {fmtRange(r.startDate, r.endDate)}
                   </TableCell>
-                  <TableCell className="text-center tabular-nums">{r.days}</TableCell>
+                  <TableCell className="tabular-nums">{r.days}</TableCell>
                   <TableCell className="max-w-[16rem] truncate text-muted-foreground">
                     {r.reason}
                   </TableCell>
@@ -175,7 +175,7 @@ export function LeaveRequestsView() {
                   <TableCell className="text-muted-foreground tabular-nums">
                     {fmtDay(r.submittedAt)}
                   </TableCell>
-                  <TableCell className="pr-5 text-right">
+                  <TableCell className="pr-5">
                     {r.status === "pending" ? (
                       <Button
                         variant="ghost"

@@ -9,10 +9,23 @@ import type { User } from "@/types/user";
 
 /* --------------------------------- People -------------------------------- */
 
+// Screenshot / anomaly subjects. Lead with one monitored team (Design /
+// Product Design) so a team-scoped view is populated, then fill with other
+// people for the org-wide view. Deterministic (sorted by id).
+const SCREENSHOT_TEAM = users.filter(
+  (u) =>
+    u.department === "Design" &&
+    u.team === "Product Design" &&
+    (u.status === "active" || u.status === "inactive"),
+);
+const SCREENSHOT_TEAM_IDS = new Set(SCREENSHOT_TEAM.map((u) => u.id));
 /** A stable handful of people to attribute screenshots/anomalies to. */
-export const SAMPLE_PEOPLE: User[] = [...users]
-  .sort((a, b) => a.id.localeCompare(b.id))
-  .slice(0, 8);
+export const SAMPLE_PEOPLE: User[] = [
+  ...[...SCREENSHOT_TEAM].sort((a, b) => a.id.localeCompare(b.id)),
+  ...[...users]
+    .filter((u) => !SCREENSHOT_TEAM_IDS.has(u.id))
+    .sort((a, b) => a.id.localeCompare(b.id)),
+].slice(0, 12);
 
 /* ------------------------------- Activity -------------------------------- */
 

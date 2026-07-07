@@ -363,11 +363,6 @@ export function PayrollView() {
               index={periodIndex}
               onChange={resetPage(setPeriodIndex)}
             />
-            {can("payroll:export") ? (
-              <Button variant="outline" onClick={() => exportRunCsv(run)}>
-                <Download className="size-4" /> Download
-              </Button>
-            ) : null}
             <FilterDropdown
               label="Dept"
               value={dept}
@@ -380,6 +375,11 @@ export function PayrollView() {
               options={STATUS_OPTIONS}
               onChange={resetPage(setStatus)}
             />
+            {can("payroll:export") ? (
+              <Button variant="outline" onClick={() => exportRunCsv(run)}>
+                <Download className="size-4" /> Download
+              </Button>
+            ) : null}
           </div>
         </div>
 

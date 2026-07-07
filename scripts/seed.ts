@@ -112,13 +112,10 @@ function generateUsers(count: number): User[] {
   for (let i = 1; i < count; i++) {
     const department = faker.helpers.arrayElement(DEPARTMENTS);
     const team = faker.helpers.arrayElement(TEAMS_BY_DEPT[department]);
-    // Weight heavily toward employees, with a sprinkling of other roles.
+    // Weight heavily toward employees, with a sprinkling of admins.
     const roleId = faker.helpers.weightedArrayElement([
-      { value: "role-employee", weight: 70 },
-      { value: "role-manager", weight: 14 },
-      { value: "role-admin", weight: 6 },
-      { value: "role-hr", weight: 5 },
-      { value: "role-finance", weight: 5 },
+      { value: "role-employee", weight: 88 },
+      { value: "role-admin", weight: 12 },
     ]);
     void nonOwnerRoles;
     const firstName = faker.person.firstName();
@@ -207,7 +204,7 @@ function generateProjects(count: number, users: User[]): Project[] {
   const leadPool = users.filter(
     (u) =>
       u.status === "active" &&
-      ["role-owner", "role-admin", "role-manager"].includes(u.roleId),
+      ["role-owner", "role-admin"].includes(u.roleId),
   );
   const memberPool = users.filter((u) => u.status !== "suspended");
   const usedNames = new Set<string>();
@@ -243,11 +240,6 @@ function generateProjects(count: number, users: User[]): Project[] {
     if (i < 12 && !members.includes("user-owner")) members.unshift("user-owner");
     if (!members.includes(lead.id)) members.unshift(lead.id);
 
-    const budget = faker.number.int({ min: 20, max: 480 }) * 1000;
-    // Spent tracks progress, with a slice of projects intentionally over budget.
-    const burn = progress / 100 + faker.number.float({ min: -0.12, max: 0.18 });
-    const spent = Math.round(budget * Math.max(0, Math.min(1.22, burn)));
-
     const startOffset = -faker.number.int({ min: 20, max: 210 });
     const span = faker.number.int({ min: 45, max: 170 });
     const dueOffset =
@@ -264,8 +256,6 @@ function generateProjects(count: number, users: User[]): Project[] {
       leadUserId: lead.id,
       memberIds: [...new Set(members)],
       department: faker.helpers.arrayElement(DEPARTMENTS),
-      budget,
-      spent,
       startDate: isoFromOffsetDays(startOffset),
       dueDate: isoFromOffsetDays(dueOffset),
       velocity: generateVelocity(faker.number.int({ min: 20, max: 70 })),

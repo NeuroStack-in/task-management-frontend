@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Users, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useDataScope } from "@/hooks/use-data-scope";
 import type {
   DailyHours,
   ProjectTimesheet,
@@ -32,9 +33,13 @@ export function TimeTrackingView({
   teamWeekly: DailyHours[];
 }) {
   const { can } = usePermissions();
+  const { inScope } = useDataScope();
   const canApprove = can("time-tracking:approve");
   const canTrack = can("time-tracking:edit");
   const showToggle = canApprove && canTrack;
+
+  // Team leads only see their own team's timesheets; org roles see everyone.
+  const scopedTeamRows = teamRows.filter((r) => inScope(r.id));
 
   const [view, setView] = useState<View>(
     canTrack ? "personal" : "team",
@@ -72,7 +77,7 @@ export function TimeTrackingView({
 
       {view === "team" ? (
         <TeamTimeView
-          rows={teamRows}
+          rows={scopedTeamRows}
           projectRows={projectRows}
           weekly={teamWeekly}
           canApprove={canApprove}

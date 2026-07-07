@@ -87,7 +87,7 @@ function Gallery() {
       <ScreenFrame title="Reset password">
         <ResetPasswordForm />
       </ScreenFrame>
-      <ScreenFrame title="Two-factor verification">
+      <ScreenFrame title="Multi-factor verification">
         <MfaForm />
       </ScreenFrame>
       {ONBOARDING_STEPS.map((s, i) => (
@@ -113,8 +113,9 @@ export default function AuthPreviewPage() {
             Authentication &amp; onboarding
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            A visual sample of the sign-in, account creation, recovery, two-factor,
-            and onboarding screens for review. These previews are static; open the
+            A visual sample of the sign-in, account creation, recovery,
+            multi-factor, and onboarding screens for review. These previews are
+            static; open the
             live, interactive versions to try them. Everything runs on mock data —
             no backend.
           </p>
