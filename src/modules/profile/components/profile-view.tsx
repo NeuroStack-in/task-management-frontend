@@ -29,6 +29,11 @@ import { initials } from "@/lib/format";
 import { isEmail, isWithinSize, MB } from "@/lib/validation";
 import { PageHeader } from "@/components/shared/page-header";
 import { Sparkline } from "@/components/shared/sparkline";
+import {
+  BannerBackground,
+  BannerPatternPicker,
+  type BannerPattern,
+} from "@/components/shared/banner-pattern";
 import { Gauge } from "@/components/shared/gauge";
 import { Loader } from "@/components/shared/loader";
 import { Card } from "@/components/ui/card";
@@ -139,6 +144,8 @@ function RichProfile({
 }) {
   const updateUser = useAuthStore((s) => s.updateUser);
   const [uploadOpen, setUploadOpen] = useState(false);
+  // Temporary control to preview the banner patterns.
+  const [pattern, setPattern] = useState<BannerPattern>("topographic");
   const facts = personalFacts(user);
   const productivity = user.productivityScore;
 
@@ -251,23 +258,8 @@ function RichProfile({
         className="relative overflow-hidden rounded-2xl bg-feature p-6 text-feature-foreground shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-7"
         style={{ animationFillMode: "backwards" }}
       >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(130% 120% at 12% -10%, rgb(255 255 255 / 0.18), transparent 55%), radial-gradient(90% 120% at 100% 120%, rgb(0 0 0 / 0.22), transparent 60%)",
-          }}
-        />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 opacity-[0.14]">
-          <Sparkline
-            data={[18, 42, 30, 58, 40, 72, 55, 84, 66, 92]}
-            area
-            height={120}
-            strokeWidth={2}
-            className="text-white"
-          />
-        </div>
+        <BannerBackground pattern={pattern} />
+        <BannerPatternPicker value={pattern} onChange={setPattern} />
 
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-5">

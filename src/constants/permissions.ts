@@ -107,6 +107,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("activity", "view", "View Activity"),
       p("screenshots", "view", "View Screenshots"),
+      p("locations", "view", "View Employee Locations"),
     ],
   },
   {

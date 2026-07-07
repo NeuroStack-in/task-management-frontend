@@ -12,22 +12,13 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   COUNT_METRICS,
   MONTH_NAMES,
-  TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
   type DayCell,
 } from "@/lib/mock-attendance";
 import { downloadBlob } from "@/lib/download";
-import { LogDatePicker } from "./attendance-log";
 import { cn } from "@/lib/utils";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -69,25 +60,17 @@ interface AttendanceDate {
 export function AttendanceCalendar({
   selected,
   onSelect,
-  dept,
-  onDeptChange,
-  departments,
 }: {
   selected: AttendanceDate;
   onSelect: (d: AttendanceDate) => void;
-  dept: string;
-  onDeptChange: (d: string) => void;
-  departments: string[];
 }) {
-  // The displayed month follows the selected date — single source of truth, now
-  // that the header date picker is the only month/date control.
+  // The displayed month follows the selected date — single source of truth; the
+  // shared filter at the top of the page owns date/department selection.
   const view = { year: selected.year, month: selected.month };
   const weeks = useMemo(
     () => monthMatrix(view.year, view.month),
     [view.year, view.month],
   );
-
-  const goToToday = () => onSelect({ ...TODAY });
 
   // Prev/next move the selection by one month, clamping the day to the new
   // month's length; the grid follows because the view derives from the selection.
@@ -132,39 +115,14 @@ export function AttendanceCalendar({
           </Button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={dept} onValueChange={(v) => onDeptChange(v as string)}>
-            <SelectTrigger className="h-8 w-[10.5rem]" aria-label="Department">
-              <SelectValue>
-                {(v) =>
-                  v == null || v === "all" ? "All departments" : String(v)
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {departments.map((d) => (
-                <SelectItem key={d} value={d}>
-                  {d === "all" ? "All departments" : d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <LogDatePicker value={selected} onChange={onSelect} />
-
-          <Button variant="outline" size="sm" onClick={goToToday}>
-            Today
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => exportMonthCsv(view.year, view.month, weeks)}
-          >
-            <Download className="size-4" /> Download
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => exportMonthCsv(view.year, view.month, weeks)}
+        >
+          <Download className="size-4" /> Download
+        </Button>
       </CardHeader>
 
       <CardContent className="space-y-3">

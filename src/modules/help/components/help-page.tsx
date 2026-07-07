@@ -33,6 +33,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import {
+  BannerBackground,
+  BannerPatternPicker,
+  type BannerPattern,
+} from "@/components/shared/banner-pattern"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -246,6 +251,8 @@ export function HelpPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [tickets, setTickets] = useState<SupportTicket[]>([...MOCK_TICKETS])
   const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
+  // Temporary control to preview the banner patterns.
+  const [pattern, setPattern] = useState<BannerPattern>("grid")
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
   const askAi = () => openAssistant(search.trim() || undefined)
@@ -312,40 +319,8 @@ export function HelpPage() {
     <div className="space-y-10">
       {/* ── Hero ── */}
       <section className="relative isolate overflow-hidden rounded-[1.6rem] bg-feature px-6 py-10 text-center ring-1 ring-inset ring-white/15 duration-700 animate-in fade-in slide-in-from-bottom-2 sm:py-14">
-        {/* Static teal base (bg-feature) — no gradient. */}
-        {/* Dotted texture, anchored to the left & right edges (fades to centre). */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-60"
-          style={{
-            backgroundImage:
-              "radial-gradient(rgba(255,255,255,0.55) 1px, transparent 1.6px)",
-            backgroundSize: "20px 20px",
-            maskImage:
-              "linear-gradient(90deg, black 0%, black 9%, transparent 30%, transparent 70%, black 91%, black 100%)",
-            WebkitMaskImage:
-              "linear-gradient(90deg, black 0%, black 9%, transparent 30%, transparent 70%, black 91%, black 100%)",
-          }}
-        />
-        {/* Soft flowing wave lines. */}
-        <svg
-          aria-hidden
-          viewBox="0 0 1200 320"
-          preserveAspectRatio="none"
-          fill="none"
-          className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.16]"
-        >
-          <path
-            d="M0 205 C 240 150 380 245 620 205 S 1000 128 1200 188"
-            stroke="white"
-            strokeWidth="1.4"
-          />
-          <path
-            d="M0 248 C 260 198 430 288 660 248 S 1030 178 1200 232"
-            stroke="white"
-            strokeWidth="1"
-            opacity="0.55"
-          />
-        </svg>
+        <BannerBackground pattern={pattern} />
+        <BannerPatternPicker value={pattern} onChange={setPattern} />
         <div className="relative z-10 text-feature-foreground">
         <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
           How can we help?

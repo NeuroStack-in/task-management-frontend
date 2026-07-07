@@ -6,6 +6,7 @@ import {
   Users,
   Activity,
   Camera,
+  MapPin,
   CheckCheck,
   WandSparkles,
   LineChart,
@@ -127,6 +128,13 @@ export const INSIGHTS_TABS: NavItem[] = [
     icon: Camera,
     permission: "screenshots:view",
     description: "Screenshot gallery, timeline, and risk analysis.",
+  },
+  {
+    label: "Locations",
+    href: "/insights/locations",
+    icon: MapPin,
+    permission: "locations:view",
+    description: "Live employee locations, login/logout trail, and map.",
   },
   {
     label: "AI Insights & Reports",

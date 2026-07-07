@@ -751,7 +751,7 @@ function KanbanColumn({
         isOver && "bg-primary/5 ring-2 ring-primary/40",
       )}
     >
-      <div className="mb-3 flex items-center justify-between px-1">
+      <div className="mb-3 flex items-center px-1">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
           <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
           {meta.label}
@@ -759,14 +759,6 @@ function KanbanColumn({
             {tasks.length}
           </span>
         </span>
-        <button
-          type="button"
-          onClick={onAdd}
-          aria-label={`Add task to ${meta.label}`}
-          className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-        >
-          <Plus className="size-4" />
-        </button>
       </div>
 
       {tasks.length === 0 ? (

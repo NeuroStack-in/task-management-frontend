@@ -39,11 +39,11 @@ const INVITE_CODE = (() => {
 })();
 const INVITE_LINK = `https://app.workpulse.io/join/${SLUG}?code=${INVITE_CODE}`;
 
-/** WhatsApp glyph (lucide has no brand mark). */
-function WhatsAppIcon({ className }: { className?: string }) {
+/** Slack glyph (lucide has no brand mark). */
+function SlackIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
-      <path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.16-.17.2-.35.22-.64.08-.3-.15-1.26-.47-2.39-1.48-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.6.13-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.88 1.21 3.07c.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.7.25-1.29.17-1.41-.07-.12-.27-.2-.57-.35M12.05 21.79h-.01a9.87 9.87 0 01-5.03-1.38l-.36-.21-3.74.98 1-3.65-.24-.37a9.86 9.86 0 01-1.51-5.26C2.16 6.99 6.6 2.56 12.05 2.56c2.64 0 5.12 1.03 6.99 2.9a9.82 9.82 0 012.89 6.99c0 5.45-4.44 9.88-9.88 9.88m8.41-18.3A11.81 11.81 0 0012.05.5C5.5.5.16 5.83.16 12.39c0 2.1.55 4.14 1.59 5.95L.06 24.5l6.3-1.65a11.88 11.88 0 005.69 1.45h.01c6.55 0 11.89-5.34 11.89-11.9 0-3.18-1.24-6.17-3.49-8.41z" />
+      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
     </svg>
   );
 }
@@ -78,8 +78,13 @@ export function InviteDialog({
       () => toast.error("Couldn't copy the link"),
     );
 
-  const shareWhatsApp = () =>
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  const shareSlack = () => {
+    // Slack has no prefilled-share URL, so copy the message first, then deep-link
+    // into the Slack app so the invite is ready to paste.
+    navigator.clipboard?.writeText(message).catch(() => {});
+    toast.success("Invite copied — opening Slack, just paste it in");
+    window.open("slack://open", "_blank", "noopener,noreferrer");
+  };
 
   const shareEmail = () => {
     if (!isEmail(form.email)) {
@@ -163,13 +168,6 @@ export function InviteDialog({
         {/* 2 — Invite channels */}
         <div className="grid grid-cols-3 gap-2.5">
           <Channel
-            onClick={shareWhatsApp}
-            icon={<WhatsAppIcon className="size-5" />}
-            label="WhatsApp"
-            tint="color-mix(in srgb, #25D366 16%, transparent)"
-            color="#128C3E"
-          />
-          <Channel
             onClick={shareEmail}
             icon={<Mail className="size-5" />}
             label="Email"
@@ -177,16 +175,20 @@ export function InviteDialog({
             color="var(--primary)"
           />
           <Channel
+            onClick={shareSlack}
+            icon={<SlackIcon className="size-5" />}
+            label="Slack"
+            tint="color-mix(in srgb, #4A154B 16%, transparent)"
+            color="#4A154B"
+          />
+          <Channel
             onClick={copyLink}
             icon={<Link2 className="size-5" />}
-            label="Share link"
+            label="Copy link"
             tint="var(--muted)"
             color="var(--foreground)"
           />
         </div>
-        <p className="-mt-1 text-center text-xs text-muted-foreground">
-          “Share link” copies the workspace invite link to your clipboard.
-        </p>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
