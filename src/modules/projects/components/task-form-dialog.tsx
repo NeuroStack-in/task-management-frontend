@@ -28,7 +28,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -236,9 +235,7 @@ export function TaskFormDialog({
                                 {u.avatarUrl ? (
                                   <AvatarImage src={u.avatarUrl} alt={u.name} />
                                 ) : null}
-                                <AvatarFallback className="text-[0.55rem]">
-                                  {initials(u.name)}
-                                </AvatarFallback>
+                                <AvatarFallback />
                               </Avatar>
                               <span className="truncate">{u.name}</span>
                             </span>
@@ -255,9 +252,7 @@ export function TaskFormDialog({
                               {u.avatarUrl ? (
                                 <AvatarImage src={u.avatarUrl} alt={u.name} />
                               ) : null}
-                              <AvatarFallback className="text-[0.6rem]">
-                                {initials(u.name)}
-                              </AvatarFallback>
+                              <AvatarFallback />
                             </Avatar>
                             <span className="flex min-w-0 flex-col leading-tight">
                               <span className="truncate text-sm">{u.name}</span>

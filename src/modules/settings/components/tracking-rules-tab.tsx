@@ -49,7 +49,6 @@ import {
   type UsageCategory,
   type UsageItem,
 } from "@/lib/mock-insights"
-import { initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -649,9 +648,7 @@ function ExceptionsPanel({
                   >
                     <Avatar className="size-6">
                       <AvatarImage src={p.avatarUrl} alt={p.name} />
-                      <AvatarFallback className="text-[10px]">
-                        {initials(p.name)}
-                      </AvatarFallback>
+                      <AvatarFallback />
                     </Avatar>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">
@@ -678,9 +675,7 @@ function ExceptionsPanel({
           <div key={person.id} className="flex items-center gap-3 px-6 py-3">
             <Avatar className="size-8">
               <AvatarImage src={person.avatarUrl} alt={person.name} />
-              <AvatarFallback className="text-xs">
-                {initials(person.name)}
-              </AvatarFallback>
+              <AvatarFallback />
             </Avatar>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">{person.name}</p>

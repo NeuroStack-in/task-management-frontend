@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
-import { initials } from "@/lib/format";
 import { PageHeader } from "@/components/shared/page-header";
 import { Sparkline } from "@/components/shared/sparkline";
 import { Gauge } from "@/components/shared/gauge";
@@ -226,8 +225,12 @@ function RichProfile({
       ? Math.round((presentDays / (presentDays + lateDays)) * 100)
       : 100;
 
+  // Org leadership (no attendance card) gets a full-width Account details card;
+  // tighten its spacing so it doesn't read as sparse.
+  const compact = !showAttendance;
+
   return (
-    <div className="flex flex-col gap-5 pb-2">
+    <div className={cn("flex flex-col pb-2", compact ? "gap-3 lg:gap-2" : "gap-5")}>
       <PageHeader
         title="Profile"
         description="Your account, role, and personal productivity."
@@ -235,7 +238,10 @@ function RichProfile({
 
       {/* Hero identity band */}
       <section
-        className="relative overflow-hidden rounded-2xl bg-feature p-6 text-feature-foreground shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-7"
+        className={cn(
+          "relative overflow-hidden rounded-2xl bg-feature text-feature-foreground shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-500",
+          compact ? "p-5 lg:p-3" : "p-6 sm:p-7",
+        )}
         style={{ animationFillMode: "backwards" }}
       >
         <div
@@ -259,11 +265,14 @@ function RichProfile({
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-5">
             <div className="group relative shrink-0">
-              <Avatar className="size-24 ring-4 ring-white/25">
+              <Avatar
+                className={cn(
+                  "ring-4 ring-white/25",
+                  compact ? "size-20" : "size-24",
+                )}
+              >
                 <AvatarImage src={user.avatarUrl} alt={user.name} />
-                <AvatarFallback className="bg-white/15 text-2xl font-semibold text-white">
-                  {initials(user.name)}
-                </AvatarFallback>
+                <AvatarFallback className="bg-white/15 text-white" />
               </Avatar>
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -300,7 +309,12 @@ function RichProfile({
             </div>
           </div>
 
-          <div className="shrink-0 rounded-xl bg-white/10 p-4 ring-1 ring-inset ring-white/15 backdrop-blur-sm sm:min-w-60">
+          <div
+            className={cn(
+              "shrink-0 rounded-xl bg-white/10 ring-1 ring-inset ring-white/15 backdrop-blur-sm sm:min-w-60",
+              compact ? "p-3 lg:p-2" : "p-4",
+            )}
+          >
             <div className="flex items-center justify-between gap-6">
               <div>
                 <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-feature-foreground/75">
@@ -332,10 +346,18 @@ function RichProfile({
         )}
       >
         <Card
-          className="animate-in fade-in slide-in-from-bottom-3 p-6 duration-500 sm:p-7 [--card-spacing:--spacing(3)]"
+          className={cn(
+            "animate-in fade-in slide-in-from-bottom-3 duration-500 [--card-spacing:--spacing(3)]",
+            compact ? "p-5 lg:p-3.5" : "p-6 sm:p-7",
+          )}
           style={{ animationDelay: "80ms", animationFillMode: "backwards" } as CSSProperties}
         >
-          <div className="mb-5 flex items-center justify-between gap-3">
+          <div
+            className={cn(
+              "flex items-center justify-between gap-3",
+              compact ? "mb-3 lg:mb-2" : "mb-5",
+            )}
+          >
             <h3 className="font-heading text-base font-medium">Account details</h3>
             <div className="flex items-center gap-3">
               <span className="font-mono text-xs text-muted-foreground">{facts.employeeId}</span>
@@ -344,9 +366,9 @@ function RichProfile({
               </Button>
             </div>
           </div>
-          <ManagerGroup label="Contact" rows={contact} />
-          <div className="my-5 h-px bg-border" />
-          <ManagerGroup label="Employment" rows={employment} />
+          <ManagerGroup label="Contact" rows={contact} compact={compact} />
+          <div className={cn("h-px bg-border", compact ? "my-3 lg:my-2" : "my-5")} />
+          <ManagerGroup label="Employment" rows={employment} compact={compact} />
         </Card>
 
         {showAttendance ? (
@@ -400,9 +422,7 @@ function RichProfile({
           <div className="flex items-center gap-4">
             <Avatar className="size-16 ring-2 ring-border">
               <AvatarImage src={previewSrc} alt="" />
-              <AvatarFallback className="text-lg font-semibold">
-                {initials(form.name || user.name)}
-              </AvatarFallback>
+              <AvatarFallback />
             </Avatar>
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
@@ -497,19 +517,45 @@ function RichProfile({
   );
 }
 
-function ManagerGroup({ label, rows }: { label: string; rows: DetailRow[] }) {
+function ManagerGroup({
+  label,
+  rows,
+  compact,
+}: {
+  label: string;
+  rows: DetailRow[];
+  compact?: boolean;
+}) {
   return (
     <div>
-      <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+      <p
+        className={cn(
+          "text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground",
+          compact ? "mb-1.5 lg:mb-1" : "mb-2.5",
+        )}
+      >
         {label}
       </p>
-      <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+      <dl
+        className={cn(
+          "grid gap-x-6 sm:grid-cols-2",
+          compact ? "gap-y-2" : "gap-y-1",
+        )}
+      >
         {rows.map((d) => (
           <div
             key={d.label}
-            className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50"
+            className={cn(
+              "-mx-2 flex items-center gap-3 rounded-lg px-2 transition-colors hover:bg-muted/50",
+              compact ? "py-1.5 lg:py-1.5" : "py-2",
+            )}
           >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
+            <span
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary",
+                compact ? "size-9 lg:size-8" : "size-9",
+              )}
+            >
               <d.icon className="size-4" />
             </span>
             <div className="min-w-0">

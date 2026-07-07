@@ -38,19 +38,53 @@ function AvatarImage({ className, ...props }: AvatarPrimitive.Image.Props) {
   )
 }
 
+/**
+ * The WorkPulse default avatar mark — the signature pulse-line motif
+ * (Docs/DESIGN.md), not initials. Purely brand-driven and identical for every
+ * user, so it stays instantly recognizable across the app. Colours come from
+ * theme tokens (`text-primary`), so it adapts to light/dark and every palette.
+ * The stroke scales with the SVG, staying crisp from 24px (navbar) to a profile
+ * hero. Rounded caps match the sparkline/gauge primitives.
+ */
+function DefaultAvatarMark({ className }: { className?: string }) {
+  // Colour is inherited (`currentColor`) from the fallback container, so a call
+  // site can recolour the pulse — e.g. `text-white` on a coloured banner —
+  // without touching this mark.
+  return (
+    <svg
+      viewBox="0 0 40 40"
+      fill="none"
+      aria-hidden="true"
+      className={cn("size-[68%]", className)}
+    >
+      <path
+        d="M6 20 H17 L20 12 L23 28 L26 20 H34"
+        stroke="currentColor"
+        strokeWidth={2.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity={0.9}
+      />
+    </svg>
+  )
+}
+
 function AvatarFallback({
   className,
+  children,
   ...props
 }: AvatarPrimitive.Fallback.Props) {
   return (
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
       className={cn(
-        "flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs",
+        "flex size-full items-center justify-center rounded-full bg-gradient-to-b from-muted to-accent text-primary",
         className
       )}
       {...props}
-    />
+    >
+      {children ?? <DefaultAvatarMark />}
+    </AvatarPrimitive.Fallback>
   )
 }
 
@@ -103,6 +137,7 @@ export {
   Avatar,
   AvatarImage,
   AvatarFallback,
+  DefaultAvatarMark,
   AvatarGroup,
   AvatarGroupCount,
   AvatarBadge,

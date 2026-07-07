@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ReportsExperimental } from "@/modules/insights/components/reports-experimental";
 
-export const metadata: Metadata = { title: "AI Insights & Reports · Analytics" };
+export const metadata: Metadata = { title: "Insights & Reports · Analytics" };
 
 /**
  * The AI-first reports surface: AI briefing, workforce health, and the report

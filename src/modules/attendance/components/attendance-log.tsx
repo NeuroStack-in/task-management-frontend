@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { users } from "@/lib/data";
-import { initials } from "@/lib/format";
 import { useDataScope } from "@/hooks/use-data-scope";
 import { type AttendanceStatus } from "@/lib/mock-metrics";
 import {
@@ -320,9 +319,7 @@ export function AttendanceLog({
                           <div className="flex items-center gap-3">
                             <Avatar className="size-8">
                               <AvatarImage src={r.avatarUrl} alt={r.name} />
-                              <AvatarFallback className="text-xs">
-                                {initials(r.name)}
-                              </AvatarFallback>
+                              <AvatarFallback />
                             </Avatar>
                             <span className="font-medium">{r.name}</span>
                           </div>

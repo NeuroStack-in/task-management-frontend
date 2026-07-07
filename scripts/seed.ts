@@ -97,7 +97,9 @@ function generateUsers(count: number): User[] {
     id: "user-owner",
     name: "Alex Morgan",
     email: "owner@acme.test",
-    avatarUrl: faker.image.avatarGitHub(),
+    // No photo → shows the WorkPulse branded default avatar. Users only get an
+    // image once they actually upload one (see the ~30% minority below).
+    avatarUrl: undefined,
     roleId: "role-owner",
     jobTitle: "Founder & CEO",
     department: "Product",
@@ -130,7 +132,11 @@ function generateUsers(count: number): User[] {
       email: faker.internet
         .email({ firstName, lastName, provider: "acme.test" })
         .toLowerCase(),
-      avatarUrl: faker.image.avatarGitHub(),
+      // Only a minority have uploaded a real photo; everyone else falls through
+      // to the WorkPulse branded default avatar (AvatarFallback).
+      avatarUrl: faker.datatype.boolean({ probability: 0.3 })
+        ? faker.image.personPortrait()
+        : undefined,
       roleId,
       jobTitle: faker.person.jobTitle(),
       department,

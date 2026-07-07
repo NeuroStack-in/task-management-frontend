@@ -8,7 +8,6 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
 import {
   PROJECT_STATUS_META,
   PROJECT_STATUS_ORDER,
@@ -140,7 +139,7 @@ export function ProjectsList({
                             {lead.avatarUrl ? (
                               <AvatarImage src={lead.avatarUrl} alt={lead.name} />
                             ) : null}
-                            <AvatarFallback>{initials(lead.name)}</AvatarFallback>
+                            <AvatarFallback />
                           </Avatar>
                         ) : null}
                         <div className="min-w-0">

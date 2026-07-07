@@ -19,7 +19,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Sparkline } from "@/components/shared/sparkline";
 import { useAssistantStore } from "@/stores/assistant.store";
-import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { User } from "@/types/user";
 
@@ -51,9 +50,7 @@ export function TopEmployeesWidget({ people }: { people: User[] }) {
             </span>
             <Avatar className="size-9">
               <AvatarImage src={u.avatarUrl} alt={u.name} />
-              <AvatarFallback className="text-xs">
-                {initials(u.name)}
-              </AvatarFallback>
+              <AvatarFallback />
             </Avatar>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{u.name}</p>

@@ -10,7 +10,6 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
 import {
   toneBar,
   toneDot,
@@ -85,7 +84,7 @@ export function MemberStack({
       {shown.map((m) => (
         <Avatar key={m.id} size="sm">
           {m.avatarUrl ? <AvatarImage src={m.avatarUrl} alt={m.name} /> : null}
-          <AvatarFallback>{initials(m.name)}</AvatarFallback>
+          <AvatarFallback />
         </Avatar>
       ))}
       {extra > 0 ? (

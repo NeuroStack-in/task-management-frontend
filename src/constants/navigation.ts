@@ -129,7 +129,7 @@ export const INSIGHTS_TABS: NavItem[] = [
     description: "Screenshot gallery, timeline, and risk analysis.",
   },
   {
-    label: "AI Insights & Reports",
+    label: "Insights & Reports",
     href: "/insights/ai-reports",
     icon: WandSparkles,
     permission: "reports:view",

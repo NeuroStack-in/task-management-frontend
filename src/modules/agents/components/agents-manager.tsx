@@ -67,7 +67,6 @@ import { StatCard } from "@/components/shared/stat-card"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { EmptyState } from "@/components/shared/empty-state"
 import { usePermissions } from "@/hooks/use-permissions"
-import { initials } from "@/lib/format"
 import {
   AGENTS,
   AGENT_ENROLLMENT_TOKEN,
@@ -276,9 +275,7 @@ export function AgentsManager() {
                       <TableCell className="py-3 pl-4">
                         <div className="flex items-center gap-3">
                           <Avatar className="size-8">
-                            <AvatarFallback className="text-[10px]">
-                              {initials(a.user)}
-                            </AvatarFallback>
+                            <AvatarFallback />
                           </Avatar>
                           <div className="min-w-0">
                             <p className="font-medium">{a.hostname}</p>

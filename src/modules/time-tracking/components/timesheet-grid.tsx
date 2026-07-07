@@ -26,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { initials } from "@/lib/format";
 import type {
   ProjectTimesheet,
   TeamMemberTime,
@@ -418,9 +417,7 @@ export function TimesheetGrid({
                         ) : (
                           <Avatar className="size-8">
                             <AvatarImage src={r.avatarUrl} alt={r.name} />
-                            <AvatarFallback className="text-xs">
-                              {initials(r.name)}
-                            </AvatarFallback>
+                            <AvatarFallback />
                           </Avatar>
                         )}
                         <div className="min-w-0">

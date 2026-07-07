@@ -4,9 +4,11 @@ import { useMemo, useState } from "react";
 import {
   ArrowLeft,
   Camera,
+  ChevronLeft,
   ChevronRight,
   Flag,
   Maximize2,
+  Minimize2,
   Search,
   Sparkles,
   Users,
@@ -33,7 +35,6 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useDataScope } from "@/hooks/use-data-scope";
-import { initials } from "@/lib/format";
 import {
   SCREENSHOT_EMPLOYEES,
   dayLabel,
@@ -241,9 +242,7 @@ function EmployeeCard({
       <div className="flex items-center gap-2 px-3 py-2.5">
         <Avatar className="size-8">
           <AvatarImage src={emp.user.avatarUrl} alt={emp.user.name} />
-          <AvatarFallback className="text-[10px]">
-            {initials(emp.user.name)}
-          </AvatarFallback>
+          <AvatarFallback />
         </Avatar>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{emp.user.name}</p>
@@ -291,6 +290,11 @@ function EmployeeDetail({
   );
 
   const dirty = day !== "" || from !== "" || to !== "" || flag !== "all";
+  // Position of the open capture within the current (filtered) list, for
+  // prev/next navigation inside the lightbox.
+  const lbIndex = lightbox
+    ? shots.findIndex((s) => s.id === lightbox.id)
+    : -1;
   const reset = () => {
     setDay("");
     setFrom("");
@@ -308,7 +312,7 @@ function EmployeeDetail({
       <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-card px-5 py-4 shadow-soft">
         <Avatar className="size-12">
           <AvatarImage src={employee.user.avatarUrl} alt={employee.user.name} />
-          <AvatarFallback>{initials(employee.user.name)}</AvatarFallback>
+          <AvatarFallback />
         </Avatar>
         <div className="min-w-0 flex-1">
           <h2 className="font-heading text-lg font-semibold">
@@ -428,7 +432,18 @@ function EmployeeDetail({
         </div>
       )}
 
-      <Lightbox shot={lightbox} onClose={() => setLightbox(null)} />
+      <Lightbox
+        shot={lightbox}
+        onClose={() => setLightbox(null)}
+        onPrev={
+          lbIndex > 0 ? () => setLightbox(shots[lbIndex - 1]) : undefined
+        }
+        onNext={
+          lbIndex >= 0 && lbIndex < shots.length - 1
+            ? () => setLightbox(shots[lbIndex + 1])
+            : undefined
+        }
+      />
     </div>
   );
 }
@@ -567,14 +582,17 @@ function ShotCard({
 function Lightbox({
   shot,
   onClose,
+  onPrev,
+  onNext,
 }: {
   shot: Screenshot | null;
   onClose: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
 }) {
   const reason = shot ? flagReason(shot) : null;
   const [full, setFull] = useState(false);
   return (
-    <>
     <Dialog
       open={!!shot}
       onOpenChange={(open) => {
@@ -584,14 +602,54 @@ function Lightbox({
         }
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        className={cn(
+          // Smoothly tween size between compact and full screen. interpolate-size
+          // lets height animate to/from `auto` (Chromium); elsewhere it degrades
+          // to an instant height change while width still animates.
+          "transition-[max-width,height,max-height] duration-300 ease-out [interpolate-size:allow-keywords]",
+          full
+            ? "flex h-[92vh] max-w-[98vw] flex-col overflow-hidden sm:max-w-[98vw]"
+            : "sm:max-w-lg",
+        )}
+        onKeyDown={(e) => {
+          // Arrow keys move between captures while the detail dialog is open.
+          if (e.key === "ArrowLeft") onPrev?.();
+          else if (e.key === "ArrowRight") onNext?.();
+        }}
+      >
         {shot ? (
           <>
+            {/* Prev / next — floated just outside the dialog panel (compact
+                mode only; in full screen they live in the grid gutters). */}
+            {!full ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onPrev}
+                  disabled={!onPrev}
+                  aria-label="Previous screenshot"
+                  className="absolute top-1/2 right-full mr-3 hidden size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background text-foreground shadow-md ring-1 ring-foreground/10 transition hover:bg-accent disabled:pointer-events-none disabled:opacity-0 sm:flex"
+                >
+                  <ChevronLeft className="size-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onNext}
+                  disabled={!onNext}
+                  aria-label="Next screenshot"
+                  className="absolute top-1/2 left-full ml-3 hidden size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background text-foreground shadow-md ring-1 ring-foreground/10 transition hover:bg-accent disabled:pointer-events-none disabled:opacity-0 sm:flex"
+                >
+                  <ChevronRight className="size-5" />
+                </button>
+              </>
+            ) : null}
+
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 {shot.user.name}
                 {shot.flagged ? (
-                  <Badge variant="default">
+                  <Badge className="border-transparent bg-destructive text-white">
                     <Flag className="size-3" /> Needs review
                   </Badge>
                 ) : null}
@@ -605,78 +663,117 @@ function Lightbox({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setFull(true)}
+                onClick={() => setFull((f) => !f)}
               >
-                <Maximize2 className="size-4" /> View full screenshot
+                {full ? (
+                  <>
+                    <Minimize2 className="size-4" /> Exit full screen
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="size-4" /> Full screen
+                  </>
+                )}
               </Button>
             </div>
 
-            {/* Full capture */}
-            <div className="relative aspect-[16/10] overflow-hidden rounded-lg border">
-              <CaptureImage seed={shot.id} alt={`${shot.app} screenshot`} />
-              <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
-                {shot.app}
-              </div>
-            </div>
+            {/* Body — capture beside the details when maximized, stacked
+                otherwise (the wrappers collapse to `contents` so the normal
+                dialog keeps its single-column flow). */}
+            <div
+              className={cn(
+                full
+                  ? "grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]"
+                  : "contents",
+              )}
+            >
+              {/* Capture */}
+              {full ? (
+                <div className="relative flex min-h-0 items-center justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={captureUrl(shot.id)}
+                    alt={`${shot.app} screenshot`}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                  {/* Prev / next overlaid on the edges */}
+                  <button
+                    type="button"
+                    onClick={onPrev}
+                    disabled={!onPrev}
+                    aria-label="Previous screenshot"
+                    className="absolute left-2 top-1/2 hidden size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md ring-1 ring-foreground/10 backdrop-blur-sm transition hover:bg-background disabled:pointer-events-none disabled:opacity-30 lg:flex"
+                  >
+                    <ChevronLeft className="size-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onNext}
+                    disabled={!onNext}
+                    aria-label="Next screenshot"
+                    className="absolute right-2 top-1/2 hidden size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md ring-1 ring-foreground/10 backdrop-blur-sm transition hover:bg-background disabled:pointer-events-none disabled:opacity-30 lg:flex"
+                  >
+                    <ChevronRight className="size-5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative aspect-[16/10] overflow-hidden rounded-lg border">
+                  <CaptureImage seed={shot.id} alt={`${shot.app} screenshot`} />
+                  <div className="absolute left-2 top-2 rounded-full bg-background/85 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
+                    {shot.app}
+                  </div>
+                </div>
+              )}
 
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted-foreground">Application</dt>
-              <dd className="text-right font-medium">{shot.app}</dd>
-              <dt className="text-muted-foreground">Activity</dt>
-              <dd
+              {/* Details */}
+              <div
                 className={cn(
-                  "text-right font-mono font-medium tabular-nums",
-                  activityTone(shot.activity),
+                  full
+                    ? "flex min-h-0 flex-col gap-4 overflow-y-auto"
+                    : "contents",
                 )}
               >
-                {shot.activity}%
-              </dd>
-              <dt className="text-muted-foreground">Captured</dt>
-              <dd className="text-right font-medium">
-                {dayLabel(shot.date)} · {shot.time}
-              </dd>
-              {reason ? (
-                <>
-                  <dt className="text-muted-foreground">Review reason</dt>
-                  <dd className="text-right font-medium text-destructive">
-                    {reason}
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <dt className="text-muted-foreground">Application</dt>
+                  <dd className="text-right font-medium">{shot.app}</dd>
+                  <dt className="text-muted-foreground">Activity</dt>
+                  <dd
+                    className={cn(
+                      "text-right font-mono font-medium tabular-nums",
+                      activityTone(shot.activity),
+                    )}
+                  >
+                    {shot.activity}%
                   </dd>
-                </>
-              ) : null}
-            </dl>
+                  <dt className="text-muted-foreground">Captured</dt>
+                  <dd className="text-right font-medium">
+                    {dayLabel(shot.date)} · {shot.time}
+                  </dd>
+                  {reason ? (
+                    <>
+                      <dt className="text-muted-foreground">Review reason</dt>
+                      <dd className="text-right font-medium text-destructive">
+                        {reason}
+                      </dd>
+                    </>
+                  ) : null}
+                </dl>
 
-            {/* Per-capture AI analysis */}
-            <div className="flex gap-2 rounded-xl bg-feature-tint p-3 text-sm">
-              <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-              <div>
-                <p className="font-medium text-primary">AI analysis</p>
-                <p className="mt-0.5 text-foreground/80">{aiAnalysis(shot)}</p>
+                {/* Per-capture AI analysis */}
+                <div className="flex gap-2 rounded-xl bg-feature-tint p-3 text-sm">
+                  <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div>
+                    <p className="font-medium text-primary">AI analysis</p>
+                    <p className="mt-0.5 text-foreground/80">
+                      {aiAnalysis(shot)}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </>
         ) : null}
       </DialogContent>
     </Dialog>
-
-    {/* Full-screen viewer — opens the capture large, in-app, with a close button */}
-    <Dialog open={full} onOpenChange={setFull}>
-      <DialogContent className="max-w-[96vw] border-0 bg-transparent p-0 shadow-none sm:max-w-5xl">
-        <DialogHeader className="sr-only">
-          <DialogTitle>Full screenshot</DialogTitle>
-          <DialogDescription>
-            {shot ? `${shot.app} — ${shot.user.name}` : ""}
-          </DialogDescription>
-        </DialogHeader>
-        {shot ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={captureUrl(shot.id)}
-            alt={`${shot.app} screenshot`}
-            className="max-h-[85vh] w-full rounded-lg object-contain"
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
-    </>
   );
 }

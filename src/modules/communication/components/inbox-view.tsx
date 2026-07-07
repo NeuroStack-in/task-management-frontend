@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { initials } from "@/lib/format";
 import {
   CONVERSATIONS,
   QUICK_REPLIES,
@@ -251,7 +250,7 @@ function ConversationAvatar({
     <span className="relative shrink-0">
       <Avatar className="size-9">
         <AvatarImage src={c.avatarUrl} alt={c.name} />
-        <AvatarFallback className="text-xs">{initials(c.name)}</AvatarFallback>
+        <AvatarFallback />
       </Avatar>
       {c.online ? (
         <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-success ring-2 ring-card" />

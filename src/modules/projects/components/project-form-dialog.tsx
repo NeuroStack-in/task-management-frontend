@@ -29,7 +29,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
 import type { UserMini } from "../lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 
@@ -349,7 +348,7 @@ function MemberMultiSelect({
                     {u.avatarUrl ? (
                       <AvatarImage src={u.avatarUrl} alt={u.name} />
                     ) : null}
-                    <AvatarFallback>{initials(u.name)}</AvatarFallback>
+                    <AvatarFallback />
                   </Avatar>
                   <span className="min-w-0 flex-1 leading-tight">
                     <span className="block truncate text-sm font-medium">
@@ -410,9 +409,7 @@ function PersonSelect({
                   {u.avatarUrl ? (
                     <AvatarImage src={u.avatarUrl} alt={u.name} />
                   ) : null}
-                  <AvatarFallback className="text-[0.55rem]">
-                    {initials(u.name)}
-                  </AvatarFallback>
+                  <AvatarFallback />
                 </Avatar>
                 <span className="truncate">{u.name}</span>
               </span>
@@ -428,9 +425,7 @@ function PersonSelect({
                 {u.avatarUrl ? (
                   <AvatarImage src={u.avatarUrl} alt={u.name} />
                 ) : null}
-                <AvatarFallback className="text-[0.6rem]">
-                  {initials(u.name)}
-                </AvatarFallback>
+                <AvatarFallback />
               </Avatar>
               <span className="flex min-w-0 flex-col leading-tight">
                 <span className="truncate text-sm">{u.name}</span>

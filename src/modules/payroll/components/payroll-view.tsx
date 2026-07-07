@@ -42,7 +42,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/hooks/use-permissions";
-import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { formatCurrency } from "@/lib/mock-billing";
 import { cn } from "@/lib/utils";
@@ -412,7 +411,7 @@ export function PayrollView() {
                     <div className="flex items-center gap-3">
                       <Avatar className="size-8">
                         <AvatarImage src={r.avatarUrl} alt={r.name} />
-                        <AvatarFallback>{initials(r.name)}</AvatarFallback>
+                        <AvatarFallback />
                       </Avatar>
                       <div className="min-w-0">
                         <p className="truncate font-medium">{r.name}</p>

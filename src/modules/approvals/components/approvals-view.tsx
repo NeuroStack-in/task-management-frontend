@@ -35,7 +35,6 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useDataScope } from "@/hooks/use-data-scope";
-import { initials } from "@/lib/format";
 import {
   APPROVALS,
   KIND_META,
@@ -180,9 +179,7 @@ export function ApprovalsView() {
                               src={req.requester.avatarUrl}
                               alt={req.requester.name}
                             />
-                            <AvatarFallback className="text-[10px]">
-                              {initials(req.requester.name)}
-                            </AvatarFallback>
+                            <AvatarFallback />
                           </Avatar>
                           <span className="truncate font-medium">
                             {req.requester.name}
@@ -303,7 +300,7 @@ function ApprovalDialog({
                   src={req.requester.avatarUrl}
                   alt={req.requester.name}
                 />
-                <AvatarFallback>{initials(req.requester.name)}</AvatarFallback>
+                <AvatarFallback />
               </Avatar>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{req.requester.name}</p>

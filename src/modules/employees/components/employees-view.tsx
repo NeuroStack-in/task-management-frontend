@@ -42,7 +42,6 @@ import {
 import { usePermissions } from "@/hooks/use-permissions";
 import { useEmployeesStore } from "@/stores/employees.store";
 import { useDataScope } from "@/hooks/use-data-scope";
-import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { InviteDialog } from "./invite-dialog";
@@ -358,9 +357,7 @@ export function EmployeesView({
                         <div className="flex items-center gap-3">
                           <Avatar className="size-8">
                             <AvatarImage src={e.avatarUrl} alt={e.name} />
-                            <AvatarFallback className="text-xs">
-                              {initials(e.name)}
-                            </AvatarFallback>
+                            <AvatarFallback />
                           </Avatar>
                           <div className="min-w-0">
                             <p className="truncate font-medium">{e.name}</p>

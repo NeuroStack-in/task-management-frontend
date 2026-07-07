@@ -40,7 +40,6 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useAuthStore } from "@/stores/auth.store";
 import { WILDCARD } from "@/constants/permissions";
 import { users, organization, projects, tasks } from "@/lib/data";
-import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 
@@ -186,9 +185,7 @@ export function OwnershipSettings() {
                 <span className="flex min-w-0 items-center gap-2">
                   <Avatar className="size-5">
                     <AvatarImage src={newOwner.avatarUrl} alt={newOwner.name} />
-                    <AvatarFallback className="text-[10px]">
-                      {initials(newOwner.name)}
-                    </AvatarFallback>
+                    <AvatarFallback />
                   </Avatar>
                   <span className="truncate">{newOwner.name}</span>
                 </span>
@@ -209,9 +206,7 @@ export function OwnershipSettings() {
                 >
                   <Avatar className="size-6">
                     <AvatarImage src={u.avatarUrl} alt={u.name} />
-                    <AvatarFallback className="text-[10px]">
-                      {initials(u.name)}
-                    </AvatarFallback>
+                    <AvatarFallback />
                   </Avatar>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{u.name}</span>

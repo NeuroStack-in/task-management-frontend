@@ -32,7 +32,6 @@ import {
   SETTINGS_SUBSECTIONS,
 } from "@/constants/navigation";
 import { users, projects } from "@/lib/data";
-import { initials } from "@/lib/format";
 import { scrollToHashAfterNav } from "@/lib/scroll-to-hash";
 import { cn } from "@/lib/utils";
 import { PALETTES, applyPalette } from "./palette-switcher";
@@ -349,9 +348,7 @@ export function CommandPalette() {
                       {r.avatarUrl !== undefined ? (
                         <Avatar className="size-7 shrink-0">
                           <AvatarImage src={r.avatarUrl} alt={r.label} />
-                          <AvatarFallback className="text-[10px]">
-                            {initials(r.label)}
-                          </AvatarFallback>
+                          <AvatarFallback />
                         </Avatar>
                       ) : Icon ? (
                         <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">

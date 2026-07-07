@@ -13,7 +13,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SidebarSearch } from "./sidebar-search";
 
@@ -161,9 +160,7 @@ export function SidebarNav({
           {user ? (
             <Avatar className="mt-1 size-9">
               <AvatarImage src={user.avatarUrl} alt={user.name} />
-              <AvatarFallback className="text-xs">
-                {initials(user.name)}
-              </AvatarFallback>
+              <AvatarFallback />
             </Avatar>
           ) : null}
         </div>

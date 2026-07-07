@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/table"
 import { PageHeader } from "@/components/shared/page-header"
 import { EmptyState } from "@/components/shared/empty-state"
-import { initials } from "@/lib/format"
 import {
   AUDIT_CATEGORIES,
   AUDIT_CATEGORY_LABEL,
@@ -288,9 +287,7 @@ export function AuditLogs() {
                   <TableCell className="py-3 pl-6 lg:pl-2">
                     <div className="flex items-center gap-2.5">
                       <Avatar className="size-7">
-                        <AvatarFallback className="text-[10px]">
-                          {initials(e.actorName)}
-                        </AvatarFallback>
+                        <AvatarFallback />
                       </Avatar>
                       <span className="font-medium">{e.actorName}</span>
                     </div>
@@ -353,9 +350,7 @@ export function AuditLogs() {
                 <DetailRow label="User">
                   <div className="flex items-center gap-2">
                     <Avatar className="size-6">
-                      <AvatarFallback className="text-[9px]">
-                        {initials(selected.actorName)}
-                      </AvatarFallback>
+                      <AvatarFallback />
                     </Avatar>
                     <div className="min-w-0">
                       <p className="truncate font-medium">{selected.actorName}</p>

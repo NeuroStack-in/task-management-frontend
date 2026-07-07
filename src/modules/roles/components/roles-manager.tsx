@@ -132,18 +132,16 @@ export function RolesManager() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{role.name}</span>
-                        <Badge
-                          variant={role.system ? "secondary" : "outline"}
-                          className="font-normal"
-                        >
-                          {role.system ? (
-                            <>
-                              <Lock className="size-3" /> System
-                            </>
-                          ) : (
-                            "Custom"
-                          )}
-                        </Badge>
+                        {role.system ? (
+                          <Lock
+                            className="size-3.5 shrink-0 text-muted-foreground"
+                            aria-label="System role"
+                          />
+                        ) : (
+                          <Badge variant="outline" className="font-normal">
+                            Custom
+                          </Badge>
+                        )}
                       </div>
                       {/* Description shown inline on small screens */}
                       <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground md:hidden">

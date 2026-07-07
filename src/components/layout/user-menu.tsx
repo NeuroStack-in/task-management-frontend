@@ -5,7 +5,6 @@ import { LogOut, User as UserIcon, Settings } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole, usePermissions } from "@/hooks/use-permissions";
 import { ADMIN_SECTIONS } from "@/constants/navigation";
-import { initials } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,18 +51,14 @@ export function UserMenu() {
       >
         <Avatar className="size-7">
           <AvatarImage src={user.avatarUrl} alt={user.name} />
-          <AvatarFallback className="text-xs">
-            {initials(user.name)}
-          </AvatarFallback>
+          <AvatarFallback />
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <div className="flex items-center gap-2.5 px-2 py-1.5">
           <Avatar className="size-9 shrink-0">
             <AvatarImage src={user.avatarUrl} alt={user.name} />
-            <AvatarFallback className="text-xs">
-              {initials(user.name)}
-            </AvatarFallback>
+            <AvatarFallback />
           </Avatar>
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-medium">{user.name}</span>

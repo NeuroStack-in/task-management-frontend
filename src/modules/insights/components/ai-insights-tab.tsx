@@ -36,7 +36,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
-import { initials } from "@/lib/format";
 import {
   ANOMALIES,
   ANOMALY_KIND_LABEL,
@@ -389,7 +388,7 @@ export function AttentionDialog({
                 <div className="flex items-center gap-3 rounded-xl border p-3">
                   <Avatar className="size-10">
                     <AvatarImage src={a.user.avatarUrl} alt={a.user.name} />
-                    <AvatarFallback>{initials(a.user.name)}</AvatarFallback>
+                    <AvatarFallback />
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{a.user.name}</p>

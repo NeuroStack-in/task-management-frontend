@@ -54,7 +54,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TablePagination } from "@/components/shared/table-pagination";
-import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
 import { useEmployeesStore } from "@/stores/employees.store";
@@ -389,9 +388,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
             <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
               <Avatar className="size-16 shrink-0 ring-4 ring-feature-tint">
                 <AvatarImage src={data.avatarUrl} alt={data.name} />
-                <AvatarFallback className="text-lg">
-                  {initials(data.name)}
-                </AvatarFallback>
+                <AvatarFallback />
               </Avatar>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

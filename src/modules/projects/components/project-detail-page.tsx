@@ -50,7 +50,6 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
 import { useAuthStore } from "@/stores/auth.store";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
 import {
   useProjectsStore,
   type ProjectFormValues,
@@ -352,9 +351,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
                     {lead.avatarUrl ? (
                       <AvatarImage src={lead.avatarUrl} alt={lead.name} />
                     ) : null}
-                    <AvatarFallback className="bg-white/10 text-[0.55rem] text-white">
-                      {initials(lead.name)}
-                    </AvatarFallback>
+                    <AvatarFallback className="bg-white/10 text-white" />
                   </Avatar>
                   Led by {lead.name}
                 </span>
@@ -634,7 +631,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
                         {u.avatarUrl ? (
                           <AvatarImage src={u.avatarUrl} alt={u.name} />
                         ) : null}
-                        <AvatarFallback>{initials(u.name)}</AvatarFallback>
+                        <AvatarFallback />
                       </Avatar>
                       <div className="min-w-0 flex-1 leading-tight">
                         <p className="flex items-center gap-1 truncate text-sm font-medium">
@@ -958,9 +955,7 @@ function TaskListView({
                             alt={assignee.name}
                           />
                         ) : null}
-                        <AvatarFallback className="text-[0.55rem]">
-                          {initials(assignee.name)}
-                        </AvatarFallback>
+                        <AvatarFallback />
                       </Avatar>
                       <span className="hidden truncate text-xs text-muted-foreground lg:inline">
                         {assignee.name}
@@ -1019,9 +1014,7 @@ function TaskCardContent({
               {assignee.avatarUrl ? (
                 <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
               ) : null}
-              <AvatarFallback className="text-[0.55rem]">
-                {initials(assignee.name)}
-              </AvatarFallback>
+              <AvatarFallback />
             </Avatar>
           ) : (
             <span className="text-[0.7rem] text-muted-foreground/60">
