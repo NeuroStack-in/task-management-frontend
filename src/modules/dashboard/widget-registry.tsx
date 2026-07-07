@@ -12,8 +12,7 @@ import {
   TopEmployeesWidget,
   ScreenshotsWidget,
   AiSummaryWidget,
-  AlertsWidget,
-  DeadlineWidget,
+  AlertsDeadlinesWidget,
   UpcomingTasksWidget,
   BillingWidget,
 } from "./components/widgets";
@@ -69,7 +68,6 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   },
   "ai-summary": { span: 1, render: () => <AiSummaryWidget /> },
   billing: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
-  alerts: { span: 1, render: () => <AlertsWidget /> },
-  deadlines: { span: 1, render: () => <DeadlineWidget /> },
+  "alerts-deadlines": { span: 1, render: () => <AlertsDeadlinesWidget /> },
   "upcoming-tasks": { span: 1, render: () => <UpcomingTasksWidget /> },
 };
