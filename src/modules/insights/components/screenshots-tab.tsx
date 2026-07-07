@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Flag,
+  Monitor,
   Search,
   Sparkles,
   Users,
@@ -271,6 +272,7 @@ function EmployeeDetail({
   const [from, setFrom] = useState<string>(""); // "HH:MM", "" = open start
   const [to, setTo] = useState<string>(""); // "HH:MM", "" = open end
   const [flag, setFlag] = useState<"all" | "flagged">("all");
+  const [desktop, setDesktop] = useState<string>("all"); // "all" | "1" | "2" …
   // Index into the currently-filtered `shots` list, for the gallery lightbox.
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
 
@@ -287,17 +289,20 @@ function EmployeeDetail({
         if (from && s.time < from) return false;
         if (to && s.time > to) return false;
         if (flag === "flagged" && !s.flagged) return false;
+        if (desktop !== "all" && String(s.desktop) !== desktop) return false;
         return true;
       }),
-    [employee, day, from, to, flag],
+    [employee, day, from, to, flag, desktop],
   );
 
-  const dirty = day !== "" || from !== "" || to !== "" || flag !== "all";
+  const dirty =
+    day !== "" || from !== "" || to !== "" || flag !== "all" || desktop !== "all";
   const reset = () => {
     setDay("");
     setFrom("");
     setTo("");
     setFlag("all");
+    setDesktop("all");
   };
 
   return (
@@ -318,6 +323,10 @@ function EmployeeDetail({
           </h2>
           <p className="text-sm text-muted-foreground">
             {employee.user.jobTitle} · {employee.user.department}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Monitor className="size-3.5" />
+            {employee.device}
           </p>
         </div>
         <div className="flex gap-5 text-sm">
@@ -358,8 +367,27 @@ function EmployeeDetail({
         ]}
       />
 
-      {/* Filters: calendar date · time range · flagged radio */}
+      {/* Filters: desktop · calendar date · time range · flagged radio */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
+        <Field label="Desktop">
+          <Select value={desktop} onValueChange={(v) => setDesktop(v as string)}>
+            <SelectTrigger className="h-8 w-40" aria-label="Desktop">
+              <SelectValue>
+                {(v) =>
+                  v == null || v === "all" ? "All desktops" : `Desktop ${v}`
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All desktops</SelectItem>
+              {employee.desktops.map((d) => (
+                <SelectItem key={d} value={String(d)}>
+                  Desktop {d}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         <Field label="Date">
           <DatePicker
             value={day}
@@ -551,6 +579,9 @@ function ShotCard({
             <Flag className="size-3" /> Needs review
           </Badge>
         ) : null}
+        <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
+          <Monitor className="size-3" /> Desktop {shot.desktop}
+        </span>
         <span className="absolute bottom-2 right-2 rounded-full bg-background/85 px-2 py-0.5 font-mono text-[11px] tabular-nums backdrop-blur-sm">
           {shot.activity}%
         </span>
@@ -558,14 +589,19 @@ function ShotCard({
 
       <div
         className={cn(
-          "flex items-center justify-between px-3 py-2.5 text-sm",
+          "px-3 py-2.5 text-sm",
           shot.flagged && "bg-destructive/10",
         )}
       >
-        <span className="font-medium">{dayLabel(shot.date)}</span>
-        <span className="font-mono text-xs tabular-nums text-muted-foreground">
-          {shot.time}
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="font-medium">{dayLabel(shot.date)}</span>
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {shot.time}
+          </span>
+        </div>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          {shot.device}
+        </p>
       </div>
     </Card>
   );
@@ -719,6 +755,8 @@ function Lightbox({
               <div className="mx-auto flex max-w-5xl flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm sm:flex sm:flex-wrap sm:items-end">
                   <OverlayDetail label="Application" value={shot.app} />
+                  <OverlayDetail label="Device" value={shot.device} />
+                  <OverlayDetail label="Desktop" value={`Desktop ${shot.desktop}`} />
                   <OverlayDetail
                     label="Activity"
                     value={`${shot.activity}%`}
