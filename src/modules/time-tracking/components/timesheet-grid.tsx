@@ -109,8 +109,6 @@ export function TimesheetGrid({
 }: {
   personRows: TeamMemberTime[];
   projectRows: ProjectTimesheet[];
-  /** Accepted for API compatibility; approvals live on the Approvals page. */
-  canApprove?: boolean;
 }) {
   const [group, setGroup] = useState<GroupBy>("person");
   const [query, setQuery] = useState("");

@@ -19,8 +19,8 @@ type View = "team" | "personal";
 /**
  * Role-aware Time Tracking (see Docs/RBAC.md):
  * - Personal tracker for people who log their own time (`time-tracking:edit`).
- * - Team timesheets + approvals for oversight roles (`time-tracking:approve`),
- *   so Owners/Admins don't get a personal timer they'll never use.
+ * - Team timesheet oversight for management roles (`time-tracking:manage`), so
+ *   Owners/Admins don't get a personal timer they'll never use.
  * Users with both (Owner/Admin) get a toggle and default to their own time.
  */
 export function TimeTrackingView({
@@ -34,9 +34,9 @@ export function TimeTrackingView({
 }) {
   const { can } = usePermissions();
   const { inScope } = useDataScope();
-  const canApprove = can("time-tracking:approve");
+  const canManageTeam = can("time-tracking:manage");
   const canTrack = can("time-tracking:edit");
-  const showToggle = canApprove && canTrack;
+  const showToggle = canManageTeam && canTrack;
 
   // Team leads only see their own team's timesheets; org roles see everyone.
   const scopedTeamRows = teamRows.filter((r) => inScope(r.id));
@@ -47,7 +47,7 @@ export function TimeTrackingView({
 
   const description =
     view === "team"
-      ? "Review the team's hours and approve timesheets."
+      ? "Review the team's tracked hours, billable split, and activity."
       : "Track your time, review today's timesheet, and monitor your weekly hours.";
 
   return (
@@ -80,7 +80,6 @@ export function TimeTrackingView({
           rows={scopedTeamRows}
           projectRows={projectRows}
           weekly={teamWeekly}
-          canApprove={canApprove}
         />
       ) : (
         <PersonalTimeView canExport={canTrack} />

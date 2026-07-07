@@ -19,15 +19,6 @@ const HOUR = MIN * 60;
 /** Demo notifications. `createdAt` is relative to import time. */
 export const DEMO_NOTIFICATIONS: AppNotification[] = [
   {
-    id: "seed-1",
-    type: "approval",
-    title: "Timesheet pending approval",
-    message: "Priya Nair submitted a timesheet for last week.",
-    read: false,
-    createdAt: Date.now() - MIN * 12,
-    href: "/approvals",
-  },
-  {
     id: "seed-2",
     type: "task",
     title: "Task due today",

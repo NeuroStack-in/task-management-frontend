@@ -1,14 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import {
-  CalendarOff,
-  Check,
-  ClipboardCheck,
-  Clock,
-  PencilLine,
-  X,
-} from "lucide-react";
+import { CalendarOff, Check, ClipboardCheck, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
@@ -46,13 +39,11 @@ import {
 import { cn } from "@/lib/utils";
 
 const KIND_ICON: Record<ApprovalKind, LucideIcon> = {
-  "time-change": PencilLine,
-  "manual-entry": Clock,
   leave: CalendarOff,
 };
 
 /** Sort order so requests of the same type sit together in the table. */
-const KIND_ORDER: ApprovalKind[] = ["time-change", "manual-entry", "leave"];
+const KIND_ORDER: ApprovalKind[] = ["leave"];
 
 const STATUS_BADGE: Record<ApprovalStatus, string> = {
   pending: "bg-warning/15 text-warning",
@@ -119,7 +110,7 @@ export function ApprovalsView() {
     <div className="space-y-5">
       <PageHeader
         title="Approval Center"
-        description={`${counts.pending} pending · review time-record changes, manual entries, and leave`}
+        description={`${counts.pending} pending · review and decide time-off requests`}
       />
 
       {/* Status filter */}

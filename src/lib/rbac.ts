@@ -60,7 +60,7 @@ const MANAGEMENT_PERMISSIONS: PermissionId[] = [
   "roles:view",
   "security:view",
   "payroll:view",
-  "time-tracking:approve",
+  "time-tracking:manage",
   "approvals:view",
 ];
 

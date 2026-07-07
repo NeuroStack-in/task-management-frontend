@@ -25,7 +25,7 @@ export const SYSTEM_ROLES: Role[] = [
       "dashboard:view",
       "dashboard:edit",
       "time-tracking:view",
-      "time-tracking:approve",
+      "time-tracking:manage",
       "tasks:view",
       "tasks:create",
       "tasks:edit",

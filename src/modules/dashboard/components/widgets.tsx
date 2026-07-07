@@ -228,7 +228,7 @@ const TASKS = [
   { title: "Review design tokens", project: "WEB-12", time: "9:30" },
   { title: "Sync with Platform team", project: "PLT-4", time: "11:00" },
   { title: "Draft hiring plan", project: "HR-7", time: "14:00" },
-  { title: "Approve timesheets", project: "OPS-2", time: "16:30" },
+  { title: "Review sprint board", project: "WEB-12", time: "16:30" },
 ];
 
 export function UpcomingTasksWidget() {

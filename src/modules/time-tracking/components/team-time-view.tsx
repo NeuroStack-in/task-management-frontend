@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, BadgeDollarSign, CheckCheck, Activity } from "lucide-react";
+import { Clock, BadgeDollarSign, Activity } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { TimesheetGrid } from "./timesheet-grid";
 import type {
@@ -13,12 +13,10 @@ export function TeamTimeView({
   rows,
   projectRows,
   weekly,
-  canApprove,
 }: {
   rows: TeamMemberTime[];
   projectRows: ProjectTimesheet[];
   weekly: DailyHours[];
-  canApprove: boolean;
 }) {
   const teamHours = weekly.reduce((s, d) => s + d.hours, 0);
   const teamBillable = weekly.reduce((s, d) => s + d.billable, 0);
@@ -26,11 +24,10 @@ export function TeamTimeView({
   const avgActivity = Math.round(
     rows.reduce((s, r) => s + r.activity, 0) / (rows.length || 1),
   );
-  const pending = rows.filter((r) => r.status === "pending").length;
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="Team hours"
           value={`${teamHours.toLocaleString()}h`}
@@ -46,12 +43,6 @@ export function TeamTimeView({
           delta={2}
         />
         <StatCard
-          label="Pending approvals"
-          value={pending}
-          icon={CheckCheck}
-          hint="awaiting review"
-        />
-        <StatCard
           label="Avg activity"
           value={`${avgActivity}%`}
           icon={Activity}
@@ -59,11 +50,7 @@ export function TeamTimeView({
         />
       </div>
 
-      <TimesheetGrid
-        personRows={rows}
-        projectRows={projectRows}
-        canApprove={canApprove}
-      />
+      <TimesheetGrid personRows={rows} projectRows={projectRows} />
     </div>
   );
 }

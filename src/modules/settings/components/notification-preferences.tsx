@@ -34,7 +34,7 @@ const NOTIFICATION_TYPES: NotificationType[] = [
   {
     key: "approvals",
     label: "Approvals",
-    description: "Decisions on your time-off requests and timesheets.",
+    description: "Decisions on your time-off requests.",
     defaults: { inApp: true, email: true },
   },
   {

@@ -46,7 +46,7 @@ const FEATURE_LIST: FeatureDef[] = [
     icon: Timer,
     label: "Time Tracking",
     description:
-      "Let employees log hours, start/stop timers, and submit timesheets for approval.",
+      "Let employees log hours, start/stop timers, and track time against projects.",
   },
   {
     key: "activity-monitoring",
