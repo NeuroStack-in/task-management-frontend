@@ -3,6 +3,7 @@ import { WILDCARD, CONTRIBUTOR_ONLY_PERMISSIONS } from "@/constants/permissions"
 import {
   NAV_GROUPS,
   ADMIN_SECTIONS,
+  ACCOUNT_SECTIONS,
   INSIGHTS_TABS,
   type NavGroup,
   type NavItem,
@@ -97,6 +98,7 @@ export function permissionForPath(pathname: string): PermissionId | null {
   const items: NavItem[] = [
     ...NAV_GROUPS.flatMap((g) => g.items),
     ...ADMIN_SECTIONS.flatMap((g) => g.items),
+    ...ACCOUNT_SECTIONS,
     ...INSIGHTS_TABS,
   ];
   let match: NavItem | null = null;

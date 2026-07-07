@@ -311,30 +311,41 @@ export function HelpPage() {
   return (
     <div className="space-y-10">
       {/* ── Hero ── */}
-      <section className="relative isolate overflow-hidden rounded-[1.6rem] bg-feature px-6 py-14 text-center shadow-xl shadow-primary/25 ring-1 ring-inset ring-white/15 duration-700 animate-in fade-in slide-in-from-bottom-2 sm:py-20">
-        {/* Layered gradient — bright crown, a coloured corner bloom, deeper base. */}
+      <section className="relative isolate overflow-hidden rounded-[1.6rem] bg-feature px-6 py-10 text-center ring-1 ring-inset ring-white/15 duration-700 animate-in fade-in slide-in-from-bottom-2 sm:py-14">
+        {/* Static teal base (bg-feature) — no gradient. */}
+        {/* Dotted texture, anchored to the left & right edges (fades to centre). */}
         <div
-          className="pointer-events-none absolute inset-0"
+          className="pointer-events-none absolute inset-0 opacity-60"
           style={{
             backgroundImage:
-              "radial-gradient(120% 110% at 15% -15%, rgba(255,255,255,0.24), transparent 50%), radial-gradient(100% 120% at 100% 0%, color-mix(in srgb, var(--primary) 45%, white), transparent 45%), linear-gradient(180deg, rgba(0,0,0,0) 35%, rgba(0,0,0,0.38) 100%)",
+              "radial-gradient(rgba(255,255,255,0.55) 1px, transparent 1.6px)",
+            backgroundSize: "20px 20px",
+            maskImage:
+              "linear-gradient(90deg, black 0%, black 9%, transparent 30%, transparent 70%, black 91%, black 100%)",
+            WebkitMaskImage:
+              "linear-gradient(90deg, black 0%, black 9%, transparent 30%, transparent 70%, black 91%, black 100%)",
           }}
         />
-        {/* Soft, slowly-breathing glow orbs (respects reduced-motion). */}
-        <div className="pointer-events-none absolute -top-24 -left-16 size-72 rounded-full bg-white/12 blur-3xl motion-safe:animate-pulse motion-safe:[animation-duration:7s]" />
-        <div className="pointer-events-none absolute -bottom-28 right-0 size-80 translate-x-1/4 rounded-full bg-primary/30 blur-3xl motion-safe:animate-pulse motion-safe:[animation-duration:9s]" />
-        {/* Dot texture, masked to fade toward the edges. */}
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.14]"
-          style={{
-            backgroundImage:
-              "radial-gradient(rgba(255,255,255,0.85) 1px, transparent 1.5px)",
-            backgroundSize: "22px 22px",
-            maskImage: "radial-gradient(85% 80% at 50% 0%, black, transparent 78%)",
-            WebkitMaskImage: "radial-gradient(85% 80% at 50% 0%, black, transparent 78%)",
-          }}
-        />
-
+        {/* Soft flowing wave lines. */}
+        <svg
+          aria-hidden
+          viewBox="0 0 1200 320"
+          preserveAspectRatio="none"
+          fill="none"
+          className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.16]"
+        >
+          <path
+            d="M0 205 C 240 150 380 245 620 205 S 1000 128 1200 188"
+            stroke="white"
+            strokeWidth="1.4"
+          />
+          <path
+            d="M0 248 C 260 198 430 288 660 248 S 1030 178 1200 232"
+            stroke="white"
+            strokeWidth="1"
+            opacity="0.55"
+          />
+        </svg>
         <div className="relative z-10 text-feature-foreground">
         <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
           How can we help?
@@ -346,18 +357,18 @@ export function HelpPage() {
 
         <div className="mx-auto mt-7 flex max-w-xl flex-col gap-2.5 sm:flex-row">
           <div className="relative flex-1">
-            <Search className="absolute top-1/2 left-3.5 size-4.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute top-1/2 left-3.5 size-4.5 -translate-y-1/2 text-slate-500" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search for answers…"
-              className="h-12 rounded-xl border-transparent bg-card pl-10 text-foreground shadow-sm placeholder:text-muted-foreground"
+              className="h-12 rounded-xl border-transparent bg-white pl-10 text-slate-900 shadow-sm placeholder:text-slate-500 dark:bg-white"
             />
           </div>
           <Button
             type="button"
             onClick={askAi}
-            className="h-12 gap-2 rounded-xl bg-card text-foreground hover:bg-card/90"
+            className="h-12 gap-2 rounded-xl bg-white text-slate-900 hover:bg-white/90"
           >
             <Sparkles className="size-4 text-primary" /> Ask AI
           </Button>

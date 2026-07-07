@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { FolderKanban, Search, X, type LucideIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsSelfScoped } from "@/hooks/use-self-scope";
+import { useAuthStore } from "@/stores/auth.store";
 import { useUiStore } from "@/stores/ui.store";
 import { isNavItemVisible } from "@/lib/rbac";
 import {
@@ -40,6 +42,10 @@ const MAX_PAGES = 6;
 export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
   const { can, role, nav } = usePermissions();
+  // Self-scoped roles (Employee) only see projects they're a member of — mirror
+  // the Projects page so search doesn't surface projects they can't open.
+  const selfScoped = useIsSelfScoped();
+  const userId = useAuthStore((s) => s.user?.id);
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -94,7 +100,11 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     if (can("projects:view")) {
       out.push(
         ...projects
-          .filter((p) => `${p.name} ${p.key} ${p.id}`.toLowerCase().includes(q))
+          .filter(
+            (p) =>
+              (!selfScoped || (!!userId && p.memberIds.includes(userId))) &&
+              `${p.name} ${p.key} ${p.id}`.toLowerCase().includes(q),
+          )
           .slice(0, MAX_PROJECTS)
           .map<Result>((p) => ({
             id: `p-${p.id}`,
@@ -150,7 +160,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     );
 
     return out;
-  }, [query, can, role, nav]);
+  }, [query, can, role, nav, selfScoped, userId]);
 
   const activeIdx = results.length ? Math.min(active, results.length - 1) : 0;
 

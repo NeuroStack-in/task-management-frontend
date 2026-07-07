@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { ImagePlus, Upload, X } from "lucide-react"
 import { toast } from "sonner"
+import { isWithinSize, MB } from "@/lib/validation"
 import {
   Dialog,
   DialogContent,
@@ -43,7 +44,14 @@ export function PhotoEditor({ open, onClose, onApply }: PhotoEditorProps) {
   }, [open])
 
   function loadFile(file: File) {
-    if (!file.type.startsWith("image/")) return
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose an image file.")
+      return
+    }
+    if (!isWithinSize(file, 10 * MB)) {
+      toast.error("Image must be 10 MB or smaller.")
+      return
+    }
     setFile(file)
     setFileName(file.name)
     const url = URL.createObjectURL(file)

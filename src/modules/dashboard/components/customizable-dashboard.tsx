@@ -64,13 +64,11 @@ const TILE =
   "xl:basis-[calc((100%-2.5rem)/3-0.02px)]";
 
 /**
- * The first row (3 widgets on desktop) stretches to fill the viewport down to the
- * sidebar's bottom edge, so its bottom lands flush on the sidebar's bottom edge and
- * the rows below sit just under the fold (scroll to reveal — no view-more toggle).
- * This is the height from the top of the widget grid to that edge — tune the rem if
- * the row doesn't land exactly on the sidebar's bottom.
+ * A gentle floor for the first row so the top widgets stay visually balanced
+ * without ballooning to fill the viewport. Widgets otherwise size to their
+ * content; rows below sit under the fold (scroll to reveal — no view-more toggle).
  */
-const HERO_ROW_FILL = "xl:min-h-[calc(99vh-22rem)]";
+const HERO_ROW_FILL = "xl:min-h-[22rem]";
 
 function SortableWidget({
   id,

@@ -15,7 +15,6 @@ import { GlobalTimer } from "./global-timer";
 import { ThemeSwitcher } from "./theme-switcher";
 import { PaletteSwitcher } from "./palette-switcher";
 import { NotificationsMenu } from "./notifications-menu";
-import { UserMenu } from "./user-menu";
 
 export function TopNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -72,9 +71,6 @@ export function TopNavbar() {
         <div className="flex items-center gap-0.5 rounded-full bg-card p-1 shadow-soft">
           <NotificationsMenu />
           <ThemeSwitcher />
-        </div>
-        <div className="rounded-full bg-card shadow-soft">
-          <UserMenu />
         </div>
       </div>
     </header>

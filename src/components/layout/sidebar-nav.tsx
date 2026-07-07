@@ -38,7 +38,7 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { nav } = usePermissions();
+  const { nav, role } = usePermissions();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const requestSearchFocus = useUiStore((s) => s.requestSearchFocus);
@@ -159,12 +159,26 @@ export function SidebarNav({
             <TooltipContent side="right">Log out</TooltipContent>
           </Tooltip>
           {user ? (
-            <Avatar className="mt-1 size-9">
-              <AvatarImage src={user.avatarUrl} alt={user.name} />
-              <AvatarFallback className="text-xs">
-                {initials(user.name)}
-              </AvatarFallback>
-            </Avatar>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Link
+                    href="/settings/profile"
+                    onClick={onNavigate}
+                    aria-label="Profile"
+                    className="mt-1"
+                  />
+                }
+              >
+                <Avatar className="size-9">
+                  <AvatarImage src={user.avatarUrl} alt={user.name} />
+                  <AvatarFallback className="text-xs">
+                    {initials(user.name)}
+                  </AvatarFallback>
+                </Avatar>
+              </TooltipTrigger>
+              <TooltipContent side="right">Profile</TooltipContent>
+            </Tooltip>
           ) : null}
         </div>
       </div>
@@ -231,8 +245,36 @@ export function SidebarNav({
         </nav>
       </ScrollArea>
 
-      {/* Log out — pinned to the foot of the sidebar */}
-      <div className="border-t border-sidebar-border p-3">
+      {/* Account — profile + log out, pinned to the foot of the sidebar */}
+      <div className="space-y-0.5 border-t border-sidebar-border p-3">
+        {user ? (
+          <Link
+            href="/settings/profile"
+            onClick={onNavigate}
+            aria-current={
+              isActive(pathname, "/settings/profile") ? "page" : undefined
+            }
+            className={cn(
+              "flex items-center gap-3 rounded-md px-2 py-2 transition-colors",
+              isActive(pathname, "/settings/profile")
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            )}
+          >
+            <Avatar className="size-8 shrink-0">
+              <AvatarImage src={user.avatarUrl} alt={user.name} />
+              <AvatarFallback className="text-xs">
+                {initials(user.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{user.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {role?.name ?? "View profile"}
+              </p>
+            </div>
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={handleLogout}

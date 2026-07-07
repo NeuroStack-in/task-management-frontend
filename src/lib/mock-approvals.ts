@@ -24,13 +24,12 @@ export interface ApprovalRequest {
   status: ApprovalStatus;
 }
 
-// Lead with the demo manager's team (Design / Product Design) so a team lead
-// has requests to review, then fill with other active people for org roles.
+// Lead with one team (Design / Product Design) so a team-scoped approver view
+// is populated, then fill with other active people for org roles.
 const APPROVAL_TEAM = users.filter(
   (u) =>
     u.department === "Design" &&
     u.team === "Product Design" &&
-    u.roleId !== "role-manager" &&
     u.status === "active",
 );
 const APPROVAL_TEAM_IDS = new Set(APPROVAL_TEAM.map((u) => u.id));

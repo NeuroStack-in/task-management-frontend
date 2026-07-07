@@ -44,6 +44,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TimerHero } from "./timer-hero";
 import { WeeklyHoursChart } from "./weekly-hours-chart";
+import { PayrollWidget } from "./payroll-widget";
 
 export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   const [entries, setEntries] = useState<TimeEntry[]>(TODAYS_ENTRIES);
@@ -236,7 +237,11 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
         </CardContent>
       </Card>
 
-      <WeeklyHoursChart />
+      {/* Weekly hours (stacked bar + week arrows) alongside personal payroll */}
+      <div className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
+        <WeeklyHoursChart />
+        <PayrollWidget />
+      </div>
     </div>
   );
 }

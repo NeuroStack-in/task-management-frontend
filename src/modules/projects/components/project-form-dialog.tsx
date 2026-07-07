@@ -45,8 +45,12 @@ export const PROJECT_DEPARTMENTS = [
 ] as const;
 
 const schema = z.object({
-  name: z.string().min(2, "Give the project a name"),
-  description: z.string().max(500, "Keep it under 500 characters").optional(),
+  name: z.string().trim().min(2, "Give the project a name"),
+  description: z
+    .string()
+    .trim()
+    .max(500, "Keep it under 500 characters")
+    .optional(),
   department: z.string().min(1, "Pick a department"),
   leadUserId: z.string().min(1, "Pick a lead"),
   managerId: z.string().min(1, "Pick a manager"),

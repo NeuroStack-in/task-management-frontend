@@ -1,8 +1,7 @@
-import type { Metadata } from "next";
-import { BillingView } from "@/modules/billing/components/billing-view";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Billing & Subscription" };
-
+// Billing lives inside the Settings hub (gated by `billing:view`); keep the old
+// URL working by redirecting there so it can't be reached fail-open.
 export default function Page() {
-  return <BillingView />;
+  redirect("/settings/billing");
 }

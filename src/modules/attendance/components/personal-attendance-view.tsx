@@ -33,6 +33,18 @@ const STATUS: Record<
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Fixed axis for the "working window" timeline: 06:00 → 20:00 (in minutes).
+const DAY_START = 6 * 60;
+const DAY_END = 20 * 60;
+const DAY_SPAN = DAY_END - DAY_START;
+
+/** "HH:MM" → position (0–100%) along the day axis, clamped. */
+function axisPct(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  const mins = h * 60 + m;
+  return Math.max(0, Math.min(100, ((mins - DAY_START) / DAY_SPAN) * 100));
+}
+
 export function PersonalAttendanceView() {
   const user = useAuthStore((s) => s.user);
   const userId = user?.id ?? "";
@@ -225,26 +237,82 @@ export function PersonalAttendanceView() {
             Recent days
           </h2>
         </div>
-        <ul className="divide-y divide-border">
-          {recent.map((r) => {
-            const meta = STATUS[r.status];
-            return (
-              <li key={r.key} className="flex items-center gap-3 px-5 py-3 text-sm">
-                <span className="w-28 shrink-0 font-medium">{r.label}</span>
-                <span className="flex items-center gap-1.5">
-                  <span className={cn("size-2 rounded-full", meta.dot)} />
-                  <span className="text-muted-foreground">{meta.label}</span>
-                </span>
-                <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
-                  {r.clockIn} – {r.clockOut}
-                </span>
-                <span className="w-12 shrink-0 text-right tabular-nums">
-                  {r.hours > 0 ? `${r.hours.toFixed(1)}h` : "—"}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 font-medium">
+                  Date
+                </th>
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 font-medium">
+                  Status
+                </th>
+                <th scope="col" className="w-full px-3 py-2.5 font-medium">
+                  Working window
+                </th>
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
+                  Clock in
+                </th>
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
+                  Clock out
+                </th>
+                <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
+                  Hours
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {recent.map((r) => {
+                const meta = STATUS[r.status];
+                const logged = r.hours > 0 && r.clockIn && r.clockOut;
+                const left = logged ? axisPct(r.clockIn) : 0;
+                const right = logged ? axisPct(r.clockOut) : 0;
+                return (
+                  <tr key={r.key} className="transition-colors hover:bg-muted/40">
+                    <td className="whitespace-nowrap px-5 py-3 font-medium">
+                      {r.label}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3">
+                      <span className="flex items-center gap-1.5">
+                        <span className={cn("size-2 rounded-full", meta.dot)} />
+                        <span className="text-muted-foreground">{meta.label}</span>
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="relative h-1.5 w-full min-w-[7rem] overflow-hidden rounded-full bg-muted">
+                        {logged ? (
+                          <div
+                            className={cn(
+                              "absolute inset-y-0 rounded-full",
+                              meta.dot,
+                            )}
+                            style={{
+                              left: `${left}%`,
+                              width: `${Math.max(right - left, 2)}%`,
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
+                      {logged ? r.clockIn : "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
+                      {logged ? r.clockOut : "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums">
+                      {logged ? (
+                        <span className="font-medium">{r.hours.toFixed(1)}h</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

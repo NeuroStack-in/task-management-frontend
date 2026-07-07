@@ -9,14 +9,13 @@ import type { User } from "@/types/user";
 
 /* --------------------------------- People -------------------------------- */
 
-// Screenshot / anomaly subjects. Lead with the demo manager's monitored team
-// (Design / Product Design) so a team-scoped manager view is populated, then
-// fill with other people for the org-wide view. Deterministic (sorted by id).
+// Screenshot / anomaly subjects. Lead with one monitored team (Design /
+// Product Design) so a team-scoped view is populated, then fill with other
+// people for the org-wide view. Deterministic (sorted by id).
 const SCREENSHOT_TEAM = users.filter(
   (u) =>
     u.department === "Design" &&
     u.team === "Product Design" &&
-    u.roleId !== "role-manager" &&
     (u.status === "active" || u.status === "inactive"),
 );
 const SCREENSHOT_TEAM_IDS = new Set(SCREENSHOT_TEAM.map((u) => u.id));

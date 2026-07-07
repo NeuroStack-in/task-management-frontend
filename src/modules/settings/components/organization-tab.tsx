@@ -55,6 +55,7 @@ import {
   type OrgLocation,
   type WorkDay,
 } from "@/lib/mock-org"
+import { isWithinSize, MB } from "@/lib/validation"
 import { cn } from "@/lib/utils"
 
 // ── Lifted form state ─────────────────────────────────────────────────────────
@@ -191,7 +192,15 @@ function CompanyInfoSection({
   const [dragging, setDragging] = useState(false)
 
   function acceptFile(file: File | undefined) {
-    if (!file || !file.type.startsWith("image/")) return
+    if (!file) return
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose an image file for the logo.")
+      return
+    }
+    if (!isWithinSize(file, 2 * MB)) {
+      toast.error("Logo must be 2 MB or smaller.")
+      return
+    }
     onBrandingChange({ logo: URL.createObjectURL(file) })
   }
 

@@ -220,6 +220,14 @@ export function EmployeesView({
     [customEmployees],
   );
 
+  // Department filter options are derived from the employees the current user
+  // can actually see — the full org for Owner/Admin, just their team for a
+  // team-scoped role — so the dropdown never lists empty departments.
+  const deptOptions = useMemo(
+    () => [...new Set(allEmployees.map((e) => e.department))].sort(),
+    [allEmployees],
+  );
+
   // Stats stay in sync as accounts are added this session.
   const liveStats = useMemo(() => {
     if (customEmployees.length === 0) return stats;
@@ -286,7 +294,7 @@ export function EmployeesView({
           onChange={resetPage(setDept)}
           options={[
             { value: "all", label: "All departments" },
-            ...departments.map((d) => ({ value: d, label: d })),
+            ...deptOptions.map((d) => ({ value: d, label: d })),
           ]}
         />
         <FilterDropdown

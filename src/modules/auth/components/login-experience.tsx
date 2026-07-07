@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
-import { AuthError, DEMO_EMAIL } from "@/modules/auth/services/auth.service";
+import {
+  AuthError,
+  DEMO_ACCOUNTS,
+  DEMO_PASSWORD,
+} from "@/modules/auth/services/auth.service";
+import Image from "next/image";
 import { Logo } from "@/modules/marketing/logo";
-import { GoogleIcon, MicrosoftIcon } from "@/modules/marketing/brand-icons";
 
 type Status = "idle" | "loading" | "success";
 
@@ -15,6 +19,8 @@ export function LoginExperience() {
   const router = useRouter();
   const params = useSearchParams();
   const login = useAuthStore((s) => s.login);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const hydrated = useAuthStore((s) => s.hydrated);
 
   const [mode, setMode] = useState<"signin" | "reset">("signin");
   const [email, setEmail] = useState("");
@@ -23,6 +29,15 @@ export function LoginExperience() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+
+  // Already signed in (e.g. arrived here via the browser back button)? Send them
+  // to the app instead of the login form — going back shouldn't feel like a logout.
+  useEffect(() => {
+    if (hydrated && isAuthenticated) {
+      const from = params.get("from");
+      router.replace(from && from.startsWith("/") ? from : "/dashboard");
+    }
+  }, [hydrated, isAuthenticated, params, router]);
 
   const onSignin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,42 +70,83 @@ export function LoginExperience() {
     setSent(true);
   };
 
-  return (
-    <div className="m-root relative flex min-h-screen items-center justify-center overflow-hidden p-5">
-      {/* Aurora backdrop */}
-      <div className="m-aurora" aria-hidden style={{ opacity: 0.35 }}>
-        <span
-          style={{
-            width: "44vw",
-            height: "44vw",
-            left: "6%",
-            top: "4%",
-            background: "var(--m-accent)",
-            animation: "m-drift-a 28s ease-in-out infinite",
-          }}
-        />
-        <span
-          style={{
-            width: "40vw",
-            height: "40vw",
-            right: "2%",
-            bottom: "0%",
-            background: "var(--m-accent-2)",
-            animation: "m-drift-b 32s ease-in-out infinite",
-          }}
-        />
-      </div>
+  // Redirect in flight — don't flash the login form to a signed-in user.
+  if (hydrated && isAuthenticated) return null;
 
-      {/* Card — scale-up entrance */}
-      <div
-        className="m-card m-enter-scale relative z-10 w-full max-w-[440px] p-8 sm:p-10"
-        style={{ boxShadow: "0 40px 80px -40px rgb(0 0 0 / 0.6)" }}
+  return (
+    <div className="m-root min-h-screen w-full lg:grid lg:grid-cols-[1.05fr_1fr]">
+      {/* ── Left: immersive brand panel ── */}
+      <aside
+        className="relative hidden overflow-hidden text-white lg:flex lg:flex-col lg:justify-between lg:p-14"
+        style={{
+          background:
+            "radial-gradient(120% 90% at 12% 8%, rgba(47,157,146,0.42), transparent 52%)," +
+            "radial-gradient(110% 90% at 92% 96%, rgba(15,118,110,0.55), transparent 58%)," +
+            "linear-gradient(160deg, #07100f 0%, #0a1a18 55%, #071312 100%)",
+        }}
       >
-        <Link href="/" className="inline-block">
+        {/* Full-bleed wave artwork with a left scrim for headline legibility */}
+        <div className="pointer-events-none absolute inset-0 z-0">
+          <Image
+            src="/logindesign01.png"
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 1024px) 52vw, 0px"
+            className="object-cover object-center"
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(90deg, rgba(6,15,14,0.82) 0%, rgba(6,15,14,0.4) 40%, rgba(6,15,14,0.05) 72%, transparent 100%)",
+            }}
+          />
+        </div>
+        {/* Top — brand */}
+        <Link
+          href="/"
+          className="m-enter-up relative z-10 inline-flex w-fit text-white"
+          style={{ animationDelay: "60ms" }}
+        >
           <Logo />
         </Link>
 
-        {mode === "signin" ? (
+        {/* Middle — headline */}
+        <div
+          className="m-enter-left relative z-10 max-w-md"
+          style={{ animationDelay: "160ms" }}
+        >
+          <h2 className="m-display text-[2.6rem] font-semibold leading-[1.08] tracking-tight">
+            Your workforce,
+            <br />
+            in perfect rhythm.
+          </h2>
+          <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-white/70">
+            Time, attendance, tasks, and productivity — one calm place for the
+            whole team, from first clock-in to payroll-ready timesheets.
+          </p>
+        </div>
+
+        {/* Spacer keeps the headline vertically centred in the panel */}
+        <div aria-hidden />
+      </aside>
+
+      {/* ── Right: auth form ── */}
+      <main
+        className="flex min-h-screen items-center justify-center px-6 py-10 sm:px-10"
+        style={{ background: "var(--m-bg)" }}
+      >
+        <div
+          className="m-enter-right w-full max-w-[400px]"
+          style={{ animationDelay: "120ms" }}
+        >
+          {/* Logo shown here on small screens (left panel hidden) */}
+          <Link href="/" className="mb-9 inline-flex lg:hidden">
+            <Logo />
+          </Link>
+
+          {mode === "signin" ? (
           <form onSubmit={onSignin} className="mt-7">
             <h1 className="m-display text-2xl font-semibold">Welcome back</h1>
             <p className="mt-1.5 text-sm" style={{ color: "var(--m-muted)" }}>
@@ -177,40 +233,42 @@ export function LoginExperience() {
             </button>
 
             {/* Divider */}
-            <div className="my-6 flex items-center gap-3">
+            <div className="my-5 flex items-center gap-3">
               <span className="h-px flex-1" style={{ background: "var(--m-border)" }} />
               <span className="text-xs" style={{ color: "var(--m-muted)" }}>
-                or continue with
+                or
               </span>
               <span className="h-px flex-1" style={{ background: "var(--m-border)" }} />
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <button type="button" className="m-social" aria-label="Continue with Google">
-                <GoogleIcon />
-              </button>
-              <button type="button" className="m-social" aria-label="Continue with Microsoft">
-                <MicrosoftIcon />
-              </button>
-              <button type="button" className="m-social" aria-label="Single sign-on">
-                <KeyRound className="size-[18px]" />
-              </button>
-            </div>
 
-            <p className="mt-6 text-center text-xs" style={{ color: "var(--m-muted)" }}>
-              Demo:{" "}
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail(DEMO_EMAIL);
-                  setPassword("demo1234");
-                }}
-                className="font-medium hover:underline"
-                style={{ color: "var(--m-accent-ink)" }}
-              >
-                {DEMO_EMAIL}
-              </button>{" "}
-              · any password
-            </p>
+            {/* SSO entry (matches the sign-up page) */}
+            <button type="button" className="m-btn m-btn-ghost w-full">
+              <KeyRound className="size-[18px]" /> Continue with SSO
+            </button>
+
+            <div className="mt-6 text-center text-xs" style={{ color: "var(--m-muted)" }}>
+              <p className="mb-2">Demo logins · any password</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {DEMO_ACCOUNTS.map((acct) => (
+                  <button
+                    key={acct.email}
+                    type="button"
+                    onClick={() => {
+                      setEmail(acct.email);
+                      setPassword(DEMO_PASSWORD);
+                    }}
+                    className="rounded-full border px-3 py-1 font-medium transition-colors hover:bg-black/5"
+                    style={{
+                      borderColor: "var(--m-border)",
+                      color: "var(--m-accent-ink)",
+                    }}
+                    title={acct.hint}
+                  >
+                    {acct.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <p className="mt-4 text-center text-sm" style={{ color: "var(--m-muted)" }}>
               Don&apos;t have an account?{" "}
@@ -272,7 +330,8 @@ export function LoginExperience() {
             </button>
           </form>
         )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
