@@ -14,8 +14,14 @@ export function InsightsTabs() {
 
   if (tabs.length === 0) return null;
 
+  // `overflow-x-auto` lets the tabs scroll horizontally on narrow screens, but it
+  // also forces `overflow-y` to compute as `auto` (CSS spec) — and under display
+  // scaling the row overflows vertically by 1px, popping a phantom scrollbar at the
+  // right end. `wp-no-scrollbar` (globals.css) hides the scrollbar chrome; it must
+  // be a real unlayered class because the app-wide `* { scrollbar-width: thin }`
+  // beats any Tailwind utility. Horizontal scroll still works via swipe/drag.
   return (
-    <div className="flex gap-1 overflow-x-auto border-b">
+    <div className="wp-no-scrollbar flex gap-1 overflow-x-auto border-b">
       {tabs.map((tab) => {
         const active =
           pathname === tab.href || pathname.startsWith(`${tab.href}/`);

@@ -5,17 +5,18 @@ import type { DashboardWidget } from "@/types";
 /**
  * id === type for these built-in widgets (one instance of each).
  *
- * Default first row (left→right): Attendance, Team Comparison, AI Summary —
- * followed by the at-a-glance exec snapshot. The first six are all single-width
- * tiles and are the default dashboard (two clean rows of three, no scroll). The
+ * Default first row (left→right): AI Summary, Attendance, Team Comparison —
+ * AI Summary leads so the at-a-glance narrative is the first thing owners see
+ * (they can still drag it elsewhere). The first six are all single-width tiles
+ * and are the default dashboard (two clean rows of three, no scroll). The
  * remaining widgets ship hidden — users opt into them via the Customize control.
  * The grid picks its own column count to stay gap-free, so the exact span total
  * isn't load-bearing.
  */
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
-  { id: "attendance", title: "Attendance", type: "attendance", position: 0, visible: true },
-  { id: "team-comparison", title: "Team Comparison", type: "team-comparison", position: 1, visible: true },
-  { id: "ai-summary", title: "AI Summary", type: "ai-summary", position: 2, visible: true },
+  { id: "ai-summary", title: "AI Summary", type: "ai-summary", position: 0, visible: true },
+  { id: "attendance", title: "Attendance", type: "attendance", position: 1, visible: true },
+  { id: "team-comparison", title: "Team Comparison", type: "team-comparison", position: 2, visible: true },
   { id: "top-employees", title: "Top Employees", type: "top-employees", position: 3, visible: true },
   { id: "screenshots", title: "Screenshots Captured", type: "screenshots", position: 4, visible: true },
   { id: "deadlines", title: "Deadline Warnings", type: "deadlines", position: 5, visible: true },
@@ -61,7 +62,7 @@ export const useDashboardStore = create<DashboardState>()(
       name: "wp-dashboard",
       // Bumped when the widget set or default order changed shape; older persisted
       // layouts are discarded so everyone picks up the new default order.
-      version: 9,
+      version: 10,
       migrate: () => ({ widgets: DEFAULT_WIDGETS }) as DashboardState,
     },
   ),

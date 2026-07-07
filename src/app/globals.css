@@ -1419,6 +1419,21 @@ input[type="date"]::-webkit-inner-spin-button {
   height: 0;
 }
 
+/* Opt-out: fully hide a scroll container's scrollbar in both engines. Unlayered
+   (like the `*` rule above) and class-specific so it actually overrides the
+   app-wide `scrollbar-width: thin` — a Tailwind arbitrary utility can't, because
+   utilities live in a cascade layer and lose to this unlayered `*` rule. Used by
+   e.g. the Insights tab strip, whose `overflow-x-auto` forces `overflow-y: auto`
+   and otherwise pops a 1px phantom vertical scrollbar under display scaling. */
+.wp-no-scrollbar {
+  scrollbar-width: none;
+}
+.wp-no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Themed thin scrollbar for the Settings rail's independent scroll. Scoped —
    does not affect the rest of the app's native scrollbars. */
 .wp-rail-scroll {
