@@ -23,8 +23,7 @@ const STATUS_META: Record<
   TimesheetStatus,
   { label: string; className: string }
 > = {
-  approved: { label: "Approved", className: "bg-success/12 text-success" },
-  pending: { label: "Pending", className: "bg-warning/15 text-warning" },
+  "on-track": { label: "On track", className: "bg-success/12 text-success" },
   flagged: { label: "Flagged", className: "bg-destructive/12 text-destructive" },
 };
 

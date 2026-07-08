@@ -217,7 +217,9 @@ export function formatHours(hours: number): string {
 
 /* --------------------------- Team / oversight --------------------------- */
 
-export type TimesheetStatus = "approved" | "pending" | "flagged";
+/** Health of a person's/project's tracked time — not an approval state.
+ *  `flagged` marks a low-activity anomaly worth a look; `on-track` is normal. */
+export type TimesheetStatus = "on-track" | "flagged";
 
 export interface TeamMemberTime {
   id: string;
@@ -257,8 +259,7 @@ export function buildTeamTimesheet(users: MinimalUser[]): TeamMemberTime[] {
       const idleHrs = 1 + (seed % 5); // 1–5h
       const billablePct = 55 + (seed % 38); // 55–92%
       const activity = u.productivityScore;
-      const status: TimesheetStatus =
-        activity < 45 ? "flagged" : seed % 4 === 0 ? "pending" : "approved";
+      const status: TimesheetStatus = activity < 45 ? "flagged" : "on-track";
       return {
         id: u.id,
         name: u.name,
@@ -308,8 +309,7 @@ export function buildProjectTimesheet(
     const members = Math.max(1, p.memberIds.length);
     const trackedHrs = members * (7 + (seed % 5)); // ~7–11h per member / week
     const activity = Math.min(98, 45 + Math.round(p.progress * 0.45) + (seed % 8));
-    const status: TimesheetStatus =
-      activity < 50 ? "flagged" : seed % 4 === 0 ? "pending" : "approved";
+    const status: TimesheetStatus = activity < 50 ? "flagged" : "on-track";
     return {
       id: p.id,
       name: p.name,

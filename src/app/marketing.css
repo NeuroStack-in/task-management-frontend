@@ -218,6 +218,154 @@
   animation: m-scale-in 0.38s var(--m-ease-enter) forwards;
 }
 
+/* ---- Auth card entrance (login ⇄ signup transition) ---- */
+@keyframes m-auth-in {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.m-auth-in {
+  opacity: 0;
+  animation: m-auth-in 0.55s var(--m-ease-enter) forwards;
+}
+
+/* ---- Glassmorphic auth card (login / sign-up) ---- *
+ *  Re-themes the shared m-* tokens to a dark, translucent context so EVERY
+ *  control nested inside (m-input, m-btn, chips, checkbox, links, divider)
+ *  adapts to light-on-glass automatically — no per-component restyle. Scoped to
+ *  the card, so the light-themed SSO / org-setup modals are untouched.         */
+.m-authglass {
+  --m-text: #eef6f4; /* near-white ink */
+  --m-muted: rgba(221, 238, 235, 0.64); /* secondary / field icons */
+  --m-faint: rgba(221, 238, 235, 0.44); /* placeholders */
+  --m-surface: rgba(255, 255, 255, 0.06); /* glass input fill */
+  --m-surface-2: rgba(255, 255, 255, 0.12);
+  --m-border: rgba(255, 255, 255, 0.1);
+  --m-border-strong: rgba(255, 255, 255, 0.18); /* control hairlines */
+  --m-accent: #14b8a6; /* brighter teal for focus/checkbox/icons */
+  --m-accent-ink: #7fe3d6; /* legible teal link on dark */
+  --m-accent-tint: rgba(20, 184, 166, 0.15);
+  --m-on-accent: #ffffff;
+  --m-danger: #fca5a5; /* soft red — legible on dark */
+
+  position: relative;
+  border-radius: 22px;
+  padding: 1.7rem 1.55rem;
+  background:
+    linear-gradient(
+      157deg,
+      rgba(255, 255, 255, 0.11),
+      rgba(255, 255, 255, 0.03) 44%,
+      rgba(4, 22, 19, 0.1)
+    ),
+    rgba(6, 25, 22, 0.44);
+  backdrop-filter: blur(28px) saturate(135%);
+  -webkit-backdrop-filter: blur(28px) saturate(135%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 42px 92px -42px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+@media (min-width: 640px) {
+  .m-authglass {
+    padding: 2rem 1.85rem;
+  }
+}
+/* Gradient sheen along the top edge (1px ring highlight) */
+.m-authglass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    150deg,
+    rgba(255, 255, 255, 0.5),
+    rgba(255, 255, 255, 0) 38%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Inputs inside the glass: translucent, frosted, room for the leading icon */
+.m-authglass .m-input {
+  height: 3rem;
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--m-text);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.m-authglass .m-input::placeholder {
+  color: var(--m-faint);
+}
+.m-authglass .m-input:focus {
+  border-color: var(--m-accent);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--m-accent) 30%, transparent);
+}
+.m-authglass .m-input.m-error {
+  border-color: var(--m-danger);
+}
+
+/* Primary button — teal gradient with a soft glow on dark glass */
+.m-authglass .m-btn-primary {
+  background: linear-gradient(180deg, #16b9a6, #0c7f72);
+  color: #ffffff;
+  box-shadow: 0 12px 28px -12px rgba(20, 184, 166, 0.7);
+}
+.m-authglass .m-btn-primary:hover {
+  background: linear-gradient(180deg, #1ac4b0, #0d8a7c);
+}
+
+/* Ghost / SSO button — frosted glass */
+.m-authglass .m-btn-ghost {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--m-text);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.m-authglass .m-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ---- Icon input (login/signup fields) ---- */
+.m-input {
+  height: 3rem;
+  width: 100%;
+  border-radius: 0.8rem;
+  border: 1px solid var(--m-border-strong);
+  background: var(--m-surface);
+  color: var(--m-text);
+  font-size: 0.9rem;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.m-input::placeholder {
+  color: var(--m-muted);
+}
+.m-input:focus {
+  border-color: var(--m-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--m-accent) 22%, transparent);
+}
+.m-input.m-error {
+  border-color: var(--m-danger);
+}
+
 /* ---- Scroll reveal (IntersectionObserver toggles .m-in) ---- */
 .m-reveal {
   opacity: 0;

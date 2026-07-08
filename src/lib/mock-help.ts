@@ -113,15 +113,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: "time-tracking",
     excerpt: "Add, edit, and submit time entries directly from the Time Tracking page.",
     readMins: 3,
-    body: "To log time manually, go to Time Tracking and click Add Entry. Select the project and task, enter the duration or start/end times, and optionally add a note. Entries can be edited until they are submitted for approval. Submitted entries are locked and require manager approval to change. You can also use the global timer in the top navigation bar — press Start, work on your task, then press Stop to create an entry automatically.",
-  },
-  {
-    slug: "timesheets",
-    title: "Submitting and approving timesheets",
-    category: "time-tracking",
-    excerpt: "Learn the weekly timesheet workflow from submission to approval.",
-    readMins: 4,
-    body: "At the end of each week, employees submit their timesheet for manager review. Go to Time Tracking → Timesheets and click Submit Week. Your manager will receive a notification and can approve or reject the submission with a comment. Approved timesheets are locked and feed into billing and payroll reports. Rejected timesheets are returned with feedback for correction. Admins can configure the submission deadline in Settings → Monitoring.",
+    body: "To log time manually, go to Time Tracking and click Add Entry. Select the project and task, enter the duration or start/end times, and optionally add a note. Entries can be edited or deleted at any time from the Time Tracking page. You can also use the global timer in the top navigation bar — press Start, work on your task, then press Stop to create an entry automatically.",
   },
   {
     slug: "global-timer",

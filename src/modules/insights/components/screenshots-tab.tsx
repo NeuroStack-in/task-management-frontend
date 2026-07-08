@@ -571,8 +571,8 @@ function ShotCard({
   );
 }
 
-/** One overlaid detail (label + value) for the full-screen viewer. */
-function OverlayDetail({
+/** One detail row (label + value) in the viewer's info panel. */
+function PanelDetail({
   label,
   value,
   className,
@@ -583,10 +583,10 @@ function OverlayDetail({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-medium uppercase tracking-wide text-white/60">
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-white/45">
         {label}
       </dt>
-      <dd className={cn("truncate font-medium text-white", className)}>
+      <dd className={cn("mt-1 font-medium break-words text-white", className)}>
         {value}
       </dd>
     </div>
@@ -594,10 +594,11 @@ function OverlayDetail({
 }
 
 /**
- * Full-screen gallery viewer. The capture fills the screen; the member's
- * details and per-capture AI read are overlaid on top. Left/right arrows (and
- * ←/→ keys) move through the currently-filtered captures; they stop at the
- * first/last capture (no wrap-around) to match the "N / total" position.
+ * Full-screen gallery viewer, split into two stacked sections so nothing sits
+ * on top of the capture: the image fills its own pane on top (letterboxed,
+ * object-contain), and all metadata + the per-capture AI read live in a distinct
+ * section below it. Prev/next arrows reveal on hover (they otherwise cover the
+ * image) — always shown on touch, and on ←/→ keys; both clamp at the first/last.
  */
 function Lightbox({
   shots,
@@ -641,7 +642,7 @@ function Lightbox({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="flex h-[100dvh] max-h-none w-screen max-w-none items-center justify-center gap-0 rounded-none border-0 bg-black/95 p-0 ring-0 sm:max-w-none"
+        className="flex h-[100dvh] max-h-none w-screen max-w-none flex-col gap-0 rounded-none border-0 bg-black p-0 ring-0 sm:max-w-none"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Screenshot viewer</DialogTitle>
@@ -652,103 +653,106 @@ function Lightbox({
 
         {shot ? (
           <>
-            {/* Top overlay — member + timestamp, counter, close */}
-            <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 bg-gradient-to-b from-black/70 to-transparent p-4 sm:p-5">
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 text-base font-semibold text-white">
-                  <span className="truncate">{shot.user.name}</span>
-                  {shot.flagged ? (
-                    <Badge className="border-transparent bg-destructive text-white">
-                      <Flag className="size-3" /> Needs review
-                    </Badge>
-                  ) : null}
-                </p>
-                <p className="truncate text-xs text-white/70">
-                  {shot.user.department} · {dayLabel(shot.date)} at {shot.time}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <span className="text-xs font-medium tabular-nums text-white/70">
-                  {(index ?? 0) + 1} / {count}
-                </span>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="Close"
-                  className="flex size-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
+            {/* ── Image pane — its own section; only the capture ── */}
+            <div className="group relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={captureUrl(shot.id)}
+                alt={`${shot.app} screenshot`}
+                className="max-h-full max-w-full object-contain"
+              />
+
+              {/* Close — small corner control */}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="absolute right-4 top-4 z-20 flex size-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+              >
+                <X className="size-5" />
+              </button>
+
+              {/* Prev / next — hidden until the image is hovered (they otherwise
+                  cover the capture); always shown on touch (no hover), revealed
+                  on keyboard focus, and hidden at the first / last capture. */}
+              {count > 1 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => step(-1)}
+                    disabled={atStart}
+                    aria-label="Previous screenshot"
+                    className="absolute left-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white opacity-100 backdrop-blur-sm transition-opacity duration-200 hover:bg-white/25 focus-visible:opacity-100 disabled:pointer-events-none disabled:!opacity-0 sm:left-5 sm:opacity-0 sm:group-hover:opacity-100"
+                  >
+                    <ChevronLeft className="size-6" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => step(1)}
+                    disabled={atEnd}
+                    aria-label="Next screenshot"
+                    className="absolute right-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white opacity-100 backdrop-blur-sm transition-opacity duration-200 hover:bg-white/25 focus-visible:opacity-100 disabled:pointer-events-none disabled:!opacity-0 sm:right-5 sm:opacity-0 sm:group-hover:opacity-100"
+                  >
+                    <ChevronRight className="size-6" />
+                  </button>
+                </>
+              ) : null}
+
+              <span className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium tabular-nums text-white/80 backdrop-blur-sm">
+                {(index ?? 0) + 1} / {count}
+              </span>
             </div>
 
-            {/* The capture */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={captureUrl(shot.id)}
-              alt={`${shot.app} screenshot`}
-              className="max-h-[100dvh] max-w-full object-contain"
-            />
-
-            {/* Prev / next arrows — disabled at the first / last capture */}
-            {count > 1 ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => step(-1)}
-                  disabled={atStart}
-                  aria-label="Previous screenshot"
-                  className="absolute left-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25 disabled:pointer-events-none disabled:opacity-30 sm:left-5"
-                >
-                  <ChevronLeft className="size-6" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => step(1)}
-                  disabled={atEnd}
-                  aria-label="Next screenshot"
-                  className="absolute right-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25 disabled:pointer-events-none disabled:opacity-30 sm:right-5"
-                >
-                  <ChevronRight className="size-6" />
-                </button>
-              </>
-            ) : null}
-
-            {/* Bottom overlay — details + AI analysis */}
-            <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/55 to-transparent p-4 pt-16 sm:p-5 sm:pt-20">
-              <div className="mx-auto flex max-w-5xl flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm sm:flex sm:flex-wrap sm:items-end">
-                  <OverlayDetail label="Application" value={shot.app} />
-                  <OverlayDetail
-                    label="Activity"
-                    value={`${shot.activity}%`}
-                    className={cn(
-                      "font-mono tabular-nums",
-                      shot.activity >= 60
-                        ? "text-success"
-                        : shot.activity >= 40
-                          ? "text-warning"
-                          : "text-destructive",
-                    )}
-                  />
-                  <OverlayDetail
-                    label="Captured"
-                    value={`${dayLabel(shot.date)} · ${shot.time}`}
-                  />
-                  {reason ? (
-                    <OverlayDetail
-                      label="Review reason"
-                      value={reason}
-                      className="text-destructive"
+            {/* ── Description — its own section, below the image ── */}
+            <div className="max-h-[50vh] shrink-0 overflow-y-auto border-t border-white/10 bg-[#0d0e13]">
+              <div className="mx-auto flex max-w-[100rem] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:gap-10">
+                {/* Member + details */}
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-2 font-heading text-base font-semibold text-white">
+                    <span className="truncate">{shot.user.name}</span>
+                    {shot.flagged ? (
+                      <Badge className="shrink-0 border-transparent bg-destructive text-white">
+                        <Flag className="size-3" /> Review
+                      </Badge>
+                    ) : null}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-white/55">
+                    {shot.user.department} · {dayLabel(shot.date)} at {shot.time}
+                  </p>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-8 sm:gap-y-2">
+                    <PanelDetail label="Application" value={shot.app} />
+                    <PanelDetail
+                      label="Activity"
+                      value={`${shot.activity}%`}
+                      className={cn(
+                        "font-mono tabular-nums",
+                        shot.activity >= 60
+                          ? "text-success"
+                          : shot.activity >= 40
+                            ? "text-warning"
+                            : "text-destructive",
+                      )}
                     />
-                  ) : null}
-                </dl>
+                    <PanelDetail
+                      label="Captured"
+                      value={`${dayLabel(shot.date)} · ${shot.time}`}
+                    />
+                    {reason ? (
+                      <PanelDetail
+                        label="Review reason"
+                        value={reason}
+                        className="text-destructive"
+                      />
+                    ) : null}
+                  </dl>
+                </div>
 
-                <div className="flex max-w-md gap-2 rounded-xl bg-white/10 p-3 text-sm text-white backdrop-blur-sm">
+                {/* AI analysis */}
+                <div className="flex gap-2.5 rounded-xl bg-white/[0.06] p-4 text-sm text-white ring-1 ring-white/10 lg:w-[32rem] lg:shrink-0">
                   <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
                   <div className="min-w-0">
                     <p className="font-medium">AI analysis</p>
-                    <p className="mt-0.5 text-white/80">{aiAnalysis(shot)}</p>
+                    <p className="mt-1 text-white/75">{aiAnalysis(shot)}</p>
                   </div>
                 </div>
               </div>

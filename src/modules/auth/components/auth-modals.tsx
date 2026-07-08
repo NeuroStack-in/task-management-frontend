@@ -150,7 +150,7 @@ function MModal({
       <div
         role="dialog"
         aria-modal="true"
-        className={`m-card m-enter-scale relative z-10 flex max-h-[92vh] w-full flex-col overflow-hidden ${maxW}`}
+        className={`m-card m-root m-enter-scale relative z-10 flex max-h-[92vh] w-full flex-col overflow-hidden ${maxW}`}
         style={{ boxShadow: "0 50px 110px -40px rgb(18 28 40 / 0.5)" }}
       >
         {dismissable ? (
@@ -839,7 +839,7 @@ export function OrgSetupModal({
 
               {/* Free-trial banner */}
               <div
-                className="mt-4 flex items-center gap-2.5 rounded-xl border p-3 text-xs font-medium"
+                className="mt-3 flex items-center gap-2.5 rounded-xl border p-2.5 text-xs font-medium"
                 style={{
                   borderColor: "color-mix(in srgb, var(--m-accent) 30%, transparent)",
                   background: "var(--m-accent-tint)",
@@ -850,7 +850,7 @@ export function OrgSetupModal({
                 Start free, or try Pro &amp; Max free for 14 days — no card required.
               </div>
 
-              <div className="mt-4 grid gap-3">
+              <div className="mt-3 grid gap-2.5">
                 {PLANS.map((pl) => {
                   const on = plan === pl.id;
                   const free = pl.monthly === 0;
@@ -860,7 +860,7 @@ export function OrgSetupModal({
                       key={pl.id}
                       type="button"
                       onClick={() => setPlan(pl.id)}
-                      className="w-full rounded-2xl border p-4 text-left transition-colors sm:p-5"
+                      className="w-full rounded-2xl border p-3.5 text-left transition-colors sm:p-4"
                       style={{
                         borderColor: on ? "var(--m-accent)" : "var(--m-border-strong)",
                         background: on ? "var(--m-accent-tint)" : "var(--m-surface)",
@@ -897,7 +897,7 @@ export function OrgSetupModal({
                             </span>
                           </div>
                           <p className="mt-0.5 text-xs" style={{ color: "var(--m-muted)" }}>{pl.tagline}</p>
-                          <ul className="mt-2.5 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+                          <ul className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
                             {pl.features.map((f) => (
                               <li key={f} className="flex items-start gap-2 text-xs">
                                 <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--m-accent-ink)" }} />
@@ -914,7 +914,7 @@ export function OrgSetupModal({
 
               {/* Monitoring consent */}
               <label
-                className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border p-3.5"
+                className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border p-3"
                 style={{
                   borderColor: consent ? "var(--m-accent)" : "var(--m-border-strong)",
                   background: consent ? "var(--m-accent-tint)" : "var(--m-surface)",

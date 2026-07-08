@@ -53,7 +53,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("time-tracking", "view", "View Time Tracking"),
       p("time-tracking", "edit", "Track own time (run timer & edit entries)"),
-      p("time-tracking", "approve", "Approve Timesheets"),
+      p("time-tracking", "manage", "Manage time tracking (team oversight)"),
     ],
   },
   {
