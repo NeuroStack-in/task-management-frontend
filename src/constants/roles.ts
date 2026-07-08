@@ -43,6 +43,7 @@ export const SYSTEM_ROLES: Role[] = [
       "payroll:export",
       "activity:view",
       "screenshots:view",
+      "locations:view",
       "reports:view",
       "reports:export",
       "approvals:view",

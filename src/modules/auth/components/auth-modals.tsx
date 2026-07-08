@@ -703,7 +703,7 @@ export function OrgSetupModal({
                   )}
                 </button>
                 <div>
-                  <p className="text-sm font-medium">Company logo</p>
+                  <p className="text-sm font-medium">Organization logo</p>
                   <p className="text-xs" style={{ color: "var(--m-muted)" }}>
                     PNG or SVG, square works best. Optional.
                   </p>
@@ -721,13 +721,13 @@ export function OrgSetupModal({
                 <input className="m-input" value={org.name} onChange={(e) => setName(e.target.value)} placeholder="Acme Inc." />
               </Field>
 
-              <Field label="Workspace URL">
+              <Field label="Organization URL">
                 <div className="m-input-affix">
                   <input
                     value={org.slug}
                     onChange={(e) => { setSlugTouched(true); setOrg((o) => ({ ...o, slug: slugify(e.target.value) })); }}
                     placeholder="acme"
-                    aria-label="Workspace URL"
+                    aria-label="Organization URL"
                   />
                   <span className="m-suffix">.workpulse.io</span>
                 </div>
@@ -737,12 +737,12 @@ export function OrgSetupModal({
                 <Field label="Industry">
                   <MSelect value={org.industry} onChange={(v) => setOrg({ ...org, industry: v })} options={INDUSTRIES} ariaLabel="Industry" />
                 </Field>
-                <Field label="Company size">
-                  <MSelect value={org.size} onChange={(v) => setOrg({ ...org, size: v })} options={SIZES} ariaLabel="Company size" />
+                <Field label="Organization size">
+                  <MSelect value={org.size} onChange={(v) => setOrg({ ...org, size: v })} options={SIZES} ariaLabel="Organization size" />
                 </Field>
               </div>
 
-              <Field label="Company website" hint="Optional">
+              <Field label="Organization website" hint="Optional">
                 <input className="m-input" value={org.website} onChange={(e) => setOrg({ ...org, website: e.target.value })} placeholder="https://acme.com" />
               </Field>
             </div>
@@ -969,11 +969,11 @@ export function OrgSetupModal({
             >
               {status === "loading" ? (
                 <>
-                  <Loader2 className="m-spin size-4" /> Creating workspace…
+                  <Loader2 className="m-spin size-4" /> Creating organization…
                 </>
               ) : status === "success" ? (
                 <>
-                  <Check className="size-4" /> Workspace ready
+                  <Check className="size-4" /> Organization ready
                 </>
               ) : (
                 <>

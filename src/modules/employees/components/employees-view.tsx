@@ -310,16 +310,16 @@ export function EmployeesView({
         <div className="flex items-center gap-2 sm:ml-auto">
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" />}>
-              <Download className="size-4" /> Download report
+              <Download className="size-4" /> Download
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 onClick={() => exportEmployeesPdf(filtered, liveStats)}
               >
-                <FileText className="size-4" /> PDF report
+                <FileText className="size-4" /> PDF
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
-                <Sheet className="size-4" /> CSV export
+                <Sheet className="size-4" /> CSV
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -21,7 +21,7 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Productivity Heatmap</CardTitle>
+        <CardTitle>Productivity heatmap</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1.5">
         {data.map((row, d) => (
@@ -174,7 +174,7 @@ export function ActiveInactiveRing({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Active vs Inactive</CardTitle>
+        <CardTitle>Active vs inactive</CardTitle>
       </CardHeader>
       <CardContent>
         <Donut
@@ -209,7 +209,7 @@ export function HeadcountStatus({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Headcount by Status</CardTitle>
+        <CardTitle>Headcount by status</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="font-display text-3xl font-semibold tabular-nums">{total}</p>

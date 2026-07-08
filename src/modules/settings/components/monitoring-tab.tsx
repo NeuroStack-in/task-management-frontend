@@ -303,13 +303,13 @@ export function MonitoringTab() {
             <CardHeader>
               <CardTitle>Alert thresholds</CardTitle>
               <CardDescription>
-                Configure triggers for the anomaly alerts shown in Insights → Anomalies.
+                Configure triggers for the alerts shown in Analytics → AI reports.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-0 pb-2">
               <SettingRow
                 label="Long inactivity alert"
-                description="Alert when a user with an active timer is continuously idle beyond this threshold."
+                description="Alert when an employee with an active timer is continuously idle beyond this threshold."
                 disabled={!canManage}
               >
                 <NumericStepper
@@ -324,7 +324,7 @@ export function MonitoringTab() {
               </SettingRow>
               <SettingRow
                 label="Productivity drop alert"
-                description="Alert when a user's score drops by more than this vs their 7-day average."
+                description="Alert when an employee's score drops by more than this vs their 7-day average."
                 disabled={!canManage}
               >
                 <NumericStepper
@@ -339,7 +339,7 @@ export function MonitoringTab() {
               </SettingRow>
               <SettingRow
                 label="Burnout alert threshold"
-                description="Alert when a user tracks more hours than this in a single day."
+                description="Alert when an employee tracks more hours than this in a single day."
                 disabled={!canManage}
               >
                 <NumericStepper

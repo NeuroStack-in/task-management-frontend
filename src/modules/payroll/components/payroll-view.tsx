@@ -117,7 +117,7 @@ function downloadPayslipPdf(row: PayslipRow, periodLabel: string) {
 
   line("Earnings", "");
   line(
-    `Hours worked × rate (${row.hours.toFixed(1)}h @ $${row.hourlyRate}/hr)`,
+    `Hours tracked × rate (${row.hours.toFixed(1)}h @ $${row.hourlyRate}/hr)`,
     formatCurrency(row.gross),
   );
   y += 2;
@@ -277,7 +277,7 @@ export function PayrollView() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Net payout"
+          label="Net pay"
           value={formatCurrency(totals.net)}
           icon={Wallet}
           hint={period.label}
@@ -296,7 +296,7 @@ export function PayrollView() {
           hint={totals.paid === totals.headcount ? "Run settled" : "Run pending"}
         />
         <StatCard
-          label="Hours logged"
+          label="Hours tracked"
           value={totals.hours.toLocaleString("en-US")}
           icon={Clock}
           hint={`avg ${formatCurrency(avgNet)} net / person`}
@@ -319,17 +319,17 @@ export function PayrollView() {
       {/* Pay-period variance insight */}
       {showInsight && prevRun && netVariancePct !== null && (
         <AiInsight
-          title={`Net payout ${netVariancePct > 0 ? "up" : "down"} ${Math.abs(
+          title={`Net pay ${netVariancePct > 0 ? "up" : "down"} ${Math.abs(
             netVariancePct,
           )}% vs ${prevPeriod.label}`}
           detail={
             hoursVariancePct !== null
-              ? `Hours logged ${
+              ? `Hours tracked ${
                   hoursVariancePct > 0 ? "increased" : "decreased"
                 } ${Math.abs(
                   hoursVariancePct,
                 )}% period-over-period, driving the net change. Average hourly rates are stable.`
-              : `Net payout moved from ${formatCurrency(
+              : `Net pay moved from ${formatCurrency(
                   prevRun.totals.net,
                 )} to ${formatCurrency(run.totals.net)}.`
           }
@@ -343,7 +343,7 @@ export function PayrollView() {
           ]}
           basis={`Derived from ${
             run.totals.headcount
-          } payslips · ${run.totals.hours.toLocaleString()} hours logged`}
+          } payslips · ${run.totals.hours.toLocaleString()} hours tracked`}
         />
       )}
 

@@ -14,18 +14,17 @@ import type { DashboardWidget } from "@/types";
  */
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "attendance", title: "Attendance", type: "attendance", position: 0, visible: true },
-  { id: "team-comparison", title: "Team Comparison", type: "team-comparison", position: 1, visible: true },
-  { id: "ai-summary", title: "AI Summary", type: "ai-summary", position: 2, visible: true },
-  { id: "top-employees", title: "Top Employees", type: "top-employees", position: 3, visible: true },
-  { id: "screenshots", title: "Screenshots Captured", type: "screenshots", position: 4, visible: true },
-  { id: "deadlines", title: "Deadline Warnings", type: "deadlines", position: 5, visible: true },
-  { id: "alerts", title: "Recent Alerts", type: "alerts", position: 6, visible: false },
-  { id: "active-inactive", title: "Active vs Inactive", type: "active-inactive", position: 7, visible: false },
-  { id: "productivity-trends", title: "Productivity Trends", type: "productivity-trends", position: 8, visible: false },
-  { id: "upcoming-tasks", title: "Upcoming Tasks", type: "upcoming-tasks", position: 9, visible: false },
-  { id: "heatmap", title: "Productivity Heatmap", type: "heatmap", position: 10, visible: false },
-  { id: "headcount", title: "Headcount by Status", type: "headcount", position: 11, visible: false },
-  { id: "billing", title: "Billing Overview", type: "billing", position: 12, visible: false },
+  { id: "team-comparison", title: "Team comparison", type: "team-comparison", position: 1, visible: true },
+  { id: "ai-summary", title: "AI summary", type: "ai-summary", position: 2, visible: true },
+  { id: "top-employees", title: "Top performers", type: "top-employees", position: 3, visible: true },
+  { id: "screenshots", title: "Screenshots captured", type: "screenshots", position: 4, visible: true },
+  { id: "alerts-deadlines", title: "Alerts & deadlines", type: "alerts-deadlines", position: 5, visible: true },
+  { id: "active-inactive", title: "Active vs inactive", type: "active-inactive", position: 6, visible: false },
+  { id: "productivity-trends", title: "Productivity trends", type: "productivity-trends", position: 7, visible: false },
+  { id: "upcoming-tasks", title: "Upcoming tasks", type: "upcoming-tasks", position: 8, visible: false },
+  { id: "heatmap", title: "Productivity heatmap", type: "heatmap", position: 9, visible: false },
+  { id: "headcount", title: "Headcount by status", type: "headcount", position: 10, visible: false },
+  { id: "billing", title: "Billing overview", type: "billing", position: 11, visible: false },
 ];
 
 interface DashboardState {
@@ -61,7 +60,7 @@ export const useDashboardStore = create<DashboardState>()(
       name: "wp-dashboard",
       // Bumped when the widget set or default order changed shape; older persisted
       // layouts are discarded so everyone picks up the new default order.
-      version: 9,
+      version: 10,
       migrate: () => ({ widgets: DEFAULT_WIDGETS }) as DashboardState,
     },
   ),

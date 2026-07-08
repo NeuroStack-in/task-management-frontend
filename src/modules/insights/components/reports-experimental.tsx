@@ -306,7 +306,7 @@ export function ReportsExperimental() {
       {/* ================================ HEADER =============================== */}
       <div>
         <h2 className="font-display text-xl font-semibold tracking-tight">
-          Insights & Reports
+          AI reports
         </h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
           Your AI analyst has organized everything — read the brief, act on what
@@ -346,8 +346,9 @@ export function ReportsExperimental() {
                 reports={selectedReports}
                 onClear={() => setSelected(new Set())}
               />
-            ) : null}
-            <DownloadAllButton canExport={canExport} />
+            ) : (
+              <DownloadAllButton canExport={canExport} />
+            )}
           </div>
         </div>
 
@@ -509,7 +510,7 @@ function AiBriefing({
       />
       <div className="relative flex h-full flex-col">
         <div className="flex items-center gap-2 text-sm font-medium text-feature-foreground/90">
-          <Sparkles className="size-4" /> AI reporting summary
+          <Sparkles className="size-4" /> AI summary
         </div>
 
         {/* What's happening */}
@@ -575,7 +576,7 @@ function HealthScoreCard({
     delta?: number;
     unit?: string;
   }[] = [
-    { label: "Focus rate", value: `${kpis.focus}%`, delta: 2 },
+    { label: "Activity rate", value: `${kpis.focus}%`, delta: 2 },
     { label: "Billable", value: `${kpis.billable}%`, delta: 4 },
     {
       label: "Burnout risk",

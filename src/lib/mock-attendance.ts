@@ -58,16 +58,27 @@ function personStatus(id: string, month: number, day: number): DayStatus {
   return "present";
 }
 
-/** Organization-wide attendance counts for one working day. */
-export function orgDayCounts(month: number, day: number): DayCounts {
+/**
+ * Attendance counts for one working day, optionally narrowed to a department.
+ * `dept === "all"` (default) tallies the whole employed headcount.
+ */
+export function orgDayCounts(
+  month: number,
+  day: number,
+  dept = "all",
+): DayCounts {
+  const people =
+    dept === "all"
+      ? HEADCOUNT
+      : HEADCOUNT.filter((u) => u.department === dept);
   const counts: DayCounts = {
     present: 0,
     late: 0,
     leave: 0,
     absent: 0,
-    total: HEADCOUNT.length,
+    total: people.length,
   };
-  for (const u of HEADCOUNT) counts[personStatus(u.id, month, day)] += 1;
+  for (const u of people) counts[personStatus(u.id, month, day)] += 1;
   return counts;
 }
 
@@ -224,6 +235,115 @@ export const MONTH_NAMES = [
 ];
 
 export const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/* ------------------------------ Range filter ------------------------------ */
+
+export type AttendanceRange = "today" | "week" | "month" | "custom" | "day";
+
+/** The segmented quick-ranges. "day" is driven by the date picker, not a button. */
+export const ATTENDANCE_RANGE_OPTIONS: {
+  value: AttendanceRange;
+  label: string;
+}[] = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "custom", label: "Custom" },
+];
+
+/** Working days (Mon–Fri) between two dates, inclusive. */
+function workdaysBetween(
+  startD: Date,
+  endD: Date,
+): { year: number; month: number; day: number }[] {
+  const out: { year: number; month: number; day: number }[] = [];
+  const d = new Date(startD);
+  let guard = 0;
+  while (d.getTime() <= endD.getTime() && guard < 400) {
+    if (mondayIndex(d.getDay()) < 5) {
+      out.push({ year: d.getFullYear(), month: d.getMonth(), day: d.getDate() });
+    }
+    d.setDate(d.getDate() + 1);
+    guard++;
+  }
+  return out;
+}
+
+/**
+ * Aggregated attendance for a range (today / week / month / custom), optionally
+ * narrowed to a department. Averages daily counts across the range's working
+ * days, so the rate stays comparable regardless of how long the range is.
+ */
+/** The working days (and a label) covered by a range / custom / day selection. */
+export function rangeDays(
+  range: AttendanceRange,
+  date?: { year: number; month: number; day: number },
+  start?: string,
+  end?: string,
+): { days: { year: number; month: number; day: number }[]; label: string } {
+  const today = new Date(TODAY.year, TODAY.month, TODAY.day);
+
+  if (range === "week") {
+    const mon = new Date(today);
+    mon.setDate(today.getDate() - mondayIndex(today.getDay()));
+    const fri = new Date(mon);
+    fri.setDate(mon.getDate() + 4);
+    return { days: workdaysBetween(mon, fri), label: "This week" };
+  }
+  if (range === "month") {
+    const first = new Date(TODAY.year, TODAY.month, 1);
+    const last = new Date(TODAY.year, TODAY.month + 1, 0);
+    return { days: workdaysBetween(first, last), label: "This month" };
+  }
+  if (range === "custom" && start && end) {
+    const s = new Date(`${start}T00:00:00`);
+    const e = new Date(`${end}T00:00:00`);
+    return {
+      days: workdaysBetween(s, e),
+      label: `${MONTH_NAMES[s.getMonth()].slice(0, 3)} ${s.getDate()} – ${MONTH_NAMES[e.getMonth()].slice(0, 3)} ${e.getDate()}`,
+    };
+  }
+  if (range === "day" && date) {
+    return {
+      days: [{ ...date }],
+      label: `${MONTH_NAMES[date.month].slice(0, 3)} ${date.day}, ${date.year}`,
+    };
+  }
+  // "today" (and "custom" before both bounds are picked)
+  return { days: [{ ...TODAY }], label: "Today" };
+}
+
+export function rangeSummary(
+  range: AttendanceRange,
+  dept = "all",
+  date?: { year: number; month: number; day: number },
+  start?: string,
+  end?: string,
+): { counts: DayCounts; label: string; days: number } {
+  const { days, label } = rangeDays(range, date, start, end);
+
+  const acc = { present: 0, late: 0, leave: 0, absent: 0, total: 0 };
+  for (const d of days) {
+    const c = orgDayCounts(d.month, d.day, dept);
+    acc.present += c.present;
+    acc.late += c.late;
+    acc.leave += c.leave;
+    acc.absent += c.absent;
+    acc.total = c.total;
+  }
+  const n = days.length || 1;
+  return {
+    counts: {
+      present: Math.round(acc.present / n),
+      late: Math.round(acc.late / n),
+      leave: Math.round(acc.leave / n),
+      absent: Math.round(acc.absent / n),
+      total: acc.total,
+    },
+    label,
+    days: days.length,
+  };
+}
 
 /** The three headline metrics shown per day + their colours. */
 export const COUNT_METRICS: {

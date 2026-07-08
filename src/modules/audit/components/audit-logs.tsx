@@ -229,7 +229,7 @@ export function AuditLogs() {
           className="w-full gap-1.5 sm:w-auto"
           onClick={() => toast.success("Audit log exported (CSV)")}
         >
-          <Download className="size-4" /> Download report
+          <Download className="size-4" /> Download CSV
         </Button>
       </div>
 

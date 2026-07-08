@@ -7,8 +7,8 @@ import {
   UserMinus,
   Timer,
   Clock,
-  BadgeDollarSign,
-  Activity,
+  CalendarCheck,
+  UserPlus,
 } from "lucide-react";
 import type { User } from "@/types/user";
 import { StatCard } from "@/components/shared/stat-card";
@@ -102,7 +102,7 @@ export function DashboardView({ users }: { users: User[] }) {
         {range === "today" ? (
           <>
             <StatCard
-              label="Active Users"
+              label="Active employees"
               value={kpis.active.value}
               icon={Users}
               delta={kpis.active.deltaPct}
@@ -110,7 +110,7 @@ export function DashboardView({ users }: { users: User[] }) {
               href="/employees"
             />
             <StatCard
-              label="Inactive Users"
+              label="Inactive employees"
               value={kpis.inactive.value}
               icon={UserMinus}
               delta={kpis.inactive.deltaPct}
@@ -139,21 +139,22 @@ export function DashboardView({ users }: { users: User[] }) {
               href="/time-tracking"
             />
             <StatCard
-              label="Billable"
-              value={`${kpis.billable.value}%`}
-              icon={BadgeDollarSign}
-              delta={kpis.billable.deltaPct}
-              trend={kpis.billable.trend}
-              href="/insights/reports"
+              label="Attendance Rate"
+              value={`${kpis.attendance.value}%`}
+              icon={CalendarCheck}
+              hint={rangeLabel}
+              delta={kpis.attendance.deltaPct}
+              trend={kpis.attendance.trend}
+              href="/attendance"
             />
             <StatCard
-              label="Avg Activity"
-              value={`${kpis.activity.value}%`}
-              icon={Activity}
+              label="New Hires"
+              value={kpis.newHires.value}
+              icon={UserPlus}
               hint={rangeLabel}
-              delta={kpis.activity.deltaPct}
-              trend={kpis.activity.trend}
-              href="/insights/activity"
+              delta={kpis.newHires.deltaPct}
+              trend={kpis.newHires.trend}
+              href="/employees"
             />
           </>
         )}

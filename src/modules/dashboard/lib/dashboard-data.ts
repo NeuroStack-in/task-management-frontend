@@ -144,8 +144,8 @@ export interface DashboardData {
     timers: KpiSeries;
     // Period aggregates (shown for 7d / 30d / range)
     hours: KpiSeries;
-    billable: KpiSeries;
-    activity: KpiSeries;
+    attendance: KpiSeries;
+    newHires: KpiSeries;
   };
   productivityTrend: TrendPoint[];
   teamData: { team: string; score: number }[];
@@ -197,8 +197,19 @@ export function buildDashboardData(
 
   // Period aggregates (deterministic; seeded by range + team).
   const hoursTracked = Math.round(scope.length * 7.4 * meta.workdays);
-  const billablePct = clamp(58 + (hash(key("billable")) % 28));
-  const avgActivity = clamp(62 + (hash(key("activity")) % 24));
+  // New hires onboarded in the window. Deterministic and scaled by headcount and
+  // window length (~0.6% of the team per workday-week), so a month shows more
+  // than a week and a single team fewer than the whole org.
+  const newHires = Math.max(1, Math.round(scope.length * 0.006 * meta.workdays));
+
+  // Attendance rate = clocked-in share (present + late) over the scope. A core
+  // workforce-health headline for admins; derived from the same counts the
+  // Attendance donut uses so the two never disagree.
+  const attn = attendanceCounts(scope);
+  const attnTotal = attn.present + attn.late + attn.leave + attn.absent;
+  const attendanceRate = attnTotal
+    ? Math.round(((attn.present + attn.late) / attnTotal) * 100)
+    : 0;
 
   const topPerformers = [...scope]
     .sort((a, b) => b.productivityScore - a.productivityScore)
@@ -258,15 +269,15 @@ export function buildDashboardData(
         deltaPct: deltaFor(key("hours")),
         trend: seededTrend(key("hours"), 60, 30),
       },
-      billable: {
-        value: billablePct,
-        deltaPct: deltaFor(key("billable")),
-        trend: seededTrend(key("billable"), billablePct, 8),
+      attendance: {
+        value: attendanceRate,
+        deltaPct: deltaFor(key("attendance")),
+        trend: seededTrend(key("attendance"), attendanceRate, 6),
       },
-      activity: {
-        value: avgActivity,
-        deltaPct: deltaFor(key("activity")),
-        trend: seededTrend(key("activity"), avgActivity, 8),
+      newHires: {
+        value: newHires,
+        deltaPct: deltaFor(key("hires")),
+        trend: seededTrend(key("hires"), 40, 22),
       },
     },
     productivityTrend,
@@ -276,7 +287,7 @@ export function buildDashboardData(
     topPerformers,
     billing: { plan: "Business", seatsUsed: active, seatsTotal: 120 },
     heatmap: productivityHeatmap(),
-    attendanceCounts: attendanceCounts(scope),
+    attendanceCounts: attn,
     statusCounts: statusCounts(scope),
     activeCount: active,
     inactiveCount: inactive,

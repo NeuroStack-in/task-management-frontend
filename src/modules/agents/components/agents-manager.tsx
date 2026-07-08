@@ -163,7 +163,7 @@ export function AgentsManager() {
   return (
     <div className="space-y-5 pt-1">
       <PageHeader
-        title="Desktop Agents"
+        title="Device agents"
         description="Monitor and manage the WorkPulse agent installed on employee devices."
         actions={
           <Button onClick={() => setDownloadOpen(true)}>
@@ -198,7 +198,7 @@ export function AgentsManager() {
       {/* ── Fleet ── */}
       <Card>
         <CardHeader>
-          <CardTitle>Agent fleet</CardTitle>
+          <CardTitle>Device agents</CardTitle>
           <CardDescription>
             Every device with the WorkPulse agent installed.
           </CardDescription>
@@ -360,7 +360,7 @@ export function AgentsManager() {
       {/* ── Agent settings ── */}
       <Card>
         <CardHeader>
-          <CardTitle>Agent Settings</CardTitle>
+          <CardTitle>Device agent settings</CardTitle>
           <CardDescription>
             Fleet-wide behaviour applied to every installed agent.
           </CardDescription>

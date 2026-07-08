@@ -4,6 +4,7 @@ import * as React from "react"
 import { Avatar as AvatarPrimitive } from "@base-ui/react/avatar"
 
 import { cn } from "@/lib/utils"
+import { monogramGradient } from "@/lib/format"
 
 function Avatar({
   className,
@@ -40,17 +41,37 @@ function AvatarImage({ className, ...props }: AvatarPrimitive.Image.Props) {
 
 function AvatarFallback({
   className,
+  style,
+  children,
   ...props
 }: AvatarPrimitive.Fallback.Props) {
+  // When the fallback holds plain-text initials, render the WorkPulse
+  // "Gradient Monogram" — a deterministic two-tone gradient + white initials —
+  // as the default avatar for anyone without an uploaded picture. Callers that
+  // set their own background (a `bg-*` class) opt out and keep their styling.
+  const seed = typeof children === "string" ? children : undefined
+  const hasBgOverride = typeof className === "string" && /\bbg-/.test(className)
+  const useMonogram = Boolean(seed) && !hasBgOverride
+
   return (
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
+      style={
+        useMonogram
+          ? { backgroundImage: monogramGradient(seed as string), ...style }
+          : style
+      }
       className={cn(
-        "flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs",
+        "flex size-full items-center justify-center rounded-full text-sm group-data-[size=sm]/avatar:text-xs",
+        useMonogram
+          ? "font-semibold text-white"
+          : "bg-muted text-muted-foreground",
         className
       )}
       {...props}
-    />
+    >
+      {children}
+    </AvatarPrimitive.Fallback>
   )
 }
 

@@ -623,10 +623,10 @@ function ExceptionsPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Monitoring Exceptions</CardTitle>
+        <CardTitle>Monitoring exceptions</CardTitle>
         <CardDescription>
-          Users listed here are excluded from activity monitoring, screenshots, and
-          anomaly detection.
+          Employees listed here are excluded from activity monitoring, screenshots,
+          and alerts.
         </CardDescription>
         {canManage && available.length > 0 && (
           <CardAction>
@@ -730,7 +730,7 @@ export function TrackingRulesTab() {
     setTimeout(() => {
       setSaved(cloneState(next))
       setSaving(false)
-      toast.success("Application & URL rules saved")
+      toast.success("Tracking rules saved")
     }, 500)
   }
 
@@ -756,7 +756,7 @@ export function TrackingRulesTab() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Application & URL Rules"
+        title="Tracking rules"
         description="Classify apps and websites, manage allow/block lists, and configure productivity scoring."
       />
 

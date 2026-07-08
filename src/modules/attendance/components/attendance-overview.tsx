@@ -1,10 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { Flag, PieChart } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { DeltaPill } from "@/components/shared/delta-pill";
 import {
   Select,
   SelectContent,
@@ -12,108 +8,172 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
+import { DeltaPill } from "@/components/shared/delta-pill";
 import {
-  DEPARTMENT_ATTENDANCE,
+  ATTENDANCE_RANGE_OPTIONS,
   OVERVIEW,
-  TODAY,
-  orgDayCounts,
+  rangeSummary,
+  type AttendanceRange,
 } from "@/lib/mock-attendance";
 import { cn } from "@/lib/utils";
+import { LogDatePicker } from "./attendance-log";
 
 const BARS = 48;
 
-type View = "today" | "department";
+interface AttendanceDate {
+  year: number;
+  month: number;
+  day: number;
+}
 
-export function AttendanceOverview() {
-  const [view, setView] = useState<View>("today");
-  const [activeDept, setActiveDept] = useState(DEPARTMENT_ATTENDANCE[0].dept);
-  const dept =
-    DEPARTMENT_ATTENDANCE.find((d) => d.dept === activeDept) ??
-    DEPARTMENT_ATTENDANCE[0];
+/**
+ * At-a-glance attendance for the active filter (a Today / Week / Month range or
+ * a specific picked day), optionally narrowed to one department. Owns the shared
+ * filter in its top-right. Today by default.
+ */
+export function AttendanceOverview({
+  range,
+  onRangeChange,
+  date,
+  onDateChange,
+  start,
+  end,
+  onStartChange,
+  onEndChange,
+  dept,
+  onDeptChange,
+  departments,
+}: {
+  range: AttendanceRange;
+  onRangeChange: (r: AttendanceRange) => void;
+  date: AttendanceDate;
+  onDateChange: (d: AttendanceDate) => void;
+  start: string;
+  end: string;
+  onStartChange: (v: string) => void;
+  onEndChange: (v: string) => void;
+  dept: string;
+  onDeptChange: (d: string) => void;
+  departments: string[];
+}) {
+  const { counts, label } = rangeSummary(range, dept, date, start, end);
 
-  const c = orgDayCounts(TODAY.month, TODAY.day);
+  // "Present" counts everyone who showed up (on-time + late).
+  const present = counts.present + counts.late;
+  const total = counts.total || 1;
+  const leave = counts.leave;
+  const absent = Math.max(0, total - present - leave);
 
-  // Both views render the same graph; only the data behind it changes.
-  const stats =
-    view === "today"
-      ? {
-          // "Present" counts everyone who showed up (on-time + late).
-          present: c.present + c.late,
-          leave: c.leave,
-          absent: c.total - (c.present + c.late) - c.leave,
-          total: c.total,
-          delta: OVERVIEW.rateDelta as number | null,
-          asPercent: true,
-        }
-      : {
-          present: dept.present,
-          leave: dept.leave,
-          absent: dept.absent,
-          total: dept.present + dept.leave + dept.absent,
-          delta: null,
-          asPercent: false,
-        };
+  const isDefault = range === "today" && dept === "all";
+  // The week-over-week delta only makes sense for today's org-wide snapshot.
+  const delta = isDefault ? (OVERVIEW.rateDelta as number) : null;
 
-  const rate = Math.round((stats.present / stats.total) * 1000) / 10;
-  const presentPct = Math.round((stats.present / stats.total) * 100);
-  const leavePct = Math.round((stats.leave / stats.total) * 100);
-  const absentPct = 100 - presentPct - leavePct;
+  const rate = Math.round((present / total) * 1000) / 10;
 
-  const presentBars = Math.round((stats.present / stats.total) * BARS);
-  const leaveBars = Math.round((stats.leave / stats.total) * BARS);
+  const presentBars = Math.round((present / total) * BARS);
+  const leaveBars = Math.round((leave / total) * BARS);
 
-  const fmt = (count: number, pct: number) =>
-    stats.asPercent ? `${pct}%` : String(count);
+  const context = `${label} · ${dept === "all" ? "All departments" : dept}`;
 
   return (
     <Card>
       <CardContent className="space-y-5 px-5">
-        {/* Toolbar: view toggle + (department dropdown when in dept view) */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex items-center gap-1 rounded-full bg-muted p-1">
-            <ToggleButton
-              active={view === "today"}
-              onClick={() => setView("today")}
-              icon={Flag}
-              label="Today's"
-            />
-            <ToggleButton
-              active={view === "department"}
-              onClick={() => setView("department")}
-              icon={PieChart}
-              label="Department"
-            />
+        {/* Top: summary (left) + filters (right). Two columns so the custom-range
+            pickers only grow the right side — the rate stays pinned top-left. */}
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-4">
+          {/* Summary */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">{context}</p>
+            <div className="flex items-center gap-2">
+              <span className="font-display text-3xl font-semibold tabular-nums">
+                {rate}%
+              </span>
+              {delta !== null ? <DeltaPill value={delta} /> : null}
+              <span className="text-xs text-muted-foreground">
+                Attendance rate
+              </span>
+            </div>
           </div>
 
-          {view === "department" ? (
-            <Select
-              value={activeDept}
-              onValueChange={(v) => setActiveDept(v as string)}
-            >
-              <SelectTrigger aria-label="Select department" className="h-9 w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="min-w-44">
-                {DEPARTMENT_ATTENDANCE.map((d) => (
-                  <SelectItem key={d.dept} value={d.dept}>
-                    {d.dept}
-                  </SelectItem>
+          {/* Filters */}
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="inline-flex items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-soft">
+                {ATTENDANCE_RANGE_OPTIONS.map((r) => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => onRangeChange(r.value)}
+                    className={cn(
+                      "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                      range === r.value
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {r.label}
+                  </button>
                 ))}
-              </SelectContent>
-            </Select>
-          ) : null}
+              </div>
+
+              {/* Pick a specific day — switches the overview to that date. */}
+              <LogDatePicker
+                value={date}
+                onChange={(d) => {
+                  onDateChange(d);
+                  onRangeChange("day");
+                }}
+              />
+
+              <Select
+                value={dept}
+                onValueChange={(v) => onDeptChange(v as string)}
+              >
+                <SelectTrigger className="h-8 w-[10.5rem]" aria-label="Department">
+                  <SelectValue>
+                    {(v) =>
+                      v == null || v === "all" ? "All departments" : String(v)
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {departments.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d === "all" ? "All departments" : d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Custom range pickers — always occupy their row (kept invisible when
+                not in "Custom") so the card height never changes when toggling. */}
+            <div
+              aria-hidden={range !== "custom"}
+              className={cn(
+                "flex flex-wrap items-center justify-end gap-2",
+                range !== "custom" && "invisible",
+              )}
+            >
+              <DatePicker
+                value={start}
+                onChange={onStartChange}
+                max={end || undefined}
+                placeholder="Start date"
+              />
+              <span className="text-sm text-muted-foreground">–</span>
+              <DatePicker
+                value={end}
+                onChange={onEndChange}
+                min={start || undefined}
+                placeholder="End date"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Headline rate */}
-        <div className="flex items-center gap-2">
-          <span className="font-display text-3xl font-semibold tabular-nums">
-            {rate}%
-          </span>
-          {stats.delta !== null ? <DeltaPill value={stats.delta} /> : null}
-          <span className="text-xs text-muted-foreground">Attendance rate</span>
-        </div>
-
-        {/* Distribution graph (same pattern for both views) */}
+        {/* Distribution graph */}
         <div className="flex h-28 items-end gap-[3px]">
           {Array.from({ length: BARS }, (_, i) => {
             const seg =
@@ -135,52 +195,12 @@ export function AttendanceOverview() {
 
         {/* Legend */}
         <div className="grid grid-cols-3 gap-2 border-t pt-3">
-          <LegendItem
-            dot="bg-success"
-            label="Present"
-            value={fmt(stats.present, presentPct)}
-          />
-          <LegendItem
-            dot="bg-primary"
-            label="On leave"
-            value={fmt(stats.leave, leavePct)}
-          />
-          <LegendItem
-            dot="bg-destructive"
-            label="Absent"
-            value={fmt(stats.absent, absentPct)}
-          />
+          <LegendItem dot="bg-success" label="Present" value={`${present}`} />
+          <LegendItem dot="bg-primary" label="On leave" value={`${leave}`} />
+          <LegendItem dot="bg-destructive" label="Absent" value={`${absent}`} />
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function ToggleButton({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: LucideIcon;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-        active
-          ? "bg-card text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      <Icon className="size-4" />
-      {label}
-    </button>
   );
 }
 

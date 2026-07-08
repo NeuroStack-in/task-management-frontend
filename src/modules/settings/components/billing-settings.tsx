@@ -38,7 +38,7 @@ export function BillingSettings() {
   const invoices = INVOICES.slice(0, 3);
 
   const soon = (what: string) =>
-    toast.info(what, { description: "Manage this in the Billing Center." });
+    toast.info(what, { description: "Manage this in Billing." });
 
   return (
     <div className="space-y-6">
@@ -68,9 +68,9 @@ export function BillingSettings() {
               variant="outline"
               size="sm"
               className="shrink-0"
-              onClick={() => soon("Adjust plan")}
+              onClick={() => soon("Change plan")}
             >
-              Adjust plan
+              Change plan
             </Button>
           </section>
 
