@@ -246,24 +246,29 @@ const SHOT_TIMES = ["09:12", "10:40", "11:55", "14:05", "15:30", "16:48"];
  */
 export const SCREENSHOTS: Screenshot[] = SAMPLE_PEOPLE.flatMap((user, pi) => {
   const device = deviceFor(user);
-  const desks = desktopCountFor(user);
+  // Physical monitors / virtual desktops on this machine (2–3).
+  const monitors = desktopCountFor(user);
   return SHOT_DATES.flatMap((date, di) =>
-    Array.from({ length: 3 }, (_, k) => {
-      const idx = pi * 137 + di * 17 + k * 5;
-      const app = SHOT_APPS[idx % SHOT_APPS.length];
-      const activity = 94 - ((idx * 13) % 78);
-      return {
-        id: `shot-${user.id}-${di}-${k}`,
-        user,
-        date,
-        time: SHOT_TIMES[(di + k) % SHOT_TIMES.length],
-        app,
-        activity,
-        flagged: app === "YouTube" || app === "Reddit" || activity < 25,
-        device,
-        // Spread the day's captures across the machine's desktops.
-        desktop: (k % desks) + 1,
-      };
+    // Three capture moments a day; each moment grabs ALL of the machine's
+    // monitors at once — one screenshot per monitor, sharing the timestamp.
+    Array.from({ length: 3 }).flatMap((_, k) => {
+      const time = SHOT_TIMES[(di + k) % SHOT_TIMES.length];
+      return Array.from({ length: monitors }, (_, m) => {
+        const idx = pi * 137 + di * 17 + k * 5 + m * 3;
+        const app = SHOT_APPS[idx % SHOT_APPS.length];
+        const activity = 94 - ((idx * 13) % 78);
+        return {
+          id: `shot-${user.id}-${di}-${k}-m${m + 1}`,
+          user,
+          date,
+          time,
+          app,
+          activity,
+          flagged: app === "YouTube" || app === "Reddit" || activity < 25,
+          device,
+          desktop: m + 1, // monitor index on this machine (1-based)
+        };
+      });
     }),
   );
 });
