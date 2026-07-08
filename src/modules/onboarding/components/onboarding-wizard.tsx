@@ -51,6 +51,25 @@ function CheckRow({ label, defaultOn }: { label: string; defaultOn?: boolean }) 
 
 function StepContent({ index }: { index: number }) {
   switch (ONBOARDING_STEPS[index].key) {
+    case "org":
+      return (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="ob-company">Organization name</Label>
+            <Input id="ob-company" placeholder="Acme Inc." defaultValue="Acme Corporation" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ob-tz">Timezone</Label>
+              <Input id="ob-tz" defaultValue="America/New_York" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ob-site">Website</Label>
+              <Input id="ob-site" placeholder="acme.com" />
+            </div>
+          </div>
+        </div>
+      );
     case "team":
       return (
         <div className="space-y-3">

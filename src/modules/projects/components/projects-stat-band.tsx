@@ -59,9 +59,9 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
     },
     {
       key: "atRisk",
-      label: "At risk",
+      label: "Overdue",
       value: stats.atRisk,
-      sub: "overdue & unfinished",
+      sub: "past due & unfinished",
       icon: AlertTriangle,
       chip: "bg-warning/15 text-warning",
       accent: "text-warning",

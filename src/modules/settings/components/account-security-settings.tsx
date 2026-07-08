@@ -82,9 +82,7 @@ export function AccountSecuritySettings() {
   const { can } = usePermissions();
   const orgSecurity = can("security:view");
   const heading = orgSecurity ? "Login & security" : "Security";
-  const mfa = orgSecurity
-    ? "Two-factor authentication"
-    : "Multi-factor authentication";
+  const mfa = "Multi-factor authentication";
   const mfaLower = mfa.toLowerCase();
 
   const [setupOpen, setSetupOpen] = useState(false);

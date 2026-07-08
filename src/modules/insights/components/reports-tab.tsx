@@ -255,7 +255,7 @@ export function ReportsTab() {
   return (
     <div className="space-y-6">
       <AiReportCard
-        title="AI reporting summary"
+        title="AI summary"
         summary={`Across ${empCount} employees and ${projCount} projects, Engineering and Product lead utilization this week. Two projects are flagged at risk and a small group is trending toward over-utilization — open any report below for the detail.`}
         metrics={[
           { label: "Utilization", value: "78%" },

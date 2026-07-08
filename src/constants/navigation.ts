@@ -6,6 +6,7 @@ import {
   Users,
   Activity,
   Camera,
+  MapPin,
   CheckCheck,
   WandSparkles,
   LineChart,
@@ -129,12 +130,19 @@ export const INSIGHTS_TABS: NavItem[] = [
     description: "Screenshot gallery, timeline, and risk analysis.",
   },
   {
-    label: "AI Insights & Reports",
+    label: "Locations",
+    href: "/insights/locations",
+    icon: MapPin,
+    permission: "locations:view",
+    description: "Live employee locations, login/logout trail, and map.",
+  },
+  {
+    label: "AI reports",
     href: "/insights/ai-reports",
     icon: WandSparkles,
     permission: "reports:view",
     description:
-      "AI briefing, workforce health, attention signals, and exportable reports in one place.",
+      "AI summary, workforce health, alerts, and exportable reports in one place.",
   },
 ];
 
@@ -181,7 +189,7 @@ export const SETTINGS_SUBSECTIONS: NavItem[] = [
     href: "/settings/security#mfa",
     icon: ShieldCheck,
     permission: "security:view",
-    description: "Two-factor / authenticator setup and policy.",
+    description: "Multi-factor / authenticator setup and policy.",
     keywords:
       "mfa 2fa multifactor multi-factor two-factor authenticator otp passkey two step verification",
   },
@@ -217,11 +225,11 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         href: "/settings/organization",
         icon: Building2,
         permission: "settings:view",
-        description: "Company info, departments, teams, working hours, and branding.",
-        keywords: "company department team workspace working hours branding logo timezone",
+        description: "Organization info, departments, teams, working hours, and branding.",
+        keywords: "organization company department team workspace working hours branding logo timezone",
       },
       {
-        label: "Feature management",
+        label: "Features",
         href: "/settings/features",
         icon: ToggleRight,
         permission: "settings:view",
@@ -258,7 +266,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         keywords: "idle screenshot productivity threshold tracking monitoring",
       },
       {
-        label: "Application & URL rules",
+        label: "Tracking rules",
         href: "/settings/tracking-rules",
         icon: Globe,
         permission: "settings:view",
@@ -271,7 +279,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
     label: "Access & security",
     items: [
       {
-        label: "Roles & Permissions",
+        label: "Roles & permissions",
         href: "/settings/roles",
         icon: KeyRound,
         permission: "roles:view",
@@ -287,7 +295,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         keywords: "security center protect compliance events policy",
       },
       {
-        label: "Audit Logs",
+        label: "Audit logs",
         href: "/settings/audit-logs",
         icon: ScrollText,
         permission: "audit-logs:view",
@@ -307,11 +315,11 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         description: "Slack, Teams, Jira, GitHub, and more.",
       },
       {
-        label: "Desktop Agents",
+        label: "Device agents",
         href: "/settings/agents",
         icon: MonitorSmartphone,
         permission: "agents:view",
-        description: "Agent status, configuration, policies, and health.",
+        description: "Device agent status, configuration, policies, and health.",
       },
     ],
   },

@@ -93,11 +93,14 @@ function generateUsers(count: number): User[] {
   const users: User[] = [];
 
   // First user is the Organization Owner (the demo login).
+  // No uploaded picture — the app renders the Gradient Monogram avatar by
+  // default. Keep the faker call so the deterministic RNG stream is unchanged.
+  faker.image.avatarGitHub();
   users.push({
     id: "user-owner",
     name: "Alex Morgan",
     email: "owner@acme.test",
-    avatarUrl: faker.image.avatarGitHub(),
+    avatarUrl: "",
     roleId: "role-owner",
     jobTitle: "Founder & CEO",
     department: "Product",
@@ -120,6 +123,9 @@ function generateUsers(count: number): User[] {
     void nonOwnerRoles;
     const firstName = faker.person.firstName();
     const lastName = faker.person.lastName();
+    // No uploaded picture — default to the Gradient Monogram avatar. Keep the
+    // faker call so the deterministic RNG stream (and all data below) is stable.
+    faker.image.avatarGitHub();
 
     users.push({
       id: `user-${i.toString().padStart(4, "0")}`,
@@ -127,7 +133,7 @@ function generateUsers(count: number): User[] {
       email: faker.internet
         .email({ firstName, lastName, provider: "acme.test" })
         .toLowerCase(),
-      avatarUrl: faker.image.avatarGitHub(),
+      avatarUrl: "",
       roleId,
       jobTitle: faker.person.jobTitle(),
       department,

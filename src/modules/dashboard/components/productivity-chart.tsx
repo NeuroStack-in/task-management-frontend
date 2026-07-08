@@ -28,7 +28,7 @@ export function ProductivityChart({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Productivity Trends</CardTitle>
+        <CardTitle>Productivity trends</CardTitle>
         <CardDescription>
           Active vs. productive time · {rangeLabel}
         </CardDescription>

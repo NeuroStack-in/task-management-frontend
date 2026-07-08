@@ -37,8 +37,7 @@ export type WidgetType =
   | "top-employees"
   | "ai-summary"
   | "billing"
-  | "alerts"
-  | "deadlines"
+  | "alerts-deadlines"
   | "upcoming-tasks";
 
 export interface DashboardWidget {

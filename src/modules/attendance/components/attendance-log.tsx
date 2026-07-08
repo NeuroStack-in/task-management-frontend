@@ -22,9 +22,11 @@ import {
   dayRecordFor,
   isFutureDate,
   monthMatrix,
+  rangeDays,
   MONTH_NAMES,
   TODAY,
   WEEKDAY_LABELS,
+  type AttendanceRange,
 } from "@/lib/mock-attendance";
 import {
   Card,
@@ -82,10 +84,12 @@ const STATUS_FILTERS: (AttendanceStatus | "all")[] = [
   "absent",
 ];
 
-type SortKey = "name" | "clockIn" | "hours";
+type SortKey = "name" | "clockIn" | "hours" | "date";
 const PAGE_SIZE = 10;
 
 interface Row {
+  /** Unique per employee + day (a range shows one row per employee per day). */
+  key: string;
   id: string;
   name: string;
   avatarUrl?: string;
@@ -94,6 +98,10 @@ interface Row {
   clockIn: string;
   clockOut: string;
   hours: number;
+  /** Short display date, e.g. "Jun 25". */
+  dateStr: string;
+  /** ISO date key for sorting, e.g. "2026-06-25". */
+  dateSort: string;
 }
 
 interface SelectedDate {
@@ -109,35 +117,55 @@ const dateLabel = (d: SelectedDate) =>
   `${MONTH_NAMES[d.month].slice(0, 3)} ${d.day}, ${d.year}`;
 
 export function AttendanceLog({
+  range,
   date,
+  start,
+  end,
   dept,
 }: {
+  range: AttendanceRange;
   date: SelectedDate;
+  start: string;
+  end: string;
   dept: string;
 }) {
   const router = useRouter();
   const { ids: scopeIds } = useDataScope();
 
-  const allRows: Row[] = useMemo(
-    () =>
-      users
-        // Team leads only see their own team's attendance; org roles see all.
-        .filter((u) => scopeIds === null || scopeIds.has(u.id))
-        .map((u) => {
-          const a = dayRecordFor(u.id, date.year, date.month, date.day);
-          return {
-            id: u.id,
-            name: u.name,
-            avatarUrl: u.avatarUrl,
-            department: u.department,
-            status: a.status,
-            clockIn: a.clockIn,
-            clockOut: a.clockOut,
-            hours: a.hours,
-          };
-        }),
-    [date, scopeIds],
+  // Which day(s) the log covers — a single day, or every working day in the
+  // selected week / month / custom range.
+  const { days, label } = useMemo(
+    () => rangeDays(range, date, start, end),
+    [range, date, start, end],
   );
+  const multi = days.length > 1;
+
+  const allRows: Row[] = useMemo(() => {
+    // Team leads only see their own team's attendance; org roles see all.
+    const scoped = users.filter((u) => scopeIds === null || scopeIds.has(u.id));
+    const rows: Row[] = [];
+    for (const d of days) {
+      const iso = `${d.year}-${String(d.month + 1).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
+      const short = `${MONTH_NAMES[d.month].slice(0, 3)} ${d.day}`;
+      for (const u of scoped) {
+        const a = dayRecordFor(u.id, d.year, d.month, d.day);
+        rows.push({
+          key: `${u.id}-${iso}`,
+          id: u.id,
+          name: u.name,
+          avatarUrl: u.avatarUrl,
+          department: u.department,
+          status: a.status,
+          clockIn: a.clockIn,
+          clockOut: a.clockOut,
+          hours: a.hours,
+          dateStr: short,
+          dateSort: iso,
+        });
+      }
+    }
+    return rows;
+  }, [days, scopeIds]);
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AttendanceStatus | "all">("all");
@@ -147,8 +175,15 @@ export function AttendanceLog({
   });
   const [page, setPage] = useState(0);
 
-  // Reset to the first page when the selected day or department changes.
-  useEffect(() => setPage(0), [date, dept]);
+  // Reset to the first page when the range/day or department changes.
+  const depsKey = `${range}|${date.year}-${date.month}-${date.day}|${start}|${end}|${dept}`;
+  useEffect(() => setPage(0), [depsKey]);
+  // Default to date order for multi-day ranges, name order for a single day.
+  useEffect(() => {
+    setSort(
+      multi ? { key: "date", dir: "asc" } : { key: "name", dir: "asc" },
+    );
+  }, [multi]);
 
   const statusCounts = useMemo(() => {
     const base = { all: allRows.length } as Record<string, number>;
@@ -167,6 +202,10 @@ export function AttendanceLog({
     );
     const dir = sort.dir === "asc" ? 1 : -1;
     rows.sort((a, b) => {
+      // Group by day first (stable name tiebreak) when sorting by date.
+      if (sort.key === "date")
+        return a.dateSort.localeCompare(b.dateSort) * dir ||
+          a.name.localeCompare(b.name);
       if (sort.key === "name") return a.name.localeCompare(b.name) * dir;
       if (sort.key === "hours") return (a.hours - b.hours) * dir;
       // clockIn: "—" (no clock-in) sorts last regardless of direction
@@ -196,10 +235,23 @@ export function AttendanceLog({
     resetPage();
   };
 
+  const singleDay = days[0];
+  const title = !multi && isToday(singleDay) ? "Today's log" : "Attendance log";
+  const subtitle = multi ? label : dateLabel(singleDay);
+
   const exportCsv = () => {
     const csv = Papa.unparse({
-      fields: ["Employee", "Department", "Status", "Clock in", "Clock out", "Hours"],
+      fields: [
+        ...(multi ? ["Date"] : []),
+        "Employee",
+        "Department",
+        "Status",
+        "Clock in",
+        "Clock out",
+        "Hours",
+      ],
       data: filtered.map((r) => [
+        ...(multi ? [r.dateStr] : []),
         r.name,
         r.department,
         STATUS_META[r.status].label,
@@ -208,7 +260,8 @@ export function AttendanceLog({
         r.hours ? r.hours.toFixed(1) : "—",
       ]),
     });
-    const fname = `attendance-${date.year}-${String(date.month + 1).padStart(2, "0")}-${String(date.day).padStart(2, "0")}.csv`;
+    const slug = subtitle.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    const fname = `attendance-${slug}.csv`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -219,7 +272,7 @@ export function AttendanceLog({
     a.remove();
     URL.revokeObjectURL(url);
     toast.success("Attendance log exported", {
-      description: `${dateLabel(date)} · ${filtered.length} rows · ${fname}`,
+      description: `${subtitle} · ${filtered.length} rows · ${fname}`,
     });
   };
 
@@ -227,8 +280,8 @@ export function AttendanceLog({
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div>
-          <CardTitle>{isToday(date) ? "Today's log" : "Attendance log"}</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">{dateLabel(date)}</p>
+          <CardTitle>{title}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -291,6 +344,14 @@ export function AttendanceLog({
                       onClick={() => toggleSort("name")}
                     />
                     <TableHead>Department</TableHead>
+                    {multi ? (
+                      <SortHead
+                        label="Date"
+                        active={sort.key === "date"}
+                        dir={sort.dir}
+                        onClick={() => toggleSort("date")}
+                      />
+                    ) : null}
                     <TableHead>Status</TableHead>
                     <SortHead
                       label="Clock in"
@@ -312,7 +373,7 @@ export function AttendanceLog({
                     const meta = STATUS_META[r.status];
                     return (
                       <TableRow
-                        key={r.id}
+                        key={r.key}
                         onClick={() => router.push(`/employees/${r.id}`)}
                         className={cn("cursor-pointer", meta.row)}
                       >
@@ -330,6 +391,11 @@ export function AttendanceLog({
                         <TableCell className="text-muted-foreground">
                           {r.department}
                         </TableCell>
+                        {multi ? (
+                          <TableCell className="font-mono tabular-nums text-muted-foreground">
+                            {r.dateStr}
+                          </TableCell>
+                        ) : null}
                         <TableCell>
                           <Badge className={meta.badge}>{meta.label}</Badge>
                         </TableCell>

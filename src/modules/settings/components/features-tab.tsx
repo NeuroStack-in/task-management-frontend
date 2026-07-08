@@ -44,14 +44,14 @@ const FEATURE_LIST: FeatureDef[] = [
   {
     key: "time-tracking",
     icon: Timer,
-    label: "Time Tracking",
+    label: "Time tracking",
     description:
       "Let employees log hours, start/stop timers, and track time against projects.",
   },
   {
     key: "activity-monitoring",
     icon: Activity,
-    label: "Activity Monitoring",
+    label: "Activity monitoring",
     description:
       "Track active vs idle time, application usage, and keyboard/mouse intensity.",
   },
@@ -65,22 +65,22 @@ const FEATURE_LIST: FeatureDef[] = [
   {
     key: "ai",
     icon: Bot,
-    label: "AI Insights",
+    label: "Assistant",
     description:
-      "AI-generated productivity summaries, anomaly detection, and smart recommendations.",
+      "AI-generated productivity summaries, alerts, and smart recommendations.",
     beta: true,
   },
   {
     key: "billing",
     icon: CreditCard,
-    label: "Billing & Subscriptions",
+    label: "Billing & subscriptions",
     description:
       "Manage your WorkPulse plan, payment methods, and billing history.",
   },
   {
     key: "reports",
     icon: FileBarChart,
-    label: "Reports & Analytics",
+    label: "Reports & analytics",
     description:
       "Generate workforce, time, and project reports with CSV/PDF export.",
   },
@@ -106,7 +106,7 @@ const FEATURE_LIST: FeatureDef[] = [
   {
     key: "remote-support",
     icon: Headset,
-    label: "Remote Support",
+    label: "Remote support",
     description:
       "Approval-gated remote sessions for IT to assist employees securely.",
     beta: true,
@@ -114,9 +114,9 @@ const FEATURE_LIST: FeatureDef[] = [
   {
     key: "desktop-agents",
     icon: MonitorSmartphone,
-    label: "Desktop Agents",
+    label: "Device agents",
     description:
-      "Install lightweight agents on employee machines for real-time monitoring.",
+      "Install lightweight device agents on employee machines for real-time monitoring.",
   },
 ]
 
@@ -160,8 +160,8 @@ export function FeaturesTab() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Feature Management"
-        description="Enable or disable modules organization-wide. Changes take effect for all users once saved."
+        title="Features"
+        description="Enable or disable features organization-wide. Changes take effect for all users once saved."
       />
 
       {!canManage && (
@@ -175,9 +175,9 @@ export function FeaturesTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Modules</CardTitle>
+          <CardTitle>Features</CardTitle>
           <CardDescription>
-            Disabled modules are hidden from all users. Re-enabling a module restores access
+            Disabled features are hidden from all users. Re-enabling a feature restores access
             based on each role&apos;s existing permissions.
           </CardDescription>
         </CardHeader>

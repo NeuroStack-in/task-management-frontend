@@ -179,6 +179,35 @@ export interface Screenshot {
   app: string;
   activity: number;
   flagged: boolean;
+  /** Host machine the capture came from, e.g. "HP EliteDesk 800 G6". */
+  device: string;
+  /** Monitor / virtual desktop on that machine the capture came from (1-based). */
+  desktop: number;
+}
+
+/** Host machine models we attribute monitored employees to (deterministic). */
+const DEVICE_MODELS = [
+  "HP EliteDesk 800 G6",
+  "Dell OptiPlex 7090",
+  "Lenovo ThinkCentre M90",
+  "HP ProDesk 400 G7",
+  "Apple Mac mini M2",
+  "Dell Latitude 5540",
+];
+
+/** Stable per-user seed reused for device + desktop assignment. */
+function userSeed(user: User): number {
+  return [...user.id].reduce((s, c) => s + c.charCodeAt(0), 0);
+}
+
+/** The (single) machine an employee is monitored on. */
+export function deviceFor(user: User): string {
+  return DEVICE_MODELS[userSeed(user) % DEVICE_MODELS.length];
+}
+
+/** How many monitors / virtual desktops that machine has (2 or 3). */
+export function desktopCountFor(user: User): number {
+  return 2 + (userSeed(user) % 2);
 }
 
 const SHOT_APPS = [
@@ -215,24 +244,34 @@ const SHOT_TIMES = ["09:12", "10:40", "11:55", "14:05", "15:30", "16:48"];
  * full history, filterable by month/date — so captures are grouped by user,
  * not presented as a flat recent feed.
  */
-export const SCREENSHOTS: Screenshot[] = SAMPLE_PEOPLE.flatMap((user, pi) =>
-  SHOT_DATES.flatMap((date, di) =>
-    Array.from({ length: 3 }, (_, k) => {
-      const idx = pi * 137 + di * 17 + k * 5;
-      const app = SHOT_APPS[idx % SHOT_APPS.length];
-      const activity = 94 - ((idx * 13) % 78);
-      return {
-        id: `shot-${user.id}-${di}-${k}`,
-        user,
-        date,
-        time: SHOT_TIMES[(di + k) % SHOT_TIMES.length],
-        app,
-        activity,
-        flagged: app === "YouTube" || app === "Reddit" || activity < 25,
-      };
+export const SCREENSHOTS: Screenshot[] = SAMPLE_PEOPLE.flatMap((user, pi) => {
+  const device = deviceFor(user);
+  // Physical monitors / virtual desktops on this machine (2–3).
+  const monitors = desktopCountFor(user);
+  return SHOT_DATES.flatMap((date, di) =>
+    // Three capture moments a day; each moment grabs ALL of the machine's
+    // monitors at once — one screenshot per monitor, sharing the timestamp.
+    Array.from({ length: 3 }).flatMap((_, k) => {
+      const time = SHOT_TIMES[(di + k) % SHOT_TIMES.length];
+      return Array.from({ length: monitors }, (_, m) => {
+        const idx = pi * 137 + di * 17 + k * 5 + m * 3;
+        const app = SHOT_APPS[idx % SHOT_APPS.length];
+        const activity = 94 - ((idx * 13) % 78);
+        return {
+          id: `shot-${user.id}-${di}-${k}-m${m + 1}`,
+          user,
+          date,
+          time,
+          app,
+          activity,
+          flagged: app === "YouTube" || app === "Reddit" || activity < 25,
+          device,
+          desktop: m + 1, // monitor index on this machine (1-based)
+        };
+      });
     }),
-  ),
-);
+  );
+});
 
 export interface EmployeeShots {
   user: User;
@@ -242,6 +281,10 @@ export interface EmployeeShots {
   avgActivity: number;
   /** Most recent capture (cover thumbnail). */
   latest: Screenshot;
+  /** The machine this employee is monitored on. */
+  device: string;
+  /** Desktop / monitor numbers this employee has captures on (sorted). */
+  desktops: number[];
 }
 
 /** Screenshots grouped by employee, with per-person summary stats. */
@@ -252,7 +295,19 @@ export const SCREENSHOT_EMPLOYEES: EmployeeShots[] = SAMPLE_PEOPLE.map(
     const avgActivity = Math.round(
       shots.reduce((a, s) => a + s.activity, 0) / shots.length,
     );
-    return { user, shots, total: shots.length, flagged, avgActivity, latest: shots[0] };
+    const desktops = Array.from(new Set(shots.map((s) => s.desktop))).sort(
+      (a, b) => a - b,
+    );
+    return {
+      user,
+      shots,
+      total: shots.length,
+      flagged,
+      avgActivity,
+      latest: shots[0],
+      device: deviceFor(user),
+      desktops,
+    };
   },
 );
 
@@ -568,7 +623,7 @@ export const REPORTS: ReportDef[] = [
   {
     id: "project",
     name: "Project Time Allocation",
-    description: "Hours logged per project with completion estimates.",
+    description: "Hours tracked per project with completion estimates.",
     category: "projects",
     period: "This month",
     columns: ["Project", "Hours", "Members", "On track"],

@@ -104,7 +104,7 @@ export function RegisterForm() {
               ) : null}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="company">Company</Label>
+              <Label htmlFor="company">Organization</Label>
               <Input id="company" placeholder="Acme Inc." {...register("company")} />
               {errors.company ? (
                 <p className="text-xs text-destructive">

@@ -153,7 +153,7 @@ export function AiInsightsTab() {
       tone: burnout > 0 ? "down" : "up",
     },
     {
-      label: "Needs attention",
+      label: "Alerts",
       value: String(open.length),
       tone: open.length > 0 ? "down" : "up",
     },
@@ -174,7 +174,7 @@ export function AiInsightsTab() {
 
   return (
     <div className="space-y-4">
-      <AiReportCard title="Weekly summary" summary={summary} signals={signals} />
+      <AiReportCard title="AI summary" summary={summary} signals={signals} />
 
       <div className="grid items-start gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -200,7 +200,7 @@ export function AiInsightsTab() {
       <Card>
         <CardHeader className="flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
           <div className="space-y-1">
-            <CardTitle>Needs attention ({open.length})</CardTitle>
+            <CardTitle>Alerts ({open.length})</CardTitle>
             <p className="text-xs text-muted-foreground">
               {high} high priority · {burnout} burnout · {drops} productivity drops
             </p>

@@ -219,7 +219,7 @@ function CompanyInfoSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Company Information</CardTitle>
+        <CardTitle>Organization information</CardTitle>
         <CardDescription>
           Basic profile shown across the platform and used in exported reports.
         </CardDescription>
@@ -229,7 +229,7 @@ function CompanyInfoSection({
           {/* Company details */}
           <div className="grid content-start gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Company name</Label>
+              <Label>Organization name</Label>
               <Input
                 value={value.name}
                 disabled={!canManage}
@@ -264,7 +264,7 @@ function CompanyInfoSection({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Company size</Label>
+              <Label>Organization size</Label>
               <StyledSelect
                 value={value.size}
                 onChange={(v) => onChange({ size: v })}
@@ -287,7 +287,7 @@ function CompanyInfoSection({
 
           {/* Company logo — right rail, uses the open space beside the fields */}
           <div className="space-y-2 lg:border-l lg:border-border lg:pl-6">
-            <Label>Company logo</Label>
+            <Label>Organization logo</Label>
             {/* Clickable drag-and-drop upload zone (doubles as the preview) */}
             <button
               type="button"
@@ -978,7 +978,7 @@ function PoliciesSection({
           <div>
             <p className="text-sm font-medium">Track overtime</p>
             <p className="text-xs text-muted-foreground">
-              Flag hours logged beyond the daily expected threshold as overtime.
+              Flag hours tracked beyond the daily expected threshold as overtime.
             </p>
           </div>
           <Switch

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -41,7 +42,7 @@ export function TopEmployeesWidget({ people }: { people: User[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top Employees</CardTitle>
+        <CardTitle>Top performers</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {people.map((u, i) => (
@@ -88,7 +89,7 @@ export function ScreenshotsWidget({
           <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <Camera className="size-4" />
           </span>
-          Screenshots Captured
+          Screenshots captured
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -111,7 +112,7 @@ export function AiSummaryWidget() {
     <Card className="bg-feature text-feature-foreground shadow-none">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Sparkles className="size-4" /> AI Summary
+          <Sparkles className="size-4" /> AI summary
         </CardTitle>
       </CardHeader>
       <CardContent className="gap-3 text-sm leading-relaxed text-feature-foreground/90">
@@ -141,47 +142,7 @@ export function AiSummaryWidget() {
   );
 }
 
-/* ---------------------------- Recent Alerts ---------------------------- */
-
-const ALERTS = [
-  { tone: "danger", title: "Low productivity", detail: "Backend team · −8% today" },
-  { tone: "warning", title: "Missing screenshots", detail: "3 agents offline > 2h" },
-  { tone: "warning", title: "Long inactivity", detail: "J. Cannan idle 47m" },
-  { tone: "danger", title: "Burnout risk", detail: "Design · 2 people flagged" },
-] as const;
-
-export function AlertsWidget() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Recent Alerts</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {ALERTS.map((a) => (
-          <div key={a.title} className="flex items-start gap-3">
-            <span
-              className={cn(
-                "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
-                a.tone === "danger"
-                  ? "bg-destructive/12 text-destructive"
-                  : "bg-warning/15 text-warning",
-              )}
-            >
-              <AlertTriangle className="size-3.5" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{a.title}</p>
-              <p className="truncate text-xs text-muted-foreground">{a.detail}</p>
-            </div>
-          </div>
-        ))}
-        <ViewAllLink href="/insights/anomalies" label="View all alerts" />
-      </CardContent>
-    </Card>
-  );
-}
-
-/* -------------------------- Deadline Warnings -------------------------- */
+/* --------------------- Alerts & Deadlines (combined) -------------------- */
 
 const DEADLINES = [
   { task: "Q3 productivity report", due: "Due in 2h", urgent: true },
@@ -190,33 +151,86 @@ const DEADLINES = [
   { task: "Security policy update", due: "In 3 days", urgent: false },
 ];
 
-export function DeadlineWidget() {
+const ALERTS = [
+  { tone: "danger", title: "Low productivity", detail: "Backend team · −8% today" },
+  { tone: "warning", title: "Missing screenshots", detail: "3 device agents offline > 2h" },
+  { tone: "warning", title: "Long inactivity", detail: "J. Cannan idle 47m" },
+  { tone: "danger", title: "Burnout risk", detail: "Design · 2 people flagged" },
+] as const;
+
+/** Small uppercase divider that labels a section inside a stacked card. */
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+      {children}
+    </p>
+  );
+}
+
+/**
+ * A single "what needs attention" card that merges upcoming Deadlines with live
+ * Alerts. Two labelled sections keep each list scannable while collapsing two
+ * tiles into one; each section links out to its canonical page.
+ */
+export function AlertsDeadlinesWidget() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Deadline Warnings</CardTitle>
+        <CardTitle>Alerts &amp; deadlines</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {DEADLINES.map((d) => (
-          <div key={d.task} className="flex items-center gap-3">
-            <CalendarClock
-              className={cn(
-                "size-4 shrink-0",
-                d.urgent ? "text-destructive" : "text-muted-foreground",
-              )}
-            />
-            <p className="min-w-0 flex-1 truncate text-sm">{d.task}</p>
-            <span
-              className={cn(
-                "shrink-0 text-xs font-medium",
-                d.urgent ? "text-destructive" : "text-muted-foreground",
-              )}
-            >
-              {d.due}
-            </span>
+      <CardContent className="gap-5">
+        {/* Deadlines */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <SectionLabel>Deadlines</SectionLabel>
+            <ViewAllLink href="/projects" label="All" />
           </div>
-        ))}
-        <ViewAllLink href="/projects" label="View all deadlines" />
+          {DEADLINES.slice(0, 3).map((d) => (
+            <div key={d.task} className="flex items-center gap-3">
+              <CalendarClock
+                className={cn(
+                  "size-4 shrink-0",
+                  d.urgent ? "text-destructive" : "text-muted-foreground",
+                )}
+              />
+              <p className="min-w-0 flex-1 truncate text-sm">{d.task}</p>
+              <span
+                className={cn(
+                  "shrink-0 text-xs font-medium",
+                  d.urgent ? "text-destructive" : "text-muted-foreground",
+                )}
+              >
+                {d.due}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Alerts */}
+        <div className="space-y-3 border-t border-border/60 pt-4">
+          <div className="flex items-center justify-between">
+            <SectionLabel>Alerts</SectionLabel>
+            <ViewAllLink href="/insights/anomalies" label="All" />
+          </div>
+          {ALERTS.slice(0, 3).map((a) => (
+            <div key={a.title} className="flex items-start gap-3">
+              <span
+                className={cn(
+                  "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
+                  a.tone === "danger"
+                    ? "bg-destructive/12 text-destructive"
+                    : "bg-warning/15 text-warning",
+                )}
+              >
+                <AlertTriangle className="size-3.5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{a.title}</p>
+                <p className="truncate text-xs text-muted-foreground">{a.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -235,7 +249,7 @@ export function UpcomingTasksWidget() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Upcoming Tasks</CardTitle>
+        <CardTitle>Upcoming tasks</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {TASKS.map((t) => (
@@ -275,7 +289,7 @@ export function BillingWidget({
           <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <CreditCard className="size-4" />
           </span>
-          Billing Overview
+          Billing overview
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -246,7 +246,7 @@ function DayDetail({
   if (view.hours <= 0) {
     return (
       <div className="rounded-2xl border border-dashed bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
-        No hours logged on this day — a day off.
+        No hours tracked on this day — a day off.
       </div>
     );
   }

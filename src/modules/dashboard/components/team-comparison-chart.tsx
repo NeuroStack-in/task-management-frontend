@@ -29,7 +29,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Team Comparison</CardTitle>
+        <CardTitle>Team comparison</CardTitle>
         <CardDescription>Average productivity by department</CardDescription>
       </CardHeader>
       <CardContent>

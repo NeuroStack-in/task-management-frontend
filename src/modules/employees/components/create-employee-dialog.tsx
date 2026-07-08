@@ -134,9 +134,9 @@ export function CreateEmployeeDialog({
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create employee account</DialogTitle>
+          <DialogTitle>Add employee</DialogTitle>
           <DialogDescription>
-            Add a new member to your organization. Invited accounts receive access
+            Add a new employee to your organization. Invited accounts receive access
             once they accept; active accounts are enabled immediately.
           </DialogDescription>
         </DialogHeader>

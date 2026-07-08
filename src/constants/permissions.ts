@@ -107,6 +107,7 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("activity", "view", "View Activity"),
       p("screenshots", "view", "View Screenshots"),
+      p("locations", "view", "View Employee Locations"),
     ],
   },
   {
@@ -136,13 +137,13 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     module: "ai",
-    label: "AI Insights",
-    permissions: [p("ai", "view", "Use AI Assistant")],
+    label: "Assistant",
+    permissions: [p("ai", "view", "Use the assistant")],
   },
   {
     module: "anomalies",
-    label: "Anomaly Detection",
-    permissions: [p("anomalies", "view", "View Anomalies")],
+    label: "Alerts",
+    permissions: [p("anomalies", "view", "View alerts")],
   },
   {
     module: "communication",
@@ -180,10 +181,10 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     module: "agents",
-    label: "Desktop Agents",
+    label: "Device agents",
     permissions: [
-      p("agents", "view", "View Agents"),
-      p("agents", "manage", "Manage Agents"),
+      p("agents", "view", "View device agents"),
+      p("agents", "manage", "Manage device agents"),
     ],
   },
   {

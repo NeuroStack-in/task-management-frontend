@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Flag,
+  Monitor,
   Search,
   Sparkles,
   Users,
@@ -43,6 +44,46 @@ import {
 } from "@/lib/mock-insights";
 import { cn } from "@/lib/utils";
 import { AiReportCard } from "./ai-report-card";
+
+/**
+ * A capture is the SET of screenshots grabbed at one moment across all of a
+ * machine's monitors — they share a timestamp and differ by `desktop` (monitor).
+ */
+interface Capture {
+  key: string;
+  date: string;
+  time: string;
+  /** One screenshot per monitor, ordered by monitor number. */
+  monitors: Screenshot[];
+  /** True if any monitor in the set was flagged. */
+  flagged: boolean;
+  /** Representative shot for the gallery tile (a flagged one if present). */
+  cover: Screenshot;
+}
+
+/** Group a flat screenshot list into capture sets by (date, time). Preserves the
+ *  input order (screenshots arrive newest-first, monitors consecutive). */
+function groupCaptures(shots: Screenshot[]): Capture[] {
+  const byKey = new Map<string, Screenshot[]>();
+  for (const s of shots) {
+    const key = `${s.date}|${s.time}`;
+    const list = byKey.get(key);
+    if (list) list.push(s);
+    else byKey.set(key, [s]);
+  }
+  return [...byKey.values()].map((group) => {
+    const monitors = [...group].sort((a, b) => a.desktop - b.desktop);
+    const first = monitors[0];
+    return {
+      key: `${first.date}|${first.time}`,
+      date: first.date,
+      time: first.time,
+      monitors,
+      flagged: monitors.some((s) => s.flagged),
+      cover: monitors.find((s) => s.flagged) ?? first,
+    };
+  });
+}
 
 function flagReason(shot: Screenshot): string | null {
   if (!shot.flagged) return null;
@@ -125,7 +166,7 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
         }. Average on-screen activity sits at ${avgActivity}%.`}
         metrics={[
           { label: "Monitored", value: scoped.length },
-          { label: "Total captures", value: totalCaptures.toLocaleString() },
+          { label: "Screenshots", value: totalCaptures.toLocaleString() },
           { label: "Needs review", value: totalFlagged },
           { label: "Avg activity", value: `${avgActivity}%` },
         ]}
@@ -235,7 +276,7 @@ function EmployeeCard({
           </Badge>
         ) : null}
         <span className="absolute bottom-2 left-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
-          {emp.total} captures
+          {emp.total} shots · {emp.desktops.length} monitors
         </span>
       </div>
 
@@ -271,8 +312,9 @@ function EmployeeDetail({
   const [from, setFrom] = useState<string>(""); // "HH:MM", "" = open start
   const [to, setTo] = useState<string>(""); // "HH:MM", "" = open end
   const [flag, setFlag] = useState<"all" | "flagged">("all");
-  // Index into the currently-filtered `shots` list, for the gallery lightbox.
-  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  // Open capture (index into filtered `captures`) + which monitor within it.
+  const [captureIdx, setCaptureIdx] = useState<number | null>(null);
+  const [monitorIdx, setMonitorIdx] = useState(0);
 
   // Calendar bounds = the window this employee actually has captures in.
   const [minDate, maxDate] = useMemo(() => {
@@ -280,17 +322,29 @@ function EmployeeDetail({
     return [sorted[0], sorted[sorted.length - 1]];
   }, [employee]);
 
-  const shots = useMemo(
+  // Group every screenshot into capture sets (one moment = all monitors), then
+  // filter at the capture level so a set is kept or dropped as a whole.
+  const allCaptures = useMemo(
+    () => groupCaptures(employee.shots),
+    [employee],
+  );
+  const captures = useMemo(
     () =>
-      employee.shots.filter((s) => {
-        if (day && s.date !== day) return false;
-        if (from && s.time < from) return false;
-        if (to && s.time > to) return false;
-        if (flag === "flagged" && !s.flagged) return false;
+      allCaptures.filter((c) => {
+        if (day && c.date !== day) return false;
+        if (from && c.time < from) return false;
+        if (to && c.time > to) return false;
+        if (flag === "flagged" && !c.flagged) return false;
         return true;
       }),
-    [employee, day, from, to, flag],
+    [allCaptures, day, from, to, flag],
   );
+
+  const flaggedCaptures = allCaptures.filter((c) => c.flagged).length;
+  const openCapture = (i: number) => {
+    setCaptureIdx(i);
+    setMonitorIdx(0);
+  };
 
   const dirty = day !== "" || from !== "" || to !== "" || flag !== "all";
   const reset = () => {
@@ -321,7 +375,8 @@ function EmployeeDetail({
           </p>
         </div>
         <div className="flex gap-5 text-sm">
-          <Summary label="Captures" value={employee.total} />
+          <Summary label="Captures" value={allCaptures.length} />
+          <Summary label="Monitors" value={employee.desktops.length} />
           <Summary
             label="Avg activity"
             value={`${employee.avgActivity}%`}
@@ -329,8 +384,8 @@ function EmployeeDetail({
           />
           <Summary
             label="Needs review"
-            value={employee.flagged}
-            tone={employee.flagged > 0 ? "text-destructive" : undefined}
+            value={flaggedCaptures}
+            tone={flaggedCaptures > 0 ? "text-destructive" : undefined}
           />
         </div>
       </div>
@@ -338,17 +393,17 @@ function EmployeeDetail({
       {/* Per-person AI report */}
       <AiReportCard
         title={`AI report — ${employee.user.name.split(" ")[0]}`}
-        summary={`${employee.user.name.split(" ")[0]} has ${employee.total} captures this period with activity averaging ${employee.avgActivity}%. ${
-          employee.flagged > 0
-            ? `${employee.flagged} were marked for review for distracting apps or low activity — review the highlighted captures below.`
+        summary={`${employee.user.name.split(" ")[0]} has ${allCaptures.length} captures this period across ${employee.desktops.length} monitors on ${employee.device}, with activity averaging ${employee.avgActivity}%. ${
+          flaggedCaptures > 0
+            ? `${flaggedCaptures} were marked for review for distracting apps or low activity — review the highlighted captures below.`
             : "Nothing needs review — coverage and focus both look healthy."
         }`}
         signals={[
-          { label: "Captures", value: `${employee.total}`, tone: "flat" },
+          { label: "Captures", value: `${allCaptures.length}`, tone: "flat" },
           {
             label: "Needs review",
-            value: `${employee.flagged}`,
-            tone: employee.flagged > 0 ? "down" : "up",
+            value: `${flaggedCaptures}`,
+            tone: flaggedCaptures > 0 ? "down" : "up",
           },
           {
             label: "Avg activity",
@@ -408,11 +463,11 @@ function EmployeeDetail({
       </div>
 
       <p className="text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">{shots.length}</span>{" "}
-        captures
+        <span className="font-medium text-foreground">{captures.length}</span>{" "}
+        captures · {employee.device} · {employee.desktops.length} monitors
       </p>
 
-      {shots.length === 0 ? (
+      {captures.length === 0 ? (
         <EmptyState
           icon={Camera}
           title="No captures in this range"
@@ -420,21 +475,23 @@ function EmployeeDetail({
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {shots.map((shot, i) => (
-            <ShotCard
-              key={shot.id}
-              shot={shot}
-              onOpen={() => setLightboxIdx(i)}
+          {captures.map((capture, i) => (
+            <CaptureCard
+              key={capture.key}
+              capture={capture}
+              onOpen={() => openCapture(i)}
             />
           ))}
         </div>
       )}
 
       <Lightbox
-        shots={shots}
-        index={lightboxIdx}
-        onIndexChange={setLightboxIdx}
-        onClose={() => setLightboxIdx(null)}
+        captures={captures}
+        captureIndex={captureIdx}
+        monitorIndex={monitorIdx}
+        onCaptureChange={openCapture}
+        onMonitorChange={setMonitorIdx}
+        onClose={() => setCaptureIdx(null)}
       />
     </div>
   );
@@ -521,50 +578,62 @@ function CaptureImage({ seed, alt }: { seed: string; alt: string }) {
   );
 }
 
-function ShotCard({
-  shot,
+function CaptureCard({
+  capture,
   onOpen,
 }: {
-  shot: Screenshot;
+  capture: Capture;
   onOpen: () => void;
 }) {
+  const { cover, monitors, flagged } = capture;
+  const multi = monitors.length > 1;
   return (
     <Card
       className={cn(
         "group cursor-pointer gap-0 overflow-hidden p-0 transition",
-        shot.flagged
+        flagged
           ? "bg-destructive/5 ring-2 ring-destructive/60 ring-offset-1 ring-offset-background hover:ring-destructive/75"
           : "hover:ring-1 hover:ring-primary/40",
       )}
       onClick={onOpen}
     >
       <div className="relative aspect-[16/10] overflow-hidden">
-        <CaptureImage seed={shot.id} alt={`${shot.app} screenshot`} />
-        {shot.flagged ? (
+        {/* Fanned edge to hint a multi-monitor set behind the cover */}
+        {multi ? (
+          <span className="absolute inset-x-2 top-1 bottom-2 rounded-md bg-foreground/15" />
+        ) : null}
+        <div className={cn("absolute inset-0", multi && "inset-x-0 bottom-0 top-1")}>
+          <CaptureImage seed={cover.id} alt={`${cover.app} screenshot`} />
+        </div>
+        {flagged ? (
           <div className="pointer-events-none absolute inset-0 bg-destructive/10" />
         ) : null}
         <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
-          {shot.app}
+          {cover.app}
         </div>
-        {shot.flagged ? (
+        {flagged ? (
           <Badge className="absolute right-2 top-2 border-transparent bg-destructive text-white shadow-sm">
             <Flag className="size-3" /> Needs review
           </Badge>
+        ) : multi ? (
+          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
+            <Monitor className="size-3" /> {monitors.length} monitors
+          </span>
         ) : null}
         <span className="absolute bottom-2 right-2 rounded-full bg-background/85 px-2 py-0.5 font-mono text-[11px] tabular-nums backdrop-blur-sm">
-          {shot.activity}%
+          {cover.activity}%
         </span>
       </div>
 
       <div
         className={cn(
           "flex items-center justify-between px-3 py-2.5 text-sm",
-          shot.flagged && "bg-destructive/10",
+          flagged && "bg-destructive/10",
         )}
       >
-        <span className="font-medium">{dayLabel(shot.date)}</span>
+        <span className="font-medium">{dayLabel(capture.date)}</span>
         <span className="font-mono text-xs tabular-nums text-muted-foreground">
-          {shot.time}
+          {capture.time}
         </span>
       </div>
     </Card>
@@ -601,42 +670,64 @@ function PanelDetail({
  * image) — always shown on touch, and on ←/→ keys; both clamp at the first/last.
  */
 function Lightbox({
-  shots,
-  index,
-  onIndexChange,
+  captures,
+  captureIndex,
+  monitorIndex,
+  onCaptureChange,
+  onMonitorChange,
   onClose,
 }: {
-  shots: Screenshot[];
-  index: number | null;
-  onIndexChange: (i: number) => void;
+  captures: Capture[];
+  captureIndex: number | null;
+  monitorIndex: number;
+  onCaptureChange: (i: number) => void;
+  onMonitorChange: (i: number) => void;
   onClose: () => void;
 }) {
-  const count = shots.length;
-  const shot = index !== null ? (shots[index] ?? null) : null;
-  const open = shot !== null;
+  const count = captures.length;
+  const capture =
+    captureIndex !== null ? (captures[captureIndex] ?? null) : null;
+  const open = capture !== null;
+  const monitors = capture?.monitors ?? [];
+  const mIdx = Math.min(monitorIndex, Math.max(0, monitors.length - 1));
+  const shot = capture ? (monitors[mIdx] ?? null) : null;
 
-  const atStart = index === 0;
-  const atEnd = index !== null && index === count - 1;
+  const atStart = captureIndex === 0;
+  const atEnd = captureIndex !== null && captureIndex === count - 1;
 
   const step = (delta: number) => {
-    if (index === null) return;
-    const next = index + delta;
+    if (captureIndex === null) return;
+    const next = captureIndex + delta;
     if (next < 0 || next >= count) return; // clamp at the ends, no wrap
-    onIndexChange(next);
+    onCaptureChange(next);
   };
 
-  // ←/→ to move through the gallery while it's open (stops at the ends).
+  // ←/→ move across captures (time); ↑/↓ switch monitors within a capture.
   useEffect(() => {
-    if (!open || index === null) return;
+    if (!open || captureIndex === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight" && index < count - 1) onIndexChange(index + 1);
-      else if (e.key === "ArrowLeft" && index > 0) onIndexChange(index - 1);
+      if (e.key === "ArrowRight" && captureIndex < count - 1)
+        onCaptureChange(captureIndex + 1);
+      else if (e.key === "ArrowLeft" && captureIndex > 0)
+        onCaptureChange(captureIndex - 1);
+      else if (e.key === "ArrowUp" && mIdx > 0) onMonitorChange(mIdx - 1);
+      else if (e.key === "ArrowDown" && mIdx < monitors.length - 1)
+        onMonitorChange(mIdx + 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, index, count, onIndexChange]);
+  }, [
+    open,
+    captureIndex,
+    count,
+    mIdx,
+    monitors.length,
+    onCaptureChange,
+    onMonitorChange,
+  ]);
 
   const reason = shot ? flagReason(shot) : null;
+  const multi = monitors.length > 1;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -698,8 +789,34 @@ function Lightbox({
                 </>
               ) : null}
 
+              {/* Monitor switcher — pick which screen of this capture set */}
+              {multi ? (
+                <div className="absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/10 p-1 backdrop-blur-sm">
+                  {monitors.map((m, i) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => onMonitorChange(i)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                        i === mIdx
+                          ? "bg-white text-black"
+                          : "text-white/80 hover:bg-white/15",
+                      )}
+                    >
+                      <Monitor className="size-3.5" />
+                      {i + 1}
+                      {m.flagged ? (
+                        <Flag className="size-3 text-destructive" />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
               <span className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium tabular-nums text-white/80 backdrop-blur-sm">
-                {(index ?? 0) + 1} / {count}
+                Capture {(captureIndex ?? 0) + 1} / {count}
+                {multi ? ` · Monitor ${mIdx + 1}/${monitors.length}` : ""}
               </span>
             </div>
 
@@ -732,6 +849,11 @@ function Lightbox({
                             ? "text-warning"
                             : "text-destructive",
                       )}
+                    />
+                    <PanelDetail label="Device" value={shot.device} />
+                    <PanelDetail
+                      label="Monitor"
+                      value={`${mIdx + 1} of ${monitors.length}`}
                     />
                     <PanelDetail
                       label="Captured"
