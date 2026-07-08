@@ -59,6 +59,95 @@ export function areaByName(name: string): Area | undefined {
   return name === OFFICE.area ? OFFICE : AREAS.find((a) => a.area === name);
 }
 
+/* ------------------------------- geofence -------------------------------- */
+
+/**
+ * A circular "location perimeter" (Phase 1). A real backend would store this as
+ * GeoJSON in PostGIS; here it's a center + radius. Polygons can be added later.
+ */
+export interface Geofence {
+  center: GeoPoint;
+  radiusM: number;
+}
+
+/** Default office perimeter around the Thoraipakkam HQ. */
+export const OFFICE_GEOFENCE: Geofence = { center: OFFICE.point, radiusM: 250 };
+
+/** Great-circle distance in metres (haversine). Pure. */
+export function distanceMeters(a: GeoPoint, b: GeoPoint): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const la1 = toRad(a.lat);
+  const la2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/**
+ * THE authoritative in/out check — the single pure function that a server
+ * implementation (PostGIS ST_DWithin / Turf) would replace unchanged.
+ */
+export function insidePerimeter(point: GeoPoint, fence: Geofence): boolean {
+  return distanceMeters(point, fence.center) <= fence.radiusM;
+}
+
+/* --------------------------- point-in-time lookup ------------------------- */
+
+function toMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+export interface MomentFix {
+  point: GeoPoint;
+  area: string;
+  time: string;
+  /** Nearest recorded event (for context). */
+  nearest: LocationEvent;
+}
+
+/**
+ * Where an employee was at a specific time-of-day, interpolated along their
+ * trail for the selected day. Deterministic; used by the "date + time" lookup.
+ */
+export function locationAtTime(
+  loc: EmployeeLocation,
+  time: string,
+): MomentFix | null {
+  const trail = loc.trail;
+  if (!trail.length) return null;
+  const T = toMinutes(time);
+  const first = trail[0];
+  const last = trail[trail.length - 1];
+  if (T <= toMinutes(first.time))
+    return { point: first.point, area: first.area, time, nearest: first };
+  if (T >= toMinutes(last.time))
+    return { point: last.point, area: last.area, time, nearest: last };
+  for (let i = 0; i < trail.length - 1; i++) {
+    const a = trail[i];
+    const b = trail[i + 1];
+    const ta = toMinutes(a.time);
+    const tb = toMinutes(b.time);
+    if (T >= ta && T <= tb) {
+      const f = tb === ta ? 0 : (T - ta) / (tb - ta);
+      return {
+        point: {
+          lat: a.point.lat + (b.point.lat - a.point.lat) * f,
+          lng: a.point.lng + (b.point.lng - a.point.lng) * f,
+        },
+        area: f < 0.5 ? a.area : b.area,
+        time,
+        nearest: f < 0.5 ? a : b,
+      };
+    }
+  }
+  return { point: last.point, area: last.area, time, nearest: last };
+}
+
 /** Modern devices with built-in GPS (locatable). */
 const GPS_DEVICES = [
   "iPhone 14 Pro",
@@ -294,6 +383,15 @@ const MONITORED: User[] = users.filter(
 export const LOCATION_EMPLOYEES: EmployeeLocation[] = MONITORED.map((u) =>
   locationFor(u, TODAY.year, TODAY.month, TODAY.day),
 );
+
+/** Every monitored employee's location for a given day (for the date filter). */
+export function allLocationsForDate(
+  year: number,
+  month: number,
+  day: number,
+): EmployeeLocation[] {
+  return MONITORED.map((u) => locationFor(u, year, month, day));
+}
 
 export function employeeLocationById(
   id: string,

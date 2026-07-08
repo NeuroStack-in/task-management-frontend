@@ -102,7 +102,7 @@ export function DashboardView({ users }: { users: User[] }) {
         {range === "today" ? (
           <>
             <StatCard
-              label="Active Users"
+              label="Active employees"
               value={kpis.active.value}
               icon={Users}
               delta={kpis.active.deltaPct}
@@ -110,7 +110,7 @@ export function DashboardView({ users }: { users: User[] }) {
               href="/employees"
             />
             <StatCard
-              label="Inactive Users"
+              label="Inactive employees"
               value={kpis.inactive.value}
               icon={UserMinus}
               delta={kpis.inactive.deltaPct}

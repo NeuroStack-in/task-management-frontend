@@ -334,7 +334,7 @@ export function OwnershipSettings() {
               setDeleteOpen(true);
             }}
           >
-            <Trash2 className="size-4" /> Close organization
+            <Trash2 className="size-4" /> Delete organization
           </Button>
         </div>
       </Card>
@@ -389,7 +389,7 @@ export function OwnershipSettings() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Close organization?</DialogTitle>
+            <DialogTitle>Delete organization?</DialogTitle>
             <DialogDescription>
               This permanently deletes{" "}
               <span className="font-medium text-foreground">
@@ -417,7 +417,7 @@ export function OwnershipSettings() {
               disabled={deleteConfirm.trim() !== organization.name}
               onClick={handleDelete}
             >
-              <Trash2 className="size-4" /> Delete permanently
+              <Trash2 className="size-4" /> Delete organization
             </Button>
           </DialogFooter>
         </DialogContent>

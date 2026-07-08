@@ -56,13 +56,13 @@ export function PayrollWidget() {
         <div className="grid grid-cols-2 gap-3">
           <Stat
             icon={Clock}
-            label="Hours worked"
+            label="Hours tracked"
             value={`${slip.hours}h`}
             sub="this month"
           />
           <Stat
             icon={Wallet}
-            label="Net salary"
+            label="Net pay"
             value={usd(slip.net)}
             sub={`${usd(slip.hourlyRate)}/h`}
           />
@@ -76,7 +76,7 @@ export function PayrollWidget() {
           <dl className="space-y-1.5 text-sm">
             <PayRow label="Gross (company pays)" value={usd(slip.gross)} />
             <PayRow
-              label="Tax & benefits"
+              label="Deductions"
               value={`− ${usd(slip.deductions)}`}
               muted
             />

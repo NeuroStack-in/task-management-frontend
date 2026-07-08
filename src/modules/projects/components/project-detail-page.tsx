@@ -325,7 +325,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
               {atRisk ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
                   <AlertTriangle className="size-3" />
-                  At risk
+                  Overdue
                 </span>
               ) : null}
             </div>
@@ -386,7 +386,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
       <div className="grid gap-4 md:grid-cols-3">
         <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-5">
           <p className="self-start text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Completion
+            Progress
           </p>
           <Gauge value={project.progress} label="of work done" size={172} />
           <p className="mt-1 text-xs text-muted-foreground">
@@ -410,9 +410,9 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
             <span className="text-sm text-muted-foreground">total</span>
           </div>
           <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
-            <TaskStat label="Completed" value={completed} dot="bg-primary" />
+            <TaskStat label="Done" value={completed} dot="bg-primary" />
             <TaskStat
-              label="Pending"
+              label="Open"
               value={pending}
               dot="bg-muted-foreground/40"
             />
@@ -603,7 +603,7 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
                   label="Health"
                   value={
                     atRisk ? (
-                      <span className="font-medium text-warning">At risk</span>
+                      <span className="font-medium text-warning">Overdue</span>
                     ) : (
                       <span className="font-medium text-success">On track</span>
                     )

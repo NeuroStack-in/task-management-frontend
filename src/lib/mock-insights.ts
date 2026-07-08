@@ -618,7 +618,7 @@ export const REPORTS: ReportDef[] = [
   {
     id: "project",
     name: "Project Time Allocation",
-    description: "Hours logged per project with completion estimates.",
+    description: "Hours tracked per project with completion estimates.",
     category: "projects",
     period: "This month",
     columns: ["Project", "Hours", "Members", "On track"],

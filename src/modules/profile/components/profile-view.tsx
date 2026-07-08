@@ -266,7 +266,7 @@ function RichProfile({
             <div className="group relative shrink-0">
               <Avatar className="size-24 ring-4 ring-white/25">
                 <AvatarImage src={user.avatarUrl} alt={user.name} />
-                <AvatarFallback className="bg-white/15 text-2xl font-semibold text-white">
+                <AvatarFallback className="text-2xl">
                   {initials(user.name)}
                 </AvatarFallback>
               </Avatar>

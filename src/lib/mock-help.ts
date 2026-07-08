@@ -61,7 +61,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Set up your organization, invite your team, and start tracking in under 10 minutes.",
     readMins: 4,
-    body: "WorkPulse is designed to be set up quickly. Begin by completing your organization profile in Settings → Organization, then invite your team members from the Employees page. Once your team is added, assign roles that match their responsibilities. The dashboard will populate automatically as team members start logging time and the desktop agent begins collecting activity data. We recommend starting with a small pilot group to fine-tune your monitoring thresholds before rolling out to the full team.",
+    body: "WorkPulse is designed to be set up quickly. Begin by completing your organization profile in Settings → Organization, then invite your team members from the Employees page. Once your team is added, assign roles that match their responsibilities. The dashboard will populate automatically as team members start logging time and the device agent begins collecting activity data. We recommend starting with a small pilot group to fine-tune your monitoring thresholds before rolling out to the full team.",
   },
   {
     slug: "invite-employees",
@@ -70,7 +70,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Send invitations, assign roles, and guide new members through the onboarding flow.",
     readMins: 3,
-    body: "Navigate to Employees → Invite and enter the email addresses of your team members. Each person will receive an invitation email with a link to create their account. During onboarding, they'll be guided through connecting the desktop agent and setting their preferences. You can track invitation status (Pending, Active, Declined) from the Employees list. For bulk invites, use the CSV import feature in the Employees section.",
+    body: "Navigate to Employees → Invite and enter the email addresses of your team members. Each person will receive an invitation email with a link to create their account. During onboarding, they'll be guided through connecting the device agent and setting their preferences. You can track invitation status (Pending, Active, Declined) from the Employees list. For bulk invites, use the CSV import feature in the Employees section.",
   },
   {
     slug: "roles-and-permissions",
@@ -88,16 +88,16 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Customize your dashboard with productivity metrics, team activity, and AI insights.",
     readMins: 3,
-    body: "The dashboard is your real-time command center. You can add, remove, and reorder widgets by clicking Customize in the top right. Available widgets include: Team Activity Heatmap, Active vs Inactive breakdown, Top Performers leaderboard, AI Summary, upcoming task deadlines, and billing status. Your widget layout is saved automatically and persists across sessions. Each role sees only the widgets relevant to their permissions.",
+    body: "The dashboard is your real-time command center. You can add, remove, and reorder widgets by clicking Customize in the top right. Available widgets include: Team Activity Heatmap, Active vs Inactive breakdown, Top Performers leaderboard, AI summary, upcoming task deadlines, and billing status. Your widget layout is saved automatically and persists across sessions. Each role sees only the widgets relevant to their permissions.",
   },
   {
     slug: "install-desktop-agent",
-    title: "Installing the desktop agent",
+    title: "Installing the device agent",
     category: "getting-started",
     excerpt:
-      "The desktop agent enables real-time monitoring, screenshots, and activity tracking.",
+      "The device agent enables real-time monitoring, screenshots, and activity tracking.",
     readMins: 6,
-    body: "The WorkPulse desktop agent is a lightweight background process that captures activity data, takes periodic screenshots, and reports time to the platform. Download the installer from Settings → Desktop Agents → Download. The agent supports Windows 10+, macOS 12+, and Ubuntu 20.04+. After installation, the agent appears in the system tray and connects automatically using your organization token. Employees are notified when monitoring is active. Admins can manage agent versions and policies from the Agents page.",
+    body: "The WorkPulse device agent is a lightweight background process that captures activity data, takes periodic screenshots, and reports time to the platform. Download the installer from Settings → Device agents → Download. The agent supports Windows 10+, macOS 12+, and Ubuntu 20.04+. After installation, the agent appears in the system tray and connects automatically using your organization token. Employees are notified when monitoring is active. Admins can manage agent versions and policies from the Agents page.",
   },
   {
     slug: "notifications-guide",
@@ -138,7 +138,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "WorkPulse detects mouse and keyboard inactivity to separate active from idle time.",
     readMins: 3,
-    body: "Idle detection monitors keyboard and mouse activity at the OS level via the desktop agent. If no input is detected for the configured threshold (default: 5 minutes), the timer is automatically paused and the period is marked as idle. Idle time is displayed separately in reports and does not count toward productive hours. You can configure the idle threshold in Settings → Monitoring. If Count Idle as Break is enabled, idle periods are logged as break time rather than untracked.",
+    body: "Idle detection monitors keyboard and mouse activity at the OS level via the device agent. If no input is detected for the configured threshold (default: 5 minutes), the timer is automatically paused and the period is marked as idle. Idle time is displayed separately in reports and does not count toward productive hours. You can configure the idle threshold in Settings → Monitoring. If Count Idle as Break is enabled, idle periods are logged as break time rather than untracked.",
   },
   {
     slug: "screenshot-settings",
@@ -147,7 +147,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Configure capture frequency, blur rules, and employee notification settings.",
     readMins: 4,
-    body: "Screenshots are captured periodically by the desktop agent at the interval set in Settings → Monitoring → Screenshots. By default, employees are notified via the system tray icon whenever a screenshot is taken. You can enable Blur by Default to automatically blur screenshots before they are uploaded. Screenshots are stored for the configured retention period (default: 30 days) and then deleted automatically. Employees can view their own screenshots in Analytics → Screenshots.",
+    body: "Screenshots are captured periodically by the device agent at the interval set in Settings → Monitoring → Screenshots. By default, employees are notified via the system tray icon whenever a screenshot is taken. You can enable Blur by Default to automatically blur screenshots before they are uploaded. Screenshots are stored for the configured retention period (default: 30 days) and then deleted automatically. Employees can view their own screenshots in Analytics → Screenshots.",
   },
   {
     slug: "productivity-scores",
@@ -156,7 +156,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "How WorkPulse calculates productivity from app usage, active time, and task completion.",
     readMins: 5,
-    body: "Productivity scores are calculated from three signals: active vs idle time ratio, application category usage (productive/neutral/distracting), and task completion rate. Each signal is weighted and combined into a 0–100 score. Admins can adjust the productive and low-activity thresholds in Settings → Monitoring → Productivity Thresholds. Application categories can be customized in Settings → Application & URL Rules to match your team's workflow.",
+    body: "Productivity scores are calculated from three signals: active vs idle time ratio, application category usage (productive/neutral/distracting), and task completion rate. Each signal is weighted and combined into a 0–100 score. Admins can adjust the productive and low-activity thresholds in Settings → Monitoring → Productivity Thresholds. Application categories can be customized in Settings → Tracking rules to match your team's workflow.",
   },
   {
     slug: "export-reports",
@@ -214,22 +214,22 @@ export interface Faq {
 export const FAQS: Faq[] = [
   {
     q: "How does idle detection work?",
-    a: "The desktop agent monitors keyboard and mouse activity at the OS level. If no input is detected for the configured threshold (default: 5 minutes), the current session is marked as idle. Idle time is shown separately in reports and does not count toward productive hours. You can adjust the threshold in Settings → Monitoring.",
+    a: "The device agent monitors keyboard and mouse activity at the OS level. If no input is detected for the configured threshold (default: 5 minutes), the current session is marked as idle. Idle time is shown separately in reports and does not count toward productive hours. You can adjust the threshold in Settings → Monitoring.",
   },
   {
     q: "Are employees notified when screenshots are taken?",
     a: "Yes. By default, a system tray icon pulses briefly whenever a screenshot is captured, so employees are always aware. This behavior can be configured in Settings → Monitoring → Screenshots. Admins can also enable Blur by Default so captured images are blurred before upload.",
   },
   {
-    q: "Can I use WorkPulse without the desktop agent?",
-    a: "Yes. The web app supports manual time logging and task management without the agent. However, automatic time tracking, screenshot capture, and application/URL monitoring require the desktop agent to be installed on the employee's machine.",
+    q: "Can I use WorkPulse without the device agent?",
+    a: "Yes. The web app supports manual time logging and task management without the agent. However, automatic time tracking, screenshot capture, and application/URL monitoring require the device agent to be installed on the employee's machine.",
   },
   {
     q: "How is the productivity score calculated?",
     a: "Productivity scores combine three signals: the ratio of active to total logged time, the proportion of time spent in productive vs distracting applications, and task completion rate. Each signal is weighted and combined into a 0–100 score. Thresholds can be adjusted in Settings → Monitoring → Productivity Thresholds.",
   },
   {
-    q: "What data is collected by the desktop agent?",
+    q: "What data is collected by the device agent?",
     a: "The agent collects: active application names and window titles, keyboard and mouse activity levels (counts only — no keylogging), periodic screenshots (configurable frequency), and time spent in each application. No keystrokes or clipboard content are recorded. Employees can view their collected data in Analytics → Activity and Screenshots.",
   },
   {
@@ -243,8 +243,8 @@ export const FAQS: Faq[] = [
     permission: "reports:view",
   },
   {
-    q: "What happens if the desktop agent goes offline?",
-    a: "If the agent loses its connection, it stores activity data locally and syncs when the connection is restored. You will see an alert in Settings → Desktop Agents for any agents offline for more than 30 minutes. Manual time entries can still be submitted via the web app during agent downtime.",
+    q: "What happens if the device agent goes offline?",
+    a: "If the agent loses its connection, it stores activity data locally and syncs when the connection is restored. You will see an alert in Settings → Device agents for any agents offline for more than 30 minutes. Manual time entries can still be submitted via the web app during agent downtime.",
   },
   {
     q: "Is WorkPulse GDPR compliant?",

@@ -1,10 +1,23 @@
 "use client";
 
-import { LogIn, LogOut, MapPin, Navigation } from "lucide-react";
+import { Clock, LogIn, LogOut, MapPin, Navigation } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
-import type { EmployeeLocation, LocationEvent } from "@/lib/mock-locations";
+import type {
+  EmployeeLocation,
+  GeoPoint,
+  LocationEvent,
+} from "@/lib/mock-locations";
 import { cn } from "@/lib/utils";
+
+/** The picked date+time fix, appended to the bottom of the trail. */
+export interface MomentEntry {
+  time: string;
+  area: string;
+  point: GeoPoint;
+  inside: boolean | null;
+  distM: number | null;
+}
 
 const OFFLINE_COPY: Record<string, { title: string; description: string }> = {
   "on-leave": {
@@ -50,8 +63,10 @@ function rowMeta(
 
 export function LocationTimeline({
   employee,
+  moment,
 }: {
   employee: EmployeeLocation;
+  moment?: MomentEntry | null;
 }) {
   if (employee.trail.length === 0) {
     const copy = OFFLINE_COPY[employee.offlineReason ?? "no-data"];
@@ -65,7 +80,7 @@ export function LocationTimeline({
       {employee.trail.map((ev, i) => {
         const meta = rowMeta(ev, employee.status === "online");
         const Icon = meta.icon;
-        const last = i === employee.trail.length - 1;
+        const last = i === employee.trail.length - 1 && !moment;
         return (
           <li key={ev.id} className="relative flex gap-3">
             {/* Connector */}
@@ -103,6 +118,41 @@ export function LocationTimeline({
           </li>
         );
       })}
+
+      {moment ? (
+        <li className="relative flex gap-3">
+          <span className="relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
+            <Clock className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold">At this time</p>
+              {moment.inside !== null ? (
+                <Badge
+                  className={cn(
+                    "gap-1 border-transparent",
+                    moment.inside
+                      ? "bg-success/12 text-success"
+                      : "bg-destructive/12 text-destructive",
+                  )}
+                >
+                  {moment.inside ? "Inside office" : "Outside office"}
+                </Badge>
+              ) : null}
+              <span className="ml-auto font-mono text-xs tabular-nums text-muted-foreground">
+                {moment.time}
+              </span>
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              near {moment.area}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground/80">
+              {moment.point.lat.toFixed(4)}, {moment.point.lng.toFixed(4)}
+              {moment.distM !== null ? ` · ${moment.distM} m from office` : ""}
+            </p>
+          </div>
+        </li>
+      ) : null}
     </ol>
   );
 }

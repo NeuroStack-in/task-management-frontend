@@ -138,7 +138,7 @@ export function RolesManager() {
                         >
                           {role.system ? (
                             <>
-                              <Lock className="size-3" /> Standard
+                              <Lock className="size-3" /> Default
                             </>
                           ) : (
                             "Custom"

@@ -141,7 +141,7 @@ export function PersonalAttendanceView() {
           hint={`${summary.late} late`}
         />
         <StatCard
-          label="Hours logged"
+          label="Hours tracked"
           value={summary.hours.toFixed(1)}
           icon={Clock}
           hint="this month"

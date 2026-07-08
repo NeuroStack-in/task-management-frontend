@@ -42,7 +42,7 @@ export function TopEmployeesWidget({ people }: { people: User[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top Employees</CardTitle>
+        <CardTitle>Top performers</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {people.map((u, i) => (
@@ -89,7 +89,7 @@ export function ScreenshotsWidget({
           <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <Camera className="size-4" />
           </span>
-          Screenshots Captured
+          Screenshots captured
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -112,7 +112,7 @@ export function AiSummaryWidget() {
     <Card className="bg-feature text-feature-foreground shadow-none">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Sparkles className="size-4" /> AI Summary
+          <Sparkles className="size-4" /> AI summary
         </CardTitle>
       </CardHeader>
       <CardContent className="gap-3 text-sm leading-relaxed text-feature-foreground/90">
@@ -153,7 +153,7 @@ const DEADLINES = [
 
 const ALERTS = [
   { tone: "danger", title: "Low productivity", detail: "Backend team · −8% today" },
-  { tone: "warning", title: "Missing screenshots", detail: "3 agents offline > 2h" },
+  { tone: "warning", title: "Missing screenshots", detail: "3 device agents offline > 2h" },
   { tone: "warning", title: "Long inactivity", detail: "J. Cannan idle 47m" },
   { tone: "danger", title: "Burnout risk", detail: "Design · 2 people flagged" },
 ] as const;
@@ -176,7 +176,7 @@ export function AlertsDeadlinesWidget() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Alerts &amp; Deadlines</CardTitle>
+        <CardTitle>Alerts &amp; deadlines</CardTitle>
       </CardHeader>
       <CardContent className="gap-5">
         {/* Deadlines */}
@@ -249,7 +249,7 @@ export function UpcomingTasksWidget() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Upcoming Tasks</CardTitle>
+        <CardTitle>Upcoming tasks</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {TASKS.map((t) => (
@@ -289,7 +289,7 @@ export function BillingWidget({
           <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <CreditCard className="size-4" />
           </span>
-          Billing Overview
+          Billing overview
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

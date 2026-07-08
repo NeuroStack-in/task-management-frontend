@@ -345,7 +345,7 @@ export function HelpPage() {
             onClick={askAi}
             className="h-12 gap-2 rounded-xl bg-white text-slate-900 hover:bg-white/90"
           >
-            <Sparkles className="size-4 text-primary" /> Ask AI
+            <Sparkles className="size-4 text-primary" /> Ask the assistant
           </Button>
         </div>
 

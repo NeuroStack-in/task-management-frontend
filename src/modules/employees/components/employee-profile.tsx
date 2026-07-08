@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
@@ -10,6 +11,7 @@ import {
   Download,
   FileText,
   FolderKanban,
+  MapPin,
   Sheet,
   BarChart2,
   Pencil,
@@ -113,7 +115,7 @@ function exportEmployeeCsv(d: EmployeeProfileData) {
   const rows: (string | number)[][] = [
     ["Field", "Value"],
     ["Employee", d.name],
-    ["Code", d.empCode],
+    ["Employee ID", d.empCode],
     ["Role", d.roleName],
     ["Title", d.jobTitle],
     ["Department", d.department],
@@ -255,9 +257,9 @@ function ReassignDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Move {name}</DialogTitle>
+          <DialogTitle>Reassign {name}</DialogTitle>
           <DialogDescription>
-            Change this member&apos;s department and team.
+            Change this employee&apos;s department and team.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -304,8 +306,10 @@ function ReassignDialog({
 }
 
 export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
+  const router = useRouter();
   const { can } = usePermissions();
   const canManage = can("employees:manage");
+  const canViewLocations = can("locations:view");
 
   // Apply any reassignment override on top of the seed-built profile data.
   const override = useEmployeesStore((s) => s.assignments[data.id]);
@@ -353,16 +357,26 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
             <span className="text-muted-foreground/50">/</span>
             <span className="font-medium text-foreground">{data.name}</span>
           </nav>
+          {canViewLocations ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/insights/locations?emp=${data.id}`)}
+              title="View live location"
+            >
+              <MapPin className="size-4" /> Location
+            </Button>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-              <Download className="size-4" /> Download report
+              <Download className="size-4" /> Download
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => exportEmployeePdf(data)}>
-                <FileText className="size-4" /> PDF report
+                <FileText className="size-4" /> PDF
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => exportEmployeeCsv(data)}>
-                <Sheet className="size-4" /> CSV export
+                <Sheet className="size-4" /> CSV
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -419,7 +433,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
                   className="shrink-0 self-start sm:self-center"
                   onClick={() => setReassignOpen(true)}
                 >
-                  <Pencil className="size-4" /> Move team
+                  <Pencil className="size-4" /> Reassign
                 </Button>
               ) : null}
             </div>

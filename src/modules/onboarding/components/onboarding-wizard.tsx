@@ -55,7 +55,7 @@ function StepContent({ index }: { index: number }) {
       return (
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="ob-company">Company name</Label>
+            <Label htmlFor="ob-company">Organization name</Label>
             <Input id="ob-company" placeholder="Acme Inc." defaultValue="Acme Corporation" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">

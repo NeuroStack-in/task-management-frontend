@@ -104,7 +104,7 @@ export function InviteDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add an employee</DialogTitle>
+          <DialogTitle>Add employee</DialogTitle>
           <DialogDescription>
             Add their details, then invite them to {organization.name}.
           </DialogDescription>

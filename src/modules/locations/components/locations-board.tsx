@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -30,17 +30,35 @@ import { useDataScope } from "@/hooks/use-data-scope";
 import { initials } from "@/lib/format";
 import {
   LOCATION_EMPLOYEES,
-  OFFICE,
+  allLocationsForDate,
+  dateLabel,
+  insidePerimeter,
   WORK_MODE_LABEL,
   type WorkMode,
 } from "@/lib/mock-locations";
+import { TODAY } from "@/lib/mock-attendance";
+import { useGeofenceStore } from "@/stores/geofence.store";
+import { Button } from "@/components/ui/button";
+import { LogDatePicker } from "@/modules/attendance/components/attendance-log";
 import { LiveMap, type MapMarker } from "./live-map";
 import { EmployeeLocationView } from "./employee-location";
 import { cn } from "@/lib/utils";
 
 /** Board ⇄ per-employee detail, mirroring the Screenshots drill-down. */
 export function LocationsView() {
+  const { inScope } = useDataScope();
   const [selected, setSelected] = useState<User | null>(null);
+
+  // Deep-link support: /insights/locations?emp=<id> opens that employee directly
+  // (e.g. the "Location" button on the employee profile). Scope-checked.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("emp");
+    if (!id || !inScope(id)) return;
+    const match = LOCATION_EMPLOYEES.find((e) => e.user.id === id)?.user;
+    if (match) setSelected(match);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return selected ? (
     <EmployeeLocationView user={selected} onBack={() => setSelected(null)} />
   ) : (
@@ -53,14 +71,34 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState<
-    "all" | "online" | "offline" | "untracked"
+    "all" | "online" | "offline" | "untracked" | "outside"
   >("all");
   const [mode, setMode] = useState<"all" | WorkMode>("all");
+  // Geofence ("location perimeter") — admin-configurable, shared via store.
+  const {
+    center: fenceCenter,
+    radiusM,
+    enabled: showFence,
+    setCenter,
+    setRadius,
+    setEnabled,
+    reset: resetFence,
+  } = useGeofenceStore();
+  const [editingFence, setEditingFence] = useState(false);
+  const [date, setDate] = useState({ ...TODAY });
+  const isToday =
+    date.year === TODAY.year &&
+    date.month === TODAY.month &&
+    date.day === TODAY.day;
 
-  // Team leads see only their team; org roles see everyone.
+  // Team leads see only their team; org roles see everyone. Data follows the
+  // picked day (today = live snapshot; a past day = that day's recorded fixes).
   const scoped = useMemo(
-    () => LOCATION_EMPLOYEES.filter((e) => inScope(e.user.id)),
-    [inScope],
+    () =>
+      allLocationsForDate(date.year, date.month, date.day).filter((e) =>
+        inScope(e.user.id),
+      ),
+    [date, inScope],
   );
 
   const departments = useMemo(
@@ -68,17 +106,31 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
     [scoped],
   );
 
-  const onlineEmployees = scoped.filter((e) => e.status === "online");
-  const onlineCount = onlineEmployees.length;
-  const remoteOnline = onlineEmployees.filter((e) => e.mode === "remote").length;
-  const officeOnline = onlineCount - remoteOnline;
+  // "Located" = has a recorded position for the day (online today, or present on
+  // a past day). This is what the map plots and the headline counts describe.
+  const located = scoped.filter((e) => e.current);
+  const locatedCount = located.length;
+  const remoteLocated = located.filter((e) => e.mode === "remote").length;
+  const officeLocated = locatedCount - remoteLocated;
   const noGpsCount = scoped.filter((e) => !e.gpsCapable).length;
+
+  // Geofence perimeter check — one pure function (insidePerimeter) that a server
+  // (PostGIS ST_DWithin / Turf) would replace unchanged.
+  const fence = { center: fenceCenter, radiusM };
+  const isInside = (e: (typeof scoped)[number]) =>
+    e.current ? insidePerimeter(e.current.point, fence) : null;
+  // A perimeter "violation" = an IN-OFFICE employee physically outside the office
+  // fence. Remote employees are away by design, so they're never flagged.
+  const flagOutside = (e: (typeof scoped)[number]) =>
+    showFence && e.mode === "in-office" && isInside(e) === false;
+  const outsideCount = located.filter(flagOutside).length;
 
   const q = query.trim().toLowerCase();
   const matchesStatus = (e: (typeof scoped)[number]) => {
     if (status === "all") return true;
     if (status === "online") return e.status === "online";
     if (status === "untracked") return e.offlineReason === "no-gps";
+    if (status === "outside") return flagOutside(e);
     // "offline" = not online and NOT the no-GPS case (leave / absent)
     return e.status === "offline" && e.offlineReason !== "no-gps";
   };
@@ -92,45 +144,51 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
           (q === "" || e.user.name.toLowerCase().includes(q)),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scoped, dept, status, mode, q],
+    [scoped, dept, status, mode, q, radiusM, fenceCenter],
   );
 
-  // Avatar markers reflect the same dept / status / mode filters, placed at
-  // each employee's real location (only online people have a live location).
+  // Avatar markers mirror the filtered list (only located, online people show);
+  // those outside the perimeter get a red alert ring.
   const mapMarkers: MapMarker[] = useMemo(
     () =>
-      scoped
-        .filter(
-          (e) =>
-            e.status === "online" &&
-            e.current &&
-            (status === "all" || status === "online") &&
-            (dept === "all" || e.user.department === dept) &&
-            (mode === "all" || e.mode === mode),
-        )
+      employees
+        .filter((e) => e.current)
         .map((e) => ({
           id: e.user.id,
           point: e.current!.point,
           variant: "avatar" as const,
           avatarUrl: e.user.avatarUrl,
-          name: `${e.user.name} · ${e.current!.area}`,
-          online: true,
+          name: `${e.user.name} · ${e.current!.area}${
+            flagOutside(e) ? " · outside office" : ""
+          }`,
+          online: e.status === "online",
+          alert: flagOutside(e),
           onClick: () => onSelect(e.user),
         })),
-    [scoped, dept, status, mode, onSelect],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [employees, showFence, radiusM, fenceCenter, onSelect],
   );
 
   return (
     <div className="space-y-5">
       <AiReportCard
         title="AI location report"
-        summary={`${onlineCount} of ${scoped.length} monitored employees are online now — ${officeOnline} working in office and ${remoteOnline} remote (work from home). Ambattur and the OMR corridor carry the highest on-site concentration; no employee is reporting from outside the approved work zones.`}
+        summary={
+          isToday
+            ? `${locatedCount} of ${scoped.length} monitored employees are online now — ${officeLocated} in office and ${remoteLocated} remote (work from home). ${outsideCount} in-office ${outsideCount === 1 ? "employee is" : "employees are"} outside the office perimeter.`
+            : `On ${dateLabel(date)}, ${locatedCount} of ${scoped.length} monitored employees had a recorded location — ${officeLocated} in office and ${remoteLocated} remote. ${outsideCount} in-office ${outsideCount === 1 ? "was" : "were"} outside the office perimeter that day.`
+        }
         metrics={[
           { label: "Monitored", value: scoped.length },
-          { label: "Online now", value: onlineCount, hint: "live" },
-          { label: "In office", value: officeOnline },
-          { label: "Remote", value: remoteOnline },
+          {
+            label: isToday ? "Online now" : "Present",
+            value: locatedCount,
+            hint: isToday ? "live" : undefined,
+          },
+          { label: "In office", value: officeLocated },
+          { label: "Remote", value: remoteLocated },
           { label: "No GPS", value: noGpsCount },
+          { label: "Outside perimeter", value: outsideCount },
         ]}
       />
 
@@ -139,7 +197,11 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
         <CardContent className="space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Live map · online now</p>
+              <p className="text-sm font-medium">
+                {isToday
+                  ? "Live map · online now"
+                  : `${dateLabel(date)} · locations`}
+              </p>
               <p className="text-xs text-muted-foreground">
                 {mapMarkers.length}{" "}
                 {mapMarkers.length === 1 ? "person" : "people"} on the map
@@ -147,6 +209,17 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
             </div>
             {/* Unified filters — drive the map and the list below, live. */}
             <div className="flex flex-wrap items-center gap-2">
+              <LogDatePicker value={date} onChange={setDate} />
+              {!isToday ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setDate({ ...TODAY })}
+                >
+                  Today
+                </Button>
+              ) : null}
               <Select value={dept} onValueChange={(v) => setDept(v as string)}>
                 <SelectTrigger className="h-8 w-44" aria-label="Department">
                   <SelectValue>
@@ -168,7 +241,14 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
               <Select
                 value={status}
                 onValueChange={(v) =>
-                  setStatus(v as "all" | "online" | "offline" | "untracked")
+                  setStatus(
+                    v as
+                      | "all"
+                      | "online"
+                      | "offline"
+                      | "untracked"
+                      | "outside",
+                  )
                 }
               >
                 <SelectTrigger className="h-8 w-44" aria-label="Status">
@@ -180,13 +260,16 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
                           ? "Offline"
                           : v === "untracked"
                             ? "Location not tracked"
-                            : "All status"
+                            : v === "outside"
+                              ? "Outside perimeter"
+                              : "All status"
                     }
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All status</SelectItem>
                   <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="outside">Outside perimeter</SelectItem>
                   <SelectItem value="offline">Offline</SelectItem>
                   <SelectItem value="untracked">Location not tracked</SelectItem>
                 </SelectContent>
@@ -217,14 +300,87 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
           </div>
           <LiveMap
             markers={mapMarkers}
-            center={OFFICE.point}
-            zoom={13}
+            geofence={showFence ? fence : null}
+            editableCenter={showFence && editingFence}
+            onCenterChange={setCenter}
+            center={fenceCenter}
+            zoom={15}
             recenterKey="board"
           />
-          <p className="text-xs text-muted-foreground">
-            Simulated location data (Phase 1) · default view centres on the
-            Thoraipakkam office · tap an employee to open their trail.
-          </p>
+
+          {/* Perimeter "fixing" control */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+            <label className="flex items-center gap-1.5 font-medium">
+              <input
+                type="checkbox"
+                checked={showFence}
+                onChange={(e) => setEnabled(e.target.checked)}
+                className="size-3.5"
+                style={{ accentColor: "var(--primary)" }}
+              />
+              Office perimeter
+            </label>
+            {showFence ? (
+              <>
+                <input
+                  type="range"
+                  min={100}
+                  max={1000}
+                  step={50}
+                  value={radiusM}
+                  onChange={(e) => setRadius(Number(e.target.value))}
+                  className="w-40"
+                  style={{ accentColor: "var(--primary)" }}
+                  aria-label="Perimeter radius"
+                />
+                <span className="tabular-nums text-muted-foreground">
+                  {radiusM} m radius
+                </span>
+                <span
+                  className={cn(
+                    outsideCount > 0 ? "text-destructive" : "text-muted-foreground",
+                  )}
+                >
+                  · {outsideCount} outside
+                </span>
+                <Button
+                  variant={editingFence ? "default" : "outline"}
+                  size="sm"
+                  className="h-7"
+                  onClick={() => setEditingFence((v) => !v)}
+                >
+                  {editingFence ? "Done" : "Move office"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => {
+                    resetFence();
+                    setEditingFence(false);
+                  }}
+                >
+                  Reset
+                </Button>
+                <span className="tabular-nums text-muted-foreground">
+                  {fenceCenter.lat.toFixed(4)}, {fenceCenter.lng.toFixed(4)}
+                </span>
+              </>
+            ) : null}
+          </div>
+
+          {editingFence ? (
+            <p className="text-xs text-primary">
+              Click anywhere on the map, or drag the 🏢 pin, to set the office
+              location. Click <span className="font-medium">Done</span> when
+              finished.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Simulated location data (Phase 1) · red ring = outside the office
+              perimeter · tap an employee to open their trail.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -260,6 +416,21 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
         </div>
       ) : null}
 
+      {status === "outside" ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3">
+          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
+          <div className="text-sm">
+            <p className="font-medium text-foreground">
+              Employees outside the office perimeter
+            </p>
+            <p className="mt-0.5 text-muted-foreground">
+              These online employees are located beyond the {radiusM} m office
+              geofence. In a live system this would flag attendance for review.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {employees.length === 0 ? (
         <EmptyState
           icon={Users}
@@ -271,6 +442,7 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
           {employees.map((e) => {
             const online = e.status === "online";
             const noGps = e.offlineReason === "no-gps";
+            const outside = flagOutside(e);
             return (
               <button
                 key={e.user.id}
@@ -290,6 +462,13 @@ function LocationsBoard({ onSelect }: { onSelect: (u: User) => void }) {
                     <p className="flex items-center gap-1 truncate text-xs text-warning">
                       <MapPinOff className="size-3 shrink-0" />
                       <span className="truncate">No GPS · {e.device}</span>
+                    </p>
+                  ) : outside ? (
+                    <p className="flex items-center gap-1 truncate text-xs text-destructive">
+                      <AlertTriangle className="size-3 shrink-0" />
+                      <span className="truncate">
+                        Outside office · {e.current?.area} · {e.current?.time}
+                      </span>
                     </p>
                   ) : (
                     <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">

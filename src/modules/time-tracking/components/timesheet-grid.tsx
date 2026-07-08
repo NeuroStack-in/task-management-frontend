@@ -298,7 +298,7 @@ export function TimesheetGrid({
               onValueChange={(v) => setDeptFilter(v as string)}
             >
               <SelectTrigger
-                aria-label="Filter by team"
+                aria-label="Filter by department"
                 className="h-9 w-full gap-2 sm:w-44"
               >
                 <div className="flex min-w-0 items-center gap-2">
@@ -306,14 +306,14 @@ export function TimesheetGrid({
                   <SelectValue>
                     {(value) =>
                       value === "all" || value == null
-                        ? "All teams"
+                        ? "All departments"
                         : String(value)
                     }
                   </SelectValue>
                 </div>
               </SelectTrigger>
               <SelectContent className="min-w-44">
-                <SelectItem value="all">All teams</SelectItem>
+                <SelectItem value="all">All departments</SelectItem>
                 {departments.map((d) => (
                   <SelectItem key={d} value={d}>
                     {d}
@@ -343,7 +343,7 @@ export function TimesheetGrid({
             <span className="text-xs text-muted-foreground">Filters:</span>
             {deptFilter !== "all" ? (
               <FilterTagChip
-                label={`Team: ${deptFilter}`}
+                label={`Department: ${deptFilter}`}
                 onClear={() => setDeptFilter("all")}
               />
             ) : null}

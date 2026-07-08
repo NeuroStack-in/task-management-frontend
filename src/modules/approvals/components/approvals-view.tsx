@@ -118,7 +118,7 @@ export function ApprovalsView() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Approval Center"
+        title="Approvals"
         description={`${counts.pending} pending · review time-record changes, manual entries, and leave`}
       />
 
@@ -155,7 +155,7 @@ export function ApprovalsView() {
                 <TableRow>
                   <TableHead className="w-[20%]">Requester</TableHead>
                   <TableHead className="w-[13%]">Type</TableHead>
-                  <TableHead className="w-[26%]">Request</TableHead>
+                  <TableHead className="w-[26%]">Summary</TableHead>
                   <TableHead className="w-[11%]">Duration</TableHead>
                   <TableHead className="w-[12%]">Submitted</TableHead>
                   <TableHead className="w-[10%]">Status</TableHead>

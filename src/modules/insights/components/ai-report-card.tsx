@@ -41,7 +41,7 @@ const ToneIcon: Record<AiTone, typeof TrendingUp> = {
  * page so each surface carries its own AI read.
  */
 export function AiReportCard({
-  title = "AI report",
+  title = "AI summary",
   summary,
   signals = [],
   metrics = [],

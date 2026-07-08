@@ -38,7 +38,7 @@ function mockReply(prompt: string): string {
   if (q.includes("summar") || q.includes("week"))
     return "This week productivity is up 3% overall, led by Engineering and Product. Weekend activity dropped as expected, and two teams show early burnout signals worth a look.";
   if (q.includes("attention") || q.includes("burnout") || q.includes("risk"))
-    return "Design and Backend are trending down — Design has 2 people flagged for burnout, and Backend is at −8% today. The Anomaly Center has the details.";
+    return "Design and Backend are trending down — Design has 2 people flagged for burnout, and Backend is at −8% today. The Alerts list in Analytics has the details.";
   if (q.includes("report"))
     return "I can draft a productivity report for the last 7 days covering active vs. productive time, top performers, and deadlines. Head to Reports → Custom Report Builder to export it as PDF or CSV.";
   if (q.includes("top") || q.includes("productive"))

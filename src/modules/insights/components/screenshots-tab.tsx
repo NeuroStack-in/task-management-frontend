@@ -126,7 +126,7 @@ function Gallery({ onSelect }: { onSelect: (e: EmployeeShots) => void }) {
         }. Average on-screen activity sits at ${avgActivity}%.`}
         metrics={[
           { label: "Monitored", value: scoped.length },
-          { label: "Total captures", value: totalCaptures.toLocaleString() },
+          { label: "Total screenshots", value: totalCaptures.toLocaleString() },
           { label: "Needs review", value: totalFlagged },
           { label: "Avg activity", value: `${avgActivity}%` },
         ]}
@@ -236,7 +236,7 @@ function EmployeeCard({
           </Badge>
         ) : null}
         <span className="absolute bottom-2 left-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
-          {emp.total} captures
+          {emp.total} screenshots
         </span>
       </div>
 
@@ -346,14 +346,14 @@ function EmployeeDetail({
 
       {/* Per-person AI report */}
       <AiReportCard
-        title={`AI report — ${employee.user.name.split(" ")[0]}`}
-        summary={`${employee.user.name.split(" ")[0]} has ${employee.total} captures this period with activity averaging ${employee.avgActivity}%. ${
+        title={`AI summary — ${employee.user.name.split(" ")[0]}`}
+        summary={`${employee.user.name.split(" ")[0]} has ${employee.total} screenshots this period with activity averaging ${employee.avgActivity}%. ${
           employee.flagged > 0
-            ? `${employee.flagged} were marked for review for distracting apps or low activity — review the highlighted captures below.`
+            ? `${employee.flagged} were marked for review for distracting apps or low activity — review the highlighted screenshots below.`
             : "Nothing needs review — coverage and focus both look healthy."
         }`}
         signals={[
-          { label: "Captures", value: `${employee.total}`, tone: "flat" },
+          { label: "Screenshots", value: `${employee.total}`, tone: "flat" },
           {
             label: "Needs review",
             value: `${employee.flagged}`,
@@ -369,20 +369,22 @@ function EmployeeDetail({
 
       {/* Filters: desktop · calendar date · time range · flagged radio */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
-        <Field label="Desktop">
+        <Field label="Virtual desktop">
           <Select value={desktop} onValueChange={(v) => setDesktop(v as string)}>
-            <SelectTrigger className="h-8 w-40" aria-label="Desktop">
+            <SelectTrigger className="h-8 w-44" aria-label="Virtual desktop">
               <SelectValue>
                 {(v) =>
-                  v == null || v === "all" ? "All desktops" : `Desktop ${v}`
+                  v == null || v === "all"
+                    ? "All virtual desktops"
+                    : `Virtual desktop ${v}`
                 }
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All desktops</SelectItem>
+              <SelectItem value="all">All virtual desktops</SelectItem>
               {employee.desktops.map((d) => (
                 <SelectItem key={d} value={String(d)}>
-                  Desktop {d}
+                  Virtual desktop {d}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -437,13 +439,13 @@ function EmployeeDetail({
 
       <p className="text-sm text-muted-foreground">
         <span className="font-medium text-foreground">{shots.length}</span>{" "}
-        captures
+        screenshots
       </p>
 
       {shots.length === 0 ? (
         <EmptyState
           icon={Camera}
-          title="No captures in this range"
+          title="No screenshots in this range"
           description="Try a different month or date — “All” shows the full history."
         />
       ) : (
@@ -580,7 +582,7 @@ function ShotCard({
           </Badge>
         ) : null}
         <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
-          <Monitor className="size-3" /> Desktop {shot.desktop}
+          <Monitor className="size-3" /> Virtual desktop {shot.desktop}
         </span>
         <span className="absolute bottom-2 right-2 rounded-full bg-background/85 px-2 py-0.5 font-mono text-[11px] tabular-nums backdrop-blur-sm">
           {shot.activity}%
@@ -756,7 +758,7 @@ function Lightbox({
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm sm:flex sm:flex-wrap sm:items-end">
                   <OverlayDetail label="Application" value={shot.app} />
                   <OverlayDetail label="Device" value={shot.device} />
-                  <OverlayDetail label="Desktop" value={`Desktop ${shot.desktop}`} />
+                  <OverlayDetail label="Virtual desktop" value={`Virtual desktop ${shot.desktop}`} />
                   <OverlayDetail
                     label="Activity"
                     value={`${shot.activity}%`}

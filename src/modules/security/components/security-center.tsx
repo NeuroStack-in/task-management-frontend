@@ -390,7 +390,7 @@ export function SecurityCenter() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <PageHeader
-          title="Security Center"
+          title="Security"
           description="Authentication, single sign-on, session policies, and security activity."
         />
         <Button
@@ -398,7 +398,7 @@ export function SecurityCenter() {
           className="shrink-0 gap-1.5"
           onClick={() => toast.success("Security report downloaded")}
         >
-          <Download className="size-4" /> Download report
+          <Download className="size-4" /> Download
         </Button>
       </div>
 
@@ -473,7 +473,7 @@ export function SecurityCenter() {
                 <AlertTriangle className="size-4" />
               </span>
               <p className="text-sm">
-                <span className="font-medium">Two-step protection is off.</span> Set
+                <span className="font-medium">Multi-factor authentication is off.</span> Set
                 up an authenticator app to secure your account.
               </p>
               <Button
