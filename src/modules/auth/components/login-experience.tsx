@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, KeyRound, Loader2, Lock, Mail } from "lucide-react";
+import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import {
   AuthError,
@@ -18,6 +19,7 @@ import {
   Divider,
   PwToggle,
 } from "./auth-frame";
+import { SsoOptionsModal, SsoPickerModal } from "./auth-modals";
 
 type Status = "idle" | "loading" | "success";
 
@@ -35,6 +37,8 @@ export function LoginExperience() {
   const [error, setError] = useState<string | null>(null);
   const [reset, setReset] = useState(false);
   const [sent, setSent] = useState(false);
+  const [ssoOpen, setSsoOpen] = useState(false);
+  const [sso, setSso] = useState<"google" | "microsoft" | null>(null);
 
   useEffect(() => {
     if (hydrated && isAuthenticated) {
@@ -74,9 +78,39 @@ export function LoginExperience() {
     setSent(true);
   };
 
+  // SSO is simulated: any provider signs in as the demo owner and lands on the
+  // dashboard, mirroring the sign-up flow's SSO handling.
+  const ssoSignIn = async (providerLabel: string) => {
+    setSso(null);
+    setError(null);
+    setStatus("loading");
+    try {
+      await login(DEMO_ACCOUNTS[0].email, DEMO_PASSWORD);
+      setStatus("success");
+      toast.success(`Signed in with ${providerLabel}`, {
+        description: "Simulated SSO — demo only.",
+      });
+      const from = params.get("from");
+      setTimeout(
+        () => router.replace(from && from.startsWith("/") ? from : "/dashboard"),
+        650,
+      );
+    } catch {
+      setStatus("idle");
+      setError("SSO sign-in failed. Try a demo login below.");
+    }
+  };
+
+  const onSsoPick = (provider: "google" | "microsoft" | "saml") => {
+    setSsoOpen(false);
+    if (provider === "saml") ssoSignIn("SAML SSO");
+    else setSso(provider);
+  };
+
   if (hydrated && isAuthenticated) return null;
 
   return (
+    <>
     <AuthFrame maxWidth={404}>
       <AuthCard>
         {!reset ? (
@@ -152,7 +186,15 @@ export function LoginExperience() {
 
             <Divider />
 
-            <button type="button" className="m-btn m-btn-ghost w-full">
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setSsoOpen(true);
+              }}
+              disabled={status !== "idle"}
+              className="m-btn m-btn-ghost w-full"
+            >
               <KeyRound className="size-[18px]" /> Continue with SSO
             </button>
 
@@ -233,5 +275,17 @@ export function LoginExperience() {
         )}
       </AuthCard>
     </AuthFrame>
+
+      <SsoOptionsModal
+        open={ssoOpen}
+        onClose={() => setSsoOpen(false)}
+        onPick={onSsoPick}
+      />
+      <SsoPickerModal
+        provider={sso}
+        onClose={() => setSso(null)}
+        onPicked={() => ssoSignIn(sso === "google" ? "Google" : "Microsoft")}
+      />
+    </>
   );
 }

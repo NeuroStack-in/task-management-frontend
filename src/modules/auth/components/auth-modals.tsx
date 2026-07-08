@@ -642,7 +642,7 @@ export function OrgSetupModal({
     <>
       <MModal open={open} onClose={onClose} maxW="max-w-2xl" backdropClose={false}>
         {/* Header + stepper */}
-        <div className="shrink-0 border-b p-6 pr-12" style={{ borderColor: "var(--m-border)" }}>
+        <div className="shrink-0 border-b p-5 pr-12" style={{ borderColor: "var(--m-border)" }}>
           <div className="flex items-center gap-2">
             <span
               className="flex size-7 items-center justify-center rounded-lg"
@@ -654,9 +654,9 @@ export function OrgSetupModal({
               Set up your workspace
             </p>
           </div>
-          <h2 className="m-display mt-2 text-2xl font-semibold">{STEPS[step].label}</h2>
+          <h2 className="m-display mt-1.5 text-xl font-semibold">{STEPS[step].label}</h2>
 
-          <ol className="mt-5 flex items-center gap-2">
+          <ol className="mt-4 flex items-center gap-2">
             {STEPS.map((s, i) => {
               const done = i < step;
               const active = i === step;
@@ -684,7 +684,7 @@ export function OrgSetupModal({
         </div>
 
         {/* Body (scrolls) */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
           {/* Step 0 — Organization */}
           {step === 0 ? (
             <div className="space-y-4">
@@ -850,7 +850,7 @@ export function OrgSetupModal({
                 Start free, or try Pro &amp; Max free for 14 days — no card required.
               </div>
 
-              <div className="mt-3 grid gap-2.5">
+              <div className="mt-3 grid gap-2">
                 {PLANS.map((pl) => {
                   const on = plan === pl.id;
                   const free = pl.monthly === 0;
@@ -860,7 +860,7 @@ export function OrgSetupModal({
                       key={pl.id}
                       type="button"
                       onClick={() => setPlan(pl.id)}
-                      className="w-full rounded-2xl border p-3.5 text-left transition-colors sm:p-4"
+                      className="w-full rounded-2xl border p-3 text-left transition-colors sm:p-3.5"
                       style={{
                         borderColor: on ? "var(--m-accent)" : "var(--m-border-strong)",
                         background: on ? "var(--m-accent-tint)" : "var(--m-surface)",
@@ -897,7 +897,7 @@ export function OrgSetupModal({
                             </span>
                           </div>
                           <p className="mt-0.5 text-xs" style={{ color: "var(--m-muted)" }}>{pl.tagline}</p>
-                          <ul className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                          <ul className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
                             {pl.features.map((f) => (
                               <li key={f} className="flex items-start gap-2 text-xs">
                                 <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--m-accent-ink)" }} />
@@ -911,43 +911,47 @@ export function OrgSetupModal({
                   );
                 })}
               </div>
-
-              {/* Monitoring consent */}
-              <label
-                className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border p-3"
-                style={{
-                  borderColor: consent ? "var(--m-accent)" : "var(--m-border-strong)",
-                  background: consent ? "var(--m-accent-tint)" : "var(--m-surface)",
-                }}
-              >
-                <span
-                  className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors"
-                  style={{
-                    borderColor: consent ? "var(--m-accent)" : "var(--m-border-strong)",
-                    background: consent ? "var(--m-accent)" : "transparent",
-                    color: "var(--m-on-accent)",
-                  }}
-                >
-                  {consent ? <Check className="size-3.5" /> : null}
-                </span>
-                <input type="checkbox" className="sr-only" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                <span className="text-xs leading-relaxed" style={{ color: "var(--m-muted)" }}>
-                  I&apos;m authorized to enable workforce activity monitoring for this organization and confirm team
-                  members will be informed in line with applicable law.
-                </span>
-              </label>
             </div>
-          ) : null}
-
-          {err ? (
-            <p className="mt-4 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
-              {err}
-            </p>
           ) : null}
         </div>
 
-        {/* Footer */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-t p-5" style={{ borderColor: "var(--m-border)" }}>
+        {/* Pinned footer — the required consent (Plan step) and any error stay
+            visible above the actions, so nothing critical hides below the scroll. */}
+        <div className="shrink-0 border-t" style={{ borderColor: "var(--m-border)" }}>
+          {step === 3 ? (
+            <label
+              className="mx-4 mt-4 flex cursor-pointer items-start gap-3 rounded-xl border p-3"
+              style={{
+                borderColor: consent ? "var(--m-accent)" : "var(--m-border-strong)",
+                background: consent ? "var(--m-accent-tint)" : "var(--m-surface)",
+              }}
+            >
+              <span
+                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors"
+                style={{
+                  borderColor: consent ? "var(--m-accent)" : "var(--m-border-strong)",
+                  background: consent ? "var(--m-accent)" : "transparent",
+                  color: "var(--m-on-accent)",
+                }}
+              >
+                {consent ? <Check className="size-3.5" /> : null}
+              </span>
+              <input type="checkbox" className="sr-only" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              <span className="text-xs leading-relaxed" style={{ color: "var(--m-muted)" }}>
+                I&apos;m authorized to enable workforce activity monitoring for this organization and confirm team
+                members will be informed in line with applicable law.
+              </span>
+            </label>
+          ) : null}
+
+          {err ? (
+            <p className="mx-4 mt-2.5 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
+              {err}
+            </p>
+          ) : null}
+
+          {/* Actions */}
+          <div className="flex items-center justify-between gap-3 p-4">
           {step > 0 ? (
             <button type="button" onClick={() => { setErr(null); setStep((s) => s - 1); }} className="m-btn m-btn-ghost" disabled={status !== "idle"}>
               <ArrowLeft className="size-4" /> Back
@@ -986,6 +990,7 @@ export function OrgSetupModal({
               <CreditCard className="size-4" /> Proceed to pay
             </button>
           )}
+          </div>
         </div>
       </MModal>
 

@@ -317,6 +317,31 @@
 .m-authglass .m-input.m-error {
   border-color: var(--m-danger);
 }
+/* Browser autofill paints an opaque light fill that ignores `background`, so a
+   saved login rendered these frosted fields near-white. Repaint the autofill
+   state to match the dark glass: an inset box-shadow overlays the browser fill
+   and text-fill-color restores the light ink. */
+.m-authglass .m-input:-webkit-autofill,
+.m-authglass .m-input:-webkit-autofill:hover,
+.m-authglass .m-input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--m-text);
+  caret-color: var(--m-text);
+  border-color: rgba(255, 255, 255, 0.16);
+  -webkit-box-shadow: 0 0 0 1000px #18302b inset;
+  box-shadow: 0 0 0 1000px #18302b inset;
+  transition: background-color 600000s 0s;
+}
+.m-authglass .m-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--m-text);
+  caret-color: var(--m-text);
+  border-color: var(--m-accent);
+  -webkit-box-shadow:
+    0 0 0 1000px #1d3833 inset,
+    0 0 0 3px color-mix(in srgb, var(--m-accent) 30%, transparent);
+  box-shadow:
+    0 0 0 1000px #1d3833 inset,
+    0 0 0 3px color-mix(in srgb, var(--m-accent) 30%, transparent);
+}
 
 /* Primary button — teal gradient with a soft glow on dark glass */
 .m-authglass .m-btn-primary {
@@ -364,6 +389,17 @@
 }
 .m-input.m-error {
   border-color: var(--m-danger);
+}
+/* Keep autofilled fields on the token surface (not the browser's light-blue). */
+.m-input:-webkit-autofill,
+.m-input:-webkit-autofill:hover,
+.m-input:-webkit-autofill:focus,
+.m-input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--m-text);
+  caret-color: var(--m-text);
+  -webkit-box-shadow: 0 0 0 1000px var(--m-surface) inset;
+  box-shadow: 0 0 0 1000px var(--m-surface) inset;
+  transition: background-color 600000s 0s;
 }
 
 /* ---- Scroll reveal (IntersectionObserver toggles .m-in) ---- */

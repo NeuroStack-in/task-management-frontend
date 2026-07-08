@@ -705,7 +705,7 @@ function Lightbox({
 
             {/* ── Description — its own section, below the image ── */}
             <div className="max-h-[50vh] shrink-0 overflow-y-auto border-t border-white/10 bg-[#0d0e13]">
-              <div className="mx-auto flex max-w-[100rem] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:gap-10">
+              <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-6 py-5 sm:px-8 lg:flex-row lg:items-start lg:justify-between lg:gap-12">
                 {/* Member + details */}
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 font-heading text-base font-semibold text-white">
