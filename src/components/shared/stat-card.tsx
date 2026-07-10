@@ -34,6 +34,9 @@ export function StatCard({
     <Card
       className={cn(
         "flex h-full flex-col justify-between gap-3 p-4 transition-shadow",
+        // Stagger lives on whichever element is the grid's direct child, so an
+        // href-wrapped card hands it to the <Link> below instead.
+        !href && "wp-stat-card",
         featured
           ? "border-transparent bg-feature text-feature-foreground shadow-none"
           : "border border-border",
@@ -115,7 +118,10 @@ export function StatCard({
 
   if (!href) return card;
   return (
-    <Link href={href} className="group/stat block focus-visible:outline-none">
+    <Link
+      href={href}
+      className="wp-stat-card group/stat block focus-visible:outline-none"
+    >
       {card}
     </Link>
   );

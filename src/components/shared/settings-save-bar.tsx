@@ -29,7 +29,8 @@ export function SettingsSaveBar({
 
   return (
     <div className="pointer-events-none sticky bottom-6 z-20 flex justify-center">
-      <div className="pointer-events-auto flex items-center gap-4 rounded-md border border-border bg-card/95 px-4 py-2.5 backdrop-blur duration-300 animate-in fade-in slide-in-from-bottom-3">
+      {/* Intentionally unanimated — the bar appears and disappears instantly. */}
+      <div className="pointer-events-auto flex items-center gap-4 rounded-md border border-border bg-card/95 px-4 py-2.5 backdrop-blur">
         <p className="flex items-center gap-2 text-sm font-medium">
           <span className="size-2 shrink-0 rounded-full bg-warning" />
           <span className="hidden sm:inline">You have unsaved changes</span>

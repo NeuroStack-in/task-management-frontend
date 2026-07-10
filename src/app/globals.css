@@ -82,7 +82,7 @@
 
   /* Consistent, restrained elevation scale (refines Tailwind's shadow-sm/md/lg). */
   --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04);
-  --shadow-md: 0 2px 8px -2px rgb(15 23 42 / 0.10);
+  --shadow-md: 0 2px 8px -2px rgb(15 23 42 / 0.1);
   --shadow-lg: 0 10px 28px -8px rgb(15 23 42 / 0.16);
 
   --color-accent-foreground: var(--accent-foreground);
@@ -112,14 +112,63 @@
   --radius-3xl: calc(var(--radius) * 2.2);
 
   /* Enterprise motion system — subtle, fast, consistent (Docs/REDESIGN.md §10).
-     Durations enable `duration-fast|base|slow`; easings enable `ease-enter` etc. */
-  --animate-duration-fast: 150ms;
-  --animate-duration-base: 200ms;
-  --animate-duration-slow: 240ms;
+     Easings live here because Tailwind's `--ease-*` namespace generates the
+     `ease-enter` / `ease-standard` / `ease-exit` utilities. Durations do NOT:
+     Tailwind v4 has no `--duration-*` theme namespace, so the duration tokens
+     are plain custom properties below, surfaced as utilities via `@utility`. */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-enter: cubic-bezier(0, 0, 0, 1);
   --ease-exit: cubic-bezier(0.3, 0, 1, 1);
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Duration scale. Enters are calm, exits are always quicker — a surface should
+   get out of the way faster than it arrived. Nothing routine exceeds --dur-slow. */
+:root {
+  --dur-micro: 120ms; /* press, toggle, tab underline */
+  --dur-fast: 150ms; /* menu/tooltip enter, all overlay exits */
+  --dur-base: 200ms; /* dialog, sheet, page fade, sidebar collapse */
+  --dur-slow: 240ms; /* ceiling — first-run / empty-state only */
+
+  /* Sidebar expand sweep. `--rail-lead` matches the width tween so rows start
+     only once the rail has finished opening. Last row lands at roughly
+     200 + (18 × 34) + 280 ≈ 1.09s. Tune here, not in the component. */
+  --rail-lead: var(--dur-base);
+  --rail-step: 34ms;
+  --rail-item-dur: 280ms;
+  /* Collapse plays in the other order: content leaves, *then* the width closes.
+     The wrapper's width tween only starts once this has elapsed. */
+  --rail-exit: 160ms;
+
+  /* KPI stat-card rise. Last of 5 cards lands at 4 × 70 + 380 ≈ 660ms. */
+  --stat-step: 70ms;
+  --stat-item-dur: 380ms;
+
+  /* How long a route navigation must take before the loading spinner appears.
+     Under Nielsen's 0.1s "instantaneous" limit nothing should be shown at all. */
+  --loading-delay: 160ms;
+
+  /* Dialogs & the screenshot lightbox. These are big surfaces the user opens
+     deliberately, so they get a longer, legible open than the anchored menus.
+     Exit stays brisk — a dismissed dialog should get out of the way. */
+  --dialog-in: 340ms;
+  --dialog-out: 180ms;
+
+  /* Lightbox capture-to-capture swipe. */
+  --swipe-dur: 320ms;
+
+  /* Sheets / drawers. These travel their full width, so they need longer than a
+     dialog that only scales — distance, not duration, is what makes a slide
+     legible. Exit stays brisk. */
+  --sheet-in: 400ms;
+  --sheet-out: 250ms;
+
+  /* Dropdown & select menus. The popup itself just fades; its items cascade
+     downward, the vertical counterpart of the sidebar's left-to-right sweep. */
+  --menu-in: 200ms;
+  --menu-out: 120ms;
+  --menu-step: 26ms;
+  --menu-item-dur: 220ms;
 }
 
 /* ----------------------------------------------------------------- */
@@ -1462,6 +1511,32 @@ input[type="date"]::-webkit-inner-spin-button {
     0 2px 8px -3px rgb(15 23 42 / 0.08);
 }
 
+/* ---- Named duration utilities (`duration-fast`, `data-closed:duration-fast`, …).
+   Tailwind v4 has no `--duration-*` theme namespace, so these are hand-rolled.
+   `--tw-duration` is what tw-animate-css reads for `animate-in` / `animate-out`;
+   `animation-duration` covers our own `@keyframes`; `transition-duration` covers
+   plain `transition-*`. Setting all three keeps one class correct everywhere. ---- */
+@utility duration-micro {
+  --tw-duration: var(--dur-micro);
+  animation-duration: var(--dur-micro);
+  transition-duration: var(--dur-micro);
+}
+@utility duration-fast {
+  --tw-duration: var(--dur-fast);
+  animation-duration: var(--dur-fast);
+  transition-duration: var(--dur-fast);
+}
+@utility duration-base {
+  --tw-duration: var(--dur-base);
+  animation-duration: var(--dur-base);
+  transition-duration: var(--dur-base);
+}
+@utility duration-slow {
+  --tw-duration: var(--dur-slow);
+  animation-duration: var(--dur-slow);
+  transition-duration: var(--dur-slow);
+}
+
 /* ---- Live, animated meters & progress bars ---- */
 @keyframes wp-meter-grow {
   from {
@@ -1511,7 +1586,7 @@ input[type="date"]::-webkit-inner-spin-button {
 }
 
 /* ---- Shared content-entrance — subtle fade + small rise on route/content mount.
-   Fast and calm (enterprise), and fully disabled under reduced-motion. ---- */
+   Fast and calm (enterprise), and stripped back to opacity under reduced-motion. ---- */
 @keyframes wp-enter {
   from {
     opacity: 0;
@@ -1519,11 +1594,202 @@ input[type="date"]::-webkit-inner-spin-button {
   }
 }
 .wp-enter {
-  animation: wp-enter var(--motion-base, 200ms) var(--ease-enter) both;
+  animation: wp-enter var(--dur-base) var(--ease-enter) both;
+}
+
+/* Movement-free sibling of wp-enter. Used where a container is already changing
+   size (the sidebar rail) and a rise would fight the width tween — and as the
+   reduced-motion stand-in for wp-enter. */
+@keyframes wp-fade {
+  from {
+    opacity: 0;
+  }
+}
+.wp-fade {
+  animation: wp-fade var(--dur-fast) var(--ease-enter) both;
+}
+
+/* ---- Route-loading fallback. Held invisible for --loading-delay before fading
+   in, so a navigation that resolves in 40ms (target already prefetched) never
+   flashes a spinner. A spinner that appears and vanishes reads as a glitch and
+   makes the app feel slower, not faster. `both` fill keeps opacity at 0 for the
+   whole delay; the spinner only materialises if the wait is real. ---- */
+.wp-loading-delay {
+  animation: wp-fade var(--dur-base) var(--ease-enter) var(--loading-delay) both;
+}
+
+/* ---- Screenshot lightbox: carousel swipe between captures. The outgoing image
+   leaves toward the side you came from while the incoming one arrives from the
+   side you're heading to, so the pair reads as one sheet of film moving. The
+   translate is a percentage of the image's own width, so it scales with the
+   viewport instead of looking timid on a large monitor. ---- */
+@keyframes wp-swipe-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(12%);
+  }
+}
+@keyframes wp-swipe-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-12%);
+  }
+}
+@keyframes wp-swipe-out-left {
+  to {
+    opacity: 0;
+    transform: translateX(-12%);
+  }
+}
+@keyframes wp-swipe-out-right {
+  to {
+    opacity: 0;
+    transform: translateX(12%);
+  }
+}
+.wp-swipe-in-right {
+  animation: wp-swipe-in-right var(--swipe-dur) var(--ease-standard) both;
+}
+.wp-swipe-in-left {
+  animation: wp-swipe-in-left var(--swipe-dur) var(--ease-standard) both;
+}
+.wp-swipe-out-left {
+  animation: wp-swipe-out-left var(--swipe-dur) var(--ease-standard) both;
+}
+.wp-swipe-out-right {
+  animation: wp-swipe-out-right var(--swipe-dur) var(--ease-standard) both;
+}
+
+/* ---- Sidebar rail items sweep in from the left, one after another, when the
+   rail expands. The index comes from React (`--wp-i`) rather than `nth-child`,
+   because the items are split across per-group <ul>s and nth-child would restart
+   the count in each group. A full rail is 19 steps (13 links + 4 group headings
+   + 2 account rows), so the cap sits just above that: every row gets its own
+   beat, and a permission-trimmed nav simply finishes sooner.
+
+   The sweep waits out the rail's width tween (--dur-base) before the first row
+   moves, so rows arrive into a settled panel rather than racing it open. This is
+   the one place in the app that deliberately breaks the "nothing over 300ms"
+   rule: it's a reveal the user explicitly asked for by toggling the rail, not
+   something they sit through on every navigation.
+
+   Tunables: --rail-step (gap between rows) and --rail-item-dur (per-row travel). */
+@keyframes wp-rail-item {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+}
+.wp-rail-item {
+  animation: wp-rail-item var(--rail-item-dur) var(--ease-enter) both;
+  animation-delay: calc(var(--rail-lead) + min(var(--wp-i, 0), 18) * var(--rail-step));
+}
+
+/* ---- The counterpart to the sweep: the expanded rail's contents leave before
+   the panel narrows, so the labels never reflow or truncate against a shrinking
+   edge. Applied to the content column only — the panel's background stays put,
+   otherwise the canvas would flash through mid-collapse. Held at opacity 0 by
+   `both` so React's unmount at the end of the phase is invisible. ---- */
+@keyframes wp-rail-out {
+  to {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+.wp-rail-out {
+  animation: wp-rail-out var(--rail-exit) var(--ease-exit) both;
+}
+
+/* ---- Dropdown / select menu items cascade downward as the popup opens — the
+   vertical counterpart of the sidebar rail's left-to-right sweep. Items are
+   direct children of the popup, so `nth-child` sequences them without threading
+   an index through React. The popup remounts on every open, so this replays
+   each time. Capped at 12 beats (~312ms) — a long menu shouldn't outrun the
+   hand already moving toward it. ---- */
+@keyframes wp-menu-item {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+.wp-menu-stagger > * {
+  animation: wp-menu-item var(--menu-item-dur) var(--ease-enter) both;
+}
+.wp-menu-stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.wp-menu-stagger > *:nth-child(2) {
+  animation-delay: calc(1 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(3) {
+  animation-delay: calc(2 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(4) {
+  animation-delay: calc(3 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(5) {
+  animation-delay: calc(4 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(6) {
+  animation-delay: calc(5 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(7) {
+  animation-delay: calc(6 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(8) {
+  animation-delay: calc(7 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(9) {
+  animation-delay: calc(8 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(10) {
+  animation-delay: calc(9 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(11) {
+  animation-delay: calc(10 * var(--menu-step));
+}
+.wp-menu-stagger > *:nth-child(n + 12) {
+  animation-delay: calc(11 * var(--menu-step));
+}
+
+/* ---- Staggered KPI-card entrance. Cards animate as siblings, so `nth-child`
+   does the sequencing with no index prop threaded through React. The stagger is
+   capped at 5 steps — beyond that a cascade stops reading as craft and starts
+   reading as lag. Replays only on mount, which for these cards means once per
+   route visit (the shell keys content on `pathname`).
+
+   The rise is deliberately taller and slower than the generic `wp-enter` so the
+   motion is legible at a glance; these are the first thing you look at on a page.
+   Tunables: --stat-step (gap between cards) and --stat-item-dur (per-card rise). */
+@keyframes wp-stat-card {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+.wp-stat-card {
+  animation: wp-stat-card var(--stat-item-dur) var(--ease-enter) both;
+}
+.wp-stat-card:nth-child(2) {
+  animation-delay: calc(1 * var(--stat-step));
+}
+.wp-stat-card:nth-child(3) {
+  animation-delay: calc(2 * var(--stat-step));
+}
+.wp-stat-card:nth-child(4) {
+  animation-delay: calc(3 * var(--stat-step));
+}
+.wp-stat-card:nth-child(5) {
+  animation-delay: calc(4 * var(--stat-step));
+}
+.wp-stat-card:nth-child(n + 6) {
+  animation-delay: calc(5 * var(--stat-step));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Honour the OS setting globally: keep opacity-only feedback, drop movement. */
+  /* Honour the OS setting globally: drop movement, keep a short opacity fade.
+     Transforms are the vestibular trigger (WCAG C39); opacity is not, so a
+     content entrance still reads as an entrance instead of snapping in. */
   *,
   *::before,
   *::after {
@@ -1532,7 +1798,23 @@ input[type="date"]::-webkit-inner-spin-button {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .wp-enter {
-    animation: none;
+  .wp-enter,
+  .wp-fade,
+  .wp-stat-card,
+  .wp-rail-item {
+    animation: wp-fade var(--dur-fast) var(--ease-enter) both !important;
+    animation-delay: 0ms !important;
+  }
+  /* The blanket rule above zeroes animation *duration* but not *delay*, so a
+     staggered menu would still trickle in. Drop the item animation outright. */
+  .wp-menu-stagger > * {
+    animation: none !important;
+  }
+  /* Loading spinners are essential feedback, not decoration — WCAG's reduced
+     motion guidance is about vestibular triggers, not about removing the only
+     signal that the app is working. The blanket rule above would otherwise pin
+     every spinner to one 0.01ms rotation, i.e. a motionless ring. */
+  .animate-spin {
+    animation: var(--animate-spin) !important;
   }
 }

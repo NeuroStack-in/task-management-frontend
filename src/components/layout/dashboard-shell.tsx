@@ -30,7 +30,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <aside className="hidden shrink-0 py-3 pl-3 lg:block">
         <div
           className={cn(
-            "sticky top-3 h-[calc(100vh-1.5rem)] transition-[width] duration-200",
+            "sticky top-3 h-[calc(100vh-1.5rem)] transition-[width] duration-base ease-standard",
             collapsed ? "w-[68px]" : "w-60",
           )}
         >
