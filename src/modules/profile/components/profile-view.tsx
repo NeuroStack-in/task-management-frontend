@@ -145,7 +145,7 @@ function RichProfile({
   const updateUser = useAuthStore((s) => s.updateUser);
   const [uploadOpen, setUploadOpen] = useState(false);
   // Temporary control to preview the banner patterns.
-  const [pattern, setPattern] = useState<BannerPattern>("topographic");
+  const [pattern, setPattern] = useState<BannerPattern>("grid");
   const facts = personalFacts(user);
   const productivity = user.productivityScore;
 
