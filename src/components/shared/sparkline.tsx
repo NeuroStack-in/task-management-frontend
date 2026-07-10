@@ -4,6 +4,9 @@ interface SparklineProps {
   data: number[];
   /** Render a soft area fill under the line. */
   area?: boolean;
+  /** Peak opacity of the area fill (fades to 0). Default 0.1 — raise it when
+   *  the sparkline sits on a strong colour surface (e.g. the feature banner). */
+  areaOpacity?: number;
   /** Show a dot at the latest point. Default false. */
   showDot?: boolean;
   /**
@@ -74,6 +77,7 @@ function monotonePath(pts: readonly (readonly [number, number])[]): string {
 export function Sparkline({
   data,
   area = false,
+  areaOpacity = 0.1,
   showDot = false,
   width,
   height = 36,
@@ -102,7 +106,7 @@ export function Sparkline({
 
   const d = monotonePath(points);
   const last = points[points.length - 1];
-  const gradId = `spark-${vbW}x${height}-${data.length}-${Math.round(data[0])}-${Math.round(max)}`;
+  const gradId = `spark-${vbW}x${height}-${data.length}-${Math.round(data[0])}-${Math.round(max)}-${areaOpacity}`;
   const areaD = `${d} L ${last[0]},${height} L ${points[0][0]},${height} Z`;
 
   return (
@@ -119,7 +123,7 @@ export function Sparkline({
         <>
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="currentColor" stopOpacity={0.1} />
+              <stop offset="0%" stopColor="currentColor" stopOpacity={areaOpacity} />
               <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
             </linearGradient>
           </defs>

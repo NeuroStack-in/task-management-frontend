@@ -74,6 +74,11 @@ export function AttendanceOverview({
   const presentBars = Math.round((present / total) * BARS);
   const leaveBars = Math.round((leave / total) * BARS);
 
+  // Shares for the bar hover titles.
+  const presentPct = Math.round((present / total) * 100);
+  const leavePct = Math.round((leave / total) * 100);
+  const absentPct = Math.max(0, 100 - presentPct - leavePct);
+
   const context = `${label} · ${dept === "all" ? "All departments" : dept}`;
 
   return (
@@ -173,21 +178,26 @@ export function AttendanceOverview({
           </div>
         </div>
 
-        {/* Distribution graph */}
+        {/* Distribution graph — bar heights are decorative texture; each bar's
+            hover title reveals the segment it belongs to (status · count · share). */}
         <div className="flex h-28 items-end gap-[3px]">
           {Array.from({ length: BARS }, (_, i) => {
             const seg =
               i < presentBars
-                ? "bg-success"
+                ? { className: "bg-success", label: "Present", count: present, pct: presentPct }
                 : i < presentBars + leaveBars
-                  ? "bg-primary"
-                  : "bg-destructive/70";
+                  ? { className: "bg-primary", label: "On leave", count: leave, pct: leavePct }
+                  : { className: "bg-destructive/70", label: "Absent", count: absent, pct: absentPct };
             const h = 58 + ((i * 11) % 34) - (i / BARS) * 18;
             return (
               <div
                 key={i}
-                className={cn("flex-1 rounded-full", seg)}
+                className={cn(
+                  "flex-1 rounded-full transition-[filter] hover:brightness-75",
+                  seg.className,
+                )}
                 style={{ height: `${Math.max(28, h)}%` }}
+                title={`${seg.label} — ${seg.count} of ${total} (${seg.pct}%)`}
               />
             );
           })}

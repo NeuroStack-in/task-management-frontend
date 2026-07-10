@@ -546,7 +546,7 @@ export function EmployeeProfile({ data }: { data: EmployeeProfileData }) {
               <p className="mt-1 font-display text-3xl font-bold tabular-nums">
                 {data.totalTasks}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">in flight</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">across all projects</p>
             </div>
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -672,7 +672,7 @@ function EmployeeSummaryInsight({ data }: { data: EmployeeProfileData }) {
 
   const title = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""}.`;
 
-  const detail = `Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks in flight.`;
+  const detail = `Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks across all projects.`;
 
   const points: string[] = [
     trendUp
@@ -726,13 +726,16 @@ function Legend({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span
-        className={cn(
-          "h-0.5 w-4 rounded-full",
-          className,
-          dashed && "opacity-70",
-        )}
-      />
+      {dashed ? (
+        // Dashed swatch — mirrors the chart's dashed "previous period" stroke.
+        <span className="inline-flex w-4 items-center justify-between">
+          <span className={cn("h-0.5 w-1 rounded-full", className)} />
+          <span className={cn("h-0.5 w-1 rounded-full", className)} />
+          <span className={cn("h-0.5 w-1 rounded-full", className)} />
+        </span>
+      ) : (
+        <span className={cn("h-0.5 w-4 rounded-full", className)} />
+      )}
       {label}
     </span>
   );

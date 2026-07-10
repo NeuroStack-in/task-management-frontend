@@ -77,18 +77,31 @@ function Donut({
   slices,
   center,
   caption,
+  layout = "column",
 }: {
   slices: { label: string; value: number; color: string }[];
   center: string;
   caption: string;
+  /** "column" stacks the legend below the ring (dashboard widgets); "row"
+   *  puts the legend beside it (wide half-width cards, e.g. Analytics). */
+  layout?: "column" | "row";
 }) {
   const total = slices.reduce((s, x) => s + x.value, 0) || 1;
   return (
-    // The ring grows to fill all space above the legend (flex-1 + percentage
-    // radii), so the card is used efficiently — no dead band — with the legend
-    // anchored at the bottom.
-    <div className="flex h-full flex-col gap-3">
-      <div className="relative min-h-[150px] w-full flex-1">
+    // The ring grows to fill all space above/beside the legend (flex-1 +
+    // percentage radii), so the card is used efficiently — no dead band.
+    <div
+      className={cn(
+        "flex h-full flex-col gap-3",
+        layout === "row" && "sm:flex-row sm:items-center sm:gap-6",
+      )}
+    >
+      <div
+        className={cn(
+          "relative min-h-[150px] w-full flex-1",
+          layout === "row" && "sm:h-44 sm:w-auto",
+        )}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -112,7 +125,7 @@ function Donut({
           <span className="mt-1 text-xs text-muted-foreground">{caption}</span>
         </div>
       </div>
-      <ul className="w-full space-y-2">
+      <ul className={cn("w-full space-y-2", layout === "row" && "sm:flex-1")}>
         {slices.map((s) => (
           <li key={s.label} className="flex items-center gap-2 text-sm">
             <span
@@ -120,9 +133,11 @@ function Donut({
               style={{ backgroundColor: s.color }}
             />
             <span className="flex-1 text-muted-foreground">{s.label}</span>
-            <span className="font-medium tabular-nums">{s.value}</span>
-            <span className="w-9 text-right text-xs text-muted-foreground tabular-nums">
-              {Math.round((s.value / total) * 100)}%
+            <span className="tabular-nums">
+              <span className="font-medium">{s.value}</span>
+              <span className="text-xs text-muted-foreground">
+                {" "}- {Math.round((s.value / total) * 100)}%
+              </span>
             </span>
           </li>
         ))}
@@ -166,9 +181,11 @@ export function AttendanceDonut({
 export function ActiveInactiveRing({
   active,
   inactive,
+  layout,
 }: {
   active: number;
   inactive: number;
+  layout?: "column" | "row";
 }) {
   const total = active + inactive || 1;
   return (
@@ -176,10 +193,11 @@ export function ActiveInactiveRing({
       <CardHeader>
         <CardTitle>Active vs inactive</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1">
         <Donut
           center={`${Math.round((active / total) * 100)}%`}
           caption="active"
+          layout={layout}
           slices={[
             { label: "Active", value: active, color: "var(--primary)" },
             { label: "Inactive", value: inactive, color: "var(--muted-foreground)" },

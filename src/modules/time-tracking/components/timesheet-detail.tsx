@@ -204,16 +204,18 @@ export function ActivityDialog({
           <>
             <DialogHeader className="border-b p-5 pr-12 text-left">
               <div className="flex items-center gap-2">
-                <Badge className={meta!.className}>{meta!.label}</Badge>
+                {/* "On track" is the norm — only surface the badge when flagged. */}
+                {view.status === "flagged" ? (
+                  <Badge className={meta!.className}>{meta!.label}</Badge>
+                ) : null}
                 <span className="text-xs text-muted-foreground">
-                  {view.kind === "day" ? "Daily activity" : "Weekly activity"}
+                  {view.kind === "day"
+                    ? `Daily activity · ${view.dateLabel}`
+                    : `Weekly activity · ${view.weekRange}`}
                 </span>
               </div>
               <DialogTitle className="mt-1 text-lg">{view.name}</DialogTitle>
-              <DialogDescription>
-                {view.subtitle} ·{" "}
-                {view.kind === "day" ? view.dateLabel : view.weekRange}
-              </DialogDescription>
+              <DialogDescription>{view.subtitle}</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-6 p-5">
@@ -297,6 +299,8 @@ function WeekDetail({
         <div className="flex items-end justify-between gap-2 pt-1">
           {a.perDay.map((d, i) => {
             const total = d.working + d.idle;
+            const workingPct = total > 0 ? Math.round((d.working / total) * 100) : 0;
+            const idlePct = total > 0 ? 100 - workingPct : 0;
             return (
               <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
                 <div className="flex h-28 w-full max-w-9 flex-col justify-end overflow-hidden rounded-md bg-muted">
@@ -305,12 +309,12 @@ function WeekDetail({
                       <div
                         className="w-full bg-muted-foreground/30"
                         style={{ height: `${(d.idle / max) * 100}%` }}
-                        title={`Non-working ${formatHours(d.idle)}`}
+                        title={`Non-working ${formatHours(d.idle)} · ${idlePct}%`}
                       />
                       <div
                         className="w-full bg-primary"
                         style={{ height: `${(d.working / max) * 100}%` }}
-                        title={`Working ${formatHours(d.working)}`}
+                        title={`Working ${formatHours(d.working)} · ${workingPct}%`}
                       />
                     </>
                   ) : null}
@@ -396,6 +400,10 @@ function Tile({
 
 function SplitBar({ working, idle }: { working: number; idle: number }) {
   const total = working + idle || 1;
+  // The tiles above already show the hour values; the bar legend shows the
+  // share of the day instead, so the two read as complements, not duplicates.
+  const workingPct = Math.round((working / total) * 100);
+  const idlePct = 100 - workingPct;
   return (
     <div className="space-y-1.5">
       <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
@@ -409,10 +417,10 @@ function SplitBar({ working, idle }: { working: number; idle: number }) {
         />
       </div>
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-        <Legend className="bg-primary" label={`Working ${formatHours(working)}`} />
+        <Legend className="bg-primary" label={`Working ${workingPct}%`} />
         <Legend
           className="bg-muted-foreground/30"
-          label={`Non-working ${formatHours(idle)}`}
+          label={`Non-working ${idlePct}%`}
         />
       </div>
     </div>

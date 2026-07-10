@@ -47,7 +47,7 @@ export function TimeTrackingView({
 
   const description =
     view === "team"
-      ? "Review the team's tracked hours, billable split, and activity."
+      ? "Review the team's tracked hours, billable time, and activity."
       : "Track your time, review today's timesheet, and monitor your weekly hours.";
 
   return (

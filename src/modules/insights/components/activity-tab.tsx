@@ -176,7 +176,7 @@ export function ActivityTab() {
           <CardHeader>
             <CardTitle>Time by category</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="flex flex-1 flex-col gap-3">
             {(Object.keys(totals) as UsageCategory[]).map((cat) => {
               const pct = Math.round((totals[cat] / (totalMin || 1)) * 100);
               return (
@@ -194,12 +194,12 @@ export function ActivityTab() {
                 </div>
               );
             })}
-            <p className="pt-1 text-xs text-muted-foreground">
+            <p className="mt-auto pt-1 text-xs text-muted-foreground">
               Based on {Math.round(totalMin / 60)}h of tracked application time today.
             </p>
           </CardContent>
         </Card>
-        <ActiveInactiveRing active={active} inactive={inactive} />
+        <ActiveInactiveRing active={active} inactive={inactive} layout="row" />
       </div>
 
       <div className="space-y-4">
