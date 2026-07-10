@@ -564,6 +564,10 @@ function captureUrl(seed: string): string {
 /** A real screenshot image with the skeleton behind it as a load/offline
  *  fallback. Fills its (aspect-ratio) parent. */
 function CaptureImage({ seed, alt }: { seed: string; alt: string }) {
+  // Lazy-loaded images decode off the main thread and used to snap in over the
+  // placeholder. Cross-fade instead. `onLoad` also fires for cached images, and
+  // an image completed before hydration is caught by the `complete` check.
+  const [loaded, setLoaded] = useState(false);
   return (
     <>
       <FauxCapture />
@@ -572,7 +576,14 @@ function CaptureImage({ seed, alt }: { seed: string; alt: string }) {
         src={captureUrl(seed)}
         alt={alt}
         loading="lazy"
-        className="absolute inset-0 size-full object-cover"
+        onLoad={() => setLoaded(true)}
+        ref={(el) => {
+          if (el?.complete) setLoaded(true);
+        }}
+        className={cn(
+          "absolute inset-0 size-full object-cover transition-opacity duration-base ease-enter",
+          loaded ? "opacity-100" : "opacity-0",
+        )}
       />
     </>
   );
@@ -729,6 +740,37 @@ function Lightbox({
   const reason = shot ? flagReason(shot) : null;
   const multi = monitors.length > 1;
 
+  // ── Carousel swipe between captures ──────────────────────────────────────
+  // Direction is derived during render (React's "adjust state when a prop
+  // changes" pattern) rather than in an effect: an effect would let the new
+  // image paint one settled frame before the animation class arrived, which
+  // reads as a flash. `id` guards against a stale animationend from a swipe the
+  // user has already clicked past.
+  const [prevIndex, setPrevIndex] = useState(captureIndex);
+  const [swipe, setSwipe] = useState<{
+    dir: 1 | -1;
+    outUrl: string | null;
+    id: number;
+  } | null>(null);
+
+  if (prevIndex !== captureIndex) {
+    const from = prevIndex;
+    setPrevIndex(captureIndex);
+    if (from === null || captureIndex === null) {
+      setSwipe(null); // opening or closing the lightbox — not a swipe
+    } else {
+      const fromCapture = captures[from];
+      const fromMonitors = fromCapture?.monitors ?? [];
+      const fromShot =
+        fromMonitors[Math.min(mIdx, Math.max(0, fromMonitors.length - 1))];
+      setSwipe({
+        dir: captureIndex > from ? 1 : -1,
+        outUrl: fromShot ? captureUrl(fromShot.id) : null,
+        id: (swipe?.id ?? 0) + 1,
+      });
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
@@ -746,12 +788,47 @@ function Lightbox({
           <>
             {/* ── Image pane — its own section; only the capture ── */}
             <div className="group relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={captureUrl(shot.id)}
-                alt={`${shot.app} screenshot`}
-                className="max-h-full max-w-full object-contain"
-              />
+              {/* Swipe stage. Both layers fill the pane so the 12% translate is
+                  a share of the viewport, not of the letterboxed image. It's
+                  pointer-events-none so the prev/next controls stay clickable. */}
+              <div className="pointer-events-none absolute inset-0">
+                {swipe?.outUrl ? (
+                  <div
+                    key={`out-${swipe.id}`}
+                    aria-hidden="true"
+                    className={cn(
+                      "absolute inset-0 flex items-center justify-center",
+                      swipe.dir === 1 ? "wp-swipe-out-left" : "wp-swipe-out-right",
+                    )}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={swipe.outUrl}
+                      alt=""
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+                ) : null}
+                <div
+                  key={`in-${captureIndex}-${mIdx}`}
+                  onAnimationEnd={() => {
+                    const id = swipe?.id;
+                    setSwipe((s) => (s && s.id === id ? null : s));
+                  }}
+                  className={cn(
+                    "absolute inset-0 flex items-center justify-center",
+                    swipe?.dir === 1 && "wp-swipe-in-right",
+                    swipe?.dir === -1 && "wp-swipe-in-left",
+                  )}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={captureUrl(shot.id)}
+                    alt={`${shot.app} screenshot`}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              </div>
 
               {/* Close — small corner control */}
               <button

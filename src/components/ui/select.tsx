@@ -35,7 +35,7 @@ function SelectTrigger({
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon className="shrink-0 text-muted-foreground transition-transform duration-200 data-[popup-open]:rotate-180">
+      <SelectPrimitive.Icon className="shrink-0 text-muted-foreground transition-transform duration-fast ease-standard data-[popup-open]:rotate-180">
         <ChevronDownIcon className="size-4" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
@@ -63,7 +63,9 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            "z-50 max-h-(--available-height) w-(--anchor-width) min-w-[8rem] origin-(--transform-origin) overflow-y-auto overscroll-contain rounded-xl bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            // The popup fades; its items cascade downward (`wp-menu-stagger`). No
+            // zoom on the popup — a scaling parent fights the items' own travel.
+            "wp-menu-stagger z-50 max-h-(--available-height) w-(--anchor-width) min-w-[8rem] origin-(--transform-origin) overflow-y-auto overscroll-contain rounded-xl bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-[var(--menu-in)] outline-none data-open:animate-in data-open:fade-in-0 data-open:ease-enter data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-closed:duration-[var(--menu-out)] data-closed:ease-exit",
             className,
           )}
           {...props}

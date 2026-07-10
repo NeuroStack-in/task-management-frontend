@@ -89,7 +89,9 @@ export default function SettingsLayout({
   ];
 
   return (
-    <div className="flex flex-col gap-6 pt-1 lg:h-[calc(100vh-7rem)] lg:flex-row lg:gap-10">
+    // The rail sits in the shell's 24px (sm:px-6) gutter on its left, so the gap
+    // on its right matches — otherwise the content pane reads as pushed off-centre.
+    <div className="flex flex-col gap-6 pt-1 lg:h-[calc(100vh-7rem)] lg:flex-row lg:gap-6">
       {/* ── Section rail ── */}
       <nav
         aria-label="Settings sections"

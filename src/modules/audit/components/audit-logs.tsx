@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import type { LucideIcon } from "lucide-react"
-import { Download, ScrollText, Search } from "lucide-react"
+import { Copy, Download, ScrollText, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import {
   Select,
@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -86,9 +87,58 @@ function StatusBadge({ status }: { status: AuditStatus }) {
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-3 gap-3 py-2.5 [&+&]:border-t">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="col-span-2 min-w-0 text-sm">{children}</dd>
+    <div className="group/row grid grid-cols-[6.5rem_1fr] items-start gap-4 py-2.5 [&+&]:border-t [&+&]:border-border/60">
+      <dt className="pt-px text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-sm">{children}</dd>
+    </div>
+  )
+}
+
+/** Hand the whole record to the clipboard — what an auditor actually wants to
+ *  paste into a ticket, rather than re-typing seven fields. */
+function copyEventJson(event: AuditEvent) {
+  void navigator.clipboard?.writeText(JSON.stringify(event, null, 2))
+  toast.success("Event copied as JSON")
+}
+
+/** Grouping for the detail sheet — an uppercase eyebrow over a set of rows,
+ *  matching the sidebar's group headings so the app reads as one system. */
+function DetailSection({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="px-5 py-4 [&+&]:border-t">
+      <h3 className="pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
+        {title}
+      </h3>
+      {children}
+    </section>
+  )
+}
+
+/** A value with a copy affordance that stays out of the way until you hover the
+ *  row it belongs to (or tab to it). Machine-readable values only — IDs, IPs. */
+function CopyValue({ value, mono }: { value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className={cn("min-w-0 truncate", mono && "font-mono text-xs")}>
+        {value}
+      </span>
+      <button
+        type="button"
+        aria-label={`Copy ${value}`}
+        onClick={() => {
+          void navigator.clipboard?.writeText(value)
+          toast.success("Copied to clipboard")
+        }}
+        className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity duration-micro hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
+      >
+        <Copy className="size-3.5" />
+      </button>
     </div>
   )
 }
@@ -100,6 +150,11 @@ export function AuditLogs() {
   const [timeframe, setTimeframe] = useState<string>("all")
   const [visible, setVisible] = useState(PAGE_SIZE)
   const [selected, setSelected] = useState<AuditEvent | null>(null)
+
+  // Capitalised so it can be used as a JSX tag. `categoryIcon` always resolves,
+  // falling back to ScrollText, so this is only null when nothing is selected —
+  // and the sheet body doesn't render then.
+  const SelectedIcon = selected ? categoryIcon(selected.category) : ScrollText
 
   const hasFilters =
     search !== "" ||
@@ -331,53 +386,110 @@ export function AuditLogs() {
 
       {/* ── Detail sheet ── */}
       <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          className="w-full gap-0 p-0 data-[side=right]:sm:max-w-lg"
+        >
           {selected && (
-            <>
-              <SheetHeader className="pb-2">
-                <div className="flex items-center gap-2">
+            <div className="flex h-full min-h-0 flex-col">
+              {/* Header — identity of the event: what happened, to what, when */}
+              <SheetHeader className="gap-3 border-b bg-muted/40 p-5">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-primary">
+                    <SelectedIcon className="size-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <SheetTitle className="text-left text-base leading-snug">
+                      {selected.action}
+                    </SheetTitle>
+                    <SheetDescription className="mt-0.5 truncate text-left font-mono text-xs">
+                      {selected.id}
+                    </SheetDescription>
+                  </div>
+                  <SheetClose
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="-mr-1.5 -mt-1.5 shrink-0"
+                      />
+                    }
+                  >
+                    <X className="size-4" />
+                    <span className="sr-only">Close</span>
+                  </SheetClose>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
                   <CategoryBadge category={selected.category} />
                   <StatusBadge status={selected.status} />
+                  <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {selected.timestamp}
+                  </span>
                 </div>
-                <SheetTitle className="text-left text-lg leading-snug">
-                  {selected.action}
-                </SheetTitle>
-                <SheetDescription className="text-left">
-                  {selected.timestamp}
-                </SheetDescription>
               </SheetHeader>
-              <dl className="px-4 pb-8">
-                <DetailRow label="Event ID">
-                  <span className="font-mono text-xs">{selected.id}</span>
-                </DetailRow>
-                <DetailRow label="User">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="size-6">
-                      <AvatarFallback className="text-[9px]">
+
+              {/* Body — the sheet itself never scrolls; only this pane does, so
+                  the header and footer stay pinned. */}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <DetailSection title="Performed by">
+                  <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-3">
+                    <Avatar className="size-9 shrink-0">
+                      <AvatarFallback className="text-xs">
                         {initials(selected.actorName)}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{selected.actorName}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {selected.actorName}
+                      </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {selected.actorEmail}
                       </p>
                     </div>
                   </div>
-                </DetailRow>
-                <DetailRow label="Category">
-                  {AUDIT_CATEGORY_LABEL[selected.category]}
-                </DetailRow>
-                <DetailRow label="Target">{selected.target}</DetailRow>
-                <DetailRow label="IP address">
-                  <span className="font-mono text-xs">{selected.ip}</span>
-                </DetailRow>
-                <DetailRow label="Device">{selected.device}</DetailRow>
-                <DetailRow label="Timestamp">
-                  <span className="tabular-nums">{selected.timestamp}</span>
-                </DetailRow>
-              </dl>
-            </>
+                </DetailSection>
+
+                <DetailSection title="Event">
+                  <dl>
+                    <DetailRow label="Category">
+                      {AUDIT_CATEGORY_LABEL[selected.category]}
+                    </DetailRow>
+                    <DetailRow label="Target">{selected.target}</DetailRow>
+                    <DetailRow label="Outcome">
+                      <StatusBadge status={selected.status} />
+                    </DetailRow>
+                  </dl>
+                </DetailSection>
+
+                <DetailSection title="Origin">
+                  <dl>
+                    <DetailRow label="IP address">
+                      <CopyValue value={selected.ip} mono />
+                    </DetailRow>
+                    <DetailRow label="Device">{selected.device}</DetailRow>
+                    <DetailRow label="Timestamp">
+                      <span className="tabular-nums">{selected.timestamp}</span>
+                    </DetailRow>
+                    <DetailRow label="Event ID">
+                      <CopyValue value={selected.id} mono />
+                    </DetailRow>
+                  </dl>
+                </DetailSection>
+              </div>
+
+              <div className="border-t bg-muted/40 p-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-1.5"
+                  onClick={() => copyEventJson(selected)}
+                >
+                  <Copy className="size-3.5" />
+                  Copy event as JSON
+                </Button>
+              </div>
+            </div>
           )}
         </SheetContent>
       </Sheet>

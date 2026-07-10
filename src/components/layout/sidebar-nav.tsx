@@ -45,6 +45,10 @@ export function SidebarNav({
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
+  // Total stagger beats consumed by the nav: one per group heading, one per link.
+  // The account rows at the foot continue the sequence from here.
+  const navSteps = nav.reduce((n, g) => n + g.items.length + 1, 0);
+
   const handleLogout = () => {
     logout();
     router.replace("/login");
@@ -60,7 +64,13 @@ export function SidebarNav({
 
   if (collapsed) {
     return (
-      <div className="flex h-full w-[68px] flex-col items-center overflow-hidden rounded-[1.6rem] bg-sidebar py-4 text-sidebar-foreground shadow-soft">
+      // `key` forces a remount when the rail flips, so `wp-fade` replays. `w-full`
+      // (not a fixed 68px) lets the panel track the wrapper's width tween instead
+      // of snapping to its final width on frame one.
+      <div
+        key="collapsed"
+        className="wp-fade flex h-full w-full flex-col items-center overflow-hidden rounded-[1.6rem] bg-sidebar py-4 text-sidebar-foreground shadow-soft"
+      >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -186,7 +196,10 @@ export function SidebarNav({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[1.4rem] bg-sidebar text-sidebar-foreground shadow-soft">
+    <div
+      key="expanded"
+      className="wp-fade flex h-full w-full flex-col overflow-hidden rounded-[1.4rem] bg-sidebar text-sidebar-foreground shadow-soft"
+    >
       <div className="flex h-16 items-center gap-2.5 px-4">
         <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
           <Activity className="size-5" />
@@ -211,41 +224,61 @@ export function SidebarNav({
 
       <ScrollArea className="min-h-0 flex-1 px-3 pb-4">
         <nav className="flex flex-col gap-5">
-          {nav.map((group) => (
-            <div key={group.label}>
-              <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
-                {group.label}
-              </p>
-              <ul className="flex flex-col gap-0.5">
-                {group.items.map((item) => {
-                  const active = isActive(pathname, item.href);
-                  const Icon = item.icon;
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        onClick={onNavigate}
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                          active
-                            ? "border-l-2 border-primary bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                            : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                        )}
+          {nav.map((group, groupIndex) => {
+            // Each group contributes its label plus its items to the running
+            // stagger index, so the sweep runs continuously down the whole rail
+            // instead of restarting at every group heading.
+            const groupStart = nav
+              .slice(0, groupIndex)
+              .reduce((n, g) => n + g.items.length + 1, 0);
+            return (
+              <div key={group.label}>
+                <p
+                  className="wp-rail-item px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80"
+                  style={{ "--wp-i": groupStart } as React.CSSProperties}
+                >
+                  {group.label}
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  {group.items.map((item, itemIndex) => {
+                    const active = isActive(pathname, item.href);
+                    const Icon = item.icon;
+                    return (
+                      <li
+                        key={item.href}
+                        className="wp-rail-item"
+                        style={
+                          {
+                            "--wp-i": groupStart + itemIndex + 1,
+                          } as React.CSSProperties
+                        }
                       >
-                        <Icon className="size-4 shrink-0" />
-                        <span className="truncate">{item.label}</span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+                        <Link
+                          href={item.href}
+                          onClick={onNavigate}
+                          aria-current={active ? "page" : undefined}
+                          className={cn(
+                            "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                            active
+                              ? "border-l-2 border-primary bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                              : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                          )}
+                        >
+                          <Icon className="size-4 shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
       </ScrollArea>
 
-      {/* Account — profile + log out, pinned to the foot of the sidebar */}
+      {/* Account — profile + log out, pinned to the foot of the sidebar. These
+          pick up where the nav left off so the sweep runs the full height. */}
       <div className="space-y-0.5 border-t border-sidebar-border p-3">
         {user ? (
           <Link
@@ -254,8 +287,9 @@ export function SidebarNav({
             aria-current={
               isActive(pathname, "/settings/profile") ? "page" : undefined
             }
+            style={{ "--wp-i": navSteps } as React.CSSProperties}
             className={cn(
-              "flex items-center gap-3 rounded-md px-2 py-2 transition-colors",
+              "wp-rail-item flex items-center gap-3 rounded-md px-2 py-2 transition-colors",
               isActive(pathname, "/settings/profile")
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
                 : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -278,7 +312,8 @@ export function SidebarNav({
         <button
           type="button"
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          style={{ "--wp-i": navSteps + 1 } as React.CSSProperties}
+          className="wp-rail-item flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <LogOut className="size-4 shrink-0" />
           <span className="truncate">Log out</span>
