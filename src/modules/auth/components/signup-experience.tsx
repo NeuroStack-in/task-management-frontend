@@ -16,7 +16,6 @@ import {
   AuthField,
   AuthFrame,
   CardSwitch,
-  Divider,
   PwToggle,
 } from "./auth-frame";
 
@@ -96,7 +95,12 @@ export function SignupExperience() {
 
   return (
     <>
-      <AuthFrame maxWidth={432}>
+      <AuthFrame
+        headline="Set your whole organization in motion."
+        copy="Time, attendance, tasks, and productivity — one calm place for the whole team, from first clock-in to payroll-ready timesheets."
+        brandSide="right"
+        maxWidth={440}
+      >
         <AuthCard>
           <form onSubmit={submitAccount}>
             <AuthCardHeader
@@ -104,30 +108,29 @@ export function SignupExperience() {
               subtitle="Start a free WorkPulse workspace for your team."
             />
 
-            <div className="space-y-2.5">
-              <AuthField id="name" icon={UserRound} type="text" value={acct.name} onChange={setA("name")} placeholder="Full name" error={err.name} autoComplete="name" />
-              <AuthField id="su-email" icon={Mail} type="email" value={acct.email} onChange={setA("email")} placeholder="Work email" error={err.email} autoComplete="email" />
+            <div className="space-y-4">
+              <AuthField id="name" label="Full name" icon={UserRound} type="text" value={acct.name} onChange={setA("name")} error={err.name} autoComplete="name" />
+              <AuthField id="su-email" label="Work email" icon={Mail} type="email" value={acct.email} onChange={setA("email")} error={err.email} autoComplete="email" />
               <AuthField
                 id="su-password"
-                icon={Lock}
+                label="Password"
                 type={showPw ? "text" : "password"}
                 value={acct.password}
                 onChange={setA("password")}
-                placeholder="Password"
                 error={err.password}
                 autoComplete="new-password"
                 toggle={<PwToggle show={showPw} onClick={() => setShowPw((s) => !s)} />}
               />
-              <AuthField id="confirm" icon={Lock} type={showPw ? "text" : "password"} value={acct.confirm} onChange={setA("confirm")} placeholder="Confirm password" error={err.confirm} autoComplete="new-password" />
+              <AuthField id="confirm" label="Confirm password" icon={Lock} type={showPw ? "text" : "password"} value={acct.confirm} onChange={setA("confirm")} error={err.confirm} autoComplete="new-password" />
             </div>
 
             {signupError ? (
-              <p className="mt-2 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
+              <p className="mt-2.5 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
                 {signupError}
               </p>
             ) : null}
 
-            <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+            <label className="mt-4 flex cursor-pointer items-start gap-2.5">
               <span
                 className="mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors"
                 style={{
@@ -159,14 +162,16 @@ export function SignupExperience() {
               </span>
             </label>
 
-            <button type="submit" className="m-btn m-btn-primary mt-3.5 w-full">
+            <button type="submit" className="m-btn m-btn-primary mt-4 w-full">
               Continue <ArrowRight className="size-4" />
             </button>
 
-            <Divider />
-
-            <button type="button" onClick={openSso} className="m-btn m-btn-ghost w-full">
-              <KeyRound className="size-[18px]" /> Continue with SSO
+            <button
+              type="button"
+              onClick={openSso}
+              className="m-btn m-btn-ghost mt-2.5 w-full"
+            >
+              <KeyRound className="size-4" /> Continue with SSO
             </button>
 
             <CardSwitch prompt="Already have an account?" href="/login" label="Log in" />

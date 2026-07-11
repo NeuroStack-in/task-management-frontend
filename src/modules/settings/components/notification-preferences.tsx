@@ -135,7 +135,7 @@ export function NotificationPreferences() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Notifications"
+        title="Notification preferences"
         description="Choose what you're notified about and where."
       />
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Check, KeyRound, Loader2, Lock, Mail } from "lucide-react";
+import { ArrowLeft, Check, KeyRound, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import {
@@ -16,7 +16,6 @@ import {
   AuthField,
   AuthFrame,
   CardSwitch,
-  Divider,
   PwToggle,
 } from "./auth-frame";
 import { SsoOptionsModal, SsoPickerModal } from "./auth-modals";
@@ -32,6 +31,7 @@ export function LoginExperience() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +111,11 @@ export function LoginExperience() {
 
   return (
     <>
-    <AuthFrame maxWidth={404}>
+    <AuthFrame
+      headline="Your workforce, in perfect rhythm."
+      copy="Time, attendance, tasks, and productivity — one calm place for the whole team, from first clock-in to payroll-ready timesheets."
+      maxWidth={440}
+    >
       <AuthCard>
         {!reset ? (
           <form onSubmit={onSignin}>
@@ -120,47 +124,67 @@ export function LoginExperience() {
               subtitle="Sign in to pick up where your team left off."
             />
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               <AuthField
                 id="email"
+                label="Email"
                 icon={Mail}
                 type="email"
                 value={email}
                 onChange={setEmail}
-                placeholder="Email"
                 error={!!error}
                 autoComplete="email"
               />
-              <div>
-                <AuthField
-                  id="password"
-                  icon={Lock}
-                  type={showPw ? "text" : "password"}
-                  value={password}
-                  onChange={setPassword}
-                  placeholder="Password"
-                  error={!!error}
-                  autoComplete="current-password"
-                  toggle={<PwToggle show={showPw} onClick={() => setShowPw((s) => !s)} />}
+              <AuthField
+                id="password"
+                label="Password"
+                type={showPw ? "text" : "password"}
+                value={password}
+                onChange={setPassword}
+                error={!!error}
+                autoComplete="current-password"
+                toggle={<PwToggle show={showPw} onClick={() => setShowPw((s) => !s)} />}
+              />
+            </div>
+
+            {/* Remember · Forgot */}
+            <div className="mt-3.5 flex items-center justify-between">
+              <label className="flex cursor-pointer items-center gap-2">
+                <span
+                  className="flex size-[16px] items-center justify-center rounded-[4px] border transition-colors"
+                  style={{
+                    borderColor: remember ? "var(--m-accent)" : "var(--m-border-strong)",
+                    background: remember ? "var(--m-accent)" : "transparent",
+                    color: "var(--m-on-accent)",
+                  }}
+                >
+                  {remember ? <Check className="size-3" /> : null}
+                </span>
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
                 />
-                <div className="mt-1.5 text-right">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReset(true);
-                      setError(null);
-                    }}
-                    className="text-xs font-medium hover:underline"
-                    style={{ color: "var(--m-accent-ink)" }}
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-              </div>
+                <span className="text-xs" style={{ color: "var(--m-muted)" }}>
+                  Remember
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setReset(true);
+                  setError(null);
+                }}
+                className="text-xs font-medium hover:underline"
+                style={{ color: "var(--m-accent-ink)" }}
+              >
+                Forgot password?
+              </button>
             </div>
 
             {error ? (
-              <p className="mt-2 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
+              <p className="mt-2.5 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
                 {error}
               </p>
             ) : null}
@@ -168,7 +192,7 @@ export function LoginExperience() {
             <button
               type="submit"
               disabled={status !== "idle"}
-              className="m-btn m-btn-primary mt-4 w-full"
+              className="m-btn m-btn-primary mt-5 w-full"
               style={status === "success" ? { background: "var(--m-success)" } : undefined}
             >
               {status === "loading" ? (
@@ -184,8 +208,6 @@ export function LoginExperience() {
               )}
             </button>
 
-            <Divider />
-
             <button
               type="button"
               onClick={() => {
@@ -193,34 +215,32 @@ export function LoginExperience() {
                 setSsoOpen(true);
               }}
               disabled={status !== "idle"}
-              className="m-btn m-btn-ghost w-full"
+              className="m-btn m-btn-ghost mt-2.5 w-full"
             >
-              <KeyRound className="size-[18px]" /> Continue with SSO
+              <KeyRound className="size-4" /> Continue with SSO
             </button>
 
-            <div className="mt-4 text-center text-xs" style={{ color: "var(--m-muted)" }}>
-              <p className="mb-2">Demo logins · any password</p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {DEMO_ACCOUNTS.map((a) => (
-                  <button
-                    key={a.email}
-                    type="button"
-                    onClick={() => {
-                      setEmail(a.email);
-                      setPassword(DEMO_PASSWORD);
-                    }}
-                    className="rounded-full border px-3.5 py-1 text-xs font-semibold transition-[filter] hover:brightness-95"
-                    style={{
-                      borderColor: "color-mix(in srgb, var(--m-accent) 30%, transparent)",
-                      background: "var(--m-accent-tint)",
-                      color: "var(--m-accent-ink)",
-                    }}
-                    title={a.hint}
-                  >
-                    {a.label}
-                  </button>
-                ))}
-              </div>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs" style={{ color: "var(--m-faint)" }}>
+              <span>Demo logins · any password</span>
+              {DEMO_ACCOUNTS.map((a) => (
+                <button
+                  key={a.email}
+                  type="button"
+                  onClick={() => {
+                    setEmail(a.email);
+                    setPassword(DEMO_PASSWORD);
+                  }}
+                  className="rounded-[6px] border px-3 py-0.5 text-xs font-semibold transition-[filter] hover:brightness-95"
+                  style={{
+                    borderColor: "color-mix(in srgb, var(--m-accent) 30%, transparent)",
+                    background: "var(--m-accent-tint)",
+                    color: "var(--m-accent-ink)",
+                  }}
+                  title={a.hint}
+                >
+                  {a.label}
+                </button>
+              ))}
             </div>
 
             <CardSwitch prompt="Don't have an account?" href="/register" label="Sign up" />
@@ -241,11 +261,11 @@ export function LoginExperience() {
               <>
                 <AuthField
                   id="reset-email"
+                  label="Email"
                   icon={Mail}
                   type="email"
                   value={email}
                   onChange={setEmail}
-                  placeholder="Email"
                   error={!!error}
                 />
                 {error ? (
@@ -253,7 +273,7 @@ export function LoginExperience() {
                     {error}
                   </p>
                 ) : null}
-                <button type="submit" className="m-btn m-btn-primary mt-4 w-full">
+                <button type="submit" className="m-btn m-btn-primary mt-5 w-full">
                   Send reset link
                 </button>
               </>
