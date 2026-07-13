@@ -12,6 +12,7 @@ import {
   LineChart,
   Mail,
   Bell,
+  BellRing,
   ShieldCheck,
   MonitorSmartphone,
   KeyRound,
@@ -161,12 +162,12 @@ export const ACCOUNT_SECTIONS: NavItem[] = [
     keywords: "name email avatar photo personal account details job title",
   },
   {
-    label: "Notifications",
+    label: "Notification preferences",
     href: "/settings/notifications",
-    icon: Bell,
+    icon: BellRing,
     permission: null,
     description: "Email and in-app notification preferences.",
-    keywords: "alerts email digest preferences push reminders",
+    keywords: "alerts email digest preferences push reminders notifications",
   },
   {
     label: "Appearance",

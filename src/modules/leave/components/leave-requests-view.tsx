@@ -114,7 +114,7 @@ export function LeaveRequestsView() {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                {b.used} used · {b.remaining} remaining
+                {b.used} taken · {b.remaining} available
               </p>
             </Card>
           );

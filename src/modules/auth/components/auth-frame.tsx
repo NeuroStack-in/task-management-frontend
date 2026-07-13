@@ -4,32 +4,42 @@ import Link from "next/link";
 import Image from "next/image";
 import { Eye, EyeOff, type LucideIcon } from "lucide-react";
 import { Logo } from "@/modules/marketing/logo";
+import { cn } from "@/lib/utils";
 
 /**
- * Shared auth chrome: the logindesign01 wave artwork as a full-bleed background
- * with a dark scrim, a compact centered column (logo + tagline), then a
- * glassmorphic card. The surface is locked to the viewport (h-[100dvh] +
- * overflow-hidden) so login / sign-up never scroll; the card is sized to its
- * content and re-themes the m-* tokens to a dark-glass context (see the
- * `.m-authglass` block in marketing.css).
+ * Shared auth chrome — split composition over the login_desktop_bg_2 wave
+ * artwork (with a dark scrim). The logo pins to the page's top-left corner;
+ * the per-page headline + copy sit vertically centred beside the glass form
+ * card, and the whole two-column band is width-capped and centred so the
+ * brand text and card read as one gathered composition (no dead flanks).
+ * On mobile the brand column collapses to a compact logo above the card.
  */
 export function AuthFrame({
   children,
-  maxWidth = 420,
+  headline,
+  copy,
+  brandSide = "left",
+  maxWidth = 440,
 }: {
   children: React.ReactNode;
-  /** Card column width — sized per page to the fields it carries. */
+  /** Brand-column display headline (per page). */
+  headline: string;
+  /** Supporting paragraph under the headline. */
+  copy: string;
+  /** Which side the wordings sit on (login: left · sign-up: right). */
+  brandSide?: "left" | "right";
+  /** Form card width — sized per page to the fields it carries. */
   maxWidth?: number;
 }) {
   return (
     <div
-      className="m-root relative flex h-[100dvh] w-full flex-col items-center justify-center overflow-hidden px-5 py-6"
+      className="m-root relative flex min-h-[100dvh] w-full items-center justify-center overflow-hidden px-5 py-10 sm:px-10"
       style={{ background: "#04100e" }}
     >
       {/* Background artwork + scrim */}
       <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
         <Image
-          src="/logindesign01.png"
+          src="/login_desktop_bg_2.png"
           alt=""
           fill
           priority
@@ -45,36 +55,45 @@ export function AuthFrame({
         />
       </div>
 
-      {/* Teal glow behind the card for depth */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[540px] w-[540px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(20,184,166,0.18), transparent 66%)",
-          filter: "blur(28px)",
-        }}
-      />
+      {/* Centred two-column band: brand block · form card */}
+      <div className="relative z-10 grid w-full max-w-5xl items-center gap-10 lg:grid-cols-2 lg:gap-14">
+        {/* ---- Brand column (desktop): logo leads, wordings follow ---- */}
+        <aside
+          className={cn(
+            "m-enter-up hidden max-w-md text-white lg:block",
+            brandSide === "right" && "lg:order-2 lg:ml-auto",
+          )}
+          style={{ animationDelay: "130ms" }}
+        >
+          <Link href="/" className="inline-flex">
+            <Logo className="text-white" size="xl" />
+          </Link>
+          <h2 className="m-display mt-7 text-2xl font-semibold leading-snug xl:text-[1.75rem]">
+            {headline}
+          </h2>
+          <p className="mt-3 text-[0.95rem] leading-relaxed text-white/75">
+            {copy}
+          </p>
+        </aside>
 
-      {/* Centered column */}
-      <div
-        className="relative z-10 flex w-full flex-col items-center"
-        style={{ maxWidth }}
-      >
-        <Link
-          href="/"
-          className="m-enter-up inline-flex"
-          style={{ animationDelay: "40ms" }}
+        {/* ---- Form column ---- */}
+        <main
+          className={cn(
+            "flex flex-col items-center gap-6",
+            brandSide === "right" && "lg:order-1",
+          )}
         >
-          <Logo className="text-white" />
-        </Link>
-        <p
-          className="m-enter-up mt-2 text-center text-sm text-white/55"
-          style={{ animationDelay: "90ms" }}
-        >
-          Your workforce, in perfect rhythm.
-        </p>
-        <div className="mt-5 w-full">{children}</div>
+          {/* Compact brand on mobile, where the panel is hidden */}
+          <Link href="/" className="inline-flex lg:hidden">
+            <Logo className="text-white" />
+          </Link>
+          <div
+            className={cn("w-full", brandSide === "right" ? "lg:mr-auto" : "lg:ml-auto")}
+            style={{ maxWidth }}
+          >
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );
@@ -85,7 +104,7 @@ export function AuthCard({ children }: { children: React.ReactNode }) {
   return <div className="m-authglass m-auth-in w-full">{children}</div>;
 }
 
-/** Title + subtitle header — no icon chip (reference-clean). */
+/** Left-aligned title + subtitle header. */
 export function AuthCardHeader({
   title,
   subtitle,
@@ -94,9 +113,9 @@ export function AuthCardHeader({
   subtitle: string;
 }) {
   return (
-    <div className="mb-5 text-center">
+    <div className="mb-6">
       <h1
-        className="m-display text-[1.5rem] font-semibold tracking-tight"
+        className="m-display text-2xl font-semibold tracking-tight"
         style={{ color: "var(--m-text)" }}
       >
         {title}
@@ -108,53 +127,64 @@ export function AuthCardHeader({
   );
 }
 
-/** Icon-leading input (mail/lock/etc. inside the field).
- *  Padding is set inline so it can't be clobbered by the (unlayered) global
- *  `.m-input` rule — that override was what made the icon overlap the text. */
+/** Labelled input with a trailing adornment: the password toggle when given,
+ *  otherwise a muted icon. Padding is inline so the (unlayered) global
+ *  `.m-input` rule can't clobber it. */
 export function AuthField({
   id,
+  label,
   icon: Icon,
   type,
   value,
   onChange,
-  placeholder,
   error,
   autoComplete,
   toggle,
 }: {
   id: string;
-  icon: LucideIcon;
+  label: string;
+  icon?: LucideIcon;
   type: string;
   value: string;
   onChange: (v: string) => void;
-  placeholder: string;
   error?: boolean | string;
   autoComplete?: string;
   toggle?: React.ReactNode;
 }) {
   return (
-    <div className="relative">
-      <Icon
-        className="pointer-events-none absolute left-4 top-1/2 size-[18px] -translate-y-1/2"
+    <div>
+      <label
+        htmlFor={id}
+        className="mb-1.5 block text-xs font-medium"
         style={{ color: "var(--m-muted)" }}
-      />
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        aria-invalid={!!error}
-        className={`m-input ${error ? "m-error" : ""}`}
-        style={{
-          paddingLeft: "2.9rem",
-          paddingRight: toggle ? "2.75rem" : "0.9rem",
-        }}
-      />
-      {toggle ? (
-        <span className="absolute right-2 top-1/2 -translate-y-1/2">{toggle}</span>
-      ) : null}
+      >
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={autoComplete}
+          aria-invalid={!!error}
+          className={`m-input ${error ? "m-error" : ""}`}
+          style={{
+            paddingLeft: "1rem",
+            paddingRight: toggle || Icon ? "2.75rem" : "1rem",
+          }}
+        />
+        {toggle ? (
+          <span className="absolute right-2 top-1/2 -translate-y-1/2">
+            {toggle}
+          </span>
+        ) : Icon ? (
+          <Icon
+            className="pointer-events-none absolute right-3.5 top-1/2 size-[18px] -translate-y-1/2"
+            style={{ color: "var(--m-faint)" }}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -173,20 +203,7 @@ export function PwToggle({ show, onClick }: { show: boolean; onClick: () => void
   );
 }
 
-/** Dotted "or" divider. */
-export function Divider() {
-  return (
-    <div className="my-4 flex items-center gap-3">
-      <span className="flex-1" style={{ borderTop: "1.5px dotted var(--m-border-strong)" }} />
-      <span className="text-xs" style={{ color: "var(--m-muted)" }}>
-        or
-      </span>
-      <span className="flex-1" style={{ borderTop: "1.5px dotted var(--m-border-strong)" }} />
-    </div>
-  );
-}
-
-/** Cross-link inside the card. */
+/** In-card switch — a single line: prompt + inline link. */
 export function CardSwitch({
   prompt,
   href,
@@ -199,7 +216,11 @@ export function CardSwitch({
   return (
     <p className="mt-5 text-center text-sm" style={{ color: "var(--m-muted)" }}>
       {prompt}{" "}
-      <Link href={href} className="font-semibold hover:underline" style={{ color: "var(--m-text)" }}>
+      <Link
+        href={href}
+        className="font-semibold hover:underline"
+        style={{ color: "var(--m-accent-ink)" }}
+      >
         {label}
       </Link>
     </p>

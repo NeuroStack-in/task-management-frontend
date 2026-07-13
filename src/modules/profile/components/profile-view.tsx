@@ -319,10 +319,11 @@ function RichProfile({
               <Sparkline
                 data={prodTrend}
                 area
+                areaOpacity={0.3}
                 showDot
-                width={92}
-                height={48}
-                strokeWidth={2}
+                width={104}
+                height={56}
+                strokeWidth={2.5}
                 className="text-white"
               />
             </div>

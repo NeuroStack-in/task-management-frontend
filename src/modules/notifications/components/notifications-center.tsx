@@ -180,29 +180,31 @@ export function NotificationsCenter() {
                         <p className="mt-0.5 text-sm text-muted-foreground">
                           {n.message}
                         </p>
-                        <div className="mt-1.5 flex items-center gap-3">
-                          <button
-                            type="button"
+                        <div className="mt-2 flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2.5 text-xs"
                             onClick={(e) => {
                               e.stopPropagation();
                               markRead(n.id);
                               setSelected(n);
                             }}
-                            className="text-xs font-medium text-primary hover:underline"
                           >
                             View
-                          </button>
+                          </Button>
                           {!n.read ? (
-                            <button
-                              type="button"
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2.5 text-xs text-muted-foreground"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 markRead(n.id);
                               }}
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                             >
                               <Check className="size-3.5" /> Mark read
-                            </button>
+                            </Button>
                           ) : null}
                         </div>
                       </div>

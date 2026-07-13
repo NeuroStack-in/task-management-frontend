@@ -254,7 +254,7 @@
   --m-danger: #fca5a5; /* soft red — legible on dark */
 
   position: relative;
-  border-radius: 22px;
+  border-radius: 6px;
   padding: 1.7rem 1.55rem;
   background:
     linear-gradient(
@@ -266,53 +266,46 @@
     rgba(6, 25, 22, 0.44);
   backdrop-filter: blur(28px) saturate(135%);
   -webkit-backdrop-filter: blur(28px) saturate(135%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow:
-    0 42px 92px -42px rgba(0, 0, 0, 0.78),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  /* Flat matte card: a minimal low-contrast hairline and a soft dark drop
+     shadow — no sheen ring, no inset edge highlight, no bright border line. */
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 42px 92px -42px rgba(0, 0, 0, 0.78);
 }
 @media (min-width: 640px) {
   .m-authglass {
     padding: 2rem 1.85rem;
   }
 }
-/* Gradient sheen along the top edge (1px ring highlight) */
-.m-authglass::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    150deg,
-    rgba(255, 255, 255, 0.5),
-    rgba(255, 255, 255, 0) 38%
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
 
 /* Inputs inside the glass: translucent, frosted, room for the leading icon */
 .m-authglass .m-input {
-  height: 3rem;
-  border-radius: 0.85rem;
+  /* Compact, sharp-cornered fields — denser SaaS proportions than the
+     marketing surfaces (which keep the 3rem pill inputs). */
+  height: 2.5rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.16);
   color: var(--m-text);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
+/* Buttons inside the card match the fields: 40px tall, crisp 6px corners. */
+.m-authglass .m-btn {
+  height: 2.5rem;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
 .m-authglass .m-input::placeholder {
   color: var(--m-faint);
 }
 .m-authglass .m-input:focus {
+  /* Focus = accent border only; no glow ring (overrides the base .m-input ring). */
   border-color: var(--m-accent);
   background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--m-accent) 30%, transparent);
+  box-shadow: none;
 }
 .m-authglass .m-input.m-error {
   border-color: var(--m-danger);
@@ -335,22 +328,17 @@
   -webkit-text-fill-color: var(--m-text);
   caret-color: var(--m-text);
   border-color: var(--m-accent);
-  -webkit-box-shadow:
-    0 0 0 1000px #1d3833 inset,
-    0 0 0 3px color-mix(in srgb, var(--m-accent) 30%, transparent);
-  box-shadow:
-    0 0 0 1000px #1d3833 inset,
-    0 0 0 3px color-mix(in srgb, var(--m-accent) 30%, transparent);
+  -webkit-box-shadow: 0 0 0 1000px #1d3833 inset;
+  box-shadow: 0 0 0 1000px #1d3833 inset;
 }
 
-/* Primary button — teal gradient with a soft glow on dark glass */
+/* Primary button — flat solid teal (no gradient, no glow) on dark glass */
 .m-authglass .m-btn-primary {
-  background: linear-gradient(180deg, #16b9a6, #0c7f72);
+  background: #0f9d8c;
   color: #ffffff;
-  box-shadow: 0 12px 28px -12px rgba(20, 184, 166, 0.7);
 }
 .m-authglass .m-btn-primary:hover {
-  background: linear-gradient(180deg, #1ac4b0, #0d8a7c);
+  background: #0d8a7c;
 }
 
 /* Ghost / SSO button — frosted glass */

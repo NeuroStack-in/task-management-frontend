@@ -2,15 +2,21 @@
 export function Logo({
   className = "",
   showText = true,
+  size = "md",
 }: {
   className?: string;
   showText?: boolean;
+  /** "md" for nav/footer chrome; "lg"/"xl" for brand moments (e.g. auth pages). */
+  size?: "md" | "lg" | "xl";
 }) {
+  const icon = size === "xl" ? 56 : size === "lg" ? 44 : 30;
   return (
-    <span className={`inline-flex items-center gap-2.5 ${className}`}>
+    <span
+      className={`inline-flex items-center ${size === "md" ? "gap-2.5" : "gap-3"} ${className}`}
+    >
       <svg
-        width="30"
-        height="30"
+        width={icon}
+        height={icon}
         viewBox="0 0 30 30"
         fill="none"
         aria-hidden="true"
@@ -25,7 +31,15 @@ export function Logo({
         />
       </svg>
       {showText ? (
-        <span className="m-display text-[1.05rem] font-semibold tracking-tight">
+        <span
+          className={`m-display font-semibold tracking-tight ${
+            size === "xl"
+              ? "text-[2.1rem]"
+              : size === "lg"
+                ? "text-[1.65rem]"
+                : "text-[1.05rem]"
+          }`}
+        >
           WorkPulse
         </span>
       ) : null}
