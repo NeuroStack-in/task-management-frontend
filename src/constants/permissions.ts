@@ -172,14 +172,6 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     ],
   },
   {
-    module: "remote-support",
-    label: "Remote Support",
-    permissions: [
-      p("remote-support", "view", "View Remote Support"),
-      p("remote-support", "approve", "Approve Sessions"),
-    ],
-  },
-  {
     module: "agents",
     label: "Device agents",
     permissions: [

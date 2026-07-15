@@ -90,16 +90,6 @@ function StepContent({ index }: { index: number }) {
           </Button>
         </div>
       );
-    case "roles":
-      return (
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <CheckRow label="Admin" defaultOn />
-          <CheckRow label="Manager" defaultOn />
-          <CheckRow label="HR" />
-          <CheckRow label="Finance" />
-          <CheckRow label="Employee" defaultOn />
-        </div>
-      );
     case "tracking":
       return (
         <div className="space-y-3">

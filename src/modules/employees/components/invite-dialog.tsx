@@ -57,10 +57,11 @@ export function InviteDialog({
   onOpenChange: (open: boolean) => void;
   departments: string[];
 }) {
+  // No empId here: it's server-generated on invite acceptance — an org-configurable
+  // prefix plus an atomic per-tenant sequence (COUNTER#emp_id) → "NS-0042". Never typed.
   const [form, setForm] = useState({
     name: "",
     email: "",
-    empId: "",
     role: "Member",
     department: "",
   });
@@ -122,9 +123,6 @@ export function InviteDialog({
               onChange={(e) => set("email")(e.target.value)}
               placeholder="jordan@acme.test"
             />
-          </Field>
-          <Field label="Employee ID">
-            <Input value={form.empId} onChange={(e) => set("empId")(e.target.value)} placeholder="EMP-2048" />
           </Field>
           <Field label="Role">
             <Select value={form.role} onValueChange={(v) => set("role")(v as string)}>

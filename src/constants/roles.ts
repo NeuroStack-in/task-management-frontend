@@ -56,7 +56,6 @@ export const SYSTEM_ROLES: Role[] = [
       "integrations:view",
       "integrations:manage",
       "billing:view",
-      "remote-support:view",
       "agents:view",
       "agents:manage",
       "roles:view",

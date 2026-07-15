@@ -11,7 +11,6 @@ export type FeatureKey =
   | "integrations"
   | "communication"
   | "approvals"
-  | "remote-support"
   | "desktop-agents"
 
 const DEFAULTS: Record<FeatureKey, boolean> = {
@@ -24,7 +23,6 @@ const DEFAULTS: Record<FeatureKey, boolean> = {
   integrations: true,
   communication: true,
   approvals: true,
-  "remote-support": false,
   "desktop-agents": false,
 }
 

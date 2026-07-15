@@ -8,7 +8,6 @@ import {
   CheckCheck,
   CreditCard,
   FileBarChart,
-  Headset,
   Lock,
   Mail,
   MonitorSmartphone,
@@ -102,14 +101,6 @@ const FEATURE_LIST: FeatureDef[] = [
     label: "Approvals",
     description:
       "Time-off requests, timesheet approvals, and custom approval workflows.",
-  },
-  {
-    key: "remote-support",
-    icon: Headset,
-    label: "Remote support",
-    description:
-      "Approval-gated remote sessions for IT to assist employees securely.",
-    beta: true,
   },
   {
     key: "desktop-agents",
