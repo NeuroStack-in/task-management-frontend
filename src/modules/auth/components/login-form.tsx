@@ -12,7 +12,6 @@ import { useAuthStore } from "@/stores/auth.store";
 import {
   AuthError,
   DEMO_ACCOUNTS,
-  DEMO_PASSWORD,
 } from "@/modules/auth/services/auth.service";
 import { SsoButtons } from "./sso-buttons";
 import {
@@ -67,9 +66,9 @@ export function LoginForm() {
     }
   };
 
+  // Prefills the email only — auth is real Cognito now, so the actual password is required.
   const fillDemo = (email: string) => {
     setValue("email", email);
-    setValue("password", DEMO_PASSWORD);
   };
 
   return (
@@ -143,8 +142,10 @@ export function LoginForm() {
           </label>
 
           <div className="rounded-xl border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">Demo mode</p>
-            <p className="mt-0.5">Pick a login — any password works.</p>
+            <p className="font-medium text-foreground">Seeded account</p>
+            <p className="mt-0.5">
+              Fills the email — enter the account&apos;s real password.
+            </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {DEMO_ACCOUNTS.map((acct) => (
                 <button

@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Check, KeyRound, Lock, Mail, UserRound } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
-import { DEMO_EMAIL } from "@/modules/auth/services/auth.service";
 import {
   OrgSetupModal,
   SsoOptionsModal,
@@ -26,7 +25,6 @@ type AccountErrors = Partial<
 export function SignupExperience() {
   const router = useRouter();
   const params = useSearchParams();
-  const login = useAuthStore((s) => s.login);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const hydrated = useAuthStore((s) => s.hydrated);
 
@@ -38,15 +36,10 @@ export function SignupExperience() {
   const [sso, setSso] = useState<"google" | "microsoft" | null>(null);
   const [orgOpen, setOrgOpen] = useState(false);
 
-  // Set once we hand off to /onboarding, so the "already authenticated"
-  // redirect below doesn't race us straight to /dashboard after login.
-  const finishingRef = useRef(false);
-
   const setA = (k: keyof typeof acct) => (v: string) =>
     setAcct((s) => ({ ...s, [k]: v }));
 
   useEffect(() => {
-    if (finishingRef.current) return;
     if (hydrated && isAuthenticated) {
       const from = params.get("from");
       router.replace(from && from.startsWith("/") ? from : "/dashboard");
@@ -83,10 +76,13 @@ export function SignupExperience() {
 
   const completeSetup = () => {
     setOrgOpen(false);
-    finishingRef.current = true;
-    // New members run through workspace onboarding (invite team, roles,
-    // tracking, dashboard widgets) before they land on the dashboard.
-    void login(DEMO_EMAIL, "demo1234").finally(() => router.replace("/onboarding"));
+    // Sign-up can't complete yet: auth is a real Cognito exchange now (no faking a session), and
+    // the backend's org-creation flow (identity `create_org`) isn't built. Say so rather than
+    // dropping an unauthenticated user on /onboarding.
+    setErr({
+      email:
+        "Sign-up isn't available yet — sign in with an existing account instead.",
+    });
   };
 
   const signupError = Object.values(err).filter(Boolean)[0];

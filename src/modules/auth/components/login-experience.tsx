@@ -5,11 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, KeyRound, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
-import {
-  AuthError,
-  DEMO_ACCOUNTS,
-  DEMO_PASSWORD,
-} from "@/modules/auth/services/auth.service";
+import { AuthError, DEMO_ACCOUNTS } from "@/modules/auth/services/auth.service";
 import {
   AuthCard,
   AuthCardHeader,
@@ -78,27 +74,13 @@ export function LoginExperience() {
     setSent(true);
   };
 
-  // SSO is simulated: any provider signs in as the demo owner and lands on the
-  // dashboard, mirroring the sign-up flow's SSO handling.
-  const ssoSignIn = async (providerLabel: string) => {
+  // SSO can no longer be faked: auth is a real Cognito SRP exchange, and the pool has no federated
+  // identity providers (enterprise SSO is cut from scope — LLD "Cut from scope"). Say so plainly
+  // instead of signing the user in as somebody else.
+  const ssoSignIn = (providerLabel: string) => {
     setSso(null);
-    setError(null);
-    setStatus("loading");
-    try {
-      await login(DEMO_ACCOUNTS[0].email, DEMO_PASSWORD);
-      setStatus("success");
-      toast.success(`Signed in with ${providerLabel}`, {
-        description: "Simulated SSO — demo only.",
-      });
-      const from = params.get("from");
-      setTimeout(
-        () => router.replace(from && from.startsWith("/") ? from : "/dashboard"),
-        650,
-      );
-    } catch {
-      setStatus("idle");
-      setError("SSO sign-in failed. Try a demo login below.");
-    }
+    setStatus("idle");
+    setError(`${providerLabel} isn't available — sign in with your email and password.`);
   };
 
   const onSsoPick = (provider: "google" | "microsoft" | "saml") => {
@@ -221,15 +203,12 @@ export function LoginExperience() {
             </button>
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs" style={{ color: "var(--m-faint)" }}>
-              <span>Demo logins · any password</span>
+              <span>Seeded account · real password</span>
               {DEMO_ACCOUNTS.map((a) => (
                 <button
                   key={a.email}
                   type="button"
-                  onClick={() => {
-                    setEmail(a.email);
-                    setPassword(DEMO_PASSWORD);
-                  }}
+                  onClick={() => setEmail(a.email)}
                   className="rounded-[6px] border px-3 py-0.5 text-xs font-semibold transition-[filter] hover:brightness-95"
                   style={{
                     borderColor: "color-mix(in srgb, var(--m-accent) 30%, transparent)",

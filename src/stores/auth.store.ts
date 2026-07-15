@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AuthSession, User } from "@/types/user";
-import { login as loginService } from "@/modules/auth/services/auth.service";
+import {
+  login as loginService,
+  logout as logoutService,
+} from "@/modules/auth/services/auth.service";
 
 interface AuthState {
   session: AuthSession | null;
@@ -29,7 +32,11 @@ export const useAuthStore = create<AuthState>()(
         set({ session, user, isAuthenticated: true });
       },
 
-      logout: () => set({ session: null, user: null, isAuthenticated: false }),
+      logout: () => {
+        // Clear the Cognito session (its tokens live in localStorage) as well as our own state.
+        logoutService();
+        set({ session: null, user: null, isAuthenticated: false });
+      },
 
       updateUser: (patch) =>
         set((s) => (s.user ? { user: { ...s.user, ...patch } } : s)),

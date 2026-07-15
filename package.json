@@ -21,6 +21,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^3.9.1",
     "@tanstack/react-table": "^8.20.6",
+    "amazon-cognito-identity-js": "^6.3.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "html2canvas": "^1.4.1",
