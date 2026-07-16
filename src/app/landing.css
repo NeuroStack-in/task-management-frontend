@@ -1,0 +1,397 @@
+/* ============================================================= *
+ *  WorkPulse — Landing page design system (self-contained)       *
+ *  Scope: everything under `.wp`. Warm, light, editorial.        *
+ *  Deliberately does NOT use marketing.css (teal) — the landing  *
+ *  owns its own palette so it stays airy/warm and never green.   *
+ *  Landing-only: imported by app/page.tsx alone.                 *
+ * ============================================================= */
+
+.wp {
+  /* --- Canvas & ink (warm) --- */
+  --wp-bg: #f7f2ea; /* warm cream canvas */
+  --wp-bg-2: #f2ebe0; /* deeper sand for banded sections */
+  --wp-surface: #fffdfa; /* warm white card */
+  --wp-surface-2: #f4ede2; /* inset surface */
+  --wp-ink: #211a15; /* warm near-black */
+  --wp-ink-2: #4a3f37; /* softer heading ink */
+  --wp-muted: #766a5f; /* warm taupe body */
+  --wp-faint: #a89b8c; /* captions */
+
+  /* --- Accent (teal) + warm secondary --- */
+  --wp-accent: #0f766e; /* teal */
+  --wp-accent-ink: #0b5d54; /* legible teal as text on cream */
+  --wp-accent-soft: #dcebe7; /* teal tint surface */
+  --wp-accent-glow: #7fc6bb; /* light teal wash */
+  --wp-gold: #c98a2b; /* warm amber for tiny highlights */
+  --wp-plum: #8a5a4a; /* muted warm brown for a 2nd data series */
+
+  /* --- Lines & status --- */
+  --wp-border: #ece2d3;
+  --wp-border-strong: #ddceb9;
+  --wp-success: #3f7d54;
+  --wp-warning: #b9791f;
+  --wp-danger: #c14a35;
+
+  /* --- Motion --- */
+  --wp-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --wp-shadow-sm: 0 1px 2px rgb(56 40 24 / 0.05), 0 6px 16px -8px rgb(56 40 24 / 0.1);
+  --wp-shadow: 0 30px 60px -32px rgb(72 46 22 / 0.28);
+
+  color: var(--wp-ink);
+  background: var(--wp-bg);
+  font-family: var(--font-body, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* --- Editorial display type (serif, scoped Fraunces via next/font) --- */
+.wp-display {
+  font-family: var(--wp-display, "Fraunces", Georgia, "Times New Roman", serif);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+}
+.wp-serif-italic {
+  font-family: var(--wp-display, "Fraunces", Georgia, serif);
+  font-style: italic;
+  font-weight: 500;
+}
+.wp-mono {
+  font-family: var(--font-mono-face, ui-monospace, "JetBrains Mono", monospace);
+  font-feature-settings: "tnum" 1;
+}
+/* Bold sans display — hero title only (Space Grotesk, scoped via next/font) */
+.wp-hero-title {
+  font-family: var(--wp-sans-display, "Space Grotesk", ui-sans-serif, system-ui, sans-serif);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.04;
+  /* soft dark halo lifts the type off the busy clock backdrop (clock stays fully visible) */
+  text-shadow:
+    0 1px 3px rgb(8 20 27 / 0.55),
+    0 8px 40px rgb(8 20 27 / 0.5);
+}
+.wp-hero-title .wp-serif-italic {
+  /* the emphasised line sits over the dial centre — give it presence + a stronger halo */
+  text-shadow:
+    0 1px 3px rgb(8 20 27 / 0.6),
+    0 6px 26px rgb(8 20 27 / 0.7);
+}
+.wp-kicker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--wp-accent-ink);
+}
+
+/* --- Buttons --- */
+.wp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.8rem 1.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform 0.18s var(--wp-ease),
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+}
+.wp-btn:active {
+  transform: translateY(1px);
+}
+.wp-btn-primary {
+  background: var(--wp-accent);
+  color: #fff;
+  box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--wp-accent) 70%, transparent);
+}
+.wp-btn-primary:hover {
+  background: var(--wp-accent-ink);
+  transform: translateY(-1px);
+}
+.wp-btn-ghost {
+  background: transparent;
+  color: var(--wp-ink);
+  border: 1px solid var(--wp-border-strong);
+}
+.wp-btn-ghost:hover {
+  background: var(--wp-surface);
+  border-color: var(--wp-ink);
+}
+.wp-btn:focus-visible,
+.wp a:focus-visible,
+.wp button:focus-visible {
+  outline: 2px solid var(--wp-accent);
+  outline-offset: 3px;
+}
+
+/* --- Cards & chips --- */
+.wp-card {
+  background: var(--wp-surface);
+  border: 1px solid var(--wp-border);
+  border-radius: 20px;
+  box-shadow: var(--wp-shadow-sm);
+}
+.wp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--wp-border-strong);
+  background: var(--wp-surface);
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--wp-muted);
+}
+
+/* --- Skip link --- */
+.wp-skip {
+  position: absolute;
+  left: 1rem;
+  top: -3.5rem;
+  z-index: 100;
+  border-radius: 999px;
+  background: var(--wp-accent);
+  color: #fff;
+  padding: 0.6rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: top 0.18s ease;
+}
+.wp-skip:focus {
+  top: 1rem;
+  outline: 2px solid var(--wp-ink);
+  outline-offset: 2px;
+}
+
+/* --- Anchor targets clear the fixed nav --- */
+.wp section[id],
+.wp [data-anchor] {
+  scroll-margin-top: 5.5rem;
+}
+
+/* ============================================================= *
+ *  Motion (rich, scroll-driven) — all reduced-motion gated       *
+ * ============================================================= */
+
+/* Scroll reveal */
+.wp-reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition:
+    opacity 0.7s var(--wp-ease),
+    transform 0.7s var(--wp-ease);
+  transition-delay: var(--d, 0ms);
+  will-change: opacity, transform;
+}
+.wp-reveal[data-variant="left"] {
+  transform: translateX(-32px);
+}
+.wp-reveal[data-variant="right"] {
+  transform: translateX(32px);
+}
+.wp-reveal[data-variant="scale"] {
+  transform: scale(0.96);
+}
+.wp-reveal.wp-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Hero word stagger */
+@keyframes wp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5em);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.wp-word {
+  display: inline-block;
+  /* preserve the trailing space inside the inline-block so words don't jam together */
+  white-space: pre;
+  opacity: 0;
+  animation: wp-rise 0.85s var(--wp-ease) forwards;
+  animation-delay: var(--d, 0ms);
+}
+
+/* Marquee */
+@keyframes wp-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+.wp-marquee {
+  display: flex;
+  width: max-content;
+  animation: wp-marquee 34s linear infinite;
+}
+.wp-marquee-mask {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+/* Pulse line draw */
+.wp-draw {
+  stroke-dasharray: var(--len, 800);
+  stroke-dashoffset: var(--len, 800);
+}
+.wp-in .wp-draw,
+.wp-draw.wp-in {
+  animation: wp-draw 1.8s var(--wp-ease) forwards;
+  animation-delay: var(--d, 0ms);
+}
+@keyframes wp-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Soft float for hero accent shapes */
+@keyframes wp-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+.wp-float {
+  animation: wp-float 7s ease-in-out infinite;
+}
+
+/* Role tab panels */
+.wp-panel {
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.4s var(--wp-ease),
+    transform 0.4s var(--wp-ease);
+}
+.wp-panel[data-active="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+.wp-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Dark hero (Infiniqon-style network backdrop) ---- */
+.wp-hero-dark {
+  position: relative;
+  overflow: hidden;
+  color: #eaf1f2;
+  background:
+    radial-gradient(115% 80% at 50% -10%, #17313f 0%, #102530 42%, #0b1a22 100%);
+}
+.wp-hero-dark .wp-hero-muted {
+  color: rgb(224 236 238 / 0.62);
+}
+/* concentric expanding rings */
+@keyframes wp-ring {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+.wp-ring {
+  transform-origin: center;
+  animation: wp-ring 7s ease-out infinite;
+}
+/* drifting particles */
+@keyframes wp-twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+.wp-star {
+  animation: wp-twinkle 4s ease-in-out infinite;
+}
+/* clock backdrop hands */
+.wp-clock-hand {
+  transform-box: view-box;
+  transform-origin: 100px 100px;
+}
+.wp-clock-second {
+  animation: wp-spin 60s linear infinite;
+}
+@keyframes wp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- Nav dropdown panel ---- */
+.wp-nav-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 15rem;
+  background: var(--wp-surface);
+  border: 1px solid var(--wp-border);
+  border-radius: 16px;
+  box-shadow: var(--wp-shadow);
+  padding: 0.5rem;
+  z-index: 60;
+}
+.wp-nav-item {
+  display: block;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--wp-ink-2);
+  transition: background 0.15s ease;
+}
+.wp-nav-item:hover {
+  background: var(--wp-surface-2);
+  color: var(--wp-accent-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wp-ring,
+  .wp-star {
+    animation: none !important;
+  }
+}
+
+/* Reduced motion — kill everything */
+@media (prefers-reduced-motion: reduce) {
+  .wp * {
+    animation: none !important;
+  }
+  .wp-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .wp-word {
+    opacity: 1 !important;
+  }
+  .wp-draw {
+    stroke-dashoffset: 0 !important;
+  }
+  .wp-panel {
+    transition: none !important;
+  }
+}
