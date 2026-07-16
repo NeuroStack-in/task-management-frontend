@@ -13,7 +13,6 @@ import {
   Lock,
   Monitor,
   Plus,
-  QrCode,
   RefreshCw,
   ShieldCheck,
   Smartphone,
@@ -22,7 +21,6 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { toast } from "sonner"
-import { QRCodeSVG } from "qrcode.react"
 import {
   Card,
   CardAction,
@@ -56,10 +54,9 @@ import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useAuthStore } from "@/stores/auth.store"
+import { users } from "@/lib/data"
 import { isIpOrCidr } from "@/lib/validation"
 import {
-  MFA_GRACE_OPTIONS,
-  MFA_METHODS,
   PASSWORD_ROTATION_OPTIONS,
   SECURITY_DEFAULTS,
   SECURITY_EVENTS,
@@ -117,24 +114,10 @@ const SESSIONS: SessionRow[] = [
   },
 ]
 
-// ── Personal MFA enrollment (frontend-only stand-ins) ─────────────────────────
-const TOTP_SECRET = "JBSW Y3DP EHPK 3PXP"
-const RECOVERY_CODES = [
-  "4F2K-9QX7",
-  "B8M3-7TLP",
-  "Z1C6-2WD9",
-  "9HRA-5NK2",
-  "Q3VE-8YB4",
-  "L7XP-1MD6",
-  "T2KF-6RZ8",
-  "C9WN-3JQ5",
-]
-
 // ── Draft / saved model ───────────────────────────────────────────────────────
 
 interface SecurityDraft {
   policies: SecurityPolicies
-  methods: Record<string, boolean>
 }
 
 const INITIAL: SecurityDraft = {
@@ -142,13 +125,11 @@ const INITIAL: SecurityDraft = {
     ...SECURITY_DEFAULTS,
     ipAllowlist: [...SECURITY_DEFAULTS.ipAllowlist],
   },
-  methods: Object.fromEntries(MFA_METHODS.map((m) => [m.key, m.enabled])),
 }
 
 function cloneDraft(d: SecurityDraft): SecurityDraft {
   return {
     policies: { ...d.policies, ipAllowlist: [...d.policies.ipAllowlist] },
-    methods: { ...d.methods },
   }
 }
 
@@ -214,6 +195,73 @@ function ReadOnlyField({
         >
           <Copy className="size-3.5" />
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ── MFA posture ───────────────────────────────────────────────────────────────
+
+/**
+ * A member's MFA state, mirroring LLD §2. Read-only by design: MFA is a platform
+ * invariant, so there is nothing here for a user or an org to change.
+ *
+ * `sso` exists because Cognito **cannot** force MFA on a federated identity — those
+ * users delegate the check to their IdP. That's an accepted stance, not a gap, so it
+ * reads as covered rather than as a warning.
+ */
+type MfaPosture = "totp" | "sso" | "none"
+
+const MFA_POSTURE_META: Record<
+  MfaPosture,
+  { icon: typeof ShieldCheck; tone: string; title: string; detail: string }
+> = {
+  totp: {
+    icon: ShieldCheck,
+    tone: "success",
+    title: "Protected by an authenticator app",
+    detail:
+      "Set up when you first signed in. Lost your phone? An admin can reset your device.",
+  },
+  sso: {
+    icon: ShieldCheck,
+    tone: "success",
+    title: "Delegated to your identity provider",
+    detail:
+      "You sign in through SSO, so your provider performs the check. WorkPulse can't add a second factor on top of it.",
+  },
+  none: {
+    icon: AlertTriangle,
+    tone: "warning",
+    title: "Not enrolled",
+    detail:
+      "You'll be prompted to set up an authenticator the next time you sign in.",
+  },
+}
+
+function MfaPostureRow({ posture }: { posture: MfaPosture }) {
+  const meta = MFA_POSTURE_META[posture]
+  const Icon = meta.icon
+  return (
+    <div
+      className={cn(
+        "flex gap-3 rounded-md px-4 py-3",
+        meta.tone === "success" ? "bg-success/10" : "bg-warning/10",
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-full",
+          meta.tone === "success"
+            ? "bg-success/15 text-success"
+            : "bg-warning/15 text-warning",
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{meta.title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{meta.detail}</p>
       </div>
     </div>
   )
@@ -303,39 +351,24 @@ export function SecurityCenter() {
   const userEmail = useAuthStore((s) => s.user?.email)
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" })
 
-  // Personal MFA enrollment (your own authenticator), separate from the org policy.
-  // Starts not-enrolled so first-time setup is discoverable; once enrolled, the
-  // banner exposes "Reconfigure" to re-run setup without turning MFA off first.
-  const [mfaEnabled, setMfaEnabled] = useState(false)
-  const [setupOpen, setSetupOpen] = useState(false)
-  const [otp, setOtp] = useState("")
-  const [codesOpen, setCodesOpen] = useState(false)
-  // The QR encodes the secret, so keep it hidden until the user reveals it
-  // (avoids exposure in screen-shares / screenshots), mirroring AWS MFA setup.
-  const [qrShown, setQrShown] = useState(false)
+  // Your MFA posture — read-only. Enrollment happens in Cognito's MFA_SETUP challenge at
+  // sign-in (LLD §2), not here, so there is no setup flow on this page and nothing to
+  // toggle: MFA is a platform invariant, not an org or personal preference.
+  // Server-sourced once `/v1/me` carries it; hardcoded to the common case meanwhile.
+  const mfaPosture: MfaPosture = "totp"
 
-  // otpauth URI for authenticator apps (Google Authenticator, Authy, …). Built
-  // from the static demo secret + the signed-in email; deterministic (no
-  // Date.now/random). The secret is stored with spaces for readability — strip
-  // them for the URI.
-  const account = userEmail ?? "member@workpulse.app"
-  const otpauthUri =
-    `otpauth://totp/WorkPulse:${encodeURIComponent(account)}` +
-    `?secret=${TOTP_SECRET.replace(/\s/g, "")}` +
-    `&issuer=WorkPulse&algorithm=SHA1&digits=6&period=30`
+  // The lost-phone flow — the single MFA action an admin has (LLD §2):
+  // `POST /v1/users/{id}/mfa/reset`, perm `security:manage`.
+  const [resetMfaOpen, setResetMfaOpen] = useState(false)
+  const [resetMfaUserId, setResetMfaUserId] = useState("")
 
-  function verifyMfa() {
-    if (otp.length !== 6) return
-    setMfaEnabled(true)
-    setSetupOpen(false)
-    setOtp("")
-    setCodesOpen(true)
-    toast.success("Multi-factor authentication enabled")
-  }
-
-  function disableMfa() {
-    setMfaEnabled(false)
-    toast.success("Multi-factor authentication turned off")
+  function confirmResetMfa() {
+    const target = users.find((u) => u.id === resetMfaUserId)
+    setResetMfaOpen(false)
+    setResetMfaUserId("")
+    toast.success("Authenticator reset", {
+      description: `${target?.name ?? "The member"} will set up a new device at their next sign-in.`,
+    })
   }
 
   function sendResetLink() {
@@ -363,8 +396,6 @@ export function SecurityCenter() {
 
   const updatePolicy = (patch: Partial<SecurityPolicies>) =>
     setDraft((d) => ({ ...d, policies: { ...d.policies, ...patch } }))
-  const toggleMethod = (key: string) =>
-    setDraft((d) => ({ ...d, methods: { ...d.methods, [key]: !d.methods[key] } }))
 
   function handleSave() {
     if (!dirty || saving) return
@@ -381,7 +412,7 @@ export function SecurityCenter() {
     setDraft(cloneDraft(saved))
   }
 
-  const { policies, methods } = draft
+  const { policies } = draft
   const adoptionPct = Math.round(
     (SECURITY_OVERVIEW.mfaEnrolled / SECURITY_OVERVIEW.mfaTotal) * 100,
   )
@@ -429,128 +460,29 @@ export function SecurityCenter() {
       </div>
 
       {/* ── Multi-factor authentication ── */}
+      {/*
+        MFA is a platform invariant, not an org setting (LLD §2): the Cognito pool
+        requires TOTP for password users, with no grace period and nothing org-editable.
+        So this card is a **posture view plus one action** — the switches that used to
+        live here ("Require MFA", "Enrollment grace period", "Allowed methods") were
+        settings for a decision the org doesn't get to make.
+
+        Enrollment isn't here either: it happens in Cognito's MFA_SETUP challenge at
+        invite-accept / first sign-in, not on a settings page you have to know to visit.
+      */}
       <Card id="mfa" className="scroll-mt-24">
         <CardHeader>
           <CardTitle>Multi-Factor Authentication</CardTitle>
           <CardDescription>
-            Add an extra verification step at sign-in for every member.
+            Required for every member who signs in with a password. Managed by the
+            platform — there is nothing to configure.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          {/* Personal enrollment status + setup */}
-          {mfaEnabled ? (
-            <div className="flex flex-col gap-3 rounded-md bg-success/10 px-4 py-3 sm:flex-row sm:items-center">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-success/15 text-success">
-                <ShieldCheck className="size-4" />
-              </span>
-              <p className="text-sm">
-                <span className="font-medium">Your account is protected</span> with
-                an authenticator app.
-              </p>
-              <div className="flex shrink-0 flex-wrap gap-2 sm:ml-auto">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setCodesOpen(true)}
-                >
-                  Recovery codes
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setSetupOpen(true)}
-                >
-                  <RefreshCw className="size-3.5" /> Reconfigure
-                </Button>
-                <Button size="sm" variant="outline" onClick={disableMfa}>
-                  Turn off
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3 rounded-md bg-warning/10 px-4 py-3 sm:flex-row sm:items-center">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
-                <AlertTriangle className="size-4" />
-              </span>
-              <p className="text-sm">
-                <span className="font-medium">Multi-factor authentication is off.</span> Set
-                up an authenticator app to secure your account.
-              </p>
-              <Button
-                size="sm"
-                className="shrink-0 sm:ml-auto"
-                onClick={() => setSetupOpen(true)}
-              >
-                Set up authenticator
-              </Button>
-            </div>
-          )}
+          {/* Your own posture — read-only. */}
+          <MfaPostureRow posture={mfaPosture} />
 
-          <div>
-            <SettingRow
-              label="Require multi-factor authentication"
-              description="All members must set up MFA before they can access WorkPulse."
-              disabled={!canManage}
-            >
-              <Switch
-                checked={policies.mfaRequired}
-                disabled={!canManage}
-                onCheckedChange={(v) => updatePolicy({ mfaRequired: v })}
-              />
-            </SettingRow>
-            <SettingRow
-              label="Enrollment grace period"
-              description="How long new members may wait before MFA becomes mandatory."
-              disabled={!canManage || !policies.mfaRequired}
-            >
-              <Select
-                value={String(policies.mfaGraceDays)}
-                onValueChange={(v) =>
-                  updatePolicy({ mfaGraceDays: Number(v) })
-                }
-                disabled={!canManage || !policies.mfaRequired}
-              >
-                <SelectTrigger size="sm" className="w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MFA_GRACE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </SettingRow>
-          </div>
-
-          {/* Allowed methods */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Allowed methods
-            </p>
-            <div className="divide-y divide-border rounded-md border border-border">
-              {MFA_METHODS.map((m) => (
-                <div
-                  key={m.key}
-                  className="flex items-center justify-between gap-4 px-4 py-2.5"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{m.label}</p>
-                    <p className="text-xs text-muted-foreground">{m.description}</p>
-                  </div>
-                  <Switch
-                    size="sm"
-                    checked={methods[m.key]}
-                    disabled={!canManage}
-                    onCheckedChange={() => toggleMethod(m.key)}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Adoption */}
+          {/* Org posture — read-only. */}
           <div className="space-y-2 rounded-md bg-muted/50 p-4">
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium">Organization enrollment</span>
@@ -565,7 +497,27 @@ export function SecurityCenter() {
                 style={{ width: `${adoptionPct}%` }}
               />
             </div>
+            <p className="text-xs text-muted-foreground">
+              Members who sign in through SSO are counted as covered — their identity
+              provider performs the check.
+            </p>
           </div>
+
+          {/* The one action (LLD §2): the lost-phone flow. */}
+          {canManage ? (
+            <SettingRow
+              label="Reset a member's authenticator"
+              description="Clears their current device so they can re-enrol at next sign-in. Use this when someone loses their phone."
+            >
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setResetMfaOpen(true)}
+              >
+                <RefreshCw className="size-3.5" /> Reset device
+              </Button>
+            </SettingRow>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -934,124 +886,40 @@ export function SecurityCenter() {
         />
       )}
 
-      {/* MFA setup dialog */}
-      <Dialog
-        open={setupOpen}
-        onOpenChange={(v) => {
-          if (!v) {
-            setSetupOpen(false)
-            setOtp("")
-            setQrShown(false)
-          }
-        }}
-      >
+      {/*
+        The lost-phone flow — the only MFA action in the product (LLD §2). There is no
+        setup dialog here any more: enrollment is Cognito's MFA_SETUP challenge at
+        sign-in, and MFA is a platform invariant, so an org can neither require it nor
+        waive it. Recovery codes went with it — resetting the device IS the recovery
+        path, and it is the one an admin can actually audit.
+      */}
+      <Dialog open={resetMfaOpen} onOpenChange={setResetMfaOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Set up multi-factor authentication</DialogTitle>
+            <DialogTitle>Reset authenticator</DialogTitle>
             <DialogDescription>
-              Scan the QR code with your authenticator app, then enter the
-              6-digit code it shows.
+              Clears the member&apos;s current device. They will set up a new
+              authenticator the next time they sign in. This is logged to the audit trail.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            {/* Scannable QR, hidden until revealed (it encodes the secret). When
-                shown it uses high-contrast literal colours (not theme tokens) so
-                it stays white-on-black and scannable in dark mode too. */}
-            <div className="flex flex-col items-center gap-2">
-              {qrShown ? (
-                <button
-                  type="button"
-                  onClick={() => setQrShown(false)}
-                  aria-label="Hide QR code"
-                  title="Click to hide"
-                  className="rounded-lg border border-border bg-white p-3 transition hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
-                >
-                  <QRCodeSVG
-                    value={otpauthUri}
-                    size={192}
-                    level="M"
-                    bgColor="#ffffff"
-                    fgColor="#0a0a0a"
-                  />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setQrShown(true)}
-                  className="flex size-[218px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-foreground"
-                >
-                  <QrCode className="size-8" />
-                  <span className="text-sm font-medium">Show QR code</span>
-                </button>
-              )}
-              <p className="text-xs text-muted-foreground">
-                {qrShown
-                  ? "Scan with Google Authenticator, Authy, or 1Password · click to hide"
-                  : "Reveal the code to scan it with your authenticator app."}
-              </p>
-            </div>
-
-            {/* Manual fallback for anyone who can't scan */}
-            <div className="rounded-lg border border-border bg-muted/40 p-3 text-center">
-              <p className="text-xs text-muted-foreground">
-                Can&apos;t scan? Enter this code manually
-              </p>
-              <p className="mt-1 font-mono text-sm font-semibold tracking-widest">
-                {TOTP_SECRET}
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="mfa-otp">6-digit code</Label>
-              <Input
-                id="mfa-otp"
-                inputMode="numeric"
-                maxLength={6}
-                value={otp}
-                onChange={(e) =>
-                  setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-                placeholder="123456"
-                className="tracking-[0.4em]"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Member</p>
+            <Select value={resetMfaUserId || undefined} onValueChange={(v) => setResetMfaUserId(v as string)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a member…" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.slice(0, 40).map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.name} · {u.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter showCloseButton>
-            <Button onClick={verifyMfa} disabled={otp.length !== 6}>
-              Verify &amp; enable
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Recovery codes dialog */}
-      <Dialog open={codesOpen} onOpenChange={setCodesOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Recovery codes</DialogTitle>
-            <DialogDescription>
-              Save these somewhere safe. Each can be used once if you lose your
-              device.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-2">
-            {RECOVERY_CODES.map((c) => (
-              <code
-                key={c}
-                className="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-center font-mono text-sm"
-              >
-                {c}
-              </code>
-            ))}
-          </div>
-          <DialogFooter showCloseButton>
-            <Button
-              variant="outline"
-              onClick={() => {
-                navigator.clipboard?.writeText(RECOVERY_CODES.join("\n"))
-                toast.success("Recovery codes copied")
-              }}
-            >
-              <Copy className="size-4" /> Copy codes
+            <Button disabled={!resetMfaUserId} onClick={confirmResetMfa}>
+              <RefreshCw className="size-4" /> Reset device
             </Button>
           </DialogFooter>
         </DialogContent>

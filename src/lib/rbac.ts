@@ -12,8 +12,12 @@ import {
 /**
  * Core access check (TDD §8). A null permission is always granted. An explicit
  * grant always wins. The wildcard "*" grants everything EXCEPT contributor-only
- * capabilities (e.g. `time-tracking:edit`) — so oversight roles like Owner don't
+ * capabilities (e.g. `time-tracking:self`) — so oversight roles like Owner don't
  * inherit "I track my own time". Contributor-only perms must be listed.
+ *
+ * This mirrors `AuthContext::can` in wp-platform, which special-cases the same
+ * carve-out (bits 110–119, `Permission::is_contributor_only`): `is_owner` wins
+ * everywhere except that range. The server is the real boundary; this gate is UX.
  */
 export function canAccess(
   role: Role | null | undefined,

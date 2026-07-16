@@ -79,7 +79,7 @@ export const SYSTEM_ROLES: Role[] = [
     permissions: [
       "dashboard:view",
       "time-tracking:view",
-      "time-tracking:edit",
+      "time-tracking:self",
       "tasks:view",
       "tasks:create",
       "tasks:edit",

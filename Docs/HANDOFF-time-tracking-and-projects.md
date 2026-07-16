@@ -79,7 +79,7 @@ React Hook Form + Zod · papaparse (CSV) · jspdf + html2canvas (PDF) · sonner 
 ## 4. TIME TRACKING — extend the existing v1
 
 **Route:** `/time-tracking` · **Permissions:** `time-tracking:view` (gate edits with
-`time-tracking:edit`, approvals with `time-tracking:approve`).
+`time-tracking:self`, approvals with `time-tracking:approve`).
 
 ### Current state
 - The page [src/app/(app)/time-tracking/page.tsx](<../src/app/(app)/time-tracking/page.tsx>)
@@ -94,7 +94,7 @@ React Hook Form + Zod · papaparse (CSV) · jspdf + html2canvas (PDF) · sonner 
   `summarize()`, `formatHours()`.
 - Global timer store: `useTimerStore` (start/pause/resume/stop/`switchTask`/`elapsed`).
 - **Make it role-aware** (see [RBAC.md](RBAC.md)): show the personal tracker only
-  for `time-tracking:edit` holders without `approve`; show the team timesheet /
+  for `time-tracking:self` holders without `approve`; show the team timesheet /
   approvals view for oversight roles (`time-tracking:approve`) — so the Owner/Admin
   don't get a personal timer.
 

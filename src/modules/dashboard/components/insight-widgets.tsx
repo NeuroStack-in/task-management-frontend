@@ -151,10 +151,14 @@ function Donut({
 export function AttendanceDonut({
   counts,
 }: {
-  counts: Record<AttendanceStatus, number>;
+  counts: Record<AttendanceStatus, number> & { late: number };
 }) {
-  const total = counts.present + counts.late + counts.leave + counts.absent;
-  const presentPct = Math.round(((counts.present + counts.late) / (total || 1)) * 100);
+  // Disjoint statuses only — they sum to the counted total. `late` is a qualifier on
+  // `present`, so it is NOT a slice: the old donut drew present and late side by side
+  // and counted every late arrival twice. `non_workday` is excluded from the
+  // denominator by design (LLD §7).
+  const total = counts.present + counts.partial + counts.leave + counts.absent;
+  const presentPct = Math.round((counts.present / (total || 1)) * 100);
   return (
     <Card>
       <CardHeader>
@@ -163,10 +167,10 @@ export function AttendanceDonut({
       <CardContent>
         <Donut
           center={`${presentPct}%`}
-          caption="clocked in"
+          caption={counts.late ? `present · ${counts.late} late` : "present"}
           slices={[
             { label: "Present", value: counts.present, color: "var(--success)" },
-            { label: "Late", value: counts.late, color: "var(--warning)" },
+            { label: "Partial", value: counts.partial, color: "var(--warning)" },
             { label: "On leave", value: counts.leave, color: "var(--muted-foreground)" },
             { label: "Absent", value: counts.absent, color: "var(--destructive)" },
           ]}

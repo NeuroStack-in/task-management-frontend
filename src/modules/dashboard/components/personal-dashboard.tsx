@@ -30,9 +30,10 @@ const TONE: Record<string, string> = {
 
 const ATTENDANCE: Record<DayStatus, { dot: string; label: string }> = {
   present: { dot: "bg-success", label: "Present" },
-  late: { dot: "bg-warning", label: "Late" },
+  partial: { dot: "bg-warning", label: "Partial" },
   leave: { dot: "bg-primary", label: "On leave" },
   absent: { dot: "bg-destructive", label: "Absent" },
+  non_workday: { dot: "bg-muted-foreground/40", label: "Non-working day" },
 };
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -96,9 +97,9 @@ export function PersonalDashboard() {
   const hoursToday = week[week.length - 1].record.hours;
   const weekHours =
     Math.round(week.reduce((sum, w) => sum + w.record.hours, 0) * 10) / 10;
-  const daysPresent = week.filter(
-    (w) => w.record.status === "present" || w.record.status === "late",
-  ).length;
+  // `present` already includes late arrivals — `late` is a qualifier, not a peer status,
+  // so the old `present || late` is now just `present` (LLD §7).
+  const daysPresent = week.filter((w) => w.record.status === "present").length;
 
   const score = user.productivityScore;
   const trend = [score - 6, score - 3, score - 5, score - 2, score - 3, score - 1, score].map(clamp);

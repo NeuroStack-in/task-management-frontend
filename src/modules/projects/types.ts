@@ -16,6 +16,15 @@ export interface Project {
   /** Short uppercase key, e.g. "WP" — used as a task prefix and card badge. */
   key: string;
   status: ProjectStatus;
+  /**
+   * Billable is a **project-level** decision — every task inherits it, there is no
+   * per-task override (LLD §4). Required at creation: there is no sensible default,
+   * and guessing wrong silently mis-bills a client.
+   *
+   * The server stamps this onto each `TimeEntry` at fold time and **freezes** it, so
+   * reclassifying a project never rewrites past entries.
+   */
+  billable: boolean;
   /** 0–100. */
   progress: number;
   leadUserId: string;

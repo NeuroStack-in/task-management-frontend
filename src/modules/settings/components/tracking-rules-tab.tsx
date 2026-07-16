@@ -583,23 +583,48 @@ function AllowBlockPanel({
   canManage: boolean
 }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <DomainListCard
-        title="Allow List"
-        description="Domains always rated productive, regardless of category rules."
-        accent="positive"
-        items={allowList}
-        onChange={onAllow}
-        canManage={canManage}
-      />
-      <DomainListCard
-        title="Block List"
-        description="Domains always rated distracting and flagged in anomaly reports."
-        accent="negative"
-        items={blockList}
-        onChange={onBlock}
-        canManage={canManage}
-      />
+    <div className="space-y-4">
+      {/*
+        These lists do two different jobs, and only one of them is visible in the app
+        (LLD §14). Saying so here is the difference between an admin who knows their
+        block list interrupts people mid-timer and one who finds out from a complaint.
+      */}
+      <div className="rounded-lg border border-warning/30 bg-warning/[0.06] px-3.5 py-3">
+        <p className="text-sm font-medium">These lists do two things</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          They <strong className="font-medium text-foreground">classify</strong> activity
+          for the productivity score, and the desktop agent{" "}
+          <strong className="font-medium text-foreground">actively blocks</strong>{" "}
+          anything on the block list — minimizing a blocked app’s window, or covering a
+          blocked site with an overlay.
+        </p>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          Blocking only happens{" "}
+          <strong className="font-medium text-foreground">
+            while a timer is running
+          </strong>
+          . Off the clock there is no enforcement, ever — someone’s own time is their own.
+        </p>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <DomainListCard
+          title="Allow List"
+          description="Always rated productive, regardless of category rules. Never blocked."
+          accent="positive"
+          items={allowList}
+          onChange={onAllow}
+          canManage={canManage}
+        />
+        <DomainListCard
+          title="Block List"
+          description="Always rated distracting, flagged in anomaly reports — and blocked by the agent during a running timer."
+          accent="negative"
+          items={blockList}
+          onChange={onBlock}
+          canManage={canManage}
+        />
+      </div>
     </div>
   )
 }

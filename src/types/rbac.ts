@@ -17,7 +17,13 @@ export type PermissionAction =
   | "manage"
   | "export"
   | "approve"
-  | "request";
+  | "request"
+  /**
+   * "I personally do this" — a contributor capability, not an oversight one.
+   * Distinct from `edit`: it answers *do I do this myself?*, never *may I change
+   * someone else's?*. See CONTRIBUTOR_ONLY_PERMISSIONS.
+   */
+  | "self";
 
 export type PermissionId = string; // `${module}:${action}` or "*"
 

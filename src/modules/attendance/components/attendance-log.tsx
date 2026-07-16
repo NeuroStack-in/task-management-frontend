@@ -59,8 +59,8 @@ const STATUS_META: Record<
   { label: string; badge: string; row: string }
 > = {
   present: { label: "Present", badge: "bg-success/12 text-success", row: "" },
-  late: {
-    label: "Late",
+  partial: {
+    label: "Partial",
     badge: "bg-warning/15 text-warning",
     row: "bg-warning/[0.04]",
   },
@@ -74,12 +74,19 @@ const STATUS_META: Record<
     badge: "bg-destructive/12 text-destructive",
     row: "bg-destructive/[0.04]",
   },
+  non_workday: {
+    label: "Non-working day",
+    badge: "bg-muted text-muted-foreground",
+    row: "opacity-60",
+  },
 };
 
+// "late" is deliberately absent: it qualifies `present`, so it's a separate filter
+// dimension, not a peer status (LLD §7).
 const STATUS_FILTERS: (AttendanceStatus | "all")[] = [
   "all",
   "present",
-  "late",
+  "partial",
   "leave",
   "absent",
 ];

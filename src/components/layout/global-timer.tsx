@@ -28,8 +28,8 @@ export function GlobalTimer() {
 
   // Oversight roles (Owner/Admin/managers) don't run a personal timer — they
   // manage their team's. The personal indicator only applies to people who
-  // log their own time (`time-tracking:edit`, a contributor-only permission).
-  if (!can("time-tracking:edit")) return null;
+  // log their own time (`time-tracking:self`, a contributor-only permission).
+  if (!can("time-tracking:self")) return null;
 
   // Idle — no timer running.
   if (!task) {

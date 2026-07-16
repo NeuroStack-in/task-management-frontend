@@ -7,16 +7,15 @@
  * (present / late / on-leave / absent), tallied across the employed headcount.
  */
 import { users } from "@/lib/data";
+import { type DayStatus, type DayCounts, type DayRecord } from "@/types/attendance";
 
-export type DayStatus = "present" | "late" | "leave" | "absent";
-
-export interface DayCounts {
-  present: number;
-  late: number;
-  leave: number;
-  absent: number;
-  total: number;
-}
+export {
+  isCounted,
+  DAY_STATUS_LABEL,
+  type DayStatus,
+  type DayCounts,
+  type DayRecord,
+} from "@/types/attendance";
 
 /** The month the calendar opens on, and "today" (mirrors the demo clock). */
 export const REFERENCE_MONTH = { year: 2026, month: 5 }; // June 2026 (0-indexed)
@@ -49,13 +48,26 @@ export function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
 
-/** Deterministic per-person status for a given working day. */
-function personStatus(id: string, month: number, day: number): DayStatus {
+/**
+ * Deterministic per-person status for a given working day, in LLD §7's resolution
+ * order (first match wins). `late` is a **qualifier on present**, so it's returned
+ * alongside the status, never as one of them.
+ *
+ * Callers pass working days only — `non_workday` is decided by the calendar
+ * (`isWorkday`), not by this dice roll.
+ */
+function personStatus(
+  id: string,
+  month: number,
+  day: number,
+): { status: Exclude<DayStatus, "non_workday">; late: boolean } {
   const r = (hash(id) * 31 + day * 17 + month * 7) % 100;
-  if (r < 5) return "absent";
-  if (r < 12) return "leave";
-  if (r < 24) return "late";
-  return "present";
+  // 1. leave → 2. (non_workday, decided by the calendar) → 3. absent → 4. partial → 5. present
+  if (r < 7) return { status: "leave", late: false };
+  if (r < 12) return { status: "absent", late: false };
+  if (r < 18) return { status: "partial", late: false };
+  // present — late qualifies it, and roughly a fifth of present days are late.
+  return { status: "present", late: r < 30 };
 }
 
 /**
@@ -74,19 +86,19 @@ export function orgDayCounts(
   const counts: DayCounts = {
     present: 0,
     late: 0,
+    partial: 0,
     leave: 0,
     absent: 0,
     total: people.length,
   };
-  for (const u of people) counts[personStatus(u.id, month, day)] += 1;
+  for (const u of people) {
+    const { status, late } = personStatus(u.id, month, day);
+    counts[status] += 1;
+    // `late` is a SUBSET of present, not a peer — it's already counted above.
+    // Adding present + late would double-count every late arrival.
+    if (late) counts.late += 1;
+  }
   return counts;
-}
-
-export interface DayRecord {
-  status: DayStatus;
-  clockIn: string;
-  clockOut: string;
-  hours: number;
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -103,29 +115,46 @@ export function dayRecordFor(
   day: number,
 ): DayRecord {
   const weekday = mondayIndex(new Date(year, month, day).getDay());
-  const r = (hash(id) * 31 + day * 17 + month * 7 + year) % 100;
-  let status: DayStatus =
-    r < 5 ? "absent" : r < 12 ? "leave" : r < 24 ? "late" : "present";
-  if (weekday >= 5) status = r < 78 ? "absent" : "present"; // weekends
-
   const s = hash(id);
+
+  // Resolution step 2: a weekend is a non_workday — excluded from the expected set,
+  // NOT an absence. Weekends previously resolved to "absent", which put every Saturday
+  // in the denominator and made the absence rate look catastrophic (LLD §7).
+  if (weekday >= 5) {
+    return { status: "non_workday", late: false, clockIn: "—", clockOut: "—", hours: 0 };
+  }
+
+  const { status, late } = personStatus(id, month, day);
+
   if (status === "present") {
+    return late
+      ? {
+          status,
+          late,
+          clockIn: `09:${pad2((s % 24) + 6)}`,
+          clockOut: `17:${10 + (s % 30)}`,
+          hours: 7 + (s % 6) / 10,
+        }
+      : {
+          status,
+          late,
+          clockIn: `09:0${s % 6}`,
+          clockOut: `17:${10 + (s % 40)}`,
+          hours: 8 + (s % 5) / 10,
+        };
+  }
+  if (status === "partial") {
+    // A session exists, but under `min_present_minutes` — so it has real clock times
+    // and non-zero hours. That is exactly what distinguishes it from absent.
     return {
       status,
-      clockIn: `09:0${s % 6}`,
-      clockOut: `17:${10 + (s % 40)}`,
-      hours: 8 + (s % 5) / 10,
+      late,
+      clockIn: `10:${pad2(s % 50)}`,
+      clockOut: `13:${pad2(10 + (s % 45))}`,
+      hours: 2 + (s % 15) / 10,
     };
   }
-  if (status === "late") {
-    return {
-      status,
-      clockIn: `09:${pad2((s % 24) + 6)}`,
-      clockOut: `17:${10 + (s % 30)}`,
-      hours: 7 + (s % 6) / 10,
-    };
-  }
-  return { status, clockIn: "—", clockOut: "—", hours: 0 };
+  return { status, late, clockIn: "—", clockOut: "—", hours: 0 };
 }
 
 /** Is the date in the future relative to the demo "today"? (No records yet.) */
@@ -186,10 +215,18 @@ export function monthSummary(year: number, month: number): DayCounts {
   const days = monthMatrix(year, month)
     .flat()
     .filter((c) => c.isWorkday && c.counts);
-  const sum: DayCounts = { present: 0, late: 0, leave: 0, absent: 0, total: 0 };
+  const sum: DayCounts = {
+    present: 0,
+    late: 0,
+    partial: 0,
+    leave: 0,
+    absent: 0,
+    total: 0,
+  };
   for (const c of days) {
     sum.present += c.counts!.present;
     sum.late += c.counts!.late;
+    sum.partial += c.counts!.partial;
     sum.leave += c.counts!.leave;
     sum.absent += c.counts!.absent;
   }
@@ -197,6 +234,7 @@ export function monthSummary(year: number, month: number): DayCounts {
   return {
     present: Math.round(sum.present / n),
     late: Math.round(sum.late / n),
+    partial: Math.round(sum.partial / n),
     leave: Math.round(sum.leave / n),
     absent: Math.round(sum.absent / n),
     total: HEADCOUNT.length,
@@ -322,11 +360,12 @@ export function rangeSummary(
 ): { counts: DayCounts; label: string; days: number } {
   const { days, label } = rangeDays(range, date, start, end);
 
-  const acc = { present: 0, late: 0, leave: 0, absent: 0, total: 0 };
+  const acc = { present: 0, late: 0, partial: 0, leave: 0, absent: 0, total: 0 };
   for (const d of days) {
     const c = orgDayCounts(d.month, d.day, dept);
     acc.present += c.present;
     acc.late += c.late;
+    acc.partial += c.partial;
     acc.leave += c.leave;
     acc.absent += c.absent;
     acc.total = c.total;
@@ -336,6 +375,7 @@ export function rangeSummary(
     counts: {
       present: Math.round(acc.present / n),
       late: Math.round(acc.late / n),
+      partial: Math.round(acc.partial / n),
       leave: Math.round(acc.leave / n),
       absent: Math.round(acc.absent / n),
       total: acc.total,

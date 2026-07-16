@@ -54,6 +54,12 @@ const COUNTRY_CURRENCY: Record<string, string> = {
   "United Arab Emirates": "AED — UAE Dirham",
 };
 
+/**
+ * The `id`s here are the contract — they're what gets sent to the server, which accepts
+ * exactly `free | starter | enterprise` (`Plan` in `crates/wp-contracts/src/plans.rs`,
+ * serialized lowercase). They were `free | pro | max`: two of the three would have been
+ * rejected outright once signup talks to a real API.
+ */
 const PLANS = [
   {
     id: "free",
@@ -70,8 +76,8 @@ const PLANS = [
     featured: false,
   },
   {
-    id: "pro",
-    name: "Pro",
+    id: "starter",
+    name: "Starter",
     monthly: 12,
     annual: 10,
     tagline: "For growing teams that need real insight.",
@@ -85,17 +91,18 @@ const PLANS = [
     featured: false,
   },
   {
-    id: "max",
-    name: "Max",
+    id: "enterprise",
+    name: "Enterprise",
     monthly: 22,
     annual: 18,
     tagline: "For organizations operating at scale.",
     features: [
-      "Everything in Pro",
+      "Everything in Starter",
       "SSO / SAML & SCIM provisioning",
       "AI anomaly & burnout detection",
       "Audit logs, DPA & data residency",
       "Advanced security & roles",
+      "Custom contracts & premier SLA",
       "Dedicated success manager",
     ],
     featured: true,
@@ -847,7 +854,7 @@ export function OrgSetupModal({
                 }}
               >
                 <BadgeCheck className="size-4 shrink-0" />
-                Start free, or try Pro &amp; Max free for 14 days — no card required.
+                Start free, or try Starter &amp; Enterprise free for 14 days — no card required.
               </div>
 
               <div className="mt-3 grid gap-2">

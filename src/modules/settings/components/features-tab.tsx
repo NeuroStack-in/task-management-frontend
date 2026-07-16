@@ -4,15 +4,16 @@ import { useEffect, useRef, useState } from "react"
 import {
   Activity,
   Bot,
+  CalendarCheck,
   Camera,
-  CheckCheck,
-  CreditCard,
   FileBarChart,
+  FileText,
+  FolderKanban,
   Lock,
-  Mail,
-  MonitorSmartphone,
-  Plug,
+  Plane,
+  Sparkles,
   Timer,
+  TriangleAlert,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -39,75 +40,96 @@ interface FeatureDef {
   beta?: true
 }
 
+/**
+ * One card per key in `FEATURE_KEYS` (`crates/wp-contracts/src/plans.rs`) — no more, no
+ * fewer. A card for a key the server doesn't gate is a switch that does nothing; a key
+ * without a card is a feature nobody can turn on.
+ *
+ * Deliberately absent, and why:
+ *  - **Billing** — never plan-gated. Gating it would deadlock an org out of fixing the
+ *    very plan that gates it.
+ *  - **Approvals**, **Device agents** — core, not plan-gated.
+ *  - **Communication** (Inbox) — DEFERRED; no backend key exists.
+ *  - **Integrations** — DEFERRED, and removed from the backend catalog.
+ *  - **Remote support** — CUT entirely.
+ */
 const FEATURE_LIST: FeatureDef[] = [
   {
-    key: "time-tracking",
+    key: "time.tracking",
     icon: Timer,
     label: "Time tracking",
     description:
-      "Let employees log hours, start/stop timers, and track time against projects.",
+      "Let employees log hours against projects from the desktop agent's timer.",
   },
   {
-    key: "activity-monitoring",
+    key: "attendance",
+    icon: CalendarCheck,
+    label: "Attendance",
+    description:
+      "Daily present/partial/absent status, computed nightly from recorded sessions.",
+  },
+  {
+    key: "leave",
+    icon: Plane,
+    label: "Leave",
+    description: "Leave types, balances, requests, and the approval queue.",
+  },
+  {
+    key: "projects",
+    icon: FolderKanban,
+    label: "Projects & tasks",
+    description: "Projects, tasks, assignments, and per-project roles.",
+  },
+  {
+    key: "monitoring.activity",
     icon: Activity,
     label: "Activity monitoring",
     description:
-      "Track active vs idle time, application usage, and keyboard/mouse intensity.",
+      "Track active vs idle time, application usage, and input intensity.",
   },
   {
-    key: "screenshots",
+    key: "monitoring.screenshots",
     icon: Camera,
     label: "Screenshots",
     description:
-      "Capture periodic screenshots to verify work and generate an activity timeline.",
+      "Capture periodic screenshots to verify work and build an activity timeline.",
   },
   {
-    key: "ai",
-    icon: Bot,
-    label: "Assistant",
-    description:
-      "AI-generated productivity summaries, alerts, and smart recommendations.",
-    beta: true,
-  },
-  {
-    key: "billing",
-    icon: CreditCard,
-    label: "Billing & subscriptions",
-    description:
-      "Manage your WorkPulse plan, payment methods, and billing history.",
-  },
-  {
-    key: "reports",
+    key: "reports.basic",
     icon: FileBarChart,
     label: "Reports & analytics",
     description:
-      "Generate workforce, time, and project reports with CSV/PDF export.",
+      "Workforce, time, and project reports with CSV export.",
   },
   {
-    key: "integrations",
-    icon: Plug,
-    label: "Integrations",
-    description: "Connect Slack, Jira, GitHub, Teams, and other third-party tools.",
-  },
-  {
-    key: "communication",
-    icon: Mail,
-    label: "Communication",
-    description: "Internal inbox and team messaging within WorkPulse.",
-  },
-  {
-    key: "approvals",
-    icon: CheckCheck,
-    label: "Approvals",
+    key: "insights.reports.ai_pdf",
+    icon: FileText,
+    label: "AI report export (PDF)",
     description:
-      "Time-off requests, timesheet approvals, and custom approval workflows.",
+      "Narrated PDF reports. Billed per generation — a sub-feature of Reports, not implied by it.",
   },
   {
-    key: "desktop-agents",
-    icon: MonitorSmartphone,
-    label: "Device agents",
+    key: "ai.insights",
+    icon: Sparkles,
+    label: "AI insights",
     description:
-      "Install lightweight device agents on employee machines for real-time monitoring.",
+      "AI-narrated productivity summaries over the day's activity.",
+    beta: true,
+  },
+  {
+    key: "ai.assistant",
+    icon: Bot,
+    label: "AI assistant",
+    description:
+      "Ask questions about your workspace. Session-only — nothing is stored.",
+    beta: true,
+  },
+  {
+    key: "anomalies",
+    icon: TriangleAlert,
+    label: "Anomaly detection",
+    description:
+      "Flags unusual patterns for human review. Statistical, not AI — and never auto-actions.",
   },
 ]
 

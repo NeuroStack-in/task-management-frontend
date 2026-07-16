@@ -175,6 +175,9 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
     managerId: project.managerId ?? "",
     memberIds: project.memberIds,
     dueDate: project.dueDate.slice(0, 10),
+    // Must be carried: omitting it would pre-fill the form as non-billable and silently
+    // reclassify a billable project on save.
+    billable: project.billable,
   };
 
   const handleEdit = (values: ProjectFormValues) => {
@@ -591,6 +594,10 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
                 <DetailRow label="Lead" value={lead?.name ?? "—"} />
                 <DetailRow label="Manager" value={manager?.name ?? "—"} />
                 <DetailRow label="Department" value={project.department} />
+                <DetailRow
+                  label="Billing"
+                  value={project.billable ? "Billable" : "Non-billable"}
+                />
                 <DetailRow
                   label="Timeline"
                   value={`${formatDate(project.startDate)} – ${formatDate(project.dueDate)}`}

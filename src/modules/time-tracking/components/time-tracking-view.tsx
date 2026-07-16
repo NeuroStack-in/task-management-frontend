@@ -18,7 +18,7 @@ type View = "team" | "personal";
 
 /**
  * Role-aware Time Tracking (see Docs/RBAC.md):
- * - Personal tracker for people who log their own time (`time-tracking:edit`).
+ * - Personal tracker for people who log their own time (`time-tracking:self`).
  * - Team timesheet oversight for management roles (`time-tracking:manage`), so
  *   Owners/Admins don't get a personal timer they'll never use.
  * Users with both (Owner/Admin) get a toggle and default to their own time.
@@ -35,7 +35,7 @@ export function TimeTrackingView({
   const { can } = usePermissions();
   const { inScope } = useDataScope();
   const canManageTeam = can("time-tracking:manage");
-  const canTrack = can("time-tracking:edit");
+  const canTrack = can("time-tracking:self");
   const showToggle = canManageTeam && canTrack;
 
   // Team leads only see their own team's timesheets; org roles see everyone.

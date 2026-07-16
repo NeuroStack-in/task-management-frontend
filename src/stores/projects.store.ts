@@ -23,6 +23,8 @@ export interface ProjectFormValues {
   /** Team members picked from the org directory. */
   memberIds: string[];
   dueDate: string;
+  /** Project-level, required at creation; every task inherits it (LLD §4). */
+  billable: boolean;
 }
 
 interface ProjectsState {
@@ -66,6 +68,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       description: v.description.trim() || undefined,
       key: deriveKey(v.name),
       status: "active",
+      billable: v.billable,
       progress: 0,
       leadUserId: v.leadUserId,
       managerId: v.managerId || undefined,
@@ -88,6 +91,10 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
               // key and status are preserved (not edited here).
               name: v.name,
               description: v.description.trim() || undefined,
+              // Reclassifying is allowed and takes effect from now on. It never rewrites
+              // past entries: the server stamps `billable` onto each TimeEntry at fold
+              // time and freezes it there (LLD §4).
+              billable: v.billable,
               department: v.department,
               leadUserId: v.leadUserId,
               managerId: v.managerId || undefined,

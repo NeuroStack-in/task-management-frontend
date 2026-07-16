@@ -258,6 +258,13 @@ function generateProjects(count: number, users: User[]): Project[] {
       name,
       key,
       status,
+      // Project-level and required at creation (LLD §4) — every task inherits it.
+      // Most client work bills; internal projects don't. ~70/30 keeps both paths
+      // populated in the demo data.
+      billable: faker.helpers.weightedArrayElement([
+        { weight: 70, value: true },
+        { weight: 30, value: false },
+      ]),
       progress,
       leadUserId: lead.id,
       memberIds: [...new Set(members)],

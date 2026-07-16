@@ -124,9 +124,25 @@ const TESTIMONIALS = [
   { quote: "Our field crews actually use it. Clock-in is one tap and the reports just make sense.", name: "Sofia Alvarez", role: "Founder, Cascade Build" },
 ];
 
+/**
+ * Mirrors `Plan` in `crates/wp-contracts/src/plans.rs` — `free | starter | enterprise`.
+ * These are the only plans the server can issue, so anything else here is unsellable.
+ *
+ * This block used to list Pro/Max/Enterprise while /pricing listed Free/Pro/Max — four
+ * tiers across two pages, neither matching the catalog. Kept in step with
+ * `app/pricing/page.tsx`: same three names, same prices.
+ */
 const PRICING = [
   {
-    name: "Pro",
+    name: "Free",
+    price: "$0",
+    tagline: "For individuals and very small teams getting started.",
+    features: ["Core time tracking & timesheets", "Up to 5 members", "1 active project", "7-day activity history", "Community support"],
+    cta: "Get started free",
+    featured: false,
+  },
+  {
+    name: "Starter",
     price: "$12",
     tagline: "For growing teams that need real insight.",
     features: ["Time tracking & timesheets", "Activity & productivity", "Unlimited projects & tasks", "Reports & exports", "Priority support"],
@@ -134,20 +150,12 @@ const PRICING = [
     featured: false,
   },
   {
-    name: "Max",
+    name: "Enterprise",
     price: "$22",
     tagline: "For organizations operating at scale.",
-    features: ["Everything in Pro", "SSO / SAML & SCIM", "Anomaly & burnout AI", "Audit logs, DPA & residency", "Dedicated success manager"],
+    features: ["Everything in Starter", "SSO / SAML & SCIM", "Anomaly & burnout AI", "Audit logs, DPA & residency", "Custom contracts & premier SLA", "Dedicated success manager"],
     cta: "Start free trial",
     featured: true,
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    tagline: "Procurement, security review & volume.",
-    features: ["Everything in Max", "Custom contracts & invoicing", "SAML & SCIM at scale", "Tailored onboarding", "Premier SLA & support"],
-    cta: "Talk to sales",
-    featured: false,
   },
 ];
 

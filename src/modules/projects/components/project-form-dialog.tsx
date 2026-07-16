@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -56,6 +56,12 @@ const schema = z.object({
   managerId: z.string().min(1, "Pick a manager"),
   memberIds: z.array(z.string()).min(1, "Select at least one member"),
   dueDate: z.string().min(1, "Pick a deadline"),
+  // Required at creation (LLD §4) — deliberately a choice with no default rather than a
+  // checkbox, which would silently default every project to non-billable. Modelled as an
+  // enum, not a boolean, precisely so "unanswered" is representable and fails validation.
+  billable: z.enum(["yes", "no"], {
+    errorMap: () => ({ message: "Choose whether this project is billable" }),
+  }),
 });
 
 type FormShape = z.infer<typeof schema>;
@@ -63,7 +69,9 @@ type FormShape = z.infer<typeof schema>;
 const fieldClass =
   "h-9 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
-const EMPTY: FormShape = {
+// `billable` is intentionally absent: it has no default, so an unanswered form fails
+// validation instead of quietly creating a non-billable project (LLD §4).
+const EMPTY: Omit<FormShape, "billable"> = {
   name: "",
   description: "",
   department: "",
@@ -92,6 +100,17 @@ export function ProjectFormDialog({
   initial,
   onSubmit,
 }: ProjectFormDialogProps) {
+  // The domain model carries `billable` as a boolean; the form as an enum, so that
+  // "unanswered" is representable and a new project can't default to non-billable.
+  // Convert on the way in — the submit handler converts back.
+  const initialForm = useMemo(
+    () =>
+      initial
+        ? { ...initial, billable: (initial.billable ? "yes" : "no") as "yes" | "no" }
+        : undefined,
+    [initial],
+  );
+
   const {
     register,
     handleSubmit,
@@ -102,12 +121,12 @@ export function ProjectFormDialog({
     formState: { errors },
   } = useForm<FormShape>({
     resolver: zodResolver(schema),
-    defaultValues: { ...EMPTY, ...initial },
+    defaultValues: { ...EMPTY, ...initialForm },
   });
 
   // Re-seed the form whenever it (re)opens so edit mode reflects the latest data.
   useEffect(() => {
-    if (open) reset({ ...EMPTY, ...initial });
+    if (open) reset({ ...EMPTY, ...initialForm });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -118,6 +137,9 @@ export function ProjectFormDialog({
     onSubmit({
       ...data,
       description: data.description ?? "",
+      // The form models this as an enum so "unanswered" can fail validation; the domain
+      // model is a boolean. Map at the boundary.
+      billable: data.billable === "yes",
     });
     onOpenChange(false);
   });
@@ -126,7 +148,7 @@ export function ProjectFormDialog({
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o) reset({ ...EMPTY, ...initial });
+        if (!o) reset({ ...EMPTY, ...initialForm });
         onOpenChange(o);
       }}
     >
@@ -227,6 +249,33 @@ export function ProjectFormDialog({
               />
             </Field>
           </div>
+
+          <Field
+            label="Billing"
+            error={errors.billable?.message}
+            hint="Every task inherits this. Time already logged keeps its original billing."
+          >
+            <Controller
+              control={control}
+              name="billable"
+              render={({ field }) => (
+                <Select
+                  value={field.value || undefined}
+                  onValueChange={(v) => field.onChange(v as string)}
+                >
+                  <SelectTrigger
+                    className={cn("w-full", errors.billable && "border-destructive")}
+                  >
+                    <SelectValue placeholder="Billable or non-billable?" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">Billable</SelectItem>
+                    <SelectItem value="no">Non-billable</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
 
           <Field
             label={`Team members${memberIds.length ? ` (${memberIds.length})` : ""}`}
@@ -454,11 +503,14 @@ function Field({
   label,
   error,
   optional,
+  hint,
   children,
 }: {
   label: string;
   error?: string;
   optional?: boolean;
+  /** Explains a consequence the control can't show. Hidden while an error is up. */
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -472,7 +524,11 @@ function Field({
         ) : null}
       </Label>
       {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : hint ? (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   );
 }

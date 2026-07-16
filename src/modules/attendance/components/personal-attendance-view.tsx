@@ -15,6 +15,7 @@ import {
   daysInMonth,
   dayRecordFor,
   isFutureDate,
+  isCounted,
   type DayStatus,
   type DayCell,
 } from "@/lib/mock-attendance";
@@ -26,10 +27,14 @@ const STATUS: Record<
   { label: string; tile: string; dot: string }
 > = {
   present: { label: "Present", tile: "bg-success/15 ring-success/30", dot: "bg-success" },
-  late: { label: "Late", tile: "bg-warning/15 ring-warning/40", dot: "bg-warning" },
+  partial: { label: "Partial", tile: "bg-warning/15 ring-warning/40", dot: "bg-warning" },
   leave: { label: "On leave", tile: "bg-primary/12 ring-primary/30", dot: "bg-primary" },
   absent: { label: "Absent", tile: "bg-destructive/12 ring-destructive/30", dot: "bg-destructive" },
+  non_workday: { label: "Non-working day", tile: "bg-muted/40 ring-border", dot: "bg-muted-foreground/40" },
 };
+
+/** `late` qualifies `present` — styled as a marker on the tile, not a status of its own. */
+const LATE_DOT = "bg-warning";
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -61,12 +66,26 @@ export function PersonalAttendanceView() {
 
   // The current user's own tally for the viewed month (elapsed workdays only).
   const summary = useMemo(() => {
-    const acc = { present: 0, late: 0, leave: 0, absent: 0, hours: 0, workdays: 0 };
+    const acc = {
+      present: 0,
+      partial: 0,
+      leave: 0,
+      absent: 0,
+      non_workday: 0,
+      /** Subset of `present` — never add the two. */
+      late: 0,
+      hours: 0,
+      workdays: 0,
+    };
     for (const cell of weeks.flat()) {
       if (!cell.isWorkday) continue;
       if (isFutureDate(cell.year, cell.month, cell.day)) continue;
       const rec = dayRecordFor(userId, cell.year, cell.month, cell.day);
+      // A non-workday is excluded from the expected set, so it must not reach the
+      // denominator — that's what `isCounted` is for (LLD §7).
+      if (!isCounted(rec.status)) continue;
       acc[rec.status] += 1;
+      if (rec.late) acc.late += 1;
       acc.hours += rec.hours;
       acc.workdays += 1;
     }
@@ -74,8 +93,9 @@ export function PersonalAttendanceView() {
     return acc;
   }, [weeks, userId]);
 
+  // `present` already includes late arrivals — the old `present + late` double-counted them.
   const rate = summary.workdays
-    ? Math.round(((summary.present + summary.late) / summary.workdays) * 100)
+    ? Math.round((summary.present / summary.workdays) * 100)
     : 0;
 
   // The user's own recent working days (most recent first).
@@ -345,16 +365,31 @@ function PersonalDayCell({ cell, userId }: { cell: DayCell; userId: string }) {
         meta ? `${meta.tile} ring-inset` : "bg-card ring-border",
         cell.isToday && "ring-2 ring-primary",
       )}
-      title={rec ? `${cell.day}: ${meta!.label} · ${rec.hours.toFixed(1)}h` : `${cell.day}`}
+      title={
+        rec
+          ? `${cell.day}: ${meta!.label}${rec.late ? " (late)" : ""} · ${rec.hours.toFixed(1)}h`
+          : `${cell.day}`
+      }
     >
-      <span
-        className={cn(
-          "text-sm font-semibold leading-none tabular-nums",
-          cell.isToday ? "text-primary" : "text-foreground",
-        )}
-      >
-        {cell.day}
-      </span>
+      <div className="flex items-start justify-between gap-1">
+        <span
+          className={cn(
+            "text-sm font-semibold leading-none tabular-nums",
+            cell.isToday ? "text-primary" : "text-foreground",
+          )}
+        >
+          {cell.day}
+        </span>
+        {/* `late` qualifies `present` — a marker on the tile, not a tile colour of its
+            own. A late day is still a present day (LLD §7). */}
+        {rec?.late ? (
+          <span
+            className={cn("mt-0.5 size-1.5 shrink-0 rounded-full", LATE_DOT)}
+            aria-label="Late arrival"
+            title="Late arrival"
+          />
+        ) : null}
+      </div>
       {rec ? (
         <span className="text-right text-[11px] font-medium tabular-nums text-foreground/70">
           {rec.hours > 0 ? `${rec.hours.toFixed(1)}h` : meta!.label}

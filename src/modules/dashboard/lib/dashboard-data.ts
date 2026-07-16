@@ -154,7 +154,8 @@ export interface DashboardData {
   topPerformers: User[];
   billing: { plan: string; seatsUsed: number; seatsTotal: number };
   heatmap: number[][];
-  attendanceCounts: Record<AttendanceStatus, number>;
+  /** `late` is a subset of `present`, not a peer — never add the two (LLD §7). */
+  attendanceCounts: Record<AttendanceStatus, number> & { late: number };
   statusCounts: Record<UserStatus, number>;
   activeCount: number;
   inactiveCount: number;
@@ -202,13 +203,15 @@ export function buildDashboardData(
   // than a week and a single team fewer than the whole org.
   const newHires = Math.max(1, Math.round(scope.length * 0.006 * meta.workdays));
 
-  // Attendance rate = clocked-in share (present + late) over the scope. A core
-  // workforce-health headline for admins; derived from the same counts the
-  // Attendance donut uses so the two never disagree.
+  // Attendance rate = present share over the scope. A core workforce-health headline
+  // for admins; derived from the same counts the Attendance donut uses so the two never
+  // disagree. `present` already includes late arrivals (`late` is a qualifier, LLD §7),
+  // so it is NOT added — the denominator sums the disjoint statuses only, and
+  // `non_workday` stays out of it by design.
   const attn = attendanceCounts(scope);
-  const attnTotal = attn.present + attn.late + attn.leave + attn.absent;
+  const attnTotal = attn.present + attn.partial + attn.leave + attn.absent;
   const attendanceRate = attnTotal
-    ? Math.round(((attn.present + attn.late) / attnTotal) * 100)
+    ? Math.round((attn.present / attnTotal) * 100)
     : 0;
 
   const topPerformers = [...scope]

@@ -10,7 +10,7 @@ Source of truth in code:
 
 ## How it works
 
-- A permission id is `"<module>:<action>"` (e.g. `time-tracking:edit`).
+- A permission id is `"<module>:<action>"` (e.g. `time-tracking:self`).
 - A role holds a list of permission ids, **or** the wildcard `"*"` which grants
   everything.
 - `canAccess(role, "module:action")` returns true if the role has that id or `*`.
@@ -36,7 +36,7 @@ Source of truth in code:
 | Dashboard | `dashboard:view` | View Dashboard |
 | Dashboard | `dashboard:edit` | Customize Dashboard |
 | Time Tracking | `time-tracking:view` | View Time Tracking |
-| Time Tracking | `time-tracking:edit` | Log/edit **own** time entries (personal tracker) |
+| Time Tracking | `time-tracking:self` | **I personally run a timer** (the personal tracker). Not a write-permission on time entries — time is agent-derived and immutable, so nobody may edit an entry. Mirrors `Permission::TimeTrackSelf` (bit 110). |
 | Time Tracking | `time-tracking:approve` | Approve others' timesheets (oversight) |
 | Tasks | `tasks:view` | View Tasks |
 | Tasks | `tasks:create` | Create Task |
@@ -101,7 +101,7 @@ Source of truth in code:
 | `dashboard:view` | ✓ | ✓ | ✓ |
 | `dashboard:edit` | ✓ | ✓ | — |
 | `time-tracking:view` | ✓ | ✓ | ✓ |
-| `time-tracking:edit` | ✓¹ | ✓¹ | ✓ |
+| `time-tracking:self` | ✓¹ | ✓¹ | ✓ |
 | `time-tracking:approve` | ✓ | ✓ | — |
 | `tasks:view` | ✓ | ✓ | ✓ |
 | `tasks:create` | ✓ | ✓ | ✓ |
@@ -151,7 +151,7 @@ for oversight roles.
 
 **Admin** — everything **except** `billing:manage` and `remote-support:approve`.
 
-**Employee** — `dashboard:view`, `time-tracking:view`, `time-tracking:edit`,
+**Employee** — `dashboard:view`, `time-tracking:view`, `time-tracking:self`,
 `tasks:view`, `tasks:create`, `tasks:edit`, `projects:view`, `attendance:view`,
 `communication:view`, `notifications:view`, `help:view`. Employee-reachable
 pages are **self-scoped** (own dashboard, own attendance, own projects/tasks) —
@@ -164,12 +164,12 @@ they never see org-wide aggregates. Org reporting and AI insights are withheld.
 **Problem:** the Owner sees the personal timer/tracker on `/time-tracking`, but
 an Owner doesn't log their own time — they oversee everyone's.
 
-**Cause:** the personal tracker shows for anyone with `time-tracking:edit`
+**Cause:** the personal tracker shows for anyone with `time-tracking:self`
 (log/edit own time). Owner has it via the wildcard; Admin has it explicitly.
 
 **Recommended model:** treat time tracking as two distinct capabilities —
 
-- `time-tracking:edit` → **personal** tracker (timer + my timesheet). Employees.
+- `time-tracking:self` → **personal** tracker (timer + my timesheet). Employees.
 - `time-tracking:approve` → **oversight** (team timesheets, approvals). Owner, Admin, Manager.
 
 **Two ways to apply it (pick one):**
@@ -177,17 +177,17 @@ an Owner doesn't log their own time — they oversee everyone's.
 1. **UI-level (no grant change, keeps Owner = `*`)** — make `/time-tracking`
    role-aware:
    - has `time-tracking:approve` → default to the **team/approvals** view (no personal timer)
-   - has `time-tracking:edit` **and not** `approve` → show the **personal tracker**
+   - has `time-tracking:self` **and not** `approve` → show the **personal tracker**
    ```tsx
    const { can } = usePermissions();
    const oversight = can("time-tracking:approve");
    // render <TeamTimesheets/> when oversight, else <PersonalTracker/>
    ```
-2. **Grant-level (explicit)** — drop `time-tracking:edit` from oversight roles so
+2. **Grant-level (explicit)** — drop `time-tracking:self` from oversight roles so
    they never get the personal tracker:
-   - **Admin**: remove `time-tracking:edit`, keep `view` + `approve`.
+   - **Admin**: remove `time-tracking:self`, keep `view` + `approve`.
    - **Owner**: replace the wildcard with an explicit full set that **excludes
-     `time-tracking:edit`** (trade-off: new permissions won't auto-grant to Owner
+     `time-tracking:self`** (trade-off: new permissions won't auto-grant to Owner
      and must be added here going forward).
 
 **Recommendation:** do **#1** (role-aware page) — it fixes the Owner experience,

@@ -286,7 +286,10 @@ export function locationFor(
 ): EmployeeLocation {
   const date = { year, month, day };
   const rec = dayRecordFor(user.id, year, month, day);
-  const online = rec.status === "present" || rec.status === "late";
+  // "Online" = a session exists today. Under the five-status model that's present or
+  // partial (a partial day is a short session, not a no-show). Was `present || late`,
+  // which meant the same thing when `late` was still a peer status.
+  const online = rec.status === "present" || rec.status === "partial";
 
   // Device + GPS capability are stable per employee (not per day).
   const deviceSeed = hash(user.id);

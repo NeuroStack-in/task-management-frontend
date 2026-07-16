@@ -3,11 +3,19 @@
  * are stable across renders/reloads (SPEC.md §5). Server-safe.
  */
 import type { User, UserStatus } from "@/types/user";
+import type { DayStatus } from "@/types/attendance";
 
-export type AttendanceStatus = "present" | "late" | "leave" | "absent";
+/**
+ * @deprecated Use `DayStatus` from `@/types/attendance` — this alias only exists so the
+ * rename stayed a one-line change at each call site. There was a second, drifted copy of
+ * this union here; both are now the one model that mirrors the backend (LLD §7).
+ */
+export type AttendanceStatus = DayStatus;
 
 export interface AttendanceRecord {
-  status: AttendanceStatus;
+  status: DayStatus;
+  /** Qualifier on `present` — never a status of its own (LLD §7). */
+  late: boolean;
   clockIn: string;
   clockOut: string;
   hours: number;
@@ -21,36 +29,57 @@ function seedOf(id: string): number {
 export function attendanceFor(id: string): AttendanceRecord {
   const seed = seedOf(id);
   const r = seed % 10;
-  const status: AttendanceStatus =
-    r < 6 ? "present" : r < 8 ? "late" : r < 9 ? "leave" : "absent";
+  // LLD §7 resolution order: leave → non_workday → absent → partial → present.
+  // `late` qualifies present; it is not a status.
+  const status: DayStatus =
+    r < 1 ? "leave" : r < 2 ? "absent" : r < 3 ? "partial" : "present";
+  const late = status === "present" && r >= 8;
   const lateMin = (seed % 24) + 6;
   const clockIn =
     status === "present"
-      ? `09:0${seed % 6}`
-      : status === "late"
+      ? late
         ? `09:${lateMin}`
+        : `09:0${seed % 6}`
+      : status === "partial"
+        ? `10:${(seed % 50).toString().padStart(2, "0")}`
         : "—";
   const clockOut =
-    status === "present" || status === "late" ? `17:${10 + (seed % 40)}` : "—";
+    status === "present"
+      ? `17:${10 + (seed % 40)}`
+      : status === "partial"
+        ? `13:${10 + (seed % 45)}`
+        : "—";
   const hours =
     status === "present"
-      ? 8 + (seed % 5) / 10
-      : status === "late"
+      ? late
         ? 7 + (seed % 6) / 10
+        : 8 + (seed % 5) / 10
+      : status === "partial"
+        ? 2 + (seed % 15) / 10
         : 0;
-  return { status, clockIn, clockOut, hours };
+  return { status, late, clockIn, clockOut, hours };
 }
 
+/**
+ * Tally by status, plus `late` as a **subset of `present`** — not a peer.
+ * `present` already includes late arrivals; adding them double-counts (LLD §7).
+ */
 export function attendanceCounts(
   list: User[],
-): Record<AttendanceStatus, number> {
-  const counts: Record<AttendanceStatus, number> = {
+): Record<DayStatus, number> & { late: number } {
+  const counts = {
     present: 0,
-    late: 0,
+    partial: 0,
     leave: 0,
     absent: 0,
+    non_workday: 0,
+    late: 0,
   };
-  for (const u of list) counts[attendanceFor(u.id).status] += 1;
+  for (const u of list) {
+    const { status, late } = attendanceFor(u.id);
+    counts[status] += 1;
+    if (late) counts.late += 1;
+  }
   return counts;
 }
 

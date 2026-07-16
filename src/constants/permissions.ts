@@ -16,7 +16,7 @@ export const WILDCARD = "*" as const;
  * `canAccess`. (Oversight roles still approve leave via `leave:approve`.)
  */
 export const CONTRIBUTOR_ONLY_PERMISSIONS: PermissionId[] = [
-  "time-tracking:edit",
+  "time-tracking:self",
   "leave:view",
   "leave:request",
 ];
@@ -52,7 +52,11 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     label: "Time Tracking",
     permissions: [
       p("time-tracking", "view", "View Time Tracking"),
-      p("time-tracking", "edit", "Track own time (run timer & edit entries)"),
+      // Mirrors `Permission::TimeTrackSelf` (bit 110) in wp-contracts. It decides whether
+      // the agent shows this user a timer at all — it is NOT a write-permission on time
+      // entries. Time is agent-derived and immutable (LLD §4: no manual entries, no
+      // corrections), so nobody may edit an entry and no such permission exists.
+      p("time-tracking", "self", "Track own time (run a timer)"),
       p("time-tracking", "manage", "Manage time tracking (team oversight)"),
     ],
   },

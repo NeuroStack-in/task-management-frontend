@@ -9,9 +9,18 @@ import { Reveal } from "@/modules/marketing/reveal";
 export const metadata: Metadata = {
   title: "Pricing — WorkPulse",
   description:
-    "Simple, per-seat pricing. Start free, or trial Pro and Max for 14 days — no card required.",
+    "Simple, per-seat pricing. Start free, or trial Starter and Enterprise for 14 days — no card required.",
 };
 
+/**
+ * The three tiers, mirroring `Plan` in `crates/wp-contracts/src/plans.rs`:
+ * `free | starter | enterprise`. The server can only ever issue one of these, so a
+ * fourth tier here would be a plan nobody can actually buy.
+ *
+ * Was Free/Pro/Max, with a fourth "Enterprise" that existed only on the landing page —
+ * the surfaces disagreed with each other and none matched the catalog. Pro became
+ * Starter; Max folded into Enterprise.
+ */
 const PLANS = [
   {
     name: "Free",
@@ -23,7 +32,7 @@ const PLANS = [
     featured: false,
   },
   {
-    name: "Pro",
+    name: "Starter",
     price: "$12",
     unit: "/ user / mo",
     tagline: "For growing teams that need real insight.",
@@ -32,11 +41,11 @@ const PLANS = [
     featured: false,
   },
   {
-    name: "Max",
+    name: "Enterprise",
     price: "$22",
     unit: "/ user / mo",
     tagline: "For organizations operating at scale.",
-    features: ["Everything in Pro", "SSO / SAML & SCIM", "AI anomaly & burnout detection", "Audit logs, DPA & data residency", "Advanced security & roles", "Dedicated success manager"],
+    features: ["Everything in Starter", "SSO / SAML & SCIM", "AI anomaly & burnout detection", "Audit logs, DPA & data residency", "Advanced security & roles", "Custom contracts & premier SLA", "Dedicated success manager"],
     cta: "Start free trial",
     featured: true,
   },
@@ -58,9 +67,9 @@ const COMPARISON: { label: string; values: [string | boolean, string | boolean, 
 
 const FAQS = [
   { q: "How does per-seat billing work?", a: "You're billed per active user per month. Suspended and uninvited users don't count. Annual billing saves ~17% over monthly." },
-  { q: "Is there really a free plan?", a: "Yes — Free is free forever for up to 5 members. Pro and Max include a 14-day free trial with no card required." },
+  { q: "Is there really a free plan?", a: "Yes — Free is free forever for up to 5 members. Starter and Enterprise include a 14-day free trial with no card required." },
   { q: "Can I change plans later?", a: "Upgrade or downgrade anytime. Upgrades are prorated immediately; downgrades take effect at the next cycle." },
-  { q: "Do you offer enterprise terms?", a: "Max includes SSO/SAML, SCIM, audit logs, data residency, and a signed DPA. Talk to sales for volume and procurement." },
+  { q: "Do you offer enterprise terms?", a: "Enterprise includes SSO/SAML, SCIM, audit logs, data residency, and a signed DPA. Talk to sales for volume and procurement." },
 ];
 
 function Cell({ v }: { v: string | boolean }) {
@@ -88,7 +97,7 @@ export default function PricingPage() {
             Simple, per-seat pricing.
           </h1>
           <p className="m-enter-up mx-auto mt-5 max-w-xl text-base leading-relaxed sm:text-lg" style={{ color: "var(--m-muted)", animationDelay: "160ms" }}>
-            Start free, or trial Pro and Max for 14 days — no card required. Pay per
+            Start free, or trial Starter and Enterprise for 14 days — no card required. Pay per
             active user, billed monthly or annually.
           </p>
         </div>
@@ -143,7 +152,8 @@ export default function PricingPage() {
                 <thead>
                   <tr style={{ background: "var(--m-surface)" }}>
                     <th className="p-4 text-sm font-semibold">Capability</th>
-                    {["Free", "Pro", "Max"].map((h) => (
+                    {/* Driven off PLANS so the table can't drift from the cards above. */}
+                    {PLANS.map((p) => p.name).map((h) => (
                       <th key={h} className="p-4 text-center text-sm font-semibold">{h}</th>
                     ))}
                   </tr>
