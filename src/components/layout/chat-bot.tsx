@@ -5,6 +5,8 @@ import { Sparkles, X, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAssistantStore } from "@/stores/assistant.store";
+import { ApiError } from "@/lib/api";
+import { sendAssistantMessage } from "@/modules/communication/services/assistant.service";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -26,25 +28,14 @@ interface FabPos {
 const GREETING =
   "I'm your WorkPulse assistant. Ask about productivity, your team, or the current screen.";
 
+// Questions v1 can answer well. It has no live org-data grounding yet (that lands with `insights`),
+// so the old data-summary prompts ("Summarize this week") would just draw an honest "I can't see
+// your data yet" — these play to what the assistant actually does now.
 const SUGGESTIONS = [
-  "Summarize this week",
-  "Who needs attention?",
-  "Draft a productivity report",
+  "What can you help me with?",
+  "How does WorkPulse track productivity?",
+  "Explain the five attendance statuses",
 ];
-
-/** Canned, keyword-based mock replies (no real AI in Phase 1). */
-function mockReply(prompt: string): string {
-  const q = prompt.toLowerCase();
-  if (q.includes("summar") || q.includes("week"))
-    return "This week productivity is up 3% overall, led by Engineering and Product. Weekend activity dropped as expected, and two teams show early burnout signals worth a look.";
-  if (q.includes("attention") || q.includes("burnout") || q.includes("risk"))
-    return "Design and Backend are trending down — Design has 2 people flagged for burnout, and Backend is at −8% today. The Alerts list in Analytics has the details.";
-  if (q.includes("report"))
-    return "I can draft a productivity report for the last 7 days covering active vs. productive time, top performers, and deadlines. Head to Reports → Custom Report Builder to export it as PDF or CSV.";
-  if (q.includes("top") || q.includes("productive"))
-    return "Your top performers this week are leading at 90%+ productivity. You can see the full ranking on the Dashboard and in Employees.";
-  return "This assistant runs on sample data in the demo. Try asking for a weekly summary, who needs attention, or a productivity report.";
-}
 
 export function ChatBot() {
   const open = useAssistantStore((s) => s.open);
@@ -64,18 +55,26 @@ export function ChatBot() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, pending, open]);
 
-  const send = (text: string) => {
+  const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || pending) return;
     const userMsg: Message = { id: idRef.current++, role: "user", text: trimmed };
     setMessages((m) => [...m, userMsg]);
     setInput("");
     setPending(true);
-    const reply = mockReply(trimmed);
-    setTimeout(() => {
+    try {
+      // Real Groq Llama 3.3 70B via /v1/assistant/messages (session-only; nothing stored server-side).
+      const reply = await sendAssistantMessage(trimmed);
       setMessages((m) => [...m, { id: idRef.current++, role: "assistant", text: reply }]);
+    } catch (e) {
+      const text =
+        e instanceof ApiError && e.status === 403
+          ? "You don't have access to the assistant."
+          : "Sorry — I couldn't reach the assistant just now. Please try again.";
+      setMessages((m) => [...m, { id: idRef.current++, role: "assistant", text }]);
+    } finally {
       setPending(false);
-    }, 700);
+    }
   };
 
   // When opened with a seeded prompt (e.g. from the Help Center "Ask AI"
