@@ -14,6 +14,8 @@ export interface ApiEmployee {
   user_id: string;
   name: string;
   title?: string;
+  /** Human-facing employee id (e.g. `EMP-0001`). Absent for legacy/seeded rows minted before ids. */
+  emp_id?: string;
   /** `active` | `deactivated`. */
   status: string;
   department_id: string;

@@ -20,6 +20,8 @@ import {
 /** The row shape the view renders. `productivityScore: null` = unavailable (agent-blocked). */
 export interface EmployeeRow {
   id: string;
+  /** Human-facing employee id (e.g. `EMP-0001`); `null` for legacy rows that predate ids. */
+  empId: string | null;
   name: string;
   email: string;
   avatarUrl?: string;
@@ -70,6 +72,7 @@ export function useEmployees(): EmployeesData {
         setEmployees(
           roster.map((e) => ({
             id: e.user_id,
+            empId: e.emp_id ?? null,
             name: e.name,
             email: "", // not on the directory list — lives on the full profile
             roleName: "",

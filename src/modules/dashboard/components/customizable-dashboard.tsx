@@ -20,17 +20,9 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  GripVertical,
-  SlidersHorizontal,
-  RotateCcw,
-  X,
-} from "lucide-react";
-import { useDashboardStore } from "@/stores/dashboard.store";
-import {
-  WIDGET_REGISTRY,
-  type DashboardData,
-} from "@/modules/dashboard/widget-registry";
+import { GripVertical, SlidersHorizontal, RotateCcw, X } from "lucide-react";
+import { useDashboardStore, type DashboardWidget } from "@/stores/dashboard.store";
+import { WIDGET_REGISTRY } from "@/modules/dashboard/widget-registry";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -40,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { DashboardWidget } from "@/types";
+import type { DashboardSummary } from "../use-dashboard-summary";
 
 /**
  * Makes a widget card fill its tile and distribute its content top-to-bottom:
@@ -55,19 +47,14 @@ const FILL_CARD =
  * Tile width: three per row on desktop (two on tablet, one on mobile). `grow`
  * lets the cards on a partial LAST row expand to fill the width — a lone last
  * card spans the whole row, two split it in half — while every complete row
- * stays a clean 3-up. (-0.02px guards against sub-pixel rounding wrapping a full
- * row early; the gap is 1.25rem = gap-5.)
+ * stays a clean 3-up.
  */
 const TILE =
   "grow min-w-0 basis-full " +
   "sm:basis-[calc((100%-1.25rem)/2-0.02px)] " +
   "xl:basis-[calc((100%-2.5rem)/3-0.02px)]";
 
-/**
- * A gentle floor for the first row so the top widgets stay visually balanced
- * without ballooning to fill the viewport. Widgets otherwise size to their
- * content; rows below sit under the fold (scroll to reveal — no view-more toggle).
- */
+/** A gentle floor for the first row so the top widgets stay visually balanced. */
 const HERO_ROW_FILL = "xl:min-h-[22rem]";
 
 function SortableWidget({
@@ -77,7 +64,6 @@ function SortableWidget({
   children,
 }: {
   id: string;
-  /** First-row tile: stretch to fill the viewport down to the sidebar bottom. */
   heroFill?: boolean;
   onRemove: () => void;
   children: React.ReactNode;
@@ -119,7 +105,6 @@ function SortableWidget({
       ) : null}
 
       {isDragging ? (
-        // Dashed drop-placeholder; the floating DragOverlay shows the widget.
         <div className="relative h-full">
           <div className={cn("invisible", FILL_CARD)}>{children}</div>
           <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
@@ -131,7 +116,7 @@ function SortableWidget({
   );
 }
 
-export function CustomizableDashboard({ data }: { data: DashboardData }) {
+export function CustomizableDashboard({ summary }: { summary: DashboardSummary }) {
   const widgets = useDashboardStore((s) => s.widgets);
   const toggleWidget = useDashboardStore((s) => s.toggleWidget);
   const reorder = useDashboardStore((s) => s.reorder);
@@ -152,9 +137,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const visibleIds = visible.map((w) => w.id);
   const hiddenIds = ordered.filter((w) => !w.visible).map((w) => w.id);
 
-  const activeWidget = activeId
-    ? ordered.find((w) => w.id === activeId)
-    : null;
+  const activeWidget = activeId ? ordered.find((w) => w.id === activeId) : null;
 
   const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
 
@@ -180,7 +163,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
         heroFill={heroFill}
         onRemove={() => toggleWidget(w.id)}
       >
-        {def.render(data)}
+        {def.render(summary)}
       </SortableWidget>
     );
   };
@@ -188,9 +171,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg font-semibold tracking-tight">
-          Your widgets
-        </h2>
+        <h2 className="font-display text-lg font-semibold tracking-tight">Your widgets</h2>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={<Button variant="outline" size="sm" className="gap-2" />}
@@ -198,19 +179,14 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
             <SlidersHorizontal className="size-4" /> Customize
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64 p-0">
-            <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
-              Show widgets
-            </p>
+            <p className="px-3 py-2 text-xs font-medium text-muted-foreground">Show widgets</p>
             <div className="max-h-72 overflow-y-auto px-1 pb-1">
               {ordered.map((w) => (
                 <label
                   key={w.id}
                   className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
                 >
-                  <Checkbox
-                    checked={w.visible}
-                    onCheckedChange={() => toggleWidget(w.id)}
-                  />
+                  <Checkbox checked={w.visible} onCheckedChange={() => toggleWidget(w.id)} />
                   <span className="truncate">{w.title}</span>
                 </label>
               ))}
@@ -230,8 +206,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
       {visible.length === 0 ? (
         <div className="rounded-[1.4rem] border border-dashed p-10 text-center text-sm text-muted-foreground">
           No widgets shown. Use{" "}
-          <span className="font-medium text-foreground">Customize</span> to add
-          some.
+          <span className="font-medium text-foreground">Customize</span> to add some.
         </div>
       ) : (
         <DndContext
@@ -242,10 +217,6 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           onDragCancel={() => setActiveId(null)}
         >
           <SortableContext items={visibleIds} strategy={rectSortingStrategy}>
-            {/* Three-up rows; the partial last row's cards grow to fill the width
-                (1 card → full row, 2 cards → half each), so a row never leaves an
-                empty cell. The first row stretches to the sidebar's bottom edge
-                (HERO_ROW_FILL); rows below sit under the fold (scroll to reveal). */}
             <div className="flex flex-wrap items-stretch gap-5">
               {visible.map((w, i) => renderWidget(w, i < 3))}
             </div>
@@ -253,7 +224,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           <DragOverlay>
             {activeWidget ? (
               <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
-                {WIDGET_REGISTRY[activeWidget.type]?.render(data)}
+                {WIDGET_REGISTRY[activeWidget.type]?.render(summary)}
               </div>
             ) : null}
           </DragOverlay>

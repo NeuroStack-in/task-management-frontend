@@ -1,73 +1,64 @@
 import type { ReactNode } from "react";
-import type { WidgetType } from "@/types";
-import { ProductivityChart } from "./components/productivity-chart";
-import { TeamComparisonChart } from "./components/team-comparison-chart";
 import {
-  ProductivityHeatmap,
-  AttendanceDonut,
   ActiveInactiveRing,
   HeadcountStatus,
 } from "./components/insight-widgets";
 import {
-  TopEmployeesWidget,
-  ScreenshotsWidget,
-  AiSummaryWidget,
-  AlertsDeadlinesWidget,
-  UpcomingTasksWidget,
-  BillingWidget,
-} from "./components/widgets";
-import type { DashboardData } from "./lib/dashboard-data";
+  ProjectsOverviewCard,
+  DepartmentHeadcountCard,
+  BillingCard,
+  MonitoringPendingCard,
+} from "./components/real-widgets";
+import type { DashboardSummary } from "./use-dashboard-summary";
 
-export type { DashboardData } from "./lib/dashboard-data";
+/** The org dashboard's real, customizable widgets. Every one is live data or an honest placeholder. */
+export type RealWidgetType =
+  | "projects-overview"
+  | "active-inactive"
+  | "department-headcount"
+  | "billing"
+  | "headcount-status"
+  | "monitoring-pending";
 
 interface WidgetDef {
-  /**
-   * Columns spanned on the bento grid. All widgets are uniform (1) so the
-   * adaptive grid can always tile without gaps; charts render comfortably in a
-   * single cell. Kept as a field in case a future widget needs a wider cell.
-   */
-  span: 1 | 2;
-  render: (d: DashboardData) => ReactNode;
+  title: string;
+  render: (s: DashboardSummary) => ReactNode;
 }
 
-export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
-  "productivity-trends": {
-    span: 1,
-    render: (d) => (
-      <ProductivityChart data={d.productivityTrend} rangeLabel={d.rangeLabel} />
-    ),
-  },
-  heatmap: { span: 1, render: (d) => <ProductivityHeatmap data={d.heatmap} /> },
-  "team-comparison": {
-    span: 1,
-    render: (d) => <TeamComparisonChart data={d.teamData} />,
-  },
-  attendance: {
-    span: 1,
-    render: (d) => <AttendanceDonut counts={d.attendanceCounts} />,
+export const WIDGET_REGISTRY: Record<RealWidgetType, WidgetDef> = {
+  "projects-overview": {
+    title: "Projects overview",
+    render: (s) => <ProjectsOverviewCard p={s.projects} />,
   },
   "active-inactive": {
-    span: 1,
-    render: (d) => (
-      <ActiveInactiveRing active={d.activeCount} inactive={d.inactiveCount} />
+    title: "Active vs inactive",
+    render: (s) => (
+      <ActiveInactiveRing active={s.employees.active} inactive={s.employees.inactive} />
     ),
   },
-  headcount: {
-    span: 1,
-    render: (d) => <HeadcountStatus counts={d.statusCounts} />,
+  "department-headcount": {
+    title: "Headcount by department",
+    render: (s) => <DepartmentHeadcountCard departments={s.employees.byDepartment} />,
   },
-  screenshots: {
-    span: 1,
-    render: (d) => (
-      <ScreenshotsWidget count={d.screenshotCount} trend={d.screenshotsTrend} />
+  billing: {
+    title: "Billing overview",
+    render: (s) => <BillingCard billing={s.billing} />,
+  },
+  "headcount-status": {
+    title: "Headcount by status",
+    render: (s) => (
+      <HeadcountStatus
+        counts={{
+          active: s.employees.active,
+          inactive: s.employees.inactive,
+          invited: 0,
+          suspended: 0,
+        }}
+      />
     ),
   },
-  "top-employees": {
-    span: 1,
-    render: (d) => <TopEmployeesWidget people={d.topPerformers} />,
+  "monitoring-pending": {
+    title: "Activity monitoring",
+    render: () => <MonitoringPendingCard />,
   },
-  "ai-summary": { span: 1, render: () => <AiSummaryWidget /> },
-  billing: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
-  "alerts-deadlines": { span: 1, render: () => <AlertsDeadlinesWidget /> },
-  "upcoming-tasks": { span: 1, render: () => <UpcomingTasksWidget /> },
 };

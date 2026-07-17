@@ -57,7 +57,7 @@ const REPORT_COLUMNS = [
 ];
 const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
 const reportRow = (e: EmployeeRow) => [
-  e.id, e.name, e.email, e.roleName, e.jobTitle, e.department, e.team, e.status, pct(e.productivityScore),
+  e.empId ?? e.id, e.name, e.email, e.roleName, e.jobTitle, e.department, e.team, e.status, pct(e.productivityScore),
 ];
 
 function exportEmployeesCsv(list: EmployeeRow[]) {
@@ -226,7 +226,9 @@ export function EmployeesView() {
       if (status !== "all" && e.status !== status) return false;
       if (
         q &&
-        !`${e.name} ${e.email} ${e.jobTitle} ${e.id}`.toLowerCase().includes(q)
+        !`${e.name} ${e.email} ${e.jobTitle} ${e.empId ?? ""} ${e.id}`
+          .toLowerCase()
+          .includes(q)
       )
         return false;
       return true;
@@ -373,11 +375,15 @@ export function EmployeesView() {
                           </Avatar>
                           <div className="min-w-0">
                             <p className="truncate font-medium">{e.name}</p>
-                            {/* The directory serves neither email nor a human employee id — only
-                                the Cognito user id (a UUID, not shown). Use the job title as the
-                                subtitle when present; email fills in on the full profile. */}
-                            {(e.jobTitle || e.email) && (
+                            {/* Subtitle: the human employee id (e.g. EMP-0001) is the directory's
+                                stable identifier — lead with it. Fall back to job title, then email;
+                                the raw Cognito UUID is never shown. */}
+                            {(e.empId || e.jobTitle || e.email) && (
                               <p className="truncate text-xs text-muted-foreground">
+                                {e.empId ? (
+                                  <span className="font-mono tabular-nums">{e.empId}</span>
+                                ) : null}
+                                {e.empId && (e.jobTitle || e.email) ? " · " : ""}
                                 {e.jobTitle || e.email}
                               </p>
                             )}
