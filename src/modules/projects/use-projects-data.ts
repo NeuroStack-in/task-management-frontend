@@ -63,23 +63,6 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-/** Retry a call on transient throttle/unavailable (503/429) — a cold-start or burst hiccup, not a
- *  real error. Short exponential backoff; gives up after `attempts` and rethrows. */
-async function withRetry<R>(fn: () => Promise<R>, attempts = 3): Promise<R> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastErr = e;
-      const transient = e instanceof ApiError && (e.status === 503 || e.status === 429);
-      if (!transient || i === attempts - 1) throw e;
-      await new Promise((r) => setTimeout(r, 250 * (i + 1)));
-    }
-  }
-  throw lastErr;
-}
-
 export interface ProjectsData {
   projects: Project[];
   tasks: Task[];
@@ -122,9 +105,11 @@ export function useProjectsData(): ProjectsData {
         // org has more than a handful of projects. Batched, the load stays flat.
         const enriched = await mapWithConcurrency(list, PROJECT_FANOUT, async (p) => {
           try {
+            // apiFetch retries transient 503/429 on these GETs; bounded concurrency keeps them from
+            // bursting into a throttle in the first place.
             const [detail, board] = await Promise.all([
-              withRetry(() => getProject(p.id)),
-              withRetry(() => getBoard(p.id)).catch(() => []),
+              getProject(p.id),
+              getBoard(p.id).catch(() => []),
             ]);
             return { detail, board };
           } catch {

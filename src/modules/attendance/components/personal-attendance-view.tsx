@@ -37,6 +37,15 @@ const STATUS: Record<
   non_workday: { label: "Non-working day", tile: "bg-muted/40 ring-border", dot: "bg-muted-foreground/40" },
 };
 
+/** Never index STATUS with a raw server value directly: a status the map doesn't have would be
+ *  `undefined` and crash on `.tone`/`.dot`. This always returns a renderable meta. */
+const statusMeta = (s: string) =>
+  STATUS[s as DayStatus] ?? {
+    label: s,
+    tile: "bg-muted/40 ring-border",
+    dot: "bg-muted-foreground/40",
+  };
+
 /** `late` qualifies `present` — styled as a marker on the tile, not a status of its own. */
 const LATE_DOT = "bg-warning";
 
@@ -326,7 +335,7 @@ export function PersonalAttendanceView() {
             </thead>
             <tbody className="divide-y divide-border">
               {recent.map((r) => {
-                const meta = STATUS[r.status];
+                const meta = statusMeta(r.status);
                 const logged = r.hours > 0 && r.clockIn && r.clockOut;
                 const left = logged ? axisPct(r.clockIn) : 0;
                 const right = logged ? axisPct(r.clockOut) : 0;
@@ -407,7 +416,7 @@ function PersonalDayCell({
 
   const future = isFutureDate(cell.year, cell.month, cell.day);
   const rec = future ? null : recordFor(cell.year, cell.month, cell.day);
-  const meta = rec ? STATUS[rec.status] : null;
+  const meta = rec ? statusMeta(rec.status) : null;
 
   return (
     <div

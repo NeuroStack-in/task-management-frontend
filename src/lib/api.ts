@@ -35,19 +35,40 @@ interface Envelope<T> {
   cursor?: string;
 }
 
+/**
+ * Transient statuses worth retrying: 503 (Lambda cold-start / unavailable) and 429 (throttle). A
+ * burst of reads can trip these even when nothing is wrong; a short retry smooths it over.
+ */
+const TRANSIENT = new Set([429, 503]);
+const MAX_RETRIES = 2;
+
 export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
   const token = await getIdToken();
-  const res = await fetch(`${baseUrl()}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
+  // Only **idempotent** requests may be retried. Retrying a POST/PATCH on a 503 could double-apply
+  // it (the request may have reached the handler before the gateway gave up), so writes never retry
+  // — only GET (the default when no method is set).
+  const method = (init.method ?? "GET").toUpperCase();
+  const retryable = method === "GET";
+
+  let res: Response | null = null;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`${baseUrl()}${path}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
+    });
+    if (res.ok || !retryable || !TRANSIENT.has(res.status) || attempt >= MAX_RETRIES) {
+      break;
+    }
+    // Exponential backoff with a little spread so parallel callers don't retry in lockstep.
+    await new Promise((r) => setTimeout(r, 200 * 2 ** attempt + Math.random() * 100));
+  }
 
   const body: unknown = await res.json().catch(() => null);
 
