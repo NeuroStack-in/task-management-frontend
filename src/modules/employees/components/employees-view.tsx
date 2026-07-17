@@ -40,25 +40,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useEmployeesStore } from "@/stores/employees.store";
-import { useDataScope } from "@/hooks/use-data-scope";
+import { Loader } from "@/components/shared/loader";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { InviteDialog } from "./invite-dialog";
+import { useEmployees, type EmployeeRow } from "../use-employees";
 
-export interface EmployeeRow {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-  roleName: string;
-  jobTitle: string;
-  department: string;
-  team: string;
-  status: "active" | "inactive" | "invited" | "suspended";
-  productivityScore: number;
-}
+export type { EmployeeRow };
 
 const STATUSES = ["all", "active", "inactive", "invited", "suspended"] as const;
 const PAGE_SIZE = 9;
@@ -66,8 +55,9 @@ const PAGE_SIZE = 9;
 const REPORT_COLUMNS = [
   "ID", "Name", "Email", "Role", "Title", "Department", "Team", "Status", "Productivity %",
 ];
+const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
 const reportRow = (e: EmployeeRow) => [
-  e.id, e.name, e.email, e.roleName, e.jobTitle, e.department, e.team, e.status, e.productivityScore,
+  e.id, e.name, e.email, e.roleName, e.jobTitle, e.department, e.team, e.status, pct(e.productivityScore),
 ];
 
 function exportEmployeesCsv(list: EmployeeRow[]) {
@@ -83,7 +73,7 @@ function exportEmployeesCsv(list: EmployeeRow[]) {
 
 function exportEmployeesPdf(
   list: EmployeeRow[],
-  stats: { active: number; avgProductivity: number },
+  stats: { active: number; avgProductivity: number | null },
 ) {
   const doc = new jsPDF();
   doc.setFontSize(18);
@@ -91,7 +81,7 @@ function exportEmployeesPdf(
   doc.setFontSize(10);
   doc.setTextColor(120);
   doc.text(
-    `${list.length} employees · ${stats.active} active · ${stats.avgProductivity}% avg productivity · WorkPulse`,
+    `${list.length} employees · ${stats.active} active · ${pct(stats.avgProductivity)} avg productivity · WorkPulse`,
     14,
     25,
   );
@@ -110,7 +100,7 @@ function exportEmployeesPdf(
     doc.text(e.name, xs[0], y);
     doc.text(e.department, xs[1], y);
     doc.text(e.status, xs[2], y);
-    doc.text(`${e.productivityScore}%`, xs[3], y);
+    doc.text(pct(e.productivityScore), xs[3], y);
     y += 7;
     if (y > 285) {
       doc.addPage();
@@ -162,7 +152,19 @@ function FilterDropdown({
   );
 }
 
-function ProductivityCell({ value }: { value: number }) {
+function ProductivityCell({ value }: { value: number | null }) {
+  // `null` = the score isn't available yet (it needs the desktop agent's activity data, via
+  // insights). Show a clear placeholder rather than a fake 0%.
+  if (value === null) {
+    return (
+      <span
+        className="text-xs text-muted-foreground"
+        title="Productivity scoring needs activity monitoring, which isn't enabled yet."
+      >
+        —
+      </span>
+    );
+  }
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
@@ -181,64 +183,41 @@ function ProductivityCell({ value }: { value: number }) {
   );
 }
 
-export function EmployeesView({
-  employees,
-  departments,
-  stats,
-}: {
-  employees: EmployeeRow[];
-  departments: string[];
-  stats: { total: number; active: number; avgProductivity: number; departments: number };
-}) {
+export function EmployeesView() {
   const { can } = usePermissions();
   const router = useRouter();
-  const customEmployees = useEmployeesStore((s) => s.customEmployees);
-  const assignments = useEmployeesStore((s) => s.assignments);
-  const { ids: scopeIds } = useDataScope();
+  // Real backend directory (server-scoped by `employees:read`). No client scope filter, no session
+  // overlays — the server is the roster.
+  const { employees, loading, error, reload } = useEmployees();
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  // Runtime-created accounts (persisted store) sit on top of the seed users,
-  // and any department/team reassignments are applied over the top.
-  const allEmployees = useMemo(
-    () =>
-      [...customEmployees, ...employees]
-        // Team leads only see their own team; org roles see everyone.
-        .filter((e) => scopeIds === null || scopeIds.has(e.id))
-        .map((e) => {
-          const a = assignments[e.id];
-          return a ? { ...e, department: a.department, team: a.team } : e;
-        }),
-    [customEmployees, employees, assignments, scopeIds],
-  );
-  // Created accounts have no seed-backed profile page, so their rows don't link.
-  const customIds = useMemo(
-    () => new Set(customEmployees.map((e) => e.id)),
-    [customEmployees],
-  );
+  const allEmployees = employees;
+  // Every row is a real directory user with a profile page — none are session-only.
+  const customIds = useMemo(() => new Set<string>(), []);
 
-  // Department filter options are derived from the employees the current user
-  // can actually see — the full org for Owner/Admin, just their team for a
-  // team-scoped role — so the dropdown never lists empty departments.
   const deptOptions = useMemo(
     () => [...new Set(allEmployees.map((e) => e.department))].sort(),
     [allEmployees],
   );
 
-  // Stats stay in sync as accounts are added this session.
   const liveStats = useMemo(() => {
-    if (customEmployees.length === 0) return stats;
     const total = allEmployees.length;
     const active = allEmployees.filter((e) => e.status === "active").length;
-    const avgProductivity = Math.round(
-      allEmployees.reduce((s, e) => s + e.productivityScore, 0) / total,
-    );
+    // Average only over rows that actually have a score. None do yet (productivity needs the agent),
+    // so this is `null` → the stat card shows "—" instead of a fake 0%.
+    const scored = allEmployees.filter((e) => e.productivityScore !== null);
+    const avgProductivity = scored.length
+      ? Math.round(
+          scored.reduce((s, e) => s + (e.productivityScore ?? 0), 0) / scored.length,
+        )
+      : null;
     const departmentCount = new Set(allEmployees.map((e) => e.department)).size;
     return { total, active, avgProductivity, departments: departmentCount };
-  }, [allEmployees, customEmployees.length, stats]);
+  }, [allEmployees]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -263,6 +242,28 @@ export function EmployeesView({
     setPage(0);
   };
 
+  if (loading && employees.length === 0) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader label="Loading employees…" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-5">
+        <PageHeader title="Employees" description="Your organization's people." />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -273,7 +274,7 @@ export function EmployeesView({
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total employees" value={liveStats.total} icon={Users} hint="in this organization" featured />
         <StatCard label="Active" value={liveStats.active} icon={UserCheck} delta={4} />
-        <StatCard label="Avg. productivity" value={`${liveStats.avgProductivity}%`} icon={GaugeIcon} delta={3} />
+        <StatCard label="Avg. productivity" value={pct(liveStats.avgProductivity)} icon={GaugeIcon} hint="pending activity monitoring" />
         <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />
       </div>
 
@@ -432,7 +433,7 @@ export function EmployeesView({
       <InviteDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
-        departments={departments}
+        departments={deptOptions}
       />
     </div>
   );
