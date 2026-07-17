@@ -373,12 +373,14 @@ export function EmployeesView() {
                           </Avatar>
                           <div className="min-w-0">
                             <p className="truncate font-medium">{e.name}</p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              <span className="font-mono text-[0.65rem] text-muted-foreground/70">
-                                {e.id}
-                              </span>{" "}
-                              · {e.email}
-                            </p>
+                            {/* The directory serves neither email nor a human employee id — only
+                                the Cognito user id (a UUID, not shown). Use the job title as the
+                                subtitle when present; email fills in on the full profile. */}
+                            {(e.jobTitle || e.email) && (
+                              <p className="truncate text-xs text-muted-foreground">
+                                {e.jobTitle || e.email}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </TableCell>
@@ -386,7 +388,8 @@ export function EmployeesView() {
                         {e.roleName}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {e.department} · {e.team}
+                        {e.department}
+                        {e.team ? ` · ${e.team}` : ""}
                       </TableCell>
                       <TableCell>
                         <ProductivityCell value={e.productivityScore} />
