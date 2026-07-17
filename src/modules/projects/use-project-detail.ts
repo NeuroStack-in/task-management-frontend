@@ -18,13 +18,8 @@ import {
   updateTask as apiUpdateTask,
   deleteTask as apiDeleteTask,
 } from "./services/projects.service";
-import type {
-  Project,
-  ProjectStatus,
-  Task,
-  TaskPriority,
-  TaskStatus,
-} from "./types";
+import type { Project, Task, TaskPriority, TaskStatus } from "./types";
+import { mapProjectStatus } from "./use-projects-data";
 import type { UserMini } from "./lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 import type { TaskFormValues } from "@/stores/tasks.store";
@@ -198,7 +193,7 @@ function toProject(d: Awaited<ReturnType<typeof getProject>>): Project {
     name: d.name,
     description: d.description?.trim() || undefined,
     key: d.key ?? "",
-    status: d.status as ProjectStatus,
+    status: mapProjectStatus(d.status),
     billable: d.billable,
     progress: d.kpi?.completion_pct ?? 0,
     velocity: d.kpi?.velocity?.length ? d.kpi.velocity : [],

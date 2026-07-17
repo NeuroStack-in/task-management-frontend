@@ -233,13 +233,25 @@ export function useProjectsData(): ProjectsData {
   };
 }
 
+/**
+ * Backend project status → the frontend's vocabulary. The server's terminal state is `archived`
+ * (LLD §5: active | on_hold | archived); the UI models it as `completed`. Coerced here so every
+ * `PROJECT_STATUS_META[status]` lookup downstream is safe — an unmapped status would crash a card
+ * (`status.tone` on undefined). Anything unrecognised falls back to `active` rather than throwing.
+ */
+export function mapProjectStatus(s: string): ProjectStatus {
+  if (s === "archived") return "completed";
+  if (s === "active" || s === "on_hold" || s === "completed") return s;
+  return "active";
+}
+
 function toProject(d: Awaited<ReturnType<typeof getProject>>): Project {
   return {
     id: d.id,
     name: d.name,
     description: d.description?.trim() || undefined,
     key: d.key ?? "",
-    status: d.status as ProjectStatus,
+    status: mapProjectStatus(d.status),
     billable: d.billable,
     // KPIs from the Streams aggregator; 0/[] until it has run for a brand-new project.
     progress: d.kpi?.completion_pct ?? 0,
