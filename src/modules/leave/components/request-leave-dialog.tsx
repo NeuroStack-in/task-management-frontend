@@ -25,12 +25,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
-import { useAuthStore } from "@/stores/auth.store";
-import {
-  useLeaveStore,
-  LEAVE_TYPES,
-  LEAVE_TYPE_LABEL,
-} from "@/stores/leave-requests.store";
+import { ApiError } from "@/lib/api";
+import type {
+  ApiLeaveType,
+  NewLeaveRequest,
+} from "../services/leave.service";
 
 /** Inclusive working-day (Mon–Fri) count between two ISO dates. */
 export function workingDays(startIso: string, endIso: string): number {
@@ -48,9 +47,12 @@ export function workingDays(startIso: string, endIso: string): number {
   return n;
 }
 
+// `type` is a server-configured id (not a fixed enum), so it's validated as a non-empty string and
+// the picker is populated from the org's types. The server recomputes the authoritative day count;
+// the `days` shown here is a working-day preview only.
 const schema = z
   .object({
-    type: z.enum(["vacation", "sick", "personal", "unpaid"]),
+    type: z.string().min(1, "Select a leave type."),
     startDate: z.string().min(1, "Select a start date."),
     endDate: z.string().min(1, "Select an end date."),
     reason: z.string().trim().min(3, "Add a short reason."),
@@ -65,13 +67,14 @@ type FormValues = z.infer<typeof schema>;
 export function RequestLeaveDialog({
   open,
   onOpenChange,
+  types,
+  onSubmit: submitRequest,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  types: ApiLeaveType[];
+  onSubmit: (req: NewLeaveRequest) => Promise<void>;
 }) {
-  const user = useAuthStore((s) => s.user);
-  const addRequest = useLeaveStore((s) => s.addRequest);
-
   const {
     register,
     handleSubmit,
@@ -81,7 +84,7 @@ export function RequestLeaveDialog({
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { type: "vacation", startDate: "", endDate: "", reason: "" },
+    defaultValues: { type: "", startDate: "", endDate: "", reason: "" },
   });
 
   const start = watch("startDate");
@@ -93,22 +96,25 @@ export function RequestLeaveDialog({
     onOpenChange(false);
   }
 
-  const onSubmit = handleSubmit((data) => {
-    if (!user) return;
-    const d = workingDays(data.startDate, data.endDate);
-    addRequest({
-      userId: user.id,
-      userName: user.name,
-      type: data.type,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      days: d,
-      reason: data.reason,
-    });
-    toast.success("Leave request submitted", {
-      description: `${LEAVE_TYPE_LABEL[data.type]} · ${d} day${d === 1 ? "" : "s"} — pending approval`,
-    });
-    close();
+  const onSubmit = handleSubmit(async (data) => {
+    const label = types.find((t) => t.type_id === data.type)?.name ?? "Leave";
+    try {
+      await submitRequest({
+        type_id: data.type,
+        from: data.startDate,
+        to: data.endDate,
+        reason: data.reason,
+      });
+      const d = workingDays(data.startDate, data.endDate);
+      toast.success("Leave request submitted", {
+        description: `${label} · ${d} day${d === 1 ? "" : "s"} — pending approval`,
+      });
+      close();
+    } catch (e) {
+      const msg =
+        e instanceof ApiError ? e.message : "Couldn't submit your request. Try again.";
+      toast.error(msg);
+    }
   });
 
   return (
@@ -132,9 +138,9 @@ export function RequestLeaveDialog({
                     <SelectValue placeholder="Select a leave type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {LEAVE_TYPES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
+                    {types.map((t) => (
+                      <SelectItem key={t.type_id} value={t.type_id}>
+                        {t.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

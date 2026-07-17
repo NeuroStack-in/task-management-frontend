@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Plane, CalendarPlus, X } from "lucide-react";
+import { Plane, CalendarPlus, X, TriangleAlert } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -17,19 +18,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useAuthStore } from "@/stores/auth.store";
-import {
-  useLeaveStore,
-  LEAVE_TYPES,
-  LEAVE_TYPE_LABEL,
-  type LeaveStatus,
-} from "@/stores/leave-requests.store";
+import { useLeave } from "../use-leave";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
 
-const STATUS_META: Record<LeaveStatus, { label: string; cls: string }> = {
+/** The server's request states (LLD §8): pending → approved, or pending/approved → cancelled. */
+const STATUS_META: Record<string, { label: string; cls: string }> = {
   pending: { label: "Pending", cls: "bg-warning/15 text-warning" },
   approved: { label: "Approved", cls: "bg-success/12 text-success" },
+  cancelled: { label: "Cancelled", cls: "bg-muted text-muted-foreground" },
   rejected: { label: "Rejected", cls: "bg-destructive/12 text-destructive" },
 };
 
@@ -46,44 +43,26 @@ const fmtRange = (start: string, end: string) =>
     ? `${fmtDay(start)}, ${start.slice(0, 4)}`
     : `${fmtDay(start)} – ${fmtDay(end)}, ${end.slice(0, 4)}`;
 
+/** Epoch ms → "Jul 20", or "—" when the server didn't stamp a created_at. */
+const fmtSubmitted = (ms?: number) => {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  return `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`;
+};
+
 export function LeaveRequestsView() {
   const { can } = usePermissions();
-  const user = useAuthStore((s) => s.user);
-  const requests = useLeaveStore((s) => s.requests);
-  const cancelRequest = useLeaveStore((s) => s.cancelRequest);
-  const seedFor = useLeaveStore((s) => s.seedFor);
+  const leave = useLeave();
+  const { balances, requests, types, typeName, loading, error, submit, cancel } = leave;
   const [open, setOpen] = useState(false);
 
-  const userId = user?.id ?? "";
-
-  // Give a fresh demo user some leave history so the page isn't blank (once).
-  useEffect(() => {
-    if (user?.id) seedFor(user.id, user.name);
-  }, [user?.id, user?.name, seedFor]);
-  const mine = useMemo(
-    () =>
-      requests
-        .filter((r) => r.userId === userId)
-        .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)),
-    [requests, userId],
-  );
-
-  // Balances per allowance-bearing type: pending + approved days count as used.
-  const balances = useMemo(
-    () =>
-      LEAVE_TYPES.filter((t) => t.allowance !== null).map((t) => {
-        const used = mine
-          .filter((r) => r.type === t.value && r.status !== "rejected")
-          .reduce((sum, r) => sum + r.days, 0);
-        const allowance = t.allowance as number;
-        return { ...t, allowance, used, remaining: Math.max(0, allowance - used) };
-      }),
-    [mine],
-  );
-
-  const handleCancel = (id: string) => {
-    cancelRequest(id);
-    toast.success("Request withdrawn");
+  const handleCancel = async (id: string) => {
+    try {
+      await cancel(id);
+      toast.success("Request withdrawn");
+    } catch {
+      toast.error("Couldn't withdraw the request. Try again.");
+    }
   };
 
   return (
@@ -93,32 +72,53 @@ export function LeaveRequestsView() {
         description="Request time off and track the status of your leave."
       />
 
-      {/* Balances */}
+      {error ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-warning/40 bg-warning/5 px-4 py-3 text-sm">
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <TriangleAlert className="size-4 text-warning" /> {error}
+          </span>
+          <Button variant="outline" size="sm" onClick={leave.reload}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
+      {/* Balances — computed server-side (LLD §8). Only allowance-bearing types show a bar. */}
       <div className="grid gap-4 sm:grid-cols-3">
-        {balances.map((b) => {
-          const pct = Math.round((b.used / b.allowance) * 100);
-          return (
-            <Card key={b.value} className="gap-2 p-5">
-              <p className="text-sm text-muted-foreground">{b.label}</p>
-              <p className="font-display text-3xl font-semibold tabular-nums">
-                {b.remaining}
-                <span className="text-base font-normal text-muted-foreground">
-                  {" "}
-                  / {b.allowance} days
-                </span>
-              </p>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${Math.min(100, pct)}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {b.used} taken · {b.remaining} available
-              </p>
-            </Card>
-          );
-        })}
+        {loading && balances.length === 0
+          ? Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} className="gap-2 p-5">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-9 w-32" />
+                <Skeleton className="h-1.5 w-full" />
+              </Card>
+            ))
+          : balances
+              .filter((b) => b.allowance > 0)
+              .map((b) => {
+                const pct = b.allowance ? Math.round((b.used / b.allowance) * 100) : 0;
+                return (
+                  <Card key={b.type_id} className="gap-2 p-5">
+                    <p className="text-sm text-muted-foreground">{b.name}</p>
+                    <p className="font-display text-3xl font-semibold tabular-nums">
+                      {b.remaining}
+                      <span className="text-base font-normal text-muted-foreground">
+                        {" "}
+                        / {b.allowance} days
+                      </span>
+                    </p>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {b.used} taken · {b.remaining} available
+                    </p>
+                  </Card>
+                );
+              })}
       </div>
 
       {/* Requests */}
@@ -128,12 +128,18 @@ export function LeaveRequestsView() {
             My requests
           </h2>
           {can("leave:request") ? (
-            <Button size="sm" onClick={() => setOpen(true)}>
+            <Button size="sm" onClick={() => setOpen(true)} disabled={types.length === 0}>
               <CalendarPlus className="size-4" /> Request leave
             </Button>
           ) : null}
         </div>
-        {mine.length === 0 ? (
+        {loading && requests.length === 0 ? (
+          <div className="space-y-2 p-5">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : requests.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-5">
             <EmptyState
               icon={Plane}
@@ -155,47 +161,54 @@ export function LeaveRequestsView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mine.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="pl-5 font-medium">
-                    {LEAVE_TYPE_LABEL[r.type]}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {fmtRange(r.startDate, r.endDate)}
-                  </TableCell>
-                  <TableCell className="tabular-nums">{r.days}</TableCell>
-                  <TableCell className="max-w-[16rem] truncate text-muted-foreground">
-                    {r.reason}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={cn("font-medium", STATUS_META[r.status].cls)}>
-                      {STATUS_META[r.status].label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground tabular-nums">
-                    {fmtDay(r.submittedAt)}
-                  </TableCell>
-                  <TableCell className="pr-5">
-                    {r.status === "pending" ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCancel(r.id)}
-                      >
-                        <X className="size-4" /> Withdraw
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {requests.map((r) => {
+                const meta = STATUS_META[r.status] ?? {
+                  label: r.status,
+                  cls: "bg-muted text-muted-foreground",
+                };
+                return (
+                  <TableRow key={r.request_id}>
+                    <TableCell className="pl-5 font-medium">{typeName(r.type_id)}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmtRange(r.from, r.to)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">{r.days}</TableCell>
+                    <TableCell className="max-w-[16rem] truncate text-muted-foreground">
+                      {r.reason ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={cn("font-medium", meta.cls)}>{meta.label}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">
+                      {fmtSubmitted(r.created_at)}
+                    </TableCell>
+                    <TableCell className="pr-5">
+                      {r.status === "pending" ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCancel(r.request_id)}
+                        >
+                          <X className="size-4" /> Withdraw
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}
       </Card>
 
-      <RequestLeaveDialog open={open} onOpenChange={setOpen} />
+      <RequestLeaveDialog
+        open={open}
+        onOpenChange={setOpen}
+        types={types}
+        onSubmit={submit}
+      />
     </div>
   );
 }
