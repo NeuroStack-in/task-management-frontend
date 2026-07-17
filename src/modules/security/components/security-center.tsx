@@ -49,7 +49,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { NumberStepper } from "@/components/ui/number-stepper"
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -57,7 +56,6 @@ import { useAuthStore } from "@/stores/auth.store"
 import { users } from "@/lib/data"
 import { isIpOrCidr } from "@/lib/validation"
 import {
-  PASSWORD_ROTATION_OPTIONS,
   SECURITY_DEFAULTS,
   SECURITY_EVENTS,
   SECURITY_OVERVIEW,
@@ -197,6 +195,23 @@ function ReadOnlyField({
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * A platform-fixed value: shown, never edited.
+ *
+ * Session lifetimes and the password policy are Cognito **pool-level** (LLD §15) — they
+ * cannot vary per org, so an editor for them is a promise the product can't keep. A
+ * disabled input would imply "you could change this with the right permission"; this
+ * says the truer thing: nobody can, at any tier.
+ */
+function PlatformFixed({ value }: { value: string }) {
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap text-sm tabular-nums text-muted-foreground">
+      <Lock className="size-3.5 shrink-0" aria-hidden />
+      {value}
+    </span>
   )
 }
 
@@ -590,62 +605,46 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
-      {/* ── Session & access ── */}
+      {/*
+        Session lifetimes are Cognito pool-level and platform-fixed (LLD §15) — per-org
+        lifetimes aren't cleanly possible, so the editors that used to live here were
+        controls for a decision the org doesn't get to make. Shown read-only instead of
+        deleted: an admin asking "how long is a session?" deserves an answer, and silence
+        reads as an oversight.
+
+        "Remember this device" is gone rather than shown: it skipped MFA on trusted
+        devices, and MFA is a hard invariant with no waiver (LLD §2). It wasn't a stale
+        default — it was a switch to bypass something that cannot be bypassed.
+
+        The session FEATURE is the active-sessions list + revoke, which is right below.
+      */}
       <Card id="sessions" className="scroll-mt-24">
         <CardHeader>
           <CardTitle>Session & Access</CardTitle>
           <CardDescription>
-            Control how long sessions last and where members can sign in from.
+            Session lifetimes are fixed by the platform. Restrict where members can sign
+            in from, and revoke any session below.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-0 pb-2">
           <SettingRow
-            label="Session timeout"
-            description="Sign members out automatically after this much inactivity."
-            disabled={!canManage}
+            label="Session lifetime"
+            description="Access and ID tokens expire after 15 minutes; a session refreshes silently until the refresh token expires."
           >
-            <NumberStepper
-              value={policies.sessionTimeoutMins}
-              min={5}
-              max={480}
-              step={5}
-              suffix="min"
-              disabled={!canManage}
-              onChange={(v) => updatePolicy({ sessionTimeoutMins: v })}
-            />
+            <PlatformFixed value="15 min · 30 days" />
           </SettingRow>
           <SettingRow
-            label="Maximum concurrent sessions"
-            description="How many active sessions a single member can have at once."
-            disabled={!canManage}
+            label="Concurrent sessions"
+            description="A member can be signed in on as many devices as they need. Revoke any of them from the list below."
           >
-            <NumberStepper
-              value={policies.maxConcurrentSessions}
-              min={1}
-              max={20}
-              valueWidthClassName="w-12"
-              disabled={!canManage}
-              onChange={(v) => updatePolicy({ maxConcurrentSessions: v })}
-            />
-          </SettingRow>
-          <SettingRow
-            label="Remember this device"
-            description="Skip MFA on trusted devices for this many days."
-            disabled={!canManage}
-          >
-            <NumberStepper
-              value={policies.rememberDeviceDays}
-              min={0}
-              max={90}
-              suffix="days"
-              disabled={!canManage}
-              onChange={(v) => updatePolicy({ rememberDeviceDays: v })}
-            />
+            <PlatformFixed value="Unlimited" />
           </SettingRow>
           <div className="py-4 [&+&]:border-t">
             <Label className="text-sm font-medium">IP allowlist</Label>
             <p className="mt-0.5 mb-3 text-xs text-muted-foreground">
-              Restrict sign-in to these IP addresses or CIDR ranges.
+              Restrict sign-in to these IP addresses or CIDR ranges. Web only — the
+              desktop agent is exempt by design, so remote and offline workers keep
+              recording.
             </p>
             <IpAllowlist
               items={policies.ipAllowlist}
@@ -656,61 +655,41 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
-      {/* ── Password policy ── */}
+      {/*
+        The Cognito pool password policy, platform-fixed and shown read-only (LLD §15).
+        The values here mirror `infra/stacks/auth_stack.py` — if that changes, change
+        these. Read-only rather than deleted: "what are the password rules?" is a fair
+        question, and an admin who can't answer it can't answer their members either.
+
+        Rotation is gone rather than shown as a value: it was a scheduled prompt to
+        change passwords, which NIST 800-63B advises against (it drives predictable
+        increments), and the pool doesn't implement it. There is nothing to display.
+      */}
       <Card>
         <CardHeader>
           <CardTitle>Password Policy</CardTitle>
           <CardDescription>
-            Minimum requirements for member passwords.
+            Set by the platform and applied to every member. Not org-configurable.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-0 pb-2">
           <SettingRow
             label="Minimum length"
-            description="Passwords shorter than this are rejected."
-            disabled={!canManage}
+            description="Passwords shorter than this are rejected at sign-up and at change."
           >
-            <NumberStepper
-              value={policies.passwordMinLength}
-              min={8}
-              max={64}
-              suffix="chars"
-              disabled={!canManage}
-              onChange={(v) => updatePolicy({ passwordMinLength: v })}
-            />
+            <PlatformFixed value="12 characters" />
           </SettingRow>
           <SettingRow
-            label="Require mixed characters"
-            description="Require upper- and lower-case letters, a number, and a symbol."
-            disabled={!canManage}
+            label="Required characters"
+            description="Upper-case, lower-case, and a number. Symbols are allowed but not required — length does more for strength than forced punctuation."
           >
-            <Switch
-              checked={policies.passwordComplexity}
-              disabled={!canManage}
-              onCheckedChange={(v) => updatePolicy({ passwordComplexity: v })}
-            />
+            <PlatformFixed value="A · a · 0" />
           </SettingRow>
           <SettingRow
-            label="Password rotation"
-            description="Prompt members to choose a new password on a schedule."
-            disabled={!canManage}
+            label="Account recovery"
+            description="Members reset their own password by email. There is no admin-set password."
           >
-            <Select
-              value={String(policies.passwordRotationDays)}
-              onValueChange={(v) => updatePolicy({ passwordRotationDays: Number(v) })}
-              disabled={!canManage}
-            >
-              <SelectTrigger size="sm" className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PASSWORD_ROTATION_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PlatformFixed value="Email" />
           </SettingRow>
         </CardContent>
       </Card>

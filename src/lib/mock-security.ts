@@ -3,79 +3,39 @@
  * Deterministic — no Math.random() / Date.now(). Phase 1 is frontend-only.
  */
 
-export interface MfaMethod {
-  key: string
-  label: string
-  description: string
-  enabled: boolean
-}
-
-export const MFA_METHODS: MfaMethod[] = [
-  {
-    key: "authenticator",
-    label: "Authenticator app",
-    description:
-      "Time-based one-time codes from Google Authenticator, Authy, or 1Password.",
-    enabled: true,
-  },
-  {
-    key: "passkey",
-    label: "Security keys & passkeys",
-    description: "Hardware keys (YubiKey) and platform passkeys via WebAuthn.",
-    enabled: true,
-  },
-  {
-    key: "sms",
-    label: "SMS text message",
-    description:
-      "One-time codes by text. Less secure — recommended only as a fallback.",
-    enabled: false,
-  },
-]
-
+/**
+ * What an org can actually configure about security (LLD §15) — and it's a short list.
+ *
+ * MFA, session lifetimes, and the password policy are **Cognito pool-level and
+ * platform-fixed**: they can't vary per org, so they were removed from this model rather
+ * than merely hidden. Leaving them here would be an invitation to rebuild the editors —
+ * a settings model is a promise about what's settable.
+ *
+ * Gone, and why:
+ *  - `mfaRequired` / `mfaGraceDays` — MFA is a hard invariant, no grace, nothing to opt
+ *    out of (LLD §2). The grace was modelled on a rule the LLD had already superseded.
+ *  - `sessionTimeoutMins` / `maxConcurrentSessions` / `rememberDeviceDays` — pool-level.
+ *    `rememberDeviceDays` skipped MFA on trusted devices, which the invariant forbids.
+ *  - `passwordMinLength` / `passwordComplexity` / `passwordRotationDays` — pool policy.
+ *    Rotation isn't implemented anywhere, and NIST 800-63B advises against it.
+ *
+ * The Security Center shows all of the above **read-only**, sourced from
+ * `infra/stacks/auth_stack.py`. What's left below is genuinely org-owned.
+ */
 export interface SecurityPolicies {
-  mfaRequired: boolean
-  mfaGraceDays: number
+  /** SSO enforcement — PROPOSED (`backend/WorkPulse-SSO.md`), not yet real. */
   ssoEnforced: boolean
+  /** SCIM — PROPOSED, that design's Phase 4. */
   scimEnabled: boolean
-  sessionTimeoutMins: number
-  maxConcurrentSessions: number
-  rememberDeviceDays: number
-  passwordMinLength: number
-  passwordComplexity: boolean
-  passwordRotationDays: number
+  /** Org-configurable, web-only; the agent ingest route is exempt by design (LLD §15). */
   ipAllowlist: string[]
 }
 
 export const SECURITY_DEFAULTS: SecurityPolicies = {
-  mfaRequired: true,
-  mfaGraceDays: 7,
   ssoEnforced: false,
   scimEnabled: true,
-  sessionTimeoutMins: 60,
-  maxConcurrentSessions: 5,
-  rememberDeviceDays: 30,
-  passwordMinLength: 12,
-  passwordComplexity: true,
-  passwordRotationDays: 90,
   ipAllowlist: ["203.0.113.0/24", "198.51.100.42"],
 }
-
-export const MFA_GRACE_OPTIONS = [
-  { value: "0", label: "Immediately" },
-  { value: "3", label: "After 3 days" },
-  { value: "7", label: "After 7 days" },
-  { value: "14", label: "After 14 days" },
-  { value: "30", label: "After 30 days" },
-]
-
-export const PASSWORD_ROTATION_OPTIONS = [
-  { value: "0", label: "Never expire" },
-  { value: "30", label: "Every 30 days" },
-  { value: "60", label: "Every 60 days" },
-  { value: "90", label: "Every 90 days" },
-  { value: "180", label: "Every 180 days" },
-]
 
 export interface SsoConnection {
   provider: string
