@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { BellOff, Check, CheckCheck, X, ArrowUpRight } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -16,11 +16,8 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { useNotificationStore } from "@/stores/notification.store";
 import { usePermissions } from "@/hooks/use-permissions";
-import {
-  DEMO_NOTIFICATIONS,
-  NOTIFICATION_TYPE_META,
-  timeAgo,
-} from "@/lib/mock-notifications";
+import { useNotifications } from "../use-notifications";
+import { NOTIFICATION_TYPE_META, timeAgo } from "@/lib/mock-notifications";
 import type { AppNotification, NotificationType } from "@/types";
 import type { PermissionId } from "@/types/rbac";
 import { cn } from "@/lib/utils";
@@ -34,25 +31,37 @@ const TYPES: NotificationType[] = [
 ];
 
 /**
- * Which permission each notification type requires to be shown. `null` = visible
- * to everyone. This keeps the feed role-based — e.g. an employee doesn't hold
- * `approvals:view` / `billing:view` / `reports:view`, so those org-level alerts
- * (and their filter tabs) never appear for them.
+ * Which permission each notification type requires to be shown. `null` = visible to everyone.
+ *
+ * **Every notification the backend writes is self-targeted.** `notifications/src/consumers.rs`
+ * fans out to a single target user — the subject of the event — so nothing in this feed is an
+ * org-level alert about someone else. This table is therefore a *narrowing* of an already
+ * self-scoped feed, and each gate has to be justified against that, not against the type's name.
+ *
+ * `approval` is the live case, and it was wrong: the server tags a user's **own** leave lifecycle
+ * (`leave_requested` / `leave_approved` / `leave_cancelled`) as `approval`, but this required
+ * `approvals:view` — a Manager/Admin permission an Employee does not hold. The result was an
+ * employee never seeing their own leave approved: the server sent it, the UI filtered it out, and
+ * nothing errored. It asks "may you see YOUR leave?", so it gates on `leave:view`.
+ *
+ * `productivity` and `billing` are not produced by any consumer today; their gates are unexercised
+ * and should be re-checked against the real category the day something starts emitting them.
  */
 const TYPE_PERMISSION: Record<NotificationType, PermissionId | null> = {
   task: null,
   system: null,
-  approval: "approvals:view",
+  approval: "leave:view",
   productivity: "reports:view",
   billing: "billing:view",
 };
 
 export function NotificationsCenter() {
   const notifications = useNotificationStore((s) => s.notifications);
-  const markRead = useNotificationStore((s) => s.markRead);
-  const markAllRead = useNotificationStore((s) => s.markAllRead);
+  // Real feed + persisting mark-read (`GET /v1/notifications`). `remove` stays store-local:
+  // the backend serves read / read-all / prefs and has no delete, so a dismissed notification
+  // comes back on reload. See the module note.
+  const { markRead, markAllRead } = useNotifications();
   const remove = useNotificationStore((s) => s.remove);
-  const seed = useNotificationStore((s) => s.seed);
   const { can } = usePermissions();
 
   const [filter, setFilter] = useState<NotificationType | "all" | "unread">(
@@ -62,12 +71,6 @@ export function NotificationsCenter() {
   const router = useRouter();
   const [selected, setSelected] = useState<AppNotification | null>(null);
 
-  // Seed if the user lands here before opening the navbar dropdown.
-  useEffect(() => {
-    if (useNotificationStore.getState().notifications.length === 0) {
-      seed(DEMO_NOTIFICATIONS);
-    }
-  }, [seed]);
 
   const canType = (t: NotificationType) => {
     const perm = TYPE_PERMISSION[t];

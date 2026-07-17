@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { Bell, CheckCheck } from "lucide-react";
 import { useNotificationStore } from "@/stores/notification.store";
 import { Button } from "@/components/ui/button";
@@ -11,21 +10,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { DEMO_NOTIFICATIONS, timeAgo } from "@/lib/mock-notifications";
+import { timeAgo } from "@/lib/mock-notifications";
+import { useNotifications } from "@/modules/notifications/use-notifications";
 import { cn } from "@/lib/utils";
 
 export function NotificationsMenu() {
   const notifications = useNotificationStore((s) => s.notifications);
   const unread = notifications.filter((n) => !n.read).length;
-  const markAllRead = useNotificationStore((s) => s.markAllRead);
-  const markRead = useNotificationStore((s) => s.markRead);
-  const seed = useNotificationStore((s) => s.seed);
-
-  useEffect(() => {
-    if (useNotificationStore.getState().notifications.length === 0) {
-      seed(DEMO_NOTIFICATIONS);
-    }
-  }, [seed]);
+  // Real feed (`GET /v1/notifications`) — and mark-read now actually persists. The demo seed is
+  // gone: inventing events on a real account is worse than an empty bell.
+  const { markAllRead, markRead } = useNotifications();
 
   return (
     <DropdownMenu>
