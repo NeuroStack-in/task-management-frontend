@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { CalendarOff, Check, ClipboardCheck, X } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { CalendarOff, Check, ClipboardCheck, X, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -27,31 +27,35 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useDataScope } from "@/hooks/use-data-scope";
 import { initials } from "@/lib/format";
-import {
-  APPROVALS,
-  KIND_META,
-  type ApprovalKind,
-  type ApprovalRequest,
-  type ApprovalStatus,
-} from "@/lib/mock-approvals";
+import { useApprovals, type ApprovalItem } from "../use-approvals";
 import { cn } from "@/lib/utils";
 
-const KIND_ICON: Record<ApprovalKind, LucideIcon> = {
-  leave: CalendarOff,
-};
-
-/** Sort order so requests of the same type sit together in the table. */
-const KIND_ORDER: ApprovalKind[] = ["leave"];
-
-const STATUS_BADGE: Record<ApprovalStatus, string> = {
+const STATUS_BADGE: Record<string, string> = {
   pending: "bg-warning/15 text-warning",
   approved: "bg-success/15 text-success",
   rejected: "bg-destructive/12 text-destructive",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
-type Filter = ApprovalStatus | "all";
+const SHORT_MONTH = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+const fmtDay = (iso: string) => {
+  const [, m, d] = iso.split("-").map(Number);
+  return `${SHORT_MONTH[m - 1]} ${d}`;
+};
+const fmtRange = (from: string, to: string) =>
+  from === to ? `${fmtDay(from)}, ${from.slice(0, 4)}` : `${fmtDay(from)} – ${fmtDay(to)}, ${to.slice(0, 4)}`;
+const fmtSubmitted = (ms?: number) => {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  return `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`;
+};
+const dayLabel = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+
+type Filter = "pending" | "approved" | "rejected" | "all";
 const FILTERS: { value: Filter; label: string }[] = [
   { value: "pending", label: "Pending" },
   { value: "approved", label: "Approved" },
@@ -62,56 +66,52 @@ const FILTERS: { value: Filter; label: string }[] = [
 export function ApprovalsView() {
   const { can } = usePermissions();
   const canApprove = can("approvals:approve");
-  const { ids: scopeIds } = useDataScope();
+  const { items, counts, loading, error, reload, decide } = useApprovals();
 
-  const [allItems, setItems] = useState<ApprovalRequest[]>(APPROVALS);
   const [filter, setFilter] = useState<Filter>("pending");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  // Team leads only review their own team's requests; org roles see everyone.
-  const items = allItems.filter(
-    (a) => scopeIds === null || scopeIds.has(a.requester.id),
-  );
-
-  const counts = {
-    all: items.length,
-    pending: items.filter((a) => a.status === "pending").length,
-    approved: items.filter((a) => a.status === "approved").length,
-    rejected: items.filter((a) => a.status === "rejected").length,
-  };
+  const [deciding, setDeciding] = useState<string | null>(null);
 
   const rows = useMemo(
-    () =>
-      items
-        .filter((a) => filter === "all" || a.status === filter)
-        .sort(
-          (a, b) =>
-            KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind),
-        ),
+    () => items.filter((a) => filter === "all" || a.status === filter),
     [items, filter],
   );
 
-  const selected = items.find((a) => a.id === selectedId) ?? null;
-
-  // The Actions column only matters when there's something to act on.
+  const selected = items.find((a) => a.requestId === selectedId) ?? null;
   const showActions = canApprove && rows.some((r) => r.status === "pending");
 
-  const decide = (req: ApprovalRequest, status: ApprovalStatus) => {
-    setItems((prev) =>
-      prev.map((a) => (a.id === req.id ? { ...a, status } : a)),
-    );
-    setSelectedId(null);
-    toast.success(status === "approved" ? "Request approved" : "Request rejected", {
-      description: `${KIND_META[req.kind].label} · ${req.requester.name}`,
-    });
+  const runDecide = async (item: ApprovalItem, decision: "approve" | "reject") => {
+    setDeciding(item.requestId);
+    try {
+      await decide(item, decision);
+      setSelectedId(null);
+      toast.success(decision === "approve" ? "Request approved" : "Request rejected", {
+        description: `${item.typeName} · ${item.requesterName}`,
+      });
+    } catch {
+      toast.error("Couldn't record the decision. Try again.");
+    } finally {
+      setDeciding(null);
+    }
   };
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Approvals"
-        description={`${counts.pending} pending · review time-record changes, manual entries, and leave`}
+        description={`${counts.pending ?? 0} pending · review and decide time-off requests`}
       />
+
+      {error ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-warning/40 bg-warning/5 px-4 py-3 text-sm">
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <TriangleAlert className="size-4 text-warning" /> {error}
+          </span>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
 
       {/* Status filter */}
       <div className="flex flex-wrap gap-2">
@@ -127,12 +127,18 @@ export function ApprovalsView() {
                 : "bg-card text-muted-foreground shadow-soft hover:text-foreground",
             )}
           >
-            {f.label} · {counts[f.value]}
+            {f.label} · {counts[f.value] ?? 0}
           </button>
         ))}
       </div>
 
-      {rows.length === 0 ? (
+      {loading && items.length === 0 ? (
+        <Card className="space-y-2 p-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-11 w-full" />
+          ))}
+        </Card>
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={ClipboardCheck}
           title="Nothing to review"
@@ -144,7 +150,7 @@ export function ApprovalsView() {
             <Table className="min-w-[860px] table-fixed [&_td]:px-4 [&_th]:px-4">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[20%]">Requester</TableHead>
+                  <TableHead className="w-[22%]">Requester</TableHead>
                   <TableHead className="w-[13%]">Type</TableHead>
                   <TableHead className="w-[26%]">Summary</TableHead>
                   <TableHead className="w-[11%]">Duration</TableHead>
@@ -156,87 +162,80 @@ export function ApprovalsView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((req) => {
-                  const Icon = KIND_ICON[req.kind];
-                  return (
-                    <TableRow
-                      key={req.id}
-                      onClick={() => setSelectedId(req.id)}
-                      className="group cursor-pointer"
-                    >
-                      <TableCell>
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <Avatar className="size-7 shrink-0">
-                            <AvatarImage
-                              src={req.requester.avatarUrl}
-                              alt={req.requester.name}
-                            />
-                            <AvatarFallback className="text-[10px]">
-                              {initials(req.requester.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="truncate font-medium">
-                            {req.requester.name}
-                          </span>
-                        </div>
+                {rows.map((req) => (
+                  <TableRow
+                    key={req.requestId}
+                    onClick={() => setSelectedId(req.requestId)}
+                    className="group cursor-pointer"
+                  >
+                    <TableCell>
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Avatar className="size-7 shrink-0">
+                          <AvatarFallback className="text-[10px]">
+                            {initials(req.requesterName)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="truncate font-medium">{req.requesterName}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="gap-1">
+                        <CalendarOff className="size-3" />
+                        {req.typeName}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="block truncate">{fmtRange(req.from, req.to)}</span>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-medium tabular-nums">
+                      {dayLabel(req.days)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {fmtSubmitted(req.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={cn("border-0 capitalize", STATUS_BADGE[req.status] ?? "bg-muted")}>
+                        {req.status}
+                      </Badge>
+                    </TableCell>
+                    {showActions ? (
+                      <TableCell className="text-right">
+                        {req.status === "pending" ? (
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-success hover:text-success"
+                              aria-label="Approve"
+                              disabled={deciding === req.requestId}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                runDecide(req, "approve");
+                              }}
+                            >
+                              <Check className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-destructive hover:text-destructive"
+                              aria-label="Reject"
+                              disabled={deciding === req.requestId}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                runDecide(req, "reject");
+                              }}
+                            >
+                              <X className="size-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="gap-1">
-                          <Icon className="size-3" />
-                          {KIND_META[req.kind].label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="block truncate">{req.title}</span>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs font-medium tabular-nums">
-                        {req.amount}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {req.submitted}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={cn("border-0 capitalize", STATUS_BADGE[req.status])}>
-                          {req.status}
-                        </Badge>
-                      </TableCell>
-                      {showActions ? (
-                        <TableCell className="text-right">
-                          {req.status === "pending" ? (
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-success hover:text-success"
-                                aria-label="Approve"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  decide(req, "approved");
-                                }}
-                              >
-                                <Check className="size-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-destructive hover:text-destructive"
-                                aria-label="Reject"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  decide(req, "rejected");
-                                }}
-                              >
-                                <X className="size-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      ) : null}
-                    </TableRow>
-                  );
-                })}
+                    ) : null}
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>
@@ -246,8 +245,9 @@ export function ApprovalsView() {
       <ApprovalDialog
         request={selected}
         canApprove={canApprove}
+        busy={deciding === selected?.requestId}
         onClose={() => setSelectedId(null)}
-        onDecide={decide}
+        onDecide={runDecide}
       />
     </div>
   );
@@ -256,16 +256,16 @@ export function ApprovalsView() {
 function ApprovalDialog({
   request: req,
   canApprove,
+  busy,
   onClose,
   onDecide,
 }: {
-  request: ApprovalRequest | null;
+  request: ApprovalItem | null;
   canApprove: boolean;
+  busy: boolean;
   onClose: () => void;
-  onDecide: (req: ApprovalRequest, status: ApprovalStatus) => void;
+  onDecide: (req: ApprovalItem, decision: "approve" | "reject") => void;
 }) {
-  // Land initial focus on a neutral element so the destructive "Reject" button
-  // isn't pre-highlighted when the dialog opens.
   const initialFocusRef = useRef<HTMLDivElement>(null);
   return (
     <Dialog open={!!req} onOpenChange={(o) => !o && onClose()}>
@@ -274,71 +274,59 @@ function ApprovalDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex flex-wrap items-center gap-2">
-                {req.title}
-                <Badge variant="outline">{KIND_META[req.kind].label}</Badge>
-                <Badge className={cn("border-0 capitalize", STATUS_BADGE[req.status])}>
+                {req.typeName}
+                <Badge className={cn("border-0 capitalize", STATUS_BADGE[req.status] ?? "bg-muted")}>
                   {req.status}
                 </Badge>
               </DialogTitle>
-              <DialogDescription>Submitted {req.submitted}</DialogDescription>
+              <DialogDescription>Submitted {fmtSubmitted(req.createdAt)}</DialogDescription>
             </DialogHeader>
 
-            {/* Requester */}
             <div
               ref={initialFocusRef}
               tabIndex={-1}
               className="flex items-center gap-3 rounded-xl bg-muted/50 p-3 outline-none"
             >
               <Avatar className="size-10">
-                <AvatarImage
-                  src={req.requester.avatarUrl}
-                  alt={req.requester.name}
-                />
-                <AvatarFallback>{initials(req.requester.name)}</AvatarFallback>
+                <AvatarFallback>{initials(req.requesterName)}</AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{req.requester.name}</p>
+                <p className="truncate font-medium">{req.requesterName}</p>
                 <p className="truncate text-sm text-muted-foreground">
-                  {req.requester.jobTitle} · {req.requester.department}
+                  {fmtRange(req.from, req.to)}
                 </p>
               </div>
               <span className="font-mono text-lg font-semibold tabular-nums">
-                {req.amount}
+                {dayLabel(req.days)}
               </span>
             </div>
 
-            {/* Full description */}
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Description
-              </p>
-              <p className="text-sm leading-relaxed">{req.detail}</p>
-            </div>
+            {req.reason ? (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Reason
+                </p>
+                <p className="text-sm leading-relaxed">{req.reason}</p>
+              </div>
+            ) : null}
 
             <DialogFooter>
               {req.status !== "pending" ? (
                 <div
                   className={cn(
                     "flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium",
-                    STATUS_BADGE[req.status],
+                    STATUS_BADGE[req.status] ?? "bg-muted",
                   )}
                 >
-                  {req.status === "approved" ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <X className="size-4" />
-                  )}
+                  {req.status === "approved" ? <Check className="size-4" /> : <X className="size-4" />}
                   This request was {req.status}.
                 </div>
               ) : canApprove ? (
                 <>
-                  <Button
-                    variant="outline"
-                    onClick={() => onDecide(req, "rejected")}
-                  >
+                  <Button variant="outline" disabled={busy} onClick={() => onDecide(req, "reject")}>
                     <X className="size-4" /> Reject
                   </Button>
-                  <Button onClick={() => onDecide(req, "approved")}>
+                  <Button disabled={busy} onClick={() => onDecide(req, "approve")}>
                     <Check className="size-4" /> Approve
                   </Button>
                 </>
