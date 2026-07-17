@@ -16,6 +16,8 @@ import { apiFetch } from "@/lib/api";
 export interface ApiProject {
   id: string;
   name: string;
+  /** Short uppercase key (e.g. "WP"). Optional — projects created without one have none. */
+  key?: string;
   /** `active` | `on_hold` | `completed` (LLD §5). */
   status: string;
   /**
@@ -34,6 +36,151 @@ interface ProjectsResponse {
 export async function listProjects(): Promise<ApiProject[]> {
   const res = await apiFetch<ProjectsResponse>("/v1/projects");
   return res.projects;
+}
+
+// ── Detail + KPIs (GET /v1/projects/{id}) ──────────────────────────────────────────────────────
+
+/** Precomputed KPIs from the Streams aggregator (`project_kpi`). Absent until it has run. */
+export interface ApiProjectKpi {
+  completion_pct: number;
+  total_tasks: number;
+  tasks_by_status: {
+    todo: number;
+    in_progress: number;
+    in_review: number;
+    done: number;
+    blocked: number;
+  };
+  overdue_count: number;
+  active_members: number;
+  /** 7-day completed-per-day series, oldest first. */
+  velocity: number[];
+  updated_at: number;
+}
+
+export interface ApiProjectMember {
+  user_id: string;
+  project_role: string;
+}
+
+export interface ApiProjectDetail {
+  id: string;
+  name: string;
+  key?: string;
+  description: string;
+  status: string;
+  status_reason?: string;
+  billable: boolean;
+  start_date: string;
+  end_date?: string;
+  manager_user_id: string;
+  auto_hold: boolean;
+  members: ApiProjectMember[];
+  /** The caller's resolved project role — the UI renders from this, never re-deriving the matrix. */
+  authority: string;
+  /** `None` until the aggregator has computed KPIs for this project (a brand-new project). */
+  kpi?: ApiProjectKpi;
+}
+
+export function getProject(id: string): Promise<ApiProjectDetail> {
+  return apiFetch<ApiProjectDetail>(`/v1/projects/${encodeURIComponent(id)}`);
+}
+
+// ── Task board (GET /v1/projects/{id}/tasks) ───────────────────────────────────────────────────
+
+export interface ApiBoardTask {
+  id: string;
+  title: string;
+  description?: string;
+  assignee_id?: string;
+  due?: string;
+  /** `low` | `medium` | `high`. */
+  priority: string;
+  estimate_hours?: number;
+}
+
+export interface ApiBoardColumn {
+  /** `todo` | `in_progress` | `in_review` | `done` | `blocked`. */
+  status: string;
+  tasks: ApiBoardTask[];
+}
+
+interface BoardResponse {
+  columns: ApiBoardColumn[];
+}
+
+export function getBoard(id: string): Promise<ApiBoardColumn[]> {
+  return apiFetch<BoardResponse>(`/v1/projects/${encodeURIComponent(id)}/tasks`).then(
+    (r) => r.columns,
+  );
+}
+
+// ── Task mutations ─────────────────────────────────────────────────────────────────────────────
+
+export interface NewTask {
+  title: string;
+  description?: string;
+  assignee_id?: string;
+  status?: string;
+  due?: string;
+  priority?: string;
+  estimate_hours?: number;
+}
+
+export function createTask(projectId: string, body: NewTask): Promise<ApiBoardTask> {
+  return apiFetch<ApiBoardTask>(`/v1/projects/${encodeURIComponent(projectId)}/tasks`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** PATCH — omitted fields are left as-is; `null` on `due`/`assignee_id`/`estimate_hours` clears. */
+export interface TaskPatch {
+  title?: string;
+  description?: string;
+  status?: string;
+  due?: string | null;
+  assignee_id?: string | null;
+  priority?: string;
+  estimate_hours?: number | null;
+}
+
+export function updateTask(
+  projectId: string,
+  taskId: string,
+  patch: TaskPatch,
+): Promise<ApiBoardTask> {
+  return apiFetch<ApiBoardTask>(
+    `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+}
+
+export async function deleteTask(projectId: string, taskId: string): Promise<void> {
+  await apiFetch(
+    `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,
+    { method: "DELETE" },
+  );
+}
+
+// ── Membership ─────────────────────────────────────────────────────────────────────────────────
+
+export function addMember(
+  projectId: string,
+  userId: string,
+  role: "lead" | "member" = "member",
+): Promise<ApiProjectMember> {
+  return apiFetch<ApiProjectMember>(
+    `/v1/projects/${encodeURIComponent(projectId)}/members`,
+    { method: "POST", body: JSON.stringify({ user_id: userId, role }) },
+  );
+}
+
+export async function removeMember(projectId: string, userId: string): Promise<void> {
+  await apiFetch(
+    `/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
 }
 
 /**

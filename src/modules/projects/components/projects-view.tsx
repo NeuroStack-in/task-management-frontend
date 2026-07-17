@@ -156,6 +156,7 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
       in_progress: 0,
       in_review: 0,
       done: 0,
+      blocked: 0,
       overdue: 0,
     };
     for (const t of searchedTasks) {

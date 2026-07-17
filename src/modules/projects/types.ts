@@ -39,7 +39,14 @@ export interface Project {
   velocity: number[];
 }
 
-export type TaskStatus = "todo" | "in_progress" | "in_review" | "done";
+// `blocked` matches the backend's TaskStatus (LLD §5) — an exception state reachable from any
+// column, not a stage. It was missing here while the board was mock; the real board serves it.
+export type TaskStatus =
+  | "todo"
+  | "in_progress"
+  | "in_review"
+  | "done"
+  | "blocked";
 export type TaskPriority = "low" | "medium" | "high";
 
 export interface Task {
@@ -86,13 +93,16 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
   in_progress: { label: "In progress", tone: "primary" },
   in_review: { label: "In review", tone: "warning" },
   done: { label: "Done", tone: "success" },
+  blocked: { label: "Blocked", tone: "warning" },
 };
 
+// `blocked` sits last — an exception state, not a stage in the flow (LLD §5).
 export const TASK_STATUS_ORDER: TaskStatus[] = [
   "todo",
   "in_progress",
   "in_review",
   "done",
+  "blocked",
 ];
 
 export const TASK_PRIORITY_META: Record<

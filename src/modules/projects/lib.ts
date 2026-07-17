@@ -114,6 +114,7 @@ export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
     in_progress: 0,
     in_review: 0,
     done: 0,
+    blocked: 0,
   };
   for (const t of tasks) counts[t.status] += 1;
   return counts;

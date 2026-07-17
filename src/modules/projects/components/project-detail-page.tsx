@@ -862,6 +862,7 @@ function TaskListView({
     in_progress: 1,
     in_review: 2,
     done: 3,
+    blocked: 4,
   };
   const sorted = [...tasks].sort((a, b) => {
     if (order[a.status] !== order[b.status])
