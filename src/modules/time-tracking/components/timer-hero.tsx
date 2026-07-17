@@ -40,6 +40,19 @@ interface SessionRow {
 }
 
 /**
+ * The only fields the session roll-up reads.
+ *
+ * Structural on purpose, so a **real** timesheet row (`use-timesheet.ts`) can be passed without
+ * being widened to `mock-time.TimeEntry` — which would mean inventing an `activity` percentage the
+ * backend does not serve. This component asks for what it uses and nothing more.
+ */
+export interface TimerHeroEntry {
+  task: string;
+  project: string;
+  durationSec: number;
+}
+
+/**
  * The live timer — Time Tracking's hero. The Task picker doubles as the
  * "Today's sessions" list: its top group shows every task worked today (with
  * its day total) so a tap resumes or switches to it; the bottom group lists all
@@ -51,7 +64,7 @@ export function TimerHero({
   entries,
   onLogged,
 }: {
-  entries: TimeEntry[];
+  entries: TimerHeroEntry[];
   onLogged: (entry: TimeEntry) => void;
 }) {
   const task = useTimerStore((s) => s.task);

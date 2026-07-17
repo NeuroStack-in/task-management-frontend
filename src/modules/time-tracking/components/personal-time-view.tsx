@@ -9,12 +9,14 @@ import {
   Download,
   Timer,
   ListChecks,
+  TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTimerStore } from "@/stores/timer.store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardAction,
@@ -33,37 +35,38 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDuration } from "@/lib/format";
-import {
-  TASK_OPTIONS,
-  TODAYS_ENTRIES,
-  WEEKLY_HOURS,
-  formatHours,
-  summarize,
-  type TimeEntry,
-} from "@/lib/mock-time";
+import { TASK_OPTIONS, formatHours } from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
+import { useTimesheet } from "../use-timesheet";
 import { TimerHero } from "./timer-hero";
 import { WeeklyHoursChart } from "./weekly-hours-chart";
 import { PayrollWidget } from "./payroll-widget";
 
+/**
+ * Today's timesheet — **the first screen on the real backend** (`GET /v1/me/timesheet/today`).
+ *
+ * Two things the mock showed that the server does not serve, and which are therefore gone rather
+ * than zero-filled (a zero in a percentage column reads as a measurement):
+ *   - the **Activity %** column — no built read joins activity samples onto a time entry;
+ *   - the **focus** summary derived from it.
+ *
+ * The timer above is still local demo state. LLD §4 is explicit that the timer is a desktop-agent
+ * module and every entry is `source: agent` — there is no manual write path, so time started here
+ * cannot reach the server and will not survive a reload. That gap is a product decision, not
+ * something to paper over; the table below shows only what the backend actually has.
+ */
 export function PersonalTimeView({ canExport }: { canExport: boolean }) {
-  const [entries, setEntries] = useState<TimeEntry[]>(TODAYS_ENTRIES);
-  const summary = useMemo(() => summarize(entries, WEEKLY_HOURS), [entries]);
-  const totalSec = useMemo(
-    () => entries.reduce((s, e) => s + e.durationSec, 0),
-    [entries],
-  );
+  const { rows, totalSec, billableSec, running, loading, error, reload } =
+    useTimesheet();
+
   const dayStats = useMemo(
     () => ({
-      billable: formatHours(
-        entries.filter((e) => e.billable).reduce((s, e) => s + e.durationSec, 0) / 3600,
-      ),
-      focus: `${summary.avgActivity}%`,
-      longest: formatDuration(entries.reduce((m, e) => Math.max(m, e.durationSec), 0)),
-      projects: String(new Set(entries.map((e) => e.project)).size),
-      tasks: String(new Set(entries.map((e) => e.task)).size),
+      billable: formatHours(billableSec / 3600),
+      longest: formatDuration(rows.reduce((m, e) => Math.max(m, e.durationSec), 0)),
+      projects: String(new Set(rows.map((e) => e.project)).size),
+      tasks: String(new Set(rows.map((e) => e.task)).size),
     }),
-    [entries, summary.avgActivity],
+    [rows, billableSec],
   );
 
   // Seed the per-task day clocks from today's logged time once, so restarting a
@@ -72,7 +75,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   const seedDay = useTimerStore((s) => s.seedDay);
   useEffect(() => {
     const totals: Record<string, number> = {};
-    for (const e of TODAYS_ENTRIES) {
+    for (const e of rows) {
       const opt = TASK_OPTIONS.find(
         (o) => o.taskTitle === e.task && o.projectName === e.project,
       );
@@ -83,7 +86,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
       d.getDate(),
     ).padStart(2, "0")}`;
     seedDay(totals, day);
-  }, [seedDay]);
+  }, [seedDay, rows]);
 
   // Resolve the date on the client to avoid an SSR/hydration mismatch.
   const [today, setToday] = useState("");
@@ -98,18 +101,20 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
     );
   }, []);
 
-  const handleLogged = (entry: TimeEntry) => setEntries((prev) => [...prev, entry]);
+  // The web cannot persist a timer run (LLD §4), so a locally-logged segment must not be spliced
+  // into the server's list as though it were saved. Re-reading the server is the honest response:
+  // whatever the agent actually folded is what appears.
+  const handleLogged = () => reload();
 
   const exportCsv = () => {
     const csv = Papa.unparse(
-      entries.map((e) => ({
+      rows.map((e) => ({
         Task: e.task,
         Project: e.project,
         Start: e.start,
         End: e.end ?? "",
-        Duration: formatDuration(e.durationSec),
+        Duration: e.running ? "" : formatDuration(e.durationSec),
         Billable: e.billable ? "Yes" : "No",
-        "Activity %": e.activity,
       })),
     );
     const url = URL.createObjectURL(
@@ -127,7 +132,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
 
   return (
     <div className="space-y-6">
-      <TimerHero entries={entries} onLogged={handleLogged} />
+      <TimerHero entries={rows} onLogged={handleLogged} />
 
       <Card>
         <CardHeader>
@@ -138,43 +143,65 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               {today || "Today"}
             </span>
             <span>
-              · {entries.length} {entries.length === 1 ? "entry" : "entries"} ·{" "}
-              {dayStats.focus} focus
+              · {rows.length} {rows.length === 1 ? "entry" : "entries"}
             </span>
+            {running ? (
+              <Badge variant="secondary" className="gap-1.5">
+                <span className="size-1.5 animate-pulse rounded-full bg-success" />
+                Session running
+              </Badge>
+            ) : null}
           </CardDescription>
           <CardAction>
             <Button
               variant="outline"
               size="sm"
               onClick={exportCsv}
-              disabled={!canExport}
+              disabled={!canExport || loading || rows.length === 0}
             >
               <Download className="size-4" /> Download CSV
             </Button>
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-5">
+          {error ? (
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-10 text-center">
+              <TriangleAlert className="size-5 text-warning" />
+              <div>
+                <p className="text-sm font-medium">Couldn&apos;t load your timesheet</p>
+                <p className="text-sm text-muted-foreground">{error}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={reload}>
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <>
           <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-xl border sm:grid-cols-4 sm:divide-y-0">
             <SummaryCell
               icon={BadgeDollarSign}
               label="Billable today"
               value={dayStats.billable}
               tone="success"
+              loading={loading}
             />
             <SummaryCell
               icon={Clock}
               label="Total tracked"
               value={formatDuration(totalSec)}
+              loading={loading}
             />
             <SummaryCell
               icon={Timer}
               label="Longest session"
               value={dayStats.longest}
+              loading={loading}
             />
             <SummaryCell
               icon={ListChecks}
               label="Tasks tracked"
               value={dayStats.tasks}
+              loading={loading}
             />
           </div>
 
@@ -191,42 +218,66 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                   <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
                     Time
                   </TableHead>
-                  <TableHead className="w-40 text-center text-xs font-medium uppercase tracking-wide">
-                    Activity
-                  </TableHead>
                   <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
                     Duration
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {entries.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell className="pl-6">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{e.task}</span>
-                        {e.billable ? <Badge variant="secondary">Billable</Badge> : null}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center text-muted-foreground">{e.project}</TableCell>
-                    <TableCell className="text-center font-mono text-xs tabular-nums text-muted-foreground">
-                      {e.start} – {e.end ?? "…"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-center">
-                        <ActivityBar value={e.activity} />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center font-mono tabular-nums">
-                      {formatDuration(e.durationSec)}
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="pl-6" colSpan={4}>
+                        <Skeleton className="h-5 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={4}
+                      className="py-10 text-center text-sm text-muted-foreground"
+                    >
+                      No time tracked today. Sessions appear here once the desktop
+                      agent syncs them.
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  rows.map((e) => (
+                    <TableRow key={e.id}>
+                      <TableCell className="pl-6">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{e.task}</span>
+                          {e.billable ? <Badge variant="secondary">Billable</Badge> : null}
+                          {/* The task was deleted or unassigned by the time the session folded.
+                              The entry still counts — the time was really worked (LLD §4). */}
+                          {e.taskInvalid ? (
+                            <Badge variant="outline" className="gap-1 text-warning">
+                              <TriangleAlert className="size-3" /> Task removed
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center text-muted-foreground">{e.project}</TableCell>
+                      <TableCell className="text-center font-mono text-xs tabular-nums text-muted-foreground">
+                        {e.start} – {e.end ?? "…"}
+                      </TableCell>
+                      <TableCell className="text-center font-mono tabular-nums">
+                        {/* A running session has no duration yet — not a zero-length one. */}
+                        {e.running ? (
+                          <span className="text-muted-foreground">Running</span>
+                        ) : (
+                          formatDuration(e.durationSec)
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
               <TableFooter>
                 <TableRow>
                   <TableCell className="pl-6 font-medium">Total</TableCell>
-                  <TableCell colSpan={3} />
+                  <TableCell colSpan={2} />
                   <TableCell className="text-center font-mono font-semibold tabular-nums">
                     {formatDuration(totalSec)}
                   </TableCell>
@@ -234,6 +285,8 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
               </TableFooter>
             </Table>
           </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -251,11 +304,13 @@ function SummaryCell({
   label,
   value,
   tone = "default",
+  loading = false,
 }: {
   icon: LucideIcon;
   label: string;
   value: string;
   tone?: "default" | "success";
+  loading?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3 bg-card px-4 py-3.5">
@@ -273,25 +328,12 @@ function SummaryCell({
         <p className="truncate text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
-        <p className="text-lg font-semibold leading-tight tabular-nums">{value}</p>
+        {loading ? (
+          <Skeleton className="mt-1 h-5 w-16" />
+        ) : (
+          <p className="text-lg font-semibold leading-tight tabular-nums">{value}</p>
+        )}
       </div>
-    </div>
-  );
-}
-
-function ActivityBar({ value }: { value: number }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn(
-            "h-full rounded-full",
-            value >= 75 ? "bg-success" : value >= 50 ? "bg-primary" : "bg-warning",
-          )}
-          style={{ width: `${value}%` }}
-        />
-      </div>
-      <span className="text-xs tabular-nums text-muted-foreground">{value}%</span>
     </div>
   );
 }
