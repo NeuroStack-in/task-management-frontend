@@ -13,13 +13,17 @@ import {
   WEEKDAY_LABELS,
   monthMatrix,
   daysInMonth,
-  dayRecordFor,
   isFutureDate,
   isCounted,
   type DayStatus,
   type DayCell,
 } from "@/lib/mock-attendance";
 import { LogDatePicker } from "./attendance-log";
+import {
+  useMyAttendance,
+  ymd,
+  type MyAttendanceRange,
+} from "../use-my-attendance";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<
@@ -50,9 +54,16 @@ function axisPct(hhmm: string): number {
   return Math.max(0, Math.min(100, ((mins - DAY_START) / DAY_SPAN) * 100));
 }
 
+/** The 24-day window back from today that feeds the "recent days" list, as YYYY-MM-DD. */
+function recentFrom(): string {
+  const d = new Date(TODAY.year, TODAY.month, TODAY.day);
+  d.setDate(d.getDate() - 24);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 export function PersonalAttendanceView() {
   const user = useAuthStore((s) => s.user);
-  const userId = user?.id ?? "";
 
   // The displayed month follows the selected date (mirrors the management
   // calendar), so the header date picker and chevrons share one source of truth.
@@ -63,6 +74,16 @@ export function PersonalAttendanceView() {
     () => monthMatrix(view.year, view.month),
     [view.year, view.month],
   );
+
+  // Two range reads from the real backend (GET /v1/me/attendance):
+  //  - the viewed month, for the calendar grid and the monthly summary;
+  //  - a fixed 24-day window back from today, for the "recent days" list (which is relative to
+  //    today, not the viewed month, so it must not move when you page months).
+  const monthData = useMyAttendance(
+    ymd(view.year, view.month, 1),
+    ymd(view.year, view.month, daysInMonth(view.year, view.month)),
+  );
+  const recentData = useMyAttendance(recentFrom(), ymd(TODAY.year, TODAY.month, TODAY.day));
 
   // The current user's own tally for the viewed month (elapsed workdays only).
   const summary = useMemo(() => {
@@ -80,7 +101,10 @@ export function PersonalAttendanceView() {
     for (const cell of weeks.flat()) {
       if (!cell.isWorkday) continue;
       if (isFutureDate(cell.year, cell.month, cell.day)) continue;
-      const rec = dayRecordFor(userId, cell.year, cell.month, cell.day);
+      // Real data now: `null` = the close cron hasn't resolved this day yet. An unresolved workday
+      // is genuinely unknown, so it counts toward nothing until the cron stamps it.
+      const rec = monthData.recordFor(cell.year, cell.month, cell.day);
+      if (!rec) continue;
       // A non-workday is excluded from the expected set, so it must not reach the
       // denominator — that's what `isCounted` is for (LLD §7).
       if (!isCounted(rec.status)) continue;
@@ -91,34 +115,44 @@ export function PersonalAttendanceView() {
     }
     acc.hours = Math.round(acc.hours * 10) / 10;
     return acc;
-  }, [weeks, userId]);
+  }, [weeks, monthData]);
 
   // `present` already includes late arrivals — the old `present + late` double-counted them.
   const rate = summary.workdays
     ? Math.round((summary.present / summary.workdays) * 100)
     : 0;
 
-  // The user's own recent working days (most recent first).
+  // The user's own recent working days (most recent first) — only days the cron has resolved. Walks
+  // back across the fetched window and takes up to 10 resolved workdays; an unclosed day is skipped
+  // rather than shown blank, and the walk is bounded so it can't run past the fetched range.
   const recent = useMemo(() => {
     const out: { key: string; label: string; status: DayStatus; clockIn: string; clockOut: string; hours: number }[] = [];
     const cursor = new Date(TODAY.year, TODAY.month, TODAY.day);
-    while (out.length < 10) {
+    let guard = 0;
+    while (out.length < 10 && guard < 40) {
+      guard += 1;
       const wd = cursor.getDay();
       if (wd !== 0 && wd !== 6) {
-        const rec = dayRecordFor(userId, cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
-        out.push({
-          key: cursor.toISOString().slice(0, 10),
-          label: `${SHORT_DAY[wd]} ${MONTH_NAMES[cursor.getMonth()].slice(0, 3)} ${cursor.getDate()}`,
-          status: rec.status,
-          clockIn: rec.clockIn,
-          clockOut: rec.clockOut,
-          hours: rec.hours,
-        });
+        const rec = recentData.recordFor(
+          cursor.getFullYear(),
+          cursor.getMonth(),
+          cursor.getDate(),
+        );
+        if (rec) {
+          out.push({
+            key: `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`,
+            label: `${SHORT_DAY[wd]} ${MONTH_NAMES[cursor.getMonth()].slice(0, 3)} ${cursor.getDate()}`,
+            status: rec.status,
+            clockIn: rec.clockIn,
+            clockOut: rec.clockOut,
+            hours: rec.hours,
+          });
+        }
       }
       cursor.setDate(cursor.getDate() - 1);
     }
     return out;
-  }, [userId]);
+  }, [recentData]);
 
   // Prev/next move the selection by one month, clamping the day to the new
   // month's length; the grid follows because the view derives from the selection.
@@ -143,8 +177,17 @@ export function PersonalAttendanceView() {
     <div className="space-y-5 pt-1">
       <PageHeader
         title="My attendance"
-        description="Your own clock-ins, hours, and time off — only you can see this."
+        description="Your own attendance and time off — computed from your synced activity, only you can see this."
       />
+
+      {monthData.error ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-warning/40 bg-warning/5 px-4 py-3 text-sm">
+          <span className="text-muted-foreground">{monthData.error}</span>
+          <Button variant="outline" size="sm" onClick={monthData.reload}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -227,7 +270,7 @@ export function PersonalAttendanceView() {
 
           <div className="grid grid-cols-7 gap-1.5">
             {weeks.flat().map((cell, i) => (
-              <PersonalDayCell key={i} cell={cell} userId={userId} />
+              <PersonalDayCell key={i} cell={cell} recordFor={monthData.recordFor} />
             ))}
           </div>
 
@@ -321,7 +364,9 @@ export function PersonalAttendanceView() {
                       {logged ? r.clockOut : "—"}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums">
-                      {logged ? (
+                      {/* Hours come from attendance (worked_minutes) and exist without clock
+                          punches — so this is gated on hours, not on `logged`. */}
+                      {r.hours > 0 ? (
                         <span className="font-medium">{r.hours.toFixed(1)}h</span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
@@ -338,7 +383,13 @@ export function PersonalAttendanceView() {
   );
 }
 
-function PersonalDayCell({ cell, userId }: { cell: DayCell; userId: string }) {
+function PersonalDayCell({
+  cell,
+  recordFor,
+}: {
+  cell: DayCell;
+  recordFor: MyAttendanceRange["recordFor"];
+}) {
   if (!cell.isWorkday) {
     return (
       <div
@@ -355,7 +406,7 @@ function PersonalDayCell({ cell, userId }: { cell: DayCell; userId: string }) {
   }
 
   const future = isFutureDate(cell.year, cell.month, cell.day);
-  const rec = future ? null : dayRecordFor(userId, cell.year, cell.month, cell.day);
+  const rec = future ? null : recordFor(cell.year, cell.month, cell.day);
   const meta = rec ? STATUS[rec.status] : null;
 
   return (
