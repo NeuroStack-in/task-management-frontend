@@ -36,6 +36,50 @@ import type {
 import type { UserMini } from "./lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 
+/**
+ * How many projects to enrich (detail + board) at once. Each project is 2 calls, so this caps
+ * in-flight requests at 2×this — low enough to never trip the projects Lambda's throttle, high
+ * enough that a normal org loads in one or two rounds.
+ */
+const PROJECT_FANOUT = 3;
+
+/** Run `fn` over `items` with at most `limit` in flight at a time, preserving order. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return results;
+}
+
+/** Retry a call on transient throttle/unavailable (503/429) — a cold-start or burst hiccup, not a
+ *  real error. Short exponential backoff; gives up after `attempts` and rethrows. */
+async function withRetry<R>(fn: () => Promise<R>, attempts = 3): Promise<R> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const transient = e instanceof ApiError && (e.status === 503 || e.status === 429);
+      if (!transient || i === attempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, 250 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 export interface ProjectsData {
   projects: Project[];
   tasks: Task[];
@@ -73,21 +117,28 @@ export function useProjectsData(): ProjectsData {
         ]);
         if (!live) return;
 
-        // Per-project detail (KPIs, members, dates) + board (tasks), fanned out.
-        const enriched = await Promise.all(
-          list.map(async (p) => {
+        // Per-project detail (KPIs, members, dates) + board (tasks). BOUNDED concurrency: firing
+        // detail+board for every project at once bursts the Lambda into throttling (503s) once an
+        // org has more than a handful of projects. Batched, the load stays flat.
+        const enriched = await mapWithConcurrency(list, PROJECT_FANOUT, async (p) => {
+          try {
             const [detail, board] = await Promise.all([
-              getProject(p.id),
-              getBoard(p.id).catch(() => []),
+              withRetry(() => getProject(p.id)),
+              withRetry(() => getBoard(p.id)).catch(() => []),
             ]);
             return { detail, board };
-          }),
-        );
+          } catch {
+            // One project failing (after retries) must not blank the whole list — skip it.
+            return null;
+          }
+        });
         if (!live) return;
 
         const projs: Project[] = [];
         const allTasks: Task[] = [];
-        for (const { detail, board } of enriched) {
+        for (const item of enriched) {
+          if (!item) continue;
+          const { detail, board } = item;
           projs.push(toProject(detail));
           for (const col of board) {
             for (const t of col.tasks) {
