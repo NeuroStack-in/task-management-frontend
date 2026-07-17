@@ -16,13 +16,10 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useIsSelfScoped } from "@/hooks/use-self-scope";
-import { useAuthStore } from "@/stores/auth.store";
 import { cn } from "@/lib/utils";
-import {
-  useProjectsStore,
-  type ProjectFormValues,
-} from "@/stores/projects.store";
+import { TriangleAlert } from "lucide-react";
+import { Loader } from "@/components/shared/loader";
+import type { ProjectFormValues } from "@/stores/projects.store";
 import {
   PROJECT_STATUS_META,
   PROJECT_STATUS_ORDER,
@@ -34,6 +31,7 @@ import {
   type TaskStatus,
 } from "../types";
 import { isTaskOverdue, projectStats, toneDot, type UserMini } from "../lib";
+import { useProjectsData } from "../use-projects-data";
 import { ProjectCard } from "./project-card";
 import { ProjectsList } from "./projects-list";
 import { ProjectsStatBand } from "./projects-stat-band";
@@ -45,34 +43,15 @@ type View = "projects" | "tasks";
 type Layout = "grid" | "list";
 type StatusFilter = ProjectStatus | "all" | "overdue";
 
-interface ProjectsViewProps {
-  tasks: Task[];
-  userMap: Record<string, UserMini>;
-}
-
-export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
+export function ProjectsView() {
   const router = useRouter();
   const { can } = usePermissions();
-  const selfScoped = useIsSelfScoped();
-  const userId = useAuthStore((s) => s.user?.id) ?? "";
 
-  const allProjects = useProjectsStore((s) => s.projects);
-  const createProject = useProjectsStore((s) => s.createProject);
-
-  // Self-scoped roles (Employee) only see projects they're a member of, and the
-  // tasks within them — never the full org portfolio.
-  const projects = useMemo(
-    () =>
-      selfScoped
-        ? allProjects.filter((p) => p.memberIds.includes(userId))
-        : allProjects,
-    [allProjects, selfScoped, userId],
-  );
-  const visibleTasks = useMemo(() => {
-    if (!selfScoped) return tasks;
-    const ids = new Set(projects.map((p) => p.id));
-    return tasks.filter((t) => ids.has(t.projectId));
-  }, [tasks, projects, selfScoped]);
+  // Real backend. The server scopes the list (oversight sees all, members see theirs), so there's
+  // no client-side member filter anymore.
+  const { projects, tasks, userMap, loading, error, reload, createProject } =
+    useProjectsData();
+  const visibleTasks = tasks;
 
   const [view, setView] = useState<View>("projects");
   const [layout, setLayout] = useState<Layout>("grid");
@@ -197,25 +176,46 @@ export function ProjectsView({ tasks, userMap }: ProjectsViewProps) {
 
   const openProject = (id: string) => router.push(`/projects/${id}`);
 
-  const handleCreate = (values: ProjectFormValues) => {
-    const project = createProject(values);
-    toast.success(`Project “${project.name}” created`, {
-      description: "Added to your projects for this session.",
-    });
-    router.push(`/projects/${project.id}`);
+  const handleCreate = async (values: ProjectFormValues) => {
+    try {
+      const id = await createProject(values);
+      toast.success(`Project “${values.name}” created`);
+      router.push(`/projects/${id}`);
+    } catch {
+      toast.error("Couldn't create the project. Try again.");
+    }
   };
 
   const canCreate = can("projects:create");
+
+  if (loading && projects.length === 0) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader label="Loading projects…" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Projects" description="Your organization's projects." />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+          <TriangleAlert className="size-5 text-warning" />
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Projects"
-        description={
-          selfScoped
-            ? "Projects you're a member of — status, progress, and your tasks."
-            : "Every project across the organization — status, progress, and delivery at a glance."
-        }
+        description="Your projects — status, progress, and delivery at a glance."
       />
 
       {/* KPI stat band */}

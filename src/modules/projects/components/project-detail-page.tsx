@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   CalendarRange,
@@ -46,16 +45,13 @@ import {
 import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
+import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useIsSelfScoped } from "@/hooks/use-self-scope";
-import { useAuthStore } from "@/stores/auth.store";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
-import {
-  useProjectsStore,
-  type ProjectFormValues,
-} from "@/stores/projects.store";
-import { useTasksStore, type TaskFormValues } from "@/stores/tasks.store";
+import type { ProjectFormValues } from "@/stores/projects.store";
+import type { TaskFormValues } from "@/stores/tasks.store";
+import { useProjectDetail } from "../use-project-detail";
 import {
   PROJECT_STATUS_META,
   TASK_PRIORITY_META,
@@ -81,27 +77,27 @@ import { generateProjectReportPdf } from "../report";
 
 interface ProjectDetailPageProps {
   id: string;
-  userMap: Record<string, UserMini>;
 }
 
-export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
-  const router = useRouter();
+export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const { can } = usePermissions();
-  const selfScoped = useIsSelfScoped();
-  const userId = useAuthStore((s) => s.user?.id) ?? "";
   const canManage = can("projects:manage");
-  const project = useProjectsStore((s) => s.projects.find((p) => p.id === id));
-  const updateProject = useProjectsStore((s) => s.updateProject);
-  const deleteProject = useProjectsStore((s) => s.deleteProject);
 
-  const allTasks = useTasksStore((s) => s.tasks);
-  const createTask = useTasksStore((s) => s.createTask);
-  const updateTask = useTasksStore((s) => s.updateTask);
-  const moveTask = useTasksStore((s) => s.moveTask);
-  const tasks = useMemo(
-    () => allTasks.filter((t) => t.projectId === id),
-    [allTasks, id],
-  );
+  // Real backend. The server 404s a project the caller isn't a member of (no oversight bit), so the
+  // "no access" case is `notFound` — there's no client-side scope check anymore.
+  const {
+    project,
+    tasks,
+    userMap,
+    loading,
+    error,
+    notFound,
+    reload,
+    updateProject,
+    createTask,
+    updateTaskFull,
+    moveTask,
+  } = useProjectDetail(id);
 
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -121,12 +117,20 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
 
   const counts = useMemo(() => taskCounts(tasks), [tasks]);
 
-  if (!project) {
+  if (loading && !project) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader label="Loading project…" />
+      </div>
+    );
+  }
+
+  if (notFound || (!loading && !project)) {
     return (
       <EmptyState
         icon={AlertTriangle}
         title="Project not found"
-        description="This project may have been deleted or created in another session."
+        description="This project may have been deleted, or you're not a member of it."
         action={
           <Button render={<Link href="/projects" />} nativeButton={false}>
             Back to projects
@@ -136,16 +140,15 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
     );
   }
 
-  // Self-scoped roles (Employee) can only open projects they're a member of.
-  if (selfScoped && !project.memberIds.includes(userId)) {
+  if (error || !project) {
     return (
       <EmptyState
         icon={AlertTriangle}
-        title="No access to this project"
-        description="You can only view projects you're a member of."
+        title="Couldn't load the project"
+        description={error ?? "Something went wrong."}
         action={
-          <Button render={<Link href="/projects" />} nativeButton={false}>
-            Back to projects
+          <Button variant="outline" onClick={reload}>
+            Retry
           </Button>
         }
       />
@@ -180,20 +183,20 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
     billable: project.billable,
   };
 
-  const handleEdit = (values: ProjectFormValues) => {
-    updateProject(project.id, values);
-    toast.success("Project updated", {
-      description: `“${values.name}” has been saved.`,
-    });
+  const handleEdit = async (values: ProjectFormValues) => {
+    try {
+      await updateProject(values);
+      toast.success("Project updated", { description: `“${values.name}” saved.` });
+    } catch {
+      toast.error("Couldn't save the project. Try again.");
+    }
   };
 
   const handleDelete = () => {
-    deleteProject(project.id);
+    // No delete-project endpoint exists yet (LLD lists delete_project; it isn't built). Rather than
+    // fake a client-only delete that reappears on reload, say so plainly.
     setConfirmOpen(false);
-    toast.success("Project deleted", {
-      description: `“${project.name}” was removed.`,
-    });
-    router.push("/projects");
+    toast.info("Project deletion isn't available yet.");
   };
 
   const openCreateTask = (s: TaskStatus) => {
@@ -205,13 +208,20 @@ export function ProjectDetailPage({ id, userMap }: ProjectDetailPageProps) {
     setEditingTask(t);
     setTaskOpen(true);
   };
-  const handleTaskSubmit = (values: TaskFormValues) => {
-    if (editingTask) {
-      updateTask(editingTask.id, values);
-      toast.success("Task updated", { description: values.title });
-    } else {
-      createTask(project.id, values);
-      toast.success("Task added", { description: values.title });
+  const handleTaskSubmit = async (values: TaskFormValues) => {
+    try {
+      if (editingTask) {
+        await updateTaskFull(editingTask.id, values);
+        toast.success("Task updated", { description: values.title });
+      } else {
+        await createTask(values);
+        toast.success("Task added", { description: values.title });
+      }
+      setTaskOpen(false);
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message ? e.message : "Couldn't save the task. Try again.";
+      toast.error(msg);
     }
   };
 
