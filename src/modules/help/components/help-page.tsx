@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   BarChart2,
   ChevronDown,
@@ -60,13 +60,19 @@ import {
   FAQS,
   HELP_ARTICLES,
   HELP_CATEGORIES,
-  MOCK_TICKETS,
   VIDEO_TUTORIALS,
-  nextTicketId,
   type HelpArticle,
   type HelpCategory,
-  type SupportTicket,
 } from "@/lib/mock-help"
+import { ApiError } from "@/lib/api"
+import {
+  listTickets,
+  createTicket,
+  getThread,
+  addReply,
+  type ApiTicketSummary,
+  type ApiThread,
+} from "../services/support.service"
 import { cn } from "@/lib/utils"
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -76,44 +82,40 @@ import { cn } from "@/lib/utils"
 const ticketSchema = z.object({
   subject: z.string().min(5, "Subject must be at least 5 characters"),
   category: z.string().min(1, "Please select a category"),
-  priority: z.string().min(1),
   message: z.string().min(20, "Message must be at least 20 characters"),
 })
 
 type TicketForm = z.infer<typeof ticketSchema>
 
-const PRIORITY_OPTIONS = [
-  { value: "low", label: "Low", dot: "bg-muted-foreground/40" },
-  { value: "medium", label: "Medium", dot: "bg-primary" },
-  { value: "high", label: "High", dot: "bg-warning" },
-  { value: "urgent", label: "Urgent", dot: "bg-destructive" },
-] as const
+// ──────────────────────────────────────────────────────────────────────────────
+// Status badge — the server's status is a free string; map known ones, fall back safely.
+// ──────────────────────────────────────────────────────────────────────────────
 
-const TICKET_DOT: Record<SupportTicket["status"], string> = {
+const TICKET_DOT: Record<string, string> = {
   open: "bg-primary",
   pending: "bg-warning",
+  in_progress: "bg-warning",
   resolved: "bg-success",
+  closed: "bg-muted-foreground/50",
 }
+const statusDot = (s: string) => TICKET_DOT[s] ?? "bg-muted-foreground/40"
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Status badge
-// ──────────────────────────────────────────────────────────────────────────────
-
-const STATUS_VARIANT: Record<
-  SupportTicket["status"],
-  "default" | "secondary" | "outline"
-> = {
-  open: "default",
-  pending: "secondary",
-  resolved: "outline",
-}
-
-function StatusBadge({ status }: { status: SupportTicket["status"] }) {
+function StatusBadge({ status }: { status: string }) {
+  const variant = status === "open" ? "default" : status === "resolved" ? "outline" : "secondary"
   return (
-    <Badge variant={STATUS_VARIANT[status]} className="capitalize">
-      {status}
+    <Badge variant={variant} className="capitalize">
+      {status.replace(/_/g, " ")}
     </Badge>
   )
+}
+
+/** Epoch seconds → short date. */
+function fmtDate(secs: number): string {
+  return new Date(secs * 1000).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -241,6 +243,130 @@ const WALKTHROUGH_PERMISSION: Record<string, PermissionId | null> = {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Ticket thread sheet — real GET /v1/support/tickets/{id} + reply
+// ──────────────────────────────────────────────────────────────────────────────
+
+function TicketThreadSheet({
+  ticketId,
+  onClose,
+  onReplied,
+}: {
+  ticketId: string | null
+  onClose: () => void
+  onReplied: () => void
+}) {
+  const [thread, setThread] = useState<ApiThread | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [reply, setReply] = useState("")
+  const [sending, setSending] = useState(false)
+
+  useEffect(() => {
+    if (!ticketId) {
+      setThread(null)
+      return
+    }
+    let live = true
+    setLoading(true)
+    setThread(null)
+    setReply("")
+    getThread(ticketId)
+      .then((t) => {
+        if (live) setThread(t)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (live) setLoading(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [ticketId])
+
+  async function send() {
+    if (!ticketId || !reply.trim()) return
+    setSending(true)
+    try {
+      await addReply(ticketId, reply.trim())
+      setReply("")
+      setThread(await getThread(ticketId))
+      onReplied()
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Couldn't send the reply.")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <Sheet open={!!ticketId} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+        {loading && !thread ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+            Loading…
+          </div>
+        ) : thread ? (
+          <>
+            <SheetHeader className="gap-2 border-b p-5">
+              <div className="flex items-center gap-2">
+                <StatusBadge status={thread.ticket.status} />
+                <Badge variant="secondary" className="capitalize">
+                  {thread.ticket.category}
+                </Badge>
+              </div>
+              <SheetTitle className="text-left text-base leading-snug">
+                {thread.ticket.subject}
+              </SheetTitle>
+              <SheetDescription className="text-left font-mono text-xs">
+                {thread.ticket.ticket_id}
+              </SheetDescription>
+            </SheetHeader>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                <p className="mb-1 text-xs text-muted-foreground">
+                  {fmtDate(thread.ticket.created_at)}
+                </p>
+                <p className="whitespace-pre-wrap leading-relaxed">{thread.ticket.description}</p>
+              </div>
+              {thread.replies.length === 0 ? (
+                <p className="py-2 text-center text-xs text-muted-foreground">No replies yet.</p>
+              ) : (
+                thread.replies.map((r, i) => (
+                  <div key={i} className="rounded-lg border p-3 text-sm">
+                    <p className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        {r.author === "support" ? "Support" : "Member"}
+                      </span>
+                      <span>{fmtDate(r.created_at)}</span>
+                    </p>
+                    <p className="whitespace-pre-wrap leading-relaxed">{r.body}</p>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="border-t p-4">
+              <textarea
+                rows={3}
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                placeholder="Write a reply…"
+                className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+              />
+              <Button className="mt-2 w-full" size="sm" disabled={!reply.trim() || sending} onClick={send}>
+                <Send className="size-4" /> {sending ? "Sending…" : "Send reply"}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+            Couldn&apos;t load this ticket.
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Help page root
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -249,7 +375,10 @@ export function HelpPage() {
   const [selectedCategory, setSelectedCategory] = useState<HelpCategory | null>(null)
   const [selectedArticle, setSelectedArticle] = useState<HelpArticle | null>(null)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
-  const [tickets, setTickets] = useState<SupportTicket[]>([...MOCK_TICKETS])
+  const [tickets, setTickets] = useState<ApiTicketSummary[]>([])
+  const [ticketsLoading, setTicketsLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [openThreadId, setOpenThreadId] = useState<string | null>(null)
   const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
   // Temporary control to preview the banner patterns.
   const [pattern, setPattern] = useState<BannerPattern>("grid")
@@ -271,23 +400,47 @@ export function HelpPage() {
     formState: { errors },
   } = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
-    defaultValues: { subject: "", category: "", message: "", priority: "medium" },
+    defaultValues: { subject: "", category: "", message: "" },
   })
 
   const messageLength = watch("message")?.length ?? 0
 
-  function onTicketSubmit(data: TicketForm) {
-    const id = nextTicketId()
-    const newTicket: SupportTicket = {
-      id,
-      subject: data.subject,
-      category: data.category as HelpCategory,
-      status: "open",
-      createdAt: "2026-06-25",
+  // Load the caller's tickets (real; GSI7). An empty list is the honest initial state.
+  const loadTickets = () => {
+    let live = true
+    setTicketsLoading(true)
+    listTickets()
+      .then((t) => {
+        if (live) setTickets(t)
+      })
+      .catch(() => {
+        /* leave the list empty rather than invent tickets */
+      })
+      .finally(() => {
+        if (live) setTicketsLoading(false)
+      })
+    return () => {
+      live = false
     }
-    setTickets((p) => [newTicket, ...p])
-    reset()
-    toast.success(`Ticket submitted — ${id}`)
+  }
+  useEffect(loadTickets, [])
+
+  async function onTicketSubmit(data: TicketForm) {
+    setSubmitting(true)
+    try {
+      const created = await createTicket({
+        subject: data.subject,
+        description: data.message,
+        category: data.category,
+      })
+      reset()
+      toast.success(`Ticket submitted — ${created.ticket_id}`)
+      loadTickets()
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Couldn't submit the ticket. Try again.")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   // Role-based visibility — admin-only categories/content are filtered out.
@@ -394,84 +547,31 @@ export function HelpPage() {
                   )}
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Category</Label>
-                    <Controller
-                      control={control}
-                      name="category"
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger
-                            className={cn(
-                              "w-full",
-                              errors.category && "border-destructive",
-                            )}
-                          >
-                            <SelectValue placeholder="Select a category…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {visibleCategories.map((cat) => (
-                              <SelectItem key={cat.key} value={cat.key}>
-                                {cat.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {errors.category && (
-                      <p className="text-xs text-destructive">
-                        {errors.category.message}
-                      </p>
+                <div className="space-y-1.5">
+                  <Label>Category</Label>
+                  <Controller
+                    control={control}
+                    name="category"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger
+                          className={cn("w-full", errors.category && "border-destructive")}
+                        >
+                          <SelectValue placeholder="Select a category…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {visibleCategories.map((cat) => (
+                            <SelectItem key={cat.key} value={cat.key}>
+                              {cat.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label>Priority</Label>
-                    <Controller
-                      control={control}
-                      name="priority"
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue>
-                              {(v) => {
-                                const opt = PRIORITY_OPTIONS.find(
-                                  (p) => p.value === v,
-                                )
-                                return (
-                                  <span className="flex items-center gap-2">
-                                    {opt && (
-                                      <span
-                                        className={cn(
-                                          "size-2 rounded-full",
-                                          opt.dot,
-                                        )}
-                                      />
-                                    )}
-                                    {opt?.label ?? "Select"}
-                                  </span>
-                                )
-                              }}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PRIORITY_OPTIONS.map((p) => (
-                              <SelectItem key={p.value} value={p.value}>
-                                <span className="flex items-center gap-2">
-                                  <span
-                                    className={cn("size-2 rounded-full", p.dot)}
-                                  />
-                                  {p.label}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </div>
+                  />
+                  {errors.category && (
+                    <p className="text-xs text-destructive">{errors.category.message}</p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -506,9 +606,9 @@ export function HelpPage() {
                   Attach screenshots or files
                 </button>
 
-                <Button type="submit" className="w-full">
+                <Button type="submit" className="w-full" disabled={submitting}>
                   <Send className="size-4" />
-                  Submit ticket
+                  {submitting ? "Submitting…" : "Submit ticket"}
                 </Button>
 
                 <p className="text-center text-xs text-muted-foreground">
@@ -532,7 +632,11 @@ export function HelpPage() {
               <CardDescription>Status of previously submitted support requests.</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              {tickets.length === 0 ? (
+              {ticketsLoading ? (
+                <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+                  Loading tickets…
+                </p>
+              ) : tickets.length === 0 ? (
                 <div className="px-6 py-8">
                   <EmptyState
                     icon={Ticket}
@@ -543,24 +647,19 @@ export function HelpPage() {
               ) : (
                 <ul className="divide-y">
                   {tickets.map((ticket) => (
-                    <li key={ticket.id}>
+                    <li key={ticket.ticket_id}>
                       <button
-                        onClick={() => toast.info(`Opening ${ticket.id}`)}
+                        onClick={() => setOpenThreadId(ticket.ticket_id)}
                         className="flex w-full items-center gap-3 px-6 py-3.5 text-left transition-colors hover:bg-muted/50"
                       >
                         <span
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            TICKET_DOT[ticket.status],
-                          )}
+                          className={cn("size-2 shrink-0 rounded-full", statusDot(ticket.status))}
                         />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {ticket.subject}
-                          </p>
+                          <p className="truncate text-sm font-medium">{ticket.subject}</p>
                           <p className="text-xs text-muted-foreground">
-                            <span className="font-mono">{ticket.id}</span> ·{" "}
-                            {ticket.createdAt}
+                            <span className="font-mono">{ticket.ticket_id}</span> ·{" "}
+                            {fmtDate(ticket.created_at)}
                           </p>
                         </div>
                         <StatusBadge status={ticket.status} />
@@ -824,6 +923,13 @@ export function HelpPage() {
       <ArticleSheet
         article={selectedArticle}
         onClose={() => setSelectedArticle(null)}
+      />
+
+      {/* Support ticket thread */}
+      <TicketThreadSheet
+        ticketId={openThreadId}
+        onClose={() => setOpenThreadId(null)}
+        onReplied={loadTickets}
       />
     </div>
   )
