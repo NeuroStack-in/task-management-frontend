@@ -8,32 +8,33 @@
  * ============================================================= */
 
 .m-root {
-  /* ---- Tokens — warm editorial, matched to the homepage (app/landing.css `.wp`) ---- *
-   *  The landing sets the identity: warm cream canvas, teal accent, warm ink. Pricing,   *
-   *  product, and auth pages inherit it here so the marketing surface reads as one site  *
-   *  — no cool-porcelain jump the moment you leave the homepage. Accent was already the   *
-   *  same teal; only the neutrals differed. (Was "Harbor": deep teal on cool porcelain.)  */
-  --m-bg: #f7f2ea; /* warm cream canvas — matches --wp-bg */
-  --m-surface: #fffdfa; /* warm white cards — --wp-surface */
-  --m-surface-2: #f4ede2; /* warm inset — --wp-surface-2 */
-  --m-text: #211a15; /* warm near-black ink — --wp-ink */
-  --m-muted: #766a5f; /* warm taupe — secondary text — --wp-muted */
-  --m-faint: #a89b8c; /* warm faint — placeholders — --wp-faint */
+  /* ---- Tokens — dark petrol, matched to the homepage (app/landing.css `.wp`) ---- *
+   *  The landing's identity is the deep-teal hero, now the whole surface. Pricing,      *
+   *  product, and auth inherit the exact same dark palette here so the marketing site   *
+   *  reads as ONE dark theme — no light jump the moment you leave the homepage. Accent   *
+   *  is the same teal, brightened to read on dark. (Was warm cream; before that cool     *
+   *  porcelain — this is the single dark direction that replaces both.)                  */
+  --m-bg: #0b1a22; /* deep petrol canvas — matches --wp-bg */
+  --m-surface: #102934; /* raised card panel — --wp-surface */
+  --m-surface-2: #17313f; /* inset / lifted panel — --wp-surface-2 */
+  --m-text: #eaf1f2; /* near-white ink — --wp-ink */
+  --m-muted: #90a4a9; /* light slate — secondary text — --wp-muted */
+  --m-faint: #5f7379; /* faint — placeholders — --wp-faint */
 
-  --m-accent: #0f766e; /* deep teal — unchanged, already matched the homepage */
-  --m-accent-ink: #0b5d54; /* teal as TEXT on cream (legible) */
+  --m-accent: #12a594; /* teal fill, brightened for dark — matches --wp-accent */
+  --m-accent-ink: #5eead4; /* light teal as TEXT on dark (legible) */
   --m-accent-2: #2f9d92; /* teal — mesh */
-  --m-accent-3: #86c3bb; /* soft teal — mesh */
-  --m-accent-tint: #dcebe7; /* teal wash — --wp-accent-soft */
-  --m-on-accent: #ffffff; /* white text on deep teal */
+  --m-accent-3: #1c5a54; /* deep teal — mesh (darkened for the dark canvas) */
+  --m-accent-tint: #123a39; /* dark teal wash — --wp-accent-soft */
+  --m-on-accent: #04120f; /* dark ink on a bright teal fill */
 
-  --m-border: #ece2d3; /* warm hairlines — --wp-border */
-  --m-border-strong: #ddceb9; /* warm control borders — --wp-border-strong */
-  --m-success: #3f7d54; /* warm-leaning, matches --wp-success */
-  --m-danger: #c14a35; /* warm terracotta danger — --wp-danger */
+  --m-border: #1e3742; /* subtle light hairlines on dark — --wp-border */
+  --m-border-strong: #2c4a56; /* control borders — --wp-border-strong */
+  --m-success: #4ade80; /* brightened for dark — matches --wp-success */
+  --m-danger: #f87171; /* brightened for dark — --wp-danger */
 
-  /* warm brown shadow (never cool slate on a cream canvas) — matches the homepage */
-  --m-shadow: 56 40 24;
+  /* neutral black shadow on a dark canvas (never warm-brown) — matches the homepage */
+  --m-shadow: 0 0 0;
 
   /* Editorial serif display, matching the homepage — scoped to .m-root, so the app's
      own display font (globals.css, data-font) is untouched. */

@@ -7,35 +7,37 @@
  * ============================================================= */
 
 .wp {
-  /* --- Canvas & ink (warm) --- */
-  --wp-bg: #f7f2ea; /* warm cream canvas */
-  --wp-bg-2: #f2ebe0; /* deeper sand for banded sections */
-  --wp-surface: #fffdfa; /* warm white card */
-  --wp-surface-2: #f4ede2; /* inset surface */
-  --wp-ink: #211a15; /* warm near-black */
-  --wp-ink-2: #4a3f37; /* softer heading ink */
-  --wp-muted: #766a5f; /* warm taupe body */
-  --wp-faint: #a89b8c; /* captions */
+  /* --- Canvas & ink (dark petrol — the hero's palette, now the whole page) --- *
+   *  Derived from `.wp-hero-dark` (#17313f → #102530 → #0b1a22): one deep-teal    *
+   *  identity across the landing instead of warm header / dark hero / warm body.  */
+  --wp-bg: #0b1a22; /* deep petrol canvas — the hero's darkest tone */
+  --wp-bg-2: #0e222b; /* slightly lifted, for banded sections */
+  --wp-surface: #102934; /* raised card panel */
+  --wp-surface-2: #17313f; /* inset / most-lifted panel — the hero's light dark */
+  --wp-ink: #eaf1f2; /* near-white ink — matches the hero text */
+  --wp-ink-2: #c8d6d9; /* softer heading ink */
+  --wp-muted: #90a4a9; /* light slate body */
+  --wp-faint: #5f7379; /* captions */
 
-  /* --- Accent (teal) + warm secondary --- */
-  --wp-accent: #0f766e; /* teal */
-  --wp-accent-ink: #0b5d54; /* legible teal as text on cream */
-  --wp-accent-soft: #dcebe7; /* teal tint surface */
-  --wp-accent-glow: #7fc6bb; /* light teal wash */
-  --wp-gold: #c98a2b; /* warm amber for tiny highlights */
-  --wp-plum: #8a5a4a; /* muted warm brown for a 2nd data series */
+  /* --- Accent (teal) — brightened so it reads on dark --- */
+  --wp-accent: #12a594; /* teal fill (buttons, icons) — lifts off the petrol */
+  --wp-accent-ink: #5eead4; /* light teal as TEXT on dark (legible) */
+  --wp-accent-soft: #123a39; /* dark teal tint surface */
+  --wp-accent-glow: #2f8a7f; /* teal wash */
+  --wp-gold: #e0ab4b; /* amber highlight, lifted for dark */
+  --wp-plum: #c08a78; /* warm 2nd data series, lifted for dark */
 
-  /* --- Lines & status --- */
-  --wp-border: #ece2d3;
-  --wp-border-strong: #ddceb9;
-  --wp-success: #3f7d54;
-  --wp-warning: #b9791f;
-  --wp-danger: #c14a35;
+  /* --- Lines & status (subtle light on dark; status brightened) --- */
+  --wp-border: #1e3742;
+  --wp-border-strong: #2c4a56;
+  --wp-success: #4ade80;
+  --wp-warning: #fbbf24;
+  --wp-danger: #f87171;
 
-  /* --- Motion --- */
+  /* --- Motion (neutral shadow on dark, never warm-brown) --- */
   --wp-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --wp-shadow-sm: 0 1px 2px rgb(56 40 24 / 0.05), 0 6px 16px -8px rgb(56 40 24 / 0.1);
-  --wp-shadow: 0 30px 60px -32px rgb(72 46 22 / 0.28);
+  --wp-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 16px -8px rgb(0 0 0 / 0.5);
+  --wp-shadow: 0 30px 60px -32px rgb(0 0 0 / 0.6);
 
   color: var(--wp-ink);
   background: var(--wp-bg);
