@@ -5,10 +5,10 @@ import { DailySummaryCard } from "@/modules/insights/components/daily-summary-ca
 export const metadata: Metadata = { title: "AI reports · Analytics" };
 
 /**
- * The AI-first reports surface. `DailySummaryCard` is the one **real** AI read here — the caller's
- * own day from `/v1/me/insights/summary` (real metrics + an AI narrative). The rest of
- * `ReportsExperimental` is still mock (org-wide reports need agent data / read routes that don't
- * exist yet).
+ * The AI-first reports surface, now fully live. `DailySummaryCard` reads the caller's own day
+ * (`/v1/me/insights/summary` — real metrics + score + AI narrative); `ReportsExperimental` reads the
+ * org AI executive report (`/v1/insights/reports/ai`, entitlement-gated), the report catalog, and the
+ * people-attention ranking (`/v1/insights/attention`).
  */
 export default function Page() {
   return (

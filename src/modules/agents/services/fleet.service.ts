@@ -41,3 +41,64 @@ export function listFleet(): Promise<ApiFleet> {
 export function getDevice(agentId: string): Promise<ApiDevice> {
   return apiFetch<ApiDevice>(`/v1/fleet/${encodeURIComponent(agentId)}`);
 }
+
+// ── Tracking policy (agent config, LLD §18) ──────────────────────────────────────────────────────
+// The org-wide capture policy every agent pulls on its next config check. `GET /v1/agent/config`
+// returns the whole `AgentConfig` (an optimistic-concurrency `version` + the `tracking` block + the
+// app/site classification `rules`); the write path (`PUT /v1/fleet/update-policy`) only touches the
+// `tracking` block and returns the new `TrackingConfig`. Capture cadence:
+//   off → never · min3 / min5 / min10 → a screenshot every 3 / 5 / 10 minutes while active.
+
+export type TrackingCadence = "off" | "min3" | "min5" | "min10";
+
+/**
+ * The `tracking` block of the agent config (`fleet::dto::TrackingConfig`). Its own `version` is the
+ * optimistic-concurrency token: send it back as `expected_version` on the next write, and a 409
+ * (`version_conflict`) means someone else changed the policy since you loaded it.
+ */
+export interface TrackingPolicy {
+  version: number;
+  cadence: TrackingCadence;
+  /** Screenshot blur strength, 0 (none) … 3 (heaviest). */
+  blur_level: number;
+  /** Days to retain captures before deletion, 1 … 365. */
+  retention_days: number;
+  /** Suppress the tray indicator / capture notice on employee devices. */
+  silent: boolean;
+  /** Let agents self-update to the latest released version. */
+  auto_update: boolean;
+}
+
+/** The full agent config document (`fleet::dto::AgentConfig`). */
+export interface AgentConfig {
+  version: number;
+  tracking: TrackingPolicy;
+  /** App/site classification rules — opaque to this screen. */
+  rules: unknown;
+}
+
+/** The exact write payload for `PUT /v1/fleet/update-policy`. */
+export interface UpdateTrackingPolicyInput {
+  cadence: TrackingCadence;
+  blur_level: number;
+  retention_days: number;
+  silent: boolean;
+  auto_update: boolean;
+  /** The `tracking.version` last loaded — the server rejects the write (409) if it moved on. */
+  expected_version: number;
+}
+
+/** Load the org's current agent config, including the tracking policy this screen edits. */
+export function getTrackingPolicy(): Promise<AgentConfig> {
+  return apiFetch<AgentConfig>("/v1/agent/config");
+}
+
+/** Persist a new tracking policy. Returns the new `TrackingConfig` (with a bumped `version`). */
+export function updateTrackingPolicy(
+  body: UpdateTrackingPolicyInput,
+): Promise<TrackingPolicy> {
+  return apiFetch<TrackingPolicy>("/v1/fleet/update-policy", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}

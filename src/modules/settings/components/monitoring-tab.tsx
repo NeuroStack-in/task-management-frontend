@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
+import { Controller, useForm } from "react-hook-form"
 import { Lock } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -12,23 +13,48 @@ import {
 } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { NumberStepper as NumericStepper } from "@/components/ui/number-stepper"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
+import { Loader } from "@/components/shared/loader"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
-import { MONITORING_DEFAULTS, type MonitoringSettings } from "@/lib/mock-monitoring"
+import { ApiError } from "@/lib/api"
+import {
+  getTrackingPolicy,
+  updateTrackingPolicy,
+  type TrackingCadence,
+} from "@/modules/agents/services/fleet.service"
 import { cn } from "@/lib/utils"
 
-// Deep copy so draft/saved baselines never share nested references.
-function cloneSettings(s: MonitoringSettings): MonitoringSettings {
-  return {
-    idle: { ...s.idle },
-    screenshots: { ...s.screenshots },
-    productivity: { ...s.productivity },
-    workHours: { ...s.workHours },
-    alertThresholds: { ...s.alertThresholds },
-    silentMonitoring: s.silentMonitoring,
-  }
+/** The exact set of fields the server persists (agent `TrackingConfig`, sans `version`). */
+type PolicyForm = {
+  cadence: TrackingCadence
+  blur_level: number
+  retention_days: number
+  silent: boolean
+  auto_update: boolean
 }
+
+const EMPTY: PolicyForm = {
+  cadence: "off",
+  blur_level: 0,
+  retention_days: 30,
+  silent: false,
+  auto_update: true,
+}
+
+const CADENCE_OPTIONS: { value: TrackingCadence; label: string }[] = [
+  { value: "off", label: "Off — no screenshots" },
+  { value: "min3", label: "Every 3 minutes" },
+  { value: "min5", label: "Every 5 minutes" },
+  { value: "min10", label: "Every 10 minutes" },
+]
 
 function SettingRow({
   label,
@@ -63,47 +89,104 @@ export function MonitoringTab() {
   const { can } = usePermissions()
   const canManage = can("settings:manage")
 
-  const [saved, setSaved] = useState<MonitoringSettings>(() =>
-    cloneSettings(MONITORING_DEFAULTS),
-  )
-  const [draft, setDraft] = useState<MonitoringSettings>(() =>
-    cloneSettings(MONITORING_DEFAULTS),
-  )
+  const {
+    control,
+    handleSubmit,
+    reset,
+    formState: { isDirty },
+  } = useForm<PolicyForm>({ defaultValues: EMPTY })
+
+  // The optimistic-concurrency token from `tracking.version`. Retained across edits and sent back as
+  // `expected_version`; bumped from each successful save's response.
+  const [version, setVersion] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
 
-  const updateIdle = (patch: Partial<MonitoringSettings["idle"]>) =>
-    setDraft((d) => ({ ...d, idle: { ...d.idle, ...patch } }))
-  const updateScreenshots = (patch: Partial<MonitoringSettings["screenshots"]>) =>
-    setDraft((d) => ({ ...d, screenshots: { ...d.screenshots, ...patch } }))
-  const updateProductivity = (patch: Partial<MonitoringSettings["productivity"]>) =>
-    setDraft((d) => ({ ...d, productivity: { ...d.productivity, ...patch } }))
-  const updateWorkHours = (patch: Partial<MonitoringSettings["workHours"]>) =>
-    setDraft((d) => ({ ...d, workHours: { ...d.workHours, ...patch } }))
-  const updateAlerts = (patch: Partial<MonitoringSettings["alertThresholds"]>) =>
-    setDraft((d) => ({ ...d, alertThresholds: { ...d.alertThresholds, ...patch } }))
+  // Reset both the form values AND the RHF baseline, so `isDirty` reads false right after a load/save.
+  const seed = useCallback(
+    (p: PolicyForm, v: number) => {
+      setVersion(v)
+      reset(p)
+    },
+    [reset],
+  )
 
-  function handleSave() {
-    if (!dirty || saving) return
-    const next = draft
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const cfg = await getTrackingPolicy()
+      seed(
+        {
+          cadence: cfg.tracking.cadence,
+          blur_level: cfg.tracking.blur_level,
+          retention_days: cfg.tracking.retention_days,
+          silent: cfg.tracking.silent,
+          auto_update: cfg.tracking.auto_update,
+        },
+        cfg.tracking.version,
+      )
+    } catch (e) {
+      setLoadError(loadMessage(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [seed])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const onSave = handleSubmit(async (values) => {
+    if (saving) return
     setSaving(true)
-    // Simulated persistence latency (Phase 1 is frontend-only).
-    setTimeout(() => {
-      setSaved(cloneSettings(next))
-      setSaving(false)
+    try {
+      const next = await updateTrackingPolicy({
+        cadence: values.cadence,
+        blur_level: values.blur_level,
+        retention_days: values.retention_days,
+        silent: values.silent,
+        auto_update: values.auto_update,
+        expected_version: version,
+      })
+      seed(
+        {
+          cadence: next.cadence,
+          blur_level: next.blur_level,
+          retention_days: next.retention_days,
+          silent: next.silent,
+          auto_update: next.auto_update,
+        },
+        next.version,
+      )
       toast.success("Monitoring settings saved")
-    }, 500)
-  }
-
-  function handleReset() {
-    setDraft(cloneSettings(saved))
-  }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error("Settings changed elsewhere — reload to get the latest.", {
+          action: { label: "Reload", onClick: () => void load() },
+        })
+      } else if (e instanceof ApiError && e.status === 403) {
+        toast.error(
+          "Monitoring capture isn't included in your plan — you can't enable screenshot capture. Upgrade to turn it on.",
+        )
+      } else {
+        toast.error(
+          e instanceof ApiError
+            ? e.message
+            : "Couldn't save monitoring settings. Check your connection and retry.",
+        )
+      }
+    } finally {
+      setSaving(false)
+    }
+  })
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Monitoring"
-        description="Configure idle detection, screenshot capture, and productivity thresholds for your organization."
+        description="Configure how the desktop agent captures screenshots and how long they are retained across your organization."
       />
 
       {!canManage && (
@@ -115,87 +198,77 @@ export function MonitoringTab() {
         </div>
       )}
 
-      <div className="space-y-6">
-          {/* ── Idle Detection ── */}
-          <Card id="idle" className="scroll-mt-24 shadow-none">
-            <CardHeader>
-              <CardTitle>Idle detection</CardTitle>
-              <CardDescription>
-                Determine when a user is considered idle and how the timer responds.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-0 pb-2">
-              <SettingRow
-                label="Idle threshold"
-                description="Minutes of inactivity before a session is marked as idle."
-                disabled={!canManage}
-              >
-                <NumericStepper
-                  value={draft.idle.thresholdMins}
-                  min={1}
-                  max={120}
-                  suffix="min"
-                  disabled={!canManage}
-                  onChange={(v) => updateIdle({ thresholdMins: v })}
-                />
-              </SettingRow>
-              <SettingRow
-                label="Pause timer on idle"
-                description="Automatically pause the running timer when idle is detected."
-                disabled={!canManage}
-              >
-                <Switch
-                  checked={draft.idle.pauseTimerOnIdle}
-                  disabled={!canManage}
-                  onCheckedChange={(v) => updateIdle({ pauseTimerOnIdle: v })}
-                />
-              </SettingRow>
-            </CardContent>
-          </Card>
-
-          {/* ── Screenshots ── */}
+      {loading ? (
+        <Loader label="Loading monitoring settings…" />
+      ) : loadError ? (
+        <div className="rounded-md border border-border bg-muted px-5 py-4 text-sm text-muted-foreground">
+          {loadError}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* ── Screenshot capture ── */}
           <Card id="screenshots" className="scroll-mt-24 shadow-none">
             <CardHeader>
-              <CardTitle>Screenshots</CardTitle>
+              <CardTitle>Screenshot capture</CardTitle>
               <CardDescription>
-                Control how often screenshots are captured and how long they are retained.
+                Control how often the desktop agent captures screenshots, how they are blurred, and
+                how long they are retained.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-0 pb-2">
               <SettingRow
-                label="Capture frequency"
-                description="How often the desktop agent captures a screenshot during active sessions."
+                label="Capture cadence"
+                description="How often a screenshot is taken while a session is active."
                 disabled={!canManage}
               >
-                <NumericStepper
-                  value={draft.screenshots.frequencyMins}
-                  min={1}
-                  max={60}
-                  suffix="min"
-                  disabled={!canManage}
-                  onChange={(v) => updateScreenshots({ frequencyMins: v })}
+                <Controller
+                  control={control}
+                  name="cadence"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={(v) =>
+                        field.onChange(v as TrackingCadence)
+                      }
+                      disabled={!canManage}
+                    >
+                      <SelectTrigger className="w-56">
+                        <SelectValue>
+                          {(v) =>
+                            CADENCE_OPTIONS.find((o) => o.value === v)?.label ??
+                            "Select"
+                          }
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CADENCE_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 />
               </SettingRow>
               <SettingRow
-                label="Blur by default"
-                description="Automatically blur screenshots before upload to protect sensitive content."
+                label="Blur level"
+                description="Strength of the automatic blur applied before upload (0 = none, 3 = heaviest)."
                 disabled={!canManage}
               >
-                <Switch
-                  checked={draft.screenshots.blurByDefault}
-                  disabled={!canManage}
-                  onCheckedChange={(v) => updateScreenshots({ blurByDefault: v })}
-                />
-              </SettingRow>
-              <SettingRow
-                label="Capture on idle"
-                description="Continue capturing screenshots even while the user is idle."
-                disabled={!canManage}
-              >
-                <Switch
-                  checked={draft.screenshots.captureOnIdle}
-                  disabled={!canManage}
-                  onCheckedChange={(v) => updateScreenshots({ captureOnIdle: v })}
+                <Controller
+                  control={control}
+                  name="blur_level"
+                  render={({ field }) => (
+                    <NumericStepper
+                      value={field.value}
+                      min={0}
+                      max={3}
+                      suffix="level"
+                      disabled={!canManage}
+                      onChange={field.onChange}
+                    />
+                  )}
                 />
               </SettingRow>
               <SettingRow
@@ -203,152 +276,48 @@ export function MonitoringTab() {
                 description="Days to keep screenshots before automatic deletion."
                 disabled={!canManage}
               >
-                <NumericStepper
-                  value={draft.screenshots.retentionDays}
-                  min={7}
-                  max={365}
-                  step={1}
-                  suffix="days"
-                  disabled={!canManage}
-                  onChange={(v) => updateScreenshots({ retentionDays: v })}
+                <Controller
+                  control={control}
+                  name="retention_days"
+                  render={({ field }) => (
+                    <NumericStepper
+                      value={field.value}
+                      min={1}
+                      max={365}
+                      suffix="days"
+                      disabled={!canManage}
+                      onChange={field.onChange}
+                    />
+                  )}
                 />
               </SettingRow>
             </CardContent>
           </Card>
 
-          {/* ── Productivity Thresholds ── */}
-          <Card id="productivity" className="scroll-mt-24 shadow-none">
+          {/* ── Agent updates ── */}
+          <Card id="updates" className="scroll-mt-24 shadow-none">
             <CardHeader>
-              <CardTitle>Productivity thresholds</CardTitle>
+              <CardTitle>Agent updates</CardTitle>
               <CardDescription>
-                Define the activity bands that colour-code productivity scores across Insights.
+                Manage how the desktop agent keeps itself up to date on employee devices.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-0 pb-2">
               <SettingRow
-                label="Productive threshold"
-                description="Activity at or above this percentage is rated productive (green band)."
+                label="Automatic updates"
+                description="Allow agents to self-update to the latest released version without manual intervention."
                 disabled={!canManage}
               >
-                <NumericStepper
-                  value={draft.productivity.productiveThreshold}
-                  min={1}
-                  max={100}
-                  step={5}
-                  suffix="%"
-                  disabled={!canManage}
-                  onChange={(v) => updateProductivity({ productiveThreshold: v })}
-                />
-              </SettingRow>
-              <SettingRow
-                label="Low activity threshold"
-                description="Activity below this percentage is rated low (red band)."
-                disabled={!canManage}
-              >
-                <NumericStepper
-                  value={draft.productivity.lowActivityThreshold}
-                  min={1}
-                  max={100}
-                  step={5}
-                  suffix="%"
-                  disabled={!canManage}
-                  onChange={(v) => updateProductivity({ lowActivityThreshold: v })}
-                />
-              </SettingRow>
-            </CardContent>
-          </Card>
-
-          {/* ── Daily Work-Hour Rules ── */}
-          <Card id="work-hours" className="scroll-mt-24 shadow-none">
-            <CardHeader>
-              <CardTitle>Daily work-hour rules</CardTitle>
-              <CardDescription>
-                Set the expected workday length and the overtime alert threshold.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-0 pb-2">
-              <SettingRow
-                label="Expected hours per day"
-                description="The standard workday used to calculate utilization and overtime."
-                disabled={!canManage}
-              >
-                <NumericStepper
-                  value={draft.workHours.expectedHoursPerDay}
-                  min={1}
-                  max={24}
-                  suffix="hrs"
-                  disabled={!canManage}
-                  onChange={(v) => updateWorkHours({ expectedHoursPerDay: v })}
-                />
-              </SettingRow>
-              <SettingRow
-                label="Overtime alert threshold"
-                description="Trigger an alert when tracked hours exceed this value in a single day."
-                disabled={!canManage}
-              >
-                <NumericStepper
-                  value={draft.workHours.overtimeAlertThreshold}
-                  min={1}
-                  max={24}
-                  suffix="hrs"
-                  disabled={!canManage}
-                  onChange={(v) => updateWorkHours({ overtimeAlertThreshold: v })}
-                />
-              </SettingRow>
-            </CardContent>
-          </Card>
-
-          {/* ── Alert Thresholds ── */}
-          <Card id="alerts" className="scroll-mt-24 shadow-none">
-            <CardHeader>
-              <CardTitle>Alert thresholds</CardTitle>
-              <CardDescription>
-                Configure triggers for the alerts shown in Analytics → AI reports.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-0 pb-2">
-              <SettingRow
-                label="Long inactivity alert"
-                description="Alert when an employee with an active timer is continuously idle beyond this threshold."
-                disabled={!canManage}
-              >
-                <NumericStepper
-                  value={draft.alertThresholds.longInactivityMins}
-                  min={5}
-                  max={480}
-                  step={5}
-                  suffix="min"
-                  disabled={!canManage}
-                  onChange={(v) => updateAlerts({ longInactivityMins: v })}
-                />
-              </SettingRow>
-              <SettingRow
-                label="Productivity drop alert"
-                description="Alert when an employee's score drops by more than this vs their 7-day average."
-                disabled={!canManage}
-              >
-                <NumericStepper
-                  value={draft.alertThresholds.productivityDropPercent}
-                  min={5}
-                  max={100}
-                  step={5}
-                  suffix="%"
-                  disabled={!canManage}
-                  onChange={(v) => updateAlerts({ productivityDropPercent: v })}
-                />
-              </SettingRow>
-              <SettingRow
-                label="Burnout alert threshold"
-                description="Alert when an employee tracks more hours than this in a single day."
-                disabled={!canManage}
-              >
-                <NumericStepper
-                  value={draft.alertThresholds.burnoutHoursPerDay}
-                  min={6}
-                  max={24}
-                  suffix="hrs"
-                  disabled={!canManage}
-                  onChange={(v) => updateAlerts({ burnoutHoursPerDay: v })}
+                <Controller
+                  control={control}
+                  name="auto_update"
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value}
+                      disabled={!canManage}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
                 />
               </SettingRow>
             </CardContent>
@@ -369,12 +338,16 @@ export function MonitoringTab() {
                 description="Removes system-tray indicators and capture notifications from employee devices."
                 disabled={!canManage}
               >
-                <Switch
-                  checked={draft.silentMonitoring}
-                  disabled={!canManage}
-                  onCheckedChange={(v) =>
-                    setDraft((d) => ({ ...d, silentMonitoring: v }))
-                  }
+                <Controller
+                  control={control}
+                  name="silent"
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value}
+                      disabled={!canManage}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
                 />
               </SettingRow>
               <p className="rounded-md border border-border bg-muted/60 px-4 py-3 text-xs text-muted-foreground">
@@ -389,15 +362,26 @@ export function MonitoringTab() {
             </CardContent>
           </Card>
 
-        {canManage && (
-          <SettingsSaveBar
-            dirty={dirty}
-            saving={saving}
-            onSave={handleSave}
-            onReset={handleReset}
-          />
-        )}
-      </div>
+          {canManage && (
+            <SettingsSaveBar
+              dirty={isDirty}
+              saving={saving}
+              onSave={onSave}
+              onReset={() => reset()}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
+}
+
+function loadMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 401) return "Your session expired. Sign in again."
+    if (e.status === 403)
+      return "You don't have access to the monitoring settings."
+    return e.message
+  }
+  return "Couldn't load monitoring settings. Check your connection and retry."
 }
