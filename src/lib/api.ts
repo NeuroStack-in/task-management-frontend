@@ -156,3 +156,45 @@ export function acceptInvite(body: AcceptInviteBody): Promise<AcceptInviteResult
     body: JSON.stringify(body),
   });
 }
+
+/** Self-serve org signup — `POST /v1/org/create` (identity, public). Provisions the tenant + the
+ * owner's Cognito login (permanent password), so the caller can sign in immediately after. */
+export interface CreateOrgBody {
+  org: {
+    name: string;
+    slug: string;
+    industry?: string;
+    size?: string;
+    website?: string;
+    timezone?: string;
+    country?: string;
+    currency?: string;
+    emp_id_prefix?: string;
+  };
+  owner: {
+    email: string;
+    password: string;
+    full_name: string;
+    job_title?: string;
+    department?: string;
+    location?: string;
+    phone?: string;
+  };
+  /** `free` | `starter` | `enterprise` (the server validates it). */
+  plan: string;
+}
+
+export interface OrgCreatedResult {
+  tenant_id: string;
+  slug: string;
+  owner_user_id: string;
+  plan: string;
+  status: string;
+}
+
+export function createOrg(body: CreateOrgBody): Promise<OrgCreatedResult> {
+  return apiFetch<OrgCreatedResult>("/v1/org/create", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

@@ -566,6 +566,21 @@ function PayConfirm({
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
 
+/** Everything the org-setup wizard collects, handed to the parent to create the org. */
+export interface OrgSignupPayload {
+  org: { name: string; slug: string; industry: string; size: string; website: string };
+  region: { country: string; currency: string; timezone: string };
+  profile: {
+    fullName: string;
+    jobTitle: string;
+    department: string;
+    location: string;
+    phone: string;
+  };
+  plan: string;
+  billing: "monthly" | "annual";
+}
+
 export function OrgSetupModal({
   open,
   onClose,
@@ -573,7 +588,8 @@ export function OrgSetupModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onComplete: (plan: string) => void;
+  /** Creates the org + signs the owner in; rejects with a user-facing message on failure. */
+  onComplete: (payload: OrgSignupPayload) => Promise<void>;
 }) {
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
@@ -635,12 +651,18 @@ export function OrgSetupModal({
     setPayOpen(true);
   };
 
-  const doFinish = () => {
+  const doFinish = async () => {
+    setErr(null);
     setStatus("loading");
-    setTimeout(() => {
+    try {
+      // Real create + sign-in happens in the parent; on success it redirects (this unmounts).
+      await onComplete({ org, region, profile, plan, billing });
       setStatus("success");
-      setTimeout(() => onComplete(plan), 750);
-    }, 1100);
+    } catch (e) {
+      setStatus("idle");
+      setPayOpen(false); // back to the plan step so the message is visible and they can retry
+      setErr(e instanceof Error ? e.message : "Couldn't create your workspace. Please try again.");
+    }
   };
 
   const StepIcon = STEPS[step].icon;

@@ -3,11 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Check, KeyRound, Lock, Mail, UserRound } from "lucide-react";
+import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
+import { ApiError, createOrg } from "@/lib/api";
 import {
   OrgSetupModal,
   SsoOptionsModal,
   SsoPickerModal,
+  type OrgSignupPayload,
 } from "@/modules/auth/components/auth-modals";
 import {
   AuthCard,
@@ -22,11 +25,24 @@ type AccountErrors = Partial<
   Record<"name" | "email" | "password" | "confirm" | "agree", string>
 >;
 
+/** Map a create-org failure to a user-facing message. The global slug is the common collision. */
+function createOrgMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 409 || /slug/i.test(e.message))
+      return "That workspace URL is already taken — pick another.";
+    if (e.status === 400)
+      return e.message || "Please check your organization details and try again.";
+    return e.message || "Couldn't create your workspace. Please try again shortly.";
+  }
+  return "Couldn't create your workspace. Check your connection and try again.";
+}
+
 export function SignupExperience() {
   const router = useRouter();
   const params = useSearchParams();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const hydrated = useAuthStore((s) => s.hydrated);
+  const login = useAuthStore((s) => s.login);
 
   const [acct, setAcct] = useState({ name: "", email: "", password: "", confirm: "" });
   const [agree, setAgree] = useState(false);
@@ -74,15 +90,50 @@ export function SignupExperience() {
     else setSso(provider);
   };
 
-  const completeSetup = () => {
+  // Create the org (public POST /v1/org/create), then sign the new owner straight in. Rejects with
+  // a user-facing message so OrgSetupModal reverts to the plan step and shows it.
+  const completeSetup = async (payload: OrgSignupPayload) => {
+    const { org, region, profile, plan } = payload;
+    try {
+      await createOrg({
+        org: {
+          name: org.name.trim(),
+          slug: org.slug.trim(),
+          industry: org.industry || undefined,
+          size: org.size || undefined,
+          website: org.website.trim() || undefined,
+          timezone: region.timezone || undefined,
+          country: region.country || undefined,
+          currency: region.currency || undefined,
+        },
+        owner: {
+          email: acct.email.trim(),
+          password: acct.password,
+          full_name: profile.fullName.trim() || acct.name.trim(),
+          job_title: profile.jobTitle.trim() || undefined,
+          department: profile.department.trim() || undefined,
+          location: profile.location.trim() || undefined,
+          phone: profile.phone.trim() || undefined,
+        },
+        plan,
+      });
+    } catch (e) {
+      throw new Error(createOrgMessage(e)); // surfaced by the modal
+    }
+
+    // Org + owner Cognito login exist now. Sign in; fall back to /login if that hiccups —
+    // the account is real either way, so never present this as a failure.
     setOrgOpen(false);
-    // Sign-up can't complete yet: auth is a real Cognito exchange now (no faking a session), and
-    // the backend's org-creation flow (identity `create_org`) isn't built. Say so rather than
-    // dropping an unauthenticated user on /onboarding.
-    setErr({
-      email:
-        "Sign-up isn't available yet — sign in with an existing account instead.",
-    });
+    try {
+      await login(acct.email.trim(), acct.password);
+      toast.success("Workspace created", { description: "Welcome to WorkPulse." });
+      router.replace("/dashboard");
+    } catch {
+      toast.success("Workspace created", {
+        description: "Sign in with your new password to continue.",
+      });
+      router.replace("/login");
+    }
   };
 
   const signupError = Object.values(err).filter(Boolean)[0];
