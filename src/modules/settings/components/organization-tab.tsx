@@ -21,6 +21,12 @@ import {
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
+import { DepartmentsManager } from "./departments-manager"
+import { BrandingManager } from "./org/branding-manager"
+import { TeamsManager } from "./org/teams-manager"
+import { LocationsManager } from "./org/locations-manager"
+import { HolidaysManager } from "./org/holidays-manager"
+import { PoliciesManager } from "./org/policies-manager"
 import { Loader } from "@/components/shared/loader"
 import { usePermissions } from "@/hooks/use-permissions"
 import { ApiError } from "@/lib/api"
@@ -60,11 +66,41 @@ const TIMEZONE_OPTIONS = [
   "Australia/Sydney",
 ] as const
 
+// Industry + company-size pickers. `__none__` is the "unset" sentinel (Base UI selects need a value).
+const INDUSTRY_OPTIONS = [
+  "Software",
+  "Technology",
+  "Finance",
+  "Healthcare",
+  "Education",
+  "Retail",
+  "Manufacturing",
+  "Media",
+  "Consulting",
+  "Non-profit",
+  "Government",
+  "Other",
+] as const
+
+const SIZE_OPTIONS = [
+  "1-10",
+  "11-50",
+  "51-200",
+  "201-500",
+  "501-1000",
+  "1001-5000",
+  "5000+",
+] as const
+
+const UNSET = "__none__"
+
 interface OrgProfileForm {
   name: string
   timezone: string
   website: string
   empIdPrefix: string
+  industry: string
+  size: string
 }
 
 const EMPTY_FORM: OrgProfileForm = {
@@ -72,6 +108,8 @@ const EMPTY_FORM: OrgProfileForm = {
   timezone: "",
   website: "",
   empIdPrefix: "",
+  industry: "",
+  size: "",
 }
 
 /** Turn an OrgView into the editable form shape. */
@@ -81,6 +119,8 @@ function formFromView(v: OrgView): OrgProfileForm {
     timezone: v.timezone ?? "",
     website: v.website ?? "",
     empIdPrefix: v.emp_id_prefix ?? "",
+    industry: v.industry ?? "",
+    size: v.size ?? "",
   }
 }
 
@@ -145,6 +185,8 @@ export function OrganizationTab() {
     if (draft.timezone.trim()) body.timezone = draft.timezone.trim()
     if (draft.website.trim()) body.website = draft.website.trim()
     if (draft.empIdPrefix.trim()) body.emp_id_prefix = draft.empIdPrefix.trim()
+    if (draft.industry.trim()) body.industry = draft.industry.trim()
+    if (draft.size.trim()) body.size = draft.size.trim()
     if (version !== undefined) body.version = version
     return body
   }
@@ -157,7 +199,9 @@ export function OrganizationTab() {
       body.name === undefined &&
       body.timezone === undefined &&
       body.website === undefined &&
-      body.emp_id_prefix === undefined
+      body.emp_id_prefix === undefined &&
+      body.industry === undefined &&
+      body.size === undefined
     ) {
       toast.error("Enter at least one value before saving.")
       return
@@ -203,7 +247,7 @@ export function OrganizationTab() {
     <div className="space-y-6">
       <PageHeader
         title="Organization"
-        description="Manage your organization's name, timezone, website, and employee-ID prefix."
+        description="Manage your organization's profile, branding, structure, locations, holidays, and policies."
       />
 
       {!canManage && (
@@ -274,6 +318,50 @@ export function OrganizationTab() {
               </Select>
             </div>
             <div className="space-y-1.5">
+              <Label>Industry</Label>
+              <Select
+                value={draft.industry || UNSET}
+                onValueChange={(v) =>
+                  update({ industry: v === UNSET ? "" : (v as string) })
+                }
+                disabled={!canManage}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select an industry…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSET}>Not set</SelectItem>
+                  {INDUSTRY_OPTIONS.map((ind) => (
+                    <SelectItem key={ind} value={ind}>
+                      {ind}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Company size</Label>
+              <Select
+                value={draft.size || UNSET}
+                onValueChange={(v) =>
+                  update({ size: v === UNSET ? "" : (v as string) })
+                }
+                disabled={!canManage}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a size…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSET}>Not set</SelectItem>
+                  {SIZE_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s} employees
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
               <Label>Employee-ID prefix</Label>
               <Input
                 value={draft.empIdPrefix}
@@ -292,6 +380,16 @@ export function OrganizationTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Branding — its own singleton load/save (independent of the org-profile save bar). */}
+      <BrandingManager />
+
+      {/* Each of these is its own live-backend CRUD, independent of the org-profile save bar. */}
+      <DepartmentsManager />
+      <TeamsManager />
+      <LocationsManager />
+      <HolidaysManager />
+      <PoliciesManager />
 
       {canManage && (
         <SettingsSaveBar

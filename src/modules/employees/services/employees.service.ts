@@ -38,11 +38,36 @@ export interface ApiDepartment {
   created_at?: number;
 }
 
-/** `department_id → name`, for turning the directory's ids into labels. Best-effort.
- *  `/v1/departments` answers with a bare array in `data` (not `{departments}`). */
+/** `GET /v1/departments` → the org's departments (bare array in `data`). Needs `employees:view`. */
+export function listDepartments(): Promise<ApiDepartment[]> {
+  return apiFetch<ApiDepartment[]>("/v1/departments");
+}
+
+/** `department_id → name`, for turning the directory's ids into labels. Best-effort. */
 export async function departmentMap(): Promise<Map<string, string>> {
-  const depts = await apiFetch<ApiDepartment[]>("/v1/departments");
+  const depts = await listDepartments();
   return new Map(depts.map((d) => [d.id, d.name]));
+}
+
+/** `POST /v1/departments` — create a department. Needs `settings:manage` (backend `OrgManage`). */
+export function createDepartment(name: string): Promise<ApiDepartment> {
+  return apiFetch<ApiDepartment>("/v1/departments", {
+    method: "POST",
+    body: JSON.stringify({ name: name.trim() }),
+  });
+}
+
+/** `PATCH /v1/departments/{id}` — rename a department. Needs `settings:manage`. */
+export function updateDepartment(id: string, name: string): Promise<ApiDepartment> {
+  return apiFetch<ApiDepartment>(`/v1/departments/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name: name.trim() }),
+  });
+}
+
+/** `DELETE /v1/departments/{id}`. Needs `settings:manage`. */
+export async function deleteDepartment(id: string): Promise<void> {
+  await apiFetch(`/v1/departments/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** Mirrors `workforce::employee_profile::dto::EmployeeProfile` (`GET /v1/employees/{id}`). */
@@ -67,17 +92,57 @@ export function getEmployeeProfile(userId: string): Promise<ApiEmployeeProfile> 
   return apiFetch<ApiEmployeeProfile>(`/v1/employees/${encodeURIComponent(userId)}`);
 }
 
-interface ApiTeam {
+export interface ApiTeam {
   id: string;
   name: string;
   department_id?: string;
+  /** `user_id` of the team's lead, if one is assigned. */
+  lead_id?: string;
+}
+
+/** Tolerate both a bare array and a `{ teams }` envelope in `data`. */
+function unwrapTeams(data: ApiTeam[] | { teams: ApiTeam[] }): ApiTeam[] {
+  return Array.isArray(data) ? data : (data?.teams ?? []);
+}
+
+/** `GET /v1/teams` → the org's teams. Needs `employees:view`. */
+export async function listTeams(): Promise<ApiTeam[]> {
+  const data = await apiFetch<ApiTeam[] | { teams: ApiTeam[] }>("/v1/teams");
+  return unwrapTeams(data);
 }
 
 /** `team_id → name`, for turning the profile's id into a label. Best-effort (bare array in `data`). */
 export async function teamMap(): Promise<Map<string, string>> {
-  const data = await apiFetch<ApiTeam[] | { teams: ApiTeam[] }>("/v1/teams");
-  const teams = Array.isArray(data) ? data : (data?.teams ?? []);
+  const teams = await listTeams();
   return new Map(teams.map((t) => [t.id, t.name]));
+}
+
+/** `POST /v1/teams` — create a team. Needs `settings:manage` (backend `OrgSettingsManage`). */
+export function createTeam(body: {
+  name: string;
+  department_id: string;
+  lead_id?: string;
+}): Promise<ApiTeam> {
+  return apiFetch<ApiTeam>("/v1/teams", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `PATCH /v1/teams/{id}` — rename / re-assign a team. Needs `settings:manage`. */
+export function updateTeam(
+  id: string,
+  body: { name?: string; department_id?: string; lead_id?: string },
+): Promise<ApiTeam> {
+  return apiFetch<ApiTeam>(`/v1/teams/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `DELETE /v1/teams/{id}`. Needs `settings:manage`. */
+export async function deleteTeam(id: string): Promise<void> {
+  await apiFetch(`/v1/teams/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** `POST /v1/employees/{id}/deactivate` — the lifecycle action (LLD §6). */

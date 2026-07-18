@@ -20,6 +20,10 @@ export interface OrgView {
   timezone?: string;
   website?: string;
   emp_id_prefix?: string;
+  /** Free-text industry label (e.g. "Software"). Optional org meta. */
+  industry?: string;
+  /** Company-size bucket (e.g. "11-50"). Optional org meta. */
+  size?: string;
   version: number;
 }
 
@@ -33,6 +37,8 @@ export interface UpdateOrgRequest {
   timezone?: string;
   website?: string;
   emp_id_prefix?: string;
+  industry?: string;
+  size?: string;
   version?: number;
   /** Optionally mark one onboarding-wizard step (LLD §2): step ∈ org_setup|invite_team|tracking|
    * personalize, state ∈ pending|done|skipped. A pure onboarding update needs no meta field. */
@@ -114,5 +120,186 @@ export function exportOrg(confirm: string): Promise<ExportOrgResult> {
   return apiFetch<ExportOrgResult>("/v1/org/export", {
     method: "POST",
     body: JSON.stringify({ confirm }),
+  });
+}
+
+// ── Branding (singleton) — `GET`/`PATCH /v1/org/branding` ─────────────────────────────────────────
+// The org's visual identity: a logo URL and two brand colors. A single row per org (not a
+// collection), so there is one GET and one PATCH — no id. All fields optional; PATCH only what changed.
+
+export interface OrgBranding {
+  logo_url?: string;
+  /** Hex color (e.g. `#4f46e5`). */
+  primary_color?: string;
+  /** Hex color (e.g. `#a855f7`). */
+  accent_color?: string;
+}
+
+/** `GET /v1/org/branding` — the org's branding. Any member may read it. */
+export function getBranding(): Promise<OrgBranding> {
+  return apiFetch<OrgBranding>("/v1/org/branding");
+}
+
+/** `PATCH /v1/org/branding` — update branding fields. Needs `settings:manage` (server `OrgSettingsManage`). */
+export function updateBranding(body: OrgBranding): Promise<OrgBranding> {
+  return apiFetch<OrgBranding>("/v1/org/branding", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+// ── Locations (collection) — `/v1/org/locations` ──────────────────────────────────────────────────
+
+export interface OrgLocation {
+  id: string;
+  name: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  timezone?: string;
+}
+
+/** Body for creating/updating a location (id is path-only, never in the body). */
+export interface LocationInput {
+  name?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  timezone?: string;
+}
+
+/** `GET /v1/org/locations` → the org's locations. */
+export function listLocations(): Promise<OrgLocation[]> {
+  return apiFetch<{ locations: OrgLocation[] }>("/v1/org/locations").then(
+    (r) => r.locations,
+  );
+}
+
+/** `POST /v1/org/locations` — create a location (`name` required). Needs `settings:manage`. */
+export function createLocation(
+  body: LocationInput & { name: string },
+): Promise<OrgLocation> {
+  return apiFetch<OrgLocation>("/v1/org/locations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `PATCH /v1/org/locations/{id}` — edit a location. Needs `settings:manage`. */
+export function updateLocation(
+  id: string,
+  body: LocationInput,
+): Promise<OrgLocation> {
+  return apiFetch<OrgLocation>(`/v1/org/locations/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `DELETE /v1/org/locations/{id}`. Needs `settings:manage`. */
+export async function deleteLocation(id: string): Promise<void> {
+  await apiFetch(`/v1/org/locations/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Holidays (collection) — `/v1/org/holidays` ────────────────────────────────────────────────────
+
+export interface OrgHoliday {
+  id: string;
+  name: string;
+  /** `YYYY-MM-DD`. */
+  date: string;
+}
+
+export interface HolidayInput {
+  name?: string;
+  /** `YYYY-MM-DD`. */
+  date?: string;
+}
+
+/** `GET /v1/org/holidays` → the org's holiday calendar. */
+export function listHolidays(): Promise<OrgHoliday[]> {
+  return apiFetch<{ holidays: OrgHoliday[] }>("/v1/org/holidays").then(
+    (r) => r.holidays,
+  );
+}
+
+/** `POST /v1/org/holidays` — add a holiday (`name` + `date` required). Needs `settings:manage`. */
+export function createHoliday(body: {
+  name: string;
+  date: string;
+}): Promise<OrgHoliday> {
+  return apiFetch<OrgHoliday>("/v1/org/holidays", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `PATCH /v1/org/holidays/{id}`. Needs `settings:manage`. */
+export function updateHoliday(
+  id: string,
+  body: HolidayInput,
+): Promise<OrgHoliday> {
+  return apiFetch<OrgHoliday>(`/v1/org/holidays/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `DELETE /v1/org/holidays/{id}`. Needs `settings:manage`. */
+export async function deleteHoliday(id: string): Promise<void> {
+  await apiFetch(`/v1/org/holidays/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Policies (collection) — `/v1/org/policies` ────────────────────────────────────────────────────
+
+export interface OrgPolicy {
+  id: string;
+  title: string;
+  body?: string;
+  url?: string;
+}
+
+export interface PolicyInput {
+  title?: string;
+  body?: string;
+  url?: string;
+}
+
+/** `GET /v1/org/policies` → the org's policy documents. */
+export function listPolicies(): Promise<OrgPolicy[]> {
+  return apiFetch<{ policies: OrgPolicy[] }>("/v1/org/policies").then(
+    (r) => r.policies,
+  );
+}
+
+/** `POST /v1/org/policies` — add a policy (`title` required). Needs `settings:manage`. */
+export function createPolicy(
+  body: PolicyInput & { title: string },
+): Promise<OrgPolicy> {
+  return apiFetch<OrgPolicy>("/v1/org/policies", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `PATCH /v1/org/policies/{id}`. Needs `settings:manage`. */
+export function updatePolicy(
+  id: string,
+  body: PolicyInput,
+): Promise<OrgPolicy> {
+  return apiFetch<OrgPolicy>(`/v1/org/policies/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `DELETE /v1/org/policies/{id}`. Needs `settings:manage`. */
+export async function deletePolicy(id: string): Promise<void> {
+  await apiFetch(`/v1/org/policies/${encodeURIComponent(id)}`, {
+    method: "DELETE",
   });
 }
