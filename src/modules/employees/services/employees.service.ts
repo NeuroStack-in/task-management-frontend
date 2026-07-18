@@ -43,6 +43,41 @@ export async function departmentMap(): Promise<Map<string, string>> {
   return new Map(depts.map((d) => [d.id, d.name]));
 }
 
+/** Mirrors `workforce::employee_profile::dto::EmployeeProfile` (`GET /v1/employees/{id}`). */
+export interface ApiEmployeeProfile {
+  user_id: string;
+  name: string;
+  email: string;
+  emp_id?: string;
+  title?: string;
+  department_id?: string;
+  team_id?: string;
+  location?: string;
+  phone?: string;
+  role_id?: string;
+  /** `active` | `deactivated`. */
+  status: string;
+  /** Epoch **ms**. */
+  joined_at?: number;
+}
+
+export function getEmployeeProfile(userId: string): Promise<ApiEmployeeProfile> {
+  return apiFetch<ApiEmployeeProfile>(`/v1/employees/${encodeURIComponent(userId)}`);
+}
+
+interface ApiTeam {
+  id: string;
+  name: string;
+  department_id?: string;
+}
+
+/** `team_id → name`, for turning the profile's id into a label. Best-effort (bare array in `data`). */
+export async function teamMap(): Promise<Map<string, string>> {
+  const data = await apiFetch<ApiTeam[] | { teams: ApiTeam[] }>("/v1/teams");
+  const teams = Array.isArray(data) ? data : (data?.teams ?? []);
+  return new Map(teams.map((t) => [t.id, t.name]));
+}
+
 /** `POST /v1/employees/{id}/deactivate` — the lifecycle action (LLD §6). */
 export async function deactivateEmployee(userId: string): Promise<void> {
   await apiFetch(`/v1/employees/${encodeURIComponent(userId)}/deactivate`, {
