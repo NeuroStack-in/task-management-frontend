@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { validatePassword } from "@/lib/password";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +23,10 @@ import { Label } from "@/components/ui/label";
 
 const schema = z
   .object({
-    password: z.string().min(8, "Use at least 8 characters."),
+    password: z.string().superRefine((val, ctx) => {
+      const m = validatePassword(val);
+      if (m) ctx.addIssue({ code: z.ZodIssueCode.custom, message: m });
+    }),
     confirm: z.string(),
   })
   .refine((d) => d.password === d.confirm, {
@@ -70,7 +74,7 @@ export function ResetPasswordForm() {
               id="rp-password"
               type="password"
               autoComplete="new-password"
-              placeholder="At least 8 characters"
+              placeholder="At least 12 characters"
               {...register("password")}
             />
             {errors.password ? (

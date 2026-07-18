@@ -34,6 +34,9 @@ export interface UpdateOrgRequest {
   website?: string;
   emp_id_prefix?: string;
   version?: number;
+  /** Optionally mark one onboarding-wizard step (LLD §2): step ∈ org_setup|invite_team|tracking|
+   * personalize, state ∈ pending|done|skipped. A pure onboarding update needs no meta field. */
+  onboarding?: { step: string; state: string };
 }
 
 export function updateOrg(body: UpdateOrgRequest): Promise<OrgView> {

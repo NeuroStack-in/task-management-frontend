@@ -6,6 +6,7 @@ import { ArrowRight, Check, KeyRound, Lock, Mail, UserRound } from "lucide-react
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { ApiError, createOrg } from "@/lib/api";
+import { PASSWORD_RULES, validatePassword } from "@/lib/password";
 import {
   OrgSetupModal,
   SsoOptionsModal,
@@ -68,7 +69,10 @@ export function SignupExperience() {
     if (acct.name.trim().length < 2) e.name = "Tell us your name.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(acct.email))
       e.email = "Enter a valid work email.";
-    if (acct.password.length < 8) e.password = "At least 8 characters.";
+    // Match the Cognito pool policy up front — a too-weak password otherwise fails server-side
+    // (Cognito rejects the permanent password → org-create 500s after provisioning).
+    const pwErr = validatePassword(acct.password);
+    if (pwErr) e.password = pwErr;
     if (acct.confirm !== acct.password) e.confirm = "Passwords don't match.";
     if (!agree) e.agree = "Please accept the Terms to continue.";
     setErr(e);
@@ -126,8 +130,8 @@ export function SignupExperience() {
     setOrgOpen(false);
     try {
       await login(acct.email.trim(), acct.password);
-      toast.success("Workspace created", { description: "Welcome to WorkPulse." });
-      router.replace("/dashboard");
+      toast.success("Workspace created", { description: "Let's finish setting things up." });
+      router.replace("/onboarding");
     } catch {
       toast.success("Workspace created", {
         description: "Sign in with your new password to continue.",
@@ -168,6 +172,11 @@ export function SignupExperience() {
                 autoComplete="new-password"
                 toggle={<PwToggle show={showPw} onClick={() => setShowPw((s) => !s)} />}
               />
+              {!err.password ? (
+                <p className="-mt-1.5 text-[11px]" style={{ color: "var(--m-faint)" }}>
+                  {PASSWORD_RULES.join(" · ")}
+                </p>
+              ) : null}
               <AuthField id="confirm" label="Confirm password" icon={Lock} type={showPw ? "text" : "password"} value={acct.confirm} onChange={setA("confirm")} error={err.confirm} autoComplete="new-password" />
             </div>
 

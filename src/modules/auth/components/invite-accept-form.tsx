@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { validatePassword } from "@/lib/password";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -32,7 +33,10 @@ const schema = z
   .object({
     full_name: z.string().trim().min(1, "Your name is required."),
     otp: z.string().trim().min(1, "Enter the code from your invite email."),
-    password: z.string().min(8, "Use at least 8 characters."),
+    password: z.string().superRefine((val, ctx) => {
+      const m = validatePassword(val);
+      if (m) ctx.addIssue({ code: z.ZodIssueCode.custom, message: m });
+    }),
     confirm: z.string(),
     job_title: z.string().trim().optional(),
     phone: z.string().trim().optional(),
