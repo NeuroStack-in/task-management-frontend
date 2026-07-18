@@ -35,12 +35,17 @@ const hrs = (secs: number) => `${(secs / 3600).toFixed(1)}h`;
 
 function toMetrics(s: DailySummary): AiMetric[] {
   const m = s.metrics;
-  return [
+  const metrics: AiMetric[] = [];
+  // The productivity score leads when the agent reported activity that day (else it's absent — the
+  // score needs the desktop agent's active/idle/keystroke/app data, 80% of the formula).
+  if (s.score) metrics.push({ label: "Productivity score", value: `${s.score.score}/100` });
+  metrics.push(
     { label: "Hours worked", value: `${(m.worked_minutes / 60).toFixed(1)}h` },
     { label: "Tracked", value: hrs(m.tracked_secs) },
     { label: "Billable", value: hrs(m.billable_secs) },
     { label: "Tasks", value: m.task_count },
-  ];
+  );
+  return metrics;
 }
 
 function toSignals(s: DailySummary): AiSignal[] {
@@ -52,6 +57,16 @@ function toSignals(s: DailySummary): AiSignal[] {
       tone: m.attendance === "present" ? "up" : m.attendance === "absent" ? "down" : "flat",
     },
   ];
+  // The U/Q/F/R breakdown behind the score, when present — the four levers a manager reads.
+  if (s.score) {
+    const round = (n: number) => Math.round(n);
+    out.push(
+      { label: "Utilization", value: `${round(s.score.u)}`, tone: "flat" },
+      { label: "Quality", value: `${round(s.score.q)}`, tone: "flat" },
+      { label: "Focus", value: `${round(s.score.f)}`, tone: "flat" },
+      { label: "Reliability", value: `${round(s.score.r)}`, tone: "flat" },
+    );
+  }
   if (m.late) out.push({ label: "Late arrival", value: "yes", tone: "down" });
   if (m.entry_count > 0) out.push({ label: "Time entries", value: String(m.entry_count), tone: "flat" });
   return out;
