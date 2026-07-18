@@ -8,6 +8,7 @@ import {
   Geist_Mono,
   Manrope,
   Space_Grotesk,
+  Fraunces,
 } from "next/font/google";
 import "./globals.css";
 import { AppProviders } from "@/providers/app-providers";
@@ -45,6 +46,15 @@ const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
   display: "swap",
 });
+// Editorial serif — the homepage's display face. Loaded here so the whole marketing
+// surface (pricing, product, auth) can share it via `.m-root`, matching the landing.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  display: "swap",
+});
 
 const fontVars = [
   ibmPlexSans.variable,
@@ -55,6 +65,7 @@ const fontVars = [
   geistMono.variable,
   manrope.variable,
   spaceGrotesk.variable,
+  fraunces.variable,
 ].join(" ");
 
 export const metadata: Metadata = {

@@ -8,29 +8,36 @@
  * ============================================================= */
 
 .m-root {
-  /* ---- Tokens — "Harbor": deep teal/petrol on cool porcelain ---- *
-   *  Professional, calm and trustworthy for enterprise & business.   */
-  --m-bg: #f4f6f8; /* cool porcelain canvas */
-  --m-surface: #ffffff; /* crisp white cards */
-  --m-surface-2: #e9eef1; /* sunken / inset */
-  --m-text: #16202b; /* deep slate ink */
-  --m-muted: #5a6573; /* slate grey — secondary text */
-  --m-faint: #8b96a3; /* tertiary / placeholders */
+  /* ---- Tokens — warm editorial, matched to the homepage (app/landing.css `.wp`) ---- *
+   *  The landing sets the identity: warm cream canvas, teal accent, warm ink. Pricing,   *
+   *  product, and auth pages inherit it here so the marketing surface reads as one site  *
+   *  — no cool-porcelain jump the moment you leave the homepage. Accent was already the   *
+   *  same teal; only the neutrals differed. (Was "Harbor": deep teal on cool porcelain.)  */
+  --m-bg: #f7f2ea; /* warm cream canvas — matches --wp-bg */
+  --m-surface: #fffdfa; /* warm white cards — --wp-surface */
+  --m-surface-2: #f4ede2; /* warm inset — --wp-surface-2 */
+  --m-text: #211a15; /* warm near-black ink — --wp-ink */
+  --m-muted: #766a5f; /* warm taupe — secondary text — --wp-muted */
+  --m-faint: #a89b8c; /* warm faint — placeholders — --wp-faint */
 
-  --m-accent: #0f766e; /* deep teal — fills, icons, glints */
-  --m-accent-ink: #0b5d54; /* teal as TEXT on light (legible) */
+  --m-accent: #0f766e; /* deep teal — unchanged, already matched the homepage */
+  --m-accent-ink: #0b5d54; /* teal as TEXT on cream (legible) */
   --m-accent-2: #2f9d92; /* teal — mesh */
   --m-accent-3: #86c3bb; /* soft teal — mesh */
-  --m-accent-tint: #d8ebe8; /* teal wash surface */
+  --m-accent-tint: #dcebe7; /* teal wash — --wp-accent-soft */
   --m-on-accent: #ffffff; /* white text on deep teal */
 
-  --m-border: #e3e8ec; /* hairlines */
-  --m-border-strong: #cdd6dc; /* control borders */
-  --m-success: #15803d;
-  --m-danger: #dc2626;
+  --m-border: #ece2d3; /* warm hairlines — --wp-border */
+  --m-border-strong: #ddceb9; /* warm control borders — --wp-border-strong */
+  --m-success: #3f7d54; /* warm-leaning, matches --wp-success */
+  --m-danger: #c14a35; /* warm terracotta danger — --wp-danger */
 
-  /* cool slate shadow (never pure black on porcelain) */
-  --m-shadow: 18 28 40;
+  /* warm brown shadow (never cool slate on a cream canvas) — matches the homepage */
+  --m-shadow: 56 40 24;
+
+  /* Editorial serif display, matching the homepage — scoped to .m-root, so the app's
+     own display font (globals.css, data-font) is untouched. */
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
 
   --m-radius-card: 18px;
   --m-radius-input: 11px;
