@@ -499,7 +499,7 @@ export function SecurityCenter() {
           </DialogHeader>
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Member</p>
-            <Select value={resetMfaUserId || undefined} onValueChange={(v) => setResetMfaUserId(v as string)}>
+            <Select value={resetMfaUserId || null} onValueChange={(v) => setResetMfaUserId(v as string)}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={roster.length ? "Select a member…" : "Loading members…"} />
               </SelectTrigger>

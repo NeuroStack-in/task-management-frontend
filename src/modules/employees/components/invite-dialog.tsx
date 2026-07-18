@@ -187,7 +187,7 @@ export function InviteDialog({
               </div>
               <div className="space-y-1.5">
                 <Label>Role</Label>
-                <Select value={roleId || undefined} onValueChange={(v) => setRoleId(v as string)}>
+                <Select value={roleId || null} onValueChange={(v) => setRoleId(v as string)}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder={roles.length ? "Select a role" : "Loading roles…"} />
                   </SelectTrigger>
@@ -223,13 +223,17 @@ export function InviteDialog({
             </DialogHeader>
 
             <div className="space-y-3">
-              <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-sm">
-                <span className="text-muted-foreground">Employee ID</span>
-                <span className="font-mono font-medium">{created.emp_id}</span>
-              </div>
+              {/*
+                No "Employee ID" here: empId is server-generated only when the invite is ACCEPTED
+                (the atomic COUNTER#emp_id sequence, LLD §2), so it does not exist yet — showing an
+                empty row implied a value that can't be assigned until the person joins.
+
+                Role is shown from what we submitted (`roleId`), falling back to the response — the
+                invite-create response returns an empty `role_id`, so relying on it left this blank.
+              */}
               <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-sm">
                 <span className="text-muted-foreground">Role</span>
-                <span className="font-medium">{roleName(created.role_id)}</span>
+                <span className="font-medium">{roleName(created.role_id || roleId)}</span>
               </div>
               <CopyRow label="Invite link" value={acceptLink(tenantId, created)} />
               <CopyRow label="One-time password" value={created.otp} />

@@ -222,7 +222,7 @@ export function ProjectFormDialog({
                 name="department"
                 render={({ field }) => (
                   <Select
-                    value={field.value || undefined}
+                    value={field.value || null}
                     onValueChange={(v) => field.onChange(v as string)}
                   >
                     <SelectTrigger
@@ -260,7 +260,7 @@ export function ProjectFormDialog({
               name="billable"
               render={({ field }) => (
                 <Select
-                  value={field.value || undefined}
+                  value={field.value || null}
                   onValueChange={(v) => field.onChange(v as string)}
                 >
                   <SelectTrigger
@@ -449,7 +449,7 @@ function PersonSelect({
 }) {
   return (
     <Select
-      value={value || undefined}
+      value={value || null}
       onValueChange={(v) => onChange(v as string)}
     >
       <SelectTrigger className={cn("w-full", invalid && "border-destructive")}>
