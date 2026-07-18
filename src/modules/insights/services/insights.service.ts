@@ -52,6 +52,33 @@ export function getDailySummary(date: string): Promise<DailySummary> {
   return apiFetch<DailySummary>(`/v1/me/insights/summary?date=${encodeURIComponent(date)}`);
 }
 
+// ── GET /v1/me/insights/locations?date=  (the caller's own device-location trail for a day) ──
+
+/**
+ * One device location fix, mirroring `insights::locations::LocationPoint`. Written by the ingest
+ * fold from each consent-gated heartbeat the desktop agent sends (WinRT / OS positioning), so this
+ * is **empty until the agent reports location**. `accuracy_m` is the OS's own estimate — coarse on a
+ * GPS-less desktop (WiFi/IP positioning), so the map draws a radius rather than a pinpoint.
+ */
+export interface LocationPoint {
+  lat: number;
+  lon: number;
+  accuracy_m: number;
+  /** Epoch ms the fix was taken. */
+  captured_at: number;
+}
+
+export interface MyLocations {
+  date: string;
+  /** Chronological (the server keys points `LOC#<date>#<captured_at>`). */
+  points: LocationPoint[];
+}
+
+/** `date` is `YYYY-MM-DD` in the caller's local calendar (the server is UTC and cannot guess it). */
+export function getMyLocations(date: string): Promise<MyLocations> {
+  return apiFetch<MyLocations>(`/v1/me/insights/locations?date=${encodeURIComponent(date)}`);
+}
+
 // ── GET /v1/me/insights/activity?from=&to=  (personal daily scores + trend) ──
 
 export interface ActivityTotals {
