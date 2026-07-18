@@ -19,7 +19,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth.store";
 import { ArrowRight, ChevronDown, Menu, Minus, Play, X, Check } from "lucide-react";
 import { HERO_LINES, HERO_LEAD, HERO_SUB, HERO_MICRO, ROLES, USE_CASES, FOOTER_COLUMNS } from "./content";
-import { HeroVisual, Visual } from "./visuals";
+import { HeroVisual, HeroVisualAside, Visual } from "./visuals";
 
 function reduced() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -270,6 +270,7 @@ export function Hero() {
     <>
       <section className="wp-hero-dark px-5 pt-20 pb-44 sm:pt-24 sm:pb-56">
         <ClockBg />
+        <div className="wp-hero-scrim" aria-hidden="true" />
         <div className="relative z-10 mx-auto max-w-3xl text-center">
           <p className="wp-kicker mb-6" style={{ color: "var(--wp-accent-glow)", opacity: 0, animation: "wp-rise 0.7s var(--wp-ease) 60ms forwards" }}>
             The workforce platform
@@ -316,8 +317,9 @@ export function Hero() {
 
       {/* product peek — overlaps the hero/body boundary */}
       <div className="relative z-20 -mt-32 mb-4 px-5">
-        <div className="mx-auto max-w-lg">
+        <div className="mx-auto grid max-w-4xl items-start gap-5 md:grid-cols-2">
           <HeroVisual />
+          <HeroVisualAside />
         </div>
       </div>
     </>

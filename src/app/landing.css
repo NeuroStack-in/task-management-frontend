@@ -68,14 +68,34 @@
   line-height: 1.04;
   /* soft dark halo lifts the type off the busy clock backdrop (clock stays fully visible) */
   text-shadow:
-    0 1px 3px rgb(8 20 27 / 0.55),
-    0 8px 40px rgb(8 20 27 / 0.5);
+    0 1px 2px rgb(8 20 27 / 0.85),
+    0 2px 10px rgb(8 20 27 / 0.7),
+    0 8px 44px rgb(8 20 27 / 0.6);
 }
 .wp-hero-title .wp-serif-italic {
-  /* the emphasised line sits over the dial centre — give it presence + a stronger halo */
+  /* the emphasised line sits over the dial centre, where the second hand sweeps
+     straight through it — it needs the tightest halo of anything in the hero */
   text-shadow:
-    0 1px 3px rgb(8 20 27 / 0.6),
-    0 6px 26px rgb(8 20 27 / 0.7);
+    0 1px 2px rgb(8 20 27 / 0.92),
+    0 2px 8px rgb(8 20 27 / 0.85),
+    0 6px 28px rgb(8 20 27 / 0.8);
+}
+
+/* Scrim between the clock backdrop and the hero copy. Soft-edged and centred on
+   the dial, so the hands stay visible out at the rim but never compete with the
+   type in the middle. Sits at z-0; ClockBg is below it, hero content is z-10. */
+.wp-hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      64% 46% at 50% 44%,
+      rgb(8 20 27 / 0.72) 0%,
+      rgb(8 20 27 / 0.5) 45%,
+      rgb(8 20 27 / 0) 78%
+    );
 }
 .wp-kicker {
   font-size: 0.72rem;

@@ -102,6 +102,69 @@ export function HeroVisual() {
   );
 }
 
+/* ---- Hero companion — the "right now" cut, beside the at-a-glance card ---- *
+ *  Deliberately a different slice from HeroVisual: that one is the org rolled  *
+ *  up over a week, this one is the live view of today. Same tokens, no clone.  */
+const HERO_TEAM: { name: string; task: string; state: "active" | "idle" | "off" }[] = [
+  { name: "Priya N.", task: "Acme website · Design review", state: "active" },
+  { name: "Marcus L.", task: "Onboarding flow · QA", state: "active" },
+  { name: "Sofia R.", task: "Away since 2:10pm", state: "idle" },
+];
+
+const HERO_STATE_COLOR: Record<"active" | "idle" | "off", string> = {
+  active: "var(--wp-accent)",
+  idle: "var(--wp-warning)",
+  off: "var(--wp-border-strong)",
+};
+
+export function HeroVisualAside() {
+  return (
+    <div className="wp-in wp-card h-full overflow-hidden p-5 sm:p-6" style={{ boxShadow: "var(--wp-shadow)" }}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="wp-display text-lg" style={{ color: "var(--wp-ink)" }}>Right now</p>
+          <p className="text-xs" style={{ color: "var(--wp-muted)" }}>Live across your team</p>
+        </div>
+        <span className="wp-chip" style={{ borderColor: "var(--wp-accent)", color: "var(--wp-accent-ink)" }}>
+          <span className="size-1.5 rounded-full" style={{ background: "var(--wp-accent)" }} /> 18 on the clock
+        </span>
+      </div>
+
+      {/* your own running timer */}
+      <div className="mt-5 flex items-center justify-between rounded-2xl p-4" style={{ background: "var(--wp-accent-soft)" }}>
+        <div className="min-w-0">
+          <p className="text-xs" style={{ color: "var(--wp-accent-ink)" }}>Quarterly roadmap · Internal</p>
+          <p className="wp-mono wp-display mt-1 text-3xl" style={{ color: "var(--wp-ink)" }}>01:36:20</p>
+        </div>
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--wp-accent)", color: "#fff" }}>
+          <Play className="size-4 fill-current" />
+        </span>
+      </div>
+
+      {/* who's on what */}
+      <div className="mt-4 space-y-2">
+        {HERO_TEAM.map((p) => (
+          <div key={p.name} className="flex items-center gap-2.5 rounded-xl px-3 py-2.5" style={{ background: "var(--wp-surface-2)" }}>
+            <span className="size-1.5 shrink-0 rounded-full" style={{ background: HERO_STATE_COLOR[p.state] }} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold leading-tight" style={{ color: "var(--wp-ink)" }}>{p.name}</span>
+              <span className="block truncate text-[11px]" style={{ color: "var(--wp-faint)" }}>{p.task}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* footer link-ish strip, mirrors the AI strip's weight on the left card */}
+      <div className="mt-3 flex items-center justify-between rounded-2xl px-3 py-2.5" style={{ background: "var(--wp-surface-2)" }}>
+        <p className="text-[12px]" style={{ color: "var(--wp-ink-2)" }}>
+          <span className="font-semibold">3 approvals</span> waiting on you
+        </p>
+        <ArrowUpRight className="size-3.5 shrink-0" style={{ color: "var(--wp-accent-ink)" }} />
+      </div>
+    </div>
+  );
+}
+
 /* ============================================================= *
  *  Feature visuals                                               *
  * ============================================================= */

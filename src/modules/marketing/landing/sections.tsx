@@ -37,7 +37,7 @@ export function StatsSection() {
     <section className="px-5 py-20 sm:py-24">
       <div className="mx-auto grid max-w-6xl gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
         {STATS.map((s, i) => (
-          <Reveal key={s.label} delay={i * 90} className="text-center lg:text-left">
+          <Reveal key={s.label} delay={i * 90} className="text-center">
             <p className="wp-display text-[clamp(3rem,7vw,4.6rem)]" style={{ color: "var(--wp-accent)" }}>
               {s.to != null ? <CountUp to={s.to} suffix={s.suffix} /> : s.value}
             </p>
