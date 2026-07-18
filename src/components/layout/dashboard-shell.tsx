@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useUiStore } from "@/stores/ui.store";
+import { useHydrateProfile } from "@/modules/profile/use-hydrate-profile";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
 import { ChatBot } from "./chat-bot";
@@ -18,6 +19,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const pathname = usePathname();
+
+  // Patch the store with the caller's real name (the JWT has none — see the hook).
+  useHydrateProfile();
 
   // Settings has its own section rail, so collapse the main sidebar there to
   // free up width — and expand it again on every other route.

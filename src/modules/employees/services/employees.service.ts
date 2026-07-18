@@ -16,6 +16,8 @@ export interface ApiEmployee {
   title?: string;
   /** Human-facing employee id (e.g. `EMP-0001`). Absent for legacy/seeded rows minted before ids. */
   emp_id?: string;
+  /** RBAC role id (e.g. `role-owner`) — enriched from the base user item so the list can show Role. */
+  role_id?: string;
   /** `active` | `deactivated`. */
   status: string;
   department_id: string;

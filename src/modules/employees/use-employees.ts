@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { useRolesStore } from "@/stores/roles.store";
 import {
   listEmployees,
   departmentMap,
@@ -54,6 +55,7 @@ export function useEmployees(): EmployeesData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const getAllRoles = useRolesStore((s) => s.getAllRoles); // stable ref: role_id → name lookup
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
@@ -69,13 +71,15 @@ export function useEmployees(): EmployeesData {
           departmentMap().catch(() => new Map<string, string>()),
         ]);
         if (!live) return;
+        // role_id → display name (system + custom roles); blank if the id is unknown.
+        const roleNames = new Map(getAllRoles().map((r) => [r.id, r.name]));
         setEmployees(
           roster.map((e) => ({
             id: e.user_id,
             empId: e.emp_id ?? null,
             name: e.name,
             email: "", // not on the directory list — lives on the full profile
-            roleName: "",
+            roleName: e.role_id ? (roleNames.get(e.role_id) ?? "") : "",
             jobTitle: e.title ?? "",
             department: depts.get(e.department_id) ?? e.department_id,
             team: "",
@@ -94,7 +98,7 @@ export function useEmployees(): EmployeesData {
     return () => {
       live = false;
     };
-  }, [nonce]);
+  }, [nonce, getAllRoles]);
 
   const deactivate = useCallback(
     async (id: string) => {
