@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import { getMyLocations, type LocationPoint } from "@/modules/insights/services/insights.service";
-import type { GeoPoint } from "@/lib/mock-locations";
+import type { GeoPoint } from "@/modules/locations/types";
 import { cn } from "@/lib/utils";
 import { LiveMap, type MapMarker } from "./live-map";
 

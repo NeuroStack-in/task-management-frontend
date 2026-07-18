@@ -13,6 +13,7 @@ import {
   getAttention,
   getDailySummary,
   getOrgActivity,
+  getOversightLocations,
   getReportsCatalog,
   getScreenshots,
   getSelfActivity,
@@ -35,6 +36,11 @@ describe("insights.service route contract", () => {
   it("org activity rollup", async () => {
     await getOrgActivity("2026-07-17");
     expect(mock).toHaveBeenCalledWith("/v1/insights/activity?date=2026-07-17");
+  });
+
+  it("oversight locations is the org day route", async () => {
+    await getOversightLocations("2026-07-17");
+    expect(mock).toHaveBeenCalledWith("/v1/insights/locations?date=2026-07-17");
   });
 
   it("self activity carries the from/to range", async () => {

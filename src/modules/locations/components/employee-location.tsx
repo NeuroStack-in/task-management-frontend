@@ -1,291 +1,205 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
-  Building2,
   Clock,
-  House,
   MapPin,
   MapPinOff,
-  Monitor,
-  UserRound,
+  Navigation,
+  Target,
 } from "lucide-react";
-import type { User } from "@/types/user";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TimePicker } from "@/components/ui/date-picker";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card, CardContent } from "@/components/ui/card";
 import { initials } from "@/lib/format";
-import { TODAY } from "@/modules/attendance/lib/calendar";
+import type { OversightPersonLocation } from "@/modules/insights/services/insights.service";
+import { useGeofenceStore } from "@/stores/geofence.store";
 import {
-  dateLabel,
   distanceMeters,
   insidePerimeter,
-  locationAtTime,
-  locationFor,
-  OFFICE,
-  WORK_MODE_LABEL,
-  type EmployeeLocation,
-} from "@/lib/mock-locations";
-import { useGeofenceStore } from "@/stores/geofence.store";
-import { LogDatePicker } from "@/modules/attendance/components/attendance-log";
+  type GeoPoint,
+} from "@/modules/locations/types";
 import { LiveMap, type MapMarker } from "./live-map";
-import { LocationTimeline } from "./location-timeline";
 import { cn } from "@/lib/utils";
 
-function toMarkers(loc: EmployeeLocation): MapMarker[] {
-  const online = loc.status === "online";
-  return loc.trail.map((ev) => ({
-    id: ev.id,
-    point: ev.point,
-    variant:
-      ev.kind === "login"
-        ? "login"
-        : ev.kind === "logout"
-          ? "logout"
-          : online
-            ? "current"
-            : "default",
-    name:
-      ev.kind === "login"
-        ? `Logged in · ${ev.area} · ${ev.time}`
-        : ev.kind === "logout"
-          ? `Logged out · ${ev.area} · ${ev.time}`
-          : online
-            ? `Current · ${ev.area} · ${ev.time}`
-            : `Last seen · ${ev.area} · ${ev.time}`,
-  }));
-}
+const toGeoPoint = (p: { lat: number; lon: number }): GeoPoint => ({
+  lat: p.lat,
+  lng: p.lon,
+});
+const when = (ms: number) =>
+  new Date(ms).toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+const accuracy = (m: number) =>
+  m >= 1000 ? `±${(m / 1000).toFixed(1)} km` : `±${Math.round(m)} m`;
 
+/**
+ * Per-employee location detail, opened from the oversight board. The org oversight route serves the
+ * **latest** fix per person (not a full trail — that's exposed only for one's own device via the
+ * Insights › Location page), so this view honestly shows the last known position rather than
+ * reconstructing a day-long path.
+ */
 export function EmployeeLocationView({
-  user,
+  person,
   onBack,
 }: {
-  user: User;
+  person: OversightPersonLocation;
   onBack: () => void;
 }) {
-  const router = useRouter();
-  const [date, setDate] = useState({ ...TODAY });
-  const [time, setTime] = useState(""); // "HH:MM" — locate at a specific moment
-  const loc = useMemo(
-    () => locationFor(user, date.year, date.month, date.day),
-    [user, date],
-  );
+  const { center: fenceCenter, radiusM, enabled: showFence } = useGeofenceStore();
+  const fence = { center: fenceCenter, radiusM };
 
-  // "Where was this person at exactly this date + time?" — interpolated fix.
-  const moment = useMemo(
-    () => (time ? locationAtTime(loc, time) : null),
-    [loc, time],
-  );
+  const latest = person.latest;
+  const point = latest ? toGeoPoint(latest) : null;
+  const inside = point ? insidePerimeter(point, fence) : null;
+  const distM = point ? distanceMeters(point, fenceCenter) : null;
+  const outside = showFence && inside === false;
 
-  const markers = useMemo(() => {
-    const base = toMarkers(loc);
-    if (moment)
-      base.push({
-        id: "moment",
-        point: moment.point,
-        variant: "moment",
-        name: `At ${time} · ${moment.area}`,
-      });
-    return base;
-  }, [loc, moment, time]);
-
-  const path = useMemo(() => loc.trail.map((e) => e.point), [loc]);
-  const center =
-    moment?.point ?? loc.current?.point ?? loc.login?.point ?? OFFICE.point;
-
-  const online = loc.status === "online";
-
-  // The admin-configured office perimeter (shared store).
-  const { center: fenceCenter, radiusM: fenceRadius, enabled: fenceOn } =
-    useGeofenceStore();
-  const fence = { center: fenceCenter, radiusM: fenceRadius };
-
-  // Perimeter status of the current/last-seen fix and of the picked moment.
-  const currentInside =
-    loc.current && fenceOn ? insidePerimeter(loc.current.point, fence) : null;
-  const currentDist = loc.current
-    ? Math.round(distanceMeters(loc.current.point, fence.center))
-    : null;
-  const momentInside =
-    moment && fenceOn ? insidePerimeter(moment.point, fence) : null;
-  const momentDist = moment
-    ? Math.round(distanceMeters(moment.point, fence.center))
-    : null;
+  const markers: MapMarker[] = point
+    ? [
+        {
+          id: person.user_id,
+          point,
+          variant: "current",
+          name: person.name,
+          online: true,
+          alert: outside,
+        },
+      ]
+    : [];
 
   return (
     <div className="space-y-5">
-      <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
-        <ArrowLeft className="size-4" /> All locations
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
+          <ArrowLeft className="size-4" />
+          Back
+        </Button>
+      </div>
 
       {/* Identity */}
-      <div className="rounded-2xl bg-card px-5 py-4 shadow-soft">
-        <div className="flex items-start gap-4">
-          <Avatar className="size-14 shrink-0">
-            <AvatarImage src={user.avatarUrl} alt={user.name} />
-            <AvatarFallback className="text-base">
-              {initials(user.name)}
-            </AvatarFallback>
+      <Card>
+        <CardContent className="flex flex-wrap items-center gap-4 p-4">
+          <Avatar className="size-12">
+            <AvatarFallback>{initials(person.name)}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-              <h2 className="font-heading text-lg font-semibold">{user.name}</h2>
-              <Badge
-                className={cn(
-                  "gap-1 border-transparent",
-                  online
-                    ? "bg-success/12 text-success"
-                    : "bg-muted text-muted-foreground",
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    online ? "bg-success" : "bg-muted-foreground",
-                  )}
-                />
-                {online ? "Online" : "Offline"}
-              </Badge>
-              {!loc.gpsCapable ? (
-                <Badge className="gap-1 border-transparent bg-warning/15 text-warning">
-                  <MapPinOff className="size-3" /> No GPS
-                </Badge>
-              ) : loc.mode === "in-office" && currentInside === false ? (
-                <Badge className="gap-1 border-transparent bg-destructive/12 text-destructive">
-                  <AlertTriangle className="size-3" /> Outside office ·{" "}
-                  {currentDist} m
-                </Badge>
-              ) : (
-                <Badge className="gap-1 border-transparent bg-feature-tint text-primary">
-                  {loc.mode === "remote" ? (
-                    <House className="size-3" />
-                  ) : (
-                    <Building2 className="size-3" />
-                  )}
-                  {WORK_MODE_LABEL[loc.mode]}
-                </Badge>
-              )}
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {user.jobTitle} · {user.department}
+            <p className="text-base font-semibold">{person.name}</p>
+            <p className="text-sm text-muted-foreground">
+              {latest
+                ? `${person.fix_count} ${person.fix_count === 1 ? "fix" : "fixes"} recorded`
+                : "No location reported"}
             </p>
-            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <Monitor className="size-3.5" /> {loc.device}
-              </span>
-              {loc.current ? (
-                <span className="flex items-center gap-1.5">
-                  <MapPin className="size-3.5" /> {loc.current.label},{" "}
-                  {loc.current.city}
-                </span>
-              ) : null}
-            </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={() => router.push(`/employees/${user.id}`)}
-          >
-            <UserRound className="size-4" /> View profile
-          </Button>
-        </div>
-      </div>
-
-      {/* "View at" — pick a date + time to pinpoint a moment */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border bg-card px-4 py-3">
-        <span className="text-sm font-medium">View at</span>
-        <LogDatePicker value={date} onChange={setDate} />
-        <TimePicker value={time} onChange={setTime} className="w-28" />
-        {time ? (
-          moment ? (
-            <div className="ml-auto flex flex-wrap items-center gap-2 text-sm">
-              <Clock className="size-4 shrink-0 text-primary" />
-              <span className="font-semibold tabular-nums">{time}</span>
-              <span className="text-muted-foreground">· near {moment.area}</span>
-              {momentInside !== null ? (
-                <Badge
-                  className={cn(
-                    "gap-1 border-transparent",
-                    momentInside
-                      ? "bg-success/12 text-success"
-                      : "bg-destructive/12 text-destructive",
-                  )}
-                >
-                  {momentInside ? "Inside office" : "Outside office"}
-                </Badge>
-              ) : null}
-              <span className="text-muted-foreground">
-                {momentDist} m from office
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => setTime("")}>
-                Clear
-              </Button>
-            </div>
+          {latest ? (
+            <Badge
+              className={cn(
+                "gap-1 border-transparent",
+                outside
+                  ? "bg-destructive/12 text-destructive"
+                  : "bg-success/12 text-success",
+              )}
+            >
+              {outside ? (
+                <AlertTriangle className="size-3" />
+              ) : (
+                <MapPin className="size-3" />
+              )}
+              {outside ? "Outside perimeter" : "Located"}
+            </Badge>
           ) : (
-            <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-              No location recorded for this day.
-              <Button variant="ghost" size="sm" onClick={() => setTime("")}>
-                Clear
-              </Button>
-            </div>
-          )
-        ) : (
-          <span className="ml-auto text-xs text-muted-foreground">
-            Pick a time to pinpoint the exact-moment location (amber pin).
-          </span>
-        )}
-      </div>
+            <Badge className="gap-1 border-transparent bg-muted text-muted-foreground">
+              <MapPinOff className="size-3" />
+              No location
+            </Badge>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Map + timeline */}
-      <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
-        <Card className="overflow-hidden p-0">
-          <CardContent className="p-3">
-            <LiveMap
-              markers={markers}
-              path={path}
-              geofence={fenceOn ? fence : null}
-              center={center}
-              zoom={14}
-              recenterKey={`${user.id}:${date.year}-${date.month}-${date.day}:${time}`}
+      {latest && point ? (
+        <>
+          <Card>
+            <CardContent className="p-4">
+              <LiveMap
+                markers={markers}
+                geofence={showFence ? fence : null}
+                center={point}
+                zoom={15}
+                recenterKey={`emp-${person.user_id}`}
+              />
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Fact
+              icon={Clock}
+              label="Last seen"
+              value={when(latest.captured_at)}
             />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {dateLabel(date)} · location trail
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <LocationTimeline
-              employee={loc}
-              moment={
-                moment
-                  ? {
-                      time,
-                      area: moment.area,
-                      point: moment.point,
-                      inside: momentInside,
-                      distM: momentDist,
-                    }
-                  : null
+            <Fact
+              icon={Target}
+              label="Accuracy"
+              value={accuracy(latest.accuracy_m)}
+            />
+            <Fact
+              icon={Navigation}
+              label="Distance from office"
+              value={
+                distM === null
+                  ? "—"
+                  : distM >= 1000
+                    ? `${(distM / 1000).toFixed(1)} km`
+                    : `${Math.round(distM)} m`
               }
             />
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            This is the most recent device fix reported for {person.name}. A full
+            day-by-day location trail is available to each employee for their own
+            device on the Insights › Location page.
+          </p>
+        </>
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 p-10 text-center">
+            <MapPinOff className="size-8 text-muted-foreground" />
+            <p className="text-sm font-medium">No location for this day</p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              {person.name}&apos;s desktop agent reported no location fix on the
+              selected day — either it wasn&apos;t running, location consent
+              wasn&apos;t granted, or the device has no positioning source.
+            </p>
           </CardContent>
         </Card>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        Simulated location data (Phase 1). Captured only while an employee is
-        clocked in; visible to administrators for workforce oversight.
-      </p>
+      )}
     </div>
+  );
+}
+
+function Fact({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Clock;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 p-4">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="truncate text-sm font-medium">{value}</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

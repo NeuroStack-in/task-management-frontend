@@ -4,7 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type * as MaplibreNS from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { initials } from "@/lib/format";
-import type { GeoPoint, Geofence } from "@/lib/mock-locations";
+import type { GeoPoint, Geofence } from "@/modules/locations/types";
 import { cn } from "@/lib/utils";
 
 export type MarkerVariant =

@@ -3,10 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderKanban, Search, X, type LucideIcon } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useIsSelfScoped } from "@/hooks/use-self-scope";
-import { useAuthStore } from "@/stores/auth.store";
 import { useUiStore } from "@/stores/ui.store";
 import { isNavItemVisible } from "@/lib/rbac";
 import {
@@ -15,7 +13,7 @@ import {
   ACCOUNT_SECTIONS,
   SETTINGS_SUBSECTIONS,
 } from "@/constants/navigation";
-import { users, projects } from "@/lib/data";
+import { searchAll, type SearchResults } from "@/lib/search";
 import { initials } from "@/lib/format";
 import { scrollToHashAfterNav } from "@/lib/scroll-to-hash";
 import { cn } from "@/lib/utils";
@@ -26,9 +24,12 @@ interface Result {
   sub?: string;
   group: string;
   icon?: LucideIcon;
-  avatarUrl?: string;
+  /** Present (even if undefined) on people rows so they render an avatar rather than an icon. */
+  isPerson?: boolean;
   href: string;
 }
+
+const EMPTY_REMOTE: SearchResults = { employees: [], projects: [], tasks: [] };
 
 const MAX_PEOPLE = 5;
 const MAX_PROJECTS = 5;
@@ -42,17 +43,39 @@ const MAX_PAGES = 6;
 export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
   const { can, role, nav } = usePermissions();
-  // Self-scoped roles (Employee) only see projects they're a member of — mirror
-  // the Projects page so search doesn't surface projects they can't open.
-  const selfScoped = useIsSelfScoped();
-  const userId = useAuthStore((s) => s.user?.id);
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  // People + projects come from the real backend (`GET /v1/search`, prefix-scoped, perm-gated
+  // server-side). Pages stay client-side (they're the static nav tree). Debounced so a type-ahead
+  // doesn't fire a request per keystroke.
+  const [remote, setRemote] = useState<SearchResults>(EMPTY_REMOTE);
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Only the server can return people/projects, so skip the round-trip entirely for callers who
+  // can see neither — they still get page results.
+  const canSearchRemote = can("employees:view") || can("projects:view");
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || !canSearchRemote) {
+      setRemote(EMPTY_REMOTE);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(() => {
+      searchAll(q).then((r) => {
+        if (live) setRemote(r);
+      });
+    }, 180);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [query, canSearchRemote]);
 
   // Focus the field when the collapsed rail's search button asks for it (after
   // it expands the sidebar). Skips the initial mount (nonce starts at 0).
@@ -77,43 +100,29 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     if (!q) return [];
     const out: Result[] = [];
 
+    // People + projects are already prefix-matched and permission-scoped by the server; render them
+    // straight through (the server's shape is `{ id, label }` only — no title/department/avatar).
     if (can("employees:view")) {
       out.push(
-        ...users
-          .filter((u) =>
-            `${u.name} ${u.email} ${u.jobTitle} ${u.department}`
-              .toLowerCase()
-              .includes(q),
-          )
-          .slice(0, MAX_PEOPLE)
-          .map<Result>((u) => ({
-            id: `u-${u.id}`,
-            label: u.name,
-            sub: `${u.jobTitle} · ${u.department}`,
-            group: "People",
-            avatarUrl: u.avatarUrl,
-            href: `/employees/${u.id}`,
-          })),
+        ...remote.employees.slice(0, MAX_PEOPLE).map<Result>((h) => ({
+          id: `u-${h.id}`,
+          label: h.label,
+          group: "People",
+          isPerson: true,
+          href: `/employees/${h.id}`,
+        })),
       );
     }
 
     if (can("projects:view")) {
       out.push(
-        ...projects
-          .filter(
-            (p) =>
-              (!selfScoped || (!!userId && p.memberIds.includes(userId))) &&
-              `${p.name} ${p.key} ${p.id}`.toLowerCase().includes(q),
-          )
-          .slice(0, MAX_PROJECTS)
-          .map<Result>((p) => ({
-            id: `p-${p.id}`,
-            label: p.name,
-            sub: `${p.key} · ${p.status}`,
-            group: "Projects",
-            icon: FolderKanban,
-            href: `/projects/${p.id}`,
-          })),
+        ...remote.projects.slice(0, MAX_PROJECTS).map<Result>((h) => ({
+          id: `p-${h.id}`,
+          label: h.label,
+          group: "Projects",
+          icon: FolderKanban,
+          href: `/projects/${h.id}`,
+        })),
       );
     }
 
@@ -160,7 +169,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     );
 
     return out;
-  }, [query, can, role, nav, selfScoped, userId]);
+  }, [query, can, role, nav, remote]);
 
   const activeIdx = results.length ? Math.min(active, results.length - 1) : 0;
 
@@ -267,9 +276,8 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
                       i === activeIdx ? "bg-accent" : "hover:bg-muted/60",
                     )}
                   >
-                    {r.avatarUrl !== undefined ? (
+                    {r.isPerson ? (
                       <Avatar className="size-7 shrink-0">
-                        <AvatarImage src={r.avatarUrl} alt={r.label} />
                         <AvatarFallback className="text-[10px]">
                           {initials(r.label)}
                         </AvatarFallback>

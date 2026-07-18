@@ -238,3 +238,35 @@ export interface AiReport {
 export function getAiReport(date: string): Promise<AiReport> {
   return apiFetch<AiReport>(`/v1/insights/reports/ai?date=${encodeURIComponent(date)}`);
 }
+
+// ── GET /v1/insights/locations?date=  (org-wide oversight — the admin Locations board) ──
+
+/**
+ * One employee's latest known position for the day, mirroring
+ * `insights::oversight_locations::PersonLocation`. `latest` is `null` for anyone whose agent
+ * reported no fix that day — an honest gap the board renders as "no location", never a fabricated
+ * pin. Coordinates are the backend's `{ lat, lon }`; the map wants `lng`, so callers convert.
+ */
+export interface OversightPersonLocation {
+  user_id: string;
+  name: string;
+  department_id: string;
+  latest: LocationPoint | null;
+  fix_count: number;
+}
+
+export interface OversightLocations {
+  date: string;
+  people: OversightPersonLocation[];
+}
+
+/**
+ * Gated on `activity:read` (org oversight). `date` is `YYYY-MM-DD` in the caller's local calendar.
+ * Empty `people` (or all-`null` `latest`) is the honest state until the desktop agent reports
+ * location for the org — the same "waiting on the agent" stance as every other monitoring surface.
+ */
+export function getOversightLocations(date: string): Promise<OversightLocations> {
+  return apiFetch<OversightLocations>(
+    `/v1/insights/locations?date=${encodeURIComponent(date)}`,
+  );
+}
