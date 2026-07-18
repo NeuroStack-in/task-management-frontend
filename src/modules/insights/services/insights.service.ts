@@ -44,12 +44,26 @@ export interface DailySummary {
   metrics: DailySummaryMetrics;
   /** The stored productivity score for the day, present only when the agent reported activity. */
   score?: ScoreBreakdown;
+  /** AI recap — generated once per day and cached server-side; use {@link regenerateDailySummary}. */
   narrative: string;
+  /** Epoch **ms** the cached narrative was generated. Absent only transiently (couldn't be stored). */
+  generated_at?: number;
 }
 
-/** `date` is `YYYY-MM-DD` in the caller's local calendar. */
+/**
+ * `date` is `YYYY-MM-DD` in the caller's local calendar. The narrative is generated once (on the
+ * first call for the day) and cached — subsequent calls return the same text until regenerated.
+ */
 export function getDailySummary(date: string): Promise<DailySummary> {
   return apiFetch<DailySummary>(`/v1/me/insights/summary?date=${encodeURIComponent(date)}`);
+}
+
+/** `POST /v1/me/insights/summary/regenerate` — force a fresh AI narrative for the day and re-cache it. */
+export function regenerateDailySummary(date: string): Promise<DailySummary> {
+  return apiFetch<DailySummary>(
+    `/v1/me/insights/summary/regenerate?date=${encodeURIComponent(date)}`,
+    { method: "POST" },
+  );
 }
 
 // ── GET /v1/me/insights/locations?date=  (the caller's own device-location trail for a day) ──

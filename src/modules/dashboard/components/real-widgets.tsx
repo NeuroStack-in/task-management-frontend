@@ -22,6 +22,7 @@ import {
   Users,
   Trophy,
   BellRing,
+  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,7 @@ import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import {
   getDailySummary,
+  regenerateDailySummary,
   type DailySummary,
 } from "@/modules/insights/services/insights.service";
 import {
@@ -294,10 +296,21 @@ function MetricTile({ label, value }: { label: string; value: string | number })
  * **Real, and works without the desktop agent:** the summary is derived from attendance + timesheet;
  * the deterministic productivity `score` is present only on days the agent reported activity.
  */
+/** "Generated 12 Jul, 14:30" — absolute local time; the narrative is cached, so this is when it was
+ *  last (re)generated. Only ever rendered client-side (data arrives via useEffect), so no SSR skew. */
+function formatGeneratedAt(ms?: number): string | null {
+  if (!ms) return null;
+  const d = new Date(ms);
+  const day = d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return `${day}, ${time}`;
+}
+
 export function AiDailySummaryCard() {
   const [data, setData] = useState<DailySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -312,16 +325,42 @@ export function AiDailySummaryCard() {
     };
   }, []);
 
+  async function handleRegenerate() {
+    if (regenerating) return;
+    setRegenerating(true);
+    setError(null);
+    try {
+      const fresh = await regenerateDailySummary(isoYesterday());
+      setData(fresh);
+    } catch (e) {
+      setError(errorMessage(e, "Couldn't regenerate the summary."));
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   const m = data?.metrics;
+  const generatedAt = formatGeneratedAt(data?.generated_at);
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2">
           <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <Sparkles className="size-4" />
           </span>
           AI daily summary
         </CardTitle>
+        {/* Regenerate: the narrative is cached server-side, so this is the only way to refresh it. */}
+        <button
+          type="button"
+          onClick={handleRegenerate}
+          disabled={loading || regenerating}
+          title="Regenerate summary"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+        >
+          <RefreshCw className={`size-3.5 ${regenerating ? "animate-spin" : ""}`} />
+          {regenerating ? "Regenerating…" : "Regenerate"}
+        </button>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (
@@ -357,7 +396,10 @@ export function AiDailySummaryCard() {
                 />
               </li>
             </ul>
-            <p className="text-[11px] text-muted-foreground">Briefing for {data.date}</p>
+            <p className="text-[11px] text-muted-foreground">
+              Briefing for {data.date}
+              {generatedAt ? ` · generated ${generatedAt}` : ""}
+            </p>
           </>
         ) : null}
       </CardContent>
