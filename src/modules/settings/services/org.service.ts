@@ -46,6 +46,12 @@ export function updateOrg(body: UpdateOrgRequest): Promise<OrgView> {
   });
 }
 
+/** `GET /v1/org` — the org's current meta. Any authenticated member may read it (shown in Settings,
+ * used to prefill the org forms). Throws `ApiError` 404 only before the org exists. */
+export function getOrg(): Promise<OrgView> {
+  return apiFetch<OrgView>("/v1/org");
+}
+
 /**
  * Body for `POST /v1/org/transfer-ownership` (owner-only). `confirm` is the typed workspace slug;
  * `take_role` is the role the departing owner keeps (null/omit ⇒ server default, typically Admin).

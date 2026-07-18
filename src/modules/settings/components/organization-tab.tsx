@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { Info, Lock } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { AlertCircle, Lock } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
@@ -21,23 +21,24 @@ import {
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
+import { Loader } from "@/components/shared/loader"
 import { usePermissions } from "@/hooks/use-permissions"
 import { ApiError } from "@/lib/api"
 import {
+  getOrg,
   updateOrg,
   type OrgView,
   type UpdateOrgRequest,
 } from "@/modules/settings/services/org.service"
 
 /**
- * Organization profile — the real backend (`PATCH /v1/org`, LLD §14).
+ * Organization profile — the real backend (`GET` + `PATCH /v1/org`, LLD §14).
  *
- * **No read endpoint exists yet** (`GET /v1/org` is 404), so this pane cannot pre-fill the org's
- * current values. It is an honest **save form**: fields start empty, and after the first successful
- * save we reflect the server's returned `OrgView` (and keep its `version` for the next optimistic-
- * locked write). Only the four fields the API accepts are editable here — name, timezone, website,
- * and employee-id prefix. Legal name, industry, size, departments, locations, holidays and policies
- * were mock-only and are intentionally not shown until endpoints back them.
+ * On mount we `getOrg()` and seed the form with the org's current server-side values, keeping the
+ * returned `version` for the next optimistic-locked write. Only the four fields the API accepts are
+ * editable here — name, timezone, website, and employee-id prefix. Legal name, industry, size,
+ * departments, locations, holidays and policies were mock-only and are intentionally not shown until
+ * endpoints back them. A 404 means the org isn't provisioned yet ⇒ keep an empty editable form.
  */
 
 // Local, self-contained timezone options (no mock import). IANA zones the picker offers.
@@ -87,12 +88,47 @@ export function OrganizationTab() {
   const { can } = usePermissions()
   const canManage = can("settings:manage")
 
-  // No GET → we start blank. `saved` is the last server-confirmed state (null until first save).
+  // `saved` is the last server-confirmed state; seeded from GET /v1/org on mount.
   const [saved, setSaved] = useState<OrgProfileForm>(EMPTY_FORM)
   const [draft, setDraft] = useState<OrgProfileForm>(EMPTY_FORM)
   const [version, setVersion] = useState<number | undefined>(undefined)
-  const [everSaved, setEverSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Seed the form from the org's current server-side meta. A 404 = org not provisioned yet;
+  // that's not an error — just start from an empty, editable form.
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    getOrg()
+      .then((view) => {
+        if (!alive) return
+        const next = formFromView(view)
+        setSaved(next)
+        setDraft(next)
+        setVersion(view.version)
+        setLoadError(null)
+      })
+      .catch((e) => {
+        if (!alive) return
+        if (e instanceof ApiError && e.status === 404) {
+          setLoadError(null)
+        } else {
+          setLoadError(
+            e instanceof ApiError
+              ? e.message
+              : "Couldn't load organization settings.",
+          )
+        }
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const dirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(saved),
@@ -134,7 +170,6 @@ export function OrganizationTab() {
       setSaved(next)
       setDraft(next)
       setVersion(view.version)
-      setEverSaved(true)
       toast.success("Organization saved", {
         description: `Changes are live${
           view.slug ? ` for ${view.slug}` : ""
@@ -180,18 +215,17 @@ export function OrganizationTab() {
         </div>
       )}
 
-      {/* Honest note: there is no read endpoint, so we can't show current values yet. */}
-      {!everSaved && (
-        <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/60 px-5 py-3 text-sm text-muted-foreground">
-          <Info className="mt-0.5 size-4 shrink-0" />
-          <span>
-            Current values aren&apos;t shown yet — there&apos;s no read endpoint
-            for organization settings. Enter the values you want and save; the
-            saved state will appear here once a read endpoint lands.
-          </span>
+      {loadError && (
+        <div className="flex items-start gap-2.5 rounded-md border border-destructive/40 bg-destructive/10 px-5 py-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <span>{loadError}</span>
         </div>
       )}
 
+      {loading ? (
+        <Loader label="Loading organization settings…" />
+      ) : (
+      <>
       <Card>
         <CardHeader>
           <CardTitle>Organization profile</CardTitle>
@@ -266,6 +300,8 @@ export function OrganizationTab() {
           onSave={handleSave}
           onReset={handleReset}
         />
+      )}
+      </>
       )}
     </div>
   )

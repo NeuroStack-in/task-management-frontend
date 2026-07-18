@@ -18,7 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ONBOARDING_STEPS } from "@/modules/onboarding/steps";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
-import { updateOrg } from "@/modules/settings/services/org.service";
+import { getOrg, updateOrg } from "@/modules/settings/services/org.service";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import { createInvite } from "@/modules/employees/services/employees.service";
 import {
@@ -119,6 +119,25 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
     "Recent alerts": true,
     "Billing overview": false,
   });
+
+  // Prefill the org step from the details already captured at signup, so this is a confirm/refine
+  // rather than blank re-entry. Best-effort — a 404 (org not provisioned) leaves the fields empty.
+  useEffect(() => {
+    let alive = true;
+    getOrg()
+      .then((org) => {
+        if (!alive) return;
+        setOrgName((v) => v || org.name || "");
+        setTimezone((v) => v || org.timezone || "");
+        setWebsite((v) => v || org.website || "");
+      })
+      .catch(() => {
+        // No org yet (404) or read failed → keep the empty fields; the user can fill them in.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Load roles once so the team step can pick a default role for invites. Best-effort.
   useEffect(() => {

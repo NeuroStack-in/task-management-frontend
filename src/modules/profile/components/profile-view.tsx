@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   Camera,
@@ -63,6 +63,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PhotoEditor } from "@/modules/profile/components/photo-editor";
+import { getOrg } from "@/modules/settings/services/org.service";
 import type { User } from "@/types/user";
 import { cn } from "@/lib/utils";
 
@@ -148,6 +149,22 @@ function RichProfile({
   const [pattern, setPattern] = useState<BannerPattern>("grid");
   const facts = personalFacts(user);
   const productivity = user.productivityScore;
+
+  // The org's display name (GET /v1/org). Absent/failed (e.g. 404) → omit gracefully, never a placeholder.
+  const [orgName, setOrgName] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getOrg()
+      .then((org) => {
+        if (alive) setOrgName(org.name?.trim() || null);
+      })
+      .catch(() => {
+        // No read / not provisioned → simply don't show an organization row.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -235,6 +252,9 @@ function RichProfile({
   ];
   const employment: DetailRow[] = [
     { icon: Hash, label: "Employee ID", value: facts.employeeId },
+    ...(orgName
+      ? [{ icon: Building2, label: "Organization", value: orgName }]
+      : []),
     { icon: Briefcase, label: "Job title", value: user.jobTitle },
     { icon: Building2, label: "Department", value: user.department },
     { icon: UsersIcon, label: "Team", value: user.team },
