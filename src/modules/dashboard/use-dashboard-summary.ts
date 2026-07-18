@@ -3,12 +3,18 @@
 /**
  * The org dashboard's data — assembled from the **live backend**, honestly.
  *
- * Three real sources feed it: the employee directory (`/v1/employees`), billing (`/v1/billing`), and
- * projects (`/v1/projects` + per-project KPI). Everything derivable from those is real. Everything
- * that needs the **desktop agent's activity data** — productivity scores, tracked hours org-wide,
- * attendance rate, screenshots, heatmaps, per-team productivity — has **no endpoint yet**, so it is
- * reported as `null` ("pending monitoring"), never faked. The dashboard renders those as an honest
- * placeholder rather than a seeded number.
+ * Three real sources feed this aggregate: the employee directory (`/v1/employees`), billing
+ * (`/v1/billing`), and projects (`/v1/projects` + per-project KPI). Everything derivable from those
+ * is real.
+ *
+ * Two more real signals now have endpoints and are rendered by **self-fetching** widgets that ignore
+ * this summary: the AI daily briefing (`/v1/me/insights/summary`) and org attendance for a day
+ * (`/v1/attendance/day`) — both derived from attendance + timesheet, so they work without the agent.
+ * See `AiDailySummaryCard` / `AttendanceTodayCard` in `real-widgets.tsx`.
+ *
+ * What still needs the **desktop agent's activity data** — org-wide productivity scores, tracked
+ * hours, screenshots, heatmaps, per-team productivity — has no data feed yet and is shown as an
+ * honest agent-pending placeholder rather than a seeded number, never faked.
  *
  * The per-project KPI fan-out is **bounded** (see {@link mapWithConcurrency}) — an unbounded burst
  * throttles the Lambda and 503s the page.

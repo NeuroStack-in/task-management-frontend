@@ -8,17 +8,29 @@ import {
   DepartmentHeadcountCard,
   BillingCard,
   MonitoringPendingCard,
+  AiDailySummaryCard,
+  AttendanceTodayCard,
+  ProductivityHeatmapPendingCard,
+  TeamComparisonPendingCard,
+  TopPerformersPendingCard,
+  RecentAlertsPendingCard,
 } from "./components/real-widgets";
 import type { DashboardSummary } from "./use-dashboard-summary";
 
 /** The org dashboard's real, customizable widgets. Every one is live data or an honest placeholder. */
 export type RealWidgetType =
+  | "ai-summary"
+  | "attendance-today"
   | "projects-overview"
   | "active-inactive"
   | "department-headcount"
   | "billing"
   | "headcount-status"
-  | "monitoring-pending";
+  | "monitoring-pending"
+  | "productivity-heatmap"
+  | "team-comparison"
+  | "top-performers"
+  | "recent-alerts";
 
 interface WidgetDef {
   title: string;
@@ -26,6 +38,15 @@ interface WidgetDef {
 }
 
 export const WIDGET_REGISTRY: Record<RealWidgetType, WidgetDef> = {
+  // Real, self-fetching widgets — they ignore `s` and read their own endpoint.
+  "ai-summary": {
+    title: "AI daily summary",
+    render: () => <AiDailySummaryCard />,
+  },
+  "attendance-today": {
+    title: "Attendance",
+    render: () => <AttendanceTodayCard />,
+  },
   "projects-overview": {
     title: "Projects overview",
     render: (s) => <ProjectsOverviewCard p={s.projects} />,
@@ -60,5 +81,22 @@ export const WIDGET_REGISTRY: Record<RealWidgetType, WidgetDef> = {
   "monitoring-pending": {
     title: "Activity monitoring",
     render: () => <MonitoringPendingCard />,
+  },
+  // Agent-pending placeholders — static, honest "waiting on the desktop agent" cards.
+  "productivity-heatmap": {
+    title: "Productivity heatmap",
+    render: () => <ProductivityHeatmapPendingCard />,
+  },
+  "team-comparison": {
+    title: "Team comparison",
+    render: () => <TeamComparisonPendingCard />,
+  },
+  "top-performers": {
+    title: "Top performers",
+    render: () => <TopPerformersPendingCard />,
+  },
+  "recent-alerts": {
+    title: "Recent alerts",
+    render: () => <RecentAlertsPendingCard />,
   },
 };

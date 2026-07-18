@@ -9,15 +9,50 @@
  * desktop agent, which isn't reporting, so it states what's missing instead of seeding fake charts.
  */
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
   FolderKanban,
   CreditCard,
   Building2,
   Activity,
   ArrowUpRight,
+  Sparkles,
+  CalendarCheck,
+  Grid3x3,
+  Users,
+  Trophy,
+  BellRing,
+  type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader } from "@/components/shared/loader";
+import { ApiError } from "@/lib/api";
+import {
+  getDailySummary,
+  type DailySummary,
+} from "@/modules/insights/services/insights.service";
+import {
+  getDayOversight,
+  type ApiDayResponse,
+} from "@/modules/attendance/services/attendance.service";
 import type { DashboardSummary } from "../use-dashboard-summary";
+
+/** Yesterday in the caller's local calendar as `YYYY-MM-DD` — a completed, fully-closed day. */
+function isoYesterday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function errorMessage(e: unknown, fallback: string): string {
+  if (e instanceof ApiError) {
+    if (e.status === 401) return "Your session expired. Sign in again.";
+    if (e.status === 403) return "You don't have access to this data.";
+    return e.message;
+  }
+  return fallback;
+}
 
 export function ViewAllLink({ href, label }: { href: string; label: string }) {
   return (
@@ -227,5 +262,286 @@ export function MonitoringPendingCard() {
         </ul>
       </CardContent>
     </Card>
+  );
+}
+
+/* ------------------------------ AI daily summary (real) ----------------------------- */
+
+/** Attendance status slug → human label (shared by the AI summary + attendance cards). */
+const ATTENDANCE_LABEL: Record<string, string> = {
+  present: "Present",
+  partial: "Partial",
+  absent: "Absent",
+  leave: "On leave",
+  non_workday: "Non-workday",
+};
+
+function MetricTile({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg bg-muted/50 p-2.5 text-center">
+      <p className="font-display text-lg font-semibold leading-none tabular-nums">{value}</p>
+      <p className="mt-1 text-[11px] text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+/**
+ * The caller's AI daily briefing — self-fetching. Pulls `GET /v1/me/insights/summary?date=` for
+ * yesterday (a completed day) and renders the AI `narrative` prominently plus a few key metrics.
+ * **Real, and works without the desktop agent:** the summary is derived from attendance + timesheet;
+ * the deterministic productivity `score` is present only on days the agent reported activity.
+ */
+export function AiDailySummaryCard() {
+  const [data, setData] = useState<DailySummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setError(null);
+    getDailySummary(isoYesterday())
+      .then((d) => live && setData(d))
+      .catch((e) => live && setError(errorMessage(e, "Couldn't load your daily summary.")))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const m = data?.metrics;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <Sparkles className="size-4" />
+          </span>
+          AI daily summary
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <Loader label="Generating your briefing…" />
+        ) : error ? (
+          <p className="py-6 text-sm text-muted-foreground">{error}</p>
+        ) : data && m ? (
+          <>
+            <div className="flex gap-2.5 rounded-lg bg-feature-tint/60 p-3 text-sm text-foreground">
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+              <p className="leading-relaxed">{data.narrative}</p>
+            </div>
+            <ul className="grid grid-cols-2 gap-2">
+              <li>
+                <MetricTile label="Hours worked" value={(m.worked_minutes / 60).toFixed(1)} />
+              </li>
+              <li>
+                <MetricTile label="Tasks" value={m.task_count} />
+              </li>
+              <li>
+                <MetricTile
+                  label={m.late ? "Attendance (late)" : "Attendance"}
+                  value={ATTENDANCE_LABEL[m.attendance] ?? m.attendance}
+                />
+              </li>
+              <li>
+                <MetricTile
+                  label="Productivity"
+                  value={data.score ? `${Math.round(data.score.score)}/100` : "—"}
+                />
+              </li>
+            </ul>
+            <p className="text-[11px] text-muted-foreground">Briefing for {data.date}</p>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ------------------------------ Attendance today (real) ----------------------------- */
+
+const ATTENDANCE_TONE: Record<string, string> = {
+  present: "var(--success)",
+  partial: "var(--warning)",
+  absent: "var(--destructive)",
+  leave: "var(--muted-foreground)",
+};
+
+/**
+ * Org attendance for a completed day — self-fetching. Pulls `GET /v1/attendance/day?date=` for
+ * yesterday (the 00:15 close cron only publishes closed days) and shows present / partial / absent /
+ * leave counts. **Real** (needs `AttendanceReadTeam`; a caller without it gets an honest 403 note).
+ * `late` isn't on the GSI3 index this route reads, so it isn't broken out here — the personal
+ * timesheet is where per-session detail lives.
+ */
+export function AttendanceTodayCard() {
+  const [data, setData] = useState<ApiDayResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setError(null);
+    getDayOversight(isoYesterday())
+      .then((d) => live && setData(d))
+      .catch((e) => live && setError(errorMessage(e, "Couldn't load attendance.")))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const s = data?.summary;
+  const rows: { key: string; count: number }[] = s
+    ? [
+        { key: "present", count: s.present },
+        { key: "partial", count: s.partial },
+        { key: "absent", count: s.absent },
+        { key: "leave", count: s.leave },
+      ]
+    : [];
+  const denom = s?.counted || 1;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <CalendarCheck className="size-4" />
+          </span>
+          Attendance
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? (
+          <Loader label="Loading attendance…" />
+        ) : error ? (
+          <p className="py-6 text-sm text-muted-foreground">{error}</p>
+        ) : s && s.counted > 0 ? (
+          <>
+            <div className="flex items-end justify-between">
+              <p className="font-display text-3xl font-semibold tabular-nums">{s.present}</p>
+              <p className="text-xs text-muted-foreground">
+                {Math.round((s.present / denom) * 100)}% of {s.counted} present
+              </p>
+            </div>
+            {rows.map((r) => {
+              const pct = Math.round((r.count / denom) * 100);
+              return (
+                <div key={r.key} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{ATTENDANCE_LABEL[r.key]}</span>
+                    <span className="font-medium tabular-nums">
+                      {r.count} · {pct}%
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${pct}%`, backgroundColor: ATTENDANCE_TONE[r.key] }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <ViewAllLink href="/attendance" label="Attendance calendar" />
+          </>
+        ) : (
+          <p className="py-6 text-sm text-muted-foreground">
+            No attendance has been recorded for {data?.date ?? "this day"} yet — the close job
+            publishes each day&apos;s verdict shortly after it ends.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* --------------------- Agent-pending widgets (honest placeholders) -------------------- */
+
+/**
+ * Shared honest-placeholder shell for widgets whose figures come from the **desktop agent** — which
+ * isn't reporting yet. Mirrors {@link MonitoringPendingCard}'s treatment: state what's missing and
+ * what will appear, never a seeded number.
+ */
+function AgentPendingCard({
+  title,
+  icon: Icon,
+  detail,
+  metrics,
+}: {
+  title: string;
+  icon: LucideIcon;
+  detail: string;
+  metrics: string[];
+}) {
+  return (
+    <Card className="border-dashed">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <Icon className="size-4" />
+          </span>
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="gap-3 text-sm text-muted-foreground">
+        <p className="flex-1 leading-relaxed">{detail}</p>
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+          {metrics.map((mtc) => (
+            <li key={mtc} className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+              {mtc}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function ProductivityHeatmapPendingCard() {
+  return (
+    <AgentPendingCard
+      title="Productivity heatmap"
+      icon={Grid3x3}
+      detail="Hourly activity intensity across the week — showing when the team is most productive — appears here once the desktop agent starts reporting captured activity."
+      metrics={["Hour-of-day intensity", "Day-of-week bands", "Peak focus windows", "Quiet periods"]}
+    />
+  );
+}
+
+export function TeamComparisonPendingCard() {
+  return (
+    <AgentPendingCard
+      title="Team comparison"
+      icon={Users}
+      detail="Per-team productivity, tracked hours and attendance side by side — so you can compare teams at a glance — populates once the desktop agent reports activity data."
+      metrics={["Productivity by team", "Tracked hours", "Attendance rate", "Team trends"]}
+    />
+  );
+}
+
+export function TopPerformersPendingCard() {
+  return (
+    <AgentPendingCard
+      title="Top performers"
+      icon={Trophy}
+      detail="The highest-scoring people for the day, ranked by the deterministic productivity score, will list here once the desktop agent's activity data feeds the scorer."
+      metrics={["Score leaders", "Most focused", "Consistency streaks", "Rising this week"]}
+    />
+  );
+}
+
+export function RecentAlertsPendingCard() {
+  return (
+    <AgentPendingCard
+      title="Recent alerts"
+      icon={BellRing}
+      detail="Anomaly alerts — overtime, idle stretches, burnout risk and policy concerns — surface here once the desktop agent reports and the scorer flags them. No alerts are fabricated."
+      metrics={["Overtime / after-hours", "Idle stretches", "Burnout risk", "Policy concerns"]}
+    />
   );
 }

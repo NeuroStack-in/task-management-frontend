@@ -16,12 +16,20 @@ export interface DashboardWidget {
  * hide/show and reorder via the Customize control; the layout persists per browser.
  */
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
-  { id: "projects-overview", title: "Projects overview", type: "projects-overview", position: 0, visible: true },
-  { id: "active-inactive", title: "Active vs inactive", type: "active-inactive", position: 1, visible: true },
-  { id: "department-headcount", title: "Headcount by department", type: "department-headcount", position: 2, visible: true },
-  { id: "billing", title: "Billing overview", type: "billing", position: 3, visible: true },
-  { id: "headcount-status", title: "Headcount by status", type: "headcount-status", position: 4, visible: true },
-  { id: "monitoring-pending", title: "Activity monitoring", type: "monitoring-pending", position: 5, visible: true },
+  { id: "ai-summary", title: "AI daily summary", type: "ai-summary", position: 0, visible: true },
+  { id: "projects-overview", title: "Projects overview", type: "projects-overview", position: 1, visible: true },
+  { id: "attendance-today", title: "Attendance", type: "attendance-today", position: 2, visible: true },
+  { id: "active-inactive", title: "Active vs inactive", type: "active-inactive", position: 3, visible: true },
+  { id: "department-headcount", title: "Headcount by department", type: "department-headcount", position: 4, visible: true },
+  { id: "billing", title: "Billing overview", type: "billing", position: 5, visible: true },
+  { id: "headcount-status", title: "Headcount by status", type: "headcount-status", position: 6, visible: true },
+  { id: "monitoring-pending", title: "Activity monitoring", type: "monitoring-pending", position: 7, visible: true },
+  // Agent-pending placeholders — available in the Customize picker, hidden by default so the board
+  // isn't dominated by "waiting on the agent" cards until monitoring is live.
+  { id: "productivity-heatmap", title: "Productivity heatmap", type: "productivity-heatmap", position: 8, visible: false },
+  { id: "team-comparison", title: "Team comparison", type: "team-comparison", position: 9, visible: false },
+  { id: "top-performers", title: "Top performers", type: "top-performers", position: 10, visible: false },
+  { id: "recent-alerts", title: "Recent alerts", type: "recent-alerts", position: 11, visible: false },
 ];
 
 interface DashboardState {
@@ -55,9 +63,10 @@ export const useDashboardStore = create<DashboardState>()(
     }),
     {
       name: "wp-dashboard",
-      // Bumped to 11: the widget set changed shape entirely (real widgets replaced the mock ones), so
-      // any layout persisted under the old vocabulary must be discarded rather than migrated.
-      version: 11,
+      // Bumped to 12: added the AI-summary + attendance real widgets and four agent-pending
+      // placeholders. The default set changed, so any older persisted layout is discarded (migrate
+      // returns the fresh defaults) rather than migrated — existing users pick up the new widgets.
+      version: 12,
       migrate: () => ({ widgets: DEFAULT_WIDGETS }) as DashboardState,
     },
   ),
