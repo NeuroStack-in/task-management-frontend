@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   AlertTriangle,
@@ -9,16 +9,12 @@ import {
   Copy,
   Download,
   KeyRound,
-  Laptop,
   Lock,
   Monitor,
   Plus,
   RefreshCw,
   ShieldCheck,
-  Smartphone,
-  Tablet,
   X,
-  type LucideIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -53,7 +49,6 @@ import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useAuthStore } from "@/stores/auth.store"
-import { users } from "@/lib/data"
 import { isIpOrCidr } from "@/lib/validation"
 import {
   SECURITY_DEFAULTS,
@@ -62,6 +57,12 @@ import {
   SSO_CONNECTION,
   type SecurityPolicies,
 } from "@/lib/mock-security"
+import {
+  listMySessions,
+  resetMfaDevice,
+  type ApiSession,
+} from "../services/security.service"
+import { listEmployees } from "@/modules/employees/services/employees.service"
 import { cn } from "@/lib/utils"
 
 // Derived from the same source the Audit Logs page reads — no duplicated table.
@@ -70,47 +71,23 @@ const FLAGGED_EVENTS = SECURITY_EVENTS.filter(
 ).length
 
 // ── Active sessions (your signed-in devices) ──────────────────────────────────
+// Real, from GET /v1/me/sessions — {session_id, last_seen} only. Cognito gives no device / IP /
+// location without its paid tier, and there is no per-session revoke endpoint (§15), so the list is
+// intentionally lean and read-only.
 
-interface SessionRow {
-  id: string
-  device: string
-  location: string
-  lastActive: string
-  current?: boolean
-  icon: LucideIcon
+/** Epoch ms → a short relative label. */
+function timeAgo(ms: number | null): string {
+  if (!ms) return "Unknown"
+  const diff = Date.now() - ms
+  if (diff < 0) return "Just now"
+  const min = Math.floor(diff / 60_000)
+  if (min < 1) return "Active now"
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const d = Math.floor(hr / 24)
+  return d === 1 ? "Yesterday" : `${d}d ago`
 }
-
-const SESSIONS: SessionRow[] = [
-  {
-    id: "s1",
-    device: "Chrome on Windows",
-    location: "Bengaluru, IN",
-    lastActive: "Active now",
-    current: true,
-    icon: Laptop,
-  },
-  {
-    id: "s2",
-    device: "Safari on iPhone",
-    location: "Bengaluru, IN",
-    lastActive: "2 days ago",
-    icon: Smartphone,
-  },
-  {
-    id: "s3",
-    device: "Firefox on macOS",
-    location: "Mumbai, IN",
-    lastActive: "5 days ago",
-    icon: Monitor,
-  },
-  {
-    id: "s4",
-    device: "Chrome on iPad",
-    location: "Hyderabad, IN",
-    lastActive: "1 week ago",
-    icon: Tablet,
-  },
-]
 
 // ── Draft / saved model ───────────────────────────────────────────────────────
 
@@ -376,14 +353,59 @@ export function SecurityCenter() {
   // `POST /v1/users/{id}/mfa/reset`, perm `security:manage`.
   const [resetMfaOpen, setResetMfaOpen] = useState(false)
   const [resetMfaUserId, setResetMfaUserId] = useState("")
+  const [resetting, setResetting] = useState(false)
 
-  function confirmResetMfa() {
-    const target = users.find((u) => u.id === resetMfaUserId)
-    setResetMfaOpen(false)
-    setResetMfaUserId("")
-    toast.success("Authenticator reset", {
-      description: `${target?.name ?? "The member"} will set up a new device at their next sign-in.`,
-    })
+  // Real sessions (GET /v1/me/sessions) + the real employee roster for the MFA-reset picker.
+  const [sessions, setSessions] = useState<ApiSession[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(true)
+  const [roster, setRoster] = useState<{ id: string; name: string }[]>([])
+
+  useEffect(() => {
+    let live = true
+    listMySessions()
+      .then((s) => {
+        if (live) setSessions([...s].sort((a, b) => (b.last_seen ?? 0) - (a.last_seen ?? 0)))
+      })
+      .catch(() => {
+        /* an empty session list is the honest failure — never invent devices */
+      })
+      .finally(() => {
+        if (live) setSessionsLoading(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  // Roster for the MFA-reset picker loads only when an admin opens the dialog.
+  useEffect(() => {
+    if (!resetMfaOpen || roster.length) return
+    let live = true
+    listEmployees()
+      .then((r) => {
+        if (live) setRoster(r.map((e) => ({ id: e.user_id, name: e.name })))
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [resetMfaOpen, roster.length])
+
+  async function confirmResetMfa() {
+    const target = roster.find((u) => u.id === resetMfaUserId)
+    setResetting(true)
+    try {
+      await resetMfaDevice(resetMfaUserId)
+      toast.success("Authenticator reset", {
+        description: `${target?.name ?? "The member"} will set up a new device at their next sign-in.`,
+      })
+      setResetMfaOpen(false)
+      setResetMfaUserId("")
+    } catch {
+      toast.error("Couldn't reset the authenticator. Try again.")
+    } finally {
+      setResetting(false)
+    }
   }
 
   function sendResetLink() {
@@ -756,53 +778,53 @@ export function SecurityCenter() {
           </CardContent>
         </Card>
 
-        {/* Active sessions (your devices) */}
+        {/* Active sessions (your devices) — real, lean, read-only */}
         <Card>
           <CardHeader>
             <CardTitle>Active Sessions</CardTitle>
             <CardDescription>
-              Devices currently signed in to your account.
+              Sessions signed in to your account. Device and location aren&apos;t recorded, and
+              per-session sign-out isn&apos;t available yet.
             </CardDescription>
           </CardHeader>
           {/* ~3 sessions visible; the rest scroll so the card stays compact. */}
           <CardContent className="max-h-56 space-y-2.5 overflow-y-auto">
-            {SESSIONS.map((s) => {
-              const Icon = s.icon
-              return (
+            {sessionsLoading ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Loading sessions…</p>
+            ) : sessions.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No active sessions recorded.
+              </p>
+            ) : (
+              sessions.map((s, i) => (
                 <div
-                  key={s.id}
+                  key={s.session_id}
                   className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
                 >
                   <div className="flex items-center gap-3">
                     <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                      <Icon className="size-4" />
+                      <Monitor className="size-4" />
                     </span>
-                    <div>
+                    <div className="min-w-0">
                       <p className="flex items-center gap-2 text-sm font-medium">
-                        {s.device}
-                        {s.current ? (
+                        Web session
+                        {i === 0 ? (
                           <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
-                            This device
+                            Most recent
                           </span>
                         ) : null}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {s.location} · {s.lastActive}
+                      <p className="truncate font-mono text-[11px] text-muted-foreground">
+                        {s.session_id}
                       </p>
                     </div>
                   </div>
-                  {!s.current ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toast.success(`Signed out ${s.device}`)}
-                    >
-                      Sign out
-                    </Button>
-                  ) : null}
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {timeAgo(s.last_seen)}
+                  </span>
                 </div>
-              )
-            })}
+              ))
+            )}
           </CardContent>
         </Card>
       </div>
@@ -885,20 +907,20 @@ export function SecurityCenter() {
             <p className="text-xs font-medium text-muted-foreground">Member</p>
             <Select value={resetMfaUserId || undefined} onValueChange={(v) => setResetMfaUserId(v as string)}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a member…" />
+                <SelectValue placeholder={roster.length ? "Select a member…" : "Loading members…"} />
               </SelectTrigger>
               <SelectContent>
-                {users.slice(0, 40).map((u) => (
+                {roster.map((u) => (
                   <SelectItem key={u.id} value={u.id}>
-                    {u.name} · {u.email}
+                    {u.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <DialogFooter showCloseButton>
-            <Button disabled={!resetMfaUserId} onClick={confirmResetMfa}>
-              <RefreshCw className="size-4" /> Reset device
+            <Button disabled={!resetMfaUserId || resetting} onClick={confirmResetMfa}>
+              <RefreshCw className="size-4" /> {resetting ? "Resetting…" : "Reset device"}
             </Button>
           </DialogFooter>
         </DialogContent>
