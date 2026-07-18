@@ -274,6 +274,9 @@ const ATTENDANCE_LABEL: Record<string, string> = {
   absent: "Absent",
   leave: "On leave",
   non_workday: "Non-workday",
+  // The day-close cron (00:15 UTC) stamps the AttendanceDay; until it runs the server returns
+  // `unknown` for that day — show it as pending rather than a misleading "Absent".
+  unknown: "Pending close",
 };
 
 function MetricTile({ label, value }: { label: string; value: string | number }) {
@@ -333,7 +336,10 @@ export function AiDailySummaryCard() {
             </div>
             <ul className="grid grid-cols-2 gap-2">
               <li>
-                <MetricTile label="Hours worked" value={(m.worked_minutes / 60).toFixed(1)} />
+                {/* Live timer total from the day's TIME# entries — real the moment a session folds.
+                    (Not `worked_minutes`, which is the attendance-official figure and stays 0 until
+                    the 00:15 close cron stamps the AttendanceDay.) */}
+                <MetricTile label="Hours tracked" value={(m.tracked_secs / 3600).toFixed(1)} />
               </li>
               <li>
                 <MetricTile label="Tasks" value={m.task_count} />
