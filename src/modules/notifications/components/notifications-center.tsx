@@ -2,8 +2,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BellOff, Check, CheckCheck, X, ArrowUpRight } from "lucide-react";
+import Link from "next/link";
+import {
+  BellOff,
+  Check,
+  CheckCheck,
+  SlidersHorizontal,
+  X,
+  ArrowUpRight,
+} from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -60,7 +69,7 @@ export function NotificationsCenter() {
   // Real feed + persisting mark-read (`GET /v1/notifications`). `remove` stays store-local:
   // the backend serves read / read-all / prefs and has no delete, so a dismissed notification
   // comes back on reload. See the module note.
-  const { markRead, markAllRead } = useNotifications();
+  const { markRead, markAllRead, loading, error, reload } = useNotifications();
   const remove = useNotificationStore((s) => s.remove);
   const { can } = usePermissions();
 
@@ -93,13 +102,22 @@ export function NotificationsCenter() {
         title="Notifications"
         description="Everything that needs your attention."
         actions={
-          <Button
-            variant="outline"
-            onClick={markAllRead}
-            disabled={unread === 0}
-          >
-            <CheckCheck className="size-4" /> Mark all read
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              nativeButton={false}
+              render={<Link href="/settings/notifications" />}
+            >
+              <SlidersHorizontal className="size-4" /> Preferences
+            </Button>
+            <Button
+              variant="outline"
+              onClick={markAllRead}
+              disabled={unread === 0}
+            >
+              <CheckCheck className="size-4" /> Mark all read
+            </Button>
+          </div>
         }
       />
 
@@ -127,7 +145,22 @@ export function NotificationsCenter() {
             ))}
           </div>
 
-          {visible.length === 0 ? (
+          {loading && notifications.length === 0 ? (
+            <div className="flex min-h-[30vh] items-center justify-center">
+              <Loader label="Loading notifications…" />
+            </div>
+          ) : error && notifications.length === 0 ? (
+            <EmptyState
+              icon={BellOff}
+              title="Couldn't load notifications"
+              description={error}
+              action={
+                <Button variant="outline" size="sm" onClick={reload}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : visible.length === 0 ? (
             <EmptyState
               icon={BellOff}
               title="Nothing here"

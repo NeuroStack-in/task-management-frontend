@@ -4,12 +4,6 @@ import { useState } from "react";
 import { Users, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useDataScope } from "@/hooks/use-data-scope";
-import type {
-  DailyHours,
-  ProjectTimesheet,
-  TeamMemberTime,
-} from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
 import { PersonalTimeView } from "./personal-time-view";
 import { TeamTimeView } from "./team-time-view";
@@ -18,32 +12,20 @@ type View = "team" | "personal";
 
 /**
  * Role-aware Time Tracking (see Docs/RBAC.md):
- * - Personal tracker for people who log their own time (`time-tracking:self`).
- * - Team timesheet oversight for management roles (`time-tracking:manage`), so
- *   Owners/Admins don't get a personal timer they'll never use.
+ * - Personal tracker for people who log their own time (`time-tracking:self`), on the **real**
+ *   backend (`/v1/me/timesheet`).
+ * - Team timesheet oversight for management roles (`time-tracking:manage`). The backend serves only
+ *   the caller's own timesheet, so this view degrades honestly (see `TeamTimeView`) instead of
+ *   showing fabricated team aggregates.
  * Users with both (Owner/Admin) get a toggle and default to their own time.
  */
-export function TimeTrackingView({
-  teamRows,
-  projectRows,
-  teamWeekly,
-}: {
-  teamRows: TeamMemberTime[];
-  projectRows: ProjectTimesheet[];
-  teamWeekly: DailyHours[];
-}) {
+export function TimeTrackingView() {
   const { can } = usePermissions();
-  const { inScope } = useDataScope();
   const canManageTeam = can("time-tracking:manage");
   const canTrack = can("time-tracking:self");
   const showToggle = canManageTeam && canTrack;
 
-  // Team leads only see their own team's timesheets; org roles see everyone.
-  const scopedTeamRows = teamRows.filter((r) => inScope(r.id));
-
-  const [view, setView] = useState<View>(
-    canTrack ? "personal" : "team",
-  );
+  const [view, setView] = useState<View>(canTrack ? "personal" : "team");
 
   const description =
     view === "team"
@@ -75,15 +57,7 @@ export function TimeTrackingView({
         }
       />
 
-      {view === "team" ? (
-        <TeamTimeView
-          rows={scopedTeamRows}
-          projectRows={projectRows}
-          weekly={teamWeekly}
-        />
-      ) : (
-        <PersonalTimeView canExport={canTrack} />
-      )}
+      {view === "team" ? <TeamTimeView /> : <PersonalTimeView canExport={canTrack} />}
     </div>
   );
 }

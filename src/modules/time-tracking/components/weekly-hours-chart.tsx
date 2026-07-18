@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, TriangleAlert } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -20,10 +20,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatHours, weeklyHoursFor } from "@/lib/mock-time";
-
-/** How many weeks back the user can page. */
-const MAX_BACK = 11;
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatHours } from "@/lib/mock-time";
+import { MAX_WEEKS_BACK, useWeeklyHours } from "../use-weekly-hours";
 
 /** Monday–Sunday date range for a week `offset` weeks from `base`. */
 function weekRangeLabel(base: Date, offset: number): string {
@@ -38,22 +37,25 @@ function weekRangeLabel(base: Date, offset: number): string {
 }
 
 /**
- * Weekly tracked hours, split billable vs non-billable (stacked). The arrows
- * page through earlier weeks; "next" is disabled on the current week.
+ * Weekly tracked hours from the real backend (`GET /v1/me/timesheet`), split billable vs other
+ * (stacked). The arrows page through earlier weeks; "next" is disabled on the current week. A week
+ * with no tracked time shows genuine zeros — not invented bars.
  */
 export function WeeklyHoursChart() {
   const [offset, setOffset] = useState(0);
-  // Resolve "now" on the client to avoid an SSR/hydration mismatch on the range.
+  // Resolve "now" on the client to avoid an SSR/hydration mismatch on the range label.
   const [baseDate, setBaseDate] = useState<Date | null>(null);
   useEffect(() => setBaseDate(new Date()), []);
 
-  const data = weeklyHoursFor(offset);
+  const { week, totalHoursFor, loading, error, reload } = useWeeklyHours();
+
+  const data = week(offset);
   const chartData = data.map((d) => ({
     day: d.day,
-    billable: Math.round(d.billable * 10) / 10,
-    other: Math.round((d.hours - d.billable) * 10) / 10,
+    billable: d.billable,
+    other: d.other,
   }));
-  const totalHours = data.reduce((s, d) => s + d.hours, 0);
+  const totalHours = totalHoursFor(offset);
 
   const relLabel =
     offset === 0
@@ -68,9 +70,11 @@ export function WeeklyHoursChart() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2.5">
           {relLabel}
-          <span className="font-mono text-sm font-normal text-muted-foreground">
-            {formatHours(totalHours)}
-          </span>
+          {!loading && !error ? (
+            <span className="font-mono text-sm font-normal text-muted-foreground">
+              {formatHours(totalHours)}
+            </span>
+          ) : null}
         </CardTitle>
         <CardDescription>
           Hours tracked per day · billable vs other
@@ -88,8 +92,8 @@ export function WeeklyHoursChart() {
                 size="icon"
                 className="size-8"
                 aria-label="Previous week"
-                onClick={() => setOffset((o) => Math.max(-MAX_BACK, o - 1))}
-                disabled={offset <= -MAX_BACK}
+                onClick={() => setOffset((o) => Math.max(-MAX_WEEKS_BACK, o - 1))}
+                disabled={offset <= -MAX_WEEKS_BACK}
               >
                 <ChevronLeft className="size-4" />
               </Button>
@@ -109,52 +113,67 @@ export function WeeklyHoursChart() {
       </CardHeader>
       <CardContent>
         <div className="h-[260px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ left: -20, right: 8, top: 4 }}>
-              <CartesianGrid vertical={false} stroke="var(--border)" />
-              <XAxis
-                dataKey="day"
-                tickLine={false}
-                axisLine={false}
-                interval={0}
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                width={36}
-                tickFormatter={(v) => `${v}h`}
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-              />
-              <Tooltip
-                cursor={{ fill: "var(--muted)" }}
-                formatter={(value: number, name) => [
-                  `${value}h`,
-                  name === "billable" ? "Billable" : "Other",
-                ]}
-                contentStyle={{
-                  background: "var(--popover)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)",
-                  fontSize: 12,
-                  color: "var(--popover-foreground)",
-                }}
-              />
-              <Bar
-                dataKey="billable"
-                stackId="h"
-                fill="var(--chart-1)"
-                maxBarSize={40}
-              />
-              <Bar
-                dataKey="other"
-                stackId="h"
-                fill="color-mix(in srgb, var(--primary) 24%, var(--muted))"
-                radius={[8, 8, 0, 0]}
-                maxBarSize={40}
-              />
-            </BarChart>
-          </ResponsiveContainer>
+          {error ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center">
+              <TriangleAlert className="size-5 text-warning" />
+              <div>
+                <p className="text-sm font-medium">Couldn&apos;t load weekly hours</p>
+                <p className="text-sm text-muted-foreground">{error}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={reload}>
+                Retry
+              </Button>
+            </div>
+          ) : loading ? (
+            <Skeleton className="h-full w-full rounded-xl" />
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ left: -20, right: 8, top: 4 }}>
+                <CartesianGrid vertical={false} stroke="var(--border)" />
+                <XAxis
+                  dataKey="day"
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={36}
+                  tickFormatter={(v) => `${v}h`}
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                />
+                <Tooltip
+                  cursor={{ fill: "var(--muted)" }}
+                  formatter={(value: number, name) => [
+                    `${value}h`,
+                    name === "billable" ? "Billable" : "Other",
+                  ]}
+                  contentStyle={{
+                    background: "var(--popover)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    fontSize: 12,
+                    color: "var(--popover-foreground)",
+                  }}
+                />
+                <Bar
+                  dataKey="billable"
+                  stackId="h"
+                  fill="var(--chart-1)"
+                  maxBarSize={40}
+                />
+                <Bar
+                  dataKey="other"
+                  stackId="h"
+                  fill="color-mix(in srgb, var(--primary) 24%, var(--muted))"
+                  radius={[8, 8, 0, 0]}
+                  maxBarSize={40}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </CardContent>
     </Card>

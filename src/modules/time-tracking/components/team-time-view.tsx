@@ -1,56 +1,25 @@
 "use client";
 
-import { Clock, BadgeDollarSign, Activity } from "lucide-react";
-import { StatCard } from "@/components/shared/stat-card";
-import { TimesheetGrid } from "./timesheet-grid";
-import type {
-  DailyHours,
-  ProjectTimesheet,
-  TeamMemberTime,
-} from "@/lib/mock-time";
+import { MonitorSmartphone } from "lucide-react";
+import { EmptyState } from "@/components/shared/empty-state";
 
-export function TeamTimeView({
-  rows,
-  projectRows,
-  weekly,
-}: {
-  rows: TeamMemberTime[];
-  projectRows: ProjectTimesheet[];
-  weekly: DailyHours[];
-}) {
-  const teamHours = weekly.reduce((s, d) => s + d.hours, 0);
-  const teamBillable = weekly.reduce((s, d) => s + d.billable, 0);
-  const billablePct = Math.round((teamBillable / (teamHours || 1)) * 100);
-  const avgActivity = Math.round(
-    rows.reduce((s, r) => s + r.activity, 0) / (rows.length || 1),
-  );
-
+/**
+ * Team timesheet oversight.
+ *
+ * The mock showed team-wide hours, billable %, per-person daily grids and activity drill-downs. The
+ * live backend serves **only the caller's own** timesheet (`/v1/me/timesheet`) — there is no
+ * team/org read, and the per-person activity those grids showed is desktop-agent data that isn't
+ * reporting yet. Rather than reproduce fabricated aggregates, this degrades honestly; it drops back
+ * to a real grid once a management timesheet route (and agent activity) exists.
+ *
+ * The parent (`TimeTrackingView`) already renders the page header, so this is body-only.
+ */
+export function TeamTimeView() {
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard
-          label="Team hours"
-          value={`${teamHours.toLocaleString()}h`}
-          icon={Clock}
-          hint="this week"
-          trend={weekly.map((d) => d.hours)}
-          featured
-        />
-        <StatCard
-          label="Billable"
-          value={`${billablePct}%`}
-          icon={BadgeDollarSign}
-          delta={2}
-        />
-        <StatCard
-          label="Avg activity"
-          value={`${avgActivity}%`}
-          icon={Activity}
-          delta={3}
-        />
-      </div>
-
-      <TimesheetGrid personRows={rows} projectRows={projectRows} />
-    </div>
+    <EmptyState
+      icon={MonitorSmartphone}
+      title="Team timesheets aren't available yet"
+      description="The backend serves your own tracked time today — there's no team-wide timesheet or activity read. Once the management timesheet route and the desktop agent are live, the team grid and per-person activity appear here."
+    />
   );
 }
