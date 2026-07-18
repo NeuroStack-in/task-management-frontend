@@ -1,498 +1,263 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Papa from "papaparse";
-import { jsPDF } from "jspdf";
+import { Wallet, Banknote, Receipt, Plus, CheckCircle2, MonitorSmartphone } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Wallet,
-  Banknote,
-  Users,
-  Clock,
-  Search,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-  Download,
-  AlertCircle,
-  Receipt,
-} from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
-import { AiInsight } from "@/components/shared/ai-insight";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/hooks/use-permissions";
-import { initials } from "@/lib/format";
-import { downloadBlob } from "@/lib/download";
 import { formatCurrency } from "@/lib/mock-billing";
 import { cn } from "@/lib/utils";
-import {
-  PAYROLL_PERIODS,
-  payrollRun,
-  type PayrollRun,
-  type PayslipRow,
-} from "@/lib/mock-payroll";
+import { usePayroll } from "../use-payroll";
+import type { ApiPayrollRun } from "../services/payroll.service";
 
-const STATUS_META: Record<PayslipRow["status"], { label: string; cls: string }> = {
-  paid: { label: "Paid", cls: "bg-success/12 text-success" },
-  pending: { label: "Pending", cls: "bg-warning/15 text-warning" },
+const STATUS_META: Record<string, string> = {
+  draft: "bg-warning/15 text-warning",
+  final: "bg-success/12 text-success",
 };
+const statusMeta = (s: string) => STATUS_META[s] ?? "bg-muted text-muted-foreground";
 
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-
-const PAGE_SIZE = 10;
-
-const STATUS_OPTIONS = [
-  { value: "all", label: "All statuses" },
-  { value: "paid", label: "Paid" },
-  { value: "pending", label: "Pending" },
-];
-
-const REPORT_COLUMNS = [
-  "Employee", "Email", "Department", "Hours", "Rate ($/hr)", "Gross", "Tax", "Benefits", "Net", "Status",
-];
-const reportRow = (r: PayslipRow) => [
-  r.name, r.email, r.department, r.hours, r.hourlyRate, r.gross, r.tax, r.benefits, r.net, r.status,
-];
-
-function exportRunCsv(run: PayrollRun) {
-  const csv = Papa.unparse({
-    fields: REPORT_COLUMNS,
-    data: run.rows.map(reportRow),
-  });
-  const file = `payroll-${slug(run.period.label)}.csv`;
-  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), file);
-  toast.success("Payroll exported", {
-    description: `${file} · ${run.rows.length} payslips`,
-  });
+/** YYYY-MM → "August 2026". */
+function periodLabel(period: string): string {
+  const [y, m] = period.split("-").map(Number);
+  if (!y || !m) return period;
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-/** One styled payslip per employee, mirroring the billing invoice layout. */
-function downloadPayslipPdf(row: PayslipRow, periodLabel: string) {
-  const doc = new jsPDF();
-  doc.setFontSize(18);
-  doc.text("WorkPulse", 14, 20);
-  doc.setFontSize(11);
-  doc.setTextColor(120);
-  doc.text("Payslip", 14, 27);
-
-  doc.setTextColor(20);
-  doc.setFontSize(11);
-  doc.text(`Employee: ${row.name}`, 14, 42);
-  doc.text(`Department: ${row.department}`, 14, 49);
-  doc.text(`Title: ${row.jobTitle}`, 14, 56);
-  doc.text(`Pay period: ${periodLabel}`, 130, 42);
-  doc.text(`Status: ${STATUS_META[row.status].label}`, 130, 49);
-
-  doc.setDrawColor(210);
-  doc.line(14, 66, 196, 66);
-
-  let y = 78;
-  const line = (label: string, value: string, bold = false) => {
-    doc.setFont("helvetica", bold ? "bold" : "normal");
-    doc.text(label, 14, y);
-    doc.text(value, 196, y, { align: "right" });
-    y += 9;
-  };
-
-  line("Earnings", "");
-  line(
-    `Hours tracked × rate (${row.hours.toFixed(1)}h @ $${row.hourlyRate}/hr)`,
-    formatCurrency(row.gross),
-  );
-  y += 2;
-  line("Deductions", "");
-  line("Tax (12%)", `-${formatCurrency(row.tax)}`);
-  line("Benefits (6%)", `-${formatCurrency(row.benefits)}`);
-  y += 2;
-  doc.line(14, y - 4, 196, y - 4);
-  line("Net pay", formatCurrency(row.net), true);
-
-  const file = `payslip-${slug(row.name)}-${slug(periodLabel)}.pdf`;
-  doc.save(file);
-  toast.success("Payslip downloaded", { description: file });
-}
-
-function PeriodDropdown({
-  index,
-  onChange,
-}: {
-  index: number;
-  onChange: (i: number) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" className="gap-2" />}>
-        <span className="text-muted-foreground">Period:</span>
-        {PAYROLL_PERIODS[index].label}
-        <ChevronDown className="size-4 text-muted-foreground" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        {PAYROLL_PERIODS.map((p, i) => (
-          <DropdownMenuItem key={p.label} onClick={() => onChange(i)}>
-            <Check className={cn("size-4", i === index ? "opacity-100" : "opacity-0")} />
-            {p.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function FilterDropdown({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-}) {
-  const current = options.find((o) => o.value === value);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" className="gap-2" />}>
-        <span className="text-muted-foreground">{label}:</span>
-        {current?.label ?? "All"}
-        <ChevronDown className="size-4 text-muted-foreground" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-72 w-52 overflow-y-auto">
-        {options.map((o) => (
-          <DropdownMenuItem key={o.value} onClick={() => onChange(o.value)}>
-            <Check
-              className={cn("size-4", o.value === value ? "opacity-100" : "opacity-0")}
-            />
-            {o.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+function deductionLabel(kind: string, value: number): string {
+  return kind === "percent" ? `${value}%` : formatCurrency(value);
 }
 
 export function PayrollView() {
   const { can } = usePermissions();
-  const [periodIndex, setPeriodIndex] = useState(0);
-  const [query, setQuery] = useState("");
-  const [dept, setDept] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [page, setPage] = useState(0);
+  const canManage = can("payroll:manage");
+  const { runs, deductions, loading, error, reload, draft, finalize } = usePayroll();
 
-  const period = PAYROLL_PERIODS[periodIndex];
-  const run = useMemo(() => payrollRun(period.year, period.month), [period]);
+  const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
+  const [newPeriod, setNewPeriod] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  // Previous period for the AI variance insight.
-  const prevPeriod = PAYROLL_PERIODS[periodIndex + 1];
-  const prevRun = useMemo(
-    () => (prevPeriod ? payrollRun(prevPeriod.year, prevPeriod.month) : null),
-    [prevPeriod],
-  );
+  const selected: ApiPayrollRun | null = useMemo(() => {
+    if (!runs.length) return null;
+    return runs.find((r) => r.period === selectedPeriod) ?? runs[0];
+  }, [runs, selectedPeriod]);
 
-  const deptOptions = useMemo(() => {
-    const names = [...new Set(run.rows.map((r) => r.department))].sort();
-    return [
-      { value: "all", label: "All departments" },
-      ...names.map((d) => ({ value: d, label: d })),
-    ];
-  }, [run]);
+  async function handleDraft() {
+    const p = newPeriod.trim();
+    if (!/^\d{4}-\d{2}$/.test(p)) {
+      toast.error("Enter a period as YYYY-MM, e.g. 2026-09.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const run = await draft(p);
+      setSelectedPeriod(run.period);
+      setNewPeriod("");
+      toast.success(`Drafted ${periodLabel(run.period)}`, {
+        description: `Gross ${formatCurrency(run.gross)} · net ${formatCurrency(run.net)}`,
+      });
+    } catch {
+      toast.error("Couldn't draft the run. It may already exist.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return run.rows.filter((r) => {
-      if (dept !== "all" && r.department !== dept) return false;
-      if (status !== "all" && r.status !== status) return false;
-      if (
-        q &&
-        !`${r.name} ${r.email} ${r.department} ${r.jobTitle}`.toLowerCase().includes(q)
-      )
-        return false;
-      return true;
-    });
-  }, [run, query, dept, status]);
+  async function handleFinalize(period: string) {
+    setBusy(true);
+    try {
+      await finalize(period);
+      toast.success(`Finalized ${periodLabel(period)}`);
+    } catch {
+      toast.error("Couldn't finalize the run.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount - 1);
-  const pageRows = filtered.slice(
-    safePage * PAGE_SIZE,
-    safePage * PAGE_SIZE + PAGE_SIZE,
-  );
+  if (loading && runs.length === 0) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader label="Loading payroll…" />
+      </div>
+    );
+  }
 
-  // Reset to the first page whenever the result set changes.
-  const resetPage = <T,>(setter: (v: T) => void) => (v: T) => {
-    setter(v);
-    setPage(0);
-  };
-
-  const { totals } = run;
-  const avgNet = totals.headcount
-    ? Math.round(totals.net / totals.headcount)
-    : 0;
-
-  const pendingCount = run.rows.filter((r) => r.status === "pending").length;
-
-  // Pay-period variance for the AI insight.
-  const netVariancePct =
-    prevRun && prevRun.totals.net > 0
-      ? Math.round(
-          ((run.totals.net - prevRun.totals.net) / prevRun.totals.net) * 100,
-        )
-      : null;
-  const hoursVariancePct =
-    prevRun && prevRun.totals.hours > 0
-      ? Math.round(
-          ((run.totals.hours - prevRun.totals.hours) / prevRun.totals.hours) *
-            100,
-        )
-      : null;
-  const showInsight = netVariancePct !== null && Math.abs(netVariancePct) >= 2;
+  if (error) {
+    return (
+      <div className="space-y-5">
+        <PageHeader title="Payroll" description="Pay runs and deductions." />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Payroll"
-        description={`${period.label} pay run · ${totals.headcount} employees · payslips from logged hours`}
+        description={
+          selected
+            ? `${periodLabel(selected.period)} · ${selected.status}`
+            : "Pay runs and deductions."
+        }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Net pay"
-          value={formatCurrency(totals.net)}
-          icon={Wallet}
-          hint={period.label}
-          featured
-        />
-        <StatCard
-          label="Gross pay"
-          value={formatCurrency(totals.gross)}
-          icon={Banknote}
-          hint={`${formatCurrency(totals.deductions)} deductions`}
-        />
-        <StatCard
-          label="Employees paid"
-          value={`${totals.paid}/${totals.headcount}`}
-          icon={Users}
-          hint={totals.paid === totals.headcount ? "Run settled" : "Run pending"}
-        />
-        <StatCard
-          label="Hours tracked"
-          value={totals.hours.toLocaleString("en-US")}
-          icon={Clock}
-          hint={`avg ${formatCurrency(avgNet)} net / person`}
-        />
-      </div>
-
-      {/* Pending emphasis */}
-      {pendingCount > 0 && (
-        <div className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/8 px-4 py-2.5 text-sm">
-          <AlertCircle className="size-4 shrink-0 text-warning" />
-          <span>
-            <span className="font-semibold text-warning">
-              {pendingCount} payslip{pendingCount > 1 ? "s" : ""} pending
-            </span>{" "}
-            — this run has not settled yet.
-          </span>
+      {/* Selected run totals */}
+      {selected ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Net pay" value={formatCurrency(selected.net)} icon={Wallet} hint={periodLabel(selected.period)} featured />
+          <StatCard label="Gross pay" value={formatCurrency(selected.gross)} icon={Banknote} hint={`${formatCurrency(selected.deductions)} deductions`} />
+          <StatCard label="Deductions" value={formatCurrency(selected.deductions)} icon={Receipt} hint={`${deductions.length} rules`} />
+          <StatCard label="Status" value={selected.status === "final" ? "Final" : "Draft"} icon={CheckCircle2} hint={selected.status === "final" ? "settled" : "not settled"} />
         </div>
-      )}
+      ) : null}
 
-      {/* Pay-period variance insight */}
-      {showInsight && prevRun && netVariancePct !== null && (
-        <AiInsight
-          title={`Net pay ${netVariancePct > 0 ? "up" : "down"} ${Math.abs(
-            netVariancePct,
-          )}% vs ${prevPeriod.label}`}
-          detail={
-            hoursVariancePct !== null
-              ? `Hours tracked ${
-                  hoursVariancePct > 0 ? "increased" : "decreased"
-                } ${Math.abs(
-                  hoursVariancePct,
-                )}% period-over-period, driving the net change. Average hourly rates are stable.`
-              : `Net pay moved from ${formatCurrency(
-                  prevRun.totals.net,
-                )} to ${formatCurrency(run.totals.net)}.`
-          }
-          points={[
-            `${prevPeriod.label}: ${formatCurrency(
-              prevRun.totals.net,
-            )} net across ${prevRun.totals.headcount} employees`,
-            `${period.label}: ${formatCurrency(run.totals.net)} net (${
-              netVariancePct > 0 ? "+" : ""
-            }${netVariancePct}%)`,
-          ]}
-          basis={`Derived from ${
-            run.totals.headcount
-          } payslips · ${run.totals.hours.toLocaleString()} hours tracked`}
-        />
-      )}
-
-      <Card className="p-0 [--card-spacing:0px]">
-        <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      {/* Draft a new run */}
+      {canManage ? (
+        <div className="flex flex-col gap-2 rounded-lg border bg-card p-4 sm:flex-row sm:items-center">
+          <div className="flex-1">
+            <p className="text-sm font-medium">Draft a pay run</p>
+            <p className="text-xs text-muted-foreground">
+              Computes totals from each employee&apos;s comp minus the deduction rules below.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
             <Input
-              value={query}
-              onChange={(e) => resetPage(setQuery)(e.target.value)}
-              placeholder="Search employees…"
-              className="pl-9"
+              value={newPeriod}
+              onChange={(e) => setNewPeriod(e.target.value)}
+              placeholder="2026-09"
+              className="w-32"
             />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PeriodDropdown
-              index={periodIndex}
-              onChange={resetPage(setPeriodIndex)}
-            />
-            <FilterDropdown
-              label="Dept"
-              value={dept}
-              options={deptOptions}
-              onChange={resetPage(setDept)}
-            />
-            <FilterDropdown
-              label="Status"
-              value={status}
-              options={STATUS_OPTIONS}
-              onChange={resetPage(setStatus)}
-            />
-            {can("payroll:export") ? (
-              <Button variant="outline" onClick={() => exportRunCsv(run)}>
-                <Download className="size-4" /> Download
-              </Button>
-            ) : null}
+            <Button onClick={handleDraft} disabled={busy}>
+              <Plus className="size-4" /> Draft run
+            </Button>
           </div>
         </div>
+      ) : null}
 
-        {filtered.length === 0 ? (
-          <EmptyState
-            icon={Receipt}
-            title="No payslips"
-            description="No employees match these filters for this pay period."
-            className="m-5"
-          />
-        ) : (
-          <Table className="[&_td:first-child]:pl-5 [&_td:last-child]:pr-5 [&_th:first-child]:pl-5 [&_th:last-child]:pr-5">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Hours</TableHead>
-                <TableHead>Rate</TableHead>
-                <TableHead>Gross</TableHead>
-                <TableHead>Deductions</TableHead>
-                <TableHead>Net pay</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Payslip</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pageRows.map((r) => (
-                <TableRow key={r.employeeId}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="size-8">
-                        <AvatarImage src={r.avatarUrl} alt={r.name} />
-                        <AvatarFallback>{initials(r.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{r.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {r.jobTitle}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {r.department}
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {r.hours.toFixed(1)}
-                  </TableCell>
-                  <TableCell className="tabular-nums text-muted-foreground">
-                    ${r.hourlyRate}/hr
-                  </TableCell>
-                  <TableCell className="tabular-nums">
-                    {formatCurrency(r.gross)}
-                  </TableCell>
-                  <TableCell className="tabular-nums text-muted-foreground">
-                    -{formatCurrency(r.deductions)}
-                  </TableCell>
-                  <TableCell className="font-medium tabular-nums">
-                    {formatCurrency(r.net)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      className={cn("font-medium", STATUS_META[r.status].cls)}
+      {/* Runs */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Pay runs</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {runs.length === 0 ? (
+            <EmptyState
+              icon={Wallet}
+              title="No pay runs yet"
+              description={canManage ? "Draft a run above to get started." : "Pay runs will appear here."}
+              className="m-4 border-0"
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-6">Period</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Gross</TableHead>
+                    <TableHead className="text-right">Deductions</TableHead>
+                    <TableHead className="text-right">Net</TableHead>
+                    {canManage ? <TableHead className="pr-6 text-right">Actions</TableHead> : null}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {runs.map((r) => (
+                    <TableRow
+                      key={r.period}
+                      className={cn("cursor-pointer", r.period === selected?.period && "bg-muted/40")}
+                      onClick={() => setSelectedPeriod(r.period)}
                     >
-                      {STATUS_META[r.status].label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => downloadPayslipPdf(r, period.label)}
-                    >
-                      <Download className="size-4" /> PDF
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-
-        {filtered.length > 0 ? (
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-border px-5 py-3">
-            <span className="text-sm text-muted-foreground">
-              Showing {safePage * PAGE_SIZE + 1}–
-              {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
-              {filtered.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={safePage === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-              >
-                <ChevronLeft className="size-4" /> Prev
-              </Button>
-              <span className="text-sm tabular-nums text-muted-foreground">
-                {safePage + 1} / {pageCount}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={safePage >= pageCount - 1}
-                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-              >
-                Next <ChevronRight className="size-4" />
-              </Button>
+                      <TableCell className="pl-6 font-medium">{periodLabel(r.period)}</TableCell>
+                      <TableCell>
+                        <Badge className={cn("capitalize", statusMeta(r.status))}>{r.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(r.gross)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {formatCurrency(r.deductions)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">{formatCurrency(r.net)}</TableCell>
+                      {canManage ? (
+                        <TableCell className="pr-6 text-right">
+                          {r.status === "draft" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFinalize(r.period);
+                              }}
+                            >
+                              Finalize
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      ) : null}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </table>
             </div>
-          </div>
-        ) : null}
+          )}
+        </CardContent>
       </Card>
+
+      {/* Deductions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Deduction rules</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {deductions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No deduction rules configured.</p>
+          ) : (
+            <ul className="divide-y">
+              {deductions.map((d) => (
+                <li key={d.name} className="flex items-center justify-between py-2.5 text-sm">
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium capitalize">{d.name}</span>
+                    {!d.active ? (
+                      <Badge variant="outline" className="font-normal text-muted-foreground">
+                        inactive
+                      </Badge>
+                    ) : null}
+                  </span>
+                  <span className="font-mono tabular-nums">{deductionLabel(d.kind, d.value)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Honest gap */}
+      <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">
+        <MonitorSmartphone className="size-4 shrink-0" />
+        Totals are comp-based. Per-employee payslips and hours-based pay need tracked-hours data from
+        the desktop agent, which isn&apos;t flowing yet — so they aren&apos;t shown.
+      </div>
     </div>
   );
 }
