@@ -30,6 +30,20 @@ import {
   resendInvite,
   type ApiInviteCreated,
 } from "../services/employees.service";
+import { useAuthStore } from "@/stores/auth.store";
+
+/** The accept-page URL the invitee opens — carries tenant + invite + token (the OTP stays separate,
+ *  shared out-of-band, since it's the second factor). Mirrors the link the invite email builds. */
+function acceptLink(tenantId: string, invite: ApiInviteCreated): string {
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "";
+  const q = new URLSearchParams({
+    tenant_id: tenantId,
+    invite_id: invite.invite_id,
+    token: invite.token,
+  });
+  return `${origin}/invite/accept?${q.toString()}`;
+}
 
 function CopyRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -70,6 +84,8 @@ export function InviteDialog({
   const [roleId, setRoleId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<ApiInviteCreated | null>(null);
+  // The admin's own tenant, from their ID-token claims — the invitee joins the same org.
+  const tenantId = useAuthStore((s) => s.user?.organizationId ?? "");
 
   // Load assignable roles (never the Owner) when the dialog opens.
   useEffect(() => {
@@ -200,9 +216,9 @@ export function InviteDialog({
             <DialogHeader>
               <DialogTitle>Invite created</DialogTitle>
               <DialogDescription>
-                Automated email isn&apos;t enabled here — share the code and one-time password with{" "}
-                <span className="font-medium text-foreground">{created.email}</span> yourself. They
-                won&apos;t be shown again.
+                Automated email isn&apos;t enabled here — share the invite link and one-time password
+                with <span className="font-medium text-foreground">{created.email}</span> yourself.
+                They won&apos;t be shown again.
               </DialogDescription>
             </DialogHeader>
 
@@ -215,7 +231,7 @@ export function InviteDialog({
                 <span className="text-muted-foreground">Role</span>
                 <span className="font-medium">{roleName(created.role_id)}</span>
               </div>
-              <CopyRow label="Invite token" value={created.token} />
+              <CopyRow label="Invite link" value={acceptLink(tenantId, created)} />
               <CopyRow label="One-time password" value={created.otp} />
               <p className="text-xs text-muted-foreground">
                 Expires {new Date(created.expires_at * 1000).toLocaleDateString(undefined, {
