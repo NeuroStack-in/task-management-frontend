@@ -7,8 +7,9 @@
  * rows can show a project *name* for the `project_id` the entry carries. The two are fetched
  * together but fail independently — see `projectOf`.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { usePoll } from "@/hooks/use-poll";
 import { projectNameMap } from "@/modules/projects/services/projects.service";
 import {
   clockOf,
@@ -55,50 +56,61 @@ export function useTimesheet(): TimesheetState {
   >({ rows: [], totalSec: 0, billableSec: 0, running: false, date: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  // Monotonic request id: a slow response that lands after a newer one is dropped, so overlapping
+  // fetches (a poll firing mid-reload) can't apply stale data out of order.
+  const reqId = useRef(0);
 
-  useEffect(() => {
-    // The date is resolved on the client, deliberately: the server runs in UTC and 400s a missing
-    // date rather than guess a timezone. It must also be read inside the effect, not during render
-    // — a render-time `new Date()` would differ between the server and client passes and trip a
-    // hydration mismatch.
+  const fetchToday = useCallback(async (background: boolean) => {
+    // The date is resolved here (not at render) for the same reason it always was: the server runs
+    // in UTC and 400s a missing date, and a render-time `new Date()` would trip a hydration mismatch.
     const date = todayLocal();
-    let live = true;
-    setLoading(true);
-    setError(null);
+    const id = ++reqId.current;
+    // A foreground load shows the spinner and surfaces errors. A background poll does neither: it
+    // refreshes silently, so the page doesn't flash every 30 s and a transient blip doesn't blank
+    // good data. This is what makes the poll invisible until it actually has news.
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
+    try {
+      // The project catalog is a *nicety* — it turns an id into a name. A caller without
+      // `projects:view` gets a 403 here, which must not blank out their own timesheet, so its
+      // failure degrades to an empty map rather than rejecting the pair.
+      const [today, names] = await Promise.all([
+        getToday(date),
+        projectNameMap().catch(() => new Map<string, string>()),
+      ]);
+      if (id !== reqId.current) return; // a newer request superseded this one
+      setState({
+        date: today.date,
+        totalSec: today.total_secs,
+        billableSec: today.billable_secs,
+        running: today.running,
+        rows: today.entries.map((e) => toRow(e, names)),
+      });
+      if (background) setError(null); // a good background refresh clears a stale error banner
+    } catch (e) {
+      if (id !== reqId.current) return;
+      // Only a foreground load surfaces the error — a failed background poll keeps the last good
+      // data on screen rather than replacing a working timesheet with an error.
+      if (!background) setError(messageOf(e));
+    } finally {
+      if (id === reqId.current && !background) setLoading(false);
+    }
+  }, []);
 
-    (async () => {
-      try {
-        // The project catalog is a *nicety* — it turns an id into a name. A caller without
-        // `projects:view` gets a 403 here, which must not blank out their own timesheet, so its
-        // failure degrades to an empty map rather than rejecting the pair.
-        const [today, names] = await Promise.all([
-          getToday(date),
-          projectNameMap().catch(() => new Map<string, string>()),
-        ]);
-        if (!live) return;
+  // Initial load (foreground).
+  useEffect(() => {
+    fetchToday(false);
+  }, [fetchToday]);
 
-        setState({
-          date: today.date,
-          totalSec: today.total_secs,
-          billableSec: today.billable_secs,
-          running: today.running,
-          rows: today.entries.map((e) => toRow(e, names)),
-        });
-      } catch (e) {
-        if (!live) return;
-        setError(messageOf(e));
-      } finally {
-        if (live) setLoading(false);
-      }
-    })();
+  // Live-refresh every 30 s in the background (paused when the tab is hidden; refetches on return).
+  // This is the freshness half of the view-only timer: once the agent posts a timer transition
+  // out-of-band, the running state shows up here within a poll instead of on a manual refresh.
+  usePoll(() => fetchToday(true), 30_000);
 
-    return () => {
-      live = false;
-    };
-  }, [nonce]);
+  const reload = useCallback(() => fetchToday(false), [fetchToday]);
 
   return { ...state, loading, error, reload };
 }

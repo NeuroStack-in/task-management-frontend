@@ -13,7 +13,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useTimerStore } from "@/stores/timer.store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,7 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDuration } from "@/lib/format";
-import { TASK_OPTIONS, formatHours } from "@/lib/mock-time";
+import { formatHours } from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
 import { useTimesheet } from "../use-timesheet";
 import { TimerHero } from "./timer-hero";
@@ -69,24 +68,9 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
     [rows, billableSec],
   );
 
-  // Seed the per-task day clocks from today's logged time once, so restarting a
-  // task resumes from its full day total (matching its Today's sessions row).
-  // Keyed by taskId; no-op after the first run on a given day (see the store).
-  const seedDay = useTimerStore((s) => s.seedDay);
-  useEffect(() => {
-    const totals: Record<string, number> = {};
-    for (const e of rows) {
-      const opt = TASK_OPTIONS.find(
-        (o) => o.taskTitle === e.task && o.projectName === e.project,
-      );
-      if (opt) totals[opt.taskId] = (totals[opt.taskId] ?? 0) + e.durationSec;
-    }
-    const d = new Date();
-    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-      d.getDate(),
-    ).padStart(2, "0")}`;
-    seedDay(totals, day);
-  }, [seedDay, rows]);
+  // The open session, if any, comes straight from the server's timesheet — the row with no end.
+  // The web only *shows* it (LLD §4); the desktop agent owns start/stop.
+  const runningRow = rows.find((r) => r.running) ?? null;
 
   // Resolve the date on the client to avoid an SSR/hydration mismatch.
   const [today, setToday] = useState("");
@@ -100,11 +84,6 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
       }),
     );
   }, []);
-
-  // The web cannot persist a timer run (LLD §4), so a locally-logged segment must not be spliced
-  // into the server's list as though it were saved. Re-reading the server is the honest response:
-  // whatever the agent actually folded is what appears.
-  const handleLogged = () => reload();
 
   const exportCsv = () => {
     const csv = Papa.unparse(
@@ -132,7 +111,14 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
 
   return (
     <div className="space-y-6">
-      <TimerHero entries={rows} onLogged={handleLogged} />
+      <TimerHero
+        running={
+          runningRow
+            ? { task: runningRow.task, project: runningRow.project, start: runningRow.start }
+            : null
+        }
+        todayTotalSec={totalSec}
+      />
 
       <Card>
         <CardHeader>
