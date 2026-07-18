@@ -1,14 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { CreditCard, FileText } from "lucide-react";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
+import { usePermissions } from "@/hooks/use-permissions";
 import { PLAN_TIERS } from "@/lib/mock-billing";
 import { useBilling } from "@/modules/billing/use-billing";
+import { ChangePlanDialog } from "@/modules/billing/components/change-plan-dialog";
 
 /**
  * Account-level billing summary (Settings → Billing) — a compact panel over the **live**
@@ -16,7 +18,10 @@ import { useBilling } from "@/modules/billing/use-billing";
  * (no endpoint yet). The full Billing Center (`/billing`) is the source of truth for plan details.
  */
 export function BillingSettings() {
-  const { overview, loading, error, reload } = useBilling();
+  const { can } = usePermissions();
+  const canManage = can("billing:manage");
+  const { overview, loading, error, reload, changePlan } = useBilling();
+  const [confirming, setConfirming] = useState(false);
 
   if (loading && !overview) {
     return (
@@ -99,29 +104,37 @@ export function BillingSettings() {
             </div>
           </section>
 
-          {/* Cancellation */}
-          <section className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold">Cancel plan</p>
-              <p className="text-xs text-muted-foreground">
-                Your plan stays active until the end of the billing period.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() =>
-                toast.info("Self-serve cancellation isn't enabled yet.", {
-                  description: "Contact support to change your plan.",
-                })
-              }
-            >
-              Cancel
-            </Button>
-          </section>
+          {/* Downgrade — the backend has no cancellation/period-end concept; the only supported
+              wind-down is switching to the `free` plan, which applies immediately. */}
+          {canManage && overview.plan !== "free" ? (
+            <section className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold">Downgrade to Free</p>
+                <p className="text-xs text-muted-foreground">
+                  Applies immediately and lowers your seat cap. There&apos;s no end-of-period
+                  cancellation in this environment.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setConfirming(true)}
+              >
+                Downgrade
+              </Button>
+            </section>
+          ) : null}
         </CardContent>
       </Card>
+
+      <ChangePlanDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        overview={overview}
+        targetPlan={confirming ? "free" : null}
+        onConfirm={changePlan}
+      />
     </div>
   );
 }

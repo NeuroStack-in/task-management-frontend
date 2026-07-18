@@ -36,6 +36,7 @@ export const SYSTEM_ROLES: Role[] = [
       "projects:manage",
       "employees:view",
       "employees:manage",
+      "employees:org-manage",
       "attendance:view",
       "attendance:manage",
       "payroll:view",

@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { GoogleIcon, MicrosoftIcon } from "@/modules/marketing/brand-icons";
+import { slugify as serverSlugify } from "@/modules/auth/services/signup.service";
 
 /* ----------------------------- options ------------------------------- */
 
@@ -563,8 +564,36 @@ function PayConfirm({
 
 /* ------------------------ Organization setup ------------------------- */
 
-const slugify = (s: string) =>
-  s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
+/**
+ * The server's own normalisation (shared, so the previewed workspace URL is the one that gets
+ * stored), plus a 24-char cap that is purely ours — a suggestion while typing, and still editable.
+ */
+const slugify = (s: string) => serverSlugify(s).slice(0, 24);
+
+/**
+ * Everything the wizard collects that `POST /v1/org/create` accepts. The owner's email/password
+ * aren't here — they were captured on the signup form before this modal opened.
+ */
+export interface OrgSetupData {
+  org: {
+    name: string;
+    slug: string;
+    industry?: string;
+    size?: string;
+    website?: string;
+    timezone?: string;
+    country?: string;
+    currency?: string;
+  };
+  owner: {
+    full_name?: string;
+    job_title?: string;
+    department?: string;
+    location?: string;
+    phone?: string;
+  };
+  plan: string;
+}
 
 export function OrgSetupModal({
   open,
@@ -573,7 +602,8 @@ export function OrgSetupModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onComplete: (plan: string) => void;
+  /** Rejects to keep the wizard open and show the failure. */
+  onComplete: (data: OrgSetupData) => Promise<void>;
 }) {
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
@@ -635,12 +665,37 @@ export function OrgSetupModal({
     setPayOpen(true);
   };
 
-  const doFinish = () => {
+  // Hands the collected setup up to be committed (`POST /v1/org/create`) and reflects the real
+  // outcome: a failure returns to the form with the server's message rather than a fake success.
+  const doFinish = async () => {
     setStatus("loading");
-    setTimeout(() => {
+    setErr(null);
+    try {
+      await onComplete({
+        org: {
+          name: org.name.trim(),
+          slug: org.slug.trim(),
+          industry: org.industry || undefined,
+          size: org.size || undefined,
+          website: org.website.trim() || undefined,
+          timezone: region.timezone || undefined,
+          country: region.country || undefined,
+          currency: region.currency || undefined,
+        },
+        owner: {
+          full_name: profile.fullName.trim() || undefined,
+          job_title: profile.jobTitle.trim() || undefined,
+          department: profile.department.trim() || undefined,
+          location: profile.location.trim() || undefined,
+          phone: profile.phone.trim() || undefined,
+        },
+        plan,
+      });
       setStatus("success");
-      setTimeout(() => onComplete(plan), 750);
-    }, 1100);
+    } catch (e) {
+      setStatus("idle");
+      setErr(e instanceof Error ? e.message : "Couldn't create your workspace. Try again.");
+    }
   };
 
   const StepIcon = STEPS[step].icon;

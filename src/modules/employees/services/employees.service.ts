@@ -30,16 +30,22 @@ export function listEmployees(): Promise<ApiEmployee[]> {
   return apiFetch<DirectoryResponse>("/v1/employees").then((r) => r.employees);
 }
 
+/** Mirrors `workforce::departments::dto::DepartmentView`. */
 export interface ApiDepartment {
   id: string;
   name: string;
+  /** Epoch **ms**. Omitted by the server on the rename response (`PATCH` doesn't re-read the item). */
   created_at?: number;
 }
 
-/** `department_id → name`, for turning the directory's ids into labels. Best-effort.
- *  `/v1/departments` answers with a bare array in `data` (not `{departments}`). */
+/** `GET /v1/departments` — bare array in `data` (not `{departments}`). Gated on `employees:read`. */
+export function listDepartments(): Promise<ApiDepartment[]> {
+  return apiFetch<ApiDepartment[]>("/v1/departments");
+}
+
+/** `department_id → name`, for turning the directory's ids into labels. Best-effort. */
 export async function departmentMap(): Promise<Map<string, string>> {
-  const depts = await apiFetch<ApiDepartment[]>("/v1/departments");
+  const depts = await listDepartments();
   return new Map(depts.map((d) => [d.id, d.name]));
 }
 
@@ -65,17 +71,80 @@ export function getEmployeeProfile(userId: string): Promise<ApiEmployeeProfile> 
   return apiFetch<ApiEmployeeProfile>(`/v1/employees/${encodeURIComponent(userId)}`);
 }
 
-interface ApiTeam {
+/** Mirrors `workforce::teams::dto::TeamView`. Every team belongs to exactly one department. */
+export interface ApiTeam {
   id: string;
   name: string;
-  department_id?: string;
+  department_id: string;
+  /** Omitted when the team has no lead. */
+  lead_id?: string;
 }
 
-/** `team_id → name`, for turning the profile's id into a label. Best-effort (bare array in `data`). */
+/** `GET /v1/teams[?dept=]` — gated on `employees:read`. Tolerates both the bare-array and
+ *  `{teams}` envelope shapes seen from this endpoint. */
+export async function listTeams(departmentId?: string): Promise<ApiTeam[]> {
+  const qs = departmentId ? `?dept=${encodeURIComponent(departmentId)}` : "";
+  const data = await apiFetch<ApiTeam[] | { teams: ApiTeam[] }>(`/v1/teams${qs}`);
+  return Array.isArray(data) ? data : (data?.teams ?? []);
+}
+
+/** `team_id → name`, for turning the profile's id into a label. Best-effort. */
 export async function teamMap(): Promise<Map<string, string>> {
-  const data = await apiFetch<ApiTeam[] | { teams: ApiTeam[] }>("/v1/teams");
-  const teams = Array.isArray(data) ? data : (data?.teams ?? []);
+  const teams = await listTeams();
   return new Map(teams.map((t) => [t.id, t.name]));
+}
+
+// ── Department & team administration (LLD §6) ────────────────────────────────────────────────
+//
+// Reads above are gated on `employees:read`; every mutation below is gated on the backend's
+// `org:manage` bit ("Manage departments & teams"), which sits in the server's `employees` module
+// group. The frontend catalog has no `org:manage` id, so callers gate on `employees:manage` — the
+// same bit this module already uses for its other write affordances. The server is the real gate.
+
+/**
+ * `PATCH /v1/departments/{id}` — rename. The whole body is `{name}`; a blank/whitespace name is
+ * rejected 400. Responds with the updated department, but **without `created_at`** (the handler
+ * doesn't re-read the stored item), so don't rely on that field from this call.
+ */
+export function renameDepartment(id: string, name: string): Promise<ApiDepartment> {
+  return apiFetch<ApiDepartment>(`/v1/departments/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
+/**
+ * `DELETE /v1/departments/{id}`. Guarded server-side: a department that still has teams is
+ * **409 `department_in_use`**, because deleting it would orphan `team.department_id`. Empty the
+ * department's teams first. A missing department is 404.
+ */
+export async function deleteDepartment(id: string): Promise<void> {
+  await apiFetch<{ id: string; deleted: boolean }>(
+    `/v1/departments/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * `PATCH /v1/teams/{id}` — partial update; every field is optional and omitted fields are left
+ * alone. Only `name` is sent here: moving a team between departments and (re)assigning `lead_id`
+ * are supported by the server but have no UI yet. Note the server silently ignores a blank `name`
+ * rather than rejecting it, so validate before calling.
+ */
+export function renameTeam(id: string, name: string): Promise<ApiTeam> {
+  return apiFetch<ApiTeam>(`/v1/teams/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
+/** `DELETE /v1/teams/{id}`. Unlike departments this has **no in-use guard** server-side — a team
+ *  with members deletes cleanly. A missing team is 404. */
+export async function deleteTeam(id: string): Promise<void> {
+  await apiFetch<{ id: string; deleted: boolean }>(
+    `/v1/teams/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
 }
 
 /** `POST /v1/employees/{id}/deactivate` — the lifecycle action (LLD §6). */

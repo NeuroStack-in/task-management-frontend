@@ -1,13 +1,10 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   AlertTriangle,
   ArrowUpRight,
-  Check,
-  Copy,
-  Download,
   KeyRound,
   Lock,
   Monitor,
@@ -19,7 +16,6 @@ import {
 import { toast } from "sonner"
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -28,8 +24,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -50,13 +44,12 @@ import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useAuthStore } from "@/stores/auth.store"
 import { isIpOrCidr } from "@/lib/validation"
-import {
-  SECURITY_DEFAULTS,
-  SECURITY_EVENTS,
-  SECURITY_OVERVIEW,
-  SSO_CONNECTION,
-  type SecurityPolicies,
-} from "@/lib/mock-security"
+import { Loader } from "@/components/shared/loader"
+import { useSecurityEvents } from "@/modules/security/use-security-events"
+// `SECURITY_EVENTS`, `SECURITY_OVERVIEW` and `SSO_CONNECTION` were dropped — see the comments at
+// their former render sites. `SECURITY_DEFAULTS` stays: the session/password policy editors are
+// still local-only (LLD §15 IP allowlist + per-session revoke are the blocked backend work).
+import { SECURITY_DEFAULTS, type SecurityPolicies } from "@/lib/mock-security"
 import {
   listMySessions,
   resetMfaDevice,
@@ -64,11 +57,6 @@ import {
 } from "../services/security.service"
 import { listEmployees } from "@/modules/employees/services/employees.service"
 import { cn } from "@/lib/utils"
-
-// Derived from the same source the Audit Logs page reads — no duplicated table.
-const FLAGGED_EVENTS = SECURITY_EVENTS.filter(
-  (e) => e.status === "flagged" || e.status === "blocked",
-).length
 
 // ── Active sessions (your signed-in devices) ──────────────────────────────────
 // Real, from GET /v1/me/sessions — {session_id, last_seen} only. Cognito gives no device / IP /
@@ -135,42 +123,6 @@ function SettingRow({
         )}
       </div>
       <div className="shrink-0">{children}</div>
-    </div>
-  )
-}
-
-function ReadOnlyField({
-  label,
-  value,
-  mono,
-}: {
-  label: string
-  value: string
-  mono?: boolean
-}) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <div className="flex items-center gap-2">
-        <p
-          className={cn(
-            "min-w-0 flex-1 truncate text-sm",
-            mono && "font-mono text-xs",
-          )}
-        >
-          {value}
-        </p>
-        <button
-          onClick={() => {
-            navigator.clipboard?.writeText(value)
-            toast.success("Copied to clipboard")
-          }}
-          className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label={`Copy ${label}`}
-        >
-          <Copy className="size-3.5" />
-        </button>
-      </div>
     </div>
   )
 }
@@ -333,6 +285,7 @@ function IpAllowlist({
 export function SecurityCenter() {
   const { can } = usePermissions()
   const canManage = can("security:manage")
+  const securityEvents = useSecurityEvents()
 
   const [saved, setSaved] = useState<SecurityDraft>(() => cloneDraft(INITIAL))
   const [draft, setDraft] = useState<SecurityDraft>(() => cloneDraft(INITIAL))
@@ -450,25 +403,25 @@ export function SecurityCenter() {
   }
 
   const { policies } = draft
-  const adoptionPct = Math.round(
-    (SECURITY_OVERVIEW.mfaEnrolled / SECURITY_OVERVIEW.mfaTotal) * 100,
-  )
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <PageHeader
-          title="Security"
-          description="Authentication, single sign-on, session policies, and security activity."
-        />
-        <Button
-          variant="outline"
-          className="shrink-0 gap-1.5"
-          onClick={() => toast.success("Security report downloaded")}
-        >
-          <Download className="size-4" /> Download
-        </Button>
-      </div>
+      <PageHeader
+        title="Security"
+        description="Authentication, session policies, and security activity."
+      />
+      {/*
+        The at-a-glance strip that used to sit here ("Security score 82/100", "MFA adoption",
+        "Active sessions", "Open alerts") was entirely invented by `mock-security`. None of the four
+        has a server source:
+          · security score  — no such concept exists anywhere in the backend
+          · MFA adoption    — Cognito exposes no per-user enrolment status without its paid
+                              advanced-security tier, so enrolled/total is unknowable
+          · active sessions — `/v1/me/sessions` returns **your own** sessions, never the org's
+          · open alerts     — security events carry no severity, so nothing can be "open"
+        A fabricated security posture next to a real session list is worse than no posture at all:
+        the user cannot tell which half to trust. It is removed rather than zeroed.
+      */}
 
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
@@ -478,23 +431,6 @@ export function SecurityCenter() {
           permission.
         </div>
       )}
-
-      {/* ── At-a-glance overview strip ── */}
-      <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-4 sm:divide-y-0">
-        {[
-          { label: "Security score", value: `${SECURITY_OVERVIEW.securityScore}/100` },
-          { label: "MFA adoption", value: `${adoptionPct}%` },
-          { label: "Active sessions", value: SECURITY_OVERVIEW.activeSessions },
-          { label: "Open alerts", value: SECURITY_OVERVIEW.openAlerts },
-        ].map((s) => (
-          <div key={s.label} className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">{s.label}</p>
-            <p className="mt-0.5 font-display text-lg font-semibold tabular-nums">
-              {s.value}
-            </p>
-          </div>
-        ))}
-      </div>
 
       {/* ── Multi-factor authentication ── */}
       {/*
@@ -519,26 +455,16 @@ export function SecurityCenter() {
           {/* Your own posture — read-only. */}
           <MfaPostureRow posture={mfaPosture} />
 
-          {/* Org posture — read-only. */}
-          <div className="space-y-2 rounded-md bg-muted/50 p-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">Organization enrollment</span>
-              <span className="tabular-nums text-muted-foreground">
-                {SECURITY_OVERVIEW.mfaEnrolled}/{SECURITY_OVERVIEW.mfaTotal} ·{" "}
-                {adoptionPct}%
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${adoptionPct}%` }}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Members who sign in through SSO are counted as covered — their identity
-              provider performs the check.
-            </p>
-          </div>
+          {/*
+            An "organization enrollment X/Y" bar sat here on invented numbers. Cognito does not
+            expose per-user MFA enrolment without its paid advanced-security tier, so the org's
+            adoption rate is genuinely unknowable from here — stating it honestly beats a progress
+            bar that always looks reassuring.
+          */}
+          <p className="rounded-md bg-muted/50 p-4 text-xs text-muted-foreground">
+            Organization-wide enrollment figures aren&apos;t available — the identity provider
+            doesn&apos;t expose per-member MFA status. Your own posture is shown above.
+          </p>
 
           {/* The one action (LLD §2): the lost-phone flow. */}
           {canManage ? (
@@ -558,74 +484,27 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
-      {/* ── Single sign-on ── */}
-      <Card id="sso" className="scroll-mt-24">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Single Sign-On (SSO)
-            <Badge className="bg-success/12 font-normal text-success">
-              <Check className="size-3" /> Connected
-            </Badge>
-          </CardTitle>
-          <CardDescription>
-            {SSO_CONNECTION.provider} · {SSO_CONNECTION.protocol} · last sign-in{" "}
-            {SSO_CONNECTION.lastLogin}
-          </CardDescription>
-          <CardAction>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={() => toast.info("Opening identity-provider configuration…")}
-            >
-              <RefreshCw className="size-3.5" /> Reconfigure
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-5 sm:grid-cols-2">
-            <ReadOnlyField label="Verified domain" value={SSO_CONNECTION.domain} />
-            <ReadOnlyField
-              label="Certificate expires"
-              value={SSO_CONNECTION.certificateExpires}
-            />
-            <ReadOnlyField label="Sign-on URL" value={SSO_CONNECTION.ssoUrl} mono />
-            <ReadOnlyField label="Entity ID" value={SSO_CONNECTION.entityId} mono />
-            <div className="sm:col-span-2">
-              <ReadOnlyField
-                label="Certificate fingerprint (SHA-256)"
-                value={SSO_CONNECTION.certificateFingerprint}
-                mono
-              />
-            </div>
-          </div>
+      {/*
+        ── Single sign-on: REMOVED, and it should stay removed until the feature exists ──
 
-          <div>
-            <SettingRow
-              label="Enforce SSO for all members"
-              description="Require members to sign in through your identity provider; disables password sign-in."
-              disabled={!canManage}
-            >
-              <Switch
-                checked={policies.ssoEnforced}
-                disabled={!canManage}
-                onCheckedChange={(v) => updatePolicy({ ssoEnforced: v })}
-              />
-            </SettingRow>
-            <SettingRow
-              label="SCIM user provisioning"
-              description="Automatically create, update, and deactivate accounts from your IdP."
-              disabled={!canManage}
-            >
-              <Switch
-                checked={policies.scimEnabled}
-                disabled={!canManage}
-                onCheckedChange={(v) => updatePolicy({ scimEnabled: v })}
-              />
-            </SettingRow>
-          </div>
-        </CardContent>
-      </Card>
+        This card previously rendered a "Connected" badge over a fabricated SAML connection —
+        provider, verified domain, sign-on URL, entity id, certificate expiry, and a SHA-256
+        certificate fingerprint, all invented by `mock-security`. It also offered "Enforce SSO for
+        all members" and "SCIM provisioning" switches.
+
+        Enterprise SSO is **proposed and not approved** (backend `WorkPulse-SSO.md`): it was cut by
+        the LLD, revived as a proposal, and still gates on backend review because JIT provisioning
+        would amend the invite-only identity invariant. The backend's `plans.rs` carries a test
+        asserting `security.sso` must NOT exist as a feature key precisely so nobody can toggle a
+        feature that isn't built. There are no `/v1/security/sso/*` routes.
+
+        Showing an admin a fingerprint for a connection that does not exist is the most dangerous
+        kind of mock: it invites them to believe SSO is enforcing sign-in when password auth is the
+        only path. Do not restore this card from the mock — restore it from a real connection.
+
+        (Google/Microsoft as a *login credential* is a separate, approved thing — see `SsoButtons`
+        on the auth screens. That is not this.)
+      */}
 
       {/*
         Session lifetimes are Cognito pool-level and platform-fixed (LLD §15) — per-org
@@ -838,34 +717,57 @@ export function SecurityCenter() {
             log.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <CardContent className="space-y-4">
+          {/*
+            Live from `GET /v1/security-events`. The "N flagged events in the last 7 days" banner
+            that used to sit here counted mock rows by a `severity` field the server does not have —
+            there is no risk classification on an audit row, so nothing can be flagged.
+          */}
+          {securityEvents.forbidden ? (
+            <p className="text-sm text-muted-foreground">
+              Viewing the security event trail requires the Manage Security permission.
+            </p>
+          ) : securityEvents.error ? (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">{securityEvents.error}</p>
+              <Button variant="outline" size="sm" onClick={securityEvents.reload}>
+                Retry
+              </Button>
+            </div>
+          ) : securityEvents.loading ? (
+            <Loader label="Loading security activity…" />
+          ) : securityEvents.events.length === 0 ? (
             <div className="flex items-center gap-3">
-              <span
-                className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-md",
-                  FLAGGED_EVENTS > 0
-                    ? "bg-warning/15 text-warning"
-                    : "bg-success/12 text-success",
-                )}
-              >
-                {FLAGGED_EVENTS > 0 ? (
-                  <AlertTriangle className="size-4" />
-                ) : (
-                  <ShieldCheck className="size-4" />
-                )}
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-success/12 text-success">
+                <ShieldCheck className="size-4" />
               </span>
               <div>
-                <p className="text-sm font-medium">
-                  {FLAGGED_EVENTS > 0
-                    ? `${FLAGGED_EVENTS} flagged ${FLAGGED_EVENTS === 1 ? "event" : "events"} in the last 7 days`
-                    : "No flagged events in the last 7 days"}
-                </p>
+                <p className="text-sm font-medium">No security activity recorded</p>
                 <p className="text-xs text-muted-foreground">
-                  Blocked sign-ins and unusual activity needing review.
+                  Sign-ins, MFA resets, and role changes appear here as they happen.
                 </p>
               </div>
             </div>
+          ) : (
+            <ul className="divide-y rounded-lg border">
+              {securityEvents.events.slice(0, 8).map((e) => (
+                <li key={e.key} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{e.action}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {e.actorName}
+                      {e.target ? ` · ${e.target}` : ""}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {e.timestamp}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="flex justify-end">
             <Button
               variant="outline"
               size="sm"

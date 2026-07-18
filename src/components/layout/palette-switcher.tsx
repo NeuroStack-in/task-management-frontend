@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useSaveAppearance } from "@/modules/settings/use-appearance";
 import { cn } from "@/lib/utils";
 
 interface PaletteDef {
@@ -111,6 +112,8 @@ export const PALETTES: PaletteDef[] = [
 ];
 
 const STORAGE_KEY = "wp-palette";
+/** Must match the fallback in the pre-paint script (`app/layout.tsx`). */
+const DEFAULT_PALETTE = "meridian";
 
 export function applyPalette(id: string) {
   const el = document.documentElement;
@@ -123,22 +126,30 @@ export function applyPalette(id: string) {
   }
 }
 
+/** The palette showing right now. Mirrors the pre-paint script's default in `app/layout.tsx`. */
+export function currentPalette(): string {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) || DEFAULT_PALETTE;
+  } catch {
+    return DEFAULT_PALETTE;
+  }
+}
+
 export function PaletteSwitcher() {
-  const [active, setActive] = useState("meridian");
+  const [active, setActive] = useState(DEFAULT_PALETTE);
+  const { savePalette } = useSaveAppearance();
 
   // Read the persisted choice on mount (the inline head script already applied
   // it pre-paint; this just syncs the active checkmark). Default = Meridian.
   useEffect(() => {
-    try {
-      setActive(window.localStorage.getItem(STORAGE_KEY) || "meridian");
-    } catch {
-      /* ignore */
-    }
+    setActive(currentPalette());
   }, []);
 
+  // Applies immediately, then persists to the account so the choice follows the
+  // user to another browser. A failed write leaves the local choice in place.
   const choose = (id: string) => {
-    applyPalette(id);
     setActive(id);
+    void savePalette(id);
   };
 
   return (

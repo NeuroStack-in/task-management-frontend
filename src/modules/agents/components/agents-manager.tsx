@@ -1,20 +1,27 @@
 "use client"
 
-import { useState } from "react"
+/**
+ * Device agents — live from `GET /v1/fleet` (LLD §18).
+ *
+ * This page is deliberately read-only. The `fleet` context serves two read routes and nothing else:
+ * there is no restart, update, remove, or enrollment-token endpoint, and no agent command channel
+ * to carry one (the WebSocket control rail was cut; the agent polls `GET /v1/agent/config`). Earlier
+ * revisions of this screen had buttons for all four — they toasted success and did nothing. They are
+ * gone rather than disabled, because a greyed-out control still implies the capability exists.
+ *
+ * Capture policy is not configured here either — that's the tracking rules editor, which is real.
+ */
+
+import { useMemo, useState } from "react"
+import Link from "next/link"
 import {
-  AlertTriangle,
-  Copy,
-  Download,
+  HardDrive,
   MonitorSmartphone,
-  MoreVertical,
-  Power,
   RefreshCw,
   Search,
-  Trash2,
   Wifi,
   WifiOff,
 } from "lucide-react"
-import { toast } from "sonner"
 import {
   Card,
   CardContent,
@@ -25,7 +32,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   Select,
@@ -34,20 +40,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { NumberStepper } from "@/components/ui/number-stepper"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import {
   Sheet,
   SheetContent,
@@ -64,30 +56,19 @@ import {
 } from "@/components/ui/table"
 import { PageHeader } from "@/components/shared/page-header"
 import { StatCard } from "@/components/shared/stat-card"
-import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { EmptyState } from "@/components/shared/empty-state"
-import { usePermissions } from "@/hooks/use-permissions"
+import { Loader } from "@/components/shared/loader"
 import { initials } from "@/lib/format"
-import {
-  AGENTS,
-  AGENT_ENROLLMENT_TOKEN,
-  AGENT_PLATFORMS,
-  AGENT_SETTINGS_DEFAULTS,
-  LATEST_AGENT_VERSION,
-  UPDATE_CHANNEL_OPTIONS,
-  type Agent,
-  type AgentSettings,
-  type AgentStatus,
-} from "@/lib/mock-agents"
+import { useFleet, type DeviceStatus, type FleetDevice } from "../use-fleet"
 import { cn } from "@/lib/utils"
 
-const STATUS_META: Record<AgentStatus, { label: string; dot: string }> = {
+const STATUS_META: Record<DeviceStatus, { label: string; dot: string }> = {
   online: { label: "Online", dot: "bg-success" },
   idle: { label: "Idle", dot: "bg-warning" },
   offline: { label: "Offline", dot: "bg-muted-foreground/40" },
 }
 
-function StatusIndicator({ status }: { status: AgentStatus }) {
+function StatusIndicator({ status }: { status: DeviceStatus }) {
   const meta = STATUS_META[status]
   return (
     <span className="inline-flex items-center gap-2 text-sm">
@@ -98,64 +79,26 @@ function StatusIndicator({ status }: { status: AgentStatus }) {
 }
 
 export function AgentsManager() {
-  const { can } = usePermissions()
-  const canManage = can("agents:manage")
+  const { devices, total, online, offline, loading, error, reload } = useFleet()
 
-  const [agents, setAgents] = useState<Agent[]>(() => AGENTS.map((a) => ({ ...a })))
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [osFilter, setOsFilter] = useState("all")
-  const [selected, setSelected] = useState<Agent | null>(null)
-  const [downloadOpen, setDownloadOpen] = useState(false)
+  const [selected, setSelected] = useState<FleetDevice | null>(null)
 
-  // Fleet-wide agent settings (dirty-aware save bar).
-  const [saved, setSaved] = useState<AgentSettings>({ ...AGENT_SETTINGS_DEFAULTS })
-  const [draft, setDraft] = useState<AgentSettings>({ ...AGENT_SETTINGS_DEFAULTS })
-  const [saving, setSaving] = useState(false)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
+  // Derived from what the fleet actually reports — the agent's `os` string comes from `sysinfo`,
+  // so hardcoding a Windows/macOS/Linux list here would silently hide anything else.
+  const osOptions = useMemo(
+    () => Array.from(new Set(devices.map((d) => d.os).filter(Boolean))).sort(),
+    [devices],
+  )
 
-  const isOutdated = (a: Agent) => a.version !== LATEST_AGENT_VERSION
-  const total = agents.length
-  const online = agents.filter((a) => a.status === "online").length
-  const offline = agents.filter((a) => a.status === "offline").length
-  const outdated = agents.filter(isOutdated).length
-
-  function updateAgent(id: string) {
-    setAgents((list) =>
-      list.map((a) => (a.id === id ? { ...a, version: LATEST_AGENT_VERSION } : a)),
-    )
-    toast.success("Agent updated to the latest version")
-  }
-
-  function updateAll() {
-    setAgents((list) => list.map((a) => ({ ...a, version: LATEST_AGENT_VERSION })))
-    toast.success("All agents queued for update")
-  }
-
-  function removeAgent(id: string, hostname: string) {
-    setAgents((list) => list.filter((a) => a.id !== id))
-    setSelected(null)
-    toast.success(`Removed ${hostname}`)
-  }
-
-  function handleSave() {
-    if (!dirty || saving) return
-    const next = draft
-    setSaving(true)
-    setTimeout(() => {
-      setSaved({ ...next })
-      setSaving(false)
-      toast.success("Agent settings saved")
-    }, 500)
-  }
-
-  const filtered = agents.filter((a) => {
-    if (statusFilter !== "all" && a.status !== statusFilter) return false
-    if (osFilter !== "all" && a.os !== osFilter) return false
+  const filtered = devices.filter((d) => {
+    if (statusFilter !== "all" && d.status !== statusFilter) return false
+    if (osFilter !== "all" && d.os !== osFilter) return false
     if (search) {
       const q = search.toLowerCase()
-      if (!`${a.hostname} ${a.user} ${a.email}`.toLowerCase().includes(q))
-        return false
+      if (!`${d.hostname} ${d.userName} ${d.ip}`.toLowerCase().includes(q)) return false
     }
     return true
   })
@@ -164,346 +107,173 @@ export function AgentsManager() {
     <div className="space-y-5 pt-1">
       <PageHeader
         title="Device agents"
-        description="Monitor and manage the WorkPulse agent installed on employee devices."
+        description="Machines running the WorkPulse desktop agent."
         actions={
-          <Button onClick={() => setDownloadOpen(true)}>
-            <Download className="size-4" /> Download agent
+          <Button variant="outline" onClick={reload} disabled={loading}>
+            <RefreshCw className={cn("size-4", loading && "animate-spin")} /> Refresh
           </Button>
         }
       />
 
-      {/* ── Overview ── */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total agents" value={total} icon={MonitorSmartphone} hint="enrolled devices" />
-        <StatCard label="Online now" value={online} icon={Wifi} hint="reporting activity" />
-        <StatCard label="Offline" value={offline} icon={WifiOff} hint="not reporting" />
-        <StatCard label="Need update" value={outdated} icon={AlertTriangle} hint={`latest is v${LATEST_AGENT_VERSION}`} />
-      </div>
-
-      {/* ── Outdated banner ── */}
-      {outdated > 0 && canManage && (
-        <div className="flex flex-col gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-5 py-3 text-sm sm:flex-row sm:items-center">
-          <AlertTriangle className="size-4 shrink-0 text-warning" />
-          <p className="flex-1">
-            <span className="font-medium">{outdated} agent{outdated > 1 ? "s are" : " is"}</span>{" "}
-            running an outdated version. Update to v{LATEST_AGENT_VERSION} for the
-            latest fixes.
-          </p>
-          <Button size="sm" variant="outline" onClick={updateAll}>
-            <RefreshCw className="size-4" /> Update all
-          </Button>
-        </div>
-      )}
-
-      {/* ── Fleet ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Device agents</CardTitle>
-          <CardDescription>
-            Every device with the WorkPulse agent installed.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Toolbar */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by device or user…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <div className="flex gap-3 sm:ml-auto">
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => setStatusFilter(v as string)}
-              >
-                <SelectTrigger size="sm" className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All status</SelectItem>
-                  <SelectItem value="online">Online</SelectItem>
-                  <SelectItem value="idle">Idle</SelectItem>
-                  <SelectItem value="offline">Offline</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={osFilter}
-                onValueChange={(v) => setOsFilter(v as string)}
-              >
-                <SelectTrigger size="sm" className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All systems</SelectItem>
-                  <SelectItem value="Windows">Windows</SelectItem>
-                  <SelectItem value="macOS">macOS</SelectItem>
-                  <SelectItem value="Linux">Linux</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {filtered.length === 0 ? (
-            <EmptyState
-              icon={MonitorSmartphone}
-              title="No agents found"
-              description="Try a different search or filter."
-            />
-          ) : (
-            <div className="overflow-hidden rounded-xl border">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-4">Device</TableHead>
-                    <TableHead className="hidden md:table-cell">System</TableHead>
-                    <TableHead className="hidden sm:table-cell">Version</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="hidden lg:table-cell">Last seen</TableHead>
-                    <TableHead className="w-10 pr-4" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((a) => (
-                    <TableRow
-                      key={a.id}
-                      onClick={() => setSelected(a)}
-                      className="cursor-pointer"
-                    >
-                      <TableCell className="py-3 pl-4">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="size-8">
-                            <AvatarFallback className="text-[10px]">
-                              {initials(a.user)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0">
-                            <p className="font-medium">{a.hostname}</p>
-                            <p className="text-xs text-muted-foreground">{a.user}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden py-3 text-muted-foreground md:table-cell">
-                        {a.os} {a.osVersion}
-                      </TableCell>
-                      <TableCell className="hidden py-3 sm:table-cell">
-                        <span className="inline-flex items-center gap-2 tabular-nums">
-                          v{a.version}
-                          {isOutdated(a) && (
-                            <Badge className="bg-warning/15 font-normal text-warning">
-                              Outdated
-                            </Badge>
-                          )}
-                        </span>
-                      </TableCell>
-                      <TableCell className="py-3">
-                        <StatusIndicator status={a.status} />
-                      </TableCell>
-                      <TableCell className="hidden py-3 text-muted-foreground lg:table-cell">
-                        {a.lastSeen}
-                      </TableCell>
-                      <TableCell className="py-3 pr-4 text-right">
-                        {canManage && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-8"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              }
-                            >
-                              <MoreVertical className="size-4" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <DropdownMenuItem onClick={() => setSelected(a)}>
-                                View details
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => toast.success(`Restart signal sent to ${a.hostname}`)}
-                              >
-                                <Power className="size-4" /> Restart agent
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={!isOutdated(a)}
-                                onClick={() => updateAgent(a.id)}
-                              >
-                                <RefreshCw className="size-4" /> Update now
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onClick={() => removeAgent(a.id, a.hostname)}
-                              >
-                                <Trash2 className="size-4" /> Remove agent
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Agent settings ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Device agent settings</CardTitle>
-          <CardDescription>
-            Fleet-wide behaviour applied to every installed agent.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-0 pb-2">
-          <div className="flex items-center justify-between gap-6 py-4 [&+&]:border-t">
-            <div>
-              <p className="text-sm font-medium">Automatic updates</p>
-              <p className="text-xs text-muted-foreground">
-                Agents update themselves to the latest version automatically.
-              </p>
-            </div>
-            <Switch
-              checked={draft.autoUpdate}
-              disabled={!canManage}
-              onCheckedChange={(v) => setDraft((d) => ({ ...d, autoUpdate: v }))}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-6 py-4 [&+&]:border-t">
-            <div>
-              <p className="text-sm font-medium">Update channel</p>
-              <p className="text-xs text-muted-foreground">
-                Choose between stable releases or early-access builds.
-              </p>
-            </div>
-            <Select
-              value={draft.updateChannel}
-              onValueChange={(v) =>
-                setDraft((d) => ({ ...d, updateChannel: v as string }))
-              }
-              disabled={!canManage}
-            >
-              <SelectTrigger size="sm" className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {UPDATE_CHANNEL_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center justify-between gap-6 py-4 [&+&]:border-t">
-            <div>
-              <p className="text-sm font-medium">Offline alert threshold</p>
-              <p className="text-xs text-muted-foreground">
-                Flag an agent as offline after it stops reporting for this long.
-              </p>
-            </div>
-            <NumberStepper
-              value={draft.offlineAlertMins}
-              min={5}
-              max={240}
-              step={5}
-              suffix="min"
-              disabled={!canManage}
-              onChange={(v) => setDraft((d) => ({ ...d, offlineAlertMins: v }))}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-6 py-4 [&+&]:border-t">
-            <div>
-              <p className="text-sm font-medium">Upload screenshots</p>
-              <p className="text-xs text-muted-foreground">
-                Allow agents to capture and upload periodic screenshots.
-              </p>
-            </div>
-            <Switch
-              checked={draft.screenshotUpload}
-              disabled={!canManage}
-              onCheckedChange={(v) =>
-                setDraft((d) => ({ ...d, screenshotUpload: v }))
-              }
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {canManage && (
-        <SettingsSaveBar
-          dirty={dirty}
-          saving={saving}
-          onSave={handleSave}
-          onReset={() => setDraft({ ...saved })}
+      {error ? (
+        <EmptyState
+          icon={MonitorSmartphone}
+          title="Couldn't load device agents"
+          description={error}
+          action={
+            <Button variant="outline" onClick={reload}>
+              <RefreshCw className="size-4" /> Retry
+            </Button>
+          }
         />
-      )}
-
-      {/* ── Download dialog ── */}
-      <Dialog open={downloadOpen} onOpenChange={setDownloadOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Download the WorkPulse agent</DialogTitle>
-            <DialogDescription>
-              Version {LATEST_AGENT_VERSION} · install on an employee device, then
-              enroll it with the organization token below.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              {AGENT_PLATFORMS.map((p) => (
-                <button
-                  key={p.os}
-                  onClick={() => toast.success(`Downloading ${p.file}`)}
-                  className="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-muted"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
-                    <MonitorSmartphone className="size-4.5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{p.os}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {p.label} · {p.size}
-                    </p>
-                  </div>
-                  <Download className="size-4 text-muted-foreground" />
-                </button>
-              ))}
-            </div>
-
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">
-                Organization enrollment token
-              </p>
-              <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
-                <code className="min-w-0 flex-1 truncate font-mono text-xs">
-                  {AGENT_ENROLLMENT_TOKEN}
-                </code>
-                <button
-                  onClick={() => {
-                    navigator.clipboard?.writeText(AGENT_ENROLLMENT_TOKEN)
-                    toast.success("Token copied")
-                  }}
-                  className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                  aria-label="Copy token"
-                >
-                  <Copy className="size-3.5" />
-                </button>
-              </div>
-            </div>
+      ) : loading ? (
+        <Loader label="Loading device agents…" />
+      ) : (
+        <>
+          {/* ── Overview ── */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatCard label="Total devices" value={total} icon={MonitorSmartphone} hint="reporting to this org" />
+            <StatCard label="Online now" value={online} icon={Wifi} hint="heard from in the last 10 min" />
+            <StatCard label="Offline" value={offline} icon={WifiOff} hint="no recent heartbeat" />
           </div>
-        </DialogContent>
-      </Dialog>
+
+          {/* ── Fleet ── */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Devices</CardTitle>
+              <CardDescription>
+                Every device that has checked in at least once. Status is derived from the last
+                heartbeat, so it updates on refresh.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {total > 0 && (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="relative w-full sm:max-w-xs">
+                    <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by device, user, or IP…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                  <div className="flex gap-3 sm:ml-auto">
+                    <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as string)}>
+                      <SelectTrigger size="sm" className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All status</SelectItem>
+                        <SelectItem value="online">Online</SelectItem>
+                        <SelectItem value="idle">Idle</SelectItem>
+                        <SelectItem value="offline">Offline</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {osOptions.length > 1 && (
+                      <Select value={osFilter} onValueChange={(v) => setOsFilter(v as string)}>
+                        <SelectTrigger size="sm" className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All systems</SelectItem>
+                          {osOptions.map((os) => (
+                            <SelectItem key={os} value={os}>
+                              {os}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {total === 0 ? (
+                <EmptyState
+                  icon={MonitorSmartphone}
+                  title="No devices are reporting yet"
+                  description="A device appears here after the WorkPulse desktop agent is installed, signed in, and sends its first heartbeat."
+                />
+              ) : filtered.length === 0 ? (
+                <EmptyState
+                  icon={MonitorSmartphone}
+                  title="No devices found"
+                  description="Try a different search or filter."
+                />
+              ) : (
+                <div className="overflow-hidden rounded-xl border">
+                  <table className="w-full caption-bottom text-sm">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="pl-4">Device</TableHead>
+                        <TableHead className="hidden md:table-cell">System</TableHead>
+                        <TableHead className="hidden sm:table-cell">Version</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="hidden lg:table-cell">Last seen</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filtered.map((d) => (
+                        <TableRow key={d.id} onClick={() => setSelected(d)} className="cursor-pointer">
+                          <TableCell className="py-3 pl-4">
+                            <div className="flex items-center gap-3">
+                              <Avatar className="size-8">
+                                <AvatarFallback className="text-[10px]">
+                                  {initials(d.userName)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <p className="font-medium">{d.hostname}</p>
+                                <p className="text-xs text-muted-foreground">{d.userName}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden py-3 text-muted-foreground md:table-cell">
+                            {[d.os, d.osVersion].filter(Boolean).join(" ") || "—"}
+                          </TableCell>
+                          <TableCell className="hidden py-3 sm:table-cell tabular-nums">
+                            {d.version ? `v${d.version}` : "—"}
+                          </TableCell>
+                          <TableCell className="py-3">
+                            <span className="inline-flex items-center gap-2">
+                              <StatusIndicator status={d.status} />
+                              {d.deactivated && (
+                                <Badge className="bg-muted font-normal text-muted-foreground">
+                                  Deactivated
+                                </Badge>
+                              )}
+                            </span>
+                          </TableCell>
+                          <TableCell className="hidden py-3 text-muted-foreground lg:table-cell">
+                            {d.lastSeen}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Capture policy lives with the tracking rules, which are real and writable. */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Capture policy</CardTitle>
+              <CardDescription>
+                What agents record — screenshot cadence, blur, and app/URL rules — is configured once
+                for the organization and pulled by every agent on its next cycle.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" render={<Link href="/settings/tracking-rules" />} nativeButton={false}>
+                Open tracking rules
+              </Button>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* ── Detail sheet ── */}
       <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
@@ -511,77 +281,40 @@ export function AgentsManager() {
           {selected && (
             <>
               <SheetHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <StatusIndicator status={selected.status} />
-                  {isOutdated(selected) && (
-                    <Badge className="bg-warning/15 font-normal text-warning">
-                      Outdated
-                    </Badge>
-                  )}
-                </div>
-                <SheetTitle className="text-left text-lg">
-                  {selected.hostname}
-                </SheetTitle>
-                <SheetDescription className="text-left">
-                  {selected.user} · {selected.email}
-                </SheetDescription>
+                <StatusIndicator status={selected.status} />
+                <SheetTitle className="text-left text-lg">{selected.hostname}</SheetTitle>
+                <SheetDescription className="text-left">{selected.userName}</SheetDescription>
               </SheetHeader>
 
               <div className="space-y-5 px-4 pb-8">
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Info label="Operating system" value={`${selected.os} ${selected.osVersion}`} />
-                  <Info label="Agent version" value={`v${selected.version}`} />
-                  <Info label="IP address" value={selected.ip} mono />
+                  <Info
+                    label="Operating system"
+                    value={[selected.os, selected.osVersion].filter(Boolean).join(" ") || "—"}
+                  />
+                  <Info label="Agent version" value={selected.version ? `v${selected.version}` : "—"} />
+                  <Info label="IP address" value={selected.ip || "—"} mono />
                   <Info label="Last seen" value={selected.lastSeen} />
                 </div>
 
-                {/* Live resource usage */}
                 <div className="space-y-3 rounded-xl border p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Resource usage
+                  <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    Last reported telemetry
                   </p>
-                  <Meter label="CPU" value={selected.status === "offline" ? 0 : selected.cpu} />
-                  <Meter label="Memory" value={selected.status === "offline" ? 0 : selected.memory} />
+                  <Meter label="CPU" value={selected.cpu} />
+                  <Meter label="Memory" value={selected.memory} />
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                      <HardDrive className="size-3.5" /> Pending upload
+                    </span>
+                    <span className="tabular-nums">{selected.outboxMb.toFixed(1)} MB</span>
+                  </div>
                   {selected.status === "offline" && (
                     <p className="text-xs text-muted-foreground">
-                      Agent is offline — last reported {selected.lastSeen.toLowerCase()}.
+                      Agent is offline — these are the values from its last heartbeat.
                     </p>
                   )}
                 </div>
-
-                {canManage && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => toast.success(`Restart signal sent to ${selected.hostname}`)}
-                    >
-                      <Power className="size-4" /> Restart
-                    </Button>
-                    {isOutdated(selected) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          updateAgent(selected.id)
-                          setSelected((s) =>
-                            s ? { ...s, version: LATEST_AGENT_VERSION } : s,
-                          )
-                        }}
-                      >
-                        <RefreshCw className="size-4" /> Update
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => removeAgent(selected.id, selected.hostname)}
-                    >
-                      <Trash2 className="size-4" /> Remove
-                    </Button>
-                  </div>
-                )}
               </div>
             </>
           )}
@@ -591,15 +324,7 @@ export function AgentsManager() {
   )
 }
 
-function Info({
-  label,
-  value,
-  mono,
-}: {
-  label: string
-  value: string
-  mono?: boolean
-}) {
+function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="space-y-0.5">
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -618,7 +343,7 @@ function Meter({ label, value }: { label: string; value: number }) {
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div
           className={cn("h-full rounded-full", value > 80 ? "bg-warning" : "bg-primary")}
-          style={{ width: `${value}%` }}
+          style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
         />
       </div>
     </div>

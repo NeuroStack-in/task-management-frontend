@@ -12,16 +12,22 @@
  */
 import { apiFetch } from "@/lib/api";
 
-/** One org-configured leave type (`leave_types::dto::LeaveType`). */
+/**
+ * One org-configured leave type. Mirrors `leave_approvals::shared::leave::LeaveType` exactly —
+ * the field is `annual_allowance` (whole days per year, up-front grant, no carry-over), not
+ * `allowance`; that only appears on a *balance*.
+ */
 export interface ApiLeaveType {
   type_id: string;
   name: string;
-  /** Days per year; `null`/absent = no fixed allowance (e.g. unpaid). */
-  allowance?: number | null;
-  paid?: boolean;
+  paid: boolean;
+  annual_allowance: number;
+  /** Inactive types stay in the catalog but can't be requested against or seeded. */
+  active: boolean;
 }
 
-interface TypesResponse {
+/** `leave_types::dto::TypesResponse`. `version` is the optimistic lock for `PUT /v1/leave/types`. */
+export interface ApiLeaveTypesConfig {
   types: ApiLeaveType[];
   version: number;
 }
@@ -56,8 +62,13 @@ export interface ApiLeaveRequest {
   created_at?: number;
 }
 
+/** `GET /v1/leave/types` — readable by any member (no permission gate on the list handler). */
+export function getTypesConfig(): Promise<ApiLeaveTypesConfig> {
+  return apiFetch<ApiLeaveTypesConfig>("/v1/leave/types");
+}
+
 export function getTypes(): Promise<ApiLeaveType[]> {
-  return apiFetch<TypesResponse>("/v1/leave/types").then((r) => r.types);
+  return getTypesConfig().then((r) => r.types);
 }
 
 export function getBalances(): Promise<BalancesResponse> {
@@ -94,5 +105,65 @@ export function createRequest(req: NewLeaveRequest): Promise<ApiLeaveRequest> {
 export function cancelRequest(id: string): Promise<unknown> {
   return apiFetch(`/v1/me/leave/requests/${encodeURIComponent(id)}/cancel`, {
     method: "POST",
+  });
+}
+
+// ── Leave administration (LLD §8) ─────────────────────────────────────────────────────────────
+//
+// Reading the catalog is open to any member; every write below requires the backend's `leave:manage`
+// bit. The frontend permission catalog has no `leave:manage` id, so callers gate on
+// `settings:manage` — the org-configuration bit, which is what this is. The server is the real gate.
+
+/**
+ * `PUT /v1/leave/types` — replace the **whole** catalog. This is not a patch: whatever is sent
+ * becomes the catalog, so callers must send every type they want to keep.
+ *
+ * `version` is an optimistic lock. Send the `version` from the read that populated the editor; if
+ * the stored config moved on in the meantime the server answers **409 `version_conflict`** and
+ * writes nothing. Server-side validation: at least one type, non-empty unique `type_id`s, non-empty
+ * names, and `annual_allowance <= 366` (all 400).
+ *
+ * Deleting a type is expressed by omitting it (or clearing `active`); the server keeps no tombstone
+ * and does **not** reconcile already-materialized balances for a removed type.
+ */
+export function setTypes(
+  types: ApiLeaveType[],
+  version: number,
+): Promise<ApiLeaveTypesConfig> {
+  return apiFetch<ApiLeaveTypesConfig>("/v1/leave/types", {
+    method: "PUT",
+    body: JSON.stringify({ types, version }),
+  });
+}
+
+/**
+ * `POST /v1/leave/types/restore` — reset the catalog to the platform defaults (annual/sick/casual/
+ * unpaid). The server reads the current version itself, so this can't 409 on a stale editor.
+ */
+export function restoreTypes(): Promise<ApiLeaveTypesConfig> {
+  return apiFetch<ApiLeaveTypesConfig>("/v1/leave/types/restore", {
+    method: "POST",
+  });
+}
+
+/** `seed_balances::SeedResult`. */
+export interface ApiSeedResult {
+  year: string;
+  seeded_users: number;
+}
+
+/**
+ * `POST /v1/leave/seed-balances` — materialize every active employee's balances for a year.
+ *
+ * An **admin/maintenance** action, not a normal user path. In the LLD this is meant to run from
+ * EventBridge (on employee-joined, and a Jan-1 rollover cron); that trigger infra isn't built, so
+ * the logic is exposed over HTTP. It is **idempotent** — an existing balance keeps its `used` — and
+ * `my_balances`/`request_leave` also lazy-seed on first use, so this is a backfill, not a
+ * prerequisite. A `year` other than `YYYY` is silently ignored and the current year used instead.
+ */
+export function seedBalances(year?: string): Promise<ApiSeedResult> {
+  return apiFetch<ApiSeedResult>("/v1/leave/seed-balances", {
+    method: "POST",
+    body: JSON.stringify(year ? { year } : {}),
   });
 }

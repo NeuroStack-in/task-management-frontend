@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ApiError } from "@/lib/api";
+import { createOrg, slugify } from "@/modules/auth/services/signup.service";
 import { cn } from "@/lib/utils";
 import { SsoButtons } from "./sso-buttons";
 
@@ -71,14 +73,46 @@ export function RegisterForm() {
 
   const password = watch("password") ?? "";
   const score = scorePassword(password);
+  const companySlug = slugify(watch("company") ?? "");
 
-  const onSubmit = async () => {
+  // `POST /v1/org/create` — one public call that creates the tenant, the Cognito owner, the seeded
+  // system roles and the plan entitlements. There is no separate "create account" step: the owner
+  // *is* the org. On success we send them to sign in, because the call issues no session.
+  const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 700));
-    toast.success("Account created", {
-      description: "Next, set up your organization.",
-    });
-    router.push("/onboarding");
+    try {
+      await createOrg({
+        org: {
+          name: values.company.trim(),
+          slug: slugify(values.company),
+          // The browser's own zone — the org's default until an admin changes it in settings.
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
+        },
+        owner: {
+          email: values.email.trim().toLowerCase(),
+          password: values.password,
+          full_name: values.name.trim(),
+        },
+        // Every org starts free; upgrading is a billing action, not a signup choice.
+        plan: "free",
+      });
+      toast.success("Workspace created", {
+        description: "Sign in with the email and password you just chose.",
+      });
+      router.push(`/login?email=${encodeURIComponent(values.email.trim().toLowerCase())}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error("That workspace name is taken", {
+          description: "Try a different organization name.",
+        });
+      } else {
+        toast.error(
+          e instanceof ApiError ? e.message : "Couldn't create your workspace. Try again.",
+        );
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -109,6 +143,10 @@ export function RegisterForm() {
               {errors.company ? (
                 <p className="text-xs text-destructive">
                   {errors.company.message}
+                </p>
+              ) : companySlug ? (
+                <p className="text-xs text-muted-foreground">
+                  Workspace: <span className="font-mono">{companySlug}</span>
                 </p>
               ) : null}
             </div>

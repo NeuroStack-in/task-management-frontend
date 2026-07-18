@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useUiStore } from "@/stores/ui.store";
+import { useAppearanceSync } from "@/modules/settings/use-appearance";
+import { useServerRolesSync } from "@/modules/roles/use-server-roles";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
 import { ChatBot } from "./chat-bot";
@@ -18,6 +20,14 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const pathname = usePathname();
+
+  // Pull the account's stored theme/palette once per session. Mounted here rather than on the
+  // appearance page so a pref saved on another device applies everywhere, not just in settings.
+  useAppearanceSync();
+
+  // Pull the org's real roles once per session so the UI gate reflects what the server enforces,
+  // rather than a localStorage copy that never sees server-side role edits.
+  useServerRolesSync();
 
   // Settings has its own section rail, so collapse the main sidebar there to
   // free up width — and expand it again on every other route.

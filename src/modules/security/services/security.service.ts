@@ -31,3 +31,24 @@ export async function resetMfaDevice(userId: string): Promise<void> {
     method: "POST",
   });
 }
+
+/**
+ * `GET /v1/security-events` — the audit trail filtered to the `security` category (LLD §15), gated
+ * on `security:manage`.
+ *
+ * Same lean row as the audit log: `{ts, actor, category, action, target?}`. There is **no** IP,
+ * device, location, or severity on the server — the mock invented all four. A "flagged"/"critical"
+ * classification does not exist either, so the view cannot rank these by risk.
+ */
+export interface ApiSecurityEvent {
+  /** Epoch **seconds**. */
+  ts: number;
+  actor: string;
+  category: string;
+  action: string;
+  target?: string;
+}
+
+export function listSecurityEvents(limit = 100): Promise<ApiSecurityEvent[]> {
+  return apiFetch<ApiSecurityEvent[]>(`/v1/security-events?limit=${limit}`);
+}

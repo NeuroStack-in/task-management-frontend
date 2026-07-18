@@ -5,7 +5,6 @@ import type { CSSProperties, ReactNode } from "react";
 import {
   Camera,
   Mail,
-  Building,
   Building2,
   Users as UsersIcon,
   Clock,
@@ -17,7 +16,6 @@ import {
   Briefcase,
   MapPin,
   Phone,
-  Cake,
   Pencil,
   TrendingUp,
   type LucideIcon,
@@ -25,8 +23,10 @@ import {
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
+import { ApiError } from "@/lib/api";
 import { initials } from "@/lib/format";
-import { isEmail, isWithinSize, MB } from "@/lib/validation";
+import { isWithinSize, MB } from "@/lib/validation";
+import { useMyProfile } from "@/modules/profile/use-my-profile";
 import { PageHeader } from "@/components/shared/page-header";
 import { Sparkline } from "@/components/shared/sparkline";
 import {
@@ -50,13 +50,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -65,15 +58,6 @@ import {
 import { PhotoEditor } from "@/modules/profile/components/photo-editor";
 import type { User } from "@/types/user";
 import { cn } from "@/lib/utils";
-
-const LOCATIONS = [
-  "San Francisco, CA",
-  "New York, NY",
-  "Austin, TX",
-  "Seattle, WA",
-  "Remote",
-];
-const WORK_MODES = ["On-site", "Hybrid", "Remote"];
 
 interface DetailRow {
   icon: LucideIcon;
@@ -86,27 +70,27 @@ const MONTHS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/** "1994-03-14" → "Mar 14, 1994" (no Date, so no timezone drift). */
-function formatDob(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return `${MONTHS[m - 1]} ${d}, ${y}`;
+/** Epoch ms → "Jan 2024". */
+function formatJoined(epochMs: number | null): string {
+  if (!epochMs) return "—";
+  const d = new Date(epochMs);
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-/** Deterministic personal facts seeded from the user id (no randomness). */
+/**
+ * Deterministic activity figures seeded from the user id.
+ *
+ * ⚠️ STILL MOCK. These drive the attendance gauge and the productivity trend, and there is no
+ * backend for them: per-person activity/productivity needs the `insights` context (1 of 8 slices
+ * built) fed by the desktop agent. The identity fields around them are real — these are not.
+ */
 function personalFacts(user: User) {
   const seed = [...user.id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
-  const pad = (n: number) => String(n).padStart(2, "0");
   return {
     seed,
     avgHours: (7 + (seed % 20) / 10).toFixed(1),
     tasksDone: 40 + (seed % 60),
     attendance: 88 + (seed % 12),
-    location: LOCATIONS[seed % LOCATIONS.length],
-    workMode: WORK_MODES[seed % WORK_MODES.length],
-    employeeId: `EMP-${String(1000 + (seed % 9000))}`,
-    phone: `+1 (${200 + (seed % 700)}) 555-${String(1000 + (seed % 9000))}`,
-    dobISO: `${1985 + (seed % 15)}-${pad((seed % 12) + 1)}-${pad((seed % 27) + 1)}`,
   };
 }
 
@@ -142,7 +126,7 @@ function RichProfile({
   roleName: string;
   showAttendance: boolean;
 }) {
-  const updateUser = useAuthStore((s) => s.updateUser);
+  const profile = useMyProfile();
   const [uploadOpen, setUploadOpen] = useState(false);
   // Temporary control to preview the banner patterns.
   const [pattern, setPattern] = useState<BannerPattern>("grid");
@@ -151,35 +135,15 @@ function RichProfile({
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [editOpen, setEditOpen] = useState(false);
-  // Fields with no backing user record yet live here (self-edited, in-session).
-  const [local, setLocal] = useState({
-    phone: facts.phone,
-    dob: facts.dobISO,
-    location: facts.location,
-    workMode: facts.workMode,
-  });
-  const [form, setForm] = useState({
-    name: user.name,
-    email: user.email,
-    phone: facts.phone,
-    dob: facts.dobISO,
-    location: facts.location,
-    workMode: facts.workMode,
-  });
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: user.name, phone: "", location: "" });
   // Pending photo: undefined = unchanged, string = new data URL, null = removed.
   const [photo, setPhoto] = useState<string | null | undefined>(undefined);
   const set = (k: keyof typeof form) => (v: string) =>
     setForm((s) => ({ ...s, [k]: v }));
 
   const openEdit = () => {
-    setForm({
-      name: user.name,
-      email: user.email,
-      phone: local.phone,
-      dob: local.dob,
-      location: local.location,
-      workMode: local.workMode,
-    });
+    setForm({ name: user.name, phone: profile.phone, location: profile.location });
     setPhoto(undefined);
     setEditOpen(true);
   };
@@ -195,27 +159,29 @@ function RichProfile({
     reader.onload = () => setPhoto(reader.result as string);
     reader.readAsDataURL(file);
   };
-  const save = () => {
+  const save = async () => {
     const name = form.name.trim();
-    const email = form.email.trim();
     if (!name) {
       toast.error("Name can't be empty.");
       return;
     }
-    if (!isEmail(email)) {
-      toast.error("Enter a valid email address.");
-      return;
+    setSaving(true);
+    try {
+      // Send all three every time: "" clears a field server-side, which is what an emptied input
+      // means here. The photo is not sent — avatar upload needs a presigned-PUT route that doesn't
+      // exist yet, so it stays a local preview rather than pretending to persist.
+      await profile.save({
+        name,
+        phone: form.phone.trim(),
+        location: form.location.trim(),
+      });
+      setEditOpen(false);
+      toast.success("Profile updated");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Couldn't save your profile.");
+    } finally {
+      setSaving(false);
     }
-    const patch: Partial<User> = { name, email };
-    if (photo !== undefined) patch.avatarUrl = photo ?? undefined;
-    updateUser(patch);
-    setLocal({
-      phone: form.phone,
-      dob: form.dob,
-      location: form.location,
-      workMode: form.workMode,
-    });
-    setEditOpen(false);
   };
 
   // Avatar shown inside the dialog reflects the pending choice.
@@ -226,20 +192,22 @@ function RichProfile({
   const absentDays = Math.max(0, 30 - presentDays - lateDays);
   const prodTrend = [62, 65, 63, 70, 72, 69, productivity];
 
+  // "—" for a field the server returned empty; "Not shared" when we weren't allowed to read it at
+  // all (the Employee role has no `employees:read`), so a blank never reads as a known-empty value.
+  const orUnknown = (v: string) => v || (profile.known ? "—" : "Not shared");
+
   const contact: DetailRow[] = [
     { icon: Mail, label: "Email", value: user.email },
-    { icon: Phone, label: "Contact number", value: local.phone },
-    { icon: Cake, label: "Date of birth", value: formatDob(local.dob) },
-    { icon: MapPin, label: "Location", value: local.location },
-    { icon: Building, label: "Work mode", value: local.workMode },
+    { icon: Phone, label: "Contact number", value: orUnknown(profile.phone) },
+    { icon: MapPin, label: "Location", value: orUnknown(profile.location) },
   ];
   const employment: DetailRow[] = [
-    { icon: Hash, label: "Employee ID", value: facts.employeeId },
-    { icon: Briefcase, label: "Job title", value: user.jobTitle },
-    { icon: Building2, label: "Department", value: user.department },
-    { icon: UsersIcon, label: "Team", value: user.team },
+    { icon: Hash, label: "Employee ID", value: orUnknown(profile.empId) },
+    { icon: Briefcase, label: "Job title", value: user.jobTitle || orUnknown(profile.title) },
+    { icon: Building2, label: "Department", value: user.department || "—" },
+    { icon: UsersIcon, label: "Team", value: user.team || "—" },
     { icon: ShieldCheck, label: "Role", value: roleName },
-    { icon: CalendarCheck, label: "Member since", value: "Jan 2024" },
+    { icon: CalendarCheck, label: "Member since", value: formatJoined(profile.joinedAt) },
   ];
   const onTime =
     presentDays + lateDays > 0
@@ -344,7 +312,9 @@ function RichProfile({
           <div className="mb-5 flex items-center justify-between gap-3">
             <h3 className="font-heading text-base font-medium">Account details</h3>
             <div className="flex items-center gap-3">
-              <span className="font-mono text-xs text-muted-foreground">{facts.employeeId}</span>
+              {profile.empId && (
+                <span className="font-mono text-xs text-muted-foreground">{profile.empId}</span>
+              )}
               <Button variant="outline" size="sm" onClick={openEdit}>
                 <Pencil className="size-4" /> Edit profile
               </Button>
@@ -445,16 +415,11 @@ function RichProfile({
           <div className="h-px bg-border" />
 
           {/* Fields */}
+          {/* Only the three fields `PATCH /v1/me/profile` accepts. Email is the Cognito login and
+              isn't self-editable; job title, department and team are admin-owned (§17). */}
           <div className="grid gap-4 sm:grid-cols-2">
             <DialogField label="Full name">
               <Input value={form.name} onChange={(e) => set("name")(e.target.value)} />
-            </DialogField>
-            <DialogField label="Email">
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => set("email")(e.target.value)}
-              />
             </DialogField>
             <DialogField label="Contact number">
               <Input
@@ -463,37 +428,22 @@ function RichProfile({
                 onChange={(e) => set("phone")(e.target.value)}
               />
             </DialogField>
-            <DialogField label="Date of birth">
+            <DialogField label="Location" className="sm:col-span-2">
               <Input
-                type="date"
-                value={form.dob}
-                onChange={(e) => set("dob")(e.target.value)}
+                value={form.location}
+                placeholder="City, country"
+                onChange={(e) => set("location")(e.target.value)}
               />
-            </DialogField>
-            <DialogField label="Location">
-              <Input value={form.location} onChange={(e) => set("location")(e.target.value)} />
-            </DialogField>
-            <DialogField label="Work mode">
-              <Select value={form.workMode} onValueChange={(v) => set("workMode")(v as string)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {WORK_MODES.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </DialogField>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={save}>Save changes</Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

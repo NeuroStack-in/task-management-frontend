@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Wallet, Banknote, Receipt, Plus, CheckCircle2, MonitorSmartphone } from "lucide-react";
+import {
+  Wallet,
+  Banknote,
+  Receipt,
+  Plus,
+  CheckCircle2,
+  MonitorSmartphone,
+  UserCog,
+} from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
@@ -22,6 +30,8 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { formatCurrency } from "@/lib/mock-billing";
 import { cn } from "@/lib/utils";
 import { usePayroll } from "../use-payroll";
+import { useEmployeeComp } from "../use-employee-comp";
+import { EmployeeCompDialog } from "./employee-comp-dialog";
 import type { ApiPayrollRun } from "../services/payroll.service";
 
 const STATUS_META: Record<string, string> = {
@@ -49,6 +59,10 @@ export function PayrollView() {
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
   const [newPeriod, setNewPeriod] = useState("");
   const [busy, setBusy] = useState(false);
+  const [compOpen, setCompOpen] = useState(false);
+  // The roster for the comp editor. Only fetched for `payroll:manage` holders — the dialog is the
+  // only consumer, and it's the only thing that can write comp.
+  const comp = useEmployeeComp(canManage);
 
   const selected: ApiPayrollRun | null = useMemo(() => {
     if (!runs.length) return null;
@@ -151,6 +165,28 @@ export function PayrollView() {
               <Plus className="size-4" /> Draft run
             </Button>
           </div>
+        </div>
+      ) : null}
+
+      {/* Employee compensation — the input side of those totals. Write-only server-side, so this is
+          an action, not a table of current rates. */}
+      {canManage ? (
+        <div className="flex flex-col gap-2 rounded-lg border bg-card p-4 sm:flex-row sm:items-center">
+          <div className="flex-1">
+            <p className="text-sm font-medium">Employee compensation</p>
+            <p className="text-xs text-muted-foreground">
+              Set an employee&apos;s pay type and rate. Runs drafted afterwards pick up the new
+              figure — already-drafted runs don&apos;t change.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => setCompOpen(true)}
+            disabled={comp.loading || comp.employees.length === 0}
+          >
+            <UserCog className="size-4" />{" "}
+            {comp.loading ? "Loading employees…" : "Set compensation"}
+          </Button>
         </div>
       ) : null}
 
@@ -258,6 +294,17 @@ export function PayrollView() {
         Totals are comp-based. Per-employee payslips and hours-based pay need tracked-hours data from
         the desktop agent, which isn&apos;t flowing yet — so they aren&apos;t shown.
       </div>
+
+      {canManage ? (
+        <EmployeeCompDialog
+          open={compOpen}
+          onOpenChange={setCompOpen}
+          employees={comp.employees}
+          employeesLoading={comp.loading}
+          employeesError={comp.error}
+          onSave={comp.setComp}
+        />
+      ) : null}
     </div>
   );
 }

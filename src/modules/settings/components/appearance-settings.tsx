@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { FONTS, applyFont, currentFont } from "@/lib/fonts";
+import { useSaveAppearance } from "@/modules/settings/use-appearance";
 import { cn } from "@/lib/utils";
 
 interface ThemeOption {
@@ -73,7 +74,8 @@ function ThemePreview({ swatch }: { swatch: ThemeOption["swatch"] }) {
 }
 
 export function AppearanceSettings() {
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
+  const { saveTheme } = useSaveAppearance();
   const [mounted, setMounted] = useState(false);
   const [font, setFont] = useState("ibmplex");
 
@@ -101,8 +103,8 @@ export function AppearanceSettings() {
         <CardHeader>
           <CardTitle>Theme</CardTitle>
           <CardDescription>
-            Applies to your account on this browser. It does not change the theme
-            for other members.
+            Saved to your account, so it follows you to any browser you sign in
+            on. It does not change the theme for other members.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -119,7 +121,7 @@ export function AppearanceSettings() {
                   key={option.value}
                   role="radio"
                   aria-checked={selected}
-                  onClick={() => setTheme(option.value)}
+                  onClick={() => void saveTheme(option.value)}
                   className={cn(
                     "group relative flex flex-col gap-3 rounded-2xl border p-3 text-left transition-colors",
                     selected
@@ -160,7 +162,8 @@ export function AppearanceSettings() {
         <CardHeader>
           <CardTitle>Font</CardTitle>
           <CardDescription>
-            Choose the type pairing used across WorkPulse. Saved on this browser.
+            Choose the type pairing used across WorkPulse. Unlike theme and
+            palette, this one is saved on this browser only.
           </CardDescription>
         </CardHeader>
         <CardContent>

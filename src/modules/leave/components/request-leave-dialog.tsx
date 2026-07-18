@@ -138,11 +138,15 @@ export function RequestLeaveDialog({
                     <SelectValue placeholder="Select a leave type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {types.map((t) => (
-                      <SelectItem key={t.type_id} value={t.type_id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
+                    {/* Only active types are requestable — the server's `active_type` lookup
+                        rejects an inactive one, so offering it would be a guaranteed 400. */}
+                    {types
+                      .filter((t) => t.active)
+                      .map((t) => (
+                        <SelectItem key={t.type_id} value={t.type_id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               )}

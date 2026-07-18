@@ -1,7 +1,7 @@
 "use client";
 
+import { useState } from "react";
 import { Check, CreditCard, FileText } from "lucide-react";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,12 +10,16 @@ import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
 import { PLAN_TIERS, formatCurrency } from "@/lib/mock-billing";
 import { useBilling } from "../use-billing";
+import { isServerPlan, type ServerPlan } from "../services/billing.service";
+import { ChangePlanDialog } from "./change-plan-dialog";
 import { cn } from "@/lib/utils";
 
 export function BillingView() {
   const { can } = usePermissions();
   const canManage = can("billing:manage");
-  const { overview, loading, error, reload } = useBilling();
+  const { overview, loading, error, reload, changePlan } = useBilling();
+  // The plan the user is about to switch to; opens the confirmation.
+  const [pendingPlan, setPendingPlan] = useState<ServerPlan | null>(null);
 
   if (loading && !overview) {
     return (
@@ -100,14 +104,13 @@ export function BillingView() {
               {overview.cadence} · status: {overview.status}
             </p>
 
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!canManage}
-              onClick={() => toast.info("Self-serve plan changes aren't enabled yet.")}
-            >
-              Manage subscription
-            </Button>
+            {/* Downgrading is expressed as switching to `free` — the backend has no cancellation
+                concept, only the plan set free|starter|enterprise. */}
+            {canManage && overview.plan !== "free" ? (
+              <Button variant="outline" size="sm" onClick={() => setPendingPlan("free")}>
+                Downgrade to Free
+              </Button>
+            ) : null}
           </div>
 
           {/* Payment — no endpoint yet (payments are unbuilt). Honest, not a fake card. */}
@@ -157,6 +160,9 @@ export function BillingView() {
         <div className="grid gap-3 sm:grid-cols-3">
           {PLAN_TIERS.map((t) => {
             const current = t.id === overview.plan;
+            // Only plans the server accepts are switchable — the catalog's `business` tier has no
+            // backend counterpart (`parse_plan` would 400), so it offers no action.
+            const target: ServerPlan | null = isServerPlan(t.id) ? t.id : null;
             return (
               <div
                 key={t.id}
@@ -185,13 +191,13 @@ export function BillingView() {
                     </li>
                   ))}
                 </ul>
-                {!current ? (
+                {!current && target ? (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="mt-3 -ml-2"
                     disabled={!canManage}
-                    onClick={() => toast.info("Self-serve plan changes aren't enabled yet.")}
+                    onClick={() => setPendingPlan(target)}
                   >
                     Switch
                   </Button>
@@ -213,6 +219,16 @@ export function BillingView() {
           </p>
         </div>
       </section>
+
+      <ChangePlanDialog
+        open={pendingPlan !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingPlan(null);
+        }}
+        overview={overview}
+        targetPlan={pendingPlan}
+        onConfirm={changePlan}
+      />
     </div>
   );
 }

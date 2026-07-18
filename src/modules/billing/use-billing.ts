@@ -9,13 +9,24 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { getBillingOverview, type BillingOverview } from "./services/billing.service";
+import {
+  changePlan as changePlanRequest,
+  getBillingOverview,
+  type BillingOverview,
+  type ChangePlanRequest,
+} from "./services/billing.service";
 
 export interface BillingState {
   overview: BillingOverview | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
+  /**
+   * Switch the org's plan (`POST /v1/billing/change-plan`). Resolves with the server's new
+   * overview, which is adopted directly — the handler returns the authoritative post-change state
+   * (including the derived `seat_cap`), so there is nothing to re-read or guess.
+   */
+  changePlan: (req: ChangePlanRequest) => Promise<BillingOverview>;
 }
 
 export function useBilling(): BillingState {
@@ -44,7 +55,14 @@ export function useBilling(): BillingState {
   }, [nonce]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
-  return { overview, loading, error, reload };
+
+  const changePlan = useCallback(async (req: ChangePlanRequest) => {
+    const next = await changePlanRequest(req);
+    setOverview(next);
+    return next;
+  }, []);
+
+  return { overview, loading, error, reload, changePlan };
 }
 
 function messageOf(e: unknown): string {

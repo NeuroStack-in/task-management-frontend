@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { Check, ImagePlus, Lock, Pencil, Plus, Trash2, X } from "lucide-react"
+import { Check, ImagePlus, Info, Lock, Pencil, Plus, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
@@ -40,7 +40,8 @@ import {
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
-import { organization } from "@/lib/data"
+import { useOrg } from "@/modules/settings/use-org"
+import type { ApiUpdateOrgRequest } from "@/modules/settings/services/org.service"
 import {
   ALL_WORK_DAYS,
   COMMON_TIMEZONES,
@@ -61,14 +62,32 @@ import { cn } from "@/lib/utils"
 // ── Lifted form state ─────────────────────────────────────────────────────────
 // Every section feeds one draft/saved baseline, so any change surfaces the
 // dirty-aware save bar and nothing persists until Save.
+//
+// ⚠️ Only *part* of this pane is backed by the server. `PATCH /v1/org` accepts
+// exactly four meta fields — name, timezone, website, empIdPrefix — and those
+// are wired (see `services/org.service.ts`). Everything else on this page
+// (legal name, industry, size, logo, departments, locations, working hours,
+// holidays, policies) has **no backend route yet** and lives only in this
+// component's state for the session.
+//
+// ⚠️ AND: there is **no `GET /v1/org`**. The org's current name/timezone/
+// website/prefix cannot be read — the only way to see them is the `OrgView`
+// that a successful PATCH returns. So the server-backed fields deliberately
+// start EMPTY rather than showing a mock value that would look authoritative
+// and be wrong. They fill in from the response after the first save. This is
+// a backend gap, not a bug here; see the doc-comment in `org.service.ts`.
 
 interface CompanyForm {
+  // ── Server-backed (`PATCH /v1/org`) ──
   name: string
-  legalName: string
   website: string
+  timezone: string
+  /** 1–8 alphanumeric chars; applies to future employee ids only. */
+  empIdPrefix: string
+  // ── Local-only: no backend field exists for these ──
+  legalName: string
   industry: string
   size: string
-  timezone: string
 }
 
 interface BrandingForm {
@@ -104,13 +123,16 @@ interface OrgFormState {
 }
 
 const INITIAL_ORG_FORM: OrgFormState = {
+  // Server-backed fields start blank — their current values are unreadable
+  // (no GET /v1/org). Leaving them blank is honest; a mock default would not be.
   company: {
-    name: organization.name,
-    legalName: "Acme Corporation Inc.",
-    website: "https://acme.example.com",
-    industry: "Technology",
-    size: "201–500",
-    timezone: organization.timezone,
+    name: "",
+    website: "",
+    timezone: "",
+    empIdPrefix: "",
+    legalName: "",
+    industry: "",
+    size: "",
   },
   branding: { logo: null },
   structure: Object.entries(TEAMS_BY_DEPT).map(([name, teams]) => ({
@@ -181,12 +203,15 @@ function CompanyInfoSection({
   branding,
   onBrandingChange,
   canManage,
+  known,
 }: {
   value: CompanyForm
   onChange: (patch: Partial<CompanyForm>) => void
   branding: BrandingForm
   onBrandingChange: (patch: Partial<BrandingForm>) => void
   canManage: boolean
+  /** `true` once a save has returned an `OrgView`, i.e. the fields show real server values. */
+  known: boolean
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -224,7 +249,18 @@ function CompanyInfoSection({
           Basic profile shown across the platform and used in exported reports.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-5">
+        {!known && (
+          <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+            <Info className="mt-0.5 size-4 shrink-0" />
+            <span>
+              The current values can&apos;t be shown — the API can update these
+              details but has no route to read them back. Fields you leave blank
+              stay unchanged; once you save, the server&apos;s response fills
+              this form in.
+            </span>
+          </div>
+        )}
         <div className="grid gap-6 lg:grid-cols-[1fr_16rem]">
           {/* Company details */}
           <div className="grid content-start gap-4 sm:grid-cols-2">
@@ -232,9 +268,53 @@ function CompanyInfoSection({
               <Label>Organization name</Label>
               <Input
                 value={value.name}
+                placeholder={known ? undefined : "Not readable — type to set"}
                 disabled={!canManage}
                 onChange={(e) => onChange({ name: e.target.value })}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Website</Label>
+              <Input
+                type="url"
+                value={value.website}
+                placeholder={known ? undefined : "Not readable — type to set"}
+                disabled={!canManage}
+                onChange={(e) => onChange({ website: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Primary timezone</Label>
+              <StyledSelect
+                value={value.timezone}
+                onChange={(v) => onChange({ timezone: v })}
+                disabled={!canManage}
+                className="w-full"
+                placeholder="Not readable — pick to set"
+                options={COMMON_TIMEZONES}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Employee ID prefix</Label>
+              <Input
+                value={value.empIdPrefix}
+                placeholder={known ? undefined : "e.g. NS"}
+                maxLength={8}
+                disabled={!canManage}
+                onChange={(e) => onChange({ empIdPrefix: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                1–8 letters or digits. Applies to employee ids issued from now
+                on — existing ids keep their prefix.
+              </p>
+            </div>
+
+            {/* Local-only fields: no backend route stores these yet. */}
+            <div className="space-y-1.5 sm:col-span-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                Not stored yet — these stay in this browser session until the API
+                supports them.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Legal name</Label>
@@ -245,21 +325,13 @@ function CompanyInfoSection({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Website</Label>
-              <Input
-                type="url"
-                value={value.website}
-                disabled={!canManage}
-                onChange={(e) => onChange({ website: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
               <Label>Industry</Label>
               <StyledSelect
                 value={value.industry}
                 onChange={(v) => onChange({ industry: v })}
                 disabled={!canManage}
                 className="w-full"
+                placeholder="Select industry…"
                 options={INDUSTRY_SELECT_OPTIONS}
               />
             </div>
@@ -270,17 +342,8 @@ function CompanyInfoSection({
                 onChange={(v) => onChange({ size: v })}
                 disabled={!canManage}
                 className="w-full"
+                placeholder="Select size…"
                 options={COMPANY_SIZE_SELECT_OPTIONS}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Primary timezone</Label>
-              <StyledSelect
-                value={value.timezone}
-                onChange={(v) => onChange({ timezone: v })}
-                disabled={!canManage}
-                className="w-full"
-                options={COMMON_TIMEZONES}
               />
             </div>
           </div>
@@ -336,7 +399,8 @@ function CompanyInfoSection({
               )}
             </button>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              PNG, SVG or JPG · recommended 200 × 50 px · up to 2 MB.
+              PNG, SVG or JPG · recommended 200 × 50 px · up to 2 MB. Not stored
+              yet — there is no upload route.
             </p>
             {canManage && branding.logo && (
               <Button
@@ -1025,10 +1089,10 @@ function PoliciesSection({
 export function OrganizationTab() {
   const { can } = usePermissions()
   const canManage = can("settings:manage")
+  const { org, saving, save } = useOrg()
 
   const [saved, setSaved] = useState<OrgFormState>(INITIAL_ORG_FORM)
   const [draft, setDraft] = useState<OrgFormState>(INITIAL_ORG_FORM)
-  const [saving, setSaving] = useState(false)
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
 
   const updateCompany = (patch: Partial<CompanyForm>) =>
@@ -1046,16 +1110,62 @@ export function OrganizationTab() {
   const updatePolicies = (patch: Partial<PoliciesForm>) =>
     setDraft((d) => ({ ...d, policies: { ...d.policies, ...patch } }))
 
+  /**
+   * Persists the four server-backed meta fields via `PATCH /v1/org`; the rest of the pane has no
+   * route yet and is only committed to the local baseline.
+   *
+   * Blank means "unknown, leave alone" — not "clear it". Since the form can't read current values
+   * (no GET /v1/org), an empty field must never be sent, or a first save would blank the org's real
+   * name. Only fields the user actually filled in, and that differ from the last known server value,
+   * go on the wire.
+   */
   function handleSave() {
     if (!dirty || saving) return
     const next = draft
-    setSaving(true)
-    // Simulated persistence latency (Phase 1 is frontend-only).
-    setTimeout(() => {
+    const c = next.company
+    const patch: ApiUpdateOrgRequest = {}
+    if (c.name.trim() && c.name.trim() !== org?.name) patch.name = c.name.trim()
+    if (c.timezone && c.timezone !== org?.timezone) patch.timezone = c.timezone
+    if (c.website.trim() && c.website.trim() !== org?.website)
+      patch.website = c.website.trim()
+    if (c.empIdPrefix.trim() && c.empIdPrefix.trim() !== org?.emp_id_prefix)
+      patch.emp_id_prefix = c.empIdPrefix.trim()
+
+    // Nothing the server owns changed — commit the local-only sections and stop. Sending an empty
+    // patch would be a 400 ("nothing to update").
+    if (Object.keys(patch).length === 0) {
       setSaved(next)
-      setSaving(false)
+      toast.success("Saved locally", {
+        description:
+          "These sections have no API route yet, so they aren't stored on the server.",
+      })
+      return
+    }
+
+    void save(patch).then((result) => {
+      if (!result.ok) {
+        // Surface the server's own words (403 = missing Manage Settings, 409 = concurrent edit).
+        toast.error("Couldn't save organization settings", {
+          description: result.message,
+        })
+        return
+      }
+      const view = result.org
+      // The server's post-write view wins — this is the one moment we can read the org.
+      const applied: OrgFormState = {
+        ...next,
+        company: {
+          ...next.company,
+          name: view.name,
+          website: view.website ?? "",
+          timezone: view.timezone ?? "",
+          empIdPrefix: view.emp_id_prefix ?? "",
+        },
+      }
+      setDraft(applied)
+      setSaved(applied)
       toast.success("Organization settings saved")
-    }, 500)
+    })
   }
 
   function handleReset() {
@@ -1068,6 +1178,16 @@ export function OrganizationTab() {
         title="Organization"
         description="Manage your company profile, departments, teams, working hours, and policies."
       />
+
+      {/* Honest scope note: only the four fields PATCH /v1/org accepts actually persist. */}
+      <div className="flex items-start gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
+        <Info className="mt-0.5 size-4 shrink-0" />
+        <span>
+          Organization name, website, primary timezone and employee ID prefix are
+          saved to your organization. The remaining sections below have no API
+          route yet and are kept only for this session.
+        </span>
+      </div>
 
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
@@ -1085,6 +1205,7 @@ export function OrganizationTab() {
           branding={draft.branding}
           onBrandingChange={updateBranding}
           canManage={canManage}
+          known={org !== null}
         />
         <DepartmentsTeamsSection
           value={draft.structure}

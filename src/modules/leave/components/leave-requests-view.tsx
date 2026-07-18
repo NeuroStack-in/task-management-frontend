@@ -21,6 +21,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useLeave } from "../use-leave";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
+import { LeaveAdminSection } from "./leave-admin-section";
 
 /** The server's request states (LLD §8): pending → approved, or pending/approved → cancelled. */
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -202,6 +203,11 @@ export function LeaveRequestsView() {
           </Table>
         )}
       </Card>
+
+      {/* Org configuration, not a normal user path. Gated on `leave:manage` — the id now exists and
+          is byte-identical to the backend's `LeaveManage` wire id, so the UI gate and the server
+          gate agree instead of approximating each other. */}
+      {can("leave:manage") ? <LeaveAdminSection onChanged={leave.reload} /> : null}
 
       <RequestLeaveDialog
         open={open}

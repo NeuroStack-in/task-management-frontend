@@ -86,6 +86,15 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("employees", "view", "View Employees"),
       p("employees", "manage", "Manage Employees"),
+      // Distinct from `employees:manage` on the server: department/team CRUD is its own grantable
+      // bit (`OrgManage`, bit 12), which the backend groups under the employees module. Without this
+      // id a custom role could hold `employees:manage`, see the Departments editor, and then be
+      // 403'd by the server on save.
+      //
+      // The id is deliberately `org:manage` — byte-identical to the backend's wire id — rather than
+      // an `employees:*` variant. Every new permission should match the server's id where one
+      // exists; the two vocabularies already drift enough (see `lib/permission-map.ts`).
+      p("org", "manage", "Manage Departments & Teams"),
     ],
   },
   {
@@ -137,6 +146,9 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
       p("leave", "view", "View Leave Requests"),
       p("leave", "request", "Submit Leave Request"),
       p("leave", "approve", "Approve Leave Requests"),
+      // The org's leave-type catalog + balance seeding (server bit `LeaveManage`). Matches the
+      // backend wire id exactly.
+      p("leave", "manage", "Manage Leave Types & Balances"),
     ],
   },
   {

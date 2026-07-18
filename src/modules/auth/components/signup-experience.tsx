@@ -3,11 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Check, KeyRound, Lock, Mail, UserRound } from "lucide-react";
+import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
+import { createOrg, slugify } from "@/modules/auth/services/signup.service";
 import {
   OrgSetupModal,
   SsoOptionsModal,
   SsoPickerModal,
+  type OrgSetupData,
 } from "@/modules/auth/components/auth-modals";
 import {
   AuthCard,
@@ -74,15 +77,28 @@ export function SignupExperience() {
     else setSso(provider);
   };
 
-  const completeSetup = () => {
-    setOrgOpen(false);
-    // Sign-up can't complete yet: auth is a real Cognito exchange now (no faking a session), and
-    // the backend's org-creation flow (identity `create_org`) isn't built. Say so rather than
-    // dropping an unauthenticated user on /onboarding.
-    setErr({
-      email:
-        "Sign-up isn't available yet — sign in with an existing account instead.",
+  // `POST /v1/org/create` — the public signup commit. It creates the tenant, the Cognito owner, the
+  // seeded system roles and the plan entitlements in one call, but issues **no session**, so the
+  // last step is sending them to sign in with the credentials they just chose.
+  //
+  // Throws on failure so `OrgSetupModal` keeps the wizard open and shows why, rather than closing
+  // over a lost form.
+  const completeSetup = async (data: OrgSetupData) => {
+    const created = await createOrg({
+      org: { ...data.org, slug: data.org.slug || slugify(data.org.name) },
+      owner: {
+        ...data.owner,
+        email: acct.email.trim().toLowerCase(),
+        password: acct.password,
+        full_name: data.owner.full_name || acct.name.trim(),
+      },
+      plan: data.plan || "free",
     });
+    setOrgOpen(false);
+    toast.success("Workspace created", {
+      description: `${created.slug} is ready — sign in to get started.`,
+    });
+    router.push(`/login?email=${encodeURIComponent(acct.email.trim().toLowerCase())}`);
   };
 
   const signupError = Object.values(err).filter(Boolean)[0];

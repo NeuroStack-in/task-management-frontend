@@ -1,9 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, KeyRound, Loader2, Mail } from "lucide-react";
-import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { AuthError, DEMO_ACCOUNTS } from "@/modules/auth/services/auth.service";
 import {
@@ -25,7 +24,9 @@ export function LoginExperience() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const hydrated = useAuthStore((s) => s.hydrated);
 
-  const [email, setEmail] = useState("");
+  // Prefilled when we already know who's arriving — straight after creating a workspace or
+  // accepting an invite, both of which redirect here with `?email=`.
+  const [email, setEmail] = useState(() => params.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [showPw, setShowPw] = useState(false);

@@ -17,6 +17,7 @@ import {
   FileText,
   Sheet,
   UserPlus,
+  Settings2,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
@@ -45,6 +46,7 @@ import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { InviteDialog } from "./invite-dialog";
+import { OrgStructureDialog } from "./org-structure-dialog";
 import { useEmployees, type EmployeeRow } from "../use-employees";
 
 export type { EmployeeRow };
@@ -194,6 +196,7 @@ export function EmployeesView() {
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [structureOpen, setStructureOpen] = useState(false);
 
   const allEmployees = employees;
   // Every row is a real directory user with a profile page — none are session-only.
@@ -326,10 +329,17 @@ export function EmployeesView() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {can("employees:manage") ? (
-            <Button onClick={() => setInviteOpen(true)}>
-              <UserPlus className="size-4" /> Add employee
-            </Button>
+          {/* Department/team CRUD is its own server bit. `org:manage` now exists in this app's
+              catalog with the identical id, so this gate matches the server exactly. */}
+          {can("org:manage") ? (
+            <>
+              <Button variant="outline" onClick={() => setStructureOpen(true)}>
+                <Settings2 className="size-4" /> Departments
+              </Button>
+              <Button onClick={() => setInviteOpen(true)}>
+                <UserPlus className="size-4" /> Add employee
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
@@ -440,6 +450,15 @@ export function EmployeesView() {
       </div>
 
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+      <OrgStructureDialog
+        open={structureOpen}
+        onOpenChange={(o) => {
+          setStructureOpen(o);
+          // Department names are denormalized into the roster rows — refresh on close so a
+          // rename/delete is reflected there too.
+          if (!o) reload();
+        }}
+      />
     </div>
   );
 }
