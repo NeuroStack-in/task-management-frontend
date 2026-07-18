@@ -1,123 +1,65 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Globe, Lock, Plus, Search, X } from "lucide-react"
-import { toast } from "sonner"
+import { useEffect, useMemo, useState } from "react";
+import { Globe, Lock, MonitorSmartphone, Plus, Search, X } from "lucide-react";
+import { toast } from "sonner";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { NumberStepper } from "@/components/ui/number-stepper"
+} from "@/components/ui/select";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/shared/page-header";
+import { SettingsSaveBar } from "@/components/shared/settings-save-bar";
+import { Loader } from "@/components/shared/loader";
+import { usePermissions } from "@/hooks/use-permissions";
+import { ApiError } from "@/lib/api";
+import { isDomain } from "@/lib/validation";
+import { cn } from "@/lib/utils";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { PageHeader } from "@/components/shared/page-header"
-import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
-import { usePermissions } from "@/hooks/use-permissions"
-import {
-  APP_USAGE,
-  CATEGORY_COLOR,
-  CATEGORY_LABEL,
-  SAMPLE_PEOPLE,
-  URL_USAGE,
-  type UsageCategory,
-  type UsageItem,
-} from "@/lib/mock-insights"
-import { initials } from "@/lib/format"
-import { isDomain } from "@/lib/validation"
-import { cn } from "@/lib/utils"
+  useOrgRules,
+  type RulesDoc,
+  type RuleCategory,
+  type AppRule,
+  type UrlRule,
+} from "../use-org-rules";
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Types & state
-// ──────────────────────────────────────────────────────────────────────────────
+const CATEGORIES: RuleCategory[] = ["productive", "neutral", "distracting"];
+const CATEGORY_LABEL: Record<RuleCategory, string> = {
+  productive: "Productive",
+  neutral: "Neutral",
+  distracting: "Distracting",
+};
+const CATEGORY_COLOR: Record<RuleCategory, string> = {
+  productive: "var(--positive)",
+  neutral: "var(--muted-foreground)",
+  distracting: "var(--negative)",
+};
+const CATEGORY_DESC: Record<RuleCategory, string> = {
+  productive: "Work tools — editors, docs, design, task management.",
+  neutral: "General browsers, communication, calendars, utilities.",
+  distracting: "Social media, streaming, gaming, entertainment.",
+};
 
-type TabKey = "categories" | "items" | "allowblock" | "exceptions"
-
-type ItemKind = "app" | "website"
-
-interface TrackableItem extends UsageItem {
-  tracked: boolean
-}
-
-const CATEGORIES = Object.keys(CATEGORY_LABEL) as UsageCategory[]
-
-const DEFAULT_CATEGORY_DESCRIPTIONS: Record<UsageCategory, string> = {
-  productive:
-    "Work tools, code editors, docs, design software, and task management platforms.",
-  neutral:
-    "Communication tools, general browsers, calendar apps, and team utilities.",
-  distracting: "Social media, video streaming, gaming sites, and entertainment apps.",
-}
-
-interface TrackingState {
-  descriptions: Record<UsageCategory, string>
-  apps: TrackableItem[]
-  websites: TrackableItem[]
-  allowList: string[]
-  blockList: string[]
-  weights: Record<UsageCategory, number>
-  exceptionIds: string[]
-}
-
-const INITIAL_STATE: TrackingState = {
-  descriptions: { ...DEFAULT_CATEGORY_DESCRIPTIONS },
-  apps: APP_USAGE.map((it) => ({ ...it, tracked: true })),
-  websites: URL_USAGE.map((it) => ({ ...it, tracked: true })),
-  allowList: ["github.com", "notion.so", "figma.com"],
-  blockList: ["youtube.com", "reddit.com", "twitter.com"],
-  weights: { productive: 3, neutral: 1, distracting: 0 },
-  exceptionIds: SAMPLE_PEOPLE.slice(0, 2).map((p) => p.id),
-}
-
-function cloneState(s: TrackingState): TrackingState {
-  return {
-    descriptions: { ...s.descriptions },
-    apps: s.apps.map((a) => ({ ...a })),
-    websites: s.websites.map((w) => ({ ...w })),
-    allowList: [...s.allowList],
-    blockList: [...s.blockList],
-    weights: { ...s.weights },
-    exceptionIds: [...s.exceptionIds],
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Small shared bits
-// ──────────────────────────────────────────────────────────────────────────────
-
-function CategoryDot({ category }: { category: UsageCategory }) {
+function CategoryDot({ category }: { category: RuleCategory }) {
   return (
     <span
       className="inline-block size-2.5 shrink-0 rounded-full"
       style={{ background: CATEGORY_COLOR[category] }}
     />
-  )
+  );
 }
 
 function CategorySelect({
@@ -125,22 +67,18 @@ function CategorySelect({
   onChange,
   disabled,
 }: {
-  value: UsageCategory
-  onChange: (v: UsageCategory) => void
-  disabled?: boolean
+  value: RuleCategory;
+  onChange: (v: RuleCategory) => void;
+  disabled?: boolean;
 }) {
   return (
-    <Select
-      value={value}
-      onValueChange={(v) => onChange(v as UsageCategory)}
-      disabled={disabled}
-    >
-      <SelectTrigger size="sm" className="w-40">
+    <Select value={value} onValueChange={(v) => onChange(v as RuleCategory)} disabled={disabled}>
+      <SelectTrigger size="sm" className="w-36">
         <SelectValue>
           {(v) => (
             <span className="flex items-center gap-2">
-              <CategoryDot category={v as UsageCategory} />
-              {CATEGORY_LABEL[v as UsageCategory] ?? "Select"}
+              <CategoryDot category={v as RuleCategory} />
+              {CATEGORY_LABEL[v as RuleCategory] ?? "Select"}
             </span>
           )}
         </SelectValue>
@@ -156,387 +94,299 @@ function CategorySelect({
         ))}
       </SelectContent>
     </Select>
-  )
+  );
 }
 
-/** Deterministic monogram avatar — fallback when a real logo can't load. */
-function Monogram({ name }: { name: string }) {
-  const hue = [...name].reduce((sum, c) => sum + c.charCodeAt(0), 0) % 360
-  return (
-    <span
-      className="flex size-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-white"
-      style={{ backgroundColor: `hsl(${hue} 42% 45%)` }}
-    >
-      {name.charAt(0).toUpperCase()}
-    </span>
-  )
-}
-
-// Map app names to the domain whose favicon we show. Website rows already use
-// their own domain.
-const DOMAIN_BY_NAME: Record<string, string> = {
-  "VS Code": "code.visualstudio.com",
-  "Chrome — Docs": "docs.google.com",
-  Figma: "figma.com",
-  Slack: "slack.com",
-  Zoom: "zoom.us",
-  YouTube: "youtube.com",
-  "Twitter / X": "x.com",
-}
-
-function domainFor(name: string): string | null {
-  if (DOMAIN_BY_NAME[name]) return DOMAIN_BY_NAME[name]
-  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(name.trim()))
-    return name.trim().toLowerCase()
-  return null
-}
-
-/** Real favicon/logo for an app or domain, with a monogram fallback. */
-function LogoIcon({ name }: { name: string }) {
-  const [failed, setFailed] = useState(false)
-  const domain = domainFor(name)
-  if (!domain || failed) return <Monogram name={name} />
-  return (
-    <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-white">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`https://www.google.com/s2/favicons?sz=64&domain=${domain}`}
-        alt=""
-        className="size-5 object-contain"
-        onError={() => setFailed(true)}
-      />
-    </span>
-  )
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Categories panel
-// ──────────────────────────────────────────────────────────────────────────────
+/* ── Categories / weights ── */
 
 function CategoriesPanel({
-  descriptions,
   weights,
-  onDescriptions,
   onWeights,
   canManage,
 }: {
-  descriptions: Record<UsageCategory, string>
-  weights: Record<UsageCategory, number>
-  onDescriptions: (next: Record<UsageCategory, string>) => void
-  onWeights: (next: Record<UsageCategory, number>) => void
-  canManage: boolean
+  weights: Record<RuleCategory, number>;
+  onWeights: (next: Record<RuleCategory, number>) => void;
+  canManage: boolean;
 }) {
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        {CATEGORIES.map((cat) => (
-          <div
-            key={cat}
-            className="flex items-stretch overflow-hidden rounded-lg border border-border bg-card"
-          >
-            <span
-              className="w-1.5 shrink-0"
-              style={{ backgroundColor: CATEGORY_COLOR[cat] }}
-            />
-            <div className="flex flex-1 flex-col gap-3 p-4 sm:flex-row sm:items-center">
-              <div className="flex items-center gap-2 sm:w-36 sm:shrink-0">
-                <CategoryDot category={cat} />
-                <p className="text-sm font-medium">{CATEGORY_LABEL[cat]}</p>
-              </div>
-              {canManage ? (
-                <Input
-                  value={descriptions[cat]}
-                  onChange={(e) =>
-                    onDescriptions({ ...descriptions, [cat]: e.target.value })
-                  }
-                  placeholder="What belongs in this category"
-                  className="flex-1 text-sm"
-                />
-              ) : (
-                <p className="flex-1 text-xs text-muted-foreground">
-                  {descriptions[cat]}
-                </p>
-              )}
-              <div className="flex shrink-0 items-center gap-2 sm:justify-end">
-                <span className="text-xs text-muted-foreground">
-                  Score weight
-                </span>
-                <NumberStepper
-                  value={weights[cat]}
-                  min={0}
-                  max={5}
-                  valueWidthClassName="w-10"
-                  disabled={!canManage}
-                  onChange={(v) => onWeights({ ...weights, [cat]: v })}
-                />
-              </div>
+    <div className="space-y-3">
+      {CATEGORIES.map((cat) => (
+        <div
+          key={cat}
+          className="flex items-stretch overflow-hidden rounded-lg border border-border bg-card"
+        >
+          <span className="w-1.5 shrink-0" style={{ backgroundColor: CATEGORY_COLOR[cat] }} />
+          <div className="flex flex-1 flex-col gap-3 p-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2 sm:w-32 sm:shrink-0">
+              <CategoryDot category={cat} />
+              <p className="text-sm font-medium">{CATEGORY_LABEL[cat]}</p>
+            </div>
+            <p className="flex-1 text-xs text-muted-foreground">{CATEGORY_DESC[cat]}</p>
+            <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+              <span className="text-xs text-muted-foreground">Score weight</span>
+              <Input
+                type="number"
+                min={0}
+                max={5}
+                step={0.5}
+                value={weights[cat]}
+                disabled={!canManage}
+                onChange={(e) =>
+                  onWeights({ ...weights, [cat]: Math.max(0, Number(e.target.value) || 0) })
+                }
+                className="w-20"
+              />
             </div>
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
       <p className="text-xs text-muted-foreground">
-        Productivity score = (productive minutes × weight + neutral minutes ×
-        weight) ÷ total tracked minutes × 100. Distracting time doesn&apos;t
-        contribute; a higher weight strengthens that category&apos;s effect
-        (0 = no impact, 5 = maximum).
+        The productivity score weights each category&apos;s tracked minutes. A higher weight
+        strengthens that category&apos;s effect; distracting time typically weighs 0.
       </p>
     </div>
-  )
+  );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Applications / Websites panel
-// ──────────────────────────────────────────────────────────────────────────────
+/* ── Apps & websites classification ── */
 
-function ItemsPanel({
+function AppsPanel({
   apps,
-  websites,
+  urls,
   onApps,
-  onWebsites,
+  onUrls,
   canManage,
 }: {
-  apps: TrackableItem[]
-  websites: TrackableItem[]
-  onApps: (next: TrackableItem[]) => void
-  onWebsites: (next: TrackableItem[]) => void
-  canManage: boolean
+  apps: AppRule[];
+  urls: UrlRule[];
+  onApps: (next: AppRule[]) => void;
+  onUrls: (next: UrlRule[]) => void;
+  canManage: boolean;
 }) {
-  const [query, setQuery] = useState("")
-  const [kind, setKind] = useState<"all" | ItemKind>("all")
+  const [query, setQuery] = useState("");
+  const [appName, setAppName] = useState("");
+  const [appProc, setAppProc] = useState("");
+  const [urlDomain, setUrlDomain] = useState("");
+  const q = query.trim().toLowerCase();
 
-  // Apps and websites are classified the same way; merge them into one table
-  // with a kind tag so updates route back to the right list.
-  const combined = [
-    ...apps.map((it) => ({ ...it, kind: "app" as ItemKind })),
-    ...websites.map((it) => ({ ...it, kind: "website" as ItemKind })),
-  ]
-  const q = query.trim().toLowerCase()
-  const filtered = combined.filter(
-    (it) =>
-      (kind === "all" || it.kind === kind) && it.name.toLowerCase().includes(q),
-  )
-
-  function updateItem(
-    itemKind: ItemKind,
-    name: string,
-    patch: Partial<TrackableItem>,
-  ) {
-    if (itemKind === "app") {
-      onApps(apps.map((it) => (it.name === name ? { ...it, ...patch } : it)))
-    } else {
-      onWebsites(
-        websites.map((it) => (it.name === name ? { ...it, ...patch } : it)),
-      )
+  const addApp = () => {
+    const name = appName.trim();
+    const proc = appProc.trim().toLowerCase();
+    if (!name || !proc) {
+      toast.error("Enter a display name and a process name (e.g. Slack, slack.exe).");
+      return;
     }
-  }
+    if (apps.some((a) => a.process_name === proc)) {
+      toast.error(`“${proc}” is already listed.`);
+      return;
+    }
+    onApps([...apps, { display_name: name, process_name: proc, category: "neutral", tracked: true }]);
+    setAppName("");
+    setAppProc("");
+  };
 
-  const FILTERS: { key: "all" | ItemKind; label: string; count: number }[] = [
-    { key: "all", label: "All", count: combined.length },
-    { key: "app", label: "Apps", count: apps.length },
-    { key: "website", label: "Websites", count: websites.length },
-  ]
+  const addUrl = () => {
+    const d = urlDomain.trim().toLowerCase();
+    if (!isDomain(d)) {
+      toast.error("Enter a valid domain, e.g. figma.com");
+      return;
+    }
+    if (urls.some((u) => u.domain === d)) {
+      toast.error(`“${d}” is already listed.`);
+      return;
+    }
+    onUrls([...urls, { domain: d, category: "neutral", tracked: true }]);
+    setUrlDomain("");
+  };
+
+  const shownApps = apps.filter(
+    (a) => a.display_name.toLowerCase().includes(q) || a.process_name.includes(q),
+  );
+  const shownUrls = urls.filter((u) => u.domain.includes(q));
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Apps &amp; Websites</CardTitle>
         <CardDescription>
-          Classify each application and website, and choose whether it&apos;s
-          tracked.
+          Classify each application (by process name) and website (by domain), and choose whether the
+          agent tracks it.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Type filter */}
-          <div className="inline-flex items-center gap-0.5 self-start rounded-full border bg-card p-0.5 shadow-soft">
-            {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setKind(f.key)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-                  kind === f.key
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {f.label}
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
-                    kind === f.key
-                      ? "bg-primary-foreground/20"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {f.count}
-                </span>
-              </button>
-            ))}
-          </div>
-          {/* Search */}
-          <div className="relative sm:w-64">
-            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search apps or websites…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+      <CardContent className="space-y-5">
+        <div className="relative sm:w-72">
+          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search apps or domains…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
         </div>
 
-        <div className="overflow-hidden rounded-md border border-border">
-          <table className="w-full caption-bottom text-sm">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">Time</TableHead>
-                <TableHead className="text-right">Tracked</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="py-8 text-center text-sm text-muted-foreground"
-                  >
-                    No matches{q ? ` for “${query.trim()}”` : ""}.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filtered.map((item) => (
-                  <TableRow
-                    key={`${item.kind}-${item.name}`}
-                    className={cn(!item.tracked && "opacity-50")}
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <LogoIcon name={item.name} />
-                        <span className="font-medium">{item.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className="bg-muted font-normal text-muted-foreground">
-                        {item.kind === "app" ? "App" : "Website"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <CategorySelect
-                        value={item.category}
-                        onChange={(v) =>
-                          updateItem(item.kind, item.name, { category: v })
-                        }
-                        disabled={!canManage}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {item.minutes}m
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Switch
-                        size="sm"
-                        checked={item.tracked}
-                        disabled={!canManage}
-                        onCheckedChange={() =>
-                          updateItem(item.kind, item.name, {
-                            tracked: !item.tracked,
-                          })
-                        }
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </table>
+        {/* Apps */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Applications</p>
+          {canManage && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input placeholder="Display name (Slack)" value={appName} onChange={(e) => setAppName(e.target.value)} />
+              <Input placeholder="Process (slack.exe)" value={appProc} onChange={(e) => setAppProc(e.target.value)} />
+              <Button size="sm" variant="outline" onClick={addApp} className="shrink-0">
+                <Plus className="size-4" /> Add app
+              </Button>
+            </div>
+          )}
+          <RuleTable
+            rows={shownApps.map((a) => ({ key: a.process_name, label: a.display_name, sub: a.process_name, category: a.category, tracked: a.tracked }))}
+            empty={apps.length === 0 ? "No app rules yet." : "No matches."}
+            canManage={canManage}
+            onCategory={(key, c) => onApps(apps.map((a) => (a.process_name === key ? { ...a, category: c } : a)))}
+            onTracked={(key) => onApps(apps.map((a) => (a.process_name === key ? { ...a, tracked: !a.tracked } : a)))}
+            onRemove={(key) => onApps(apps.filter((a) => a.process_name !== key))}
+          />
+        </div>
+
+        {/* Websites */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Websites</p>
+          {canManage && (
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Globe className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="domain.com"
+                  value={urlDomain}
+                  onChange={(e) => setUrlDomain(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addUrl()}
+                  className="pl-9"
+                />
+              </div>
+              <Button size="sm" variant="outline" onClick={addUrl} className="shrink-0">
+                <Plus className="size-4" /> Add site
+              </Button>
+            </div>
+          )}
+          <RuleTable
+            rows={shownUrls.map((u) => ({ key: u.domain, label: u.domain, sub: null, category: u.category, tracked: u.tracked }))}
+            empty={urls.length === 0 ? "No website rules yet." : "No matches."}
+            canManage={canManage}
+            onCategory={(key, c) => onUrls(urls.map((u) => (u.domain === key ? { ...u, category: c } : u)))}
+            onTracked={(key) => onUrls(urls.map((u) => (u.domain === key ? { ...u, tracked: !u.tracked } : u)))}
+            onRemove={(key) => onUrls(urls.filter((u) => u.domain !== key))}
+          />
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Allow / Block panel
-// ──────────────────────────────────────────────────────────────────────────────
+interface RuleRow {
+  key: string;
+  label: string;
+  sub: string | null;
+  category: RuleCategory;
+  tracked: boolean;
+}
 
-function ChipList({
-  items,
-  onRemove,
+function RuleTable({
+  rows,
+  empty,
   canManage,
+  onCategory,
+  onTracked,
+  onRemove,
 }: {
-  items: string[]
-  onRemove: (item: string) => void
-  canManage: boolean
+  rows: RuleRow[];
+  empty: string;
+  canManage: boolean;
+  onCategory: (key: string, c: RuleCategory) => void;
+  onTracked: (key: string) => void;
+  onRemove: (key: string) => void;
 }) {
-  if (items.length === 0) {
-    return <p className="text-xs text-muted-foreground">No entries yet.</p>
-  }
   return (
-    <div className="flex flex-wrap gap-2">
-      {items.map((item) => (
-        <div
-          key={item}
-          className="flex items-center gap-1.5 rounded-sm border border-border bg-muted px-2.5 py-1 text-xs"
-        >
-          {item}
-          {canManage && (
-            <button
-              onClick={() => onRemove(item)}
-              className="text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={`Remove ${item}`}
-            >
-              <X className="size-3" />
-            </button>
+    <div className="overflow-hidden rounded-md border border-border">
+      <table className="w-full caption-bottom text-sm">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Category</TableHead>
+            <TableHead className="text-right">Tracked</TableHead>
+            {canManage && <TableHead className="w-10" />}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={canManage ? 4 : 3} className="py-8 text-center text-sm text-muted-foreground">
+                {empty}
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((r) => (
+              <TableRow key={r.key} className={cn(!r.tracked && "opacity-60")}>
+                <TableCell>
+                  <p className="font-medium">{r.label}</p>
+                  {r.sub ? <p className="font-mono text-xs text-muted-foreground">{r.sub}</p> : null}
+                </TableCell>
+                <TableCell>
+                  <CategorySelect value={r.category} onChange={(c) => onCategory(r.key, c)} disabled={!canManage} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Switch size="sm" checked={r.tracked} disabled={!canManage} onCheckedChange={() => onTracked(r.key)} />
+                </TableCell>
+                {canManage && (
+                  <TableCell className="text-right">
+                    <Button size="icon-sm" variant="ghost" aria-label={`Remove ${r.label}`} onClick={() => onRemove(r.key)}>
+                      <X className="size-4" />
+                    </Button>
+                  </TableCell>
+                )}
+              </TableRow>
+            ))
           )}
-        </div>
-      ))}
+        </TableBody>
+      </table>
     </div>
-  )
+  );
 }
 
-function DomainListCard({
+/* ── Allow / block lists ── */
+
+function ChipInput({
   title,
   description,
   accent,
+  placeholder,
+  validate,
   items,
   onChange,
   canManage,
 }: {
-  title: string
-  description: string
-  accent: "positive" | "negative"
-  items: string[]
-  onChange: (next: string[]) => void
-  canManage: boolean
+  title: string;
+  description: string;
+  accent: "positive" | "negative";
+  placeholder: string;
+  validate: (v: string) => boolean;
+  items: string[];
+  onChange: (next: string[]) => void;
+  canManage: boolean;
 }) {
-  const [input, setInput] = useState("")
-
-  function add() {
-    const val = input.trim().toLowerCase()
-    if (!val) return
-    if (!isDomain(val)) {
-      toast.error("Enter a valid domain, e.g. example.com")
-      return
+  const [input, setInput] = useState("");
+  const add = () => {
+    const v = input.trim().toLowerCase();
+    if (!v) return;
+    if (!validate(v)) {
+      toast.error(`“${v}” doesn't look valid.`);
+      return;
     }
-    if (!items.includes(val)) onChange([...items, val])
-    setInput("")
-  }
-
+    if (!items.includes(v)) onChange([...items, v]);
+    setInput("");
+  };
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <span
-            className={cn(
-              "size-2 rounded-full",
-              accent === "positive" ? "bg-positive" : "bg-negative",
-            )}
-          />
+          <span className={cn("size-2 rounded-full", accent === "positive" ? "bg-positive" : "bg-negative")} />
           {title}
         </CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -544,270 +394,160 @@ function DomainListCard({
       <CardContent className="space-y-4">
         {canManage && (
           <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Globe className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="domain.com"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && add()}
-                className="pl-9 text-sm"
-              />
-            </div>
+            <Input
+              placeholder={placeholder}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+              className="text-sm"
+            />
             <Button size="sm" variant="outline" onClick={add}>
               <Plus className="size-4" />
             </Button>
           </div>
         )}
-        <ChipList
-          items={items}
-          onRemove={(d) => onChange(items.filter((i) => i !== d))}
-          canManage={canManage}
-        />
-      </CardContent>
-    </Card>
-  )
-}
-
-function AllowBlockPanel({
-  allowList,
-  blockList,
-  onAllow,
-  onBlock,
-  canManage,
-}: {
-  allowList: string[]
-  blockList: string[]
-  onAllow: (next: string[]) => void
-  onBlock: (next: string[]) => void
-  canManage: boolean
-}) {
-  return (
-    <div className="space-y-4">
-      {/*
-        These lists do two different jobs, and only one of them is visible in the app
-        (LLD §14). Saying so here is the difference between an admin who knows their
-        block list interrupts people mid-timer and one who finds out from a complaint.
-      */}
-      <div className="rounded-lg border border-warning/30 bg-warning/[0.06] px-3.5 py-3">
-        <p className="text-sm font-medium">These lists do two things</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          They <strong className="font-medium text-foreground">classify</strong> activity
-          for the productivity score, and the desktop agent{" "}
-          <strong className="font-medium text-foreground">actively blocks</strong>{" "}
-          anything on the block list — minimizing a blocked app’s window, or covering a
-          blocked site with an overlay.
-        </p>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Blocking only happens{" "}
-          <strong className="font-medium text-foreground">
-            while a timer is running
-          </strong>
-          . Off the clock there is no enforcement, ever — someone’s own time is their own.
-        </p>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <DomainListCard
-          title="Allow List"
-          description="Always rated productive, regardless of category rules. Never blocked."
-          accent="positive"
-          items={allowList}
-          onChange={onAllow}
-          canManage={canManage}
-        />
-        <DomainListCard
-          title="Block List"
-          description="Always rated distracting, flagged in anomaly reports — and blocked by the agent during a running timer."
-          accent="negative"
-          items={blockList}
-          onChange={onBlock}
-          canManage={canManage}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Exceptions panel
-// ──────────────────────────────────────────────────────────────────────────────
-
-function ExceptionsPanel({
-  exceptionIds,
-  onChange,
-  canManage,
-}: {
-  exceptionIds: string[]
-  onChange: (next: string[]) => void
-  canManage: boolean
-}) {
-  const excluded = SAMPLE_PEOPLE.filter((p) => exceptionIds.includes(p.id))
-  const available = SAMPLE_PEOPLE.filter((p) => !exceptionIds.includes(p.id))
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Monitoring exceptions</CardTitle>
-        <CardDescription>
-          Employees listed here are excluded from activity monitoring, screenshots,
-          and alerts.
-        </CardDescription>
-        {canManage && available.length > 0 && (
-          <CardAction>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button size="sm" variant="outline" className="gap-1.5" />
-                }
-              >
-                <Plus className="size-4" /> Add exception
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="max-h-72 w-60 overflow-y-auto"
-              >
-                {available.map((p) => (
-                  <DropdownMenuItem
-                    key={p.id}
-                    className="gap-2.5"
-                    onClick={() => onChange([...exceptionIds, p.id])}
+        {items.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No entries yet.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {items.map((item) => (
+              <div key={item} className="flex items-center gap-1.5 rounded-sm border border-border bg-muted px-2.5 py-1 text-xs">
+                {item}
+                {canManage && (
+                  <button
+                    onClick={() => onChange(items.filter((i) => i !== item))}
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={`Remove ${item}`}
                   >
-                    <Avatar className="size-6">
-                      <AvatarImage src={p.avatarUrl} alt={p.name} />
-                      <AvatarFallback className="text-[10px]">
-                        {initials(p.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {p.name}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {p.jobTitle}
-                      </span>
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </CardAction>
-        )}
-      </CardHeader>
-      <CardContent className="divide-y p-0">
-        {excluded.length === 0 && (
-          <p className="px-6 py-8 text-center text-sm text-muted-foreground">
-            No exceptions configured.
-          </p>
-        )}
-        {excluded.map((person) => (
-          <div key={person.id} className="flex items-center gap-3 px-6 py-3">
-            <Avatar className="size-8">
-              <AvatarImage src={person.avatarUrl} alt={person.name} />
-              <AvatarFallback className="text-xs">
-                {initials(person.name)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{person.name}</p>
-              <p className="text-xs text-muted-foreground">{person.jobTitle}</p>
-            </div>
-            {canManage && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onChange(exceptionIds.filter((id) => id !== person.id))}
-                aria-label={`Remove ${person.name}`}
-              >
-                <X className="size-4" />
-              </Button>
-            )}
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </CardContent>
     </Card>
-  )
+  );
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Root export
-// ──────────────────────────────────────────────────────────────────────────────
+function looksLikeProcess(v: string) {
+  return /^[a-z0-9 ._-]+$/i.test(v);
+}
+
+/* ── Root ── */
+
+type TabKey = "categories" | "apps" | "lists";
 
 export function TrackingRulesTab() {
-  const { can } = usePermissions()
-  const canManage = can("settings:manage")
-  const [activeTab, setActiveTab] = useState<TabKey>("categories")
+  const { can } = usePermissions();
+  const canManage = can("settings:manage");
+  const { doc, loading, error, reload, save } = useOrgRules();
 
-  const [saved, setSaved] = useState<TrackingState>(() => cloneState(INITIAL_STATE))
-  const [draft, setDraft] = useState<TrackingState>(() => cloneState(INITIAL_STATE))
-  const [saving, setSaving] = useState(false)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
+  const [draft, setDraft] = useState<RulesDoc | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>("categories");
 
-  function patch<K extends keyof TrackingState>(key: K, value: TrackingState[K]) {
-    setDraft((d) => ({ ...d, [key]: value }))
+  // Seed the working draft whenever the server doc (re)loads.
+  useEffect(() => {
+    if (doc) setDraft(structuredClone(doc));
+  }, [doc]);
+
+  const dirty = useMemo(
+    () => Boolean(doc && draft && JSON.stringify(doc) !== JSON.stringify(draft)),
+    [doc, draft],
+  );
+
+  function patch<K extends keyof RulesDoc>(key: K, value: RulesDoc[K]) {
+    setDraft((d) => (d ? { ...d, [key]: value } : d));
   }
 
-  function handleSave() {
-    if (!dirty || saving) return
-    const next = draft
-    setSaving(true)
-    // Simulated persistence latency (Phase 1 is frontend-only).
-    setTimeout(() => {
-      setSaved(cloneState(next))
-      setSaving(false)
-      toast.success("Tracking rules saved")
-    }, 500)
+  async function handleSave() {
+    if (!draft || !dirty || saving) return;
+    setSaving(true);
+    try {
+      await save(draft);
+      toast.success("Tracking rules saved");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error("Rules changed elsewhere — reloaded the latest. Re-apply your edits.");
+        reload();
+      } else {
+        toast.error(e instanceof ApiError ? e.message : "Couldn't save the rules. Try again.");
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleReset() {
-    setDraft(cloneState(saved))
+  if (loading && !draft) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Loader label="Loading tracking rules…" />
+      </div>
+    );
+  }
+
+  if (error || !draft) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Tracking rules" description="Classify apps and websites, and set what's tracked or blocked." />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+          <p className="text-sm text-muted-foreground">{error ?? "Rules are unavailable."}</p>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   const tabs: { key: TabKey; label: string; count?: number }[] = [
     { key: "categories", label: "Categories" },
+    { key: "apps", label: "Apps & Websites", count: draft.apps.length + draft.urls.length },
     {
-      key: "items",
-      label: "Apps & Websites",
-      count: draft.apps.length + draft.websites.length,
-    },
-    {
-      key: "allowblock",
+      key: "lists",
       label: "Allow / Block",
-      count: draft.allowList.length + draft.blockList.length,
+      count:
+        draft.exceptions.apps.length +
+        draft.exceptions.urls.length +
+        draft.blocked.apps.length +
+        draft.blocked.urls.length,
     },
-    { key: "exceptions", label: "Exceptions", count: draft.exceptionIds.length },
-  ]
+  ];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Tracking rules"
-        description="Classify apps and websites, manage allow/block lists, and configure productivity scoring."
+        description="Classify apps and websites, manage allow/block lists, and set productivity-score weights. The desktop agent pulls these on its next heartbeat."
       />
 
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
-          <span className="font-medium text-foreground">Manage Settings</span>{" "}
-          permission.
+          <span className="font-medium text-foreground">Manage Settings</span> permission.
         </div>
       )}
 
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground">
+        <MonitorSmartphone className="size-4 shrink-0" />
+        These rules configure the desktop agent. They save to the server now; enforcement begins once
+        the agent is reporting.
+      </div>
+
       <div className="space-y-6">
-        {/* Tab bar */}
         <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b">
           {tabs.map((tab) => {
-            const active = activeTab === tab.key
+            const active = activeTab === tab.key;
             return (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={cn(
-                  "flex shrink-0 cursor-pointer items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                  active
-                    ? "-mb-px border-b-2 border-primary text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
+                  "flex shrink-0 cursor-pointer items-center gap-2 rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors",
+                  active ? "-mb-px border-b-2 border-primary text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {tab.label}
@@ -815,53 +555,76 @@ export function TrackingRulesTab() {
                   <span
                     className={cn(
                       "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
-                      active
-                        ? "bg-primary/10 text-primary"
-                        : "bg-muted text-muted-foreground",
+                      active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
                     )}
                   >
                     {tab.count}
                   </span>
                 )}
               </button>
-            )
+            );
           })}
         </div>
 
-        {/* Active panel */}
         {activeTab === "categories" && (
           <CategoriesPanel
-            descriptions={draft.descriptions}
-            weights={draft.weights}
-            onDescriptions={(v) => patch("descriptions", v)}
-            onWeights={(v) => patch("weights", v)}
+            weights={draft.category_weights}
+            onWeights={(v) => patch("category_weights", v)}
             canManage={canManage}
           />
         )}
-        {activeTab === "items" && (
-          <ItemsPanel
+        {activeTab === "apps" && (
+          <AppsPanel
             apps={draft.apps}
-            websites={draft.websites}
+            urls={draft.urls}
             onApps={(v) => patch("apps", v)}
-            onWebsites={(v) => patch("websites", v)}
+            onUrls={(v) => patch("urls", v)}
             canManage={canManage}
           />
         )}
-        {activeTab === "allowblock" && (
-          <AllowBlockPanel
-            allowList={draft.allowList}
-            blockList={draft.blockList}
-            onAllow={(v) => patch("allowList", v)}
-            onBlock={(v) => patch("blockList", v)}
-            canManage={canManage}
-          />
-        )}
-        {activeTab === "exceptions" && (
-          <ExceptionsPanel
-            exceptionIds={draft.exceptionIds}
-            onChange={(v) => patch("exceptionIds", v)}
-            canManage={canManage}
-          />
+        {activeTab === "lists" && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ChipInput
+              title="Allow list (apps)"
+              description="Exempt from blocking and always allowed. Process names, e.g. zoom.exe."
+              accent="positive"
+              placeholder="process.exe"
+              validate={looksLikeProcess}
+              items={draft.exceptions.apps}
+              onChange={(v) => patch("exceptions", { ...draft.exceptions, apps: v })}
+              canManage={canManage}
+            />
+            <ChipInput
+              title="Allow list (sites)"
+              description="Exempt from blocking, never rated distracting. Domains."
+              accent="positive"
+              placeholder="domain.com"
+              validate={isDomain}
+              items={draft.exceptions.urls}
+              onChange={(v) => patch("exceptions", { ...draft.exceptions, urls: v })}
+              canManage={canManage}
+            />
+            <ChipInput
+              title="Block list (apps)"
+              description="The agent minimizes these during a running timer. Process names."
+              accent="negative"
+              placeholder="process.exe"
+              validate={looksLikeProcess}
+              items={draft.blocked.apps}
+              onChange={(v) => patch("blocked", { ...draft.blocked, apps: v })}
+              canManage={canManage}
+            />
+            <ChipInput
+              title="Block list (sites)"
+              description="Covered with an overlay during a running timer, and flagged in reports. Domains."
+              accent="negative"
+              placeholder="domain.com"
+              validate={isDomain}
+              items={draft.blocked.urls}
+              onChange={(v) => patch("blocked", { ...draft.blocked, urls: v })}
+              canManage={canManage}
+            />
+          </div>
         )}
 
         {canManage && (
@@ -869,10 +632,10 @@ export function TrackingRulesTab() {
             dirty={dirty}
             saving={saving}
             onSave={handleSave}
-            onReset={handleReset}
+            onReset={() => doc && setDraft(structuredClone(doc))}
           />
         )}
       </div>
     </div>
-  )
+  );
 }
