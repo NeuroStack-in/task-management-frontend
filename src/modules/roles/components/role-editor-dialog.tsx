@@ -16,41 +16,65 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { PERMISSION_CATEGORIES } from "@/constants/permissions";
-import { SYSTEM_ROLES } from "@/constants/roles";
-import { useRolesStore } from "@/stores/roles.store";
-import type { PermissionId, Role } from "@/types/rbac";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ApiError } from "@/lib/api";
+import type {
+  ApiRole,
+  ApiPermissionCatalog,
+  RolePayload,
+} from "../services/roles.service";
 
 interface RoleEditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** When provided, the dialog edits this role; otherwise it creates a new one. */
-  role?: Role | null;
+  role?: ApiRole | null;
+  /** The server permission catalog (groups). Null while still loading. */
+  catalog: ApiPermissionCatalog | null;
+  /** For a client-side name-collision hint; the server is the real uniqueness guard. */
+  existingRoles: ApiRole[];
+  onCreate: (body: RolePayload) => Promise<ApiRole>;
+  onUpdate: (id: string, body: RolePayload) => Promise<ApiRole>;
 }
+
+const SCOPES = [
+  { value: "self", label: "Self — only their own data" },
+  { value: "team", label: "Team — their team's data" },
+  { value: "org", label: "Organization — everyone's data" },
+];
 
 export function RoleEditorDialog({
   open,
   onOpenChange,
   role,
+  catalog,
+  existingRoles,
+  onCreate,
+  onUpdate,
 }: RoleEditorDialogProps) {
-  const createRole = useRolesStore((s) => s.createRole);
-  const updateRole = useRolesStore((s) => s.updateRole);
-  const customRoles = useRolesStore((s) => s.customRoles);
-
   const isEdit = Boolean(role);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [selected, setSelected] = useState<Set<PermissionId>>(new Set());
+  const [scope, setScope] = useState("self");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
 
   // Reset form whenever the dialog opens or the target role changes.
   useEffect(() => {
     if (!open) return;
     setName(role?.name ?? "");
     setDescription(role?.description ?? "");
+    setScope(role?.scope ?? "self");
     setSelected(new Set(role?.permissions ?? []));
   }, [open, role]);
 
-  const toggle = (id: PermissionId) =>
+  const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -58,14 +82,14 @@ export function RoleEditorDialog({
       return next;
     });
 
-  const toggleCategory = (ids: PermissionId[], allOn: boolean) =>
+  const toggleGroup = (ids: string[], allOn: boolean) =>
     setSelected((prev) => {
       const next = new Set(prev);
       ids.forEach((id) => (allOn ? next.delete(id) : next.add(id)));
       return next;
     });
 
-  const handleSave = () => {
+  async function handleSave() {
     const trimmedName = name.trim();
     if (!trimmedName) {
       toast.error("Role name is required.");
@@ -79,12 +103,8 @@ export function RoleEditorDialog({
       toast.error("Description must be 200 characters or fewer.");
       return;
     }
-    // No two roles (system or custom) may share a name — case-insensitive,
-    // excluding the role currently being edited.
-    const nameTaken = [...SYSTEM_ROLES, ...customRoles].some(
-      (r) =>
-        r.id !== role?.id &&
-        r.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+    const nameTaken = existingRoles.some(
+      (r) => r.id !== role?.id && r.name.trim().toLowerCase() === trimmedName.toLowerCase(),
     );
     if (nameTaken) {
       toast.error(`A role named “${trimmedName}” already exists.`);
@@ -94,17 +114,31 @@ export function RoleEditorDialog({
       toast.error("Select at least one permission for this role.");
       return;
     }
-    const permissions = [...selected];
-    const desc = description.trim();
-    if (isEdit && role) {
-      updateRole(role.id, { name: trimmedName, description: desc, permissions });
-      toast.success(`Role “${trimmedName}” updated.`);
-    } else {
-      createRole({ name: trimmedName, description: desc, permissions });
-      toast.success(`Role “${trimmedName}” created.`);
+
+    const body: RolePayload = {
+      name: trimmedName,
+      description: description.trim(),
+      scope,
+      permissions: [...selected],
+    };
+    setSaving(true);
+    try {
+      if (isEdit && role) {
+        await onUpdate(role.id, body);
+        toast.success(`Role “${trimmedName}” updated.`);
+      } else {
+        await onCreate(body);
+        toast.success(`Role “${trimmedName}” created.`);
+      }
+      onOpenChange(false);
+    } catch (e) {
+      // The server enforces the real rules (name uniqueness, valid ids, no privilege escalation) —
+      // surface its message rather than claiming success.
+      toast.error(e instanceof ApiError ? e.message : "Couldn't save the role. Try again.");
+    } finally {
+      setSaving(false);
     }
-    onOpenChange(false);
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,7 +146,7 @@ export function RoleEditorDialog({
         <DialogHeader className="border-b p-6">
           <DialogTitle>{isEdit ? "Edit role" : "Create role"}</DialogTitle>
           <DialogDescription>
-            Define a name and the permissions this role grants.
+            Define a name, data scope, and the permissions this role grants.
           </DialogDescription>
         </DialogHeader>
 
@@ -138,6 +172,22 @@ export function RoleEditorDialog({
             </div>
           </div>
 
+          <div className="space-y-2">
+            <Label>Data scope</Label>
+            <Select value={scope} onValueChange={(v) => setScope(v as string)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SCOPES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex items-center justify-between">
             <Label>Permissions</Label>
             <Badge variant="secondary">{selected.size} selected</Badge>
@@ -145,50 +195,59 @@ export function RoleEditorDialog({
         </div>
 
         <ScrollArea className="max-h-[42vh] border-t">
-          <div className="divide-y">
-            {PERMISSION_CATEGORIES.map((cat) => {
-              const ids = cat.permissions.map((p) => p.id);
-              const allOn = ids.every((id) => selected.has(id));
-              return (
-                <div key={cat.module} className="p-6">
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-sm font-medium">{cat.label}</p>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => toggleCategory(ids, allOn)}
-                    >
-                      {allOn ? "Clear all" : "Select all"}
-                    </Button>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {cat.permissions.map((perm) => (
-                      <label
-                        key={perm.id}
-                        className="flex items-center justify-between gap-2 rounded-md border p-2.5"
+          {!catalog ? (
+            <p className="p-6 text-sm text-muted-foreground">Loading permissions…</p>
+          ) : (
+            <div className="divide-y">
+              {catalog.groups.map((group) => {
+                const ids = group.permissions.map((p) => p.id);
+                const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
+                return (
+                  <div key={group.module} className="p-6">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm font-medium">{group.label}</p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => toggleGroup(ids, allOn)}
                       >
-                        <span className="text-sm">{perm.label}</span>
-                        <Switch
-                          checked={selected.has(perm.id)}
-                          onCheckedChange={() => toggle(perm.id)}
-                        />
-                      </label>
-                    ))}
+                        {allOn ? "Clear all" : "Select all"}
+                      </Button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {group.permissions.map((perm) => (
+                        <label
+                          key={perm.id}
+                          className="flex items-center justify-between gap-2 rounded-md border p-2.5"
+                        >
+                          <span className="min-w-0">
+                            <span className="block text-sm">{perm.label}</span>
+                            <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                              {perm.id}
+                            </span>
+                          </span>
+                          <Switch
+                            checked={selected.has(perm.id)}
+                            onCheckedChange={() => toggle(perm.id)}
+                          />
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </ScrollArea>
 
         <DialogFooter className="border-t p-6">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>
-            {isEdit ? "Save changes" : "Create role"}
+          <Button onClick={handleSave} disabled={saving || !catalog}>
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Create role"}
           </Button>
         </DialogFooter>
       </DialogContent>

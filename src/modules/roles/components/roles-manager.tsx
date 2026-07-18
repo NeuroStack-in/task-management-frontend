@@ -9,17 +9,13 @@ import {
   Pencil,
   Plus,
   Trash2,
-  Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useRolesStore } from "@/stores/roles.store";
 import { usePermissions } from "@/hooks/use-permissions";
-import { users } from "@/lib/data";
-import { WILDCARD, ALL_PERMISSIONS } from "@/constants/permissions";
-import type { Role } from "@/types/rbac";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Loader } from "@/components/shared/loader";
 import {
   TableBody,
   TableCell,
@@ -42,62 +38,86 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RoleEditorDialog } from "./role-editor-dialog";
+import { useRoles } from "../use-roles";
+import type { ApiRole } from "../services/roles.service";
 
-function userCountFor(roleId: string): number {
-  return users.filter((u) => u.roleId === roleId).length;
-}
-
-function permissionCount(role: Role): number {
-  return role.permissions.includes(WILDCARD)
-    ? ALL_PERMISSIONS.length
-    : role.permissions.length;
+/** Owner grants everything via `is_owner`, not a counted bitset — show "All", not a number. */
+function permissionLabel(role: ApiRole): string {
+  if (role.is_owner) return "All";
+  return String(role.permissions.length);
 }
 
 export function RolesManager() {
-  const customRoles = useRolesStore((s) => s.customRoles);
-  const cloneRole = useRolesStore((s) => s.cloneRole);
-  const deleteRole = useRolesStore((s) => s.deleteRole);
-  const roles = useRolesStore((s) => s.getAllRoles)();
+  const { roles, catalog, loading, error, reload, create, update, remove, clone } = useRoles();
   const { can } = usePermissions();
   const canManage = can("roles:manage");
 
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editing, setEditing] = useState<Role | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Role | null>(null);
-
-  // Re-subscribe so cards update on custom-role changes.
-  void customRoles;
+  const [editing, setEditing] = useState<ApiRole | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ApiRole | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const openCreate = () => {
     setEditing(null);
     setEditorOpen(true);
   };
 
-  const openEdit = (role: Role) => {
+  const openEdit = (role: ApiRole) => {
     setEditing(role);
     setEditorOpen(true);
   };
 
-  const handleClone = (role: Role) => {
-    const created = cloneRole(role.id, `Copy of ${role.name}`);
-    if (created) {
+  const handleClone = async (role: ApiRole) => {
+    try {
+      const created = await clone(role.id, `Copy of ${role.name}`);
       toast.success(`Cloned “${role.name}”.`);
       openEdit(created);
+    } catch {
+      toast.error("Couldn't clone the role. Try again.");
     }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    deleteRole(deleteTarget.id);
-    toast.success(`Role “${deleteTarget.name}” deleted.`);
-    setDeleteTarget(null);
+    setBusy(true);
+    try {
+      await remove(deleteTarget.id);
+      toast.success(`Role “${deleteTarget.name}” deleted.`);
+      setDeleteTarget(null);
+    } catch {
+      toast.error("Couldn't delete the role. It may still be assigned to someone.");
+    } finally {
+      setBusy(false);
+    }
   };
+
+  if (loading && roles.length === 0) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader label="Loading roles…" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Roles & Permissions" description="Roles and what each can access." />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Roles & Permissions"
-        description="Create roles and control what each can access. The sidebar and routes adapt to these permissions."
+        description="Create roles and control what each can access. Changes take effect on the server; a member's own view updates at their next sign-in."
         actions={
           canManage ? (
             <Button onClick={openCreate}>
@@ -112,10 +132,8 @@ export function RolesManager() {
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="py-3 pl-6">Role</TableHead>
-              <TableHead className="hidden py-3 md:table-cell">
-                Description
-              </TableHead>
-              <TableHead className="py-3">Members</TableHead>
+              <TableHead className="hidden py-3 md:table-cell">Description</TableHead>
+              <TableHead className="py-3">Scope</TableHead>
               <TableHead className="py-3 pr-6 md:pr-2">Permissions</TableHead>
               {canManage && <TableHead className="w-12 py-3 pr-4" />}
             </TableRow>
@@ -123,7 +141,6 @@ export function RolesManager() {
           <TableBody>
             {roles.map((role) => (
               <TableRow key={role.id}>
-                {/* Role identity */}
                 <TableCell className="py-3 pl-6">
                   <div className="flex items-center gap-3">
                     <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -132,10 +149,7 @@ export function RolesManager() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{role.name}</span>
-                        <Badge
-                          variant={role.system ? "secondary" : "outline"}
-                          className="font-normal"
-                        >
+                        <Badge variant={role.system ? "secondary" : "outline"} className="font-normal">
                           {role.system ? (
                             <>
                               <Lock className="size-3" /> Default
@@ -145,7 +159,6 @@ export function RolesManager() {
                           )}
                         </Badge>
                       </div>
-                      {/* Description shown inline on small screens */}
                       <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground md:hidden">
                         {role.description}
                       </p>
@@ -153,34 +166,25 @@ export function RolesManager() {
                   </div>
                 </TableCell>
 
-                {/* Description */}
                 <TableCell className="hidden max-w-md py-3 whitespace-normal text-muted-foreground md:table-cell">
                   <span className="line-clamp-2">{role.description}</span>
                 </TableCell>
 
-                {/* Members */}
                 <TableCell className="py-3">
-                  <span className="inline-flex items-center gap-1.5 tabular-nums text-muted-foreground">
-                    <Users className="size-4" />
-                    {userCountFor(role.id)}
-                  </span>
+                  <Badge variant="outline" className="font-normal capitalize">
+                    {role.scope}
+                  </Badge>
                 </TableCell>
 
-                {/* Permissions */}
                 <TableCell className="py-3 pr-6 font-medium tabular-nums md:pr-2">
-                  {role.permissions.includes(WILDCARD)
-                    ? "All"
-                    : permissionCount(role)}
+                  {permissionLabel(role)}
                 </TableCell>
 
-                {/* Actions */}
                 {canManage && (
                   <TableCell className="py-3 pr-4 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger
-                        render={
-                          <Button variant="ghost" size="icon" className="size-8" />
-                        }
+                        render={<Button variant="ghost" size="icon" className="size-8" />}
                       >
                         <MoreVertical className="size-4" />
                       </DropdownMenuTrigger>
@@ -188,10 +192,7 @@ export function RolesManager() {
                         <DropdownMenuItem onClick={() => handleClone(role)}>
                           <Copy className="size-4" /> Clone
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          disabled={role.system}
-                          onClick={() => openEdit(role)}
-                        >
+                        <DropdownMenuItem disabled={role.system} onClick={() => openEdit(role)}>
                           <Pencil className="size-4" /> Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem
@@ -215,26 +216,26 @@ export function RolesManager() {
         open={editorOpen}
         onOpenChange={setEditorOpen}
         role={editing}
+        catalog={catalog}
+        existingRoles={roles}
+        onCreate={create}
+        onUpdate={update}
       />
 
-      <Dialog
-        open={Boolean(deleteTarget)}
-        onOpenChange={(o) => !o && setDeleteTarget(null)}
-      >
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Delete role</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete “{deleteTarget?.name}”? This action
-              cannot be undone.
+              Are you sure you want to delete “{deleteTarget?.name}”? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
-              Delete role
+            <Button variant="destructive" disabled={busy} onClick={confirmDelete}>
+              {busy ? "Deleting…" : "Delete role"}
             </Button>
           </DialogFooter>
         </DialogContent>
