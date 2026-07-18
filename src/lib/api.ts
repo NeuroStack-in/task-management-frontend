@@ -96,3 +96,63 @@ export interface Entitlements {
 export function getEntitlements(): Promise<Entitlements> {
   return apiFetch<Entitlements>("/v1/org/entitlements");
 }
+
+// ── Invite signup (public — the invitee has no account yet) ──────────────────────────────────────
+// Both calls run logged-out: `apiFetch` only attaches a token when one exists, so no auth header is
+// sent, which is exactly what these public routes expect.
+
+/** What the signup page renders — `GET /v1/invites/{invite_id}` (identity). No secrets returned. */
+export interface InvitePreview {
+  org_name: string;
+  /** The address the invite was issued to; the invitee cannot change it. */
+  email: string;
+  role_name: string;
+  role_id: string;
+  /** `pending` (usable) · `expired` · `accepted` · `locked`. */
+  status: "pending" | "expired" | "accepted" | "locked" | string;
+  /** Epoch seconds. */
+  expires_at: number;
+}
+
+/** The three values the accept-link carries. */
+export interface InviteLinkParams {
+  tenantId: string;
+  inviteId: string;
+  token: string;
+}
+
+/** Preview an invite so the page can render before the invitee submits. 404 = bad/unknown link. */
+export function lookupInvite(p: InviteLinkParams): Promise<InvitePreview> {
+  const q = new URLSearchParams({ tenant_id: p.tenantId, token: p.token });
+  return apiFetch<InvitePreview>(
+    `/v1/invites/${encodeURIComponent(p.inviteId)}?${q.toString()}`,
+  );
+}
+
+/** What the invitee submits — `POST /v1/invites/accept` (identity). Provisions the Cognito login. */
+export interface AcceptInviteBody {
+  tenant_id: string;
+  invite_id: string;
+  token: string;
+  /** The code from the invite email (attempt-locked server-side). */
+  otp: string;
+  full_name: string;
+  password: string;
+  job_title?: string;
+  phone?: string;
+  location?: string;
+}
+
+export interface AcceptInviteResult {
+  user_id: string;
+  emp_id: string;
+  email: string;
+  role_id: string;
+}
+
+export function acceptInvite(body: AcceptInviteBody): Promise<AcceptInviteResult> {
+  return apiFetch<AcceptInviteResult>("/v1/invites/accept", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
