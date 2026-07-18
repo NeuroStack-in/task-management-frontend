@@ -1,18 +1,11 @@
 import type { Metadata } from "next";
-import { AgentPending } from "@/components/shared/agent-pending";
+import { FleetView } from "@/modules/agents/components/fleet-view";
 
 export const metadata: Metadata = { title: "Device agents · Settings" };
 
-// The fleet backend only serves `/v1/agent/config` to the agent itself — there is no admin
-// device-list route, and no agents are enrolled/reporting yet. So this shows an honest pending
-// state instead of a mock fleet. The device-table UI is kept at modules/agents/ for when a fleet
-// read route + live agents exist.
+// Real fleet, via GET /v1/fleet (fleet context, LLD §18): the AgentDevice records the
+// ingest-processor writes from each agent's heartbeat, with read-time connectivity. Empty until
+// agents are enrolled and reporting — an honest empty state, not a mock fleet.
 export default function Page() {
-  return (
-    <AgentPending
-      title="Device agents"
-      description="Machines running the WorkPulse desktop agent."
-      detail="Enrolled devices, their status, and last check-in appear here once the WorkPulse desktop agent is installed and reporting. No agents are sending data yet."
-    />
-  );
+  return <FleetView />;
 }
