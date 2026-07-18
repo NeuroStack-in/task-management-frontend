@@ -58,6 +58,33 @@ export async function markAllRead(): Promise<void> {
 }
 
 /**
+ * Preferences — `GET`/`PUT /v1/notifications/prefs` (self-scoped, LLD §11).
+ *
+ * The server stores the pref document **opaquely** (a whole JSON blob under `data`, versioned) and
+ * hands it back verbatim, so the frontend owns the shape. We persist our own `NotificationPrefs`
+ * object directly; the server increments `version` on each write (no client-supplied lock).
+ *
+ * A brand-new user has never saved, so `GET` returns the server's *default* document, whose shape
+ * differs from ours — the caller must therefore read it **defensively** and fall back to its own
+ * defaults per field, not assume our keys are present.
+ */
+export interface PrefsDoc {
+  prefs: unknown;
+  version: number;
+}
+
+export function getPrefs(): Promise<PrefsDoc> {
+  return apiFetch<PrefsDoc>("/v1/notifications/prefs");
+}
+
+export function updatePrefs(prefs: unknown): Promise<PrefsDoc> {
+  return apiFetch<PrefsDoc>("/v1/notifications/prefs", {
+    method: "PUT",
+    body: JSON.stringify({ prefs }),
+  });
+}
+
+/**
  * Short human label per `ntype`, mirroring the summaries the backend's consumer writes.
  *
  * Kept in the same order as `notifications/src/consumers.rs` so the two can be diffed by eye — this

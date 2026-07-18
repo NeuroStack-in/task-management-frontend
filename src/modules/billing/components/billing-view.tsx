@@ -1,58 +1,51 @@
 "use client";
 
-import { jsPDF } from "jspdf";
-import { Check, CreditCard, Download } from "lucide-react";
+import { Check, CreditCard, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
-import {
-  CURRENT_PLAN,
-  INVOICES,
-  PAYMENT_METHOD,
-  PLAN_TIERS,
-  USAGE_METERS,
-  formatCurrency,
-  type Invoice,
-} from "@/lib/mock-billing";
+import { PLAN_TIERS, formatCurrency } from "@/lib/mock-billing";
+import { useBilling } from "../use-billing";
 import { cn } from "@/lib/utils";
-
-function downloadInvoice(inv: Invoice) {
-  const doc = new jsPDF();
-  doc.setFontSize(18);
-  doc.text("WorkPulse", 14, 20);
-  doc.setFontSize(11);
-  doc.setTextColor(120);
-  doc.text("Invoice", 14, 27);
-  doc.setTextColor(20);
-  doc.setFontSize(11);
-  doc.text(`Invoice: ${inv.number}`, 14, 42);
-  doc.text(`Date: ${inv.date}`, 14, 49);
-  doc.text(`Billed to: ${PAYMENT_METHOD.name}`, 14, 56);
-  doc.line(14, 64, 196, 64);
-  doc.text("Business plan — monthly subscription", 14, 74);
-  doc.text(formatCurrency(inv.amount), 170, 74);
-  doc.line(14, 80, 196, 80);
-  doc.setFontSize(13);
-  doc.text("Total", 14, 90);
-  doc.text(formatCurrency(inv.amount), 170, 90);
-  doc.setFontSize(10);
-  doc.setTextColor(120);
-  doc.text(`Status: ${inv.status.toUpperCase()}`, 14, 100);
-  doc.save(`${inv.number}.pdf`);
-  toast.success("Invoice downloaded", { description: `${inv.number}.pdf` });
-}
 
 export function BillingView() {
   const { can } = usePermissions();
   const canManage = can("billing:manage");
+  const { overview, loading, error, reload } = useBilling();
 
-  const monthly = CURRENT_PLAN.seatsUsed * CURRENT_PLAN.pricePerSeat;
-  const seatPct = Math.round(
-    (CURRENT_PLAN.seatsUsed / CURRENT_PLAN.seatsTotal) * 100,
-  );
+  if (loading && !overview) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader label="Loading billing…" />
+      </div>
+    );
+  }
+
+  if (error || !overview) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6">
+        <PageHeader title="Billing & Subscription" description="Manage your plan and seats." />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+          <p className="text-sm text-muted-foreground">{error ?? "Billing is unavailable."}</p>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // The live plan may or may not map to a priced catalog tier (e.g. `free` has none).
+  const tier = PLAN_TIERS.find((t) => t.id === overview.plan);
+  const capped = overview.seat_cap > 0;
+  const seatPct = capped ? Math.round((overview.seats_used / overview.seat_cap) * 100) : 0;
+  // A real, per-seat estimate — only when both the seat cap and a catalog price exist. Never invent
+  // an invoiced amount; the backend serves no billed total.
+  const estMonthly = tier && capped ? overview.seats_used * tier.pricePerSeat : null;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -69,46 +62,55 @@ export function BillingView() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Current plan</p>
-                <p className="font-display text-2xl font-semibold">Business</p>
+                <p className="font-display text-2xl font-semibold capitalize">{overview.plan}</p>
               </div>
-              <p className="text-right">
-                <span className="font-display text-2xl font-semibold tabular-nums">
-                  {formatCurrency(monthly)}
-                </span>
-                <span className="text-sm text-muted-foreground"> /mo</span>
-              </p>
+              {estMonthly !== null ? (
+                <p className="text-right">
+                  <span className="font-display text-2xl font-semibold tabular-nums">
+                    {formatCurrency(estMonthly)}
+                  </span>
+                  <span className="text-sm text-muted-foreground"> /mo est.</span>
+                </p>
+              ) : (
+                <Badge variant="secondary" className="capitalize">
+                  {overview.status}
+                </Badge>
+              )}
             </div>
 
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
                 <span>
-                  {CURRENT_PLAN.seatsUsed} of {CURRENT_PLAN.seatsTotal} seats
+                  {capped
+                    ? `${overview.seats_used} of ${overview.seat_cap} seats`
+                    : `${overview.seats_used} seats in use`}
                 </span>
-                <span>{seatPct}%</span>
+                {capped ? <span>{seatPct}%</span> : null}
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${seatPct}%` }}
-                />
-              </div>
+              {capped ? (
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${seatPct}%` }} />
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No seat cap on this plan.</p>
+              )}
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              Renews {CURRENT_PLAN.renewsOn} · {CURRENT_PLAN.billingCycle}
+            <p className="text-xs text-muted-foreground capitalize">
+              {overview.cadence} · status: {overview.status}
             </p>
 
             <Button
               variant="outline"
               size="sm"
               disabled={!canManage}
-              onClick={() => toast.info("Subscription management is a later phase.")}
+              onClick={() => toast.info("Self-serve plan changes aren't enabled yet.")}
             >
               Manage subscription
             </Button>
           </div>
 
-          {/* Payment */}
+          {/* Payment — no endpoint yet (payments are unbuilt). Honest, not a fake card. */}
           <div className="space-y-4 md:border-l md:pl-8">
             <p className="text-sm text-muted-foreground">Payment method</p>
             <div className="flex items-center gap-3">
@@ -116,55 +118,36 @@ export function BillingView() {
                 <CreditCard className="size-5" />
               </span>
               <div>
-                <p className="font-mono text-sm tracking-wider">
-                  •••• {PAYMENT_METHOD.last4}
-                </p>
+                <p className="text-sm font-medium">No payment method on file</p>
                 <p className="text-xs text-muted-foreground">
-                  {PAYMENT_METHOD.brand} · Exp {PAYMENT_METHOD.expires}
+                  Payments aren&apos;t enabled for this environment yet.
                 </p>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2"
-              disabled={!canManage}
-              onClick={() => toast.info("Updating cards is a later phase.")}
-            >
-              Update card
-            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Usage */}
+      {/* Usage — the one real meter is seats. */}
       <section className="space-y-4">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Usage this cycle
-        </h2>
-        <div className="space-y-4">
-          {USAGE_METERS.map((m) => {
-            const pct = Math.round((m.used / m.total) * 100);
-            return (
-              <div key={m.label} className="space-y-1.5">
-                <div className="flex items-baseline justify-between text-sm">
-                  <span>{m.label}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {m.used.toLocaleString()} / {m.total.toLocaleString()} {m.unit}
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      pct >= 85 ? "bg-warning" : "bg-primary",
-                    )}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
+        <h2 className="text-sm font-medium text-muted-foreground">Usage this cycle</h2>
+        <div className="space-y-1.5">
+          <div className="flex items-baseline justify-between text-sm">
+            <span>Seats</span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {capped
+                ? `${overview.seats_used} / ${overview.seat_cap}`
+                : `${overview.seats_used} in use`}
+            </span>
+          </div>
+          {capped ? (
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn("h-full rounded-full", seatPct >= 85 ? "bg-warning" : "bg-primary")}
+                style={{ width: `${seatPct}%` }}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -172,18 +155,18 @@ export function BillingView() {
       <section className="space-y-4">
         <h2 className="text-sm font-medium text-muted-foreground">Plans</h2>
         <div className="grid gap-3 sm:grid-cols-3">
-          {PLAN_TIERS.map((tier) => {
-            const current = tier.id === CURRENT_PLAN.tierId;
+          {PLAN_TIERS.map((t) => {
+            const current = t.id === overview.plan;
             return (
               <div
-                key={tier.id}
+                key={t.id}
                 className={cn(
                   "rounded-2xl border p-4",
                   current ? "border-primary bg-primary/[0.03]" : "border-border",
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <p className="font-medium">{tier.name}</p>
+                  <p className="font-medium">{t.name}</p>
                   {current ? (
                     <Badge variant="secondary" className="text-[11px]">
                       Current
@@ -191,14 +174,11 @@ export function BillingView() {
                   ) : null}
                 </div>
                 <p className="mt-1 font-display text-xl font-semibold tabular-nums">
-                  {formatCurrency(tier.pricePerSeat)}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {" "}
-                    /seat/mo
-                  </span>
+                  {formatCurrency(t.pricePerSeat)}
+                  <span className="text-xs font-normal text-muted-foreground"> /seat/mo</span>
                 </p>
                 <ul className="mt-3 space-y-1.5 text-xs text-muted-foreground">
-                  {tier.features.map((f) => (
+                  {t.features.map((f) => (
                     <li key={f} className="flex items-center gap-1.5">
                       <Check className="size-3 shrink-0 text-success" />
                       {f}
@@ -211,9 +191,7 @@ export function BillingView() {
                     size="sm"
                     className="mt-3 -ml-2"
                     disabled={!canManage}
-                    onClick={() =>
-                      toast.info(`Switching to ${tier.name} is a later phase.`)
-                    }
+                    onClick={() => toast.info("Self-serve plan changes aren't enabled yet.")}
                   >
                     Switch
                   </Button>
@@ -224,45 +202,15 @@ export function BillingView() {
         </div>
       </section>
 
-      {/* Invoices */}
+      {/* Invoices — no endpoint yet (invoicing is an unbuilt seam). */}
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">Invoices</h2>
-        <div className="divide-y rounded-2xl border">
-          {INVOICES.map((inv) => (
-            <div
-              key={inv.id}
-              className="flex items-center gap-4 px-4 py-3 text-sm"
-            >
-              <span className="font-mono text-xs text-muted-foreground">
-                {inv.number}
-              </span>
-              <span className="flex-1 text-muted-foreground">{inv.date}</span>
-              <span className="font-medium tabular-nums">
-                {formatCurrency(inv.amount)}
-              </span>
-              <span
-                className={cn(
-                  "w-14 text-xs capitalize",
-                  inv.status === "paid"
-                    ? "text-muted-foreground"
-                    : inv.status === "failed"
-                      ? "text-destructive"
-                      : "text-warning",
-                )}
-              >
-                {inv.status}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8 text-muted-foreground"
-                aria-label={`Download ${inv.number}`}
-                onClick={() => downloadInvoice(inv)}
-              >
-                <Download className="size-4" />
-              </Button>
-            </div>
-          ))}
+        <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed py-10 text-center">
+          <FileText className="size-5 text-muted-foreground" />
+          <p className="text-sm font-medium">No invoices yet</p>
+          <p className="text-xs text-muted-foreground">
+            Invoicing isn&apos;t enabled for this environment. Past invoices will appear here.
+          </p>
         </div>
       </section>
     </div>

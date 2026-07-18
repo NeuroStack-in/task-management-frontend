@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Card,
@@ -12,6 +12,9 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/shared/page-header";
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar";
+import { Loader } from "@/components/shared/loader";
+import { Button } from "@/components/ui/button";
+import { getPrefs, updatePrefs } from "@/modules/notifications/services/notifications.service";
 import { cn } from "@/lib/utils";
 
 type Channel = "inApp" | "email";
@@ -95,11 +98,72 @@ const INITIAL_PREFS: NotificationPrefs = {
   digest: "weekly",
 };
 
+const DIGEST_VALUES: DigestValue[] = ["off", "daily", "weekly"];
+
+/**
+ * Reads the server's opaque pref document into our shape, **field by field with a fallback**.
+ *
+ * A never-saved user gets the server's *default* document (a different shape), so nothing here may
+ * assume our keys exist: each channel falls back to that type's default, `digest`/`quietHours` fall
+ * back to `INITIAL_PREFS` when absent or the wrong type. This tolerates both the server default and a
+ * previously-saved copy of our own shape.
+ */
+function fromServer(raw: unknown): NotificationPrefs {
+  const doc = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const rawChannels = (doc.channels && typeof doc.channels === "object" ? doc.channels : {}) as Record<
+    string,
+    { inApp?: unknown; email?: unknown } | undefined
+  >;
+  const channels = Object.fromEntries(
+    NOTIFICATION_TYPES.map((t) => {
+      const r = rawChannels[t.key];
+      return [
+        t.key,
+        {
+          inApp: typeof r?.inApp === "boolean" ? r.inApp : t.defaults.inApp,
+          email: typeof r?.email === "boolean" ? r.email : t.defaults.email,
+        },
+      ];
+    }),
+  );
+  const digest = DIGEST_VALUES.includes(doc.digest as DigestValue)
+    ? (doc.digest as DigestValue)
+    : INITIAL_PREFS.digest;
+  const quietHours = typeof doc.quietHours === "boolean" ? doc.quietHours : INITIAL_PREFS.quietHours;
+  return { channels, quietHours, digest };
+}
+
 export function NotificationPreferences() {
   // Working draft vs. last-saved baseline — the diff drives the save bar.
   const [saved, setSaved] = useState<NotificationPrefs>(INITIAL_PREFS);
   const [draft, setDraft] = useState<NotificationPrefs>(INITIAL_PREFS);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    let live = true;
+    setLoading(true);
+    setLoadError(null);
+    getPrefs()
+      .then((doc) => {
+        if (!live) return;
+        const prefs = fromServer(doc.prefs);
+        setSaved(prefs);
+        setDraft(prefs);
+      })
+      .catch(() => {
+        if (live) setLoadError("Couldn't load your notification preferences.");
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => load(), [load]);
 
   const dirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(saved),
@@ -120,16 +184,44 @@ export function NotificationPreferences() {
     setDraft(saved);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!dirty || saving) return;
     const next = draft;
     setSaving(true);
-    // Simulated persistence latency (Phase 1 is frontend-only).
-    setTimeout(() => {
+    try {
+      await updatePrefs(next);
       setSaved(next);
-      setSaving(false);
       toast.success("Notification preferences saved");
-    }, 500);
+    } catch {
+      toast.error("Couldn't save your preferences. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader label="Loading preferences…" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Notification preferences"
+          description="Choose what you're notified about and where."
+        />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+          <p className="text-sm text-muted-foreground">{loadError}</p>
+          <Button variant="outline" size="sm" onClick={load}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
