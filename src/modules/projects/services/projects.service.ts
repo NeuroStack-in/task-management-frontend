@@ -115,6 +115,21 @@ export function getBoard(id: string): Promise<ApiBoardColumn[]> {
   );
 }
 
+/**
+ * The caller's own tasks (`GET /v1/me/tasks`). The projection is lean — `{id, project_id, status,
+ * due}`, **no title** — so a titled list has to enrich each id from its project board.
+ */
+export interface ApiMyTask {
+  id: string;
+  project_id: string;
+  status: string;
+  due?: string;
+}
+
+export function listMyTasks(): Promise<ApiMyTask[]> {
+  return apiFetch<{ tasks: ApiMyTask[] }>("/v1/me/tasks").then((r) => r.tasks);
+}
+
 // ── Task mutations ─────────────────────────────────────────────────────────────────────────────
 
 export interface NewTask {
