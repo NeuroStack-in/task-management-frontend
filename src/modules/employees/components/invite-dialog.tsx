@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Link2, Mail } from "lucide-react";
+import { Copy, Check, Mail, RotateCcw, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,226 +21,238 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { organization } from "@/lib/data";
 import { isEmail } from "@/lib/validation";
-import { cn } from "@/lib/utils";
+import { ApiError } from "@/lib/api";
+import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
+import {
+  createInvite,
+  revokeInvite,
+  resendInvite,
+  type ApiInviteCreated,
+} from "../services/employees.service";
 
-const ROLES = ["Member", "Manager", "Admin"];
-
-/** Stable workspace slug + invite code (deterministic — no Date/random). */
-const SLUG = organization.name
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, "-")
-  .replace(/^-+|-+$/g, "");
-const INVITE_CODE = (() => {
-  let h = 0;
-  for (const c of organization.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return h.toString(36).toUpperCase().padStart(6, "0").slice(0, 6);
-})();
-const INVITE_LINK = `https://app.workpulse.io/join/${SLUG}?code=${INVITE_CODE}`;
-
-/** Slack glyph (lucide has no brand mark). */
-function SlackIcon({ className }: { className?: string }) {
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
-      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
-    </svg>
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/40 px-2.5 py-1.5 font-mono text-xs">
+          {value}
+        </code>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          aria-label={`Copy ${label}`}
+          onClick={() => {
+            void navigator.clipboard?.writeText(value);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1200);
+          }}
+        >
+          {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
+        </Button>
+      </div>
+    </div>
   );
 }
 
 export function InviteDialog({
   open,
   onOpenChange,
-  departments,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  departments: string[];
 }) {
-  // No empId here: it's server-generated on invite acceptance — an org-configurable
-  // prefix plus an atomic per-tenant sequence (COUNTER#emp_id) → "NS-0042". Never typed.
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    role: "Member",
-    department: "",
-  });
-  const set = (k: keyof typeof form) => (v: string) =>
-    setForm((s) => ({ ...s, [k]: v }));
+  const [roles, setRoles] = useState<ApiRole[]>([]);
+  const [email, setEmail] = useState("");
+  const [roleId, setRoleId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [created, setCreated] = useState<ApiInviteCreated | null>(null);
 
-  // The invite message is personalised with whatever details are filled in.
-  const greet = form.name.trim() ? `Hi ${form.name.trim().split(" ")[0]}, ` : "";
-  const asRole = form.role ? ` as a ${form.role}` : "";
-  const message = `${greet}you're invited to join ${organization.name} on WorkPulse${asRole}. Set up your account here: ${INVITE_LINK}`;
+  // Load assignable roles (never the Owner) when the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    listRoles()
+      .then((r) => {
+        if (!live) return;
+        const assignable = r.filter((role) => !role.is_owner);
+        setRoles(assignable);
+        // Default to Employee if present.
+        const emp = assignable.find((role) => /employee/i.test(role.name));
+        setRoleId((cur) => cur || emp?.id || assignable[0]?.id || "");
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [open]);
 
-  const copyLink = () =>
-    navigator.clipboard?.writeText(INVITE_LINK).then(
-      () => toast.success("Invite link copied to clipboard"),
-      () => toast.error("Couldn't copy the link"),
-    );
+  function reset() {
+    setEmail("");
+    setCreated(null);
+    setSubmitting(false);
+  }
 
-  const shareSlack = () => {
-    // Slack has no prefilled-share URL, so copy the message first, then deep-link
-    // into the Slack app so the invite is ready to paste.
-    navigator.clipboard?.writeText(message).catch(() => {});
-    toast.success("Invite copied — opening Slack, just paste it in");
-    window.open("slack://open", "_blank", "noopener,noreferrer");
-  };
-
-  const shareEmail = () => {
-    if (!isEmail(form.email)) {
-      toast.error("Enter a valid work email to send the invite.");
+  async function submit() {
+    if (!isEmail(email)) {
+      toast.error("Enter a valid work email.");
       return;
     }
-    window.open(
-      `mailto:${encodeURIComponent(form.email.trim())}?subject=${encodeURIComponent(
-        `Join ${organization.name} on WorkPulse`,
-      )}&body=${encodeURIComponent(message)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-  };
+    if (!roleId) {
+      toast.error("Pick a role for the invite.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const invite = await createInvite({ email: email.trim(), role_id: roleId });
+      setCreated(invite);
+      toast.success(`Invite created for ${invite.email}`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Couldn't create the invite. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleRevoke() {
+    if (!created) return;
+    try {
+      await revokeInvite(created.invite_id);
+      toast.success("Invite revoked.");
+      reset();
+    } catch {
+      toast.error("Couldn't revoke the invite.");
+    }
+  }
+
+  async function handleResend() {
+    if (!created) return;
+    try {
+      await resendInvite(created.invite_id);
+      toast.success("Delivery re-attempted (email isn't enabled in this environment).");
+    } catch {
+      toast.error("Couldn't resend the invite.");
+    }
+  }
+
+  const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) reset();
+        onOpenChange(o);
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Add employee</DialogTitle>
-          <DialogDescription>
-            Add their details, then invite them to {organization.name}.
-          </DialogDescription>
-        </DialogHeader>
+        {!created ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Invite employee</DialogTitle>
+              <DialogDescription>
+                Create an invite. Department and team are assigned after they join.
+              </DialogDescription>
+            </DialogHeader>
 
-        {/* 1 — Employee details */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Full name">
-            <Input value={form.name} onChange={(e) => set("name")(e.target.value)} placeholder="Jordan Lee" />
-          </Field>
-          <Field label="Work email">
-            <Input
-              type="email"
-              value={form.email}
-              onChange={(e) => set("email")(e.target.value)}
-              placeholder="jordan@acme.test"
-            />
-          </Field>
-          <Field label="Role">
-            <Select value={form.role} onValueChange={(v) => set("role")(v as string)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <div className="sm:col-span-2">
-            <Field label="Department">
-              <Select value={form.department} onValueChange={(v) => set("department")(v as string)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a department" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        </div>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="inv-email">Work email</Label>
+                <Input
+                  id="inv-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="jordan@acme.test"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Role</Label>
+                <Select value={roleId || undefined} onValueChange={(v) => setRoleId(v as string)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={roles.length ? "Select a role" : "Loading roles…"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-        {/* Divider */}
-        <div className="flex items-center gap-3">
-          <span className="h-px flex-1 bg-border" />
-          <span className="text-xs text-muted-foreground">invite this employee</span>
-          <span className="h-px flex-1 bg-border" />
-        </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submit} disabled={submitting || !roles.length}>
+                {submitting ? "Creating…" : "Create invite"}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>Invite created</DialogTitle>
+              <DialogDescription>
+                Automated email isn&apos;t enabled here — share the code and one-time password with{" "}
+                <span className="font-medium text-foreground">{created.email}</span> yourself. They
+                won&apos;t be shown again.
+              </DialogDescription>
+            </DialogHeader>
 
-        {/* 2 — Invite channels */}
-        <div className="grid grid-cols-3 gap-2.5">
-          <Channel
-            onClick={shareEmail}
-            icon={<Mail className="size-5" />}
-            label="Email"
-            tint="var(--feature-tint)"
-            color="var(--primary)"
-          />
-          <Channel
-            onClick={shareSlack}
-            icon={<SlackIcon className="size-5" />}
-            label="Slack"
-            tint="color-mix(in srgb, #4A154B 16%, transparent)"
-            color="#4A154B"
-          />
-          <Channel
-            onClick={copyLink}
-            icon={<Link2 className="size-5" />}
-            label="Copy link"
-            tint="var(--muted)"
-            color="var(--foreground)"
-          />
-        </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Employee ID</span>
+                <span className="font-mono font-medium">{created.emp_id}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">Role</span>
+                <span className="font-medium">{roleName(created.role_id)}</span>
+              </div>
+              <CopyRow label="Invite token" value={created.token} />
+              <CopyRow label="One-time password" value={created.otp} />
+              <p className="text-xs text-muted-foreground">
+                Expires {new Date(created.expires_at * 1000).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+                .
+              </p>
+            </div>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Done
-          </Button>
-        </DialogFooter>
+            <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleResend}>
+                  <RotateCcw className="size-4" /> Resend
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={handleRevoke}
+                >
+                  <Trash2 className="size-4" /> Revoke
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={reset}>
+                  <Mail className="size-4" /> Invite another
+                </Button>
+                <Button size="sm" onClick={() => onOpenChange(false)}>
+                  Done
+                </Button>
+              </div>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm">{label}</Label>
-      {children}
-    </div>
-  );
-}
-
-function Channel({
-  onClick,
-  icon,
-  label,
-  tint,
-  color,
-}: {
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  tint: string;
-  color: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center transition-colors hover:bg-muted/50",
-      )}
-    >
-      <span
-        className="flex size-10 items-center justify-center rounded-full"
-        style={{ background: tint, color }}
-      >
-        {icon}
-      </span>
-      <span className="text-sm font-medium">{label}</span>
-    </button>
   );
 }

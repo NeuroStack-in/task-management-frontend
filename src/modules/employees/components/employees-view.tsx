@@ -439,11 +439,7 @@ export function EmployeesView() {
         </div>
       </div>
 
-      <InviteDialog
-        open={inviteOpen}
-        onOpenChange={setInviteOpen}
-        departments={deptOptions}
-      />
+      <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
     </div>
   );
 }
