@@ -17,7 +17,7 @@ import {
   isCounted,
   type DayStatus,
   type DayCell,
-} from "@/lib/mock-attendance";
+} from "../lib/calendar";
 import { LogDatePicker } from "./attendance-log";
 import {
   useMyAttendance,

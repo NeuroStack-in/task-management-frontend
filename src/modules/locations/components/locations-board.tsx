@@ -36,7 +36,7 @@ import {
   WORK_MODE_LABEL,
   type WorkMode,
 } from "@/lib/mock-locations";
-import { TODAY } from "@/lib/mock-attendance";
+import { TODAY } from "@/modules/attendance/lib/calendar";
 import { useGeofenceStore } from "@/stores/geofence.store";
 import { Button } from "@/components/ui/button";
 import { LogDatePicker } from "@/modules/attendance/components/attendance-log";

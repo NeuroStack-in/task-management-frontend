@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
-import { PLAN_TIERS, formatCurrency } from "@/lib/mock-billing";
+import { formatCurrency } from "@/lib/currency";
+import { PLAN_TIERS } from "@/modules/billing/lib/plans";
 import { useBilling } from "../use-billing";
 import { cn } from "@/lib/utils";
 

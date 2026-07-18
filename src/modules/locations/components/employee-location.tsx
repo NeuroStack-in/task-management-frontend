@@ -20,7 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TimePicker } from "@/components/ui/date-picker";
 import { initials } from "@/lib/format";
-import { TODAY } from "@/lib/mock-attendance";
+import { TODAY } from "@/modules/attendance/lib/calendar";
 import {
   dateLabel,
   distanceMeters,

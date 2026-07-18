@@ -12,7 +12,8 @@
  */
 import { users } from "@/lib/data";
 import type { User } from "@/types/user";
-import { TODAY, dayRecordFor, isFutureDate, MONTH_NAMES } from "@/lib/mock-attendance";
+import { TODAY, isFutureDate, MONTH_NAMES } from "@/modules/attendance/lib/calendar";
+import { dayRecordFor } from "@/lib/mock-attendance-data";
 
 /* --------------------------------- geo ---------------------------------- */
 

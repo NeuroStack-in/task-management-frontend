@@ -28,7 +28,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
-import { AUDIT_CATEGORIES, type AuditCategory } from "@/lib/mock-audit";
+import { AUDIT_CATEGORIES, type AuditCategory } from "@/modules/audit/lib/categories";
 import { useAudit, type AuditEntry } from "../use-audit";
 
 const PAGE_SIZE = 20;

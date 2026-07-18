@@ -31,7 +31,7 @@ import {
   monthMatrix,
   MONTH_NAMES,
   WEEKDAY_LABELS,
-} from "@/lib/mock-attendance";
+} from "../lib/calendar";
 import { cn } from "@/lib/utils";
 
 export interface SelectedDate {

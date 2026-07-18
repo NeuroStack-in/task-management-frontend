@@ -63,7 +63,7 @@ import {
   VIDEO_TUTORIALS,
   type HelpArticle,
   type HelpCategory,
-} from "@/lib/mock-help"
+} from "../lib/content"
 import { ApiError } from "@/lib/api"
 import {
   listTickets,

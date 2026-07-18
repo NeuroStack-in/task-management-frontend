@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { timeAgo } from "@/lib/mock-notifications";
+import { timeAgo } from "@/lib/format";
 import { useNotifications } from "@/modules/notifications/use-notifications";
 import { cn } from "@/lib/utils";
 

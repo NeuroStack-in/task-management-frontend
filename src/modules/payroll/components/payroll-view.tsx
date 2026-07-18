@@ -19,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { usePermissions } from "@/hooks/use-permissions";
-import { formatCurrency } from "@/lib/mock-billing";
+import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import { usePayroll } from "../use-payroll";
 import type { ApiPayrollRun } from "../services/payroll.service";

@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
-import { PLAN_TIERS } from "@/lib/mock-billing";
+import { PLAN_TIERS } from "@/modules/billing/lib/plans";
 import { useBilling } from "@/modules/billing/use-billing";
 
 /**

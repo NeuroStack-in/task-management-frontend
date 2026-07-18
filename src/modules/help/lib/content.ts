@@ -1,5 +1,10 @@
 /**
- * Static mock data for the Help Center page.
+ * Static content for the Help Center — knowledge-base categories, articles, FAQs,
+ * and video tutorials. This is legitimate authored content, not fabricated backend
+ * data: there is no help/content API, so it lives with the module. Support tickets
+ * are the exception — those are real (see ../services/support.service.ts) and are
+ * intentionally not modelled here.
+ *
  * All content is deterministic — no Math.random() / Date.now().
  */
 
@@ -258,42 +263,3 @@ export const VIDEO_TUTORIALS: VideoTutorial[] = [
   { title: "Configuring monitoring thresholds", duration: "6:12", category: "monitoring" },
   { title: "Exporting and scheduling reports", duration: "3:55", category: "reports" },
 ]
-
-export interface SupportTicket {
-  id: string
-  subject: string
-  category: HelpCategory
-  status: "open" | "pending" | "resolved"
-  createdAt: string
-}
-
-export const MOCK_TICKETS: SupportTicket[] = [
-  {
-    id: "TKT-1042",
-    subject: "Screenshot blur not applying on macOS Sequoia",
-    category: "monitoring",
-    status: "open",
-    createdAt: "2026-06-22",
-  },
-  {
-    id: "TKT-1039",
-    subject: "PDF export empty when filtering by date",
-    category: "reports",
-    status: "pending",
-    createdAt: "2026-06-18",
-  },
-  {
-    id: "TKT-1031",
-    subject: "Idle time not syncing after agent v2.1 update",
-    category: "monitoring",
-    status: "resolved",
-    createdAt: "2026-06-10",
-  },
-]
-
-let ticketCounter = 1042
-
-export function nextTicketId(): string {
-  ticketCounter += 1
-  return `TKT-${ticketCounter}`
-}
