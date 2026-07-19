@@ -1,19 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
-  ArrowRight,
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
-  FileText,
   Lock,
-  Search,
   Sparkles,
   TrendingDown,
   TrendingUp,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -24,8 +19,9 @@ import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { PeopleAttentionCard } from "./people-attention";
-import { useAiReport, useReportsCatalog } from "../use-reports";
-import type { AiReport, NamedScore, ReportType } from "../services/insights.service";
+import { ReportsLibrary } from "./reports-library";
+import { useAiReport } from "../use-reports";
+import type { AiReport, NamedScore } from "../services/insights.service";
 
 /**
  * AI reports — the AI-first executive surface in the preview's layout, fully live:
@@ -33,11 +29,9 @@ import type { AiReport, NamedScore, ReportType } from "../services/insights.serv
  *    — the AI-written org narrative, a real average-score ring, and the real day rollup. A 403 (the
  *    org lacks the AI Reports add-on) degrades to an honest upsell, not a failure.
  *  • **People to check in on** — the real attention ranking (`GET /v1/insights/attention`).
- *  • **Report library** — the real catalog (`GET /v1/insights/reports`), searchable, each card
- *    linking to its report route. Locked add-ons show honestly.
- *
- * The preview's seeded KPI deltas, mock "smart collections", and client-side CSV/PDF export of
- * fabricated report rows are dropped: the catalog exposes routes + availability, not row data.
+ *  • **Report library** ({@link ReportsLibrary}) — the preview's full "All reports" surface, every
+ *    report composed from real endpoints (real preview rows, real row/column counts, working
+ *    CSV/PDF export). No mock; honest omission where a report needs a signal that doesn't exist yet.
  */
 
 /* -------------------------------- date utils ------------------------------- */
@@ -71,21 +65,10 @@ function healthBand(score: number) {
 export function ReportsExperimental() {
   // Default to yesterday (a completed, fully-scored day); client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
-  const [query, setQuery] = useState("");
   useEffect(() => setDate(shiftIso(isoOf(new Date()), -1)), []);
 
   const today = isoOf(new Date());
   const aiReport = useAiReport(date);
-  const catalog = useReportsCatalog();
-
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return catalog.reports;
-    return catalog.reports.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) || r.description.toLowerCase().includes(q),
-    );
-  }, [catalog.reports, query]);
 
   return (
     <div className="wp-enter space-y-8">
@@ -133,48 +116,7 @@ export function ReportsExperimental() {
       <PeopleAttentionCard title="People to check in on" />
 
       {/* ============================ REPORT LIBRARY ========================== */}
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <SectionLabel icon={FileText} title="All reports" hint="Every report available to your organization" />
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search reports…"
-              className="w-56 pl-8"
-            />
-          </div>
-        </div>
-
-        {catalog.loading && catalog.reports.length === 0 ? (
-          <div className="flex min-h-[8rem] items-center justify-center rounded-2xl border border-border bg-card">
-            <Loader label="Loading reports…" />
-          </div>
-        ) : catalog.error ? (
-          <div className="rounded-2xl border border-border bg-card py-10 text-center text-sm text-muted-foreground">
-            {catalog.error}
-          </div>
-        ) : catalog.reports.length === 0 ? (
-          <EmptyState
-            icon={FileText}
-            title="No reports available"
-            description="No reports are enabled for your organization yet."
-          />
-        ) : matches.length === 0 ? (
-          <EmptyState
-            icon={Search}
-            title="No reports found"
-            description={`Nothing matched “${query.trim()}”. Try a different search term.`}
-          />
-        ) : (
-          <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {matches.map((r) => (
-              <ReportCard key={r.key} report={r} />
-            ))}
-          </div>
-        )}
-      </section>
+      <ReportsLibrary />
     </div>
   );
 }
@@ -437,79 +379,3 @@ function NamedScoreList({
   );
 }
 
-/* ------------------------------ section label ----------------------------- */
-
-function SectionLabel({ icon: Icon, title, hint }: { icon: LucideIcon; title: string; hint?: string }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="flex size-7 items-center justify-center rounded-lg bg-muted text-primary">
-        <Icon className="size-4" />
-      </span>
-      <div>
-        <h3 className="font-heading text-sm font-semibold">{title}</h3>
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-      </div>
-    </div>
-  );
-}
-
-/* ----------------------------- report card ------------------------------ */
-
-function ReportCard({ report }: { report: ReportType }) {
-  const locked = !report.available;
-
-  const body = (
-    <>
-      <div className="flex items-start justify-between gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
-          <FileText className="size-5" />
-        </span>
-        {locked ? (
-          <Badge variant="outline" className="gap-1">
-            <Lock className="size-3" /> Add-on
-          </Badge>
-        ) : null}
-      </div>
-
-      <h3 className="mt-3 font-heading text-base font-semibold">{report.title}</h3>
-      <p className="mt-1.5 line-clamp-3 min-h-[3.75rem] text-sm text-muted-foreground">
-        {report.description}
-      </p>
-
-      <div className="mt-auto flex items-center justify-between pt-3 text-xs">
-        {locked ? (
-          <span className="text-muted-foreground">
-            Requires{" "}
-            <span className="font-medium text-foreground">
-              {report.requires_entitlement ?? "an add-on"}
-            </span>
-          </span>
-        ) : (
-          <span className="font-medium text-primary">Open report</span>
-        )}
-        {locked ? (
-          <Lock className="size-4 text-muted-foreground" />
-        ) : (
-          <ArrowRight className="size-4 text-primary transition-transform group-hover:translate-x-0.5" />
-        )}
-      </div>
-    </>
-  );
-
-  if (locked) {
-    return (
-      <div className="flex h-full flex-col rounded-2xl border border-dashed border-border bg-muted/30 p-5">
-        {body}
-      </div>
-    );
-  }
-
-  return (
-    <Link
-      href={report.route}
-      className="group flex h-full flex-col rounded-2xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-    >
-      {body}
-    </Link>
-  );
-}
