@@ -188,6 +188,10 @@ export interface ShotRow {
   /** Presigned S3 read URL; empty when pii_gate withheld it (`redacted`). */
   url: string;
   redacted?: boolean;
+  /** Server-classified category of the captured app: `productive | neutral | distracting`. */
+  category: string;
+  /** `true` when the capture is worth reviewing (a distracting-app capture) — drives flag/filter. */
+  flagged: boolean;
 }
 
 export interface ScreenshotGrid {
