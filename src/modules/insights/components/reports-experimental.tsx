@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
+  ArrowUpRight,
   ChevronLeft,
   ChevronRight,
   FileText,
-  Gauge,
   Lock,
+  Search,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -17,20 +18,27 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { StatCard } from "@/components/shared/stat-card";
 import { cn } from "@/lib/utils";
+import { useAssistantStore } from "@/stores/assistant.store";
 import { PeopleAttentionCard } from "./people-attention";
 import { useAiReport, useReportsCatalog } from "../use-reports";
 import type { AiReport, NamedScore, ReportType } from "../services/insights.service";
+
+/**
+ * AI reports — the AI-first executive surface in the preview's layout, fully live:
+ *  • **AI briefing** + **workforce health** score (`GET /v1/insights/reports/ai`, entitlement-gated)
+ *    — the AI-written org narrative, a real average-score ring, and the real day rollup. A 403 (the
+ *    org lacks the AI Reports add-on) degrades to an honest upsell, not a failure.
+ *  • **People to check in on** — the real attention ranking (`GET /v1/insights/attention`).
+ *  • **Report library** — the real catalog (`GET /v1/insights/reports`), searchable, each card
+ *    linking to its report route. Locked add-ons show honestly.
+ *
+ * The preview's seeded KPI deltas, mock "smart collections", and client-side CSV/PDF export of
+ * fabricated report rows are dropped: the catalog exposes routes + availability, not row data.
+ */
 
 /* -------------------------------- date utils ------------------------------- */
 
@@ -51,125 +59,118 @@ function prettyDate(iso: string): string {
   });
 }
 
+function healthBand(score: number) {
+  if (score >= 80) return { label: "Healthy", color: "var(--success)", text: "text-success" };
+  if (score >= 65) return { label: "Stable", color: "var(--primary)", text: "text-primary" };
+  if (score >= 50) return { label: "Watch", color: "var(--warning)", text: "text-warning" };
+  return { label: "At risk", color: "var(--destructive)", text: "text-destructive" };
+}
+
 /* -------------------------------- component ------------------------------- */
 
 export function ReportsExperimental() {
   // Default to yesterday (a completed, fully-scored day); client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
+  const [query, setQuery] = useState("");
   useEffect(() => setDate(shiftIso(isoOf(new Date()), -1)), []);
 
   const today = isoOf(new Date());
   const aiReport = useAiReport(date);
   const catalog = useReportsCatalog();
 
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return catalog.reports;
+    return catalog.reports.filter(
+      (r) =>
+        r.title.toLowerCase().includes(q) || r.description.toLowerCase().includes(q),
+    );
+  }, [catalog.reports, query]);
+
   return (
     <div className="wp-enter space-y-8">
       {/* ================================ HEADER =============================== */}
-      <div>
-        <h2 className="font-display text-xl font-semibold tracking-tight">
-          AI reports
-        </h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          An AI-written executive read of the workforce, plus every report you
-          can export.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-display text-xl font-semibold tracking-tight">AI reports</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            An AI-written executive read of the workforce, plus every report you can open.
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Previous day"
+            disabled={!date}
+            onClick={() => setDate((d) => (d ? shiftIso(d, -1) : d))}
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Input
+            type="date"
+            value={date}
+            max={today}
+            onChange={(e) => setDate(e.target.value)}
+            className="h-8 w-40"
+          />
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Next day"
+            disabled={!date || date >= today}
+            onClick={() => setDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
       </div>
 
-      {/* ========================= AI EXECUTIVE REPORT ======================== */}
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <SectionLabel
-            icon={Sparkles}
-            title="Executive report"
-            hint="AI summary of org productivity for the day"
-          />
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Previous day"
-              disabled={!date}
-              onClick={() => setDate((d) => (d ? shiftIso(d, -1) : d))}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <Input
-              type="date"
-              value={date}
-              max={today}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-8 w-40"
-            />
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Next day"
-              disabled={!date || date >= today}
-              onClick={() =>
-                setDate((d) => (d && d < today ? shiftIso(d, 1) : d))
-              }
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        </div>
-
-        {aiReport.locked ? (
-          <EmptyState
-            icon={Lock}
-            title="Requires the AI Reports add-on"
-            description="The AI executive report is part of the AI Reports add-on (insights.reports.ai_pdf). Ask an owner to enable it to generate day-over-day AI briefings and PDF exports."
-          />
-        ) : aiReport.loading && !aiReport.data ? (
-          <Card>
-            <CardContent className="flex min-h-[10rem] items-center justify-center">
-              <Loader label="Generating the executive report…" />
-            </CardContent>
-          </Card>
-        ) : aiReport.error ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              {aiReport.error}
-            </CardContent>
-          </Card>
-        ) : aiReport.data ? (
-          <AiExecutiveReport report={aiReport.data} />
-        ) : null}
-      </section>
+      {/* ========================= EXECUTIVE OVERVIEW ======================== */}
+      <ExecutiveOverview state={aiReport} />
 
       {/* ====================== PEOPLE TO CHECK IN ON ====================== */}
       <PeopleAttentionCard title="People to check in on" />
 
-      {/* ============================ REPORT CATALOG ========================== */}
+      {/* ============================ REPORT LIBRARY ========================== */}
       <section className="space-y-4">
-        <SectionLabel
-          icon={FileText}
-          title="All reports"
-          hint="Every report available to your organization"
-        />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionLabel icon={FileText} title="All reports" hint="Every report available to your organization" />
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search reports…"
+              className="w-56 pl-8"
+            />
+          </div>
+        </div>
 
         {catalog.loading && catalog.reports.length === 0 ? (
-          <Card>
-            <CardContent className="flex min-h-[8rem] items-center justify-center">
-              <Loader label="Loading reports…" />
-            </CardContent>
-          </Card>
+          <div className="flex min-h-[8rem] items-center justify-center rounded-2xl border border-border bg-card">
+            <Loader label="Loading reports…" />
+          </div>
         ) : catalog.error ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              {catalog.error}
-            </CardContent>
-          </Card>
+          <div className="rounded-2xl border border-border bg-card py-10 text-center text-sm text-muted-foreground">
+            {catalog.error}
+          </div>
         ) : catalog.reports.length === 0 ? (
           <EmptyState
             icon={FileText}
             title="No reports available"
             description="No reports are enabled for your organization yet."
           />
+        ) : matches.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No reports found"
+            description={`Nothing matched “${query.trim()}”. Try a different search term.`}
+          />
         ) : (
           <div className="grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {catalog.reports.map((r) => (
-              <ReportCatalogCard key={r.key} report={r} />
+            {matches.map((r) => (
+              <ReportCard key={r.key} report={r} />
             ))}
           </div>
         )}
@@ -178,105 +179,226 @@ export function ReportsExperimental() {
   );
 }
 
-/* ------------------------------ section label ----------------------------- */
+/* --------------------------- executive overview --------------------------- */
 
-function SectionLabel({
-  icon: Icon,
-  title,
-  hint,
-}: {
-  icon: LucideIcon;
-  title: string;
-  hint?: string;
-}) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="flex size-7 items-center justify-center rounded-lg bg-muted text-primary">
-        <Icon className="size-4" />
-      </span>
-      <div>
-        <h3 className="font-heading text-sm font-semibold">{title}</h3>
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+function ExecutiveOverview({ state }: { state: ReturnType<typeof useAiReport> }) {
+  if (state.locked) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="Requires the AI Reports add-on"
+        description="The AI executive report is part of the AI Reports add-on (insights.reports.ai_pdf). Ask an owner to enable it to generate day-over-day AI briefings and PDF exports."
+      />
+    );
+  }
+  if (state.loading && !state.data) {
+    return (
+      <div className="flex min-h-[12rem] items-center justify-center rounded-3xl border border-border bg-card">
+        <Loader label="Generating the executive report…" />
       </div>
-    </div>
-  );
-}
+    );
+  }
+  if (state.error) {
+    return (
+      <div className="rounded-3xl border border-border bg-card py-12 text-center text-sm text-muted-foreground">
+        {state.error}
+      </div>
+    );
+  }
+  if (!state.data) return null;
 
-/* --------------------------- AI executive report -------------------------- */
-
-const hrs = (h: number) => `${h.toFixed(1)}h`;
-
-function AiExecutiveReport({ report }: { report: AiReport }) {
-  const m = report.metrics;
-  const generated = new Date(report.generated_at * 1000);
+  const report = state.data;
+  const band = healthBand(report.metrics.avg_score ?? 0);
 
   return (
     <div className="space-y-4">
-      {/* Headline metrics — real org rollup for the day. */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Org avg score"
-          value={m.avg_score === null ? "—" : `${Math.round(m.avg_score)}`}
-          icon={Gauge}
-          hint={m.avg_score === null ? "no scored days" : "/ 100"}
-          featured
-        />
-        <StatCard
-          label="People scored"
-          value={`${m.scored_people}/${m.total_people}`}
-          icon={Users}
-          hint="agents reporting"
-        />
-        <StatCard
-          label="Active hours"
-          value={hrs(m.active_hours_total)}
-          icon={TrendingUp}
-        />
-        <StatCard
-          label="Productive hours"
-          value={hrs(m.productive_hours_total)}
-          icon={TrendingUp}
-        />
-      </div>
+      <section className="grid gap-4 xl:grid-cols-12">
+        <AiBriefing report={report} />
+        <HealthScoreCard report={report} band={band} />
+      </section>
 
-      {/* AI narrative prose. */}
-      <Card className="border-0 bg-feature text-feature-foreground shadow-none">
-        <CardHeader className="pb-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="size-4" /> Executive summary ·{" "}
-            {prettyDate(report.date)}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-3">
-          <p className="text-sm leading-relaxed text-feature-foreground/90">
-            {report.narrative}
-          </p>
-          <p className="text-xs text-feature-foreground/70">
-            Generated {generated.toLocaleString()}
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Top performers vs needs attention. */}
       <div className="grid gap-4 md:grid-cols-2">
         <NamedScoreList
           title="Top performers"
           icon={TrendingUp}
           tone="up"
-          people={m.top_performers}
+          people={report.metrics.top_performers}
           emptyText="No scored people for this day yet."
         />
         <NamedScoreList
           title="Needs attention"
           icon={TrendingDown}
           tone="down"
-          people={m.needs_attention}
+          people={report.metrics.needs_attention}
           emptyText="No one flagged for this day."
         />
       </div>
     </div>
   );
 }
+
+/* ------------------------------- AI briefing ------------------------------ */
+
+function AiBriefing({ report }: { report: AiReport }) {
+  const openAssistant = useAssistantStore((s) => s.openAssistant);
+  const generated = new Date(report.generated_at * 1000);
+  const attention = report.metrics.needs_attention.slice(0, 3);
+
+  return (
+    <div className="relative flex flex-col overflow-hidden rounded-3xl bg-feature p-6 text-feature-foreground shadow-soft xl:col-span-8">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-24 -right-16 size-72 rounded-full opacity-40"
+        style={{ background: "radial-gradient(circle, rgba(255,255,255,0.22), transparent 70%)" }}
+      />
+      <div className="relative flex h-full flex-col">
+        <div className="flex items-center gap-2 text-sm font-medium text-feature-foreground/90">
+          <Sparkles className="size-4" /> Executive summary · {prettyDate(report.date)}
+        </div>
+
+        <p className="mt-3 max-w-2xl text-[0.95rem] leading-relaxed text-feature-foreground/90">
+          {report.narrative}
+        </p>
+
+        {attention.length > 0 ? (
+          <div className="mt-5 space-y-2 border-t border-white/15 pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-feature-foreground/70">
+              Needs your attention
+            </p>
+            {attention.map((a) => (
+              <div
+                key={a.name}
+                className="flex w-full items-center gap-3 rounded-xl bg-white/10 px-3 py-2 text-left"
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/15">
+                  <TrendingDown className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
+                <span className="shrink-0 text-xs font-medium tabular-nums text-feature-foreground/85">
+                  score {Math.round(a.score)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex-1" />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button variant="secondary" size="sm" onClick={() => openAssistant()}>
+            Ask the assistant <ArrowUpRight className="size-4" />
+          </Button>
+          <p className="text-xs text-feature-foreground/70">
+            Generated {generated.toLocaleString()}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- health score card ---------------------------- */
+
+const hrs = (h: number) => `${h.toFixed(1)}h`;
+
+function HealthScoreCard({
+  report,
+  band,
+}: {
+  report: AiReport;
+  band: { label: string; color: string; text: string };
+}) {
+  const m = report.metrics;
+  const drivers: { label: string; value: string }[] = [
+    { label: "People scored", value: `${m.scored_people}/${m.total_people}` },
+    { label: "Active hours", value: hrs(m.active_hours_total) },
+    { label: "Productive hours", value: hrs(m.productive_hours_total) },
+    {
+      label: "Needs attention",
+      value: `${m.needs_attention.length}`,
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-5 rounded-3xl border border-border bg-card p-6 shadow-soft xl:col-span-4">
+      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <Sparkles className="size-4 text-primary" /> AI workforce health
+      </div>
+
+      <div className="flex items-center gap-5">
+        {m.avg_score === null ? (
+          <RadialScore value={0} color="var(--muted-foreground)" placeholder />
+        ) : (
+          <RadialScore value={m.avg_score} color={band.color} />
+        )}
+        <div className="min-w-0">
+          <p className={cn("font-heading text-lg font-semibold", m.avg_score === null ? "text-muted-foreground" : band.text)}>
+            {m.avg_score === null ? "No scores" : band.label}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            The team's average productivity score for the day, from reported activity.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-auto grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border pt-4">
+        {drivers.map((d) => (
+          <div key={d.label} className="min-w-0">
+            <p className="truncate text-xs text-muted-foreground">{d.label}</p>
+            <span className="font-display text-lg font-semibold tabular-nums">{d.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Full-circle score ring — colour follows the health band. */
+function RadialScore({
+  value,
+  color,
+  placeholder,
+}: {
+  value: number;
+  color: string;
+  placeholder?: boolean;
+}) {
+  const size = 116;
+  const stroke = 11;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, value));
+  const offset = circ * (1 - clamped / 100);
+  const center = size / 2;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} aria-hidden="true">
+        <circle cx={center} cy={center} r={r} fill="none" stroke="var(--muted)" strokeWidth={stroke} />
+        {!placeholder ? (
+          <circle
+            cx={center}
+            cy={center}
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={circ}
+            strokeDashoffset={offset}
+            transform={`rotate(-90 ${center} ${center})`}
+          />
+        ) : null}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="font-display text-3xl font-semibold leading-none tabular-nums">
+          {placeholder ? "—" : Math.round(clamped)}
+        </span>
+        <span className="mt-0.5 text-[0.65rem] uppercase tracking-wide text-muted-foreground">/ 100</span>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------- named score list --------------------------- */
 
 function NamedScoreList({
   title,
@@ -292,54 +414,48 @@ function NamedScoreList({
   emptyText: string;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Icon
-            className={cn(
-              "size-4",
-              tone === "up" ? "text-success" : "text-warning",
-            )}
-          />
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        {people.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">
-            {emptyText}
-          </p>
-        ) : (
-          <div className="divide-y">
-            {people.map((p, i) => (
-              <div
-                key={`${p.name}-${i}`}
-                className="flex items-center justify-between gap-3 px-5 py-3"
-              >
-                <span className="min-w-0 truncate text-sm font-medium">
-                  {p.name}
-                </span>
-                <Badge
-                  className={cn(
-                    tone === "up"
-                      ? "bg-success/12 text-success"
-                      : "bg-warning/15 text-warning",
-                  )}
-                >
-                  score {Math.round(p.score)}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="rounded-2xl border border-border bg-card">
+      <div className="flex items-center gap-2 border-b border-border px-5 py-3.5 text-sm font-semibold">
+        <Icon className={cn("size-4", tone === "up" ? "text-success" : "text-warning")} />
+        {title}
+      </div>
+      {people.length === 0 ? (
+        <p className="px-5 py-8 text-center text-sm text-muted-foreground">{emptyText}</p>
+      ) : (
+        <div className="divide-y">
+          {people.map((p, i) => (
+            <div key={`${p.name}-${i}`} className="flex items-center justify-between gap-3 px-5 py-3">
+              <span className="min-w-0 truncate text-sm font-medium">{p.name}</span>
+              <Badge className={cn(tone === "up" ? "bg-success/12 text-success" : "bg-warning/15 text-warning")}>
+                score {Math.round(p.score)}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-/* ----------------------------- report catalog card ------------------------ */
+/* ------------------------------ section label ----------------------------- */
 
-function ReportCatalogCard({ report }: { report: ReportType }) {
+function SectionLabel({ icon: Icon, title, hint }: { icon: LucideIcon; title: string; hint?: string }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="flex size-7 items-center justify-center rounded-lg bg-muted text-primary">
+        <Icon className="size-4" />
+      </span>
+      <div>
+        <h3 className="font-heading text-sm font-semibold">{title}</h3>
+        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------- report card ------------------------------ */
+
+function ReportCard({ report }: { report: ReportType }) {
   const locked = !report.available;
 
   const body = (
@@ -355,9 +471,7 @@ function ReportCatalogCard({ report }: { report: ReportType }) {
         ) : null}
       </div>
 
-      <h3 className="mt-3 font-heading text-base font-semibold">
-        {report.title}
-      </h3>
+      <h3 className="mt-3 font-heading text-base font-semibold">{report.title}</h3>
       <p className="mt-1.5 line-clamp-3 min-h-[3.75rem] text-sm text-muted-foreground">
         {report.description}
       </p>
@@ -371,9 +485,7 @@ function ReportCatalogCard({ report }: { report: ReportType }) {
             </span>
           </span>
         ) : (
-          <span className="font-medium text-primary">
-            Open report
-          </span>
+          <span className="font-medium text-primary">Open report</span>
         )}
         {locked ? (
           <Lock className="size-4 text-muted-foreground" />
@@ -395,7 +507,7 @@ function ReportCatalogCard({ report }: { report: ReportType }) {
   return (
     <Link
       href={report.route}
-      className="group flex h-full flex-col rounded-2xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      className="group flex h-full flex-col rounded-2xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       {body}
     </Link>
