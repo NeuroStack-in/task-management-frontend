@@ -127,6 +127,26 @@ export function getSelfActivity(from: string, to: string): Promise<SelfActivity>
   );
 }
 
+// ── GET /v1/insights/user/{id}/activity?from=&to=  (a specific employee's daily scores + trend) ──
+
+/**
+ * The admin/manager view of one employee's activity, mirroring {@link getSelfActivity} but for
+ * another user (org oversight, gated on `activity:read`). Same `SelfActivity` shape. **Empty
+ * `days` / `days_scored: 0` is the honest state** until that person's desktop agent reports — never
+ * a fabricated score.
+ */
+export function getUserActivity(
+  userId: string,
+  from: string,
+  to: string,
+): Promise<SelfActivity> {
+  return apiFetch<SelfActivity>(
+    `/v1/insights/user/${encodeURIComponent(userId)}/activity?from=${encodeURIComponent(
+      from,
+    )}&to=${encodeURIComponent(to)}`,
+  );
+}
+
 // ── GET /v1/insights/activity?date=  (org day rollup) ──
 
 export interface PersonScore {

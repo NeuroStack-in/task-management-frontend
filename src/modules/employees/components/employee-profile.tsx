@@ -1,112 +1,303 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import {
   ArrowLeft,
-  Activity,
   Download,
   FileText,
+  FolderKanban,
+  MapPin,
   Sheet,
+  BarChart2,
+  ClipboardList,
+  Pencil,
   Users,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { TablePagination } from "@/components/shared/table-pagination";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
+import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
-import { useEmployeeProfile, type EmployeeProfileVM } from "../use-employee-profile";
+import { listRoles, assignRole, type ApiRole } from "@/modules/roles/services/roles.service";
+import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
 
-const STATUS_META: Record<EmployeeProfileVM["status"], string> = {
+const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   active: "bg-success/12 text-success",
   inactive: "bg-muted text-muted-foreground",
+  invited: "bg-warning/15 text-warning",
+  suspended: "bg-destructive/12 text-destructive",
 };
 
-const fileStem = (p: EmployeeProfileVM) => (p.empId ?? p.id).replace(/[^\w-]/g, "") || "employee";
+/** Empty backend fields render as an em dash, never as a blank or a fabricated value. */
+const dash = (s: string) => (s.trim() === "" ? "—" : s);
 
-function reportRows(p: EmployeeProfileVM): (string)[][] {
-  const v = (s: string | null) => s ?? "—";
-  return [
+/** Safe filename stem from an employee code (e.g. "#EMP357148" → "EMP357148"). */
+const fileCode = (code: string) => code.replace(/[^\w-]/g, "") || "employee";
+
+function exportEmployeeCsv(d: EmployeeProfileData) {
+  const activeCount = d.projects.filter((p) => p.active).length;
+  const score = d.hasActivity ? d.productivityScore : "—";
+  const rows: (string | number)[][] = [
     ["Field", "Value"],
-    ["Employee", p.name],
-    ["Employee ID", v(p.empId)],
-    ["Role", v(p.roleName)],
-    ["Title", v(p.title)],
-    ["Department", v(p.department)],
-    ["Team", v(p.team)],
-    ["Status", p.status],
-    ["Email", p.email],
-    ["Phone", v(p.phone)],
-    ["Location", v(p.location)],
-    ["Hire date", v(p.hireDate)],
+    ["Employee", d.name],
+    ["Employee ID", dash(d.empCode)],
+    ["Role", dash(d.roleName)],
+    ["Title", dash(d.jobTitle)],
+    ["Department", dash(d.department)],
+    ["Team", dash(d.team)],
+    ["Status", d.status],
+    ["Email", d.email],
+    ["Phone", dash(d.phone)],
+    ["Hire date", dash(d.hireDate)],
+    ["Location", dash(d.cityState)],
+    ["Productivity %", score],
+    ["Avg. completion %", d.avgCompletion],
+    ["Total tasks", d.totalTasks],
+    ["Projects managed", d.projects.length],
+    ["Active projects", activeCount],
+    [],
+    ["Project (managed)", "Key", "Progress %", "Tasks", "Members", "Active"],
+    ...d.projects.map((p) => [
+      p.name, dash(p.key), p.progress, p.tasks, p.teammates, p.active ? "Yes" : "No",
+    ]),
   ];
-}
-
-function exportCsv(p: EmployeeProfileVM) {
   downloadBlob(
-    new Blob([Papa.unparse(reportRows(p))], { type: "text/csv;charset=utf-8;" }),
-    `${fileStem(p)}-profile.csv`,
+    new Blob([Papa.unparse(rows)], { type: "text/csv;charset=utf-8;" }),
+    `${fileCode(d.empCode || d.id)}-report.csv`,
   );
-  toast.success("Profile exported", { description: `${fileStem(p)}-profile.csv` });
+  toast.success("Report exported", { description: `${fileCode(d.empCode || d.id)}-report.csv` });
 }
 
-function exportPdf(p: EmployeeProfileVM) {
+function exportEmployeePdf(d: EmployeeProfileData) {
+  const activeCount = d.projects.filter((p) => p.active).length;
   const doc = new jsPDF();
   let y = 18;
   doc.setFontSize(18);
-  doc.text(p.name, 14, y);
+  doc.text(d.name, 14, y);
   doc.setFontSize(10);
   doc.setTextColor(120);
   y += 6;
-  doc.text([p.title, p.department, p.empId].filter(Boolean).join(" · ") || p.email, 14, y);
-  doc.setDrawColor(210);
-  y += 6;
-  doc.line(14, y, 196, y);
-  y += 8;
-  doc.setFontSize(10);
-  for (const [k, val] of reportRows(p).slice(1)) {
+  doc.text(
+    [d.jobTitle, d.department, d.empCode].filter((s) => s.trim() !== "").join(" · ") || d.email,
+    14,
+    y,
+  );
+
+  const section = (title: string) => {
+    y += 10;
+    doc.setTextColor(20);
+    doc.setFontSize(13);
+    doc.text(title, 14, y);
+    doc.setDrawColor(210);
+    doc.line(14, y + 2, 196, y + 2);
+    y += 8;
+    doc.setFontSize(10);
+  };
+  const kv = (k: string, v: string) => {
     doc.setTextColor(120);
     doc.text(k, 14, y);
     doc.setTextColor(20);
-    doc.text(String(val), 60, y);
+    doc.text(v, 60, y);
     y += 6;
+  };
+
+  section("Profile");
+  kv("Role", dash(d.roleName));
+  kv("Status", d.status);
+  kv("Email", d.email);
+  kv("Phone", dash(d.phone));
+  kv("Hire date", dash(d.hireDate));
+  kv("Location", dash(d.cityState));
+
+  section("Performance");
+  kv("Productivity", d.hasActivity ? `${d.productivityScore} / 100` : "No activity reported yet");
+  kv("Avg. completion", `${d.avgCompletion}%`);
+  kv("Total tasks", String(d.totalTasks));
+  kv("Projects managed", `${d.projects.length} (${activeCount} active)`);
+
+  section("Projects managed");
+  if (d.projects.length === 0) {
+    doc.text("None.", 14, y);
+  } else {
+    for (const p of d.projects) {
+      doc.setTextColor(20);
+      doc.text(`${dash(p.key)}  ${p.name}${p.active ? "  (active)" : ""}`, 14, y);
+      doc.text(`${p.progress}%`, 196, y, { align: "right" });
+      y += 6;
+      if (y > 282) {
+        doc.addPage();
+        y = 18;
+      }
+    }
   }
-  doc.save(`${fileStem(p)}-profile.pdf`);
-  toast.success("Profile exported", { description: `${fileStem(p)}-profile.pdf` });
+
+  doc.setFontSize(8);
+  doc.setTextColor(150);
+  doc.text("WorkPulse · employee report", 14, 292);
+  doc.save(`${fileCode(d.empCode || d.id)}-report.pdf`);
+  toast.success("Report exported", { description: `${fileCode(d.empCode || d.id)}-report.pdf` });
 }
 
-function Detail({ label, value }: { label: string; value: string | null }) {
+/**
+ * Change this employee's RBAC role — the one reassignment WorkPulse actually has an endpoint for
+ * (`PUT /v1/users/{id}/role`). Department/team moves have no backend route yet, so they're not
+ * offered here rather than faked. The server enforces the caller's authority on save.
+ */
+function ReassignDialog({
+  open,
+  onOpenChange,
+  employeeId,
+  name,
+  currentRoleName,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  employeeId: string;
+  name: string;
+  currentRoleName: string;
+  onSaved: () => void;
+}) {
+  const [roles, setRoles] = useState<ApiRole[]>([]);
+  const [roleId, setRoleId] = useState("");
+  const [loadingRoles, setLoadingRoles] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setLoadingRoles(true);
+    listRoles()
+      .then((rs) => {
+        if (!live) return;
+        setRoles(rs);
+        // Pre-select the role matching the current role name, if we can find it.
+        setRoleId(rs.find((r) => r.name === currentRoleName)?.id ?? "");
+      })
+      .catch(() => toast.error("Couldn't load roles"))
+      .finally(() => {
+        if (live) setLoadingRoles(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [open, currentRoleName]);
+
+  async function save() {
+    if (!roleId) {
+      toast.error("Pick a role");
+      return;
+    }
+    setSaving(true);
+    try {
+      await assignRole(employeeId, roleId);
+      const roleName = roles.find((r) => r.id === roleId)?.name ?? roleId;
+      toast.success("Role updated", { description: `${name} → ${roleName}` });
+      onOpenChange(false);
+      onSaved();
+    } catch {
+      toast.error("Couldn't update role", {
+        description: "You may not have permission, or the server rejected it.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="space-y-0.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-medium">{value ?? "—"}</p>
-    </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reassign {name}</DialogTitle>
+          <DialogDescription>
+            Change this employee&apos;s access role. Department and team moves aren&apos;t available
+            yet.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Role</Label>
+            <Select value={roleId} onValueChange={(v) => setRoleId(v as string)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={loadingRoles ? "Loading roles…" : "Select a role"} />
+              </SelectTrigger>
+              <SelectContent>
+                {roles.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving || loadingRoles}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
+
+/* ============================ page-level wrapper ============================ */
 
 export function EmployeeProfile({ id }: { id: string }) {
   const router = useRouter();
-  const { profile, loading, error, notFound, reload } = useEmployeeProfile(id);
+  const { data, loading, error, notFound, reload } = useEmployeeProfile(id);
 
   usePageTitle(
-    profile?.name ?? "Employee",
-    profile ? [profile.title, profile.department].filter(Boolean).join(" · ") : "",
+    data?.name ?? "Employee",
+    data ? [data.jobTitle, data.department].filter((s) => s.trim() !== "").join(" · ") : "",
   );
 
-  if (loading && !profile) {
+  if (loading && !data) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader label="Loading profile…" />
@@ -120,9 +311,9 @@ export function EmployeeProfile({ id }: { id: string }) {
         <EmptyState
           icon={Users}
           title="Employee not found"
-          description="This employee doesn't exist or you don't have access."
+          description="This person may have left the organization or the link is out of date."
           action={
-            <Button variant="outline" size="sm" onClick={() => router.push("/employees")}>
+            <Button render={<Link href="/employees" />} nativeButton={false}>
               Back to employees
             </Button>
           }
@@ -131,7 +322,7 @@ export function EmployeeProfile({ id }: { id: string }) {
     );
   }
 
-  if (error || !profile) {
+  if (error || !data) {
     return (
       <div className="flex flex-col items-center gap-3 py-16 text-center">
         <p className="text-sm text-muted-foreground">{error ?? "Profile unavailable."}</p>
@@ -142,94 +333,451 @@ export function EmployeeProfile({ id }: { id: string }) {
     );
   }
 
-  const p = profile;
+  return <ProfileView data={data} reload={reload} />;
+}
+
+/* ============================ presentational view ============================ */
+
+function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () => void }) {
+  const router = useRouter();
+  const { can } = usePermissions();
+  const canManage = can("employees:manage");
+  const canViewLocations = can("locations:view");
+  const [reassignOpen, setReassignOpen] = useState(false);
+
+  const activeCount = data.projects.filter((p) => p.active).length;
+
+  const chartData = data.kpi.months.map((m, i) => ({
+    month: m,
+    current: data.kpi.current[i],
+    previous: data.kpi.previous[i],
+  }));
+
+  // Projects list paginates so a heavily-staffed manager doesn't run a wall of bars down the card.
+  const PROJECTS_PER_PAGE = 5;
+  const [projectPage, setProjectPage] = useState(0);
+  const projectPageCount = Math.max(1, Math.ceil(data.projects.length / PROJECTS_PER_PAGE));
+  const safeProjectPage = Math.min(projectPage, projectPageCount - 1);
+  const pagedProjects = data.projects.slice(
+    safeProjectPage * PROJECTS_PER_PAGE,
+    safeProjectPage * PROJECTS_PER_PAGE + PROJECTS_PER_PAGE,
+  );
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          onClick={() => router.push("/employees")}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    <div className="space-y-4">
+      {/* Top bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href="/employees"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
-          <ArrowLeft className="size-4" /> Employees
-        </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-            <Download className="size-4" /> Export
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => exportPdf(p)}>
-              <FileText className="size-4" /> PDF
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => exportCsv(p)}>
-              <Sheet className="size-4" /> CSV
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          <ArrowLeft className="size-4" />
+          All employees
+        </Link>
+        <div className="flex items-center gap-3">
+          <nav className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
+            <Link href="/employees" className="transition-colors hover:text-foreground">
+              Employees
+            </Link>
+            <span className="text-muted-foreground/50">/</span>
+            <span className="font-medium text-foreground">{data.name}</span>
+          </nav>
+          {canViewLocations ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/insights/locations?emp=${data.id}`)}
+              title="View live location"
+            >
+              <MapPin className="size-4" /> Location
+            </Button>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+              <Download className="size-4" /> Download
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportEmployeePdf(data)}>
+                <FileText className="size-4" /> PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportEmployeeCsv(data)}>
+                <Sheet className="size-4" /> CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
-      {/* Identity */}
-      <Card>
-        <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <Avatar className="size-16">
-            <AvatarFallback className="text-lg">{initials(p.name)}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-display text-xl font-semibold">{p.name}</h1>
-              {p.empId ? (
-                <span className="font-mono text-xs text-muted-foreground">{p.empId}</span>
+      {canManage ? (
+        <ReassignDialog
+          open={reassignOpen}
+          onOpenChange={setReassignOpen}
+          employeeId={data.id}
+          name={data.name}
+          currentRoleName={data.roleName}
+          onSaved={reload}
+        />
+      ) : null}
+
+      {/* 2-column layout on lg+: left = identity + projects, right = summary + stats + chart */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        {/* ── LEFT COLUMN ── */}
+        <div className="flex flex-col gap-4">
+          {/* Identity, contact & assignment in ONE card */}
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
+              <Avatar className="size-16 shrink-0 ring-4 ring-feature-tint">
+                <AvatarImage src={data.avatarUrl} alt={data.name} />
+                <AvatarFallback className="text-lg">{initials(data.name)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h1 className="font-display text-xl font-semibold tracking-tight">{data.name}</h1>
+                  {data.empCode ? (
+                    <span className="font-mono text-xs text-muted-foreground">{data.empCode}</span>
+                  ) : null}
+                </div>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {[data.jobTitle, data.department].filter((s) => s.trim() !== "").join(" · ") ||
+                    data.email}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {data.roleName ? (
+                    <Badge className="bg-feature-tint text-primary">{data.roleName}</Badge>
+                  ) : null}
+                  <Badge className={cn("capitalize", STATUS_META[data.status])}>{data.status}</Badge>
+                </div>
+              </div>
+              {canManage ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 self-start sm:self-center"
+                  onClick={() => setReassignOpen(true)}
+                >
+                  <Pencil className="size-4" /> Reassign
+                </Button>
               ) : null}
-              <Badge className={cn("capitalize", STATUS_META[p.status])}>{p.status}</Badge>
             </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {[p.title, p.department].filter(Boolean).join(" · ") || p.email}
-            </p>
-            {p.roleName ? (
-              <Badge variant="outline" className="mt-2 font-normal">
-                {p.roleName}
-              </Badge>
-            ) : null}
+
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5">
+              <Detail label="Department" value={data.department} />
+              <Detail label="Team" value={data.team} />
+              <Detail label="Phone" value={data.phone} />
+              <Detail label="Email" value={data.email} />
+              <Detail label="Hire date" value={data.hireDate} />
+              <Detail label="City / State" value={data.cityState} />
+              <Detail label="Country" value={data.country} />
+              <Detail label="Role" value={data.roleName} />
+            </dl>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Details</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-          <Detail label="Email" value={p.email} />
-          <Detail label="Phone" value={p.phone} />
-          <Detail label="Employee ID" value={p.empId} />
-          <Detail label="Department" value={p.department} />
-          <Detail label="Team" value={p.team} />
-          <Detail label="Role" value={p.roleName} />
-          <Detail label="Location" value={p.location} />
-          <Detail label="Hire date" value={p.hireDate} />
-          <Detail label="Status" value={p.status} />
-        </CardContent>
-      </Card>
+          {/* Projects the person MANAGES (no membership endpoint → manager-scoped list) */}
+          <div className="flex-1 rounded-xl border bg-card p-5">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                <FolderKanban className="size-4" />
+              </span>
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Projects
+              </p>
+              <Badge className="bg-muted font-normal text-muted-foreground">
+                {data.projects.length}
+              </Badge>
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground/80">
+              Projects this person manages
+            </p>
+            {data.projects.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Not managing any projects. Member-only projects can&apos;t be listed yet — there is no
+                per-employee membership endpoint.
+              </p>
+            ) : (
+              <>
+                <ul className="space-y-4">
+                  {pagedProjects.map((p) => (
+                    <li key={p.id} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="flex min-w-0 items-center gap-2 font-medium">
+                          {p.key ? (
+                            <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
+                              {p.key}
+                            </span>
+                          ) : null}
+                          <span className="truncate">{p.name}</span>
+                          {p.active ? (
+                            <Badge className="bg-success/12 text-[0.65rem] text-success">Active</Badge>
+                          ) : null}
+                        </span>
+                        <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+                          {p.progress}%
+                        </span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="wp-meter-fill h-full rounded-full bg-primary"
+                          style={{ width: `${p.progress}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {p.tasks} tasks · {p.teammates} members
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                {data.projects.length > PROJECTS_PER_PAGE ? (
+                  <TablePagination
+                    page={safeProjectPage}
+                    pageCount={projectPageCount}
+                    total={data.projects.length}
+                    pageSize={PROJECTS_PER_PAGE}
+                    onPageChange={setProjectPage}
+                    className="mt-4"
+                  />
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
 
-      {/* Activity — agent-gated, honest */}
-      <Card className="border-dashed">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Activity className="size-4" />
-            </span>
-            Activity &amp; productivity
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Productivity scores, tracked hours, and this person&apos;s projects come from the desktop
-            agent&apos;s activity data, which isn&apos;t reporting yet — so they&apos;re intentionally
-            blank rather than estimated. They&apos;ll appear here once monitoring is live.
-          </p>
-        </CardContent>
-      </Card>
+        {/* ── RIGHT COLUMN ── */}
+        <div className="flex flex-col gap-4">
+          {/* Factual recap (NOT AI — deterministic, built from the real numbers) */}
+          <FactualSummary data={data} />
+
+          {/* Stat cards row */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Productivity
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.hasActivity ? `${data.productivityScore}` : "—"}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {data.hasActivity ? `score over ${data.daysScored} scored days` : "no activity yet"}
+              </p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Avg. completion
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.avgCompletion}%
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">across managed projects</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Total tasks
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">{data.totalTasks}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">across managed projects</p>
+            </div>
+            <div className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Active projects
+              </p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">{activeCount}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">of {data.projects.length} managed</p>
+            </div>
+          </div>
+
+          {/* KPI chart — 6-month productivity score, capped so it never balloons */}
+          <div className="flex max-h-[360px] min-h-[300px] flex-1 flex-col rounded-xl border bg-card p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
+                  <BarChart2 className="size-4" />
+                </span>
+                <div>
+                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Productivity
+                  </p>
+                  <p className="text-xs text-muted-foreground/80">Monthly average score (0–100)</p>
+                </div>
+              </div>
+              {data.hasActivity ? (
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <Legend className="bg-primary" label="Last 6 months" />
+                  <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
+                </div>
+              ) : null}
+            </div>
+            {data.hasActivity ? (
+              <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
+                <AreaChart data={chartData} margin={{ top: 6, right: 8, bottom: 0, left: -16 }}>
+                  <defs>
+                    <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
+                      <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                    dy={6}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    width={36}
+                    domain={[0, 100]}
+                    tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                  />
+                  <Tooltip
+                    cursor={{ stroke: "var(--border)" }}
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "1px solid var(--border)",
+                      background: "var(--popover)",
+                      color: "var(--popover-foreground)",
+                      fontSize: 12,
+                    }}
+                    labelStyle={{ color: "var(--muted-foreground)" }}
+                    formatter={(v: number) => (v == null ? "—" : `${v}`)}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="previous"
+                    name="Previous 6 months"
+                    stroke="var(--muted-foreground)"
+                    strokeDasharray="5 5"
+                    strokeOpacity={0.55}
+                    strokeWidth={2}
+                    fill="transparent"
+                    connectNulls
+                    dot={false}
+                    activeDot={false}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="current"
+                    name="Last 6 months"
+                    stroke="var(--primary)"
+                    strokeWidth={2.5}
+                    fill="url(#kpi-current)"
+                    connectNulls
+                    dot={false}
+                    activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+                <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <BarChart2 className="size-5" />
+                </span>
+                <p className="text-sm font-medium">No activity yet</p>
+                <p className="max-w-xs text-xs text-muted-foreground">
+                  Productivity scores come from the desktop agent&apos;s activity data, which
+                  isn&apos;t reporting for this person yet. The trend will fill in once monitoring is
+                  live.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
+  );
+}
+
+/**
+ * A plain-language recap of the person's real numbers. Deterministic and factual — **not**
+ * AI-generated, and it never fabricates: with no activity or no projects, it says so.
+ */
+function FactualSummary({ data }: { data: EmployeeProfileData }) {
+  const first = data.name.split(" ")[0] || data.name;
+  const total = data.projects.length;
+  const activeCount = data.projects.filter((p) => p.active).length;
+  const scorePhrase = data.hasActivity
+    ? `productivity ${data.productivityScore}/100 over ${data.daysScored} scored ${data.daysScored === 1 ? "day" : "days"}`
+    : "no productivity data reported yet";
+
+  const headline =
+    total > 0
+      ? `${first} manages ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""} at ${data.avgCompletion}% average completion — ${scorePhrase}.`
+      : `${first} isn't managing any projects — ${scorePhrase}.`;
+
+  const points: string[] = [];
+  if (total > 0) {
+    points.push(
+      `${data.totalTasks} tasks across managed projects, ${data.avgCompletion}% average completion.`,
+    );
+    const top = [...data.projects].sort((a, b) => b.progress - a.progress)[0];
+    if (top) points.push(`Furthest along: ${top.name} at ${top.progress}% complete.`);
+  }
+  if (!data.hasActivity) {
+    points.push("Productivity scoring waits on the desktop agent — no scored days yet.");
+  }
+
+  return (
+    <div className="rounded-xl border bg-card p-5">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          <ClipboardList className="size-4" />
+        </span>
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Summary</p>
+      </div>
+      <p className="text-sm font-medium">{headline}</p>
+      {points.length > 0 ? (
+        <ul className="mt-3 space-y-1.5">
+          {points.map((pt, i) => (
+            <li key={i} className="flex gap-2 text-sm text-muted-foreground">
+              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+              {pt}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="mt-3 text-[0.7rem] text-muted-foreground/70">
+        Factual recap of this profile&apos;s live figures — not an AI inference.
+      </p>
+    </div>
+  );
+}
+
+/* ------------------------------- atoms -------------------------------- */
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[0.7rem] font-medium tracking-wide text-muted-foreground/70 uppercase">
+        {label}
+      </dt>
+      <dd className="mt-1 truncate text-sm font-medium" title={value}>
+        {dash(value)}
+      </dd>
+    </div>
+  );
+}
+
+function Legend({
+  className,
+  label,
+  dashed,
+}: {
+  className: string;
+  label: string;
+  dashed?: boolean;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {dashed ? (
+        <span className="inline-flex w-4 items-center justify-between">
+          <span className={cn("h-0.5 w-1 rounded-full", className)} />
+          <span className={cn("h-0.5 w-1 rounded-full", className)} />
+          <span className={cn("h-0.5 w-1 rounded-full", className)} />
+        </span>
+      ) : (
+        <span className={cn("h-0.5 w-4 rounded-full", className)} />
+      )}
+      {label}
+    </span>
   );
 }
