@@ -20,7 +20,7 @@
  * — LLD §7), and today's "in/out" is genuine live presence, not a guess.
  */
 import { useEffect, useMemo, useState } from "react";
-import { getDayOversight } from "./services/attendance.service";
+import { getDayOversight, getUserDay } from "./services/attendance.service";
 import {
   listEmployees,
   departmentMap,
@@ -52,6 +52,15 @@ export interface OversightRow {
   daysCounted?: number;
   /** `range` mode: `daysPresent / daysCounted` as a 0–100 percentage. */
   rate?: number;
+  // ── day / today mode: clock-in/out + hours, from the per-user timesheet endpoint ──
+  /** Epoch **ms** of the first timer start. Absent = didn't clock in (renders `—`). */
+  clockIn?: number;
+  /** Epoch **ms** of the last stop. Absent while a timer is still running or no session (renders `—`). */
+  clockOut?: number;
+  /** Worked minutes for the day (→ hours in the UI). */
+  workedMinutes?: number;
+  /** A timer is on right now (clocked in, no clock-out). */
+  running?: boolean;
 }
 
 export interface OversightCounts {
@@ -116,6 +125,35 @@ async function mapWithConcurrency<T, R>(
     Array.from({ length: Math.min(limit, items.length) }, () => worker()),
   );
   return results;
+}
+
+/**
+ * Enrich per-person rows (day / today mode) with clock-in/out + worked minutes from the per-user
+ * timesheet endpoint. One call per row, bounded to 4 in flight; a failed row just keeps no clock data
+ * (renders `—`) rather than failing the table.
+ */
+async function enrichClock(
+  rows: OversightRow[],
+  iso: string,
+): Promise<OversightRow[]> {
+  const details = await mapWithConcurrency(rows, 4, (r) =>
+    getUserDay(r.userId, iso).then(
+      (d) => d,
+      () => null,
+    ),
+  );
+  return rows.map((r, i) => {
+    const d = details[i];
+    return d
+      ? {
+          ...r,
+          clockIn: d.clock_in,
+          clockOut: d.clock_out,
+          workedMinutes: d.worked_minutes,
+          running: d.running,
+        }
+      : r;
+  });
 }
 
 /** The **closed** workdays (ISO) a past range covers. `today`/future are never fetched (no record). */
@@ -302,7 +340,7 @@ export function useOversightAttendance({
               : "Couldn't reach the device fleet — live presence is unavailable.";
           }
           if (!live) return;
-          const rows: OversightRow[] = emp
+          const baseRows: OversightRow[] = emp
             .map(([userId, e]) => ({
               userId,
               name: e.name,
@@ -310,7 +348,10 @@ export function useOversightAttendance({
               status: onlineIds.has(userId) ? "in" : "out",
             }))
             .sort((a, b) => a.name.localeCompare(b.name));
-          const present = rows.filter((r) => r.status === "in").length;
+          const present = baseRows.filter((r) => r.status === "in").length;
+          // Clock-in/out for today comes from each person's live TIME# sessions.
+          const rows = await enrichClock(baseRows, todayIso);
+          if (!live) return;
           setState({
             counts: { present, late: 0, leave: 0, total: emp.length },
             rows,
@@ -365,7 +406,7 @@ export function useOversightAttendance({
         let mode: OversightMode;
         if (range === "day") {
           mode = "day";
-          rows = singleDay
+          const dayRows = singleDay
             .map(({ userId, status }) => {
               const entry = dir.get(userId);
               return {
@@ -376,6 +417,9 @@ export function useOversightAttendance({
               };
             })
             .sort((a, b) => a.name.localeCompare(b.name));
+          // Clock-in/out + hours for the picked day, per employee.
+          rows = await enrichClock(dayRows, isoOf(date.year, date.month, date.day));
+          if (!live) return;
         } else {
           mode = "range";
           rows = [...perUser.entries()]

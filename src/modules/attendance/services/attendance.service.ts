@@ -99,3 +99,35 @@ export function getDayOversight(date: string): Promise<ApiDayResponse> {
   const q = new URLSearchParams({ date });
   return apiFetch<ApiDayResponse>(`/v1/attendance/day?${q}`);
 }
+
+/** Mirrors `time-attendance::user_day::UserDayDetail` — one employee's day of clock-in/out + hours. */
+export interface ApiUserDayDetail {
+  user_id: string;
+  date: string;
+  /** Resolved status once the 00:15 close ran; absent while the day is still open (today). */
+  status?: AttendanceStatus;
+  late: boolean;
+  /** Epoch **ms** of the first timer start. Absent = didn't clock in. */
+  clock_in?: number;
+  /** Epoch **ms** of the last session's stop. Absent while a session is still running. */
+  clock_out?: number;
+  worked_minutes: number;
+  /** A session is open (clocked in, not yet out) — clock_out is deliberately absent. */
+  running: boolean;
+  entry_count: number;
+}
+
+/**
+ * `GET /v1/attendance/user/{id}?date=` — one employee's clock-in/out + worked hours for a day
+ * (needs `AttendanceReadTeam`). Reads their `TIME#` sessions directly, so it works for **today** too:
+ * `clock_in` = first timer start; `clock_out` = last stop, or absent while a timer is still running.
+ */
+export function getUserDay(
+  userId: string,
+  date: string,
+): Promise<ApiUserDayDetail> {
+  const q = new URLSearchParams({ date });
+  return apiFetch<ApiUserDayDetail>(
+    `/v1/attendance/user/${encodeURIComponent(userId)}?${q}`,
+  );
+}

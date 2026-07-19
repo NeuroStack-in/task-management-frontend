@@ -81,6 +81,14 @@ const STATUS_META: Record<string, { label: string; badge: string; dot: string }>
 const statusMeta = (s: string) =>
   STATUS_META[s] ?? { label: s, badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" };
 
+/** Epoch ms → local `HH:MM`, or `—`. Client-only (the log renders after mount), so no SSR skew. */
+const fmtTime = (ms?: number) =>
+  ms
+    ? new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
+    : "—";
+/** Worked minutes → one-decimal hours, or `—`. */
+const fmtHours = (mins?: number) => (mins && mins > 0 ? (mins / 60).toFixed(1) : "—");
+
 const PAGE_SIZE = 10;
 type SortKey = "name" | "rate" | "status";
 
@@ -162,11 +170,18 @@ export function AttendanceLog({
   const exportCsv = () => {
     const fields = isRange
       ? ["Employee", "Department", "Days present", "Days counted", "Rate %"]
-      : ["Employee", "Department", "Status"];
+      : ["Employee", "Department", "Status", "Clock in", "Clock out", "Hours"];
     const data = filtered.map((r) =>
       isRange
         ? [r.name, r.dept, r.daysPresent ?? 0, r.daysCounted ?? 0, r.rate ?? 0]
-        : [r.name, r.dept, statusMeta(r.status ?? "").label],
+        : [
+            r.name,
+            r.dept,
+            statusMeta(r.status ?? "").label,
+            fmtTime(r.clockIn),
+            r.running ? "running" : fmtTime(r.clockOut),
+            fmtHours(r.workedMinutes),
+          ],
     );
     const csv = Papa.unparse({ fields, data });
     const slug = label.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
@@ -279,12 +294,17 @@ export function AttendanceLog({
                         />
                       </>
                     ) : (
-                      <SortHead
-                        label="Status"
-                        active={sort.key === "status"}
-                        dir={sort.dir}
-                        onClick={() => toggleSort("status")}
-                      />
+                      <>
+                        <SortHead
+                          label="Status"
+                          active={sort.key === "status"}
+                          dir={sort.dir}
+                          onClick={() => toggleSort("status")}
+                        />
+                        <TableHead>Clock in</TableHead>
+                        <TableHead>Clock out</TableHead>
+                        <TableHead>Hours</TableHead>
+                      </>
                     )}
                   </TableRow>
                 </TableHeader>
@@ -330,16 +350,29 @@ export function AttendanceLog({
                             </TableCell>
                           </>
                         ) : (
-                          <TableCell>
-                            {meta ? (
-                              <Badge className={cn("font-medium", meta.badge)}>
-                                <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
-                                {meta.label}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
+                          <>
+                            <TableCell>
+                              {meta ? (
+                                <Badge className={cn("font-medium", meta.badge)}>
+                                  <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
+                                  {meta.label}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="tabular-nums">{fmtTime(r.clockIn)}</TableCell>
+                            <TableCell className="tabular-nums">
+                              {r.running ? (
+                                <span className="text-success">running</span>
+                              ) : (
+                                fmtTime(r.clockOut)
+                              )}
+                            </TableCell>
+                            <TableCell className="tabular-nums text-muted-foreground">
+                              {fmtHours(r.workedMinutes)}
+                            </TableCell>
+                          </>
                         )}
                       </TableRow>
                     );
