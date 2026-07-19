@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { listRoles } from "@/modules/roles/services/roles.service";
 import {
-  listProjects,
+  listUserProjects,
   getProject,
 } from "@/modules/projects/services/projects.service";
 import { getUserActivity } from "@/modules/insights/services/insights.service";
@@ -175,21 +175,19 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           departmentMap().catch(() => new Map<string, string>()),
           teamMap().catch(() => new Map<string, string>()),
           listRoles().catch(() => []),
-          listProjects().catch(() => []),
+          listUserProjects(id).catch(() => []),
           getUserActivity(id, from, to).catch(() => null),
         ]);
         if (!live) return;
 
-        // Projects this person MANAGES (no membership endpoint exists — manager is all we can list).
-        const managed = allProjects
-          .filter((pr) => pr.manager_user_id === p.user_id)
-          .slice(0, 50); // safety cap on the per-project KPI fan-out
-        const details = await mapLimit(managed, 5, (pr) =>
+        // Every project this person is a member of (manager OR member) — the real membership scan.
+        const memberProjects = allProjects.slice(0, 50); // safety cap on the per-project KPI fan-out
+        const details = await mapLimit(memberProjects, 5, (pr) =>
           getProject(pr.id).catch(() => null),
         );
         if (!live) return;
 
-        const projects: ProjectItem[] = managed
+        const projects: ProjectItem[] = memberProjects
           .map((pr, idx) => {
             const detail = details[idx];
             const kpi = detail?.kpi;
@@ -248,7 +246,7 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           avgCompletion,
           hasActivity,
           daysScored,
-          projectsAreManagerOnly: true,
+          projectsAreManagerOnly: false,
         });
       } catch (e) {
         if (!live) return;

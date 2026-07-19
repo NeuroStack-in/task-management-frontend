@@ -38,6 +38,19 @@ export async function listProjects(): Promise<ApiProject[]> {
   return res.projects;
 }
 
+/**
+ * `GET /v1/projects/user/{id}` — the projects a specific employee is a **member** of (manager or
+ * member), for the admin employee profile. Oversight-gated (`projects:read`). Same row shape as
+ * {@link listProjects}; this is the reverse "which projects is this person on" lookup the plain list
+ * can't answer for someone other than the caller.
+ */
+export async function listUserProjects(userId: string): Promise<ApiProject[]> {
+  const res = await apiFetch<ProjectsResponse>(
+    `/v1/projects/user/${encodeURIComponent(userId)}`,
+  );
+  return res.projects;
+}
+
 // ── Detail + KPIs (GET /v1/projects/{id}) ──────────────────────────────────────────────────────
 
 /** Precomputed KPIs from the Streams aggregator (`project_kpi`). Absent until it has run. */

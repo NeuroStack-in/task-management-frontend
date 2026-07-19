@@ -95,10 +95,10 @@ function exportEmployeeCsv(d: EmployeeProfileData) {
     ["Productivity %", score],
     ["Avg. completion %", d.avgCompletion],
     ["Total tasks", d.totalTasks],
-    ["Projects managed", d.projects.length],
+    ["Projects", d.projects.length],
     ["Active projects", activeCount],
     [],
-    ["Project (managed)", "Key", "Progress %", "Tasks", "Members", "Active"],
+    ["Project", "Key", "Progress %", "Tasks", "Members", "Active"],
     ...d.projects.map((p) => [
       p.name, dash(p.key), p.progress, p.tasks, p.teammates, p.active ? "Yes" : "No",
     ]),
@@ -155,9 +155,9 @@ function exportEmployeePdf(d: EmployeeProfileData) {
   kv("Productivity", d.hasActivity ? `${d.productivityScore} / 100` : "No activity reported yet");
   kv("Avg. completion", `${d.avgCompletion}%`);
   kv("Total tasks", String(d.totalTasks));
-  kv("Projects managed", `${d.projects.length} (${activeCount} active)`);
+  kv("Projects", `${d.projects.length} (${activeCount} active)`);
 
-  section("Projects managed");
+  section("Projects");
   if (d.projects.length === 0) {
     doc.text("None.", 14, y);
   } else {
@@ -486,12 +486,11 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
               </Badge>
             </div>
             <p className="mb-4 text-xs text-muted-foreground/80">
-              Projects this person manages
+              Projects this person is on
             </p>
             {data.projects.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Not managing any projects. Member-only projects can&apos;t be listed yet — there is no
-                per-employee membership endpoint.
+                Not a member of any projects yet.
               </p>
             ) : (
               <>
@@ -566,21 +565,21 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
               <p className="mt-1 font-display text-3xl font-bold tabular-nums">
                 {data.avgCompletion}%
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">across managed projects</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">across their projects</p>
             </div>
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Total tasks
               </p>
               <p className="mt-1 font-display text-3xl font-bold tabular-nums">{data.totalTasks}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">across managed projects</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">across their projects</p>
             </div>
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Active projects
               </p>
               <p className="mt-1 font-display text-3xl font-bold tabular-nums">{activeCount}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">of {data.projects.length} managed</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">of {data.projects.length} total</p>
             </div>
           </div>
 
@@ -701,13 +700,13 @@ function FactualSummary({ data }: { data: EmployeeProfileData }) {
 
   const headline =
     total > 0
-      ? `${first} manages ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""} at ${data.avgCompletion}% average completion — ${scorePhrase}.`
-      : `${first} isn't managing any projects — ${scorePhrase}.`;
+      ? `${first} is on ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""} at ${data.avgCompletion}% average completion — ${scorePhrase}.`
+      : `${first} isn't on any projects — ${scorePhrase}.`;
 
   const points: string[] = [];
   if (total > 0) {
     points.push(
-      `${data.totalTasks} tasks across managed projects, ${data.avgCompletion}% average completion.`,
+      `${data.totalTasks} tasks across their projects, ${data.avgCompletion}% average completion.`,
     );
     const top = [...data.projects].sort((a, b) => b.progress - a.progress)[0];
     if (top) points.push(`Furthest along: ${top.name} at ${top.progress}% complete.`);
