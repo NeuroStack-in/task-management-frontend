@@ -32,6 +32,8 @@ export interface EntitlementsState {
   plan: string | null;
   /** Keys the plan permits — the ceiling. Empty until loaded. */
   allowed: Set<string>;
+  /** Layer 2 alone — the owner's per-key activation flags, straight from the server. */
+  enabled: Record<string, boolean>;
   loading: boolean;
   error: string | null;
   /**
@@ -88,6 +90,7 @@ export function useEntitlements(): EntitlementsState {
   return {
     plan: ent?.plan ?? null,
     allowed,
+    enabled: ent?.enabled ?? {},
     loading,
     error,
     effective,

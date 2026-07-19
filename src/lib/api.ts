@@ -97,6 +97,18 @@ export function getEntitlements(): Promise<Entitlements> {
   return apiFetch<Entitlements>("/v1/org/entitlements");
 }
 
+/**
+ * Flip one feature's owner-activation flag — `PATCH /v1/org/entitlements` (identity). Layer 2 of the
+ * gate; the server enforces `enabled ⊆ allowed`, so enabling a key the plan doesn't include is
+ * rejected. Returns the full, updated entitlements (both layers) so callers re-sync to server truth.
+ */
+export function toggleFeature(key: string, enabled: boolean): Promise<Entitlements> {
+  return apiFetch<Entitlements>("/v1/org/entitlements", {
+    method: "PATCH",
+    body: JSON.stringify({ key, enabled }),
+  });
+}
+
 // ── Invite signup (public — the invitee has no account yet) ──────────────────────────────────────
 // Both calls run logged-out: `apiFetch` only attaches a token when one exists, so no auth header is
 // sent, which is exactly what these public routes expect.

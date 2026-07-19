@@ -5,10 +5,8 @@ import {
   ShieldCheck,
   KeyRound,
   Laptop,
-  Smartphone,
   Copy,
   QrCode,
-  type LucideIcon,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
@@ -29,6 +27,7 @@ import {
 import { useAccountSecurityStore } from "@/stores/account-security.store";
 import { useAuthStore } from "@/stores/auth.store";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useSessions } from "@/modules/security/use-sessions";
 import { cn } from "@/lib/utils";
 
 /** Demo authenticator secret + recovery codes (frontend-only stand-in). */
@@ -44,32 +43,23 @@ const RECOVERY_CODES = [
   "C9WN-3JQ5",
 ];
 
-interface SessionRow {
-  id: string;
-  device: string;
-  location: string;
-  lastActive: string;
-  current?: boolean;
-  icon: LucideIcon;
+/**
+ * Epoch ms → a short relative label. Real sessions carry `{session_id, last_seen}` only —
+ * Cognito exposes no device / IP / location without its paid advanced-security tier, and there is
+ * no per-session revoke endpoint (§15), so this section is honestly lean and read-only.
+ */
+function timeAgo(ms: number | null): string {
+  if (!ms) return "Unknown";
+  const diff = Date.now() - ms;
+  if (diff < 0) return "Just now";
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) return "Active now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return d === 1 ? "Yesterday" : `${d}d ago`;
 }
-
-const SESSIONS: SessionRow[] = [
-  {
-    id: "s1",
-    device: "Chrome on Windows",
-    location: "Bengaluru, IN",
-    lastActive: "Active now",
-    current: true,
-    icon: Laptop,
-  },
-  {
-    id: "s2",
-    device: "Safari on iPhone",
-    location: "Bengaluru, IN",
-    lastActive: "2 days ago",
-    icon: Smartphone,
-  },
-];
 
 export function AccountSecuritySettings() {
   const enabled = useAccountSecurityStore((s) => s.twoFactorEnabled);
@@ -101,6 +91,13 @@ export function AccountSecuritySettings() {
     `&issuer=WorkPulse&algorithm=SHA1&digits=6&period=30`;
   const [showCodes, setShowCodes] = useState(false);
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+
+  // Active sessions — real, from GET /v1/me/sessions (sorted newest-first). Lean + read-only.
+  const {
+    sessions,
+    loading: sessionsLoading,
+    error: sessionsError,
+  } = useSessions();
 
   const verify = () => {
     if (code.length !== 6) return;
@@ -246,48 +243,51 @@ export function AccountSecuritySettings() {
             <p className="font-medium">Active sessions</p>
           </div>
           <p className="-mt-1 text-sm text-muted-foreground">
-            Devices currently signed in to your account.
+            Devices currently signed in to your account. Per-session sign-out
+            isn&apos;t available yet.
           </p>
           {/* Show ~3 sessions; the rest scroll within this fixed height so the
               card never grows tall. */}
           <div className="max-h-56 space-y-2.5 overflow-y-auto pr-1">
-            {SESSIONS.map((s) => {
-              const Icon = s.icon;
-              return (
+            {sessionsLoading ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Loading sessions…
+              </p>
+            ) : sessionsError ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {sessionsError}
+              </p>
+            ) : sessions.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No active sessions recorded.
+              </p>
+            ) : (
+              sessions.map((s, i) => (
                 <div
-                  key={s.id}
+                  key={s.session_id}
                   className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
                 >
                   <div className="flex items-center gap-3">
                     <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                      <Icon className="size-4" />
+                      <Laptop className="size-4" />
                     </span>
                     <div>
                       <p className="flex items-center gap-2 text-sm font-medium">
-                        {s.device}
-                        {s.current ? (
+                        Web session
+                        {i === 0 ? (
                           <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
                             This device
                           </span>
                         ) : null}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {s.location} · {s.lastActive}
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {s.session_id} · {timeAgo(s.last_seen)}
                       </p>
                     </div>
                   </div>
-                  {!s.current ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toast.success(`Signed out ${s.device}`)}
-                    >
-                      Sign out
-                    </Button>
-                  ) : null}
                 </div>
-              );
-            })}
+              ))
+            )}
           </div>
         </CardContent>
         </Card>

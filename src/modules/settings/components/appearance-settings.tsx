@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Check, Monitor, Moon, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -14,6 +15,7 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { FONTS, applyFont, currentFont } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
+import { useAppearance, type AppearanceTheme } from "../use-appearance";
 
 interface ThemeOption {
   value: "light" | "dark" | "system";
@@ -77,6 +79,9 @@ export function AppearanceSettings() {
   const [mounted, setMounted] = useState(false);
   const [font, setFont] = useState("ibmplex");
 
+  // The server holds the account-wide theme; next-themes applies it instantly per browser.
+  const { serverTheme, save: saveAppearance } = useAppearance();
+
   // next-themes + the persisted font resolve on the client; avoid an
   // SSR/hydration mismatch by reading them after mount.
   useEffect(() => {
@@ -84,6 +89,22 @@ export function AppearanceSettings() {
     setFont(currentFont());
   }, []);
   const active = mounted ? theme : undefined;
+
+  // Hydrate the theme from the account once (so it follows the user across devices), but only
+  // adopt it, not re-push it. Guarded so we don't fight the user's clicks after the first sync.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current || !serverTheme) return;
+    hydratedRef.current = true;
+    if (serverTheme !== theme) setTheme(serverTheme);
+  }, [serverTheme, theme, setTheme]);
+
+  const chooseTheme = (value: AppearanceTheme) => {
+    setTheme(value); // instant, local
+    saveAppearance(value).catch(() =>
+      toast.error("Theme applied here, but couldn't save it to your account."),
+    );
+  };
 
   const chooseFont = (id: string) => {
     applyFont(id);
@@ -101,8 +122,8 @@ export function AppearanceSettings() {
         <CardHeader>
           <CardTitle>Theme</CardTitle>
           <CardDescription>
-            Applies to your account on this browser. It does not change the theme
-            for other members.
+            Applies to your account across your devices. It does not change the
+            theme for other members.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -119,7 +140,7 @@ export function AppearanceSettings() {
                   key={option.value}
                   role="radio"
                   aria-checked={selected}
-                  onClick={() => setTheme(option.value)}
+                  onClick={() => chooseTheme(option.value)}
                   className={cn(
                     "group relative flex flex-col gap-3 rounded-2xl border p-3 text-left transition-colors",
                     selected

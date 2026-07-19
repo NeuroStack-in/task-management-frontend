@@ -29,8 +29,11 @@ import { Switch } from "@/components/ui/switch"
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
-import { useFeaturesStore, type FeatureKey } from "@/stores/features.store"
+import { type FeatureKey } from "@/stores/features.store"
+import { toggleFeature } from "@/lib/api"
+import { Loader } from "@/components/shared/loader"
 import { cn } from "@/lib/utils"
+import { useEntitlements } from "../use-entitlements"
 
 interface FeatureDef {
   key: FeatureKey
@@ -133,41 +136,66 @@ const FEATURE_LIST: FeatureDef[] = [
   },
 ]
 
+/** Server `enabled` map → the full per-card draft (a key the server omits reads as off). */
+function draftFromServer(enabled: Record<string, boolean>): Record<FeatureKey, boolean> {
+  return Object.fromEntries(
+    FEATURE_LIST.map((f) => [f.key, enabled[f.key] === true]),
+  ) as Record<FeatureKey, boolean>
+}
+
 export function FeaturesTab() {
   const { can } = usePermissions()
   const canManage = can("settings:manage")
-  const features = useFeaturesStore((s) => s.features)
-  const setFeatures = useFeaturesStore((s) => s.setFeatures)
 
-  // Edit a local draft; commit to the store only on Save.
-  const [draft, setDraft] = useState<Record<FeatureKey, boolean>>(features)
+  // Layer 2 (owner activation) is the real source of truth — `GET /v1/org/entitlements`.
+  const { enabled, allowed, loading, error, reload } = useEntitlements()
+
+  // Edit a local draft; commit to the server only on Save.
+  const [draft, setDraft] = useState<Record<FeatureKey, boolean>>(() => draftFromServer({}))
   const [saving, setSaving] = useState(false)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(features)
+  const server = draftFromServer(enabled)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(server)
 
-  // Adopt the store value when it changes externally (persist hydration or a
-  // save) — by reference, so local edits to `draft` are never clobbered.
-  const lastSyncedRef = useRef(features)
+  // Adopt server state when it (re)loads — but only when the draft is clean, so a save/reload
+  // never clobbers edits in flight. `serverKey` changes only when the server value actually does.
+  const serverKey = JSON.stringify(server)
+  const lastSyncedRef = useRef<string>("")
   useEffect(() => {
-    if (features !== lastSyncedRef.current) {
-      setDraft(features)
-      lastSyncedRef.current = features
+    if (serverKey !== lastSyncedRef.current) {
+      setDraft(draftFromServer(enabled))
+      lastSyncedRef.current = serverKey
     }
-  }, [features])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverKey])
 
-  function handleSave() {
+  async function handleSave() {
     if (!dirty || saving) return
-    const next = draft
+    // PATCH only the keys that actually changed (one call each; the server enforces enabled ⊆ allowed).
+    const changed = FEATURE_LIST.filter((f) => draft[f.key] !== server[f.key])
     setSaving(true)
-    // Simulated persistence latency (Phase 1 is frontend-only).
-    setTimeout(() => {
-      setFeatures(next)
-      setSaving(false)
+    try {
+      for (const f of changed) {
+        await toggleFeature(f.key, draft[f.key])
+      }
       toast.success("Feature settings saved")
-    }, 500)
+    } catch {
+      toast.error("Couldn't save every change. Reloading the current settings.")
+    } finally {
+      setSaving(false)
+      reload() // re-sync to server truth regardless (partial success is possible)
+    }
   }
 
   function handleReset() {
-    setDraft(features)
+    setDraft(server)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Loader label="Loading features…" />
+      </div>
+    )
   }
 
   return (
@@ -176,6 +204,13 @@ export function FeaturesTab() {
         title="Features"
         description="Enable or disable features organization-wide. Changes take effect for all users once saved."
       />
+
+      {error && (
+        <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
+          <TriangleAlert className="size-4 shrink-0" />
+          {error}
+        </div>
+      )}
 
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
@@ -198,13 +233,15 @@ export function FeaturesTab() {
           <div className="grid lg:grid-cols-2 lg:divide-x">
             {FEATURE_LIST.map((f) => {
               const Icon = f.icon
-              const enabled = draft[f.key]
+              const isOn = draft[f.key]
+              // Layer 1: a key the plan doesn't include can't be switched on (the server rejects it).
+              const planAllows = allowed.has(f.key)
               return (
                 <div
                   key={f.key}
                   className={cn(
                     "flex items-center gap-4 border-b border-border px-6 py-3 transition-opacity last:border-b-0 lg:[&:nth-last-child(2):nth-child(odd)]:border-b-0",
-                    !enabled && "opacity-60",
+                    !isOn && "opacity-60",
                   )}
                 >
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
@@ -222,9 +259,9 @@ export function FeaturesTab() {
                     <p className="mt-0.5 text-xs text-muted-foreground">{f.description}</p>
                   </div>
                   <Switch
-                    checked={enabled}
-                    disabled={!canManage}
-                    aria-label={`${f.label} — ${enabled ? "enabled" : "disabled"}`}
+                    checked={isOn}
+                    disabled={!canManage || (!planAllows && !isOn)}
+                    aria-label={`${f.label} — ${isOn ? "enabled" : "disabled"}`}
                     onCheckedChange={(v) =>
                       setDraft((p) => ({ ...p, [f.key]: v }))
                     }
