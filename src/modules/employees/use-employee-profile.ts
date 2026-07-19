@@ -4,15 +4,12 @@
  * One employee's rich profile, assembled entirely from the **live backend** — no mock:
  *   - identity / contact / assignment  → `GET /v1/employees/{id}` + department / team / role maps;
  *   - productivity score + 6-month trend → `GET /v1/insights/user/{id}/activity` (agent-fed);
- *   - projects + per-project KPIs        → `GET /v1/projects` (filtered to the ones this person
- *     **manages**) + `GET /v1/projects/{id}`.
+ *   - projects + per-project KPIs        → `GET /v1/projects/user/{id}` + `GET /v1/projects/{id}`.
  *
- * What the server genuinely can't provide degrades honestly rather than being invented:
- *   - `dob`, `address`, `postcode`, `country`, `avatarUrl` — no field exists → left `""` ("—" in UI);
- *   - productivity / trend — **empty until the desktop agent reports** (`hasActivity=false`), shown
- *     as an honest "no activity yet" state, never zeros dressed as data;
- *   - `projects` — there is no per-user *membership* endpoint, so only projects this person is the
- *     **manager** of can be listed (`managerOnly`); member-only projects can't be enumerated.
+ * The output feeds the preview `EmployeeProfileData` shape verbatim. Fields the backend genuinely
+ * doesn't carry (`dob`, `address`, `postcode`, `country`, `avatarUrl`) are left `""` and the UI
+ * renders them as an em dash. The KPI series is **avg productive hours / day** per month, derived
+ * from the agent's `productive_sec` (a month with no scored day folds to `0`).
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -58,16 +55,9 @@ export interface EmployeeProfileData {
   address: string;
   postcode: string;
   projects: ProjectItem[];
-  /** `current[i]` / `previous[i]` are `null` for a month with no scored days (a gap, never a zero). */
-  kpi: { months: string[]; current: (number | null)[]; previous: (number | null)[] };
+  kpi: { months: string[]; current: number[]; previous: number[] };
   totalTasks: number;
   avgCompletion: number;
-  /** `false` when the agent has reported no scored day → score + chart show an empty state. */
-  hasActivity: boolean;
-  /** How many days actually carried a score (the trust basis for the number shown). */
-  daysScored: number;
-  /** The `projects` list is manager-only (no membership endpoint) — surfaced so the UI can say so. */
-  projectsAreManagerOnly: boolean;
 }
 
 export interface EmployeeProfileState {
@@ -99,6 +89,8 @@ function ymd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
 /** Run `fn` over `items` with a bounded concurrency, so a many-project fan-out can't throttle (503). */
 async function mapLimit<T, R>(
   items: T[],
@@ -118,14 +110,14 @@ async function mapLimit<T, R>(
 }
 
 /**
- * Twelve monthly buckets ending on the current month. Each score-carrying day folds into its month;
- * the last 6 buckets are "current", the first 6 are "previous". A bucket with no scored day → `null`.
+ * Twelve monthly buckets ending on the current month, each holding the **avg productive hours / day**
+ * for that month (mean of the returned days' `productive_sec / 3600`). The last 6 buckets are
+ * "current", the first 6 "previous". A bucket with no scored day folds to `0`.
  */
 function buildKpi(
-  days: { date: string; score: number }[],
+  days: { date: string; productiveSec: number }[],
   now: Date,
-): { months: string[]; current: (number | null)[]; previous: (number | null)[] } {
-  // 12 bucket keys "YYYY-MM", oldest → newest, ending at the current month.
+): { months: string[]; current: number[]; previous: number[] } {
   const keys: string[] = [];
   const labels: string[] = [];
   for (let k = 11; k >= 0; k--) {
@@ -133,17 +125,17 @@ function buildKpi(
     keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
     labels.push(MONTH_SHORT[d.getMonth()]);
   }
-  const sum = new Map<string, { total: number; n: number }>();
+  const sum = new Map<string, { hours: number; n: number }>();
   for (const day of days) {
     const key = day.date.slice(0, 7);
-    const acc = sum.get(key) ?? { total: 0, n: 0 };
-    acc.total += day.score;
+    const acc = sum.get(key) ?? { hours: 0, n: 0 };
+    acc.hours += day.productiveSec / 3600;
     acc.n += 1;
     sum.set(key, acc);
   }
-  const avgFor = (key: string): number | null => {
+  const avgFor = (key: string): number => {
     const acc = sum.get(key);
-    return acc && acc.n > 0 ? Math.round(acc.total / acc.n) : null;
+    return acc && acc.n > 0 ? round1(acc.hours / acc.n) : 0;
   };
   const previous = keys.slice(0, 6).map(avgFor);
   const current = keys.slice(6).map(avgFor);
@@ -208,14 +200,10 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           ? Math.round(projects.reduce((s, pr) => s + pr.progress, 0) / projects.length)
           : 0;
 
-        const daysScored = activity?.trend.days_scored ?? 0;
-        const hasActivity = daysScored > 0;
         const productivityScore =
-          hasActivity && activity?.trend.avg_score != null
-            ? Math.round(activity.trend.avg_score)
-            : 0;
+          activity?.trend.avg_score != null ? Math.round(activity.trend.avg_score) : 0;
         const kpi = buildKpi(
-          (activity?.days ?? []).map((d) => ({ date: d.date, score: d.score })),
+          (activity?.days ?? []).map((d) => ({ date: d.date, productiveSec: d.productive_sec })),
           now,
         );
 
@@ -244,9 +232,6 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           kpi,
           totalTasks,
           avgCompletion,
-          hasActivity,
-          daysScored,
-          projectsAreManagerOnly: false,
         });
       } catch (e) {
         if (!live) return;

@@ -14,10 +14,10 @@ import {
   MapPin,
   Sheet,
   BarChart2,
-  ClipboardList,
   Pencil,
   Users,
 } from "lucide-react";
+import { AiInsight } from "@/components/shared/ai-insight";
 import {
   Area,
   AreaChart,
@@ -27,7 +27,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -78,36 +82,36 @@ const fileCode = (code: string) => code.replace(/[^\w-]/g, "") || "employee";
 
 function exportEmployeeCsv(d: EmployeeProfileData) {
   const activeCount = d.projects.filter((p) => p.active).length;
-  const score = d.hasActivity ? d.productivityScore : "—";
   const rows: (string | number)[][] = [
     ["Field", "Value"],
     ["Employee", d.name],
-    ["Employee ID", dash(d.empCode)],
-    ["Role", dash(d.roleName)],
-    ["Title", dash(d.jobTitle)],
-    ["Department", dash(d.department)],
-    ["Team", dash(d.team)],
+    ["Employee ID", d.empCode],
+    ["Role", d.roleName],
+    ["Title", d.jobTitle],
+    ["Department", d.department],
+    ["Team", d.team],
     ["Status", d.status],
     ["Email", d.email],
-    ["Phone", dash(d.phone)],
-    ["Hire date", dash(d.hireDate)],
-    ["Location", dash(d.cityState)],
-    ["Productivity %", score],
+    ["Phone", d.phone],
+    ["Date of birth", d.dob],
+    ["Hire date", d.hireDate],
+    ["Address", `${d.address}, ${d.cityState}, ${d.country} ${d.postcode}`],
+    ["Productivity %", d.productivityScore],
     ["Avg. completion %", d.avgCompletion],
     ["Total tasks", d.totalTasks],
     ["Projects", d.projects.length],
     ["Active projects", activeCount],
     [],
-    ["Project", "Key", "Progress %", "Tasks", "Members", "Active"],
+    ["Project", "Key", "Progress %", "Tasks", "Teammates", "Active"],
     ...d.projects.map((p) => [
-      p.name, dash(p.key), p.progress, p.tasks, p.teammates, p.active ? "Yes" : "No",
+      p.name, p.key, p.progress, p.tasks, p.teammates, p.active ? "Yes" : "No",
     ]),
   ];
   downloadBlob(
     new Blob([Papa.unparse(rows)], { type: "text/csv;charset=utf-8;" }),
-    `${fileCode(d.empCode || d.id)}-report.csv`,
+    `${fileCode(d.empCode)}-report.csv`,
   );
-  toast.success("Report exported", { description: `${fileCode(d.empCode || d.id)}-report.csv` });
+  toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.csv` });
 }
 
 function exportEmployeePdf(d: EmployeeProfileData) {
@@ -119,11 +123,7 @@ function exportEmployeePdf(d: EmployeeProfileData) {
   doc.setFontSize(10);
   doc.setTextColor(120);
   y += 6;
-  doc.text(
-    [d.jobTitle, d.department, d.empCode].filter((s) => s.trim() !== "").join(" · ") || d.email,
-    14,
-    y,
-  );
+  doc.text(`${d.jobTitle} · ${d.department} · ${d.empCode}`, 14, y);
 
   const section = (title: string) => {
     y += 10;
@@ -144,26 +144,27 @@ function exportEmployeePdf(d: EmployeeProfileData) {
   };
 
   section("Profile");
-  kv("Role", dash(d.roleName));
+  kv("Role", d.roleName);
   kv("Status", d.status);
   kv("Email", d.email);
-  kv("Phone", dash(d.phone));
-  kv("Hire date", dash(d.hireDate));
-  kv("Location", dash(d.cityState));
+  kv("Phone", d.phone);
+  kv("Date of birth", d.dob);
+  kv("Hire date", d.hireDate);
+  kv("Address", `${d.address}, ${d.cityState}, ${d.country} ${d.postcode}`);
 
   section("Performance");
-  kv("Productivity", d.hasActivity ? `${d.productivityScore} / 100` : "No activity reported yet");
+  kv("Productivity", `${d.productivityScore}%`);
   kv("Avg. completion", `${d.avgCompletion}%`);
   kv("Total tasks", String(d.totalTasks));
   kv("Projects", `${d.projects.length} (${activeCount} active)`);
 
   section("Projects");
   if (d.projects.length === 0) {
-    doc.text("None.", 14, y);
+    doc.text("No projects.", 14, y);
   } else {
     for (const p of d.projects) {
       doc.setTextColor(20);
-      doc.text(`${dash(p.key)}  ${p.name}${p.active ? "  (active)" : ""}`, 14, y);
+      doc.text(`${p.key}  ${p.name}${p.active ? "  (active)" : ""}`, 14, y);
       doc.text(`${p.progress}%`, 196, y, { align: "right" });
       y += 6;
       if (y > 282) {
@@ -176,14 +177,14 @@ function exportEmployeePdf(d: EmployeeProfileData) {
   doc.setFontSize(8);
   doc.setTextColor(150);
   doc.text("WorkPulse · employee report", 14, 292);
-  doc.save(`${fileCode(d.empCode || d.id)}-report.pdf`);
-  toast.success("Report exported", { description: `${fileCode(d.empCode || d.id)}-report.pdf` });
+  doc.save(`${fileCode(d.empCode)}-report.pdf`);
+  toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.pdf` });
 }
 
 /**
  * Change this employee's RBAC role — the one reassignment WorkPulse actually has an endpoint for
- * (`PUT /v1/users/{id}/role`). Department/team moves have no backend route yet, so they're not
- * offered here rather than faked. The server enforces the caller's authority on save.
+ * (`PUT /v1/users/{id}/role`). Department/team moves have no backend route yet, so only the role is
+ * persisted on save. The server enforces the caller's authority.
  */
 function ReassignDialog({
   open,
@@ -289,13 +290,7 @@ function ReassignDialog({
 /* ============================ page-level wrapper ============================ */
 
 export function EmployeeProfile({ id }: { id: string }) {
-  const router = useRouter();
   const { data, loading, error, notFound, reload } = useEmployeeProfile(id);
-
-  usePageTitle(
-    data?.name ?? "Employee",
-    data ? [data.jobTitle, data.department].filter((s) => s.trim() !== "").join(" · ") : "",
-  );
 
   if (loading && !data) {
     return (
@@ -336,16 +331,20 @@ export function EmployeeProfile({ id }: { id: string }) {
   return <ProfileView data={data} reload={reload} />;
 }
 
-/* ============================ presentational view ============================ */
+/* ============================ presentational view (verbatim preview) ============================ */
 
 function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () => void }) {
   const router = useRouter();
   const { can } = usePermissions();
   const canManage = can("employees:manage");
   const canViewLocations = can("locations:view");
+
+  const department = data.department;
+  const team = data.team;
   const [reassignOpen, setReassignOpen] = useState(false);
 
-  const activeCount = data.projects.filter((p) => p.active).length;
+  // Surface the employee's name + role in the top navbar for this detail route.
+  usePageTitle(data.name, `${data.jobTitle} · ${department}`);
 
   const chartData = data.kpi.months.map((m, i) => ({
     month: m,
@@ -353,10 +352,14 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
     previous: data.kpi.previous[i],
   }));
 
-  // Projects list paginates so a heavily-staffed manager doesn't run a wall of bars down the card.
+  // Projects list paginates so a heavily-staffed employee doesn't run a wall of
+  // bars down the card.
   const PROJECTS_PER_PAGE = 5;
   const [projectPage, setProjectPage] = useState(0);
-  const projectPageCount = Math.max(1, Math.ceil(data.projects.length / PROJECTS_PER_PAGE));
+  const projectPageCount = Math.max(
+    1,
+    Math.ceil(data.projects.length / PROJECTS_PER_PAGE),
+  );
   const safeProjectPage = Math.min(projectPage, projectPageCount - 1);
   const pagedProjects = data.projects.slice(
     safeProjectPage * PROJECTS_PER_PAGE,
@@ -376,9 +379,7 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
         </Link>
         <div className="flex items-center gap-3">
           <nav className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
-            <Link href="/employees" className="transition-colors hover:text-foreground">
-              Employees
-            </Link>
+            <Link href="/employees" className="transition-colors hover:text-foreground">Employees</Link>
             <span className="text-muted-foreground/50">/</span>
             <span className="font-medium text-foreground">{data.name}</span>
           </nav>
@@ -419,33 +420,36 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
         />
       ) : null}
 
-      {/* 2-column layout on lg+: left = identity + projects, right = summary + stats + chart */}
+      {/* 2-column layout on lg+: left = identity + projects, right = stats + chart + AI */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         {/* ── LEFT COLUMN ── */}
         <div className="flex flex-col gap-4">
-          {/* Identity, contact & assignment in ONE card */}
+          {/* Employee — identity, contact & address in ONE card */}
           <div className="overflow-hidden rounded-xl border bg-card">
             <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
               <Avatar className="size-16 shrink-0 ring-4 ring-feature-tint">
                 <AvatarImage src={data.avatarUrl} alt={data.name} />
-                <AvatarFallback className="text-lg">{initials(data.name)}</AvatarFallback>
+                <AvatarFallback className="text-lg">
+                  {initials(data.name)}
+                </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <h1 className="font-display text-xl font-semibold tracking-tight">{data.name}</h1>
-                  {data.empCode ? (
-                    <span className="font-mono text-xs text-muted-foreground">{data.empCode}</span>
-                  ) : null}
+                  <h1 className="font-display text-xl font-semibold tracking-tight">
+                    {data.name}
+                  </h1>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {dash(data.empCode)}
+                  </span>
                 </div>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                  {[data.jobTitle, data.department].filter((s) => s.trim() !== "").join(" · ") ||
-                    data.email}
+                  {data.jobTitle} · {department}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {data.roleName ? (
-                    <Badge className="bg-feature-tint text-primary">{data.roleName}</Badge>
-                  ) : null}
-                  <Badge className={cn("capitalize", STATUS_META[data.status])}>{data.status}</Badge>
+                  <Badge className="bg-feature-tint text-primary">
+                    {data.roleName}
+                  </Badge>
+                  <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
                 </div>
               </div>
               {canManage ? (
@@ -461,20 +465,19 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
             </div>
 
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5">
-              <Detail label="Department" value={data.department} />
-              <Detail label="Team" value={data.team} />
+              <Detail label="Department" value={department} />
+              <Detail label="Team" value={team} />
               <Detail label="Phone" value={data.phone} />
               <Detail label="Email" value={data.email} />
               <Detail label="Hire date" value={data.hireDate} />
               <Detail label="City / State" value={data.cityState} />
               <Detail label="Country" value={data.country} />
-              <Detail label="Role" value={data.roleName} />
             </dl>
           </div>
 
-          {/* Projects the person MANAGES (no membership endpoint → manager-scoped list) */}
+          {/* Projects — all projects, single accent bar, Active badge when active */}
           <div className="flex-1 rounded-xl border bg-card p-5">
-            <div className="mb-1 flex items-center gap-2">
+            <div className="mb-4 flex items-center gap-2">
               <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
                 <FolderKanban className="size-4" />
               </span>
@@ -485,45 +488,42 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                 {data.projects.length}
               </Badge>
             </div>
-            <p className="mb-4 text-xs text-muted-foreground/80">
-              Projects this person is on
-            </p>
             {data.projects.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Not a member of any projects yet.
+                Not assigned to any project yet.
               </p>
             ) : (
               <>
                 <ul className="space-y-4">
-                  {pagedProjects.map((p) => (
-                    <li key={p.id} className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="flex min-w-0 items-center gap-2 font-medium">
-                          {p.key ? (
-                            <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
-                              {p.key}
-                            </span>
-                          ) : null}
-                          <span className="truncate">{p.name}</span>
-                          {p.active ? (
-                            <Badge className="bg-success/12 text-[0.65rem] text-success">Active</Badge>
-                          ) : null}
+                {pagedProjects.map((p) => (
+                  <li key={p.id} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className="flex min-w-0 items-center gap-2 font-medium">
+                        <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
+                          {p.key}
                         </span>
-                        <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                          {p.progress}%
-                        </span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="wp-meter-fill h-full rounded-full bg-primary"
-                          style={{ width: `${p.progress}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {p.tasks} tasks · {p.teammates} members
-                      </p>
-                    </li>
-                  ))}
+                        <span className="truncate">{p.name}</span>
+                        {p.active ? (
+                          <Badge className="bg-success/12 text-[0.65rem] text-success">
+                            Active
+                          </Badge>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+                        {p.progress}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="wp-meter-fill h-full rounded-full bg-primary"
+                        style={{ width: `${p.progress}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {p.tasks} tasks · {p.teammates} teammates
+                    </p>
+                  </li>
+                ))}
                 </ul>
                 {data.projects.length > PROJECTS_PER_PAGE ? (
                   <TablePagination
@@ -542,8 +542,8 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
 
         {/* ── RIGHT COLUMN ── */}
         <div className="flex flex-col gap-4">
-          {/* Factual recap (NOT AI — deterministic, built from the real numbers) */}
-          <FactualSummary data={data} />
+          {/* AI summary first */}
+          <EmployeeSummaryInsight data={data} />
 
           {/* Stat cards row */}
           <div className="grid grid-cols-2 gap-4">
@@ -552,11 +552,9 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                 Productivity
               </p>
               <p className="mt-1 font-display text-3xl font-bold tabular-nums">
-                {data.hasActivity ? `${data.productivityScore}` : "—"}
+                {data.productivityScore}%
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {data.hasActivity ? `score over ${data.daysScored} scored days` : "no activity yet"}
-              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">overall score</p>
             </div>
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -565,26 +563,32 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
               <p className="mt-1 font-display text-3xl font-bold tabular-nums">
                 {data.avgCompletion}%
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">across their projects</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">task delivery rate</p>
             </div>
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Total tasks
               </p>
-              <p className="mt-1 font-display text-3xl font-bold tabular-nums">{data.totalTasks}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">across their projects</p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.totalTasks}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">across all projects</p>
             </div>
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Active projects
               </p>
-              <p className="mt-1 font-display text-3xl font-bold tabular-nums">{activeCount}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">of {data.projects.length} total</p>
+              <p className="mt-1 font-display text-3xl font-bold tabular-nums">
+                {data.projects.filter((p) => p.active).length}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                of {data.projects.length} total
+              </p>
             </div>
           </div>
 
-          {/* KPI chart — 6-month productivity score, capped so it never balloons */}
-          <div className="flex max-h-[360px] min-h-[300px] flex-1 flex-col rounded-xl border bg-card p-5">
+          {/* KPI chart — capped so it never balloons to match a taller left column */}
+          <div className="flex max-h-[360px] flex-1 flex-col rounded-xl border bg-card p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="flex size-7 items-center justify-center rounded-lg bg-feature-tint text-primary">
@@ -594,91 +598,82 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                   <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                     Productivity
                   </p>
-                  <p className="text-xs text-muted-foreground/80">Monthly average score (0–100)</p>
+                  <p className="text-xs text-muted-foreground/80">
+                    Avg. productive hours / day
+                  </p>
                 </div>
               </div>
-              {data.hasActivity ? (
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <Legend className="bg-primary" label="Last 6 months" />
-                  <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
-                </div>
-              ) : null}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <Legend className="bg-primary" label="Last 6 months" />
+                <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
+              </div>
             </div>
-            {data.hasActivity ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
-                <AreaChart data={chartData} margin={{ top: 6, right: 8, bottom: 0, left: -16 }}>
-                  <defs>
-                    <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
-                      <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-                    dy={6}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={36}
-                    domain={[0, 100]}
-                    tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-                  />
-                  <Tooltip
-                    cursor={{ stroke: "var(--border)" }}
-                    contentStyle={{
-                      borderRadius: 12,
-                      border: "1px solid var(--border)",
-                      background: "var(--popover)",
-                      color: "var(--popover-foreground)",
-                      fontSize: 12,
-                    }}
-                    labelStyle={{ color: "var(--muted-foreground)" }}
-                    formatter={(v: number) => (v == null ? "—" : `${v}`)}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="previous"
-                    name="Previous 6 months"
-                    stroke="var(--muted-foreground)"
-                    strokeDasharray="5 5"
-                    strokeOpacity={0.55}
-                    strokeWidth={2}
-                    fill="transparent"
-                    connectNulls
-                    dot={false}
-                    activeDot={false}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="current"
-                    name="Last 6 months"
-                    stroke="var(--primary)"
-                    strokeWidth={2.5}
-                    fill="url(#kpi-current)"
-                    connectNulls
-                    dot={false}
-                    activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-                <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                  <BarChart2 className="size-5" />
-                </span>
-                <p className="text-sm font-medium">No activity yet</p>
-                <p className="max-w-xs text-xs text-muted-foreground">
-                  Productivity scores come from the desktop agent&apos;s activity data, which
-                  isn&apos;t reporting for this person yet. The trend will fill in once monitoring is
-                  live.
-                </p>
-              </div>
-            )}
+            <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
+              <AreaChart
+                data={chartData}
+                margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
+              >
+                <defs>
+                  <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="var(--border)"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                  dy={6}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  width={42}
+                  tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                  tickFormatter={(v) => `${v}h`}
+                />
+                <Tooltip
+                  cursor={{ stroke: "var(--border)" }}
+                  contentStyle={{
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "var(--popover)",
+                    color: "var(--popover-foreground)",
+                    fontSize: 12,
+                  }}
+                  labelStyle={{ color: "var(--muted-foreground)" }}
+                  formatter={(v: number) => `${v}h`}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="previous"
+                  name="Previous 6 months"
+                  stroke="var(--muted-foreground)"
+                  strokeDasharray="5 5"
+                  strokeOpacity={0.55}
+                  strokeWidth={2}
+                  fill="transparent"
+                  dot={false}
+                  activeDot={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="current"
+                  name="Last 6 months"
+                  stroke="var(--primary)"
+                  strokeWidth={2.5}
+                  fill="url(#kpi-current)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
@@ -686,58 +681,48 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
   );
 }
 
-/**
- * A plain-language recap of the person's real numbers. Deterministic and factual — **not**
- * AI-generated, and it never fabricates: with no activity or no projects, it says so.
- */
-function FactualSummary({ data }: { data: EmployeeProfileData }) {
-  const first = data.name.split(" ")[0] || data.name;
+function EmployeeSummaryInsight({ data }: { data: EmployeeProfileData }) {
+  const first = data.name.split(" ")[0];
   const total = data.projects.length;
   const activeCount = data.projects.filter((p) => p.active).length;
-  const scorePhrase = data.hasActivity
-    ? `productivity ${data.productivityScore}/100 over ${data.daysScored} scored ${data.daysScored === 1 ? "day" : "days"}`
-    : "no productivity data reported yet";
+  const tier =
+    data.productivityScore >= 80
+      ? "high"
+      : data.productivityScore >= 60
+        ? "steady"
+        : "developing";
+  const trendUp =
+    data.kpi.current[data.kpi.current.length - 1] >=
+    data.kpi.previous[data.kpi.previous.length - 1];
+  const top = [...data.projects].sort((a, b) => b.progress - a.progress)[0];
 
-  const headline =
-    total > 0
-      ? `${first} is on ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""} at ${data.avgCompletion}% average completion — ${scorePhrase}.`
-      : `${first} isn't on any projects — ${scorePhrase}.`;
+  const title = `${first} is a ${tier} performer, averaging ${data.productivityScore}% productivity across ${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""}.`;
 
-  const points: string[] = [];
-  if (total > 0) {
-    points.push(
-      `${data.totalTasks} tasks across their projects, ${data.avgCompletion}% average completion.`,
-    );
-    const top = [...data.projects].sort((a, b) => b.progress - a.progress)[0];
-    if (top) points.push(`Furthest along: ${top.name} at ${top.progress}% complete.`);
-  }
-  if (!data.hasActivity) {
-    points.push("Productivity scoring waits on the desktop agent — no scored days yet.");
-  }
+  const detail = `Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks across all projects.`;
+
+  const points: string[] = [
+    trendUp
+      ? "Productivity is trending up over the last 6 months versus the prior period."
+      : "Productivity has softened recently — a check-in could surface blockers.",
+    `Workload is ${data.totalTasks >= 40 ? "heavy" : data.totalTasks >= 20 ? "balanced" : "light"} at ${data.totalTasks} tasks across ${total} ${total === 1 ? "project" : "projects"}.`,
+    top
+      ? `Strongest contribution: ${top.name} at ${top.progress}% complete.`
+      : "Not currently assigned to a project.",
+    tier === "high"
+      ? "A consistent top performer — a candidate for stretch work or mentoring."
+      : tier === "steady"
+        ? "Reliable output — small focus gains could lift them into the top tier."
+        : "Ramping up — pairing and clearer scope would accelerate progress.",
+  ];
 
   return (
-    <div className="rounded-xl border bg-card p-5">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <ClipboardList className="size-4" />
-        </span>
-        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Summary</p>
-      </div>
-      <p className="text-sm font-medium">{headline}</p>
-      {points.length > 0 ? (
-        <ul className="mt-3 space-y-1.5">
-          {points.map((pt, i) => (
-            <li key={i} className="flex gap-2 text-sm text-muted-foreground">
-              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
-              {pt}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <p className="mt-3 text-[0.7rem] text-muted-foreground/70">
-        Factual recap of this profile&apos;s live figures — not an AI inference.
-      </p>
-    </div>
+    <AiInsight
+      label="Employee summary"
+      title={title}
+      detail={detail}
+      points={points}
+      basis={`${data.totalTasks} tasks · ${total} projects · 6-month KPI trend`}
+    />
   );
 }
 
@@ -768,6 +753,7 @@ function Legend({
   return (
     <span className="inline-flex items-center gap-1.5">
       {dashed ? (
+        // Dashed swatch — mirrors the chart's dashed "previous period" stroke.
         <span className="inline-flex w-4 items-center justify-between">
           <span className={cn("h-0.5 w-1 rounded-full", className)} />
           <span className={cn("h-0.5 w-1 rounded-full", className)} />
