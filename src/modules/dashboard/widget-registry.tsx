@@ -17,7 +17,7 @@ import {
 } from "./components/widgets";
 // The AI summary is a real, self-fetching card (`GET /v1/me/insights/summary`) — reuse it instead of
 // the preview's hardcoded paragraph, so nothing is fabricated.
-import { AiDailySummaryCard } from "./components/real-widgets";
+import { OrgAiSummaryWidget } from "./components/real-widgets";
 import type { DashboardData } from "./lib/dashboard-data";
 
 export type { DashboardData } from "./lib/dashboard-data";
@@ -67,7 +67,7 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
     span: 1,
     render: (d) => <TopEmployeesWidget people={d.topPerformers} />,
   },
-  "ai-summary": { span: 1, render: () => <AiDailySummaryCard /> },
+  "ai-summary": { span: 1, render: () => <OrgAiSummaryWidget /> },
   billing: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
   "alerts-deadlines": { span: 1, render: () => <AlertsDeadlinesWidget /> },
   "upcoming-tasks": { span: 1, render: () => <UpcomingTasksWidget /> },

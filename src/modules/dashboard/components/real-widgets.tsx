@@ -9,7 +9,7 @@
  * desktop agent, which isn't reporting, so it states what's missing instead of seeding fake charts.
  */
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   FolderKanban,
   CreditCard,
@@ -31,18 +31,31 @@ import { ApiError } from "@/lib/api";
 import {
   getDailySummary,
   regenerateDailySummary,
+  getAiReport,
+  getAttention,
   type DailySummary,
 } from "@/modules/insights/services/insights.service";
 import {
   getDayOversight,
   type ApiDayResponse,
 } from "@/modules/attendance/services/attendance.service";
+import { useAssistantStore } from "@/stores/assistant.store";
 import type { DashboardSummary } from "../use-dashboard-summary";
 
 /** Yesterday in the caller's local calendar as `YYYY-MM-DD` — a completed, fully-closed day. */
 function isoYesterday(): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** The most recent completed **workday** (Mon–Fri) before today — org scores/attendance only exist on
+ *  workdays, so the org summary reads this rather than a bare "yesterday" that may be a weekend. */
+function isoLastWorkday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1); // skip Sun/Sat
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
@@ -402,6 +415,118 @@ export function AiDailySummaryCard() {
             </p>
           </>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ------------------------------ Org AI summary (real) ------------------------------- */
+
+/**
+ * The preview's teal "AI summary" card, on **real** data. Pulls the org day's AI narrative
+ * (`GET /v1/insights/reports/ai`; falls back to the broadly-available attention narrative when the
+ * org isn't on the Enterprise report), with a **Regenerate** button that re-runs the model and the
+ * preview's "Ask the assistant" CTA. Reads yesterday — the last day the close cron has resolved.
+ */
+export function OrgAiSummaryWidget() {
+  const openAssistant = useAssistantStore((s) => s.openAssistant);
+  const [narrative, setNarrative] = useState<string | null>(null);
+  const [generatedAt, setGeneratedAt] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Enterprise org report first (richer, carries generated_at); fall back to the attention narrative
+  // (gated only on AiInsightsRead) when the org lacks the report entitlement.
+  const fetchSummary = useCallback(async (): Promise<{
+    narrative: string;
+    generatedAt: number | null;
+  }> => {
+    try {
+      const r = await getAiReport(isoLastWorkday());
+      return { narrative: r.narrative, generatedAt: r.generated_at };
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        const a = await getAttention(isoLastWorkday());
+        return { narrative: a.narrative, generatedAt: null };
+      }
+      throw e;
+    }
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setError(null);
+    fetchSummary()
+      .then((r) => {
+        if (!live) return;
+        setNarrative(r.narrative);
+        setGeneratedAt(r.generatedAt);
+      })
+      .catch((e) => live && setError(errorMessage(e, "Couldn't load the AI summary.")))
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [fetchSummary]);
+
+  async function regenerate() {
+    if (regenerating || loading) return;
+    setRegenerating(true);
+    setError(null);
+    try {
+      const r = await fetchSummary();
+      setNarrative(r.narrative);
+      setGeneratedAt(r.generatedAt);
+    } catch (e) {
+      setError(errorMessage(e, "Couldn't regenerate the summary."));
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  return (
+    <Card className="bg-feature text-feature-foreground shadow-none">
+      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="size-4" /> AI summary
+        </CardTitle>
+        <button
+          type="button"
+          onClick={regenerate}
+          disabled={loading || regenerating}
+          title="Regenerate summary"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-feature-foreground/80 transition-colors hover:bg-white/15 hover:text-feature-foreground disabled:pointer-events-none disabled:opacity-50"
+        >
+          <RefreshCw className={`size-3.5 ${regenerating ? "animate-spin" : ""}`} />
+          {regenerating ? "Regenerating…" : "Regenerate"}
+        </button>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 text-sm leading-relaxed text-feature-foreground/90">
+        {loading ? (
+          <p className="flex-1 text-feature-foreground/70">Generating the org summary…</p>
+        ) : error ? (
+          <p className="flex-1 text-feature-foreground/70">{error}</p>
+        ) : (
+          <>
+            <p className="flex-1">{narrative}</p>
+            {generatedAt ? (
+              <p className="text-[11px] text-feature-foreground/60">
+                Generated {new Date(generatedAt).toLocaleString()}
+              </p>
+            ) : null}
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() =>
+            openAssistant("Summarise this week's productivity and flag any burnout risks.")
+          }
+          className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
+        >
+          Ask the assistant <ArrowUpRight className="size-3.5" />
+        </button>
       </CardContent>
     </Card>
   );
