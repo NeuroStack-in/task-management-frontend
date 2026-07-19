@@ -12,9 +12,21 @@
  */
 export { isCounted, type DayStatus } from "@/types/attendance";
 
-/** The month the calendar opens on, and "today" (mirrors the demo clock). */
-export const REFERENCE_MONTH = { year: 2026, month: 5 }; // June 2026 (0-indexed)
-export const TODAY = { year: 2026, month: 5, day: 25 };
+/**
+ * "Today" and the month the calendar opens on — the **real current date**.
+ *
+ * (Was a hardcoded demo clock, `2026-06-25`, which pinned every calendar to June and made real
+ * months look empty/future. Computed once at module load from the local clock; the wired views only
+ * render their calendars client-side — after a mount effect resolves the selected date — so this
+ * matches the browser's day and never hydrates against a stale server value.)
+ */
+const _now = new Date();
+export const TODAY = {
+  year: _now.getFullYear(),
+  month: _now.getMonth(),
+  day: _now.getDate(),
+};
+export const REFERENCE_MONTH = { year: TODAY.year, month: TODAY.month };
 
 /** One cell in the six-week month grid. Carries layout only — no attendance data. */
 export interface DayCell {
