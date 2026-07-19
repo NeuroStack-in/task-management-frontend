@@ -1,55 +1,99 @@
 "use client";
 
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
-import { MonitorSmartphone } from "lucide-react";
+import { Grid3x3 } from "lucide-react";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { DayStatus } from "@/types/attendance";
 import type { UserStatus } from "@/types/user";
+import type { AttendanceStatus } from "@/modules/dashboard/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 
-/* --------------------------- Agent-pending widget --------------------------- */
-
-/**
- * Compact, in-grid honest placeholder for insight widgets whose data comes from the
- * **desktop agent** (productivity, attendance) — which isn't reporting yet. We never seed
- * these with mock numbers; they populate once monitoring is live. (The full-page
- * `AgentPending` is too heavy for a widget cell, so this is the inline treatment.)
- */
-function AgentPendingWidget({ title, detail }: { title: string; detail: string }) {
-  return (
-    <Card className="border-dashed">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
-          <span className="flex size-10 items-center justify-center rounded-md bg-muted">
-            <MonitorSmartphone className="size-5 text-muted-foreground" />
-          </span>
-          <p className="text-sm font-medium">Waiting on the desktop agent</p>
-          <p className="max-w-xs text-xs text-muted-foreground">{detail}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+/** Heatmap axis labels (formerly from mock-metrics) — pure labels, no seeded data. */
+const HEATMAP_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const HEATMAP_HOURS = ["8a", "10a", "12p", "2p", "4p", "6p"];
 
 /* ------------------------- Productivity Heatmap ------------------------- */
 
-// Agent-gated: hourly activity intensity needs the desktop agent's capture data, which no
-// backend hook exposes yet. Renders an honest pending state instead of a seeded heatmap.
-// Signature kept (`data: number[][]`) so a future real feed can drop in unchanged.
-export function ProductivityHeatmap(_props: { data: number[][] }) {
+export function ProductivityHeatmap({ data }: { data: number[][] }) {
+  // There is no per-hour productivity endpoint — hourly intensity needs the desktop agent's capture
+  // data, which no backend read exposes yet. With no rows, show an honest empty state rather than a
+  // seeded grid. The `number[][]` signature is kept so a future real feed drops in unchanged.
+  if (data.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Productivity heatmap</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
+            <span className="flex size-10 items-center justify-center rounded-md bg-muted">
+              <Grid3x3 className="size-5 text-muted-foreground" />
+            </span>
+            <p className="text-sm font-medium">Hourly activity pending</p>
+            <p className="max-w-xs text-xs text-muted-foreground">
+              When the team is most productive across the week appears here once the desktop agent
+              reports the hourly activity it captures.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <AgentPendingWidget
-      title="Productivity heatmap"
-      detail="Hourly activity intensity across the week appears here once the desktop agent starts reporting."
-    />
+    <Card>
+      <CardHeader>
+        <CardTitle>Productivity heatmap</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {data.map((row, d) => (
+          <div key={HEATMAP_DAYS[d]} className="flex items-center gap-2">
+            <span className="w-8 shrink-0 text-xs text-muted-foreground">
+              {HEATMAP_DAYS[d]}
+            </span>
+            <div className="flex flex-1 gap-1">
+              {row.map((v, h) => (
+                <div
+                  key={h}
+                  title={`${HEATMAP_DAYS[d]} · ${v}%`}
+                  className="h-4 flex-1 rounded-[4px]"
+                  style={{
+                    backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center gap-2 pt-1 pl-10">
+          {HEATMAP_HOURS.map((h, i) => (
+            <span
+              key={i}
+              className="flex-1 text-center text-[10px] text-muted-foreground"
+            >
+              {h}
+            </span>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-1.5 pt-1 text-[10px] text-muted-foreground">
+          <span>Less</span>
+          {[18, 40, 62, 84, 100].map((v) => (
+            <span
+              key={v}
+              className="size-3 rounded-[3px]"
+              style={{
+                backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,
+              }}
+            />
+          ))}
+          <span>More</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -130,17 +174,31 @@ function Donut({
 
 /* --------------------------- Attendance donut --------------------------- */
 
-// Agent-gated: attendance is derived from the desktop agent's session data (present/partial/
-// absent, late qualifier), which no backend hook exposes yet. Renders an honest pending state
-// rather than seeded counts. Signature kept so a future real feed can drop in unchanged.
-export function AttendanceDonut(_props: {
-  counts: Record<DayStatus, number> & { late: number };
+export function AttendanceDonut({
+  counts,
+}: {
+  counts: Record<AttendanceStatus, number>;
 }) {
+  const total = counts.present + counts.partial + counts.leave + counts.absent;
+  const presentPct = Math.round(((counts.present + counts.partial) / (total || 1)) * 100);
   return (
-    <AgentPendingWidget
-      title="Attendance"
-      detail="Present, partial, leave and absence counts appear here once the desktop agent reports session data."
-    />
+    <Card>
+      <CardHeader>
+        <CardTitle>Attendance</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Donut
+          center={`${presentPct}%`}
+          caption="clocked in"
+          slices={[
+            { label: "Present", value: counts.present, color: "var(--success)" },
+            { label: "Partial", value: counts.partial, color: "var(--warning)" },
+            { label: "On leave", value: counts.leave, color: "var(--muted-foreground)" },
+            { label: "Absent", value: counts.absent, color: "var(--destructive)" },
+          ]}
+        />
+      </CardContent>
+    </Card>
   );
 }
 

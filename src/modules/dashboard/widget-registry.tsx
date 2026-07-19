@@ -1,102 +1,74 @@
 import type { ReactNode } from "react";
+import type { WidgetType } from "@/stores/dashboard.store";
+import { ProductivityChart } from "./components/productivity-chart";
+import { TeamComparisonChart } from "./components/team-comparison-chart";
 import {
+  ProductivityHeatmap,
+  AttendanceDonut,
   ActiveInactiveRing,
   HeadcountStatus,
 } from "./components/insight-widgets";
 import {
-  ProjectsOverviewCard,
-  DepartmentHeadcountCard,
-  BillingCard,
-  MonitoringPendingCard,
-  AiDailySummaryCard,
-  AttendanceTodayCard,
-  ProductivityHeatmapPendingCard,
-  TeamComparisonPendingCard,
-  TopPerformersPendingCard,
-  RecentAlertsPendingCard,
-} from "./components/real-widgets";
-import type { DashboardSummary } from "./use-dashboard-summary";
+  TopEmployeesWidget,
+  ScreenshotsWidget,
+  AlertsDeadlinesWidget,
+  UpcomingTasksWidget,
+  BillingWidget,
+} from "./components/widgets";
+// The AI summary is a real, self-fetching card (`GET /v1/me/insights/summary`) — reuse it instead of
+// the preview's hardcoded paragraph, so nothing is fabricated.
+import { AiDailySummaryCard } from "./components/real-widgets";
+import type { DashboardData } from "./lib/dashboard-data";
 
-/** The org dashboard's real, customizable widgets. Every one is live data or an honest placeholder. */
-export type RealWidgetType =
-  | "ai-summary"
-  | "attendance-today"
-  | "projects-overview"
-  | "active-inactive"
-  | "department-headcount"
-  | "billing"
-  | "headcount-status"
-  | "monitoring-pending"
-  | "productivity-heatmap"
-  | "team-comparison"
-  | "top-performers"
-  | "recent-alerts";
+export type { DashboardData } from "./lib/dashboard-data";
 
 interface WidgetDef {
-  title: string;
-  render: (s: DashboardSummary) => ReactNode;
+  /**
+   * Columns spanned on the bento grid. All widgets are uniform (1) so the adaptive grid can always
+   * tile without gaps; kept as a field in case a future widget needs a wider cell.
+   */
+  span: 1 | 2;
+  render: (d: DashboardData) => ReactNode;
 }
 
-export const WIDGET_REGISTRY: Record<RealWidgetType, WidgetDef> = {
-  // Real, self-fetching widgets — they ignore `s` and read their own endpoint.
-  "ai-summary": {
-    title: "AI daily summary",
-    render: () => <AiDailySummaryCard />,
+export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
+  "productivity-trends": {
+    span: 1,
+    render: (d) => (
+      <ProductivityChart data={d.productivityTrend} rangeLabel={d.rangeLabel} />
+    ),
   },
-  "attendance-today": {
-    title: "Attendance",
-    render: () => <AttendanceTodayCard />,
+  heatmap: { span: 1, render: (d) => <ProductivityHeatmap data={d.heatmap} /> },
+  "team-comparison": {
+    span: 1,
+    render: (d) => <TeamComparisonChart data={d.teamData} />,
   },
-  "projects-overview": {
-    title: "Projects overview",
-    render: (s) => <ProjectsOverviewCard p={s.projects} />,
+  attendance: {
+    span: 1,
+    render: (d) => <AttendanceDonut counts={d.attendanceCounts} />,
   },
   "active-inactive": {
-    title: "Active vs inactive",
-    render: (s) => (
-      <ActiveInactiveRing active={s.employees.active} inactive={s.employees.inactive} />
+    span: 1,
+    render: (d) => (
+      <ActiveInactiveRing active={d.activeCount} inactive={d.inactiveCount} />
     ),
   },
-  "department-headcount": {
-    title: "Headcount by department",
-    render: (s) => <DepartmentHeadcountCard departments={s.employees.byDepartment} />,
+  headcount: {
+    span: 1,
+    render: (d) => <HeadcountStatus counts={d.statusCounts} />,
   },
-  billing: {
-    title: "Billing overview",
-    render: (s) => <BillingCard billing={s.billing} />,
-  },
-  "headcount-status": {
-    title: "Headcount by status",
-    render: (s) => (
-      <HeadcountStatus
-        counts={{
-          active: s.employees.active,
-          inactive: s.employees.inactive,
-          invited: 0,
-          suspended: 0,
-        }}
-      />
+  screenshots: {
+    span: 1,
+    render: (d) => (
+      <ScreenshotsWidget count={d.screenshotCount} trend={d.screenshotsTrend} />
     ),
   },
-  "monitoring-pending": {
-    title: "Activity monitoring",
-    render: () => <MonitoringPendingCard />,
+  "top-employees": {
+    span: 1,
+    render: (d) => <TopEmployeesWidget people={d.topPerformers} />,
   },
-  // Agent-pending placeholders — static, honest "waiting on the desktop agent" cards.
-  "productivity-heatmap": {
-    title: "Productivity heatmap",
-    render: () => <ProductivityHeatmapPendingCard />,
-  },
-  "team-comparison": {
-    title: "Team comparison",
-    render: () => <TeamComparisonPendingCard />,
-  },
-  "top-performers": {
-    title: "Top performers",
-    render: () => <TopPerformersPendingCard />,
-  },
-  "recent-alerts": {
-    title: "Recent alerts",
-    render: () => <RecentAlertsPendingCard />,
-  },
+  "ai-summary": { span: 1, render: () => <AiDailySummaryCard /> },
+  billing: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
+  "alerts-deadlines": { span: 1, render: () => <AlertsDeadlinesWidget /> },
+  "upcoming-tasks": { span: 1, render: () => <UpcomingTasksWidget /> },
 };
