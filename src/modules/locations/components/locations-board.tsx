@@ -25,6 +25,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
+import { AiReportCard } from "@/modules/insights/components/ai-report-card";
 import { ApiError } from "@/lib/api";
 import {
   getOversightLocations,
@@ -49,6 +50,16 @@ function shiftIso(iso: string, days: number): string {
 }
 const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+/** Human date label from an ISO `YYYY-MM-DD` string, TZ-safe (parsed as local Y/M/D). */
+function dateLabel(iso: string): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 /** Backend points are `{ lat, lon }`; the map wants `{ lat, lng }`. */
 const toGeoPoint = (p: { lat: number; lon: number }): GeoPoint => ({
   lat: p.lat,
@@ -154,6 +165,20 @@ function LocationsBoard({
   const locatedCount = scoped.filter((p) => p.latest).length;
   const outsideCount = scoped.filter(flagOutside).length;
 
+  // On-site / off-site are only meaningful once an office perimeter is set (the geofence toggle).
+  // Without one we don't invent a number — the AI hero tiles read an honest note instead.
+  const onSiteCount = showFence ? locatedCount - outsideCount : null;
+  const offSiteCount = showFence ? outsideCount : null;
+
+  // A factual recap of the day's real fixes — deliberately not an AI inference.
+  const label = dateLabel(date);
+  const aiSummary =
+    scoped.length === 0
+      ? `No employees in view for ${label}.`
+      : showFence
+        ? `${locatedCount} of ${scoped.length} employees located on ${label}; ${onSiteCount} on-site, ${offSiteCount} off-site.`
+        : `${locatedCount} of ${scoped.length} employees located on ${label}. Set an office location to see on-site vs off-site.`;
+
   const q = query.trim().toLowerCase();
   const matchesStatus = (p: OversightPersonLocation) => {
     if (status === "all") return true;
@@ -204,22 +229,26 @@ function LocationsBoard({
 
   return (
     <div className="space-y-5">
-      {/* Summary */}
-      <Card>
-        <CardContent className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
-          <Stat label="Employees" value={scoped.length} />
-          <Stat
-            label={isToday ? "Located today" : "Located"}
-            value={locatedCount}
-          />
-          <Stat label="No location" value={scoped.length - locatedCount} />
-          <Stat
-            label="Outside perimeter"
-            value={showFence ? outsideCount : 0}
-            muted={!showFence}
-          />
-        </CardContent>
-      </Card>
+      {/* AI location report — a factual recap over the day's real fixes + the office perimeter. */}
+      <AiReportCard
+        title="AI location report"
+        summary={aiSummary}
+        metrics={[
+          { label: "Employees", value: scoped.length },
+          {
+            label: isToday ? "Located today" : "Located",
+            value: locatedCount,
+            hint: isToday ? "latest fix" : undefined,
+          },
+          showFence
+            ? { label: "On-site", value: onSiteCount ?? 0 }
+            : { label: "On-site", value: "—", hint: "set office location" },
+          showFence
+            ? { label: "Off-site", value: offSiteCount ?? 0 }
+            : { label: "Off-site", value: "—", hint: "set office location" },
+          { label: "No location", value: scoped.length - locatedCount },
+        ]}
+      />
 
       {/* Live map */}
       <Card>
@@ -227,7 +256,7 @@ function LocationsBoard({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium">
-                {isToday ? "Latest positions" : `Positions · ${date}`}
+                {isToday ? "Live map · latest positions" : `${label} · locations`}
               </p>
               <p className="text-xs text-muted-foreground">
                 {mapMarkers.length} {mapMarkers.length === 1 ? "person" : "people"}{" "}
@@ -407,17 +436,32 @@ function LocationsBoard({
         </div>
       </div>
 
+      {status === "outside" ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3">
+          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
+          <div className="text-sm">
+            <p className="font-medium text-foreground">
+              Employees outside the office perimeter
+            </p>
+            <p className="mt-0.5 text-muted-foreground">
+              These employees&apos; latest fix is beyond the {radiusM} m office
+              perimeter for this day.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {employees.length === 0 ? (
         <EmptyState
           icon={Users}
           title={
             scoped.length === 0
-              ? "No location data yet"
+              ? "No location data for this day"
               : "No employees match"
           }
           description={
             scoped.length === 0
-              ? "No employee has reported a location for this day. Positions appear once the desktop agent is installed and consent is granted."
+              ? "Needs the desktop agent's consented location reporting — positions appear once the agent is installed and consent is granted."
               : "Try a different name, department, or status."
           }
         />
@@ -473,35 +517,12 @@ function LocationsBoard({
                   <MapPin className="size-3" />
                   {located ? "Located" : "—"}
                 </Badge>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
               </button>
             );
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  muted,
-}: {
-  label: string;
-  value: number;
-  muted?: boolean;
-}) {
-  return (
-    <div>
-      <p
-        className={cn(
-          "text-2xl font-semibold tabular-nums",
-          muted && "text-muted-foreground",
-        )}
-      >
-        {value}
-      </p>
-      <p className="text-xs text-muted-foreground">{label}</p>
     </div>
   );
 }
