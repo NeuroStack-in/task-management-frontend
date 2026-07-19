@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Users, UserRound } from "lucide-react";
+import { Users, UserRound, MonitorSmartphone, TriangleAlert, ShieldAlert } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Loader } from "@/components/shared/loader";
+import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useDataScope } from "@/hooks/use-data-scope";
 import { cn } from "@/lib/utils";
+import { useTeamTimesheet } from "../use-team-timesheet";
 import { PersonalTimeView } from "./personal-time-view";
 import { TeamTimeView } from "./team-time-view";
 
@@ -13,17 +18,34 @@ type View = "team" | "personal";
 /**
  * Role-aware Time Tracking (see Docs/RBAC.md):
  * - Personal tracker for people who log their own time (`time-tracking:self`), on the **real**
- *   backend (`/v1/me/timesheet`).
- * - Team timesheet oversight for management roles (`time-tracking:manage`). The backend serves only
- *   the caller's own timesheet, so this view degrades honestly (see `TeamTimeView`) instead of
- *   showing fabricated team aggregates.
- * Users with both (Owner/Admin) get a toggle and default to their own time.
+ *   backend (`/v1/me/timesheet`) — unchanged.
+ * - Team timesheet oversight for management roles (`time-tracking:manage`), now fed by the **real**
+ *   per-user reads assembled in `useTeamTimesheet` (`/v1/timesheet/user/{id}` + activity), replacing
+ *   the old "not available yet" placeholder.
+ * Users with both (Owner/Admin) get a toggle and default to their own time. Team leads see only
+ * their own department (`useDataScope`); a caller without `TimeReadTeam` gets an honest 403 state.
  */
 export function TimeTrackingView() {
   const { can } = usePermissions();
+  const { inScope } = useDataScope();
   const canManageTeam = can("time-tracking:manage");
   const canTrack = can("time-tracking:self");
   const showToggle = canManageTeam && canTrack;
+
+  // Only fetch the team roll-up when the caller can actually see it — a pure employee never fans out.
+  const {
+    teamRows,
+    projectRows,
+    teamWeekly,
+    dates,
+    weekLabel,
+    loading,
+    error,
+    forbidden,
+  } = useTeamTimesheet(canManageTeam);
+
+  // Team leads only see their own team's timesheets; org roles see everyone.
+  const scopedTeamRows = teamRows.filter((r) => inScope(r.id));
 
   const [view, setView] = useState<View>(canTrack ? "personal" : "team");
 
@@ -57,7 +79,44 @@ export function TimeTrackingView() {
         }
       />
 
-      {view === "team" ? <TeamTimeView /> : <PersonalTimeView canExport={canTrack} />}
+      {view === "team" ? (
+        forbidden ? (
+          <EmptyState
+            icon={ShieldAlert}
+            title="You don't have team time access"
+            description="Reviewing other people's timesheets needs the team time-read permission. Ask an admin to grant it, or switch to your own time."
+          />
+        ) : error ? (
+          <EmptyState
+            icon={TriangleAlert}
+            title="Couldn't load team timesheets"
+            description={error}
+            action={
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                Retry
+              </Button>
+            }
+          />
+        ) : loading ? (
+          <Loader label="Assembling team timesheets…" className="min-h-64" />
+        ) : scopedTeamRows.length === 0 && projectRows.length === 0 ? (
+          <EmptyState
+            icon={MonitorSmartphone}
+            title="No tracked time this week"
+            description="No one in view has tracked time for the current week yet. Entries appear here once the desktop agent syncs them."
+          />
+        ) : (
+          <TeamTimeView
+            rows={scopedTeamRows}
+            projectRows={projectRows}
+            weekly={teamWeekly}
+            dates={dates}
+            weekLabel={weekLabel}
+          />
+        )
+      ) : (
+        <PersonalTimeView canExport={canTrack} />
+      )}
     </div>
   );
 }

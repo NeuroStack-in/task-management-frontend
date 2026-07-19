@@ -104,6 +104,23 @@ export function getRange(from: string, to: string): Promise<ApiGridResponse> {
   return apiFetch<ApiGridResponse>(`/v1/me/timesheet?${q}`);
 }
 
+/**
+ * `GET /v1/timesheet/user/{id}?from&to` — another employee's rolled-up days, for the team oversight
+ * grid. Gated `TimeReadTeam` server-side: a caller without it gets a **403**, which the team hook
+ * turns into an honest "no team time access" state rather than an empty grid. Same `GridResponse`
+ * shape as {@link getRange} (the caller's own `/v1/me/timesheet`); the same 92-day cap applies.
+ */
+export function getUserTimesheet(
+  userId: string,
+  from: string,
+  to: string,
+): Promise<ApiGridResponse> {
+  const q = new URLSearchParams({ from, to });
+  return apiFetch<ApiGridResponse>(
+    `/v1/timesheet/user/${encodeURIComponent(userId)}?${q}`,
+  );
+}
+
 /** Epoch ms → local `HH:MM`, matching how the entry's own day was resolved. */
 export function clockOf(ms: number): string {
   const d = new Date(ms);

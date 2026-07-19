@@ -1,25 +1,65 @@
 "use client";
 
-import { MonitorSmartphone } from "lucide-react";
-import { EmptyState } from "@/components/shared/empty-state";
+import { Clock, BadgeDollarSign, Activity } from "lucide-react";
+import { StatCard } from "@/components/shared/stat-card";
+import { TimesheetGrid } from "./timesheet-grid";
+import type {
+  DailyHours,
+  ProjectTimesheet,
+  TeamMemberTime,
+} from "../types";
 
-/**
- * Team timesheet oversight.
- *
- * The mock showed team-wide hours, billable %, per-person daily grids and activity drill-downs. The
- * live backend serves **only the caller's own** timesheet (`/v1/me/timesheet`) — there is no
- * team/org read, and the per-person activity those grids showed is desktop-agent data that isn't
- * reporting yet. Rather than reproduce fabricated aggregates, this degrades honestly; it drops back
- * to a real grid once a management timesheet route (and agent activity) exists.
- *
- * The parent (`TimeTrackingView`) already renders the page header, so this is body-only.
- */
-export function TeamTimeView() {
+export function TeamTimeView({
+  rows,
+  projectRows,
+  weekly,
+  dates,
+  weekLabel,
+}: {
+  rows: TeamMemberTime[];
+  projectRows: ProjectTimesheet[];
+  weekly: DailyHours[];
+  dates: string[];
+  weekLabel: string;
+}) {
+  const teamHours = weekly.reduce((s, d) => s + d.hours, 0);
+  const teamBillable = weekly.reduce((s, d) => s + d.billable, 0);
+  const billablePct = Math.round((teamBillable / (teamHours || 1)) * 100);
+  const avgActivity = Math.round(
+    rows.reduce((s, r) => s + r.activity, 0) / (rows.length || 1),
+  );
+
   return (
-    <EmptyState
-      icon={MonitorSmartphone}
-      title="Team timesheets aren't available yet"
-      description="The backend serves your own tracked time today — there's no team-wide timesheet or activity read. Once the management timesheet route and the desktop agent are live, the team grid and per-person activity appear here."
-    />
+    <div className="space-y-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {/* `trend` is the real Mon–Sun hours from `teamWeekly`; the mock `delta` seeds on the
+            Billable/Activity cards were fabricated and are dropped — the values are real. */}
+        <StatCard
+          label="Team hours"
+          value={`${Math.round(teamHours).toLocaleString()}h`}
+          icon={Clock}
+          hint="this week"
+          trend={weekly.map((d) => d.hours)}
+          featured
+        />
+        <StatCard
+          label="Billable"
+          value={`${billablePct}%`}
+          icon={BadgeDollarSign}
+        />
+        <StatCard
+          label="Avg activity"
+          value={`${avgActivity}%`}
+          icon={Activity}
+        />
+      </div>
+
+      <TimesheetGrid
+        personRows={rows}
+        projectRows={projectRows}
+        dates={dates}
+        weekLabel={weekLabel}
+      />
+    </div>
   );
 }
