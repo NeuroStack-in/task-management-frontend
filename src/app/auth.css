@@ -1,0 +1,1139 @@
+﻿/* ============================================================= *
+ *  WorkPulse — Auth split-screen                                 *
+ *  Shared by every auth surface: login · signup · forgot ·       *
+ *  reset · mfa · accept-invite.                                  *
+ *                                                                *
+ *  Layered on marketing.css (`.m-root` supplies the light        *
+ *  "Harbor" teal tokens). This file owns only the auth frame.    *
+ *                                                                *
+ *  Layout decisions, and why:                                    *
+ *  · 42/58 favouring the FORM, not the brand panel. The form is  *
+ *    the task; the panel is context. A true 50/50 leaves the eye *
+ *    unsure which side is primary.                               *
+ *  · Collapses at 64rem, not 48rem. Between 48 and 64rem the     *
+ *    panel cannot hold a legible headline while the form still   *
+ *    has a comfortable 25rem measure — both end up cramped.      *
+ *  · 100dvh, never 100vh: mobile Safari's collapsing URL bar     *
+ *    makes vh jump the layout behind the keyboard.               *
+ *  · The FORM comes first in DOM order and is repositioned by    *
+ *    grid, so keyboard and screen-reader users reach the task    *
+ *    rather than the marketing copy.                             *
+ * ============================================================= */
+
+.m-auth {
+  display: grid;
+  min-height: 100dvh;
+  grid-template-rows: auto 1fr auto;
+  background: var(--m-bg);
+  /* One knob for the form column's measure — the card, the footer links and the
+     mobile brand header all read it, so they stay edge-aligned. 30rem so the
+     paired two-up field rows still give each input a usable width. */
+  --m-auth-form-w: 30rem;
+  /* Belt-and-braces against a horizontal scrollbar: the floating cards are
+     positioned past the brand panel's right edge and clipped by its own
+     `overflow: hidden`, but `clip` here means no descendant can widen the page
+     even if one is later positioned outside that panel. `clip` rather than
+     `hidden` so it never creates a scroll container. */
+  overflow-x: clip;
+}
+
+@media (min-width: 64rem) {
+  .m-auth {
+    /* 52/48 — the reference's near-even split, still tipped to the form. The
+       panel now carries a feature list and needs more room than 42% gave it. */
+    grid-template-columns: minmax(0, 52fr) minmax(0, 48fr);
+    grid-template-rows: 1fr;
+
+    /* Pinned to the viewport: the whole page never scrolls on desktop. Paired
+       with `overflow-y: auto` on the form column below, so a short viewport
+       scrolls *inside* the form rather than clipping the sign-in button — the
+       failure mode a plain `overflow: hidden` would create. */
+    height: 100dvh;
+    overflow: hidden;
+  }
+  /* Brand left, form right — placed, not source-ordered. */
+  .m-auth__brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .m-auth__form {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+/* ---- Brand panel: a dark stage for the clock ---- */
+.m-auth__brand {
+  position: relative;
+  display: none;
+  overflow: hidden;
+  isolation: isolate;
+  padding: 2.75rem;
+  color: #eaf1f2;
+  background: radial-gradient(115% 80% at 50% -10%, #17313f 0%, #102530 42%, #0b1a22 100%);
+
+  /* The dial's palette. These live on `.wp` in landing.css, which only the
+     landing page imports — without redeclaring them here the teal silently
+     resolves to nothing and the glow disappears. */
+  --wp-accent: #0f766e;
+  --wp-accent-glow: #7fc6bb;
+}
+
+/* The hands rotate about the dial's centre, not their own box. Same story as
+   the tokens above: `.wp-clock-hand` is declared in landing.css, so without
+   this the rotations pivot on each line's own origin and the hands scatter
+   across the panel as loose diagonal strokes. */
+.m-auth__brand .wp-clock-hand {
+  transform-box: view-box;
+  transform-origin: 100px 100px;
+}
+@media (min-width: 64rem) {
+  .m-auth__brand {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+}
+@media (min-width: 90rem) {
+  .m-auth__brand {
+    padding: 3.5rem 4rem;
+  }
+}
+
+/* Text never sits directly on the dial. Contrast has to hold at every frame of
+   any motion, so the copy rides a scrim above the backdrop. */
+.m-auth__brand::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    rgba(8, 20, 27, 0.74) 0%,
+    rgba(8, 20, 27, 0.44) 46%,
+    rgba(8, 20, 27, 0.16) 100%
+  );
+}
+
+/* The panel's text column. Capped so the copy keeps a readable measure while the
+   floating cards take the space to its right. */
+.m-auth__brand-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.m-auth__kicker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--wp-accent-glow);
+  margin-bottom: -0.5rem;
+}
+
+/* Two-tone display: second line in teal. Sized off the viewport so it stays on
+   two lines from 1024px up rather than reflowing into an awkward orphan. */
+.m-auth__headline {
+  font-size: clamp(1.9rem, 2.9vw, 2.9rem);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  text-shadow:
+    0 1px 2px rgb(8 20 27 / 0.6),
+    0 2px 12px rgb(8 20 27 / 0.45);
+}
+.m-auth__headline span {
+  display: block;
+  color: var(--wp-accent-glow);
+}
+
+.m-auth__lede {
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: rgb(224 236 238 / 0.74);
+  max-width: 30rem;
+}
+
+/* ---- Feature list ---- */
+.m-auth__features {
+  display: flex;
+  flex-direction: column;
+  gap: 1.05rem;
+  margin-top: 0.35rem;
+}
+.m-auth__features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+.m-auth__feature-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 10px;
+  background: rgb(20 184 166 / 0.12);
+  border: 1px solid rgb(127 227 214 / 0.16);
+  color: var(--wp-accent-glow);
+}
+.m-auth__feature-icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.m-auth__features strong {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #eaf1f2;
+}
+.m-auth__features em {
+  display: block;
+  margin-top: 0.15rem;
+  font-style: normal;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: rgb(224 236 238 / 0.62);
+}
+
+/* ---- Trust row ----
+   Initials, not customer logos or compliance badges: everyone on this page has
+   already converted, so social proof here is spend on an audience of zero, and
+   a SOC 2 mark means nothing to an employee checking a payslip. */
+.m-auth__trust {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.8rem;
+  color: rgb(224 236 238 / 0.6);
+}
+.m-auth__avatars {
+  display: inline-flex;
+}
+.m-auth__avatars i {
+  width: 1.65rem;
+  height: 1.65rem;
+  margin-right: -0.45rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-style: normal;
+  font-weight: 600;
+  color: #04100e;
+  background: var(--wp-accent-glow);
+  border: 2px solid #0b1a22;
+}
+.m-auth__avatars i:nth-child(2) {
+  background: #86c3bb;
+}
+.m-auth__avatars i:nth-child(3) {
+  background: #5fb0a4;
+}
+.m-auth__avatars i:nth-child(4) {
+  background: #3f8d97;
+}
+
+.m-auth__brandfoot {
+  font-size: 0.75rem;
+  color: rgb(224 236 238 / 0.34);
+}
+
+/* ---- Floating product cards ----
+   Decorative. They live inside the panel's `overflow: hidden`, which is what
+   stops them widening the document — nothing here may produce a horizontal
+   scrollbar, so they are positioned from the panel's own edges and never with
+   a transform that could escape the clip. */
+.m-auth__cards {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.m-authcard {
+  position: absolute;
+  width: 15.5rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 14px;
+  background: rgba(11, 30, 38, 0.82);
+  border: 1px solid rgb(127 227 214 / 0.14);
+  box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.m-authcard header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #eaf1f2;
+}
+.m-authcard__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 8px;
+  background: rgb(20 184 166 / 0.16);
+  color: var(--wp-accent-glow);
+}
+.m-authcard__icon svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+.m-authcard__live {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: #7fe3d6;
+}
+.m-authcard__live i {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: #7fe3d6;
+}
+.m-authcard__row {
+  margin-top: 0.7rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: rgb(224 236 238 / 0.6);
+}
+.m-authcard__row strong {
+  font-size: 0.85rem;
+  color: #eaf1f2;
+}
+.m-authcard__bar {
+  margin-top: 0.4rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  overflow: hidden;
+}
+.m-authcard__bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0f766e, #7fe3d6);
+}
+.m-authcard__tags {
+  margin-top: 0.65rem;
+  display: flex;
+  gap: 0.35rem;
+}
+.m-authcard__tags span {
+  font-size: 0.63rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.06);
+  color: rgb(224 236 238 / 0.66);
+}
+.m-authcard__lines {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.m-authcard__lines span {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.07);
+}
+.m-authcard__lines span:last-child {
+  width: 62%;
+}
+.m-authcard__people {
+  margin-top: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.m-authcard__people i {
+  width: 1.3rem;
+  height: 1.3rem;
+  margin-right: -0.35rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  font-style: normal;
+  font-weight: 600;
+  color: #04100e;
+  background: #86c3bb;
+  border: 2px solid #0b1e26;
+}
+.m-authcard__people em {
+  margin-left: 0.75rem;
+  font-style: normal;
+  font-size: 0.68rem;
+  color: rgb(224 236 238 / 0.58);
+}
+.m-authcard__todo {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: rgb(224 236 238 / 0.72);
+}
+.m-authcard__todo li::before {
+  content: "○ ";
+  color: rgb(224 236 238 / 0.4);
+}
+.m-authcard__todo li.is-done {
+  color: rgb(224 236 238 / 0.42);
+  text-decoration: line-through;
+}
+.m-authcard__todo li.is-done::before {
+  content: "✓ ";
+  color: #7fe3d6;
+  text-decoration: none;
+}
+.m-authcard__chip {
+  display: inline-block;
+  margin-top: 0.65rem;
+  font-size: 0.63rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  background: rgb(20 184 166 / 0.16);
+  color: #7fe3d6;
+}
+
+/* Placement. Anchored to the panel's right edge so they tuck behind the seam
+   between the two columns, exactly as in the reference. Hidden below 80rem —
+   under that width they would collide with the copy rather than frame it. */
+.m-authcard--a {
+  top: 4%;
+  right: -3rem;
+}
+.m-authcard--b {
+  top: 38%;
+  right: -6.5rem;
+}
+.m-authcard--c {
+  bottom: 5%;
+  right: -4rem;
+}
+@media (max-width: 80rem) {
+  .m-auth__cards {
+    display: none;
+  }
+}
+
+/* ---- Form panel ---- */
+.m-auth__form {
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.25rem 1.75rem;
+}
+@media (min-width: 40rem) {
+  .m-auth__form {
+    padding: 1.5rem 2rem;
+  }
+}
+.m-auth__form-inner {
+  width: 100%;
+  max-width: var(--m-auth-form-w);
+  margin-inline: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* `safe` matters: plain `center` centres the card and then clips it at BOTH
+     ends once it outgrows the column, so the heading disappears off the top and
+     the footer off the bottom with no scrollbar to reveal either. `safe center`
+     falls back to start-alignment the moment it would overflow, so anything lost
+     is lost from the bottom only — recoverable, and obvious. */
+  justify-content: safe center;
+  padding-block: 0.75rem;
+}
+
+@media (min-width: 64rem) {
+  /* The PAGE never scrolls — `.m-auth` is pinned to 100dvh above. This column
+     is allowed to, and in the normal case never does: spacing is tuned so the
+     tallest step clears a 700px viewport, which is what a 1366×768 laptop
+     leaves after browser chrome.
+     `auto` rather than `hidden` because of the error state. An error summary
+     adds real height, and with `hidden` a form failing validation on several
+     fields at once would push its own submit button out of reach with no way to
+     get to it. A scrollbar that appears only in that case is the lesser evil —
+     and it stays inside this column, so the page itself still doesn't move.
+     `min-height: 0` is required regardless: a grid item defaults to
+     `min-height: auto` and refuses to shrink, which would push the page tall
+     again no matter what overflow is declared here. */
+  .m-auth__form {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+/* Condensed brand on mobile, where the panel is gone. Keeps the site-identity
+   signal, which matters most on a small screen with a truncated URL bar — on a
+   payroll login, "this looks exactly like it did last time" is the real
+   anti-phishing affordance. */
+.m-auth__mobile-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  max-width: var(--m-auth-form-w);
+  margin-inline: auto;
+}
+@media (min-width: 64rem) {
+  .m-auth__mobile-brand {
+    display: none;
+  }
+}
+
+/* (The form column has no footer row - see the note in `auth-frame.tsx`.) */
+
+/* ---- Form card ----
+   The reference sets the form on a distinct raised card rather than bare on the
+   background; on the light column that needs a real border, since a shadow
+   alone doesn't separate white-on-porcelain. */
+.m-auth__card {
+  background: var(--m-surface);
+  border: 1px solid var(--m-border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 24px 48px -32px rgba(18, 28, 40, 0.28);
+}
+@media (min-width: 40rem) {
+  .m-auth__card {
+    padding: 1.75rem;
+  }
+}
+
+/* ---- Card header ---- */
+.m-auth__card h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--m-text);
+}
+.m-auth__card-sub {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--m-muted);
+}
+
+/* ---- Fields ----
+   Top-aligned labels and NO placeholders anywhere. Placeholder-as-label erases
+   the label on focus, defeats error checking, and rarely clears 4.5:1; there is
+   no format hint worth giving for an email or a password, so fields carry
+   none. */
+.m-afield + .m-afield {
+  margin-top: 0.75rem;
+}
+.m-afield label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--m-text);
+}
+.m-afield__hint {
+  margin-bottom: 0.4rem;
+  font-size: 0.775rem;
+  line-height: 1.5;
+  color: var(--m-muted);
+}
+/* There is no visible per-field error style. The message is rendered
+   visually-hidden next to its input (so `aria-describedby` still announces the
+   specific problem) while the visible copy appears once in the summary at the
+   top of the card. An inline message here would repeat the same sentence twice
+   on screen and, rendering above the input, would knock one half of a paired
+   two-up row out of alignment with the other. The field still reads as invalid
+   visually — see the `[aria-invalid]` border rule below. */
+.m-afield__wrap {
+  position: relative;
+}
+
+.m-authinput {
+  width: 100%;
+  height: 2.75rem;
+  padding: 0 0.875rem;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  color: var(--m-text);
+  background: var(--m-surface);
+  /* 3:1 minimum against the adjacent surface. The fashionable #e5e7eb hairline
+     lands near 1.3:1 and fails SC 1.4.11 Non-text Contrast outright. */
+  border: 1px solid #8b96a3;
+  transition:
+    border-color 120ms var(--m-ease-base),
+    box-shadow 120ms var(--m-ease-base);
+}
+.m-authinput:hover:not(:disabled) {
+  border-color: #5a6573;
+}
+.m-authinput:focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
+  border-color: var(--m-accent);
+}
+.m-authinput[aria-invalid="true"] {
+  border-color: #b42318;
+}
+.m-authinput:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.m-authinput--withtoggle {
+  padding-right: 3rem;
+}
+
+/* Show/hide sits inside the field but keeps a 44px hit area. SC 2.5.8 sets a
+   24px floor; password entry is the error-prone case worth exceeding it for. */
+.m-pwtoggle {
+  position: absolute;
+  right: 0.0625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 8px;
+  color: var(--m-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.m-pwtoggle:hover {
+  color: var(--m-text);
+}
+.m-pwtoggle:focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: -2px;
+}
+
+/* ---- Error summary, rendered and focused on submit ---- */
+.m-errsummary {
+  margin-bottom: 0.85rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #b42318;
+  border-left-width: 4px;
+  background: #fef3f2;
+}
+/* Single error: one line, no heading. */
+.m-errsummary--one p {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  font-weight: 500;
+  color: #b42318;
+}
+.m-errsummary:focus-visible {
+  outline: 2px solid #b42318;
+  outline-offset: 2px;
+}
+.m-errsummary h2 {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #b42318;
+}
+.m-errsummary ul {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #b42318;
+  list-style: disc;
+  padding-left: 1rem;
+}
+.m-errsummary a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---- Checkbox row ---- */
+.m-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  /* 44px tap target including the label text — kept at the accessibility
+     minimum even under height pressure; this is not a spacing knob. */
+  min-height: 2.75rem;
+  padding-block: 0.2rem;
+  cursor: pointer;
+}
+.m-check input {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0.1rem;
+  accent-color: var(--m-accent);
+  cursor: pointer;
+}
+.m-check__text {
+  font-size: 0.85rem;
+  color: var(--m-text);
+}
+.m-check__note {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  color: var(--m-muted);
+}
+
+/* ---- Password requirements ----
+   A checklist, not a strength bar. A five-segment meter that goes green on
+   `Password1!` certifies a crackable password as strong; a checklist says what
+   is actually still missing. Never colour alone — every row carries a glyph. */
+.m-pwrules {
+  margin-top: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: var(--m-surface-2);
+  border: 1px solid var(--m-border);
+}
+.m-pwrules__title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--m-text);
+  margin-bottom: 0.25rem;
+}
+.m-pwrules ul {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.12rem 0.6rem;
+}
+.m-pwrules li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--m-muted);
+}
+.m-pwrules li > span[aria-hidden] {
+  width: 0.75rem;
+  flex: none;
+  text-align: center;
+}
+.m-pwrules li.is-ok {
+  color: #146c43;
+}
+
+/* ---- Inline step indicator ---- */
+.m-steps {
+  margin-bottom: 0.9rem;
+}
+.m-steps ol {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.m-steps li {
+  flex: 1;
+  height: 0.2rem;
+  border-radius: 999px;
+  background: var(--m-border-strong);
+}
+.m-steps li.is-current,
+.m-steps li.is-done {
+  background: var(--m-accent);
+}
+.m-steps li.is-current {
+  /* The active bar reads brighter than the completed ones behind it. */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--m-accent) 35%, transparent);
+}
+.m-steps__label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--m-text);
+}
+.m-steps__label span {
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--m-muted);
+}
+
+/* Caption for a control that isn't a native input — `MSelect` renders a button,
+   so a <label for> would point at nothing. The accessible name comes from its
+   `ariaLabel`; this is the visible text only, styled to match a real label. */
+.m-acap {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--m-text);
+}
+
+/* ---- Two-up field row (paired short fields) ---- */
+.m-arow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+.m-arow--first {
+  margin-top: 0;
+}
+/* The stacking rule must not fire between paired fields, or the second column
+   drops by a row's margin and the two inputs stop lining up. */
+.m-arow .m-afield + .m-afield,
+.m-arow .m-afield {
+  margin-top: 0;
+}
+/* The password field renders a visually-hidden live region as a sibling of its
+   input. It is `position: absolute` (see `.m-sr`), so it is never auto-placed
+   into a column and needs no handling here — do NOT `display: none` it, which
+   would drop it from the accessibility tree and silence the show/hide
+   announcement it exists to make. */
+
+/* Small note under a step's fields. */
+.m-anote {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--m-muted);
+}
+
+/* ---- Billing period toggle ----
+   Changes the displayed price only. The server takes `plan` with no cadence, so
+   this must never look like it records a choice. */
+.m-billtoggle {
+  display: inline-flex;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: var(--m-surface-2);
+  border: 1px solid var(--m-border);
+}
+.m-billtoggle button {
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--m-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.m-billtoggle button[data-on="true"] {
+  background: var(--m-surface);
+  color: var(--m-text);
+  box-shadow: 0 1px 2px rgb(18 28 40 / 0.12);
+}
+.m-billtoggle button span {
+  color: var(--m-accent-ink);
+}
+
+/* Billing toggle on the left, the "compare plans" info button on the right. */
+.m-planbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* 44px target even though the glyph is 18px — SC 2.5.8 sets a 24px floor and an
+   icon-only control is exactly the case worth exceeding it for. */
+.m-infobtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-right: -0.6rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--m-muted);
+  cursor: pointer;
+}
+.m-infobtn svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+.m-infobtn:hover {
+  color: var(--m-accent-ink);
+  background: var(--m-surface-2);
+}
+.m-infobtn:focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
+}
+
+/* ---- Plan comparison cards (inside the dialog) ---- */
+.m-plancard {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--m-border-strong);
+  background: var(--m-surface);
+  cursor: pointer;
+  transition: border-color 120ms var(--m-ease-base);
+}
+.m-plancard:hover {
+  border-color: var(--m-accent);
+}
+.m-plancard[data-on="true"] {
+  border-color: var(--m-accent);
+  background: var(--m-accent-tint);
+  box-shadow: inset 0 0 0 1px var(--m-accent);
+}
+.m-plancard:focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
+}
+.m-plancard__head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.m-plancard__mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--m-border-strong);
+  color: #fff;
+}
+.m-plancard[data-on="true"] .m-plancard__mark {
+  background: var(--m-accent);
+  border-color: var(--m-accent);
+}
+.m-plancard__mark svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+.m-plancard__name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--m-text);
+}
+.m-plancard__name i {
+  font-style: normal;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--m-accent);
+  color: var(--m-on-accent);
+}
+.m-plancard__price {
+  margin-left: auto;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--m-text);
+  white-space: nowrap;
+}
+.m-plancard__price i {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--m-muted);
+}
+.m-plancard__tagline {
+  display: block;
+  margin: 0.35rem 0 0 1.95rem;
+  font-size: 0.82rem;
+  color: var(--m-muted);
+}
+.m-plancard__features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0.7rem 0 0 1.95rem;
+}
+.m-plancard__features > span {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--m-text);
+}
+.m-plancard__features svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: none;
+  margin-top: 0.15rem;
+  color: var(--m-accent);
+}
+@media (max-width: 34rem) {
+  .m-plancard__features {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Plan list (rows, not columns) ----
+   A vertical list keeps each plan's name, pitch and price legible at 30rem;
+   three side-by-side cards would truncate all three. */
+.m-planlist {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.m-planlist label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--m-border-strong);
+  background: var(--m-surface);
+  cursor: pointer;
+}
+.m-planlist label.is-on {
+  border-color: var(--m-accent);
+  box-shadow: inset 0 0 0 1px var(--m-accent);
+}
+/* The radio stays in the DOM for keyboard and AT; the label is the visual. */
+.m-planlist input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.m-planlist input:focus-visible ~ .m-planlist__body {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.m-planlist__body {
+  flex: 1;
+  min-width: 0;
+}
+.m-planlist__body strong {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--m-text);
+}
+.m-planlist__body strong i {
+  font-style: normal;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: var(--m-accent-tint);
+  color: var(--m-accent-ink);
+}
+.m-planlist__body em {
+  display: block;
+  margin-top: 0.1rem;
+  font-style: normal;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--m-muted);
+}
+.m-planlist__price {
+  flex: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--m-text);
+  white-space: nowrap;
+}
+.m-planlist__price i {
+  font-style: normal;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--m-muted);
+}
+
+/* ---- Step actions ---- */
+.m-authactions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* ---- Divider ---- */
+.m-authdiv {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.85rem 0;
+  font-size: 0.75rem;
+  color: var(--m-faint);
+}
+.m-authdiv::before,
+.m-authdiv::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--m-border-strong);
+}
+
+/* ---- Entrance: one-shot, resolves to static far inside 5s ---- */
+@keyframes m-auth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.m-auth-rise {
+  animation: m-auth-rise 420ms var(--m-ease-enter) both;
+}
+
+/* Screen-reader-only, for the "Error:" prefix and the toggle's live status. */
+.m-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Nothing in the form column animates, and the whole auth surface stops under a
+   reduced-motion preference. `animation: none` also freezes the dial's sweep,
+   since that motion is CSS-driven rather than scripted. */
+@media (prefers-reduced-motion: reduce) {
+  .m-auth *,
+  .m-auth *::before,
+  .m-auth *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .m-auth-rise {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

@@ -210,3 +210,18 @@ export function createOrg(body: CreateOrgBody): Promise<OrgCreatedResult> {
     body: JSON.stringify(body),
   });
 }
+
+/**
+ * Mirror of the server's `slugify` (`identity::features::create_org::dto`).
+ *
+ * It lives beside `createOrg` because it is part of the same contract: the server re-slugifies
+ * whatever slug we send, so if this drifts, the workspace URL a user was shown during sign-up is
+ * silently not the one they get. Keep the two in step.
+ */
+export function slugify(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}

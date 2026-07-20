@@ -1,6 +1,31 @@
 /* ============================================================= *
  *  WorkPulse — Landing content (warm editorial redesign)         *
  *  Data only. Palette-agnostic. Landing-only.                    *
+ * ============================================================= *
+ *
+ *  ⚠️  EVERY CLAIM ON THIS PAGE MUST BE TRUE TODAY.
+ *
+ *  This file was rewritten on 2026-07-20 because it wasn't. It
+ *  advertised SSO/SAML and SCIM (cut — `WorkPulse-SSO.md` is
+ *  PROPOSED, not approved, and `plans.rs` has a regression test
+ *  asserting `security.sso` must NOT exist), an integrations
+ *  marketplace with webhooks and a REST API (deferred, no design,
+ *  no slices — same test guards `integrations`), approval-gated
+ *  remote support (CUT, LLD §18: "no remote sessions"), data
+ *  residency and a signed DPA (neither exists), a mobile app and
+ *  GPS clock-in (no mobile client, and `locations` has no backend
+ *  at all), import-from-your-tools (nothing to import with), and
+ *  burnout/anomaly detection (not built).
+ *
+ *  The convention now: present tense only for what ships today.
+ *  Anything still coming says so **in the copy itself** — see the
+ *  activity block, which is labelled beta rather than described as
+ *  though it works. If a reader could sign up expecting it and be
+ *  wrong, the sentence is a bug.
+ *
+ *  Plan features below mirror `Plan::allowed()` in
+ *  `crates/wp-contracts/src/plans.rs`, which is the server's real
+ *  entitlement ceiling. Keep them in step.
  * ============================================================= */
 
 import {
@@ -10,8 +35,6 @@ import {
   Eye,
   Fingerprint,
   FolderKanban,
-  Globe,
-  Headset,
   HeartPulse,
   KeyRound,
   Layers,
@@ -23,6 +46,13 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
+import {
+  PRODUCTS,
+  RESOURCES,
+  SOLUTIONS,
+  productHref,
+  type NavLink,
+} from "@/modules/marketing/products";
 
 export type VisualKind = "pulse" | "time" | "insight" | "board" | "ai";
 
@@ -36,9 +66,9 @@ export const HERO_LINES: Word[][] = [
   [{ w: "workforce" }, { w: "on" }, { w: "one" }],
   [{ w: "calm", em: true }, { w: "pulse.", em: true }],
 ];
-export const HERO_LEAD = "Track time, see activity, and run projects — in one calm place.";
+export const HERO_LEAD = "Time, attendance, projects and people — in one calm place.";
 export const HERO_SUB =
-  "WorkPulse unifies time, attendance, activity, and projects into a single clear signal — with AI that tells you what actually needs attention. Calm, not clinical.";
+  "WorkPulse brings timesheets, attendance, leave, projects and payroll onto a single record, and reads your day back to you each morning in plain language. Calm, not clinical.";
 export const HERO_MICRO = "Free during beta · No credit card required";
 
 /* ---- Use-case marquee ---- */
@@ -54,7 +84,9 @@ export const USE_CASES = [
   "Enterprises",
 ];
 
-/* ---- Oversized stat band (honest) ---- */
+/* ---- Oversized stat band ----
+   Numbers only where they're checkable. `44` is the live permission catalog
+   (`GET /v1/permissions`); `3` is the seeded system roles in `wp-contracts`. */
 export interface Stat {
   value: string;
   to?: number;
@@ -62,10 +94,10 @@ export interface Stat {
   label: string;
 }
 export const STATS: Stat[] = [
-  { value: "29", to: 29, label: "modules in one platform" },
-  { value: "5", to: 5, label: "role types, fully permissioned" },
-  { value: "1", to: 1, suffix: "-tap", label: "timer on web, desktop & mobile" },
-  { value: "AI", label: "insight on every metric" },
+  { value: "44", to: 44, label: "granular permissions" },
+  { value: "3", to: 3, label: "system roles, plus your own" },
+  { value: "1", to: 1, label: "record for time, people & projects" },
+  { value: "AI", label: "summary of your day, in plain words" },
 ];
 
 /* ---- Big editorial feature blocks ---- */
@@ -84,19 +116,27 @@ export const FEATURE_BLOCKS: FeatureBlock[] = [
     idx: "01",
     kicker: "Time",
     icon: Clock,
-    title: "Time that tracks itself.",
-    body: "A one-tap timer turns into clean, automatic timesheets — idle-aware, switchable between tasks, and ready for approval, payroll, and billing without the chasing.",
-    bullets: ["One-tap & idle-aware timer", "Automatic weekly timesheets", "Approvals, corrections & exports"],
+    title: "Time that records itself.",
+    body: "The desktop agent keeps the timer, so hours arrive as they happen and build into daily and weekly timesheets on their own. Entries are derived, never typed — which means a timesheet is a record of what happened, not of what someone remembered on Friday.",
+    bullets: [
+      "Timer lives in the desktop agent",
+      "Daily & weekly timesheets build themselves",
+      "Immutable by design — no silent edits",
+    ],
     visual: "time",
     slug: "time-tracking",
   },
   {
     idx: "02",
-    kicker: "Insight",
+    kicker: "Activity · in beta",
     icon: Activity,
-    title: "See where the day really goes.",
-    body: "Active vs. idle time, app and website usage, and a productivity score per person and team — presented as calm context, never as surveillance theatre.",
-    bullets: ["Active vs. idle analysis", "App & website breakdown", "Team productivity trends"],
+    title: "Activity insight, arriving with the agent.",
+    body: "Active and idle time, app and website context, and screenshot review are built into the desktop agent and rolling out through beta — they are not switched on for everyone yet. You set the app and URL rules up front, the agent asks for consent on the device, and nothing is captured while the timer is off.",
+    bullets: [
+      "Consent-first, and off until accepted",
+      "App & URL rules you define, not us",
+      "Rolling out with the desktop agent",
+    ],
     visual: "insight",
     slug: "activity-monitoring",
   },
@@ -104,9 +144,13 @@ export const FEATURE_BLOCKS: FeatureBlock[] = [
     idx: "03",
     kicker: "Projects",
     icon: FolderKanban,
-    title: "Plans, people, and capacity — one board.",
-    body: "Kanban projects sit right next to attendance, schedules, and leave, so delivery and capacity are always in the same view. Nobody is quietly overloaded.",
-    bullets: ["Kanban projects & tasks", "Workload & capacity", "Attendance, schedules & leave"],
+    title: "Plans and people, one record.",
+    body: "Kanban projects sit beside attendance, leave and approvals, so who is working on what and who is actually available are the same question. No reconciling a board against a spreadsheet of who's off.",
+    bullets: [
+      "Kanban projects, tasks & priorities",
+      "Project members with their own roles",
+      "Attendance, leave & approvals alongside",
+    ],
     visual: "board",
     slug: "projects",
   },
@@ -114,9 +158,13 @@ export const FEATURE_BLOCKS: FeatureBlock[] = [
     idx: "04",
     kicker: "Intelligence",
     icon: BrainCircuit,
-    title: "An analyst that reads every signal for you.",
-    body: "WorkPulse summarises the week in plain language, flags burnout and anomalies before they bite, and recommends the next move — so you lead on signal, not spreadsheets.",
-    bullets: ["Daily & weekly AI summaries", "Burnout & anomaly detection", "Plain-language recommendations"],
+    title: "Your day, read back in plain language.",
+    body: "A daily summary written over your own hours, tasks and attendance — not generic advice. Ask the assistant a question about your workspace and it answers from the same record, so the numbers in the answer are the numbers on the page.",
+    bullets: [
+      "Daily summary over your real data",
+      "Ask the assistant in plain language",
+      "Grounded in your workspace, not the web",
+    ],
     visual: "ai",
     slug: "ai-insights",
   },
@@ -138,17 +186,17 @@ export const ROLES: Role[] = [
     label: "Owners",
     icon: HeartPulse,
     headline: "The whole organization, in one glance.",
-    body: "One executive pulse across every team, with AI summarising what changed this week and where to look next.",
-    points: ["Org-wide productivity & trends", "Burnout & anomaly signals", "Company reports & exports"],
+    body: "One dashboard across headcount, projects and plan usage, with a daily AI summary of what moved since yesterday.",
+    points: ["Org dashboard & headcount", "Daily AI summary", "Plan, seats & feature control"],
     visual: "ai",
   },
   {
     id: "manager",
     label: "Managers",
     icon: FolderKanban,
-    headline: "Assign the work, watch the capacity.",
-    body: "Keep projects moving, see who is over- or under-loaded, and approve timesheets in a couple of clicks.",
-    points: ["Team workload & capacity", "Kanban projects & deadlines", "One-click approvals"],
+    headline: "Assign the work, see who's actually in.",
+    body: "Keep boards moving and approve leave in a couple of clicks, with the team's attendance in the same view.",
+    points: ["Kanban projects & tasks", "Team attendance calendar", "Leave approvals, single or bulk"],
     visual: "board",
   },
   {
@@ -156,26 +204,26 @@ export const ROLES: Role[] = [
     label: "HR",
     icon: Users,
     headline: "Attendance & leave, minus the spreadsheets.",
-    body: "Clock-in, schedules, leave balances, and approvals in one place — with a clean audit trail behind every change.",
-    points: ["Attendance & schedules", "Leave balances & requests", "Directory, teams & departments"],
+    body: "Attendance, leave balances, requests and approvals in one place — with a clean audit trail behind every change.",
+    points: ["Attendance & leave balances", "Directory, teams & departments", "Invites & onboarding"],
     visual: "time",
   },
   {
     id: "finance",
     label: "Finance",
     icon: Wallet,
-    headline: "Hours become payroll and billing.",
-    body: "Approved time flows straight into pay periods and client-billable reports, with per-payslip and full-run exports.",
-    points: ["Billable hours & utilisation", "Pay periods & payslips", "CSV / PDF exports"],
+    headline: "Compensation, deductions and pay runs.",
+    body: "Set compensation per person, define deductions once, and generate a pay run whose totals you can trace back to their inputs.",
+    points: ["Compensation & deductions", "Pay runs with traceable totals", "Plan, seats & billing"],
     visual: "time",
   },
   {
     id: "it",
     label: "IT & Security",
     icon: ShieldCheck,
-    headline: "Governed, monitored, and auditable.",
-    body: "Role-based access, SSO/SCIM, device and agent management, and a full audit log — with monitoring that is consent-first by design.",
-    points: ["RBAC, SSO/SAML & SCIM", "Desktop agent & device fleet", "Audit logs & approval gates"],
+    headline: "Governed, isolated, and auditable.",
+    body: "Role-based access down to 44 permissions, MFA on every password sign-in, and an audit trail behind every change — with monitoring that is consent-first by design.",
+    points: ["RBAC & custom roles", "MFA & session visibility", "Audit log & device fleet"],
     visual: "insight",
   },
 ];
@@ -187,12 +235,36 @@ export interface ModuleGroup {
   items: string[];
 }
 export const MODULE_GROUPS: ModuleGroup[] = [
-  { icon: Clock, title: "Time & projects", items: ["One-tap timer & timesheets", "Kanban projects & tasks", "Attendance & schedules", "Leave & approvals"] },
-  { icon: Users, title: "People & payroll", items: ["Employee directory & profiles", "Departments, teams & roles", "Payroll periods & exports"] },
-  { icon: Activity, title: "Monitoring", items: ["Active vs. idle & app usage", "Screenshots & timelines", "Consent-first controls"] },
-  { icon: Sparkles, title: "Insights & AI", items: ["Live dashboards & reports", "AI summaries & recommendations", "Anomaly & burnout detection"] },
-  { icon: ShieldCheck, title: "Control & security", items: ["Roles & permissions (RBAC)", "SSO / SAML, SCIM & MFA", "Audit logs & remote support"] },
-  { icon: Layers, title: "Integrations", items: ["Slack, GitHub & Google", "Webhooks & REST API", "Import from your tools"] },
+  {
+    icon: Clock,
+    title: "Time & attendance",
+    items: ["Automatic timesheets", "Attendance calendar", "Leave balances & requests", "Approvals, single or bulk"],
+  },
+  {
+    icon: FolderKanban,
+    title: "Projects & tasks",
+    items: ["Kanban boards & tasks", "Priorities & estimates", "Project members & roles"],
+  },
+  {
+    icon: Users,
+    title: "People",
+    items: ["Employee directory & profiles", "Departments & teams", "Invites & onboarding"],
+  },
+  {
+    icon: Wallet,
+    title: "Payroll & billing",
+    items: ["Compensation & deductions", "Pay runs & totals", "Plan, seats & invoices"],
+  },
+  {
+    icon: Sparkles,
+    title: "AI",
+    items: ["Daily summary of your day", "Assistant grounded in your data"],
+  },
+  {
+    icon: ShieldCheck,
+    title: "Control & security",
+    items: ["Roles & 44 permissions", "Audit log", "Feature toggles & tracking rules"],
+  },
 ];
 
 /* ---- How it works ---- */
@@ -202,24 +274,64 @@ export interface Step {
   body: string;
 }
 export const STEPS: Step[] = [
-  { n: "01", title: "Invite your team", body: "Bring people in by email or SSO and group them into teams and projects in minutes." },
-  { n: "02", title: "Track time & activity", body: "The timer and lightweight agent capture hours, attendance, and activity automatically." },
-  { n: "03", title: "Act on the pulse", body: "Read one clear signal, approve timesheets, and catch burnout or overruns early." },
+  {
+    n: "01",
+    title: "Create your workspace",
+    body: "Set up your organization, then invite your team by email. Everyone joins with a role, so access is right from the first sign-in.",
+  },
+  {
+    n: "02",
+    title: "Install the desktop agent",
+    body: "Your team installs the agent and accepts on-device consent. From then on, hours arrive on their own and build into timesheets.",
+  },
+  {
+    n: "03",
+    title: "Read the pulse",
+    body: "Check the dashboard, approve leave, and start each day with a plain-language summary of what actually changed.",
+  },
 ];
 
-/* ---- Security ---- */
+/* ---- Security ----
+   All six are things the platform does today. What used to sit here — SSO/SAML,
+   SCIM, data residency, a signed DPA, approval-gated remote support — is either
+   cut or unbuilt, and two of those are guarded by a test in `plans.rs` precisely
+   so nobody can entitle them by accident. */
 export interface EnterpriseItem {
   icon: LucideIcon;
   title: string;
   body: string;
 }
 export const ENTERPRISE: EnterpriseItem[] = [
-  { icon: KeyRound, title: "SSO / SAML & SCIM", body: "Single sign-on and automated provisioning, architected in from day one." },
-  { icon: Fingerprint, title: "MFA & session policies", body: "Enforce multi-factor, session limits, and device-level controls." },
-  { icon: ScrollText, title: "Audit logs", body: "Every action, permission change, and login — captured and searchable." },
-  { icon: Globe, title: "Data residency & DPA", body: "Choose where data lives; encrypted in transit and at rest." },
-  { icon: Headset, title: "Approval-gated remote support", body: "Consent-based remote sessions with a full audit trail." },
-  { icon: MonitorSmartphone, title: "Desktop agent management", body: "Roll out, configure, and monitor agent health at scale." },
+  {
+    icon: KeyRound,
+    title: "Managed sign-in & MFA",
+    body: "Authentication runs on Amazon Cognito, with time-based one-time codes available on every password account.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Role-based access",
+    body: "Three system roles plus your own, built from 44 granular permissions. The server checks every request, not just the menu.",
+  },
+  {
+    icon: ScrollText,
+    title: "Audit log",
+    body: "Permission changes, sign-ins and administrative actions are recorded and searchable by category.",
+  },
+  {
+    icon: Fingerprint,
+    title: "Tenant isolation",
+    body: "Every record is keyed to your organization at the database level, so another tenant's data is unreachable by construction.",
+  },
+  {
+    icon: Eye,
+    title: "Consent-first monitoring",
+    body: "The agent captures nothing until the person on the device accepts, and nothing at all while the timer is off.",
+  },
+  {
+    icon: MonitorSmartphone,
+    title: "Device fleet visibility",
+    body: "See which machines are enrolled, which are reporting, and which have gone quiet.",
+  },
 ];
 
 /* ---- Principles (honest — no fabricated testimonials) ---- */
@@ -229,12 +341,31 @@ export interface Principle {
   body: string;
 }
 export const PRINCIPLES: Principle[] = [
-  { icon: HeartPulse, title: "Calm by design", body: "We turn many noisy streams into one clear pulse. Signal over noise — a quiet control surface, not a wall of dashboards." },
-  { icon: Eye, title: "Consent-first monitoring", body: "Activity and screenshots are optional, policy-gated, transparent to your team, and fully audited. Built to support people, not surveil them." },
-  { icon: Layers, title: "One source of truth", body: "Time, people, projects, and insights share a single data model — nothing to reconcile, no tool sprawl to manage." },
+  {
+    icon: HeartPulse,
+    title: "Calm by design",
+    body: "We turn many noisy streams into one clear pulse. Signal over noise — a quiet control surface, not a wall of dashboards.",
+  },
+  {
+    icon: Eye,
+    title: "Consent-first monitoring",
+    body: "Activity capture is opt-in on the device, bounded by rules you set, and paused whenever the timer is. Built to support people, not surveil them.",
+  },
+  {
+    icon: Layers,
+    title: "One source of truth",
+    body: "Time, people, projects and pay share a single record — nothing to reconcile, no tool sprawl to manage.",
+  },
 ];
 
-/* ---- Pricing ---- */
+/* ---- Pricing ----
+   Feature lists mirror `Plan::allowed()` in `crates/wp-contracts/src/plans.rs`,
+   which is the server's actual entitlement ceiling:
+     Free       time.tracking · attendance · leave · projects · reports.basic
+     Starter    + monitoring.activity
+     Enterprise + monitoring.screenshots · ai.insights · ai.assistant ·
+                  anomalies · insights.reports.ai_pdf
+   Names and prices are kept in step with `app/pricing/page.tsx`. */
 export interface PricingTier {
   name: string;
   price: string;
@@ -243,17 +374,18 @@ export interface PricingTier {
   cta: string;
   featured: boolean;
 }
-// Mirrors `Plan` in `crates/wp-contracts/src/plans.rs` — `free | starter | enterprise`.
-// These are the only plans the server can issue; anything else is unsellable. Kept in
-// step with `app/pricing/page.tsx` and `app/page.tsx` — same three names, same prices.
-// (Was Pro/Max/Enterprise, which the server would reject and which disagreed with both
-// other surfaces.)
 export const PRICING: PricingTier[] = [
   {
     name: "Free",
     price: "$0",
     tagline: "For individuals and very small teams getting started.",
-    features: ["Core time tracking & timesheets", "Up to 5 members", "1 active project", "7-day activity history", "Community support"],
+    features: [
+      "Timesheets & attendance",
+      "Leave & approvals",
+      "Projects & tasks",
+      "Basic reports",
+      "Up to 5 members",
+    ],
     cta: "Get started free",
     featured: false,
   },
@@ -261,63 +393,70 @@ export const PRICING: PricingTier[] = [
     name: "Starter",
     price: "$12",
     tagline: "For growing teams that need real insight.",
-    features: ["Time tracking & timesheets", "Activity & productivity", "Unlimited projects & tasks", "Reports & exports", "Priority support"],
-    cta: "Start free",
+    features: [
+      "Everything in Free",
+      "Unlimited projects & tasks",
+      "Activity insight (beta)",
+      "Unlimited members",
+    ],
+    cta: "Choose Starter",
     featured: false,
   },
   {
     name: "Enterprise",
     price: "$22",
     tagline: "For organizations operating at scale.",
-    features: ["Everything in Starter", "SSO / SAML & SCIM", "Anomaly & burnout AI", "Audit logs, DPA & residency", "Custom contracts & premier SLA", "Dedicated success manager"],
-    cta: "Start free",
+    features: [
+      "Everything in Starter",
+      "Screenshot review (beta)",
+      "AI summaries & assistant",
+      "PDF report export",
+      "Audit log & role controls",
+    ],
+    cta: "Choose Enterprise",
     featured: true,
   },
 ];
 export const PRICING_NOTE =
-  "Prices shown are indicative for launch. WorkPulse is free while we're in beta — no credit card required.";
+  "Prices are indicative for launch. WorkPulse is free for every plan while we're in beta — no card required — and features marked beta are still rolling out.";
 
 /* ---- FAQ ---- */
+export const FAQS: Faq[] = [
+  {
+    q: "Is WorkPulse employee monitoring or surveillance?",
+    a: "It's built to be the opposite. Capture is opt-in on the device, stops whenever the timer stops, and stays inside app and URL rules you set yourself. Screenshots are blurred and reviewable. Nothing about it is designed to be hidden from the person it's about.",
+  },
+  {
+    q: "Do you have a mobile app?",
+    a: "Not yet. WorkPulse today is a web app plus a desktop agent for Windows, and the agent is what keeps the timer. A mobile client and location-aware clock-in for field crews are on the roadmap, not in your hands yet.",
+  },
+  {
+    q: "How does billing work?",
+    a: "Plans are priced per active user, monthly or annually. Everything is free while we're in beta — no card required — and you can change plan from Settings at any time.",
+  },
+  {
+    q: "Is my organization's data secure?",
+    a: "Sign-in runs on Amazon Cognito with MFA available, every record is keyed to your organization so other tenants can't reach it, access is checked server-side against 44 permissions, and data is encrypted in transit and at rest. Single sign-on and a signed DPA are not available yet.",
+  },
+  {
+    q: "Can I import from my current tool?",
+    a: "Not yet — there's no importer and no public API today. You can invite your team by email and start fresh; historical data has to stay where it is for now.",
+  },
+];
 export interface Faq {
   q: string;
   a: string;
 }
-export const FAQS: Faq[] = [
-  { q: "Is WorkPulse employee monitoring or surveillance?", a: "No. WorkPulse focuses on transparent, mostly-aggregate signals — hours, attendance, and productivity context — with clear controls and consent. Optional screenshots are policy-gated, blurred by default, and audited. It's built to support teams, not spy on them." },
-  { q: "Does it work on mobile, desktop, and for field teams?", a: "Yes. There's a one-tap timer on web, desktop, and mobile, plus GPS-aware clock-in for crews on the move." },
-  { q: "How does billing work?", a: "Plans are per active user, billed monthly or annually. You can start free during our beta — no card required — and upgrade any time." },
-  { q: "Is my organization's data secure?", a: "Data is encrypted in transit and at rest. Enterprise plans add SSO/SAML, SCIM, audit logs, and a signed DPA, with data-residency options." },
-  { q: "Can I import from my current tool?", a: "Yes — import people, projects, and historical time from common tools, or use the API to bring everything across." },
-];
 
-/* ---- Footer nav ---- */
-export const FOOTER_COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
+/* ---- Footer nav ----
+   Derived from the same lists the navbar reads (`marketing/products.ts`), so the two can't drift.
+   They previously did: the footer, the shared `MarketingFooter` and the nav each named a different
+   set of links. The footer shows the first four products; the nav's mega-menu shows all ten. */
+export const FOOTER_COLUMNS: { title: string; links: NavLink[] }[] = [
   {
     title: "Product",
-    links: [
-      { label: "Time tracking", href: "/product/time-tracking" },
-      { label: "Activity & productivity", href: "/product/activity-monitoring" },
-      { label: "Projects & tasks", href: "/product/projects" },
-      { label: "AI insights", href: "/product/ai-insights" },
-      { label: "Integrations", href: "/product/integrations" },
-    ],
+    links: PRODUCTS.slice(0, 4).map((p) => ({ label: p.name, href: productHref(p.slug) })),
   },
-  {
-    title: "Solutions",
-    links: [
-      { label: "Field service", href: "/#roles" },
-      { label: "Remote & hybrid", href: "/#roles" },
-      { label: "Agencies", href: "/#roles" },
-      { label: "Enterprise", href: "/#security" },
-    ],
-  },
-  {
-    title: "Resources",
-    links: [
-      { label: "Pricing", href: "/pricing" },
-      { label: "FAQ", href: "/#faq" },
-      { label: "Security", href: "/#security" },
-      { label: "Log in", href: "/login" },
-    ],
-  },
+  { title: "Solutions", links: SOLUTIONS },
+  { title: "Resources", links: [...RESOURCES, { label: "Log in", href: "/login" }] },
 ];

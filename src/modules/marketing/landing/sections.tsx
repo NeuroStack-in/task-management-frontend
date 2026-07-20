@@ -37,7 +37,7 @@ export function StatsSection() {
     <section className="px-5 py-20 sm:py-24">
       <div className="mx-auto grid max-w-6xl gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
         {STATS.map((s, i) => (
-          <Reveal key={s.label} delay={i * 90} className="text-center lg:text-left">
+          <Reveal key={s.label} delay={i * 90} className="text-center">
             <p className="wp-display text-[clamp(3rem,7vw,4.6rem)]" style={{ color: "var(--wp-accent)" }}>
               {s.to != null ? <CountUp to={s.to} suffix={s.suffix} /> : s.value}
             </p>
@@ -371,10 +371,13 @@ export function Footer() {
             <span className="wp-display text-xl" style={{ color: "var(--wp-ink)" }}>WorkPulse</span>
           </div>
           <p className="mt-3 max-w-xs text-sm leading-relaxed" style={{ color: "var(--wp-muted)" }}>
-            The all-in-one workforce platform that turns time, activity, and
-            projects into one calm pulse.
+            The workforce platform that turns time, people, and projects
+            into one calm pulse.
           </p>
-          <p className="mt-4 text-xs" style={{ color: "var(--wp-faint)" }}>Encrypted in transit &amp; at rest · GDPR-ready · Beta</p>
+          {/* "GDPR-ready" was here and is gone: it's an unverifiable compliance claim, and there is
+              no DPA, no data-residency choice and no completed assessment behind it. Encryption in
+              transit and at rest is a plain fact about the infrastructure, so that stays. */}
+          <p className="mt-4 text-xs" style={{ color: "var(--wp-faint)" }}>Encrypted in transit &amp; at rest · Free while in beta</p>
         </div>
         {FOOTER_COLUMNS.map((col) => (
           <div key={col.title}>

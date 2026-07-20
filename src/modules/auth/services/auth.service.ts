@@ -42,7 +42,25 @@ export interface LoginResult {
   user: User;
 }
 
-export class AuthError extends Error {}
+/**
+ * `kind` decides how loudly the UI may speak.
+ *
+ * - `credentials` — the sign-in was refused. **Every cause collapses to one message**, because a
+ *   response that distinguishes "no such account" from "wrong password" is an account-enumeration
+ *   oracle: an attacker learns which work emails exist by watching which one comes back. OWASP asks
+ *   for identical messaging across all failure outcomes, and the same applies to signup and reset.
+ * - `state` — the account exists and is reachable, but is in a state the user must be told about
+ *   (needs a permanent password, MFA is required). Withholding these strands someone with no route
+ *   forward, so the trade lands the other way.
+ */
+export class AuthError extends Error {
+  constructor(
+    message: string,
+    readonly kind: "credentials" | "state" = "credentials",
+  ) {
+    super(message);
+  }
+}
 
 /** Derive a display name from the email local-part until `workforce` serves real profiles. */
 function nameFromEmail(email: string): string {
@@ -97,31 +115,34 @@ export async function login(
       onSuccess: (s) => resolve(s),
       onFailure: (err: { code?: string; message?: string }) => {
         const code = err?.code ?? "";
-        if (code === "NotAuthorizedException")
-          return reject(new AuthError("Incorrect email or password."));
-        if (code === "UserNotFoundException")
-          return reject(new AuthError("No account found for that email."));
+        // `NotAuthorizedException` (wrong password) and `UserNotFoundException` (no such account)
+        // MUST be indistinguishable. Splitting them — as this used to — hands out a directory of
+        // which work emails are registered, one guess at a time.
+        //
+        // `UserNotConfirmedException` and `PasswordResetRequiredException` also imply the account
+        // exists, so they leak the same way but narrower; they stay specific because the user is
+        // otherwise stranded with no way to act, and both are only reachable for an account an
+        // admin already invited.
         if (code === "UserNotConfirmedException")
-          return reject(new AuthError("This account is not confirmed yet."));
+          return reject(new AuthError("This account hasn't been confirmed yet.", "state"));
         if (code === "PasswordResetRequiredException")
-          return reject(new AuthError("A password reset is required."));
-        return reject(new AuthError(err?.message ?? "Sign-in failed."));
+          return reject(
+            new AuthError("You need to reset your password before signing in.", "state"),
+          );
+        return reject(new AuthError("Your email or password is incorrect.", "credentials"));
       },
       // The pool allows TOTP MFA; surface these rather than silently hanging.
       newPasswordRequired: () =>
         reject(
           new AuthError(
-            "A new password is required for this account. Set a permanent password first.",
+            "This account needs a permanent password set before it can sign in.",
+            "state",
           ),
         ),
       mfaRequired: () =>
-        reject(
-          new AuthError("MFA is required for this account — not wired up yet."),
-        ),
+        reject(new AuthError("This account requires MFA, which isn't wired up yet.", "state")),
       totpRequired: () =>
-        reject(
-          new AuthError("MFA is required for this account — not wired up yet."),
-        ),
+        reject(new AuthError("This account requires MFA, which isn't wired up yet.", "state")),
     });
   });
 

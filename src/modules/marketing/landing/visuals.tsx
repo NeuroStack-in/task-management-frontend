@@ -95,8 +95,71 @@ export function HeroVisual() {
         </span>
         <p className="text-[12px] leading-snug" style={{ color: "var(--wp-ink-2)" }}>
           <span className="font-semibold">AI summary · </span>
-          Productivity is up 8% this week. Two teams show early burnout signals worth a look.
+          Hours are steady this week and two projects moved forward. Three approvals are waiting on you.
         </p>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Hero companion — the "right now" cut, beside the at-a-glance card ---- *
+ *  Deliberately a different slice from HeroVisual: that one is the org rolled  *
+ *  up over a week, this one is the live view of today. Same tokens, no clone.  */
+const HERO_TEAM: { name: string; task: string; state: "active" | "idle" | "off" }[] = [
+  { name: "Priya N.", task: "Acme website · Design review", state: "active" },
+  { name: "Marcus L.", task: "Onboarding flow · QA", state: "active" },
+  { name: "Sofia R.", task: "Away since 2:10pm", state: "idle" },
+];
+
+const HERO_STATE_COLOR: Record<"active" | "idle" | "off", string> = {
+  active: "var(--wp-accent)",
+  idle: "var(--wp-warning)",
+  off: "var(--wp-border-strong)",
+};
+
+export function HeroVisualAside() {
+  return (
+    <div className="wp-in wp-card h-full overflow-hidden p-5 sm:p-6" style={{ boxShadow: "var(--wp-shadow)" }}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="wp-display text-lg" style={{ color: "var(--wp-ink)" }}>Right now</p>
+          <p className="text-xs" style={{ color: "var(--wp-muted)" }}>Live across your team</p>
+        </div>
+        <span className="wp-chip" style={{ borderColor: "var(--wp-accent)", color: "var(--wp-accent-ink)" }}>
+          <span className="size-1.5 rounded-full" style={{ background: "var(--wp-accent)" }} /> 18 on the clock
+        </span>
+      </div>
+
+      {/* your own running timer */}
+      <div className="mt-5 flex items-center justify-between rounded-2xl p-4" style={{ background: "var(--wp-accent-soft)" }}>
+        <div className="min-w-0">
+          <p className="text-xs" style={{ color: "var(--wp-accent-ink)" }}>Quarterly roadmap · Internal</p>
+          <p className="wp-mono wp-display mt-1 text-3xl" style={{ color: "var(--wp-ink)" }}>01:36:20</p>
+        </div>
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--wp-accent)", color: "#fff" }}>
+          <Play className="size-4 fill-current" />
+        </span>
+      </div>
+
+      {/* who's on what */}
+      <div className="mt-4 space-y-2">
+        {HERO_TEAM.map((p) => (
+          <div key={p.name} className="flex items-center gap-2.5 rounded-xl px-3 py-2.5" style={{ background: "var(--wp-surface-2)" }}>
+            <span className="size-1.5 shrink-0 rounded-full" style={{ background: HERO_STATE_COLOR[p.state] }} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold leading-tight" style={{ color: "var(--wp-ink)" }}>{p.name}</span>
+              <span className="block truncate text-[11px]" style={{ color: "var(--wp-faint)" }}>{p.task}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* footer link-ish strip, mirrors the AI strip's weight on the left card */}
+      <div className="mt-3 flex items-center justify-between rounded-2xl px-3 py-2.5" style={{ background: "var(--wp-surface-2)" }}>
+        <p className="text-[12px]" style={{ color: "var(--wp-ink-2)" }}>
+          <span className="font-semibold">3 approvals</span> waiting on you
+        </p>
+        <ArrowUpRight className="size-3.5 shrink-0" style={{ color: "var(--wp-accent-ink)" }} />
       </div>
     </div>
   );
@@ -250,22 +313,29 @@ function AiVisual() {
           <Sparkles className="size-4" />
         </span>
         <div>
-          <p className="text-sm font-semibold" style={{ color: "var(--wp-ink)" }}>Weekly summary</p>
-          <p className="text-[11px]" style={{ color: "var(--wp-faint)" }}>Generated for the leadership team</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--wp-ink)" }}>Daily summary</p>
+          <p className="text-[11px]" style={{ color: "var(--wp-faint)" }}>Written over your own hours & tasks</p>
         </div>
       </div>
 
+      {/*
+        This mockup used to narrate burnout detection ("two teams show an early burnout signal")
+        and a productivity score. Neither exists: `anomalies` has no implementation, and per-person
+        productivity needs the insights context, which is one slice of eight. A screenshot on a
+        marketing page is a claim like any other sentence, so it now shows what the daily summary
+        actually does — restate your own hours, tasks and attendance in plain language.
+      */}
       <p className="mt-4 text-[13px] leading-relaxed" style={{ color: "var(--wp-ink-2)" }}>
-        Productivity rose <span className="font-semibold" style={{ color: "var(--wp-accent-ink)" }}>8%</span>, led by Engineering and Design.
-        Attendance held at 92%. Two teams show sustained overtime — an early
-        <span className="font-semibold" style={{ color: "var(--wp-accent-ink)" }}> burnout signal</span> worth a check-in.
+        You tracked <span className="font-semibold" style={{ color: "var(--wp-accent-ink)" }}>7h 20m</span> across
+        three projects, most of it on Acme website. Two tasks moved to review, and
+        one leave request is <span className="font-semibold" style={{ color: "var(--wp-accent-ink)" }}>waiting on you</span>.
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
         {[
-          { t: "Burnout risk · Design", tone: "danger" },
-          { t: "On track · 12 projects", tone: "success" },
-          { t: "Idle time ↓ 6%", tone: "muted" },
+          { t: "1 approval waiting", tone: "danger" },
+          { t: "3 projects active", tone: "success" },
+          { t: "Attendance · present", tone: "muted" },
         ].map((s) => (
           <span
             key={s.t}

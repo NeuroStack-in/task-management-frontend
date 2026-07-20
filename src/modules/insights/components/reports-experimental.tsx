@@ -277,7 +277,7 @@ function HealthScoreCard({
             {m.avg_score === null ? "No scores" : band.label}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            The team's average productivity score for the day, from reported activity.
+            The team&apos;s average productivity score for the day, from reported activity.
           </p>
         </div>
       </div>

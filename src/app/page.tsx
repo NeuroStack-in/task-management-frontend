@@ -9,10 +9,21 @@
  *  How · Security · Principles · Pricing · FAQ · CTA · Footer     *
  * ============================================================= */
 
+/*
+ * `marketing.css` is imported here purely for the shared `MarketingNav`.
+ *
+ * The landing owns a self-contained `.wp` design system and deliberately avoided marketing.css —
+ * but the nav is the one piece that must be identical across the marketing site, and it was
+ * previously a landing-only copy that had drifted. Its `--m-*` tokens live on `.m-root`, not
+ * `:root`, so the nav is wrapped in an `.m-root` element below; nothing else on the page picks
+ * those tokens up, and the warm `.wp` palette is untouched.
+ */
 import "./landing.css";
+import "./marketing.css";
 import type { Metadata } from "next";
 import { Fraunces, Space_Grotesk } from "next/font/google";
-import { AuthGate, Nav, Hero } from "@/modules/marketing/landing/client";
+import { AuthGate, Hero } from "@/modules/marketing/landing/client";
+import { MarketingNav } from "@/modules/marketing/marketing-nav";
 import {
   MarqueeSection,
   StatsSection,
@@ -82,7 +93,16 @@ export default function LandingPage() {
       </a>
       <AuthGate>
         <div className={`wp min-h-screen overflow-x-clip ${display.variable} ${sansDisplay.variable}`}>
-          <Nav />
+          {/* `onDark` because the hero behind it is the dark clock section: the bar stays
+              transparent over it and turns into a frosted light bar once you scroll past.
+
+              `display: contents` because `.m-root` also sets `background` and `color`, which this
+              page does not want — the wrapper exists only to put the `--m-*` custom properties in
+              scope for the nav. Custom properties inherit through the DOM regardless of `display`,
+              so the tokens still reach it while the element itself generates no box at all. */}
+          <div className="m-root" style={{ display: "contents" }}>
+            <MarketingNav onDark />
+          </div>
           <main id="main">
             <Hero />
             <MarqueeSection />

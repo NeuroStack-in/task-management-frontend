@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -20,29 +20,30 @@ import {
   X,
 } from "lucide-react";
 import { GoogleIcon, MicrosoftIcon } from "@/modules/marketing/brand-icons";
+import { slugify as serverSlugify } from "@/lib/api";
 
 /* ----------------------------- options ------------------------------- */
 
-const INDUSTRIES = [
+export const INDUSTRIES = [
   "Software / SaaS", "Field service", "Construction", "Healthcare",
   "Agency / Consulting", "Retail & hospitality", "Finance", "Manufacturing",
   "Logistics & transport", "Education", "Government / Public sector", "Other",
 ];
-const SIZES = ["1–10", "11–50", "51–200", "201–500", "501–1,000", "1,000–5,000", "5,000+"];
-const COUNTRIES = [
+export const SIZES = ["1–10", "11–50", "51–200", "201–500", "501–1,000", "1,000–5,000", "5,000+"];
+export const COUNTRIES = [
   "United States", "United Kingdom", "Canada", "Australia", "India",
   "Germany", "France", "Singapore", "United Arab Emirates", "Other",
 ];
-const CURRENCIES = [
+export const CURRENCIES = [
   "USD — US Dollar", "EUR — Euro", "GBP — British Pound", "INR — Indian Rupee",
   "AUD — Australian Dollar", "SGD — Singapore Dollar", "AED — UAE Dirham", "CAD — Canadian Dollar",
 ];
-const TIMEZONES = [
+export const TIMEZONES = [
   "(GMT−08:00) Pacific Time", "(GMT−05:00) Eastern Time", "(GMT+00:00) London / GMT",
   "(GMT+01:00) Central Europe", "(GMT+04:00) Gulf Standard", "(GMT+05:30) India Standard",
   "(GMT+08:00) Singapore", "(GMT+10:00) Sydney",
 ];
-const COUNTRY_CURRENCY: Record<string, string> = {
+export const COUNTRY_CURRENCY: Record<string, string> = {
   "United States": "USD — US Dollar",
   "United Kingdom": "GBP — British Pound",
   Canada: "CAD — Canadian Dollar",
@@ -60,7 +61,7 @@ const COUNTRY_CURRENCY: Record<string, string> = {
  * serialized lowercase). They were `free | pro | max`: two of the three would have been
  * rejected outright once signup talks to a real API.
  */
-const PLANS = [
+export const PLANS = [
   {
     id: "free",
     name: "Free",
@@ -118,7 +119,7 @@ const STEPS = [
 
 /* ------------------------------ MModal ------------------------------- */
 
-function MModal({
+export function MModal({
   open,
   onClose,
   children,
@@ -183,7 +184,7 @@ function MModal({
  *  scroll/resize (instead of closing), flips up near the viewport edge,  *
  *  and adds type-ahead search for longer lists.                          */
 
-function MSelect({
+export function MSelect({
   value,
   onChange,
   options,
@@ -563,22 +564,35 @@ function PayConfirm({
 
 /* ------------------------ Organization setup ------------------------- */
 
-const slugify = (s: string) =>
-  s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
+/**
+ * The server's own normalisation (shared, so the previewed workspace URL is the one that gets
+ * stored), plus a 24-char cap that is purely ours — a suggestion while typing, and still editable.
+ */
+const slugify = (s: string) => serverSlugify(s).slice(0, 24);
 
-/** Everything the org-setup wizard collects, handed to the parent to create the org. */
-export interface OrgSignupPayload {
-  org: { name: string; slug: string; industry: string; size: string; website: string };
-  region: { country: string; currency: string; timezone: string };
-  profile: {
-    fullName: string;
-    jobTitle: string;
-    department: string;
-    location: string;
-    phone: string;
+/**
+ * Everything the wizard collects that `POST /v1/org/create` accepts. The owner's email/password
+ * aren't here — they were captured on the signup form before this modal opened.
+ */
+export interface OrgSetupData {
+  org: {
+    name: string;
+    slug: string;
+    industry?: string;
+    size?: string;
+    website?: string;
+    timezone?: string;
+    country?: string;
+    currency?: string;
+  };
+  owner: {
+    full_name?: string;
+    job_title?: string;
+    department?: string;
+    location?: string;
+    phone?: string;
   };
   plan: string;
-  billing: "monthly" | "annual";
 }
 
 export function OrgSetupModal({
@@ -588,8 +602,8 @@ export function OrgSetupModal({
 }: {
   open: boolean;
   onClose: () => void;
-  /** Creates the org + signs the owner in; rejects with a user-facing message on failure. */
-  onComplete: (payload: OrgSignupPayload) => Promise<void>;
+  /** Rejects to keep the wizard open and show the failure. */
+  onComplete: (data: OrgSetupData) => Promise<void>;
 }) {
   const [step, setStep] = useState(0);
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
@@ -651,17 +665,36 @@ export function OrgSetupModal({
     setPayOpen(true);
   };
 
+  // Hands the collected setup up to be committed (`POST /v1/org/create`) and reflects the real
+  // outcome: a failure returns to the form with the server's message rather than a fake success.
   const doFinish = async () => {
-    setErr(null);
     setStatus("loading");
+    setErr(null);
     try {
-      // Real create + sign-in happens in the parent; on success it redirects (this unmounts).
-      await onComplete({ org, region, profile, plan, billing });
+      await onComplete({
+        org: {
+          name: org.name.trim(),
+          slug: org.slug.trim(),
+          industry: org.industry || undefined,
+          size: org.size || undefined,
+          website: org.website.trim() || undefined,
+          timezone: region.timezone || undefined,
+          country: region.country || undefined,
+          currency: region.currency || undefined,
+        },
+        owner: {
+          full_name: profile.fullName.trim() || undefined,
+          job_title: profile.jobTitle.trim() || undefined,
+          department: profile.department.trim() || undefined,
+          location: profile.location.trim() || undefined,
+          phone: profile.phone.trim() || undefined,
+        },
+        plan,
+      });
       setStatus("success");
     } catch (e) {
       setStatus("idle");
-      setPayOpen(false); // back to the plan step so the message is visible and they can retry
-      setErr(e instanceof Error ? e.message : "Couldn't create your workspace. Please try again.");
+      setErr(e instanceof Error ? e.message : "Couldn't create your workspace. Try again.");
     }
   };
 

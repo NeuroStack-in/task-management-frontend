@@ -1,22 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+/**
+ * Sign in.
+ *
+ * Decisions here are evidence-led rather than conventional; the non-obvious ones:
+ *
+ * - **`autocomplete="username"` on the email field, not `email`.** Counter-intuitive, but it is
+ *   what password managers key on for a sign-in form. `webauthn` is appended so the field is ready
+ *   for conditional-mediation passkeys later without another markup change.
+ * - **No placeholders.** There is no format hint worth giving for an email or a password, and a
+ *   placeholder that doubles as a label disappears exactly when someone needs it.
+ * - **Validation timing:** silent while typing, checked on blur only if the field has content,
+ *   cleared live once corrected, everything re-checked on submit. Validating an empty field on blur
+ *   punishes someone tabbing toward their password manager.
+ * - **One failure message for every cause.** "Your email or password is incorrect" whether the
+ *   account is absent or the password is wrong — anything more specific is an account-enumeration
+ *   oracle. (The server is the real boundary here; this is the message we choose to render.)
+ * - **The password is never repopulated after a failed attempt.**
+ */
+
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Check, KeyRound, Loader2, Mail } from "lucide-react";
-import { toast } from "sonner";
+import { KeyRound, Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { AuthError, DEMO_ACCOUNTS } from "@/modules/auth/services/auth.service";
 import {
-  AuthCard,
-  AuthCardHeader,
+  AuthErrorSummary,
   AuthField,
   AuthFrame,
-  CardSwitch,
-  PwToggle,
+  AuthHeading,
+  AuthPasswordField,
+  AuthSwitch,
 } from "./auth-frame";
 import { SsoOptionsModal, SsoPickerModal } from "./auth-modals";
 
 type Status = "idle" | "loading" | "success";
+type Errors = { email?: string; password?: string; form?: string };
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function LoginExperience() {
   const router = useRouter();
@@ -27,14 +49,27 @@ export function LoginExperience() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(false);
-  const [showPw, setShowPw] = useState(false);
+  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [reset, setReset] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
+  const [submitted, setSubmitted] = useState(false);
   const [ssoOpen, setSsoOpen] = useState(false);
   const [sso, setSso] = useState<"google" | "microsoft" | null>(null);
+
+  const summaryRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Prefill after creating a workspace or accepting an invite — both redirect here with `?email=`.
+   *
+   * Seeded in an effect rather than as lazy `useState` initial state: the server renders this page
+   * without the query string, so initialising from `params` there produces markup the client
+   * immediately disagrees with, and React reports a hydration mismatch. Setting it post-mount keeps
+   * both renders identical.
+   */
+  useEffect(() => {
+    const seeded = params.get("email");
+    if (seeded) setEmail(seeded);
+  }, [params]);
 
   useEffect(() => {
     if (hydrated && isAuthenticated) {
@@ -43,242 +78,205 @@ export function LoginExperience() {
     }
   }, [hydrated, isAuthenticated, params, router]);
 
+  const validate = (): Errors => {
+    const e: Errors = {};
+    if (!email.trim()) e.email = "Enter your work email";
+    else if (!EMAIL_RE.test(email.trim())) e.email = "Enter an email address in the correct format, like name@company.com";
+    if (!password) e.password = "Enter your password";
+    return e;
+  };
+
+  /** On blur: only complain about a field the user actually put something in. */
+  const blurCheck = (field: "email" | "password") => () => {
+    const value = field === "email" ? email : password;
+    if (!value.trim()) return;
+    const next = validate();
+    setErrors((prev) => ({ ...prev, [field]: next[field] }));
+  };
+
+  /** Live-clear: an error must disappear the moment the input becomes valid. */
+  const change = (field: "email" | "password") => (v: string) => {
+    if (field === "email") setEmail(v);
+    else setPassword(v);
+    if (errors[field] || errors.form) {
+      setErrors((prev) => ({ ...prev, [field]: undefined, form: undefined }));
+    }
+  };
+
   const onSignin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    if (!email.trim() || !password) {
-      setError("Enter your email and password.");
+    setSubmitted(true);
+    const found = validate();
+    if (Object.keys(found).length > 0) {
+      setErrors(found);
+      requestAnimationFrame(() => summaryRef.current?.focus());
       return;
     }
+
+    setErrors({});
     setStatus("loading");
     try {
       await login(email.trim(), password);
       setStatus("success");
       const from = params.get("from");
-      setTimeout(
-        () => router.replace(from && from.startsWith("/") ? from : "/dashboard"),
-        650,
-      );
+      setTimeout(() => router.replace(from && from.startsWith("/") ? from : "/dashboard"), 600);
     } catch (err) {
       setStatus("idle");
-      setError(err instanceof AuthError ? err.message : "Something went wrong.");
+      // Never leave a rejected password in the field.
+      setPassword("");
+      // `state` errors describe an account the user can't otherwise get past; everything else
+      // collapses to one message so the page never confirms whether an address has an account.
+      setErrors({
+        form:
+          err instanceof AuthError && err.kind === "state"
+            ? err.message
+            : "Your email or password is incorrect.",
+      });
+      requestAnimationFrame(() => summaryRef.current?.focus());
     }
   };
 
-  const onReset = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) {
-      setError("Enter your email.");
-      return;
-    }
-    setSent(true);
-  };
-
-  // SSO can no longer be faked: auth is a real Cognito SRP exchange, and the pool has no federated
-  // identity providers (enterprise SSO is cut from scope — LLD "Cut from scope"). Say so plainly
-  // instead of signing the user in as somebody else.
+  // SSO can't be faked: auth is a real Cognito exchange and the pool has no federated providers
+  // (enterprise SSO is a proposal, not a shipped feature). Say so rather than signing someone in.
   const ssoSignIn = (providerLabel: string) => {
     setSso(null);
     setStatus("idle");
-    setError(`${providerLabel} isn't available — sign in with your email and password.`);
-  };
-
-  const onSsoPick = (provider: "google" | "microsoft" | "saml") => {
-    setSsoOpen(false);
-    if (provider === "saml") ssoSignIn("SAML SSO");
-    else setSso(provider);
+    setErrors({ form: `${providerLabel} isn't available yet — sign in with your email and password.` });
   };
 
   if (hydrated && isAuthenticated) return null;
 
+  const summary: [string, string][] = [
+    ...(errors.email ? ([["login-email", errors.email]] as [string, string][]) : []),
+    ...(errors.password ? ([["login-password", errors.password]] as [string, string][]) : []),
+    ...(errors.form ? ([["login-email", errors.form]] as [string, string][]) : []),
+  ];
+
   return (
     <>
-    <AuthFrame
-      headline="Your workforce, in perfect rhythm."
-      copy="Time, attendance, tasks, and productivity — one calm place for the whole team, from first clock-in to payroll-ready timesheets."
-      maxWidth={440}
-    >
-      <AuthCard>
-        {!reset ? (
-          <form onSubmit={onSignin}>
-            <AuthCardHeader
-              title="Welcome back"
-              subtitle="Sign in to pick up where your team left off."
-            />
+      <AuthFrame
+        headline="Run your whole workforce"
+        headlineAccent="on one calm pulse"
+        copy="WorkPulse unifies time, attendance, activity and projects into a single clear signal — so the whole team knows where the work stands."
+      >
+        <AuthHeading title="Welcome back" subtitle="Sign in to pick up where your team left off." />
 
-            <div className="space-y-4">
-              <AuthField
-                id="email"
-                label="Email"
-                icon={Mail}
-                type="email"
-                value={email}
-                onChange={setEmail}
-                error={!!error}
-                autoComplete="email"
+        <form onSubmit={onSignin} noValidate>
+          {submitted ? <AuthErrorSummary errors={summary} summaryRef={summaryRef} /> : null}
+
+          <AuthField
+            id="login-email"
+            label="Work email"
+            type="email"
+            value={email}
+            onChange={change("email")}
+            onBlur={blurCheck("email")}
+            error={errors.email}
+            autoComplete="username webauthn"
+            inputMode="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            disabled={status !== "idle"}
+          />
+
+          <AuthPasswordField
+            id="login-password"
+            label="Password"
+            value={password}
+            onChange={change("password")}
+            onBlur={blurCheck("password")}
+            error={errors.password}
+            autoComplete="current-password"
+            disabled={status !== "idle"}
+          />
+
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-4">
+            {/* "Remember me" reads as "remember my username" to most people. Naming the device and
+                the effect is clearer — and it matters more here than on most SaaS, because
+                workforce tools get used on shared back-office and shop-floor machines. */}
+            <label className="m-check">
+              <input
+                type="checkbox"
+                checked={keepSignedIn}
+                onChange={(e) => setKeepSignedIn(e.target.checked)}
+                aria-describedby="keep-note"
               />
-              <AuthField
-                id="password"
-                label="Password"
-                type={showPw ? "text" : "password"}
-                value={password}
-                onChange={setPassword}
-                error={!!error}
-                autoComplete="current-password"
-                toggle={<PwToggle show={showPw} onClick={() => setShowPw((s) => !s)} />}
-              />
-            </div>
-
-            {/* Remember · Forgot */}
-            <div className="mt-3.5 flex items-center justify-between">
-              <label className="flex cursor-pointer items-center gap-2">
-                <span
-                  className="flex size-[16px] items-center justify-center rounded-[4px] border transition-colors"
-                  style={{
-                    borderColor: remember ? "var(--m-accent)" : "var(--m-border-strong)",
-                    background: remember ? "var(--m-accent)" : "transparent",
-                    color: "var(--m-on-accent)",
-                  }}
-                >
-                  {remember ? <Check className="size-3" /> : null}
+              <span className="m-check__text">
+                Keep me signed in on this device
+                <span className="m-check__note" id="keep-note">
+                  Don&apos;t use this on a shared or public computer.
                 </span>
-                <input
-                  type="checkbox"
-                  className="sr-only"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                />
-                <span className="text-xs" style={{ color: "var(--m-muted)" }}>
-                  Remember
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setReset(true);
-                  setError(null);
-                }}
-                className="text-xs font-medium hover:underline"
-                style={{ color: "var(--m-accent-ink)" }}
-              >
-                Forgot password?
-              </button>
-            </div>
-
-            {error ? (
-              <p className="mt-2.5 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
-                {error}
-              </p>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={status !== "idle"}
-              className="m-btn m-btn-primary mt-5 w-full"
-              style={status === "success" ? { background: "var(--m-success)" } : undefined}
+              </span>
+            </label>
+            <Link
+              href="/forgot-password"
+              className="text-sm font-medium underline underline-offset-2"
+              style={{ color: "var(--m-accent-ink)" }}
             >
-              {status === "loading" ? (
-                <>
-                  <Loader2 className="m-spin size-4" /> Signing in…
-                </>
-              ) : status === "success" ? (
-                <>
-                  <Check className="size-4" /> Welcome!
-                </>
-              ) : (
-                "Log in"
-              )}
-            </button>
+              Forgot password?
+            </Link>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setError(null);
-                setSsoOpen(true);
-              }}
-              disabled={status !== "idle"}
-              className="m-btn m-btn-ghost mt-2.5 w-full"
-            >
-              <KeyRound className="size-4" /> Continue with SSO
-            </button>
-
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs" style={{ color: "var(--m-faint)" }}>
-              <span>Seeded account · real password</span>
-              {DEMO_ACCOUNTS.map((a) => (
-                <button
-                  key={a.email}
-                  type="button"
-                  onClick={() => setEmail(a.email)}
-                  className="rounded-[6px] border px-3 py-0.5 text-xs font-semibold transition-[filter] hover:brightness-95"
-                  style={{
-                    borderColor: "color-mix(in srgb, var(--m-accent) 30%, transparent)",
-                    background: "var(--m-accent-tint)",
-                    color: "var(--m-accent-ink)",
-                  }}
-                  title={a.hint}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-
-            <CardSwitch prompt="Don't have an account?" href="/register" label="Sign up" />
-          </form>
-        ) : (
-          /* Reset password */
-          <form onSubmit={onReset}>
-            <AuthCardHeader
-              title={sent ? "Check your inbox" : "Reset password"}
-              subtitle={
-                sent
-                  ? `A reset link is on its way to ${email}.`
-                  : "Enter your email and we'll send a reset link."
-              }
-            />
-
-            {!sent ? (
+          <button type="submit" disabled={status !== "idle"} className="m-btn m-btn-primary mt-4 w-full">
+            {status === "loading" ? (
               <>
-                <AuthField
-                  id="reset-email"
-                  label="Email"
-                  icon={Mail}
-                  type="email"
-                  value={email}
-                  onChange={setEmail}
-                  error={!!error}
-                />
-                {error ? (
-                  <p className="mt-2 text-xs" style={{ color: "var(--m-danger)" }}>
-                    {error}
-                  </p>
-                ) : null}
-                <button type="submit" className="m-btn m-btn-primary mt-5 w-full">
-                  Send reset link
-                </button>
+                <Loader2 className="m-spin size-4" /> Signing in…
               </>
-            ) : null}
+            ) : status === "success" ? (
+              "Welcome back!"
+            ) : (
+              "Sign in"
+            )}
+          </button>
+        </form>
 
-            <button
-              type="button"
-              onClick={() => {
-                setReset(false);
-                setSent(false);
-                setError(null);
-              }}
-              className="mx-auto mt-5 flex items-center gap-1.5 text-sm hover:underline"
-              style={{ color: "var(--m-muted)" }}
-            >
-              <ArrowLeft className="size-4" /> Back to sign in
-            </button>
-          </form>
-        )}
-      </AuthCard>
-    </AuthFrame>
+        {/* SSO below the primary action. Kept outside the <form> so it can never be caught by an
+            Enter keypress in a field — it isn't a submit path. */}
+        <div className="m-authdiv">or</div>
 
+        <button
+          type="button"
+          onClick={() => {
+            setErrors({});
+            setSsoOpen(true);
+          }}
+          disabled={status !== "idle"}
+          className="m-btn m-btn-ghost w-full"
+        >
+          <KeyRound className="size-4" /> Continue with SSO
+        </button>
+
+        <AuthSwitch prompt="Don't have an account?" href="/register" label="Create a workspace" />
+
+        {DEMO_ACCOUNTS.length > 0 ? (
+          <p className="mt-3 text-center text-xs" style={{ color: "var(--m-faint)" }}>
+            Seeded account ·{" "}
+            {DEMO_ACCOUNTS.map((a) => (
+              <button
+                key={a.email}
+                type="button"
+                onClick={() => setEmail(a.email)}
+                className="underline underline-offset-2"
+              >
+                {a.email}
+              </button>
+            ))}{" "}
+            · real password required
+          </p>
+        ) : null}
+      </AuthFrame>
+
+      {/* `SsoOptionsModal` is the provider chooser; `SsoPickerModal` is the account chooser that
+          follows it. Easy to transpose — the names read the other way round. */}
       <SsoOptionsModal
         open={ssoOpen}
         onClose={() => setSsoOpen(false)}
-        onPick={onSsoPick}
+        onPick={(provider) => {
+          setSsoOpen(false);
+          if (provider === "saml") ssoSignIn("SAML SSO");
+          else setSso(provider);
+        }}
       />
       <SsoPickerModal
         provider={sso}

@@ -7,37 +7,35 @@
  * ============================================================= */
 
 .wp {
-  /* --- Canvas & ink (dark petrol — the hero's palette, now the whole page) --- *
-   *  Derived from `.wp-hero-dark` (#17313f → #102530 → #0b1a22): one deep-teal    *
-   *  identity across the landing instead of warm header / dark hero / warm body.  */
-  --wp-bg: #0b1a22; /* deep petrol canvas — the hero's darkest tone */
-  --wp-bg-2: #0e222b; /* slightly lifted, for banded sections */
-  --wp-surface: #102934; /* raised card panel */
-  --wp-surface-2: #17313f; /* inset / most-lifted panel — the hero's light dark */
-  --wp-ink: #eaf1f2; /* near-white ink — matches the hero text */
-  --wp-ink-2: #c8d6d9; /* softer heading ink */
-  --wp-muted: #90a4a9; /* light slate body */
-  --wp-faint: #5f7379; /* captions */
+  /* --- Canvas & ink (warm) --- */
+  --wp-bg: #f7f2ea; /* warm cream canvas */
+  --wp-bg-2: #f2ebe0; /* deeper sand for banded sections */
+  --wp-surface: #fffdfa; /* warm white card */
+  --wp-surface-2: #f4ede2; /* inset surface */
+  --wp-ink: #211a15; /* warm near-black */
+  --wp-ink-2: #4a3f37; /* softer heading ink */
+  --wp-muted: #766a5f; /* warm taupe body */
+  --wp-faint: #a89b8c; /* captions */
 
-  /* --- Accent (teal) — brightened so it reads on dark --- */
-  --wp-accent: #12a594; /* teal fill (buttons, icons) — lifts off the petrol */
-  --wp-accent-ink: #5eead4; /* light teal as TEXT on dark (legible) */
-  --wp-accent-soft: #123a39; /* dark teal tint surface */
-  --wp-accent-glow: #2f8a7f; /* teal wash */
-  --wp-gold: #e0ab4b; /* amber highlight, lifted for dark */
-  --wp-plum: #c08a78; /* warm 2nd data series, lifted for dark */
+  /* --- Accent (teal) + warm secondary --- */
+  --wp-accent: #0f766e; /* teal */
+  --wp-accent-ink: #0b5d54; /* legible teal as text on cream */
+  --wp-accent-soft: #dcebe7; /* teal tint surface */
+  --wp-accent-glow: #7fc6bb; /* light teal wash */
+  --wp-gold: #c98a2b; /* warm amber for tiny highlights */
+  --wp-plum: #8a5a4a; /* muted warm brown for a 2nd data series */
 
-  /* --- Lines & status (subtle light on dark; status brightened) --- */
-  --wp-border: #1e3742;
-  --wp-border-strong: #2c4a56;
-  --wp-success: #4ade80;
-  --wp-warning: #fbbf24;
-  --wp-danger: #f87171;
+  /* --- Lines & status --- */
+  --wp-border: #ece2d3;
+  --wp-border-strong: #ddceb9;
+  --wp-success: #3f7d54;
+  --wp-warning: #b9791f;
+  --wp-danger: #c14a35;
 
-  /* --- Motion (neutral shadow on dark, never warm-brown) --- */
+  /* --- Motion --- */
   --wp-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --wp-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 16px -8px rgb(0 0 0 / 0.5);
-  --wp-shadow: 0 30px 60px -32px rgb(0 0 0 / 0.6);
+  --wp-shadow-sm: 0 1px 2px rgb(56 40 24 / 0.05), 0 6px 16px -8px rgb(56 40 24 / 0.1);
+  --wp-shadow: 0 30px 60px -32px rgb(72 46 22 / 0.28);
 
   color: var(--wp-ink);
   background: var(--wp-bg);
@@ -70,14 +68,34 @@
   line-height: 1.04;
   /* soft dark halo lifts the type off the busy clock backdrop (clock stays fully visible) */
   text-shadow:
-    0 1px 3px rgb(8 20 27 / 0.55),
-    0 8px 40px rgb(8 20 27 / 0.5);
+    0 1px 2px rgb(8 20 27 / 0.85),
+    0 2px 10px rgb(8 20 27 / 0.7),
+    0 8px 44px rgb(8 20 27 / 0.6);
 }
 .wp-hero-title .wp-serif-italic {
-  /* the emphasised line sits over the dial centre — give it presence + a stronger halo */
+  /* the emphasised line sits over the dial centre, where the second hand sweeps
+     straight through it — it needs the tightest halo of anything in the hero */
   text-shadow:
-    0 1px 3px rgb(8 20 27 / 0.6),
-    0 6px 26px rgb(8 20 27 / 0.7);
+    0 1px 2px rgb(8 20 27 / 0.92),
+    0 2px 8px rgb(8 20 27 / 0.85),
+    0 6px 28px rgb(8 20 27 / 0.8);
+}
+
+/* Scrim between the clock backdrop and the hero copy. Soft-edged and centred on
+   the dial, so the hands stay visible out at the rim but never compete with the
+   type in the middle. Sits at z-0; ClockBg is below it, hero content is z-10. */
+.wp-hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      64% 46% at 50% 44%,
+      rgb(8 20 27 / 0.72) 0%,
+      rgb(8 20 27 / 0.5) 45%,
+      rgb(8 20 27 / 0) 78%
+    );
 }
 .wp-kicker {
   font-size: 0.72rem;
