@@ -99,8 +99,13 @@ export default function LandingPage() {
               `display: contents` because `.m-root` also sets `background` and `color`, which this
               page does not want — the wrapper exists only to put the `--m-*` custom properties in
               scope for the nav. Custom properties inherit through the DOM regardless of `display`,
-              so the tokens still reach it while the element itself generates no box at all. */}
-          <div className="m-root" style={{ display: "contents" }}>
+              so the tokens still reach it while the element itself generates no box at all.
+
+              `wp-navlight` pins the LIGHT marketing tokens. `marketing.css` is now a dark petrol
+              theme, which is right for /pricing and /product/* but wrong here: this page is the warm
+              cream landing, and inheriting those tokens turned the scrolled nav bar dark against it.
+              Those pages get the dark nav; this one keeps the light bar it was designed with. */}
+          <div className="m-root wp-navlight" style={{ display: "contents" }}>
             <MarketingNav onDark />
           </div>
           <main id="main">

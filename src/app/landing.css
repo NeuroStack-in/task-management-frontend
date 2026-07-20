@@ -415,3 +415,37 @@
     transition: none !important;
   }
 }
+
+/* ============================================================= *
+ *  Landing nav scope
+ *
+ *  `marketing.css` is a dark petrol theme, which suits /pricing
+ *  and /product/* but not this page — the landing is the warm
+ *  cream `.wp` surface, and inheriting those tokens turned the
+ *  scrolled nav bar dark against it.
+ *
+ *  These are the light "Harbor" values the shared nav was designed
+ *  against, pinned to the landing's nav wrapper only. Nothing else
+ *  on the marketing site is affected; those pages keep their dark
+ *  bar, this one keeps its light one.
+ * ============================================================= */
+/* `.m-root.wp-navlight`, not `.wp-navlight` alone: `marketing.css` is imported
+   AFTER this file, so a single-class selector ties on specificity with `.m-root`
+   and loses on source order. Two classes wins outright, whatever the order. */
+.m-root.wp-navlight {
+  --m-bg: #f4f6f8;
+  --m-surface: #ffffff;
+  --m-surface-2: #e9eef1;
+  --m-text: #16202b;
+  --m-muted: #5a6573;
+  --m-faint: #8b96a3;
+  --m-accent: #0f766e;
+  --m-accent-ink: #0b5d54;
+  --m-accent-2: #2f9d92;
+  --m-accent-3: #86c3bb;
+  --m-accent-tint: #d8ebe8;
+  --m-on-accent: #ffffff;
+  --m-border: #e3e8ec;
+  --m-border-strong: #cdd6dc;
+  --m-shadow: 18 28 40;
+}

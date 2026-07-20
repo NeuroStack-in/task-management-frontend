@@ -20,6 +20,37 @@
  *    rather than the marketing copy.                             *
  * ============================================================= */
 
+/* ---- Light token pin ----
+   `marketing.css` is a dark petrol theme, which is right for /pricing and
+   /product/* but wrong here. These screens are deliberately dark-panel-left,
+   LIGHT-form-right: the form column is where someone types a password, and a
+   translucent field on a dark, moving surface is the hardest thing in the app to
+   hold contrast on. Inheriting the dark tokens turned the whole form column dark.
+
+   These are the light "Harbor" values the auth screens were designed against,
+   scoped to the auth frame only.
+
+   `.m-root.m-auth` rather than `.m-auth`: two classes so this wins over `.m-root`
+   on specificity, not on import order — the order of these two stylesheets is not
+   something a future edit should be able to silently break. */
+.m-root.m-auth {
+  --m-bg: #f4f6f8;
+  --m-surface: #ffffff;
+  --m-surface-2: #e9eef1;
+  --m-text: #16202b;
+  --m-muted: #5a6573;
+  --m-faint: #8b96a3;
+  --m-accent: #0f766e;
+  --m-accent-ink: #0b5d54;
+  --m-accent-2: #2f9d92;
+  --m-accent-3: #86c3bb;
+  --m-accent-tint: #d8ebe8;
+  --m-on-accent: #ffffff;
+  --m-border: #e3e8ec;
+  --m-border-strong: #cdd6dc;
+  --m-shadow: 18 28 40;
+}
+
 .m-auth {
   display: grid;
   min-height: 100dvh;
