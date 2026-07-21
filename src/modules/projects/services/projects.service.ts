@@ -130,10 +130,16 @@ export function getBoard(id: string): Promise<ApiBoardColumn[]> {
 
 /**
  * The caller's own tasks (`GET /v1/me/tasks`). The projection is lean — `{id, project_id, status,
- * due}`, **no title** — so a titled list has to enrich each id from its project board.
+ * The caller's own tasks (`GET /v1/me/tasks`).
+ *
+ * **`title` is returned** — the server resolves it at read time (backend `757971a`). This comment
+ * previously said the projection was title-less and that callers had to enrich each id from its
+ * project board; that stopped being true and the stale note was why the timesheet rendered raw
+ * `k-01KY…` ids where a task name belonged.
  */
 export interface ApiMyTask {
   id: string;
+  title: string;
   project_id: string;
   status: string;
   due?: string;

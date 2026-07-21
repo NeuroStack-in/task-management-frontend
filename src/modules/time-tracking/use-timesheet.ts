@@ -10,11 +10,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { usePoll } from "@/hooks/use-poll";
-import { projectNameMap } from "@/modules/projects/services/projects.service";
+import { listMyTasks, projectNameMap } from "@/modules/projects/services/projects.service";
 import {
   clockOf,
   getToday,
-  taskLabel,
   todayLocal,
   type ApiEntryRow,
 } from "./services/timesheet.service";
@@ -22,7 +21,17 @@ import {
 /** One row as the table renders it. No `activity` — the server does not serve one (see the service). */
 export interface TimesheetRow {
   id: string;
-  task: string;
+  /**
+   * The **task's title**, or `null` when the session was tracked against a project only (a task is
+   * optional — the agent's `start_timer` takes `task_id: Option<String>`).
+   *
+   * Kept distinct from `description`: collapsing them into one label made the TASK column show a
+   * task name on one row and a typed description on the next, which reads as inconsistent data
+   * rather than two different fields.
+   */
+  task: string | null;
+  /** What the person typed in the agent. The server folds entries by (project, description). */
+  description: string;
   project: string;
   /** Local `HH:MM`. */
   start: string;
@@ -77,9 +86,14 @@ export function useTimesheet(): TimesheetState {
       // The project catalog is a *nicety* — it turns an id into a name. A caller without
       // `projects:view` gets a 403 here, which must not blank out their own timesheet, so its
       // failure degrades to an empty map rather than rejecting the pair.
-      const [today, names] = await Promise.all([
+      // Task titles are the same kind of *nicety* as the project catalog: they turn an id into a
+      // name and must never be able to blank a timesheet, so a 403/failure degrades to an empty map.
+      const [today, names, titles] = await Promise.all([
         getToday(date),
         projectNameMap().catch(() => new Map<string, string>()),
+        listMyTasks()
+          .then((ts) => new Map(ts.map((t) => [t.id, t.title])))
+          .catch(() => new Map<string, string>()),
       ]);
       if (id !== reqId.current) return; // a newer request superseded this one
       setState({
@@ -87,7 +101,7 @@ export function useTimesheet(): TimesheetState {
         totalSec: today.total_secs,
         billableSec: today.billable_secs,
         running: today.running,
-        rows: today.entries.map((e) => toRow(e, names)),
+        rows: today.entries.map((e) => toRow(e, names, titles)),
       });
       if (background) setError(null); // a good background refresh clears a stale error banner
     } catch (e) {
@@ -115,11 +129,16 @@ export function useTimesheet(): TimesheetState {
   return { ...state, loading, error, reload };
 }
 
-function toRow(e: ApiEntryRow, names: Map<string, string>): TimesheetRow {
+function toRow(
+  e: ApiEntryRow,
+  names: Map<string, string>,
+  titles: Map<string, string>,
+): TimesheetRow {
   const running = e.end === undefined;
   return {
     id: e.session_id,
-    task: taskLabel(e),
+    task: titles.get(e.task_id)?.trim() || null,
+    description: e.description?.trim() || "",
     project: projectOf(e.project_id, names),
     start: clockOf(e.start),
     end: e.end === undefined ? null : clockOf(e.end),

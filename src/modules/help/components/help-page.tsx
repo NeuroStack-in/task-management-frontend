@@ -34,8 +34,6 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import {
   BannerBackground,
-  BannerPatternPicker,
-  type BannerPattern,
 } from "@/components/shared/banner-pattern"
 import {
   Select,
@@ -380,8 +378,6 @@ export function HelpPage() {
   const [submitting, setSubmitting] = useState(false)
   const [openThreadId, setOpenThreadId] = useState<string | null>(null)
   const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
-  // Temporary control to preview the banner patterns.
-  const [pattern, setPattern] = useState<BannerPattern>("grid")
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
   const askAi = () => openAssistant(search.trim() || undefined)
@@ -472,8 +468,13 @@ export function HelpPage() {
     <div className="space-y-10">
       {/* ── Hero ── */}
       <section className="relative isolate overflow-hidden rounded-[1.6rem] bg-feature px-6 py-10 text-center ring-1 ring-inset ring-white/15 duration-700 animate-in fade-in slide-in-from-bottom-2 sm:py-14">
-        <BannerBackground pattern={pattern} />
-        <BannerPatternPicker value={pattern} onChange={setPattern} />
+        {/* Grid lines. The pattern is fixed rather than pickable: `BannerPatternPicker` was a
+            temporary preview control, not a product feature, and shipping it let every user restyle
+            a page header. The `"dots"` variant is deliberately KEPT in
+            `components/shared/banner-pattern.tsx` — it is a real, working alternative and the
+            reference for it must stay in the codebase. To switch, change the literal below to
+            `"dots"`; to bring the picker back, re-render `<BannerPatternPicker />` here. */}
+        <BannerBackground pattern="grid" />
         <div className="relative z-10 text-feature-foreground">
         <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
           How can we help?

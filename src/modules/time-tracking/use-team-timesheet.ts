@@ -32,6 +32,7 @@ import {
 } from "@/modules/employees/services/employees.service";
 import { listProjects } from "@/modules/projects/services/projects.service";
 import { getUserActivity } from "@/modules/insights/services/insights.service";
+import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import {
   getUserTimesheet,
   type ApiGridResponse,
@@ -177,16 +178,26 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
 
     (async () => {
       // Directory + label maps + the project catalog — one call each, before the fan-out.
-      const [employees, depts, projectList] = await Promise.all([
+      const [employees, depts, projectList, contributors] = await Promise.all([
         listEmployees(),
         departmentMap().catch(() => new Map<string, string>()),
         listProjects().catch(() => []),
+        // A failed roles read must not empty the grid — fall back to "everyone is a contributor",
+        // which is the pre-filter behaviour (a stray dashes row beats a blank page).
+        contributorRoleIds().catch(() => null),
       ]);
       const projects = new Map(
         projectList.map((p) => [p.id, { name: p.name, key: p.key ?? "" }]),
       );
 
-      const active = employees.filter((e) => e.status === "active");
+      // Only people who can actually run a timer. Owner/Admin hold no `TimeTrackSelf`, so they have
+      // no time by construction and rendered as a permanent row of dashes. See `contributorRoleIds`
+      // for why this keys on the permission rather than on `is_owner`.
+      const active = employees.filter(
+        (e) =>
+          e.status === "active" &&
+          (contributors === null || (e.role_id ? contributors.has(e.role_id) : true)),
+      );
 
       const results = await mapWithConcurrency(active, 4, (emp) =>
         (async (): Promise<Fetched | null> => {

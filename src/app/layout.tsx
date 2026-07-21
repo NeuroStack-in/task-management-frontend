@@ -88,7 +88,11 @@ export default function RootLayout({
         {/* Apply the saved colour palette + font pairing before paint (no flash). */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var d=document.documentElement;var p=localStorage.getItem('wp-palette')||'meridian';if(p!=='indigo'){d.setAttribute('data-palette',p);}var f=localStorage.getItem('wp-font');if(f&&f!=='ibmplex'){d.setAttribute('data-font',f);}}catch(e){document.documentElement.setAttribute('data-palette','meridian');}})();`,
+            // Default palette is `teal` — "Slate & Teal / Calm · HR-grade". The in-app switcher was
+            // removed (see `palette-switcher.tsx`), so this literal is now the *only* thing that
+            // decides the product's colours; every other palette in `PALETTES` remains defined and
+            // reachable by setting `data-palette` by hand.
+            __html: `(function(){try{var d=document.documentElement;var p=localStorage.getItem('wp-palette')||'teal';if(p!=='indigo'){d.setAttribute('data-palette',p);}var f=localStorage.getItem('wp-font');if(f&&f!=='ibmplex'){d.setAttribute('data-font',f);}}catch(e){document.documentElement.setAttribute('data-palette','teal');}})();`,
           }}
         />
         <AppProviders>{children}</AppProviders>

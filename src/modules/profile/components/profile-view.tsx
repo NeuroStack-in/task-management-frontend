@@ -31,8 +31,6 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Sparkline } from "@/components/shared/sparkline";
 import {
   BannerBackground,
-  BannerPatternPicker,
-  type BannerPattern,
 } from "@/components/shared/banner-pattern";
 import { Gauge } from "@/components/shared/gauge";
 import { Loader } from "@/components/shared/loader";
@@ -145,8 +143,6 @@ function RichProfile({
 }) {
   const updateUser = useAuthStore((s) => s.updateUser);
   const [uploadOpen, setUploadOpen] = useState(false);
-  // Temporary control to preview the banner patterns.
-  const [pattern, setPattern] = useState<BannerPattern>("grid");
   const facts = personalFacts(user);
   const productivity = user.productivityScore;
 
@@ -278,8 +274,13 @@ function RichProfile({
         className="relative overflow-hidden rounded-2xl bg-feature p-6 text-feature-foreground shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-7"
         style={{ animationFillMode: "backwards" }}
       >
-        <BannerBackground pattern={pattern} />
-        <BannerPatternPicker value={pattern} onChange={setPattern} />
+        {/* Grid lines. The pattern is fixed rather than pickable: `BannerPatternPicker` was a
+            temporary preview control, not a product feature, and shipping it let every user restyle
+            a page header. The `"dots"` variant is deliberately KEPT in
+            `components/shared/banner-pattern.tsx` — it is a real, working alternative and the
+            reference for it must stay in the codebase. To switch, change the literal below to
+            `"dots"`; to bring the picker back, re-render `<BannerPatternPicker />` here. */}
+        <BannerBackground pattern="grid" />
 
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-5">

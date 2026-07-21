@@ -70,6 +70,32 @@ export function getPermissionCatalog(): Promise<ApiPermissionCatalog> {
   return apiFetch<ApiPermissionCatalog>("/v1/permissions");
 }
 
+/** Server wire id for `Permission::TimeTrackSelf` (bit 110) — `wp-contracts/permissions.rs:306`. */
+export const TIME_TRACK_SELF = "time:track:self";
+
+/**
+ * Role ids whose holders can actually run a timer.
+ *
+ * Oversight surfaces (team timesheet, attendance roster) must not list people who *cannot* track
+ * time: `TimeTrackSelf` is contributor-only (bits 110–119), and LLD §13 is explicit that
+ * **`is_owner` never grants it** — so Owner and Admin have no time by construction, and a row for
+ * them is a permanent line of dashes. Worse on attendance, where §7 resolves "a scheduled workday
+ * with no timer session" to **absent**, marking the owner absent every single day and dragging the
+ * org rate down.
+ *
+ * Keyed on the **permission, not on `is_owner`** — that is the exception the naive filter gets
+ * wrong. `roles.rs` says an owner who is also a contributor gets a custom role granting
+ * `TimeTrackSelf`; that person *should* appear. So ask what the role grants, never who the person is.
+ */
+export function contributorRoleIds(): Promise<Set<string>> {
+  return listRoles().then(
+    (roles) =>
+      new Set(
+        roles.filter((r) => r.permissions.includes(TIME_TRACK_SELF)).map((r) => r.id),
+      ),
+  );
+}
+
 export function createRole(body: RolePayload): Promise<ApiRole> {
   return apiFetch<ApiRole>("/v1/roles", { method: "POST", body: JSON.stringify(body) });
 }

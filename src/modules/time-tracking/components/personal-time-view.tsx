@@ -114,7 +114,13 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
       <TimerHero
         running={
           runningRow
-            ? { task: runningRow.task, project: runningRow.project, start: runningRow.start }
+            ? {
+                // Same precedence as the table: the typed description is what the person
+                // recognises; the task title is the fallback, and only then a neutral placeholder.
+                task: runningRow.description || runningRow.task || "No description",
+                project: runningRow.project,
+                start: runningRow.start,
+              }
             : null
         }
         todayTotalSec={totalSec}
@@ -232,8 +238,16 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                   rows.map((e) => (
                     <TableRow key={e.id}>
                       <TableCell className="pl-6">
+                        {/* Two distinct facts, stacked rather than competing for one label: the
+                            **description** is what the person typed and is the thing they recognise,
+                            so it leads; the **task** is the assignment it was booked against and is
+                            optional (a project-only session has none). Showing whichever happened to
+                            be present made one row read "New One" and the next "Api testing", which
+                            looks like inconsistent data rather than two different fields. */}
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{e.task}</span>
+                          <span className="font-medium">
+                            {e.description || e.task || "No description"}
+                          </span>
                           {e.billable ? <Badge variant="secondary">Billable</Badge> : null}
                           {/* The task was deleted or unassigned by the time the session folded.
                               The entry still counts — the time was really worked (LLD §4). */}
@@ -243,6 +257,12 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                             </Badge>
                           ) : null}
                         </div>
+                        {/* Only when it adds something the line above doesn't already say. */}
+                        {e.task && e.description ? (
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            {e.task}
+                          </span>
+                        ) : null}
                       </TableCell>
                       <TableCell className="text-center text-muted-foreground">{e.project}</TableCell>
                       <TableCell className="text-center font-mono text-xs tabular-nums text-muted-foreground">

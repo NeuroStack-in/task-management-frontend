@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermissions } from "@/hooks/use-permissions";
+import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { TriangleAlert } from "lucide-react";
 import { Loader } from "@/components/shared/loader";
@@ -181,8 +182,15 @@ export function ProjectsView() {
       const id = await createProject(values);
       toast.success(`Project “${values.name}” created`);
       router.push(`/projects/${id}`);
-    } catch {
-      toast.error("Couldn't create the project. Try again.");
+    } catch (err) {
+      // Surface the server's own message. The API returns specific, actionable validation errors
+      // ("manager_user_id is required", "billable is required", "end_date precedes start_date");
+      // a bare `catch` swallowed all of them into one generic line, which is indistinguishable
+      // from a network failure and leaves the user with nothing to act on.
+      toast.error("Couldn't create the project", {
+        description:
+          err instanceof ApiError ? err.message : "Something went wrong. Please try again.",
+      });
     }
   };
 

@@ -45,7 +45,10 @@ export function DashboardView() {
 
 /** The org (admin/owner/lead) view — the exact preview UI, on real backend data. */
 function OrgDashboard() {
-  const [range, setRange] = useState<DashboardRange>("7d");
+  // "Today" by default: the dashboard answers "what is happening right now", and a 7-day default
+  // buried today's numbers in a week's average. The LLD does not fix a page-level default (§3 is
+  // layout persistence; `date-range` there is per-widget config), so this is a product choice.
+  const [range, setRange] = useState<DashboardRange>("today");
   const [team, setTeam] = useState("all");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");

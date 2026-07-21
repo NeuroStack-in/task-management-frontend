@@ -13,7 +13,6 @@ import { usePageHeaderStore } from "@/stores/page-header.store";
 import { SidebarNav } from "./sidebar-nav";
 import { GlobalTimer } from "./global-timer";
 import { ThemeSwitcher } from "./theme-switcher";
-import { PaletteSwitcher } from "./palette-switcher";
 import { NotificationsMenu } from "./notifications-menu";
 
 export function TopNavbar() {
@@ -64,9 +63,16 @@ export function TopNavbar() {
         {/* Page actions (e.g. the Time Tracking My time/Team toggle) portal in
             here, on the same row as the title. */}
         <div id="wp-page-actions" className="flex items-center gap-2 empty:hidden" />
-        <div className="rounded-full bg-card p-1 shadow-soft">
-          <PaletteSwitcher />
-        </div>
+        {/*
+          The palette switcher was removed from the chrome (2026-07-21): the product ships one
+          palette — `teal`, "Slate & Teal / Calm · HR-grade" — set in `layout.tsx`'s pre-paint
+          script. Letting every user repaint the whole app was a demo affordance, not a feature.
+
+          `PaletteSwitcher` and the full `PALETTES` list are deliberately **kept** in
+          `components/layout/palette-switcher.tsx`: the other schemes are still valid design tokens
+          and are reachable by setting `data-palette` on `<html>`. To bring the control back, render
+          `<PaletteSwitcher />` here again — nothing else was deleted.
+        */}
         <GlobalTimer />
         <div className="flex items-center gap-0.5 rounded-full bg-card p-1 shadow-soft">
           <NotificationsMenu />

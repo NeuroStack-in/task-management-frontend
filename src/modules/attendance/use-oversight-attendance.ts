@@ -26,6 +26,7 @@ import {
   departmentMap,
 } from "@/modules/employees/services/employees.service";
 import { listFleet } from "@/modules/agents/services/fleet.service";
+import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import { monthMatrix, MONTH_NAMES } from "./lib/calendar";
 
 export type AttendanceRange = "today" | "week" | "month" | "custom" | "day";
@@ -259,14 +260,22 @@ export function useOversightAttendance({
     let live = true;
     (async () => {
       try {
-        const [roster, depts] = await Promise.all([
+        const [roster, depts, contributors] = await Promise.all([
           listEmployees(),
           departmentMap().catch(() => new Map<string, string>()),
+          // A failed roles read must not empty the roster — fall back to including everyone.
+          contributorRoleIds().catch(() => null),
         ]);
         if (!live) return;
         const m = new Map<string, DirEntry>();
         const names = new Set<string>();
         for (const e of roster) {
+          // Skip anyone who cannot run a timer. §7 resolves "a scheduled workday with no timer
+          // session and no approved leave" to **absent**, so an Owner/Admin — who hold no
+          // `TimeTrackSelf` by construction — would be marked absent every working day and pull the
+          // org attendance rate down with them. Keyed on the permission, not `is_owner`: see
+          // `contributorRoleIds`.
+          if (contributors !== null && e.role_id && !contributors.has(e.role_id)) continue;
           const dName = depts.get(e.department_id) ?? "—";
           m.set(e.user_id, {
             name: e.name,

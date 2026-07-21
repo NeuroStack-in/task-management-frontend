@@ -12,11 +12,11 @@
  *
  * - **`activity` (0–100)**. The agent captures activity samples, but no built read joins them onto
  *   a time entry. There is no honest value to put here.
- * - **`task` (a title)**. Entries carry `task_id`. Titles live on the Task item, which the built
- *   reads cannot reach: `GET /v1/me/tasks` queries GSI1, whose projection is `INCLUDE
- *   ("type","status")` — no `title`. So `taskLabel` falls back to the id. Fixing it properly means
- *   either denormalising the title onto the entry at fold time or widening the GSI1 projection
- *   (an index rebuild); both are backend decisions, not something to paper over here.
+ * *(Resolved 2026-07-21 — this list previously also claimed `task` titles were unreachable. They
+ * are not: `GET /v1/me/tasks` returns `title` (backend `757971a`), so `use-timesheet` joins it by
+ * `task_id`. The stale note is why the table rendered raw `k-01KY…` ids where a name belonged —
+ * worth remembering that an out-of-date comment hid a fixable bug for longer than the bug itself
+ * would have.)*
  *
  * ## Time is milliseconds, and the day is the client's
  *
@@ -131,10 +131,16 @@ export function clockOf(ms: number): string {
 /**
  * What a timesheet row should call its task.
  *
- * `description` when the fold recorded one, else the raw `task_id`. The id is deliberate: it is
- * true, and an obviously-technical string invites the question "why isn't there a title here?" —
- * which is the actual state of the backend. See the module docs.
+ * Preference order: the **description** the fold recorded (what the person actually typed), then the
+ * **task title**, then — only if neither is reachable — the raw id.
+ *
+ * The id used to be the *second* step, justified as "an obviously-technical string invites the
+ * question why isn't there a title here". That reasoning expired: `GET /v1/me/tasks` returns
+ * `title` now (backend `757971a`), so the id is no longer the honest answer, just an unresolved one.
+ * Pass `titles` and it will be used; omit it and behaviour is unchanged.
  */
-export function taskLabel(e: ApiEntryRow): string {
-  return e.description?.trim() || e.task_id;
+export function taskLabel(e: ApiEntryRow, titles?: Map<string, string>): string {
+  const described = e.description?.trim();
+  if (described) return described;
+  return titles?.get(e.task_id)?.trim() || e.task_id;
 }

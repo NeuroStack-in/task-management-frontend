@@ -3,23 +3,18 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { validatePassword } from "@/lib/password";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+  AuthErrorSummary,
+  AuthField,
+  AuthHeading,
+  AuthPasswordField,
+} from "./auth-frame";
 import { AuthShell } from "./auth-shell";
 import { useAuthStore } from "@/stores/auth.store";
 import {
@@ -60,19 +55,14 @@ function LinkNotice({
   showSignIn?: boolean;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
+    <>
+      <AuthHeading title={title} subtitle={description} />
       {showSignIn ? (
-        <CardFooter>
-          <Button render={<Link href="/login" />} nativeButton={false}>
-            Go to sign in
-          </Button>
-        </CardFooter>
+        <Link href="/login" className="m-btn m-btn-primary mt-4 w-full">
+          Go to sign in
+        </Link>
       ) : null}
-    </Card>
+    </>
   );
 }
 
@@ -92,7 +82,7 @@ export function InviteAcceptForm() {
   const [submitting, setSubmitting] = useState(false);
 
   const {
-    register,
+    control,
     handleSubmit,
     formState: { errors },
   } = useForm<FormValues>({
@@ -186,12 +176,13 @@ export function InviteAcceptForm() {
   if (loading) {
     return (
       <AuthShell>
-        <Card>
-          <CardContent className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            Checking your invite…
-          </CardContent>
-        </Card>
+        <p
+          className="flex items-center justify-center gap-2 py-10 text-sm"
+          style={{ color: "var(--m-muted)" }}
+        >
+          <Loader2 className="m-spin size-4" />
+          Checking your invite…
+        </p>
       </AuthShell>
     );
   }
@@ -212,130 +203,156 @@ export function InviteAcceptForm() {
     );
   }
 
+  // The visible copy lives once, in the summary at the top of the card — the fields carry the same
+  // wording to assistive tech only. Same contract as login/signup (see AuthField).
+  const summary = (
+    [
+      ["iv-name", errors.full_name?.message],
+      ["iv-otp", errors.otp?.message],
+      ["iv-password", errors.password?.message],
+      ["iv-confirm", errors.confirm?.message],
+    ] as [string, string | undefined][]
+  ).filter((e): e is [string, string] => Boolean(e[1]));
+
   return (
     <AuthShell>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">
-            Join {preview?.org_name ?? "your organization"}
-          </CardTitle>
-          <CardDescription>
-            You&apos;ve been invited to WorkPulse as{" "}
-            <span className="font-medium text-foreground">
-              {preview?.role_name}
-            </span>
-            . Set up your account for{" "}
-            <span className="font-medium text-foreground">{preview?.email}</span>
-            .
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate>
-          <CardContent className="space-y-4">
-            <Field
+      {/* The org, not "WorkPulse": the invitee is joining their employer's workspace, and naming
+          the product here made a tenant-scoped invite read like a platform-wide signup. */}
+      <AuthHeading
+        title={`Join ${preview?.org_name ?? "your organization"}`}
+        subtitle={`You've been invited to ${preview?.org_name ?? "this workspace"} as ${preview?.role_name}. Set up your account for ${preview?.email}.`}
+      />
+
+      <form onSubmit={handleSubmit(onSubmit)} noValidate>
+        <AuthErrorSummary errors={summary} />
+
+        <Controller
+          control={control}
+          name="full_name"
+          render={({ field }) => (
+            <AuthField
               id="iv-name"
               label="Full name"
+              autoComplete="name"
+              required
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
               error={errors.full_name?.message}
-            >
-              <Input
-                id="iv-name"
-                autoComplete="name"
-                {...register("full_name")}
-              />
-            </Field>
+            />
+          )}
+        />
 
-            <Field
+        <Controller
+          control={control}
+          name="otp"
+          render={({ field }) => (
+            <AuthField
               id="iv-otp"
               label="Invite code"
               hint="The code from your invite email."
+              inputMode="numeric"
+              required
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
               error={errors.otp?.message}
-            >
-              <Input id="iv-otp" inputMode="numeric" {...register("otp")} />
-            </Field>
+            />
+          )}
+        />
 
-            <Field
+        <Controller
+          control={control}
+          name="password"
+          render={({ field }) => (
+            <AuthPasswordField
               id="iv-password"
               label="Password"
+              autoComplete="new-password"
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
               error={errors.password?.message}
-            >
-              <Input
-                id="iv-password"
-                type="password"
-                autoComplete="new-password"
-                {...register("password")}
-              />
-            </Field>
+            />
+          )}
+        />
 
-            <Field
+        <Controller
+          control={control}
+          name="confirm"
+          render={({ field }) => (
+            <AuthPasswordField
               id="iv-confirm"
               label="Confirm password"
+              autoComplete="new-password"
+              value={field.value}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
               error={errors.confirm?.message}
-            >
-              <Input
-                id="iv-confirm"
-                type="password"
-                autoComplete="new-password"
-                {...register("confirm")}
+            />
+          )}
+        />
+
+        <Controller
+          control={control}
+          name="job_title"
+          render={({ field }) => (
+            <AuthField
+              id="iv-title"
+              label="Job title (optional)"
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+            />
+          )}
+        />
+
+        <div className="m-arow">
+          <Controller
+            control={control}
+            name="phone"
+            render={({ field }) => (
+              <AuthField
+                id="iv-phone"
+                label="Phone (optional)"
+                autoComplete="tel"
+                inputMode="tel"
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
               />
-            </Field>
+            )}
+          />
+          <Controller
+            control={control}
+            name="location"
+            render={({ field }) => (
+              <AuthField
+                id="iv-location"
+                label="Location (optional)"
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+              />
+            )}
+          />
+        </div>
 
-            <Field id="iv-title" label="Job title (optional)">
-              <Input id="iv-title" {...register("job_title")} />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field id="iv-phone" label="Phone (optional)">
-                <Input
-                  id="iv-phone"
-                  autoComplete="tel"
-                  {...register("phone")}
-                />
-              </Field>
-              <Field id="iv-location" label="Location (optional)">
-                <Input id="iv-location" {...register("location")} />
-              </Field>
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Creating your account…
-                </>
-              ) : (
-                "Create account"
-              )}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="m-btn m-btn-primary mt-4 w-full"
+        >
+          {submitting ? (
+            <>
+              <Loader2 className="m-spin size-4" /> Creating your account…
+            </>
+          ) : (
+            "Create account"
+          )}
+        </button>
+      </form>
     </AuthShell>
-  );
-}
-
-/** Label + optional hint + field + error, matching the sibling auth forms. */
-function Field({
-  id,
-  label,
-  hint,
-  error,
-  children,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-      {hint && !error ? (
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      ) : null}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
   );
 }
 
