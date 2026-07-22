@@ -109,6 +109,14 @@ export function ScreenshotsTab() {
   const [dept, setDept] = useState<string>(ALL_DEPTS);
   const [flag, setFlag] = useState<"all" | "flagged">("all");
   const [viewerIdx, setViewerIdx] = useState<number | null>(null);
+  /**
+   * The employee whose captures are open, or `null` for the gallery.
+   *
+   * Stored as a **user id, not the group object**, so the detail view keeps following live data: the
+   * grid re-fetches on paging and date change, and holding a snapshot would freeze the open employee
+   * on the frames that existed when they were clicked.
+   */
+  const [openUser, setOpenUser] = useState<string | null>(null);
 
   const { shots, loading, loadingMore, error, hasMore, loadMore } = useScreenshots(date);
   const { inScope, loading: scopeLoading } = useDataScope();
@@ -192,12 +200,6 @@ export function ScreenshotsTab() {
 
   // Flat, grouped order for the lightbox so prev/next walks the whole visible day.
   const flatShots = useMemo(() => groups.flatMap((g) => g.shots), [groups]);
-  const indexOf = useMemo(() => {
-    const m = new Map<string, number>();
-    flatShots.forEach((s, i) => m.set(s.shot_id, i));
-    return m;
-  }, [flatShots]);
-
   const withheld = useMemo(
     () => filteredShots.filter((s) => s.redacted || !s.url).length,
     [filteredShots],
@@ -217,6 +219,27 @@ export function ScreenshotsTab() {
         } On-task rate sits at ${onTaskPct}%.`;
 
   const nameOf = (id: string) => dirById.get(id)?.name ?? shortUser(id);
+
+  if (openUser) {
+    // Deliberately built from `scopedShots`, **not** the gallery's `filteredShots`: the detail view
+    // has its own review/time filters, so inheriting the gallery's "Needs review" toggle would show
+    // a filtered day while claiming to be the employee's full day. Scope (who you may see) still
+    // applies — that is a permission boundary, not a filter.
+    const mine = scopedShots.filter((s) => s.user_id === openUser);
+    const emp = dirById.get(openUser);
+    const deptId = emp?.department_id;
+    return (
+      <EmployeeCaptures
+        name={nameOf(openUser)}
+        dept={deptId ? deptLabel(deptId) : "—"}
+        device={mine.find((s) => s.device)?.device ?? ""}
+        shots={mine}
+        date={date}
+        nameOf={nameOf}
+        onBack={() => setOpenUser(null)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -374,7 +397,7 @@ export function ScreenshotsTab() {
                   cover={cover}
                   count={g.shots.length}
                   flaggedCount={g.shots.filter((s) => s.flagged).length}
-                  onOpen={() => setViewerIdx(indexOf.get(cover.shot_id) ?? 0)}
+                  onOpen={() => setOpenUser(g.userId)}
                 />
               );
             })}
@@ -526,6 +549,10 @@ function Lightbox({
   const atStart = index === 0;
   const atEnd = index !== null && index === count - 1;
   const withheld = shot ? shot.redacted || !shot.url : false;
+  // How many monitors this one moment was photographed on — frames of a capture share `captured_at`.
+  const monitorsInCapture = shot
+    ? shots.filter((s) => s.captured_at === shot.captured_at).length
+    : 0;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -601,6 +628,20 @@ function Lightbox({
                 <PanelDetail label="Application" value={shot.app || "Unknown app"} />
                 <PanelDetail label="Person" value={nameOf(shot.user_id)} />
                 <PanelDetail label="Captured" value={formatDateTime(shot.captured_at)} />
+                {shot.device ? (
+                  <PanelDetail label="Device" value={shot.device} />
+                ) : null}
+                {/*
+                  Only shown on multi-monitor machines. `display` is 0-based on the wire and +1 only
+                  here for the label, so "Monitor 1 of 2" reads naturally while the sort order stays
+                  the physical one. A single-display capture says nothing rather than "1 of 1".
+                */}
+                {monitorsInCapture > 1 ? (
+                  <PanelDetail
+                    label="Monitor"
+                    value={`${(shot.display ?? 0) + 1} of ${monitorsInCapture}`}
+                  />
+                ) : null}
                 {shot.blur_level > 0 ? (
                   <PanelDetail label="Blur level" value={String(shot.blur_level)} />
                 ) : null}
@@ -634,5 +675,326 @@ function PanelDetail({
       <dt className="text-[11px] font-medium uppercase tracking-wide text-white/45">{label}</dt>
       <dd className={cn("mt-1 break-words font-medium text-white", className)}>{value}</dd>
     </div>
+  );
+}
+
+/**
+ * One **capture** — a single moment, across every monitor photographed at it.
+ *
+ * The agent photographs every connected display in the same cycle and stamps them with an identical
+ * `captured_at`, so a dual-monitor machine produces two rows for one moment. Grouping on
+ * `captured_at` turns those back into the single event they actually were. Without it, a
+ * two-monitor employee appears to have twice as many "screenshots" as moments actually observed.
+ */
+interface Capture {
+  key: string;
+  capturedAt: number;
+  /** Ordered by `display`, so index 0 is always the primary monitor. */
+  monitors: ShotRow[];
+  flagged: boolean;
+  /** The frame the tile shows: the flagged monitor if any, else the primary. */
+  cover: ShotRow;
+}
+
+function groupCaptures(shots: ShotRow[]): Capture[] {
+  const byMoment = new Map<number, ShotRow[]>();
+  for (const s of shots) {
+    const list = byMoment.get(s.captured_at);
+    if (list) list.push(s);
+    else byMoment.set(s.captured_at, [s]);
+  }
+  return [...byMoment.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([capturedAt, group]) => {
+      const monitors = [...group].sort(
+        (a, b) => (a.display ?? 0) - (b.display ?? 0),
+      );
+      return {
+        key: String(capturedAt),
+        capturedAt,
+        monitors,
+        flagged: monitors.some((s) => s.flagged),
+        // Lead with the frame that earned the flag — a reviewer should see *why* it is flagged
+        // without first clicking past whichever monitor happens to be primary.
+        cover: monitors.find((s) => s.flagged) ?? monitors[0],
+      };
+    });
+}
+
+const hhmm = (ms: number) =>
+  new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+/**
+ * One employee's captures for the selected day — the level that was missing.
+ *
+ * The gallery used to open the full-screen viewer straight from an employee tile, skipping this
+ * entirely: there was no way to see what an employee's day looked like, or to find the flagged
+ * frames within it, without paging a carousel one frame at a time.
+ *
+ * Scoped to the day picked on the board (owner decision, 2026-07-22). That matches how the capture
+ * index is partitioned — one partition per tenant-day — so this view reuses the query the board
+ * already made instead of fanning out across dates.
+ */
+function EmployeeCaptures({
+  name,
+  dept,
+  device,
+  shots,
+  date,
+  nameOf,
+  onBack,
+}: {
+  name: string;
+  dept: string;
+  device: string;
+  shots: ShotRow[];
+  date: string;
+  nameOf: (id: string) => string;
+  onBack: () => void;
+}) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [flag, setFlag] = useState<"all" | "flagged">("all");
+  const [viewerIdx, setViewerIdx] = useState<number | null>(null);
+  const allCaptures = useMemo(() => groupCaptures(shots), [shots]);
+
+  // Filtering happens at the **capture** level so a moment is kept or dropped whole. Filtering
+  // individual frames would let a capture render with one of its two monitors silently missing.
+  const captures = useMemo(
+    () =>
+      allCaptures.filter((c) => {
+        const t = hhmm(c.capturedAt);
+        if (from && t < from) return false;
+        if (to && t > to) return false;
+        if (flag === "flagged" && !c.flagged) return false;
+        return true;
+      }),
+    [allCaptures, from, to, flag],
+  );
+
+  // The viewer walks every monitor of every visible capture in order, so the arrow keys move
+  // through the day exactly as it was captured rather than skipping second monitors.
+  const flat = useMemo(() => captures.flatMap((c) => c.monitors), [captures]);
+  const firstIndexOfCapture = useMemo(() => {
+    const m = new Map<string, number>();
+    let i = 0;
+    for (const c of captures) {
+      m.set(c.key, i);
+      i += c.monitors.length;
+    }
+    return m;
+  }, [captures]);
+
+  const monitorCount = useMemo(
+    () => new Set(shots.map((s) => s.display ?? 0)).size,
+    [shots],
+  );
+  const flaggedCount = allCaptures.filter((c) => c.flagged).length;
+  const dirty = from !== "" || to !== "" || flag !== "all";
+
+  return (
+    <div className="space-y-5">
+      <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
+        <ChevronLeft className="size-4" /> All employees
+      </Button>
+
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-card px-5 py-4 shadow-soft">
+        <Avatar className="size-12">
+          <AvatarFallback>{initials(name)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-heading text-lg font-semibold">{name}</h2>
+          <p className="text-sm text-muted-foreground">
+            {dept}
+            {device ? " · " + device : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-5 text-sm">
+          <Summary label="Captures" value={allCaptures.length} />
+          <Summary label="Monitors" value={monitorCount} />
+          <Summary
+            label="Needs review"
+            value={flaggedCount}
+            tone={flaggedCount > 0 ? "text-destructive" : undefined}
+          />
+        </div>
+      </div>
+
+      {/* Filters — within the selected day */}
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
+        <Field label="From">
+          <Input
+            type="time"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="h-8 w-32"
+            aria-label="From time"
+          />
+        </Field>
+        <Field label="To">
+          <Input
+            type="time"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="h-8 w-32"
+            aria-label="To time"
+          />
+        </Field>
+        <Field label="Show">
+          <div className="flex items-center gap-4 text-sm">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="emp-flag"
+                checked={flag === "all"}
+                onChange={() => setFlag("all")}
+                style={{ accentColor: "var(--primary)" }}
+              />
+              All
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="emp-flag"
+                checked={flag === "flagged"}
+                onChange={() => setFlag("flagged")}
+                style={{ accentColor: "var(--primary)" }}
+              />
+              Needs review
+            </label>
+          </div>
+        </Field>
+        {dirty ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={() => {
+              setFrom("");
+              setTo("");
+              setFlag("all");
+            }}
+          >
+            Reset
+          </Button>
+        ) : null}
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">{captures.length}</span>{" "}
+        {captures.length === 1 ? "capture" : "captures"}
+        {monitorCount > 1 ? " · " + monitorCount + " monitors" : ""} on{" "}
+        {dateLabel(date)} · select one to view it full screen.
+      </p>
+
+      {captures.length === 0 ? (
+        <EmptyState
+          icon={flag === "flagged" ? Flag : Camera}
+          title={
+            flag === "flagged"
+              ? "Nothing flagged for review"
+              : "No captures in this range"
+          }
+          description={
+            flag === "flagged"
+              ? "No captures for this employee on this day were in a distracting app."
+              : "Try widening the time range."
+          }
+        />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {captures.map((c) => (
+            <CaptureCard
+              key={c.key}
+              capture={c}
+              monitorCount={monitorCount}
+              onOpen={() => setViewerIdx(firstIndexOfCapture.get(c.key) ?? 0)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Lightbox
+        shots={flat}
+        index={viewerIdx}
+        nameOf={nameOf}
+        onIndexChange={setViewerIdx}
+        onClose={() => setViewerIdx(null)}
+      />
+    </div>
+  );
+}
+
+function Summary({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number | string;
+  tone?: string;
+}) {
+  return (
+    <div className="text-center">
+      <p className={cn("text-lg font-semibold tabular-nums", tone)}>{value}</p>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+/** One capture tile: the cover frame, its app, time, monitor count and review flag. */
+function CaptureCard({
+  capture,
+  monitorCount,
+  onOpen,
+}: {
+  capture: Capture;
+  monitorCount: number;
+  onOpen: () => void;
+}) {
+  const shot = capture.cover;
+  const withheld = shot.redacted || !shot.url;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "group overflow-hidden rounded-2xl bg-card text-left shadow-soft transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+        capture.flagged && "ring-1 ring-destructive/40",
+      )}
+    >
+      <div className="relative aspect-video w-full overflow-hidden bg-muted">
+        {withheld ? (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <ShieldOff className="size-6" />
+          </div>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={shot.url}
+            alt={shot.app + " at " + hhmm(capture.capturedAt)}
+            className="size-full object-cover"
+            loading="lazy"
+          />
+        )}
+        <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+          {shot.app || "—"}
+        </span>
+        {capture.flagged ? (
+          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-medium text-white">
+            <Flag className="size-3" /> Needs review
+          </span>
+        ) : monitorCount > 1 ? (
+          <span className="absolute right-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+            {capture.monitors.length} of {monitorCount}
+          </span>
+        ) : null}
+        <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white">
+          {hhmm(capture.capturedAt)}
+        </span>
+      </div>
+    </button>
   );
 }

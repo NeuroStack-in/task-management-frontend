@@ -35,7 +35,14 @@ import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useDataScope } from "@/hooks/use-data-scope";
 import { useGeofenceStore } from "@/stores/geofence.store";
 import { initials } from "@/lib/format";
-import { insidePerimeter, type GeoPoint } from "@/modules/locations/types";
+import {
+  deriveMode,
+  deriveStatus,
+  insidePerimeter,
+  WORK_MODE_LABEL,
+  type GeoPoint,
+  type WorkMode,
+} from "@/modules/locations/types";
 import { cn } from "@/lib/utils";
 import { LiveMap, type MapMarker } from "./live-map";
 import { EmployeeLocationView } from "./employee-location";
@@ -66,28 +73,67 @@ const toGeoPoint = (p: { lat: number; lon: number }): GeoPoint => ({
   lng: p.lon,
 });
 
-/** Board ⇄ per-employee detail, mirroring the Screenshots drill-down. */
+/**
+ * Board ⇄ per-employee detail, mirroring the Screenshots drill-down.
+ *
+ * The **date is owned here**, not inside either child, so drilling into an employee keeps the day
+ * the admin was looking at and coming back preserves it. Holding it in the board instead would reset
+ * the detail view to today on every open — the wrong default when someone is investigating a
+ * specific past day.
+ */
 export function LocationsView() {
   const [selected, setSelected] = useState<OversightPersonLocation | null>(null);
+  const [date, setDate] = useState<string>("");
+  useEffect(() => setDate(isoOf(new Date())), []);
 
   return selected ? (
-    <EmployeeLocationView person={selected} onBack={() => setSelected(null)} />
+    <EmployeeLocationView
+      person={selected}
+      date={date}
+      onDateChange={setDate}
+      onBack={() => setSelected(null)}
+    />
   ) : (
-    <LocationsBoard onSelect={setSelected} />
+    <LocationsBoard onSelect={setSelected} date={date} onDateChange={setDate} />
   );
 }
 
-type StatusFilter = "all" | "located" | "no-location" | "outside";
+/**
+ * `online`/`offline` are derived from fix recency, `untracked` from having no fixes at all, and
+ * `outside` from the perimeter — see `types.ts` for each definition. They are listed separately
+ * because they answer different questions: "is she being tracked right now" vs "did we ever hear
+ * from her today" vs "is she where she should be".
+ */
+const STATUS_LABEL: Record<StatusFilter, string> = {
+  all: "All status",
+  online: "Online",
+  offline: "Offline",
+  untracked: "Untracked",
+  located: "Located",
+  "no-location": "No location",
+  outside: "Outside perimeter",
+};
+
+type StatusFilter =
+  | "all"
+  | "online"
+  | "offline"
+  | "untracked"
+  | "located"
+  | "no-location"
+  | "outside";
 
 function LocationsBoard({
   onSelect,
+  date,
+  onDateChange: setDate,
 }: {
   onSelect: (p: OversightPersonLocation) => void;
+  date: string;
+  onDateChange: (iso: string) => void;
 }) {
   const { inScope, loading: scopeLoading } = useDataScope();
 
-  const [date, setDate] = useState<string>("");
-  useEffect(() => setDate(isoOf(new Date())), []);
   const today = isoOf(new Date());
   const isToday = date === today;
 
@@ -99,6 +145,10 @@ function LocationsBoard({
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [mode, setMode] = useState<"all" | WorkMode>("all");
+  // Captured once per render pass so every row in one pass is judged against the same instant —
+  // calling Date.now() per row could classify two people differently on the same tick.
+  const now = Date.now();
 
   // Geofence ("location perimeter") — a client-side admin tool, shared via store.
   const {
@@ -109,8 +159,19 @@ function LocationsBoard({
     setRadius,
     setEnabled,
     reset: resetFence,
+    dirty: fenceDirty,
+    saving: fenceSaving,
+    error: fenceError,
+    load: loadFence,
+    save: saveFence,
   } = useGeofenceStore();
   const [editingFence, setEditingFence] = useState(false);
+
+  // The perimeter is org-wide config, not per-date data, so it loads once — independent of the
+  // date-scoped location fetch below.
+  useEffect(() => {
+    void loadFence();
+  }, [loadFence]);
 
   useEffect(() => {
     if (!date) return;
@@ -184,7 +245,15 @@ function LocationsBoard({
     if (status === "all") return true;
     if (status === "located") return p.latest !== null;
     if (status === "no-location") return p.latest === null;
-    return flagOutside(p); // "outside"
+    if (status === "outside") return flagOutside(p);
+    return deriveStatus(p.latest?.captured_at ?? null, p.fix_count, now) === status;
+  };
+
+  // Mode is derived from the perimeter, so with the fence off nothing has a mode and the filter
+  // would silently empty the board. Treat it as inactive instead.
+  const matchesMode = (p: OversightPersonLocation) => {
+    if (mode === "all" || !showFence) return true;
+    return deriveMode(p.latest ? toGeoPoint(p.latest) : null, fence, showFence) === mode;
   };
   const employees = useMemo(
     () =>
@@ -192,10 +261,11 @@ function LocationsBoard({
         (p) =>
           (dept === "all" || p.department_id === dept) &&
           matchesStatus(p) &&
+          matchesMode(p) &&
           (q === "" || p.name.toLowerCase().includes(q)),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scoped, dept, status, q, radiusM, fenceCenter, showFence],
+    [scoped, dept, status, mode, q, radiusM, fenceCenter, showFence, now],
   );
 
   const mapMarkers: MapMarker[] = useMemo(
@@ -238,7 +308,7 @@ function LocationsBoard({
           {
             label: isToday ? "Located today" : "Located",
             value: locatedCount,
-            hint: isToday ? "latest fix" : undefined,
+            hint: isToday ? "last seen" : undefined,
           },
           showFence
             ? { label: "On-site", value: onSiteCount ?? 0 }
@@ -271,7 +341,7 @@ function LocationsBoard({
                   size="icon"
                   className="size-8"
                   aria-label="Previous day"
-                  onClick={() => setDate((d) => shiftIso(d, -1))}
+                  onClick={() => setDate(shiftIso(date, -1))}
                 >
                   <ChevronLeft className="size-4" />
                 </Button>
@@ -288,7 +358,7 @@ function LocationsBoard({
                   className="size-8"
                   aria-label="Next day"
                   disabled={isToday}
-                  onClick={() => setDate((d) => shiftIso(d, 1))}
+                  onClick={() => setDate(shiftIso(date, 1))}
                 >
                   <ChevronRight className="size-4" />
                 </Button>
@@ -321,21 +391,53 @@ function LocationsBoard({
                 <SelectTrigger className="h-8 w-44" aria-label="Status">
                   <SelectValue>
                     {(v) =>
-                      v === "located"
-                        ? "Located"
-                        : v === "no-location"
-                          ? "No location"
-                          : v === "outside"
-                            ? "Outside perimeter"
-                            : "All status"
+                      STATUS_LABEL[v as StatusFilter] ?? "All status"
                     }
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All status</SelectItem>
+                  <SelectItem value="online">Online</SelectItem>
+                  <SelectItem value="offline">Offline</SelectItem>
+                  <SelectItem value="untracked">Untracked</SelectItem>
                   <SelectItem value="located">Located</SelectItem>
                   <SelectItem value="no-location">No location</SelectItem>
                   <SelectItem value="outside">Outside perimeter</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/*
+                Mode is *derived from the perimeter*, not a declared work arrangement — WorkPulse has
+                no such field (owner decision, 2026-07-22). With the fence switched off there is
+                nothing to derive from, so the control is disabled rather than left to silently empty
+                the board.
+              */}
+              <Select
+                value={mode}
+                onValueChange={(v) => setMode(v as "all" | WorkMode)}
+                disabled={!showFence}
+              >
+                <SelectTrigger
+                  className="h-8 w-36"
+                  aria-label="Work mode"
+                  title={
+                    showFence
+                      ? "Derived from the office perimeter"
+                      : "Set an office perimeter to filter by mode"
+                  }
+                >
+                  <SelectValue>
+                    {(v) =>
+                      v === "in-office" || v === "remote"
+                        ? WORK_MODE_LABEL[v as WorkMode]
+                        : "All modes"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All modes</SelectItem>
+                  <SelectItem value="in-office">In office</SelectItem>
+                  <SelectItem value="remote">Remote</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -400,13 +502,31 @@ function LocationsBoard({
                   variant="ghost"
                   size="sm"
                   className="h-7"
-                  onClick={() => {
-                    resetFence();
-                    setEditingFence(false);
-                  }}
+                  onClick={resetFence}
                 >
                   Reset
                 </Button>
+                {/*
+                  Saving is explicit and only offered when something actually changed. The perimeter
+                  is org-wide, so an accidental autosave would move every colleague's inside/outside
+                  status; and without the dirty check there is no way to tell a dragged-but-unsaved
+                  fence from the saved one.
+                */}
+                {fenceDirty ? (
+                  <Button
+                    size="sm"
+                    className="h-7"
+                    disabled={fenceSaving}
+                    onClick={() => {
+                      void saveFence().then((ok) => ok && setEditingFence(false));
+                    }}
+                  >
+                    {fenceSaving ? "Saving…" : "Save perimeter"}
+                  </Button>
+                ) : null}
+                {fenceError ? (
+                  <span className="text-destructive">{fenceError}</span>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -496,7 +616,7 @@ function LocationsBoard({
                       <Navigation className="size-3 shrink-0 text-primary" />
                       <span className="truncate">
                         Last seen {clock(p.latest!.captured_at)} · {p.fix_count}{" "}
-                        {p.fix_count === 1 ? "fix" : "fixes"}
+                        {p.fix_count === 1 ? "location" : "locations"}
                       </span>
                     </p>
                   ) : (

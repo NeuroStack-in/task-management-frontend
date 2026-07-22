@@ -129,7 +129,7 @@ export function MyLocationView() {
         <EmptyState
           icon={MonitorSmartphone}
           title="No location reported"
-          description="No location was recorded for this day. The desktop agent reports a fix on each heartbeat while monitoring consent is granted and the OS location service is on."
+          description="No location was recorded for this day. The desktop agent reports your location periodically while the timer is running, monitoring consent is granted, and the OS location service is on."
         />
       ) : (
         <>

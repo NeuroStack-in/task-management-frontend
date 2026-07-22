@@ -192,6 +192,17 @@ export interface ShotRow {
   category: string;
   /** `true` when the capture is worth reviewing (a distracting-app capture) — drives flag/filter. */
   flagged: boolean;
+  /**
+   * Which physical monitor this frame came from — **0-based, primary = 0**. A multi-monitor machine
+   * emits one row per display in the same batch, all sharing `captured_at`; that is what lets the
+   * grid group them into one capture and label them "Monitor 1 of 2".
+   *
+   * Optional on the wire: single-display machines and pre-field batches legitimately have none, and
+   * the field is newer than some deployed clients — treat absent as `0`, never as "unknown monitor".
+   */
+  display?: number;
+  /** Machine hostname behind the capture (resolved from the agent). Empty when unknown. */
+  device?: string;
 }
 
 export interface ScreenshotGrid {
@@ -306,5 +317,70 @@ export interface OversightLocations {
 export function getOversightLocations(date: string): Promise<OversightLocations> {
   return apiFetch<OversightLocations>(
     `/v1/insights/locations?date=${encodeURIComponent(date)}`,
+  );
+}
+
+// ── GET/PUT /v1/org/geofence  (the org's office perimeter) ──
+
+/**
+ * The org-wide "office perimeter", mirroring `insights::geofence::GeofenceResponse`.
+ *
+ * Coordinates are the backend's `{ lat, lon }`. The map component wants `{ lat, lng }`, so the
+ * store converts at this boundary rather than leaking two conventions into the components — the
+ * same rule `OversightPersonLocation` already follows.
+ *
+ * `version` is an optimistic lock, not decoration: two admins dragging the perimeter on the same map
+ * is the race it exists for. Send back the `version` you last read; a stale one is a `409`.
+ */
+export interface GeofenceConfig {
+  enabled: boolean;
+  center: { lat: number; lon: number };
+  radius_m: number;
+  version: number;
+}
+
+/** Gated on `activity:read:team` — the same bit the Locations board itself requires. */
+export function getGeofence(): Promise<GeofenceConfig> {
+  return apiFetch<GeofenceConfig>("/v1/org/geofence");
+}
+
+/** Gated on `monitoring:manage`. Throws `ApiError` 409 (`version_conflict`) if `version` is stale. */
+export function updateGeofence(
+  body: Omit<GeofenceConfig, "version"> & { version: number },
+): Promise<GeofenceConfig> {
+  return apiFetch<GeofenceConfig>("/v1/org/geofence", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+// ── GET /v1/insights/locations/{user_id}?date=  (one employee's full trail) ──
+
+/**
+ * One employee's complete location trail for a day, mirroring
+ * `insights::oversight_location_trail::TrailResponse`.
+ *
+ * Distinct from `getOversightLocations`, which serves only each person's **latest** fix for the
+ * whole roster. This is the admin detail view: every fix for one person, chronological, so the page
+ * can answer "where was this employee at 14:30".
+ *
+ * Reach-scoped server-side — a department-scoped manager requesting someone outside their department
+ * gets a 403, not an empty trail. Empty `points` is a legitimate answer (the agent reported nothing
+ * that day), never a 404.
+ */
+export interface LocationTrail {
+  date: string;
+  user_id: string;
+  name: string;
+  department_id: string;
+  points: LocationPoint[];
+}
+
+export function getLocationTrail(
+  userId: string,
+  date: string,
+): Promise<LocationTrail> {
+  return apiFetch<LocationTrail>(
+    `/v1/insights/locations/${encodeURIComponent(userId)}?date=${encodeURIComponent(date)}`,
   );
 }
