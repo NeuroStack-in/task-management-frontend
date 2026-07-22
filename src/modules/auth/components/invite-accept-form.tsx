@@ -33,7 +33,6 @@ const schema = z
       if (m) ctx.addIssue({ code: z.ZodIssueCode.custom, message: m });
     }),
     confirm: z.string(),
-    job_title: z.string().trim().optional(),
     phone: z.string().trim().optional(),
     location: z.string().trim().optional(),
   })
@@ -92,7 +91,6 @@ export function InviteAcceptForm() {
       otp: "",
       password: "",
       confirm: "",
-      job_title: "",
       phone: "",
       location: "",
     },
@@ -136,7 +134,8 @@ export function InviteAcceptForm() {
         otp: values.otp.trim(),
         full_name: values.full_name.trim(),
         password: values.password,
-        job_title: values.job_title?.trim() || undefined,
+        // No job_title: it's an org fact the admin fixed at invite time (required since
+        // 2026-07-22) — the server ignores an invitee-typed title, so the form doesn't ask.
         phone: values.phone?.trim() || undefined,
         location: values.location?.trim() || undefined,
       });
@@ -289,20 +288,6 @@ export function InviteAcceptForm() {
               onChange={field.onChange}
               onBlur={field.onBlur}
               error={errors.confirm?.message}
-            />
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="job_title"
-          render={({ field }) => (
-            <AuthField
-              id="iv-title"
-              label="Job title (optional)"
-              value={field.value ?? ""}
-              onChange={field.onChange}
-              onBlur={field.onBlur}
             />
           )}
         />

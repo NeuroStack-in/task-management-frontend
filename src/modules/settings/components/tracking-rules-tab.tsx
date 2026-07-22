@@ -491,7 +491,7 @@ export function TrackingRulesTab() {
   if (error || !draft) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Tracking rules" description="Classify apps and websites, and set what's tracked or blocked." />
+        <PageHeader title="Tracking rules" description="Classify apps and websites, and set what's tracked or restricted." />
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
           <p className="text-sm text-muted-foreground">{error ?? "Rules are unavailable."}</p>
           <Button variant="outline" size="sm" onClick={reload}>
@@ -507,7 +507,7 @@ export function TrackingRulesTab() {
     { key: "apps", label: "Apps & Websites", count: draft.apps.length + draft.urls.length },
     {
       key: "lists",
-      label: "Allow / Block",
+      label: "Restricted sites",
       count:
         draft.exceptions.apps.length +
         draft.exceptions.urls.length +
@@ -605,8 +605,8 @@ export function TrackingRulesTab() {
               canManage={canManage}
             />
             <ChipInput
-              title="Block list (apps)"
-              description="The agent minimizes these during a running timer. Process names."
+              title="Restricted apps"
+              description="Using these during a running timer warns the employee on-screen and flags the session for review. Process names."
               accent="negative"
               placeholder="process.exe"
               validate={looksLikeProcess}
@@ -615,8 +615,8 @@ export function TrackingRulesTab() {
               canManage={canManage}
             />
             <ChipInput
-              title="Block list (sites)"
-              description="Covered with an overlay during a running timer, and flagged in reports. Domains."
+              title="Restricted sites"
+              description="Visiting these during a running timer warns the employee on-screen and flags the session for review. Domains."
               accent="negative"
               placeholder="domain.com"
               validate={isDomain}

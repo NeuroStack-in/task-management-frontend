@@ -2,10 +2,10 @@
  * Organization meta + lifecycle — the real backend (`identity` context, LLD §14).
  *
  * These are the owner/admin-authed org routes:
- *   - `PATCH /v1/org` edits the four editable meta fields (name, timezone, website, emp_id_prefix)
- *     under an optimistic lock (`version`). **There is deliberately no `GET /v1/org`** — org meta is
- *     write-only from the app today (a read endpoint hasn't landed), so callers can only observe the
- *     server's state via the `OrgView` a successful write returns. Reflect that; don't invent it.
+ *   - `GET /v1/org` reads the org's current meta; `PATCH /v1/org` edits the meta fields (name,
+ *     timezone, website, emp_id_prefix, industry, size) under an optimistic lock (`version`).
+ *     *(This header once claimed "there is deliberately no GET /v1/org" — the read landed; the
+ *     stale claim survived it. Trust the exported functions below over prose.)*
  *   - The lifecycle routes (`transfer-ownership`, `close`, `reopen`, `export`) are **owner-only**
  *     (403 otherwise) and each requires the caller to re-type the workspace **slug** as `confirm`.
  */
@@ -121,6 +121,26 @@ export function exportOrg(confirm: string): Promise<ExportOrgResult> {
     method: "POST",
     body: JSON.stringify({ confirm }),
   });
+}
+
+/** One downloadable export artifact — `url` is a time-limited presigned S3 GET (~15 min). */
+export interface ExportFile {
+  name: string;
+  url: string;
+}
+
+/** `GET /v1/org/exports/{job_id}` (owner-only) — poll the job; `files` fills in once `done`. */
+export interface ExportStatusResult {
+  job_id: string;
+  /** `accepted` | `running` | `done` | `failed`. */
+  status: string;
+  requested_at?: number;
+  completed_at?: number;
+  files: ExportFile[];
+}
+
+export function getExportStatus(jobId: string): Promise<ExportStatusResult> {
+  return apiFetch<ExportStatusResult>(`/v1/org/exports/${encodeURIComponent(jobId)}`);
 }
 
 // ── Branding (singleton) — `GET`/`PATCH /v1/org/branding` ─────────────────────────────────────────

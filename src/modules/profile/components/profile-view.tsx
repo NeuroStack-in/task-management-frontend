@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 import {
   Camera,
   Mail,
+  Building,
   Building2,
   Users as UsersIcon,
   Clock,
@@ -16,6 +17,7 @@ import {
   Briefcase,
   MapPin,
   Phone,
+  Cake,
   ListTodo,
   Pencil,
   TrendingUp,
@@ -61,6 +63,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PhotoEditor } from "@/modules/profile/components/photo-editor";
 import { getOrg } from "@/modules/settings/services/org.service";
 import type { User } from "@/types/user";
@@ -82,6 +91,23 @@ function memberSince(ms: number): string {
   const d = new Date(ms);
   return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
+
+/** "1994-03-14" → "Mar 14, 1994" (string math, no Date — no timezone drift). */
+function formatDob(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${MONTHS[m - 1]} ${d}, ${y}`;
+}
+
+/** The server's `work_mode` enum, with display labels. */
+const WORK_MODES = [
+  { value: "on-site", label: "On-site" },
+  { value: "hybrid", label: "Hybrid" },
+  { value: "remote", label: "Remote" },
+] as const;
+
+const workModeLabel = (v: string | undefined) =>
+  WORK_MODES.find((m) => m.value === v)?.label ?? "—";
 
 /** Local `YYYY-MM-DD` for `daysAgo` days back — same calendar rule as `todayLocal`. */
 function dayLocal(daysAgo: number): string {
@@ -252,12 +278,14 @@ function RichProfile({
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   // Values shown when the edit dialog opened — the diff baseline, so only changes are PATCHed.
-  const baseline = useRef({ name: user.name, phone: "", location: "" });
+  const baseline = useRef({ name: user.name, phone: "", location: "", dob: "", workMode: "" });
   const [form, setForm] = useState({
     name: user.name,
     email: user.email,
     phone: "",
     location: "",
+    dob: "",
+    workMode: "",
   });
   // Pending photo: undefined = unchanged, {file, preview} = new pick (uploaded on save),
   // null = removed. The data URL is preview-only — the File is what gets uploaded.
@@ -270,8 +298,10 @@ function RichProfile({
   const openEdit = () => {
     const phone = profile?.phone ?? "";
     const location = profile?.location ?? "";
-    baseline.current = { name: user.name, phone, location };
-    setForm({ name: user.name, email: user.email, phone, location });
+    const dob = profile?.date_of_birth ?? "";
+    const workMode = profile?.work_mode ?? "";
+    baseline.current = { name: user.name, phone, location, dob, workMode };
+    setForm({ name: user.name, email: user.email, phone, location, dob, workMode });
     setPhoto(undefined);
     setEditOpen(true);
   };
@@ -291,6 +321,8 @@ function RichProfile({
     const name = form.name.trim();
     const phone = form.phone.trim();
     const location = form.location.trim();
+    const dob = form.dob.trim();
+    const workMode = form.workMode.trim();
     if (!name) {
       toast.error("Name can't be empty.");
       return;
@@ -300,6 +332,8 @@ function RichProfile({
     if (name !== baseline.current.name) body.name = name;
     if (phone !== baseline.current.phone) body.phone = phone;
     if (location !== baseline.current.location) body.location = location;
+    if (dob !== baseline.current.dob) body.date_of_birth = dob;
+    if (workMode !== baseline.current.workMode) body.work_mode = workMode;
     // Photo removed → clear `avatar_s3_key` ("" clears, per the PATCH contract).
     if (photo === null) body.avatar_s3_key = "";
     if (Object.keys(body).length > 0) {
@@ -308,7 +342,16 @@ function RichProfile({
         const p = await updateMyProfile(body);
         updateUser({ name: p.name });
         setProfile((prev) =>
-          prev ? { ...prev, name: p.name, phone: p.phone, location: p.location } : prev,
+          prev
+            ? {
+                ...prev,
+                name: p.name,
+                phone: p.phone,
+                location: p.location,
+                date_of_birth: dob || undefined,
+                work_mode: workMode || undefined,
+              }
+            : prev,
         );
         if (photo === null) updateUser({ avatarUrl: undefined });
         toast.success("Profile updated");
@@ -367,7 +410,13 @@ function RichProfile({
   const contact: DetailRow[] = [
     { icon: Mail, label: "Email", value: user.email },
     { icon: Phone, label: "Contact number", value: dash(profile?.phone) },
+    {
+      icon: Cake,
+      label: "Date of birth",
+      value: profile?.date_of_birth ? formatDob(profile.date_of_birth) : "—",
+    },
     { icon: MapPin, label: "Location", value: dash(profile?.location) },
+    { icon: Building, label: "Work mode", value: workModeLabel(profile?.work_mode) },
   ];
   const employment: DetailRow[] = [
     { icon: Hash, label: "Employee ID", value: empId },
@@ -607,9 +656,7 @@ function RichProfile({
 
           <div className="h-px bg-border" />
 
-          {/* Fields — exactly what `PATCH /v1/me/profile` accepts. Fields with no backend record
-              (date of birth, work mode) are deliberately gone: showing an editor for a value the
-              server can't store is how this page ended up inventing data in the first place. */}
+          {/* Fields — exactly what `PATCH /v1/me/profile` accepts, all persisted server-side. */}
           <div className="grid gap-4 sm:grid-cols-2">
             <DialogField label="Full name">
               <Input value={form.name} onChange={(e) => set("name")(e.target.value)} />
@@ -625,8 +672,29 @@ function RichProfile({
                 onChange={(e) => set("phone")(e.target.value)}
               />
             </DialogField>
+            <DialogField label="Date of birth">
+              <Input
+                type="date"
+                value={form.dob}
+                onChange={(e) => set("dob")(e.target.value)}
+              />
+            </DialogField>
             <DialogField label="Location">
               <Input value={form.location} onChange={(e) => set("location")(e.target.value)} />
+            </DialogField>
+            <DialogField label="Work mode">
+              <Select value={form.workMode || undefined} onValueChange={(v) => set("workMode")(v as string)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {WORK_MODES.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </DialogField>
           </div>
 

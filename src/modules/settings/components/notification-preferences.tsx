@@ -27,6 +27,14 @@ interface NotificationType {
   defaults: Record<Channel, boolean>;
 }
 
+/**
+ * Only notification types the backend can actually produce today (fan_out in
+ * notifications/src/consumers.rs). Rows for planned-but-unbuilt producers (anomaly alerts,
+ * timesheet reminders, mentions, product updates) were removed 2026-07-22: a toggle for an event
+ * that can never fire reads as a broken feature, not a preference. When a producer lands, add its
+ * row back here — the settings document and the consumer already handle unknown keys, so the
+ * toggle is live the moment the row exists.
+ */
 const NOTIFICATION_TYPES: NotificationType[] = [
   {
     key: "task-assignments",
@@ -41,40 +49,16 @@ const NOTIFICATION_TYPES: NotificationType[] = [
     defaults: { inApp: true, email: true },
   },
   {
-    key: "anomalies",
-    label: "Productivity anomalies",
-    description: "Inactivity, productivity drops, and burnout alerts for your team.",
-    defaults: { inApp: true, email: false },
-  },
-  {
-    key: "timesheet-reminders",
-    label: "Timesheet reminders",
-    description: "Nudges to submit your weekly timesheet before the deadline.",
-    defaults: { inApp: true, email: true },
-  },
-  {
-    key: "mentions",
-    label: "Mentions & messages",
-    description: "When someone @mentions you or sends a direct message.",
-    defaults: { inApp: true, email: false },
-  },
-  {
     key: "billing",
     label: "Billing & account",
-    description: "Invoices, payment issues, and seat changes.",
+    description: "Plan and seat changes for your organization.",
     defaults: { inApp: true, email: true },
   },
   {
     key: "security",
     label: "Security alerts",
-    description: "New sign-ins, MFA changes, and suspicious activity.",
+    description: "MFA resets and other security changes to your account.",
     defaults: { inApp: true, email: true },
-  },
-  {
-    key: "product-updates",
-    label: "Product updates",
-    description: "New features, tips, and occasional announcements.",
-    defaults: { inApp: false, email: false },
   },
 ];
 

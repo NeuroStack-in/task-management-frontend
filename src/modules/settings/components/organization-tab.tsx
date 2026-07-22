@@ -41,10 +41,13 @@ import {
  * Organization profile — the real backend (`GET` + `PATCH /v1/org`, LLD §14).
  *
  * On mount we `getOrg()` and seed the form with the org's current server-side values, keeping the
- * returned `version` for the next optimistic-locked write. Only the four fields the API accepts are
- * editable here — name, timezone, website, and employee-id prefix. Legal name, industry, size,
- * departments, locations, holidays and policies were mock-only and are intentionally not shown until
- * endpoints back them. A 404 means the org isn't provisioned yet ⇒ keep an empty editable form.
+ * returned `version` for the next optimistic-locked write. Every field shown is persisted: name,
+ * timezone, website, employee-id prefix, industry and size all ride `PATCH /v1/org`, and the
+ * sub-managers below (branding, departments, teams, locations, holidays, policies) each have their
+ * own live endpoints. *(A previous version of this comment said industry/size/locations/etc. were
+ * "mock-only, not shown until endpoints back them" — long false; kept as a warning that stale
+ * comments here have hidden real features before.)* A 404 means the org isn't provisioned yet ⇒
+ * keep an empty editable form.
  */
 
 // Local, self-contained timezone options (no mock import). IANA zones the picker offers.

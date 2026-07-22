@@ -16,6 +16,10 @@ export interface UpdateMyProfileBody {
   name?: string;
   phone?: string;
   location?: string;
+  /** `YYYY-MM-DD`; "" clears. */
+  date_of_birth?: string;
+  /** `on-site` | `hybrid` | `remote`; "" clears. */
+  work_mode?: string;
   avatar_s3_key?: string;
 }
 
@@ -53,6 +57,10 @@ export interface ApiMyFullProfile {
   team_id?: string;
   /** Epoch ms the account was created — the honest "member since". */
   created_at?: number;
+  /** `YYYY-MM-DD`, self-set. */
+  date_of_birth?: string;
+  /** `on-site` | `hybrid` | `remote`, self-set. */
+  work_mode?: string;
 }
 
 /** `GET /v1/me/profile` — the caller's own stored profile. Self-service. */

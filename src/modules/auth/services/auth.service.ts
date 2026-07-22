@@ -135,6 +135,9 @@ function toUser(session: CognitoUserSession): User {
     status: "active",
     productivityScore: 0,
     organizationId: c.tenant_id || c["custom:orgId"],
+    // The raw bitset claim — lets the UI gate derive permissions for server-created custom roles
+    // the local store has never heard of (see lib/permission-bits.ts).
+    perm: c.perm,
   };
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Lock,
   TriangleAlert,
@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Check,
   Download,
+  Loader2,
   ShieldOff,
   FolderX,
   ReceiptText,
@@ -42,7 +43,9 @@ import { ApiError } from "@/lib/api";
 import {
   transferOwnership,
   exportOrg,
+  getExportStatus,
   closeOrg,
+  type ExportStatusResult,
 } from "@/modules/settings/services/org.service";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -185,6 +188,23 @@ export function OwnershipSettings() {
 
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  // The in-flight/last export job this session. Polled while accepted/running; `files` carries
+  // time-limited presigned links once done (~15 min — re-poll refreshes them).
+  const [exportJob, setExportJob] = useState<ExportStatusResult | null>(null);
+
+  useEffect(() => {
+    if (!exportJob || (exportJob.status !== "accepted" && exportJob.status !== "running")) {
+      return;
+    }
+    const id = setInterval(() => {
+      getExportStatus(exportJob.job_id)
+        .then(setExportJob)
+        .catch(() => {
+          /* transient poll failure — keep the last state, next tick retries */
+        });
+    }, 4000);
+    return () => clearInterval(id);
+  }, [exportJob]);
 
   const [acknowledged, setAcknowledged] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
@@ -219,8 +239,9 @@ export function OwnershipSettings() {
     try {
       const res = await exportOrg(slug);
       setExportOpen(false);
+      setExportJob({ job_id: res.job_id, status: res.status, files: [] });
       toast.success("Export started", {
-        description: `Job ${res.job_id} · ${res.status}. You'll be able to download it once it finishes.`,
+        description: "Walking your organization's data — download links appear here when done.",
       });
     } catch (e) {
       reportError(e, "Couldn't start the export.");
@@ -389,10 +410,47 @@ export function OwnershipSettings() {
             </p>
           </div>
         </div>
+        {exportJob ? (
+          <div className="border-t border-border px-6 py-4">
+            {exportJob.status === "done" ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">
+                  Export ready — {exportJob.files.length} file
+                  {exportJob.files.length === 1 ? "" : "s"}{" "}
+                  <span className="font-normal text-muted-foreground">
+                    (links expire after ~15 minutes; re-open this page to refresh them)
+                  </span>
+                </p>
+                <ul className="max-h-48 space-y-1 overflow-y-auto">
+                  {exportJob.files.map((f) => (
+                    <li key={f.name}>
+                      <a
+                        href={f.url}
+                        download={f.name}
+                        className="text-sm text-primary underline-offset-2 hover:underline"
+                      >
+                        {f.name}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : exportJob.status === "failed" ? (
+              <p className="text-sm text-destructive">
+                Export {exportJob.job_id} failed — request a new one.
+              </p>
+            ) : (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Export {exportJob.status}… walking your data (job {exportJob.job_id}).
+              </p>
+            )}
+          </div>
+        ) : null}
         <div className="flex flex-col gap-3 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-end">
           <Button
             variant="outline"
-            disabled={!isOwner}
+            disabled={!isOwner || exportJob?.status === "running" || exportJob?.status === "accepted"}
             onClick={() => setExportOpen(true)}
           >
             <Download className="size-4" /> Request export
