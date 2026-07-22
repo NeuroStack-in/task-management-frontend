@@ -133,7 +133,11 @@ export function RequestLeaveDialog({
               control={control}
               name="type"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  items={Object.fromEntries(types.map((t) => [t.type_id, t.name]))}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select a leave type" />
                   </SelectTrigger>

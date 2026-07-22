@@ -22,6 +22,8 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import { usePayroll } from "../use-payroll";
+import { DeductionsCard } from "./deductions-card";
+import { SetCompensationCard } from "./set-compensation-card";
 import type { ApiPayrollRun } from "../services/payroll.service";
 
 const STATUS_META: Record<string, string> = {
@@ -37,14 +39,11 @@ function periodLabel(period: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-function deductionLabel(kind: string, value: number): string {
-  return kind === "percent" ? `${value}%` : formatCurrency(value);
-}
-
 export function PayrollView() {
   const { can } = usePermissions();
   const canManage = can("payroll:manage");
-  const { runs, deductions, loading, error, reload, draft, finalize } = usePayroll();
+  const { runs, deductions, loading, error, reload, draft, finalize, saveDeductions, setComp } =
+    usePayroll();
 
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
   const [newPeriod, setNewPeriod] = useState("");
@@ -224,33 +223,11 @@ export function PayrollView() {
         </CardContent>
       </Card>
 
-      {/* Deductions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Deduction rules</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {deductions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No deduction rules configured.</p>
-          ) : (
-            <ul className="divide-y">
-              {deductions.map((d) => (
-                <li key={d.name} className="flex items-center justify-between py-2.5 text-sm">
-                  <span className="flex items-center gap-2">
-                    <span className="font-medium capitalize">{d.name}</span>
-                    {!d.active ? (
-                      <Badge variant="outline" className="font-normal text-muted-foreground">
-                        inactive
-                      </Badge>
-                    ) : null}
-                  </span>
-                  <span className="font-mono tabular-nums">{deductionLabel(d.kind, d.value)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      {/* Compensation (write-only surface — the API has no comp GET) */}
+      {canManage ? <SetCompensationCard onSave={setComp} /> : null}
+
+      {/* Deductions — editable for payroll:manage, read-only otherwise */}
+      <DeductionsCard deductions={deductions} canManage={canManage} onSave={saveDeductions} />
 
       {/* Honest gap */}
       <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">

@@ -554,7 +554,13 @@ export function HelpPage() {
                     control={control}
                     name="category"
                     render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        items={Object.fromEntries(
+                          visibleCategories.map((cat) => [cat.key, cat.label]),
+                        )}
+                      >
                         <SelectTrigger
                           className={cn("w-full", errors.category && "border-destructive")}
                         >

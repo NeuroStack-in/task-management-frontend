@@ -1,15 +1,26 @@
 "use client";
 
+import { useState } from "react";
 import { Check, CreditCard, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
+import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/currency";
-import { PLAN_TIERS } from "@/modules/billing/lib/plans";
+import { PLAN_TIERS, type PlanTier } from "@/modules/billing/lib/plans";
+import { changePlan } from "../services/billing.service";
 import { useBilling } from "../use-billing";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +28,34 @@ export function BillingView() {
   const { can } = usePermissions();
   const canManage = can("billing:manage");
   const { overview, loading, error, reload } = useBilling();
+
+  // The plan-change confirm flow: pick a tier → confirm → POST → re-fetch.
+  const [pendingTier, setPendingTier] = useState<PlanTier | null>(null);
+  const [changing, setChanging] = useState(false);
+
+  async function confirmChange() {
+    if (!pendingTier) return;
+    setChanging(true);
+    try {
+      await changePlan({ plan: pendingTier.id });
+      toast.success(`You're on the ${pendingTier.name} plan.`, {
+        description: "Feature entitlements update within a few moments.",
+      });
+      setPendingTier(null);
+      // Re-fetch the overview so the new plan/seat cap renders. Entitlements aren't cached
+      // anywhere global — every consumer (feature gates, settings) re-fetches on mount, and the
+      // server reconciles them asynchronously from `billing.plan_changed` anyway.
+      reload();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        toast.error("You don't have permission to change the plan.");
+      } else {
+        toast.error(e instanceof ApiError ? e.message : "Couldn't change the plan. Try again.");
+      }
+    } finally {
+      setChanging(false);
+    }
+  }
 
   if (loading && !overview) {
     return (
@@ -46,7 +85,12 @@ export function BillingView() {
   const seatPct = capped ? Math.round((overview.seats_used / overview.seat_cap) * 100) : 0;
   // A real, per-seat estimate — only when both the seat cap and a catalog price exist. Never invent
   // an invoiced amount; the backend serves no billed total.
-  const estMonthly = tier && capped ? overview.seats_used * tier.pricePerSeat : null;
+  const estMonthly =
+    tier && tier.pricePerSeat > 0 && capped ? overview.seats_used * tier.pricePerSeat : null;
+
+  // On a downgrade the server keeps `seats_used` as-is, so the org can land over the new cap —
+  // warn before confirming.
+  const overCap = pendingTier !== null && overview.seats_used > pendingTier.seatCap;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -105,7 +149,9 @@ export function BillingView() {
               variant="outline"
               size="sm"
               disabled={!canManage}
-              onClick={() => toast.info("Self-serve plan changes aren't enabled yet.")}
+              onClick={() =>
+                document.getElementById("billing-plans")?.scrollIntoView({ behavior: "smooth" })
+              }
             >
               Manage subscription
             </Button>
@@ -153,7 +199,7 @@ export function BillingView() {
       </section>
 
       {/* Plans */}
-      <section className="space-y-4">
+      <section id="billing-plans" className="space-y-4">
         <h2 className="text-sm font-medium text-muted-foreground">Plans</h2>
         <div className="grid gap-3 sm:grid-cols-3">
           {PLAN_TIERS.map((t) => {
@@ -192,7 +238,7 @@ export function BillingView() {
                     size="sm"
                     className="mt-3 -ml-2"
                     disabled={!canManage}
-                    onClick={() => toast.info("Self-serve plan changes aren't enabled yet.")}
+                    onClick={() => setPendingTier(t)}
                   >
                     Switch
                   </Button>
@@ -214,6 +260,41 @@ export function BillingView() {
           </p>
         </div>
       </section>
+
+      {/* Confirm plan change — no payment step: the change applies immediately (no provider). */}
+      <Dialog
+        open={pendingTier !== null}
+        onOpenChange={(open) => {
+          if (!open && !changing) setPendingTier(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Switch to {pendingTier?.name}?</DialogTitle>
+            <DialogDescription>
+              Your organization moves from the{" "}
+              <span className="capitalize">{overview.plan}</span> plan to{" "}
+              {pendingTier?.name} ({pendingTier ? formatCurrency(pendingTier.pricePerSeat) : ""}
+              /seat/mo, up to {pendingTier?.seatCap.toLocaleString()} seats). The change takes
+              effect immediately and adjusts which features your plan allows.
+            </DialogDescription>
+          </DialogHeader>
+          {overCap ? (
+            <p className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+              You currently use {overview.seats_used} seats — more than this plan&apos;s cap of{" "}
+              {pendingTier?.seatCap}. Reduce active members after switching.
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingTier(null)} disabled={changing}>
+              Cancel
+            </Button>
+            <Button onClick={confirmChange} disabled={changing}>
+              {changing ? "Switching…" : `Switch to ${pendingTier?.name ?? ""}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

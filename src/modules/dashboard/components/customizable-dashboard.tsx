@@ -27,6 +27,9 @@ import {
   X,
 } from "lucide-react";
 import { useDashboardStore, type DashboardWidget } from "@/stores/dashboard.store";
+import { useDashboardLayoutSync } from "@/modules/dashboard/use-layout-sync";
+import { widgetPermission } from "@/modules/dashboard/services/dashboard.service";
+import { usePermissions } from "@/hooks/use-permissions";
 import { WIDGET_REGISTRY, type DashboardData } from "@/modules/dashboard/widget-registry";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -133,6 +136,10 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const reorder = useDashboardStore((s) => s.reorder);
   const reset = useDashboardStore((s) => s.reset);
 
+  // Server persistence: hydrate from `GET /v1/me/dashboard-layouts` on mount, debounce-save layout
+  // changes to `PUT /v1/me/dashboard-layouts/oversight`. Local store stays the optimistic truth.
+  useDashboardLayoutSync();
+
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -140,13 +147,22 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  const { can } = usePermissions();
+
   const ordered = useMemo(
     () => [...widgets].sort((a, b) => a.position - b.position),
     [widgets],
   );
-  const visible = ordered.filter((w) => w.visible);
+  // Catalog `required_perm` pre-filter (mirrors `wp-contracts::widgets`): a widget whose catalog
+  // permission the user lacks is neither rendered nor offered in Customize — matching the server's
+  // per-widget gate, and keeping unpermitted placements out of the layout PUT.
+  const permitted = ordered.filter((w) => can(widgetPermission(w.type)));
+  const blockedIds = ordered
+    .filter((w) => !can(widgetPermission(w.type)))
+    .map((w) => w.id);
+  const visible = permitted.filter((w) => w.visible);
   const visibleIds = visible.map((w) => w.id);
-  const hiddenIds = ordered.filter((w) => !w.visible).map((w) => w.id);
+  const hiddenIds = permitted.filter((w) => !w.visible).map((w) => w.id);
 
   const activeWidget = activeId
     ? ordered.find((w) => w.id === activeId)
@@ -162,8 +178,9 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
     const newIndex = visibleIds.indexOf(String(over.id));
     if (oldIndex < 0 || newIndex < 0) return;
     const newVisible = arrayMove(visibleIds, oldIndex, newIndex);
-    // Reorder within the visible set; hidden widgets keep their order behind it.
-    reorder([...newVisible, ...hiddenIds]);
+    // Reorder within the visible set; hidden widgets keep their order behind it, and
+    // permission-blocked widgets keep a stable position at the tail (never index -1).
+    reorder([...newVisible, ...hiddenIds, ...blockedIds]);
   };
 
   const renderWidget = (w: DashboardWidget, heroFill: boolean) => {
@@ -198,7 +215,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
               Show widgets
             </p>
             <div className="max-h-72 overflow-y-auto px-1 pb-1">
-              {ordered.map((w) => (
+              {permitted.map((w) => (
                 <label
                   key={w.id}
                   className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"

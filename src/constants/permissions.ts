@@ -137,6 +137,8 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
       p("leave", "view", "View Leave Requests"),
       p("leave", "request", "Submit Leave Request"),
       p("leave", "approve", "Approve Leave Requests"),
+      // Mirrors `Permission::LeaveManage` (bit 42) in wp-contracts: leave-type config + allowances.
+      p("leave", "manage", "Manage Leave Types & Allowances"),
     ],
   },
   {

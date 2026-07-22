@@ -20,7 +20,11 @@ import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { getOrg, updateOrg } from "@/modules/settings/services/org.service";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
-import { createInvite } from "@/modules/employees/services/employees.service";
+import {
+  createDepartment,
+  createInvite,
+  listDepartments,
+} from "@/modules/employees/services/employees.service";
 import {
   getTrackingPolicy,
   updateTrackingPolicy,
@@ -193,11 +197,30 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
       await markStep("invite_team", "skipped");
       return;
     }
+    // Invites now require a department + title (server 400s without them). A fresh org has no
+    // departments yet, so ensure a starter one exists; joiners land there with a generic title,
+    // both refinable later from Employees (edit employee). Real placement, not a bypass.
+    let departmentId: string;
+    try {
+      const depts = await listDepartments();
+      departmentId = depts[0]?.id ?? (await createDepartment("General")).id;
+    } catch {
+      toast.error("Couldn't prepare a department for invites", {
+        description: "Invite teammates later from Employees.",
+      });
+      await markStep("invite_team", "skipped");
+      return;
+    }
     let invited = 0;
     let failed = 0;
     for (const email of valid) {
       try {
-        await createInvite({ email, role_id: role.id });
+        await createInvite({
+          email,
+          role_id: role.id,
+          department_id: departmentId,
+          title: "Team member",
+        });
         invited++;
       } catch {
         failed++;
@@ -205,7 +228,10 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
     }
     if (invited > 0) {
       toast.success(`Invited ${invited} teammate${invited === 1 ? "" : "s"}`, {
-        description: failed > 0 ? `${failed} invite${failed === 1 ? "" : "s"} failed.` : undefined,
+        description:
+          failed > 0
+            ? `${failed} invite${failed === 1 ? "" : "s"} failed.`
+            : "Filed under General with a placeholder title — refine from Employees.",
       });
     } else if (failed > 0) {
       toast.error("Couldn't send invites", {

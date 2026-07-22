@@ -43,6 +43,9 @@ export interface EmployeeProfileData {
   jobTitle: string;
   department: string;
   team: string;
+  /** Raw backend ids (`""` when unset) — the edit dialog patches by id, not display name. */
+  departmentId: string;
+  teamId: string;
   roleName: string;
   status: "active" | "inactive" | "invited" | "suspended";
   productivityScore: number;
@@ -217,6 +220,8 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           jobTitle: p.title ?? "",
           department: p.department_id ? (depts.get(p.department_id) ?? p.department_id) : "",
           team: p.team_id ? (teams.get(p.team_id) ?? p.team_id) : "",
+          departmentId: p.department_id ?? "",
+          teamId: p.team_id ?? "",
           roleName,
           status: p.status === "deactivated" ? "inactive" : "active",
           productivityScore,

@@ -60,7 +60,13 @@ describe("employees.service route contract", () => {
   });
 
   it("createInvite POSTs /v1/employees/invites with the invite body", async () => {
-    const body = { email: "a@acme.test", role_id: "r1", team_id: "t1" };
+    const body = {
+      email: "a@acme.test",
+      role_id: "r1",
+      department_id: "d1",
+      title: "Engineer",
+      team_id: "t1",
+    };
     await createInvite(body);
     expect(mock).toHaveBeenCalledWith("/v1/employees/invites", {
       method: "POST",

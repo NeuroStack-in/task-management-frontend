@@ -12,6 +12,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import {
   AuthError,
   DEMO_ACCOUNTS,
+  TotpChallengeError,
 } from "@/modules/auth/services/auth.service";
 import { SsoButtons } from "./sso-buttons";
 import {
@@ -59,6 +60,17 @@ export function LoginForm() {
       const from = params.get("from");
       router.replace(from && from.startsWith("/") ? from : "/dashboard");
     } catch (err) {
+      if (err instanceof TotpChallengeError) {
+        // Password accepted — Cognito wants the authenticator code next. The half-signed-in
+        // user is held by the auth service; /mfa completes the challenge.
+        const from = params.get("from");
+        router.push(
+          from && from.startsWith("/")
+            ? `/mfa?from=${encodeURIComponent(from)}`
+            : "/mfa",
+        );
+        return;
+      }
       const message =
         err instanceof AuthError ? err.message : "Something went wrong.";
       toast.error("Sign in failed", { description: message });

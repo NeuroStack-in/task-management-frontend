@@ -49,6 +49,7 @@ export const SYSTEM_ROLES: Role[] = [
       "approvals:view",
       "approvals:approve",
       "leave:approve",
+      "leave:manage",
       "ai:view",
       "anomalies:view",
       "communication:view",

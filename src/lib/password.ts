@@ -1,12 +1,13 @@
 /**
- * Password policy — mirrors the Cognito user-pool policy exactly (min 12 · upper · lower · number,
- * symbols optional). Every form that sets a Cognito password (signup, invite-accept, reset) must
+ * Password policy — mirrors the Cognito user-pool policy exactly (min 8 · upper · lower · number,
+ * symbols optional; lowered from 12 by product decision 2026-07-22, deployed with the same-day
+ * auth_stack change). Every form that sets a Cognito password (signup, invite-accept, reset) must
  * validate against this BEFORE submit — otherwise Cognito rejects the password server-side and the
  * caller gets a confusing generic failure (e.g. org-create 500s after provisioning). Keep in lockstep
  * with the pool's PasswordPolicy.
  */
 
-export const PASSWORD_MIN = 12;
+export const PASSWORD_MIN = 8;
 
 /** Human-readable requirements, for a hint under the field. */
 export const PASSWORD_RULES = [

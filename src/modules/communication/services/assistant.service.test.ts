@@ -6,7 +6,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { apiFetch } from "@/lib/api";
-import { sendAssistantMessage } from "./assistant.service";
+import { listAssistantThreads, sendAssistantMessage } from "./assistant.service";
 
 const mock = vi.mocked(apiFetch);
 beforeEach(() => mock.mockClear());
@@ -20,5 +20,12 @@ describe("assistant.service route contract", () => {
       body: JSON.stringify({ message: "hello" }),
     });
     expect(reply).toBe("hi");
+  });
+
+  it("listAssistantThreads GETs the threads route and unwraps res.threads", async () => {
+    mock.mockResolvedValueOnce({ threads: ["Quarterly report help"] });
+    const threads = await listAssistantThreads();
+    expect(mock).toHaveBeenCalledWith("/v1/assistant/threads");
+    expect(threads).toEqual(["Quarterly report help"]);
   });
 });

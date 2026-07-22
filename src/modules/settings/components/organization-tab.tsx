@@ -325,6 +325,10 @@ export function OrganizationTab() {
                   update({ industry: v === UNSET ? "" : (v as string) })
                 }
                 disabled={!canManage}
+                items={{
+                  [UNSET]: "Not set",
+                  ...Object.fromEntries(INDUSTRY_OPTIONS.map((ind) => [ind, ind])),
+                }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select an industry…" />
@@ -347,6 +351,10 @@ export function OrganizationTab() {
                   update({ size: v === UNSET ? "" : (v as string) })
                 }
                 disabled={!canManage}
+                items={{
+                  [UNSET]: "Not set",
+                  ...Object.fromEntries(SIZE_OPTIONS.map((s) => [s, `${s} employees`])),
+                }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a size…" />

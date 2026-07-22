@@ -54,3 +54,44 @@ export function getDeductions(): Promise<ApiDeduction[]> {
     (r) => r.deductions,
   );
 }
+
+/**
+ * `PUT /v1/payroll/deductions` — replace the org's deduction rules wholesale (the server stores the
+ * list verbatim as the `CONFIG#DEDUCTIONS` document and echoes it back). Needs `payroll:manage`.
+ */
+export function updateDeductions(deductions: ApiDeduction[]): Promise<ApiDeduction[]> {
+  return apiFetch<{ deductions: ApiDeduction[] }>("/v1/payroll/deductions", {
+    method: "PUT",
+    body: JSON.stringify({ deductions }),
+  }).then((r) => r.deductions);
+}
+
+/** What `PUT /v1/payroll/comp/{user_id}` takes — mirrors `employee_comp::CompRequest`. */
+export interface CompensationInput {
+  /** `hourly` (rate = per hour) | `salaried` (rate = per month). Server rejects anything else. */
+  pay_type: "hourly" | "salaried";
+  /** Must be non-negative. */
+  rate: number;
+}
+
+/** The PUT's echo — mirrors `employee_comp::CompView`. There is **no comp GET route**; this response
+ *  is the only read of an employee's comp the API offers (runs consume it server-side at draft time). */
+export interface ApiCompensation {
+  user_id: string;
+  pay_type: string;
+  rate: number;
+}
+
+/**
+ * `PUT /v1/payroll/comp/{user_id}` — set an employee's pay type + rate. Needs `payroll:manage`.
+ * 404 if the user id doesn't exist in the tenant.
+ */
+export function setCompensation(
+  userId: string,
+  body: CompensationInput,
+): Promise<ApiCompensation> {
+  return apiFetch<ApiCompensation>(`/v1/payroll/comp/${encodeURIComponent(userId)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}

@@ -22,12 +22,17 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { SsoButtons } from "./sso-buttons";
+import { validatePassword } from "@/lib/password";
 
 const schema = z.object({
   name: z.string().trim().min(2, "Enter your full name."),
   email: z.string().trim().email("Enter a valid work email."),
   company: z.string().trim().min(2, "Enter your company name."),
-  password: z.string().min(8, "Use at least 8 characters."),
+  // The pool also requires upper/lower/number — surface the exact miss before Cognito rejects it.
+  password: z.string().superRefine((pw, ctx) => {
+    const err = validatePassword(pw);
+    if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
+  }),
   terms: z.literal(true, {
     errorMap: () => ({ message: "Please accept the terms to continue." }),
   }),

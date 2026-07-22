@@ -8,7 +8,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { apiFetch } from "@/lib/api";
-import { getBillingOverview } from "./billing.service";
+import { changePlan, getBillingOverview } from "./billing.service";
 
 const mock = vi.mocked(apiFetch);
 beforeEach(() => mock.mockClear());
@@ -17,5 +17,13 @@ describe("billing.service route contract", () => {
   it("getBillingOverview GETs the org billing overview", async () => {
     await getBillingOverview();
     expect(mock).toHaveBeenCalledWith("/v1/billing");
+  });
+
+  it("changePlan POSTs the plan id to /v1/billing/change-plan", async () => {
+    await changePlan({ plan: "starter" });
+    expect(mock).toHaveBeenCalledWith("/v1/billing/change-plan", {
+      method: "POST",
+      body: JSON.stringify({ plan: "starter" }),
+    });
   });
 });

@@ -120,6 +120,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                 task: runningRow.description || runningRow.task || "No description",
                 project: runningRow.project,
                 start: runningRow.start,
+                startMs: runningRow.startMs,
               }
             : null
         }

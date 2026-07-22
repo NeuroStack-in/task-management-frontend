@@ -6,7 +6,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { apiFetch } from "@/lib/api";
-import { listMySessions, resetMfaDevice } from "./security.service";
+import { listMySessions, listSecurityEvents, resetMfaDevice } from "./security.service";
 
 const mock = vi.mocked(apiFetch);
 beforeEach(() => mock.mockClear());
@@ -16,6 +16,12 @@ describe("security.service route contract", () => {
     mock.mockResolvedValueOnce([]);
     await listMySessions();
     expect(mock).toHaveBeenCalledWith("/v1/me/sessions");
+  });
+
+  it("listSecurityEvents GETs /v1/security-events with the limit", async () => {
+    mock.mockResolvedValueOnce([]);
+    await listSecurityEvents();
+    expect(mock).toHaveBeenCalledWith("/v1/security-events?limit=200");
   });
 
   it("resetMfaDevice POSTs the encoded user path", async () => {

@@ -19,17 +19,14 @@ import { formatDuration } from "@/lib/format";
 export interface RunningSession {
   task: string;
   project: string;
-  /** Local `HH:MM` the session started (from the folded time entry). */
+  /** Local `HH:MM` the session started — display only, never the tick anchor. */
   start: string;
-}
-
-/** Reconstruct today's start epoch from an `HH:MM` local time. Null if unparseable. */
-function startEpochToday(hhmm: string): number | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm);
-  if (!m) return null;
-  const d = new Date();
-  d.setHours(Number(m[1]), Number(m[2]), 0, 0);
-  return d.getTime();
+  /**
+   * Epoch ms the session started — the agent's exact stamp. The elapsed clock is anchored here so
+   * it agrees with the desktop timer to the second; deriving it from the `HH:MM` string truncated
+   * the seconds and read up to 59 s ahead of the agent.
+   */
+  startMs: number;
 }
 
 export function TimerHero({
@@ -48,9 +45,8 @@ export function TimerHero({
     return () => clearInterval(id);
   }, [running]);
 
-  const startedAt = running ? startEpochToday(running.start) : null;
-  const elapsedSec = startedAt
-    ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+  const elapsedSec = running
+    ? Math.max(0, Math.floor((Date.now() - running.startMs) / 1000))
     : 0;
 
   return (

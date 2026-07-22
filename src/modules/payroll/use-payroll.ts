@@ -11,8 +11,12 @@ import {
   getDeductions,
   draftRun,
   finalizeRun,
+  updateDeductions,
+  setCompensation,
   type ApiPayrollRun,
   type ApiDeduction,
+  type ApiCompensation,
+  type CompensationInput,
 } from "./services/payroll.service";
 
 export interface PayrollState {
@@ -23,6 +27,8 @@ export interface PayrollState {
   reload: () => void;
   draft: (period: string) => Promise<ApiPayrollRun>;
   finalize: (period: string) => Promise<ApiPayrollRun>;
+  saveDeductions: (rules: ApiDeduction[]) => Promise<ApiDeduction[]>;
+  setComp: (userId: string, body: CompensationInput) => Promise<ApiCompensation>;
 }
 
 export function usePayroll(): PayrollState {
@@ -74,7 +80,20 @@ export function usePayroll(): PayrollState {
     [reload],
   );
 
-  return { runs, deductions, loading, error, reload, draft, finalize };
+  /** PUT the full rule list; the server echoes the stored list back — trust that echo. */
+  const saveDeductions = useCallback(async (rules: ApiDeduction[]) => {
+    const next = await updateDeductions(rules);
+    setDeductions(next);
+    return next;
+  }, []);
+
+  /** Set one employee's comp. Comp feeds run totals at *draft* time, so existing rows don't move —
+   *  no reload needed; the PUT's echo is the freshest read the API offers (there is no comp GET). */
+  const setComp = useCallback(async (userId: string, body: CompensationInput) => {
+    return setCompensation(userId, body);
+  }, []);
+
+  return { runs, deductions, loading, error, reload, draft, finalize, saveDeductions, setComp };
 }
 
 function messageOf(e: unknown): string {

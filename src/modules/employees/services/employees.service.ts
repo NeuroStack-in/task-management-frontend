@@ -145,6 +145,41 @@ export async function deleteTeam(id: string): Promise<void> {
   await apiFetch(`/v1/teams/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+/**
+ * Mirrors `workforce::update_employee::dto::UpdateEmployeeRequest` (`PATCH /v1/employees/{id}`).
+ * Admin-editable fields only (LLD §17). **Omitted fields are left unchanged; an empty string
+ * clears the field** — so callers should send only what actually changed. Role is not here
+ * (that's `PUT /v1/users/{id}/role` in `identity`); email/payroll are out of scope.
+ */
+export interface UpdateEmployeeBody {
+  name?: string;
+  title?: string;
+  department_id?: string;
+  team_id?: string;
+  location?: string;
+  phone?: string;
+}
+
+/** Mirrors `workforce::update_employee::dto::UpdatedEmployee` — the lean post-update echo. */
+export interface ApiUpdatedEmployee {
+  user_id: string;
+  name: string;
+  department_id?: string;
+  team_id?: string;
+  title?: string;
+}
+
+/** `PATCH /v1/employees/{id}` — edit an employee's admin-managed fields. Needs `employees:manage`. */
+export function updateEmployee(
+  userId: string,
+  body: UpdateEmployeeBody,
+): Promise<ApiUpdatedEmployee> {
+  return apiFetch<ApiUpdatedEmployee>(`/v1/employees/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
 /** `POST /v1/employees/{id}/deactivate` — the lifecycle action (LLD §6). */
 export async function deactivateEmployee(userId: string): Promise<void> {
   await apiFetch(`/v1/employees/${encodeURIComponent(userId)}/deactivate`, {
@@ -156,6 +191,23 @@ export async function deactivateEmployee(userId: string): Promise<void> {
 export async function reactivateEmployee(userId: string): Promise<void> {
   await apiFetch(`/v1/employees/${encodeURIComponent(userId)}/reactivate`, {
     method: "POST",
+  });
+}
+
+/**
+ * `DELETE /v1/employees/{id}` — **permanent removal.** Unlike deactivate (reversible, keeps the
+ * person as a `deactivated` record), this erases the identity: the login, directory entry and email
+ * claim. Their time/attendance/payroll history stays on record (a tombstoned `user_id`).
+ *
+ * **Deactivate first.** The route only permits deletion of an already-`deactivated` employee —
+ * deactivation is the saga that reassigns their work and releases their seat/devices. Calling it on
+ * an `active` employee returns `409 must_deactivate_first`; the owner (`cannot_delete_owner`) and
+ * yourself (`cannot_delete_self`) are also rejected. The manage-menu UI steers around these before
+ * they happen and translates any that slip through.
+ */
+export async function deleteEmployee(userId: string): Promise<void> {
+  await apiFetch(`/v1/employees/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
   });
 }
 
@@ -173,6 +225,8 @@ export interface ApiInviteCreated {
   email: string;
   role_id: string;
   team_id?: string;
+  department_id: string;
+  title: string;
   /** `pending` on creation. */
   status: string;
   /** Epoch **seconds**. */
@@ -181,10 +235,14 @@ export interface ApiInviteCreated {
   otp: string;
 }
 
-/** `POST /v1/employees/invites` — mint an invite. Department/team are assigned after they join. */
+/** `POST /v1/employees/invites` — mint an invite. Department and title are REQUIRED org facts the
+ *  admin fixes up front (server 400s without them and validates the ids exist); team is optional.
+ *  They land on the User at accept, and the admin-set title wins over the invitee's signup input. */
 export function createInvite(body: {
   email: string;
   role_id: string;
+  department_id: string;
+  title: string;
   team_id?: string;
 }): Promise<ApiInviteCreated> {
   return apiFetch<ApiInviteCreated>("/v1/employees/invites", {

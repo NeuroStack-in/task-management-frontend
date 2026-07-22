@@ -174,7 +174,11 @@ export function RoleEditorDialog({
 
           <div className="space-y-2">
             <Label>Data scope</Label>
-            <Select value={scope} onValueChange={(v) => setScope(v as string)}>
+            <Select
+              value={scope}
+              onValueChange={(v) => setScope(v as string)}
+              items={Object.fromEntries(SCOPES.map((s) => [s.value, s.label]))}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>

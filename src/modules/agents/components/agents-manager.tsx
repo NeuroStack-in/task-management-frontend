@@ -150,6 +150,7 @@ export function AgentsManager() {
               <Select
                 value={statusFilter}
                 onValueChange={(v) => setStatusFilter(v as string)}
+                items={{ all: "All status", online: "Online", idle: "Idle", offline: "Offline" }}
               >
                 <SelectTrigger size="sm" className="w-32">
                   <SelectValue />
@@ -164,6 +165,10 @@ export function AgentsManager() {
               <Select
                 value={osFilter}
                 onValueChange={(v) => setOsFilter(v as string)}
+                items={{
+                  all: "All systems",
+                  ...Object.fromEntries(osOptions.map((os) => [os, os])),
+                }}
               >
                 <SelectTrigger size="sm" className="w-32">
                   <SelectValue />

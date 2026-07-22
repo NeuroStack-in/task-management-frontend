@@ -297,7 +297,12 @@ export function TeamsManager() {
             </div>
             <div className="space-y-1.5">
               <Label>Department</Label>
-              <Select value={newDept} onValueChange={(v) => setNewDept(v as string)} disabled={adding}>
+              <Select
+                value={newDept}
+                onValueChange={(v) => setNewDept(v as string)}
+                disabled={adding}
+                items={Object.fromEntries(depts.map((d) => [d.id, d.name]))}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a department…" />
                 </SelectTrigger>

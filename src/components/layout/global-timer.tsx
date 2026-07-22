@@ -44,13 +44,9 @@ function RunningIndicator() {
     );
   }
 
-  const m = /^(\d{1,2}):(\d{2})$/.exec(running.start);
-  let elapsedSec = 0;
-  if (m) {
-    const d = new Date();
-    d.setHours(Number(m[1]), Number(m[2]), 0, 0);
-    elapsedSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
-  }
+  // Anchor to the agent's exact epoch-ms stamp, not the `HH:MM` display string — the truncated
+  // seconds made this chip read up to 59 s ahead of the desktop timer for the same session.
+  const elapsedSec = Math.max(0, Math.floor((Date.now() - running.startMs) / 1000));
 
   return (
     <div

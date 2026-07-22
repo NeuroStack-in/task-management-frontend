@@ -19,7 +19,6 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -36,10 +35,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
-import { EmptyState } from "@/components/shared/empty-state"
 import { usePermissions } from "@/hooks/use-permissions"
 import { resetMfaDevice } from "../services/security.service"
 import { useSessions } from "../use-sessions"
+import { SecurityEventsFeed } from "./security-events-feed"
+import { SsoConnectionCard } from "./sso-connection-card"
 import { listEmployees } from "@/modules/employees/services/employees.service"
 import { cn } from "@/lib/utils"
 
@@ -294,27 +294,7 @@ export function SecurityCenter() {
         sign-in — all invented. Rather than fabricate a connection, this states plainly
         that it isn't available yet.
       */}
-      <Card id="sso" className="scroll-mt-24">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Single Sign-On (SSO)
-            <Badge variant="secondary" className="font-normal text-muted-foreground">
-              Not configured
-            </Badge>
-          </CardTitle>
-          <CardDescription>
-            Let members sign in through your identity provider (SAML / OIDC), with
-            optional SCIM provisioning.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <EmptyState
-            icon={ShieldCheck}
-            title="SSO isn't available yet"
-            description="Enterprise single sign-on and SCIM are on the roadmap but not enabled on this tenant. Members sign in with email, password, and an authenticator app today."
-          />
-        </CardContent>
-      </Card>
+      <SsoConnectionCard />
 
       {/* ── Session & access ── */}
       {/*
@@ -446,7 +426,16 @@ export function SecurityCenter() {
         </CardContent>
       </Card>
 
-      {/* ── Security activity (full trail lives in Audit Logs) ── */}
+      {/* ── Security events ── */}
+      {/*
+        Real, from GET /v1/security-events (identity, LLD §15) — the audit trail pre-filtered
+        to the `security` category. The route requires `security:manage` (same bit as the MFA
+        reset above), so the live feed renders only for managers; viewers keep the link-out
+        card so the page stays honest instead of showing a guaranteed 403.
+      */}
+      {canManage ? (
+        <SecurityEventsFeed />
+      ) : (
       <Card className="shadow-none">
         <CardHeader>
           <CardTitle>Security activity</CardTitle>
@@ -481,6 +470,7 @@ export function SecurityCenter() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/*
         The lost-phone flow — the only MFA action in the product (LLD §2). Enrollment is
@@ -499,7 +489,11 @@ export function SecurityCenter() {
           </DialogHeader>
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Member</p>
-            <Select value={resetMfaUserId || null} onValueChange={(v) => setResetMfaUserId(v as string)}>
+            <Select
+              value={resetMfaUserId || null}
+              onValueChange={(v) => setResetMfaUserId(v as string)}
+              items={Object.fromEntries(roster.map((u) => [u.id, u.name]))}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={roster.length ? "Select a member…" : "Loading members…"} />
               </SelectTrigger>

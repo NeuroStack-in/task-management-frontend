@@ -18,6 +18,7 @@ import {
   CognitoUserSession,
 } from "amazon-cognito-identity-js";
 import { claimsOf, cognitoSignOut, userPool } from "@/lib/cognito";
+import { completeSsoExchange } from "@/lib/oauth";
 import type { AuthSession, User } from "@/types/user";
 
 /** A quick-login shortcut shown on the sign-in screen (email prefill only — a real password is required). */
@@ -40,6 +41,53 @@ export const DEMO_EMAIL = DEMO_ACCOUNTS[0].email;
 export interface LoginResult {
   session: AuthSession;
   user: User;
+}
+
+/**
+ * Thrown by `login` when the password was correct but Cognito demands a TOTP code
+ * (the user enrolled MFA in Settings → Login & security). The half-authenticated
+ * `CognitoUser` is stashed module-side; the /mfa page finishes via `completeTotpChallenge`.
+ */
+export class TotpChallengeError extends Error {
+  constructor() {
+    super("A verification code from your authenticator app is required.");
+  }
+}
+
+/**
+ * The `CognitoUser` mid-challenge. Module-level (not a store): it holds live SRP state that
+ * cannot be serialised, so a hard refresh on /mfa intentionally loses it — the user just
+ * signs in again.
+ */
+let pendingTotpUser: CognitoUser | null = null;
+
+export function hasPendingTotpChallenge(): boolean {
+  return pendingTotpUser !== null;
+}
+
+/** Answer the TOTP challenge (`sendMFACode(code, …, "SOFTWARE_TOKEN_MFA")`) and finish sign-in. */
+export async function completeTotpChallenge(code: string): Promise<LoginResult> {
+  const user = pendingTotpUser;
+  if (!user)
+    throw new AuthError("Your sign-in expired. Please sign in again.", "state");
+  const session = await new Promise<CognitoUserSession>((resolve, reject) => {
+    user.sendMFACode(
+      code,
+      {
+        onSuccess: (s) => resolve(s),
+        onFailure: (err: { code?: string }) => {
+          if (err?.code === "CodeMismatchException")
+            // Keep the pending user — the challenge is still answerable, let them retry.
+            return reject(new AuthError("That code didn't match. Try again.", "credentials"));
+          pendingTotpUser = null;
+          reject(new AuthError("Verification failed. Please sign in again.", "state"));
+        },
+      },
+      "SOFTWARE_TOKEN_MFA",
+    );
+  });
+  pendingTotpUser = null;
+  return { session: toSession(session), user: toUser(session) };
 }
 
 /**
@@ -139,13 +187,30 @@ export async function login(
             "state",
           ),
         ),
+      // SMS MFA is not offered by this app — only TOTP (enrolled in Settings → Login & security).
       mfaRequired: () =>
-        reject(new AuthError("This account requires MFA, which isn't wired up yet.", "state")),
-      totpRequired: () =>
-        reject(new AuthError("This account requires MFA, which isn't wired up yet.", "state")),
+        reject(
+          new AuthError("This account requires SMS MFA, which isn't supported.", "state"),
+        ),
+      // Password was right; a TOTP code is now needed. Stash the half-authenticated user and
+      // hand off to /mfa (which calls `completeTotpChallenge`).
+      totpRequired: () => {
+        pendingTotpUser = user;
+        reject(new TotpChallengeError());
+      },
     });
   });
 
+  return { session: toSession(session), user: toUser(session) };
+}
+
+/**
+ * Complete a federated (SSO) sign-in on the `/callback` route: finish the PKCE code exchange, which
+ * also writes the tokens into the Cognito session store, then project the same `User`/`AuthSession`
+ * the password path returns. Throws on an invalid/expired callback (caller routes back to /login).
+ */
+export async function completeSso(): Promise<LoginResult> {
+  const session = await completeSsoExchange();
   return { session: toSession(session), user: toUser(session) };
 }
 

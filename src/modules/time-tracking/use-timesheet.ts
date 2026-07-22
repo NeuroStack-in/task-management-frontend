@@ -35,6 +35,14 @@ export interface TimesheetRow {
   project: string;
   /** Local `HH:MM`. */
   start: string;
+  /**
+   * Epoch **ms** the session started — the agent's exact stamp, straight from the server.
+   *
+   * The ticking timers (hero, navbar chip) must anchor to this, never to the display `start`:
+   * `HH:MM` has its seconds truncated, so reconstructing an epoch from it made the web clock read
+   * up to 59 s ahead of the desktop agent's own timer for the same session.
+   */
+  startMs: number;
   /** Local `HH:MM`, or null while the session is still running. */
   end: string | null;
   /** Seconds. 0 for a running session — it has not yet contributed any settled time. */
@@ -141,6 +149,7 @@ function toRow(
     description: e.description?.trim() || "",
     project: projectOf(e.project_id, names),
     start: clockOf(e.start),
+    startMs: e.start,
     end: e.end === undefined ? null : clockOf(e.end),
     durationSec: e.duration_secs ?? 0,
     billable: e.billable,

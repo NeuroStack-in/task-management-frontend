@@ -15,6 +15,7 @@ import {
   Sheet,
   BarChart2,
   Pencil,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 import { AiInsight } from "@/components/shared/ai-insight";
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
@@ -64,8 +66,18 @@ import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
+import { ApiError } from "@/lib/api";
 import { listRoles, assignRole, type ApiRole } from "@/modules/roles/services/roles.service";
+import {
+  listDepartments,
+  listTeams,
+  updateEmployee,
+  type ApiDepartment,
+  type ApiTeam,
+  type UpdateEmployeeBody,
+} from "../services/employees.service";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
+import { EmployeeManageMenu } from "./employee-manage-menu";
 
 const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   active: "bg-success/12 text-success",
@@ -260,7 +272,11 @@ function ReassignDialog({
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Role</Label>
-            <Select value={roleId} onValueChange={(v) => setRoleId(v as string)}>
+            <Select
+              value={roleId}
+              onValueChange={(v) => setRoleId(v as string)}
+              items={Object.fromEntries(roles.map((r) => [r.id, r.name]))}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={loadingRoles ? "Loading roles…" : "Select a role"} />
               </SelectTrigger>
@@ -279,6 +295,211 @@ function ReassignDialog({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving || loadingRoles}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Sentinel for "no department/team" — Base UI Select can't carry `""` as an item value. */
+const NONE = "__none__";
+
+/**
+ * Edit the admin-managed fields (`PATCH /v1/employees/{id}`, LLD §17): name, title, department,
+ * team, location, phone. **Only changed fields are sent** — the server keeps omitted fields and
+ * clears a field set to `""`. Role changes live in the Reassign dialog, not here.
+ */
+function EditEmployeeDialog({
+  open,
+  onOpenChange,
+  data,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  data: EmployeeProfileData;
+  onSaved: () => void;
+}) {
+  const [depts, setDepts] = useState<ApiDepartment[]>([]);
+  const [teams, setTeams] = useState<ApiTeam[]>([]);
+  const [loadingOpts, setLoadingOpts] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    title: "",
+    departmentId: "",
+    teamId: "",
+    location: "",
+    phone: "",
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    // Re-seed from the freshest profile every time the dialog opens.
+    setForm({
+      name: data.name,
+      title: data.jobTitle,
+      departmentId: data.departmentId,
+      teamId: data.teamId,
+      location: data.cityState,
+      phone: data.phone,
+    });
+    let live = true;
+    setLoadingOpts(true);
+    Promise.all([listDepartments().catch(() => []), listTeams().catch(() => [])])
+      .then(([d, t]) => {
+        if (!live) return;
+        setDepts(d);
+        setTeams(t);
+      })
+      .finally(() => {
+        if (live) setLoadingOpts(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [open, data]);
+
+  // Teams follow the chosen department; teams without a department are always offered.
+  const teamOptions = form.departmentId
+    ? teams.filter((t) => !t.department_id || t.department_id === form.departmentId)
+    : teams;
+
+  const setField = (k: keyof typeof form) => (v: string) =>
+    setForm((s) => ({ ...s, [k]: v }));
+
+  const onDepartmentChange = (v: string) => {
+    const departmentId = v === NONE ? "" : v;
+    setForm((s) => {
+      const team = teams.find((t) => t.id === s.teamId);
+      const teamStillValid =
+        !departmentId || !team?.department_id || team.department_id === departmentId;
+      return { ...s, departmentId, teamId: teamStillValid ? s.teamId : "" };
+    });
+  };
+
+  async function save() {
+    const name = form.name.trim();
+    if (!name) {
+      toast.error("Name can't be empty.");
+      return;
+    }
+    // Diff against what the profile currently shows — omitted keeps, "" clears (server contract).
+    const body: UpdateEmployeeBody = {};
+    if (name !== data.name) body.name = name;
+    if (form.title.trim() !== data.jobTitle) body.title = form.title.trim();
+    if (form.departmentId !== data.departmentId) body.department_id = form.departmentId;
+    if (form.teamId !== data.teamId) body.team_id = form.teamId;
+    if (form.location.trim() !== data.cityState) body.location = form.location.trim();
+    if (form.phone.trim() !== data.phone) body.phone = form.phone.trim();
+    if (Object.keys(body).length === 0) {
+      onOpenChange(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateEmployee(data.id, body);
+      toast.success("Employee updated", { description: name });
+      onOpenChange(false);
+      onSaved();
+    } catch (e) {
+      toast.error("Couldn't update employee", {
+        description:
+          e instanceof ApiError ? e.message : "The server rejected the change. Try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit {data.name}</DialogTitle>
+          <DialogDescription>
+            Update this employee&apos;s details. Access role is changed via Reassign.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Full name</Label>
+            <Input value={form.name} onChange={(e) => setField("name")(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Job title</Label>
+            <Input value={form.title} onChange={(e) => setField("title")(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Department</Label>
+            <Select
+              value={form.departmentId || NONE}
+              onValueChange={(v) => onDepartmentChange(v as string)}
+              items={{
+                [NONE]: "— None —",
+                ...Object.fromEntries(depts.map((d) => [d.id, d.name])),
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={loadingOpts ? "Loading…" : "Select a department"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>— None —</SelectItem>
+                {depts.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Team</Label>
+            <Select
+              value={form.teamId || NONE}
+              onValueChange={(v) => setField("teamId")(v === NONE ? "" : (v as string))}
+              items={{
+                [NONE]: "— None —",
+                ...Object.fromEntries(teamOptions.map((t) => [t.id, t.name])),
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={loadingOpts ? "Loading…" : "Select a team"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>— None —</SelectItem>
+                {teamOptions.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Location</Label>
+            <Input
+              placeholder="City, State"
+              value={form.location}
+              onChange={(e) => setField("location")(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Phone</Label>
+            <Input
+              type="tel"
+              value={form.phone}
+              onChange={(e) => setField("phone")(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </DialogFooter>
@@ -342,6 +563,7 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
   const department = data.department;
   const team = data.team;
   const [reassignOpen, setReassignOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   // Surface the employee's name + role in the top navbar for this detail route.
   usePageTitle(data.name, `${data.jobTitle} · ${department}`);
@@ -406,18 +628,34 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {canManage ? (
+            <EmployeeManageMenu
+              id={data.id}
+              name={data.name}
+              status={data.status}
+              onChanged={reload}
+            />
+          ) : null}
         </div>
       </div>
 
       {canManage ? (
-        <ReassignDialog
-          open={reassignOpen}
-          onOpenChange={setReassignOpen}
-          employeeId={data.id}
-          name={data.name}
-          currentRoleName={data.roleName}
-          onSaved={reload}
-        />
+        <>
+          <ReassignDialog
+            open={reassignOpen}
+            onOpenChange={setReassignOpen}
+            employeeId={data.id}
+            name={data.name}
+            currentRoleName={data.roleName}
+            onSaved={reload}
+          />
+          <EditEmployeeDialog
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            data={data}
+            onSaved={reload}
+          />
+        </>
       ) : null}
 
       {/* 2-column layout on lg+: left = identity + projects, right = stats + chart + AI */}
@@ -453,14 +691,14 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                 </div>
               </div>
               {canManage ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 self-start sm:self-center"
-                  onClick={() => setReassignOpen(true)}
-                >
-                  <Pencil className="size-4" /> Reassign
-                </Button>
+                <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
+                  <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                    <Pencil className="size-4" /> Edit
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setReassignOpen(true)}>
+                    <ShieldCheck className="size-4" /> Reassign
+                  </Button>
+                </div>
               ) : null}
             </div>
 

@@ -28,7 +28,7 @@ import { getEntitlements, type Entitlements } from "@/lib/api";
 import { type FeatureKey } from "@/stores/features.store";
 
 export interface EntitlementsState {
-  /** The org's plan id (`free` | `starter` | `business` | `enterprise`). */
+  /** The org's plan id (`free` | `starter` | `enterprise` — `wp_contracts::plans::Plan`). */
   plan: string | null;
   /** Keys the plan permits — the ceiling. Empty until loaded. */
   allowed: Set<string>;

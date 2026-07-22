@@ -304,6 +304,10 @@ export function LocationsManager() {
                 value={form.timezone || TZ_NONE}
                 onValueChange={(v) => setForm((f) => ({ ...f, timezone: v === TZ_NONE ? "" : (v as string) }))}
                 disabled={saving}
+                items={{
+                  [TZ_NONE]: "No timezone",
+                  ...Object.fromEntries(TIMEZONE_OPTIONS.map((tz) => [tz, tz])),
+                }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a timezone…" />

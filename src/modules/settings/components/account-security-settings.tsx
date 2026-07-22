@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
   KeyRound,
   Laptop,
-  Copy,
+  Loader2,
   QrCode,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -24,24 +25,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useAccountSecurityStore } from "@/stores/account-security.store";
-import { useAuthStore } from "@/stores/auth.store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useSessions } from "@/modules/security/use-sessions";
+import {
+  beginTotpEnrollment,
+  changePassword,
+  confirmTotpEnrollment,
+  disableTotp,
+  fetchTotpEnabled,
+  SessionExpiredError,
+  type TotpEnrollment,
+} from "@/modules/auth/services/account-security.service";
+import { PASSWORD_RULES, validatePassword } from "@/lib/password";
 import { cn } from "@/lib/utils";
-
-/** Demo authenticator secret + recovery codes (frontend-only stand-in). */
-const TOTP_SECRET = "JBSW Y3DP EHPK 3PXP";
-const RECOVERY_CODES = [
-  "4F2K-9QX7",
-  "B8M3-7TLP",
-  "Z1C6-2WD9",
-  "9HRA-5NK2",
-  "Q3VE-8YB4",
-  "L7XP-1MD6",
-  "T2KF-6RZ8",
-  "C9WN-3JQ5",
-];
 
 /**
  * Epoch ms → a short relative label. Real sessions carry `{session_id, last_seen}` only —
@@ -61,9 +57,19 @@ function timeAgo(ms: number | null): string {
   return d === 1 ? "Yesterday" : `${d}d ago`;
 }
 
+/** Space the base32 secret into groups of 4 for manual entry. */
+function formatSecret(secret: string): string {
+  return secret.replace(/(.{4})/g, "$1 ").trim();
+}
+
+/**
+ * Real self-service account security against the signed-in Cognito session:
+ * TOTP MFA enrollment (associateSoftwareToken → QR → verifySoftwareToken →
+ * setUserMfaPreference) and password change (changePassword). No backend REST
+ * route is involved — Cognito is the system of record.
+ */
 export function AccountSecuritySettings() {
-  const enabled = useAccountSecurityStore((s) => s.twoFactorEnabled);
-  const setTwoFactor = useAccountSecurityStore((s) => s.setTwoFactor);
+  const router = useRouter();
 
   // Roles WITH the org Security Center (Owner/Admin) keep "Login & security" +
   // "Two-factor authentication"; everyone reaching this via the personal rail
@@ -75,22 +81,138 @@ export function AccountSecuritySettings() {
   const mfa = "Multi-factor authentication";
   const mfaLower = mfa.toLowerCase();
 
+  /** Cognito session died mid-action → send them back to sign in (returning here after). */
+  const expireToLogin = useCallback(() => {
+    toast.error("Session expired", { description: "Please sign in again." });
+    router.push(`/login?from=${encodeURIComponent("/settings/login-security")}`);
+  }, [router]);
+
+  /* ── MFA status (real, from getUserData) ── */
+  const [mfaStatus, setMfaStatus] = useState<"loading" | "on" | "off" | "error">(
+    "loading",
+  );
+  useEffect(() => {
+    let cancelled = false;
+    fetchTotpEnabled()
+      .then((on) => {
+        if (!cancelled) setMfaStatus(on ? "on" : "off");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof SessionExpiredError) expireToLogin();
+        else setMfaStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expireToLogin]);
+
+  /* ── Enrollment dialog ── */
   const [setupOpen, setSetupOpen] = useState(false);
+  const [enrollment, setEnrollment] = useState<TotpEnrollment | null>(null);
+  const [starting, setStarting] = useState(false);
   const [code, setCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
   // QR encodes the secret — hidden until revealed to avoid screen-share exposure.
   const [qrShown, setQrShown] = useState(false);
+  const [disabling, setDisabling] = useState(false);
 
-  // otpauth URI for authenticator apps, built from the demo secret + signed-in
-  // email; deterministic (no Date.now/random). Secret stored with spaces for
-  // readability — strip them for the URI.
-  const userEmail = useAuthStore((s) => s.user?.email);
-  const account = userEmail ?? "member@workpulse.app";
-  const otpauthUri =
-    `otpauth://totp/WorkPulse:${encodeURIComponent(account)}` +
-    `?secret=${TOTP_SECRET.replace(/\s/g, "")}` +
-    `&issuer=WorkPulse&algorithm=SHA1&digits=6&period=30`;
-  const [showCodes, setShowCodes] = useState(false);
+  const startEnrollment = async () => {
+    setStarting(true);
+    try {
+      // Fresh secret from Cognito (associateSoftwareToken); a re-run replaces it.
+      const e = await beginTotpEnrollment();
+      setEnrollment(e);
+      setSetupOpen(true);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return expireToLogin();
+      toast.error("Couldn't start MFA setup", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const closeSetup = () => {
+    setSetupOpen(false);
+    setEnrollment(null);
+    setCode("");
+    setCodeError(null);
+    setQrShown(false);
+  };
+
+  const verify = async () => {
+    if (code.length !== 6 || verifying) return;
+    setVerifying(true);
+    setCodeError(null);
+    try {
+      // verifySoftwareToken(code) then setUserMfaPreference(TOTP preferred).
+      await confirmTotpEnrollment(code);
+      setMfaStatus("on");
+      closeSetup();
+      toast.success(`${mfa} enabled`, {
+        description: "You'll be asked for a code at your next sign-in.",
+      });
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return expireToLogin();
+      setCodeError(err instanceof Error ? err.message : "Verification failed.");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const disable = async () => {
+    setDisabling(true);
+    try {
+      await disableTotp();
+      setMfaStatus("off");
+      toast.success(`${mfa} turned off`);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return expireToLogin();
+      toast.error("Couldn't turn off MFA", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setDisabling(false);
+    }
+  };
+
+  /* ── Password change ── */
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+  const [savingPw, setSavingPw] = useState(false);
+
+  const savePassword = async () => {
+    if (savingPw) return;
+    if (!pw.current || !pw.next) {
+      toast.error("Enter your current and new password");
+      return;
+    }
+    // Same pool-policy validation as signup/invite/reset (lib/password.ts).
+    const policyError = validatePassword(pw.next);
+    if (policyError) {
+      toast.error(policyError);
+      return;
+    }
+    if (pw.next !== pw.confirm) {
+      toast.error("New passwords don't match");
+      return;
+    }
+    setSavingPw(true);
+    try {
+      await changePassword(pw.current, pw.next);
+      setPw({ current: "", next: "", confirm: "" });
+      toast.success("Password updated");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return expireToLogin();
+      toast.error("Couldn't update password", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setSavingPw(false);
+    }
+  };
 
   // Active sessions — real, from GET /v1/me/sessions (sorted newest-first). Lean + read-only.
   const {
@@ -99,36 +221,7 @@ export function AccountSecuritySettings() {
     error: sessionsError,
   } = useSessions();
 
-  const verify = () => {
-    if (code.length !== 6) return;
-    setTwoFactor(true);
-    setSetupOpen(false);
-    setCode("");
-    setShowCodes(true);
-    toast.success(`${mfa} enabled`);
-  };
-
-  const disable = () => {
-    setTwoFactor(false);
-    toast.success(`${mfa} turned off`);
-  };
-
-  const savePassword = () => {
-    if (!pw.current || !pw.next) {
-      toast.error("Enter your current and new password");
-      return;
-    }
-    if (pw.next.length < 8) {
-      toast.error("New password must be at least 8 characters");
-      return;
-    }
-    if (pw.next !== pw.confirm) {
-      toast.error("New passwords don't match");
-      return;
-    }
-    setPw({ current: "", next: "", confirm: "" });
-    toast.success("Password updated");
-  };
+  const enabled = mfaStatus === "on";
 
   return (
     <div className="space-y-6">
@@ -154,35 +247,59 @@ export function AccountSecuritySettings() {
                       : "bg-muted text-muted-foreground",
                   )}
                 >
-                  {enabled ? "On" : "Off"}
+                  {mfaStatus === "loading"
+                    ? "…"
+                    : mfaStatus === "error"
+                      ? "Unknown"
+                      : enabled
+                        ? "On"
+                        : "Off"}
                 </Badge>
               </p>
               <p className="text-sm text-muted-foreground">
                 Require a code from your authenticator app when you sign in.
               </p>
-              {enabled ? (
-                <button
-                  type="button"
-                  onClick={() => setShowCodes(true)}
-                  className="text-sm font-medium text-primary hover:underline"
-                >
-                  View recovery codes
-                </button>
+              {mfaStatus === "error" ? (
+                <p className="text-sm text-muted-foreground">
+                  Couldn&apos;t load your MFA status — reload to retry.
+                </p>
               ) : null}
             </div>
           </div>
-          {enabled ? (
+          {mfaStatus === "loading" ? (
+            <Button variant="outline" size="sm" className="shrink-0" disabled>
+              <Loader2 className="size-4 animate-spin" /> Checking…
+            </Button>
+          ) : enabled ? (
             <Button
               variant="outline"
               size="sm"
               className="shrink-0"
               onClick={disable}
+              disabled={disabling}
             >
-              Turn off
+              {disabling ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Turning off…
+                </>
+              ) : (
+                "Turn off"
+              )}
             </Button>
           ) : (
-            <Button size="sm" className="shrink-0" onClick={() => setSetupOpen(true)}>
-              Enable
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={startEnrollment}
+              disabled={starting || mfaStatus === "error"}
+            >
+              {starting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Preparing…
+                </>
+              ) : (
+                "Enable"
+              )}
             </Button>
           )}
         </CardContent>
@@ -198,7 +315,7 @@ export function AccountSecuritySettings() {
             <p className="font-medium">Password</p>
           </div>
           <p className="-mt-1 text-sm text-muted-foreground">
-            Use at least 8 characters.
+            {PASSWORD_RULES.join(" · ")}.
           </p>
           <div className="space-y-3 sm:max-w-sm">
             <div className="space-y-1.5">
@@ -206,6 +323,7 @@ export function AccountSecuritySettings() {
               <Input
                 id="cur-pw"
                 type="password"
+                autoComplete="current-password"
                 value={pw.current}
                 onChange={(e) => setPw((p) => ({ ...p, current: e.target.value }))}
               />
@@ -215,6 +333,7 @@ export function AccountSecuritySettings() {
               <Input
                 id="new-pw"
                 type="password"
+                autoComplete="new-password"
                 value={pw.next}
                 onChange={(e) => setPw((p) => ({ ...p, next: e.target.value }))}
               />
@@ -224,12 +343,19 @@ export function AccountSecuritySettings() {
               <Input
                 id="cf-pw"
                 type="password"
+                autoComplete="new-password"
                 value={pw.confirm}
                 onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))}
               />
             </div>
-            <Button size="sm" onClick={savePassword}>
-              Update password
+            <Button size="sm" onClick={savePassword} disabled={savingPw}>
+              {savingPw ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Updating…
+                </>
+              ) : (
+                "Update password"
+              )}
             </Button>
           </div>
         </CardContent>
@@ -293,15 +419,11 @@ export function AccountSecuritySettings() {
         </Card>
       </div>
 
-      {/* 2FA setup dialog */}
+      {/* 2FA setup dialog — real secret from associateSoftwareToken */}
       <Dialog
         open={setupOpen}
         onOpenChange={(v) => {
-          if (!v) {
-            setSetupOpen(false);
-            setCode("");
-            setQrShown(false);
-          }
+          if (!v && !verifying) closeSetup();
         }}
       >
         <DialogContent className="sm:max-w-sm">
@@ -316,7 +438,7 @@ export function AccountSecuritySettings() {
             {/* Scannable QR, hidden until revealed (it encodes the secret). Uses
                 literal high-contrast colours so it scans in dark mode too. */}
             <div className="flex flex-col items-center gap-2">
-              {qrShown ? (
+              {qrShown && enrollment ? (
                 <button
                   type="button"
                   onClick={() => setQrShown(false)}
@@ -325,7 +447,7 @@ export function AccountSecuritySettings() {
                   className="rounded-lg border border-border bg-white p-3 transition hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
                 >
                   <QRCodeSVG
-                    value={otpauthUri}
+                    value={enrollment.otpauthUri}
                     size={192}
                     level="M"
                     bgColor="#ffffff"
@@ -354,8 +476,8 @@ export function AccountSecuritySettings() {
               <p className="text-xs text-muted-foreground">
                 Can&apos;t scan? Enter this secret manually
               </p>
-              <p className="mt-1 font-mono text-sm font-semibold tracking-widest">
-                {TOTP_SECRET}
+              <p className="mt-1 break-all font-mono text-sm font-semibold tracking-widest">
+                {enrollment ? formatSecret(enrollment.secret) : "…"}
               </p>
             </div>
             <div className="space-y-1.5">
@@ -365,51 +487,28 @@ export function AccountSecuritySettings() {
                 inputMode="numeric"
                 maxLength={6}
                 value={code}
-                onChange={(e) =>
-                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
+                onChange={(e) => {
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                  setCodeError(null);
+                }}
                 placeholder="123456"
+                aria-invalid={!!codeError}
                 className="tracking-[0.4em]"
               />
+              {codeError ? (
+                <p className="text-xs text-destructive">{codeError}</p>
+              ) : null}
             </div>
           </div>
           <DialogFooter showCloseButton>
-            <Button onClick={verify} disabled={code.length !== 6}>
-              Verify &amp; enable
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Recovery codes dialog */}
-      <Dialog open={showCodes} onOpenChange={setShowCodes}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Recovery codes</DialogTitle>
-            <DialogDescription>
-              Save these somewhere safe. Each can be used once if you lose your
-              device.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-2">
-            {RECOVERY_CODES.map((c) => (
-              <code
-                key={c}
-                className="rounded-md border border-border bg-muted/40 px-2 py-1.5 text-center font-mono text-sm"
-              >
-                {c}
-              </code>
-            ))}
-          </div>
-          <DialogFooter showCloseButton>
-            <Button
-              variant="outline"
-              onClick={() => {
-                navigator.clipboard?.writeText(RECOVERY_CODES.join("\n"));
-                toast.success("Recovery codes copied");
-              }}
-            >
-              <Copy className="size-4" /> Copy codes
+            <Button onClick={verify} disabled={code.length !== 6 || verifying}>
+              {verifying ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Verifying…
+                </>
+              ) : (
+                "Verify & enable"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

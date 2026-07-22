@@ -26,7 +26,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Info, KeyRound, Loader2 } from "lucide-react";
+import { ArrowLeft, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 // `createOrg` and `slugify` live in `lib/api` on this branch, not in a per-module service — the
@@ -40,10 +40,9 @@ import {
   MSelect,
   PLANS,
   SIZES,
-  SsoOptionsModal,
-  SsoPickerModal,
   TIMEZONES,
 } from "@/modules/auth/components/auth-modals";
+import { SsoProviderButtons } from "./sso-provider-buttons";
 import { PlanDetailsDialog } from "./plan-details-dialog";
 import {
   AuthErrorSummary,
@@ -96,8 +95,6 @@ export function SignupExperience() {
 
   const [errors, setErrors] = useState<Errors>({});
   const [submitted, setSubmitted] = useState(false);
-  const [ssoOpen, setSsoOpen] = useState(false);
-  const [sso, setSso] = useState<"google" | "microsoft" | null>(null);
 
   const summaryRef = useRef<HTMLDivElement>(null);
 
@@ -233,17 +230,6 @@ export function SignupExperience() {
       setErrors({ "org-plan": msg });
       requestAnimationFrame(() => summaryRef.current?.focus());
     }
-  };
-
-  const openSso = () => {
-    if (!agree) {
-      setSubmitted(true);
-      setErrors({ "signup-agree": "Accept the Terms of Service to continue" });
-      requestAnimationFrame(() => summaryRef.current?.focus());
-      return;
-    }
-    setErrors({});
-    setSsoOpen(true);
   };
 
   if (hydrated && isAuthenticated) return null;
@@ -627,24 +613,17 @@ export function SignupExperience() {
         {step === 0 ? (
           <>
             <div className="m-authdiv">or</div>
-            <button type="button" onClick={openSso} className="m-btn m-btn-ghost w-full">
-              <KeyRound className="size-4" /> Continue with SSO
-            </button>
+            {/* Inline SSO (no modal). On signup these route to sign-IN via the IdP — social is
+                invited-users-only and enterprise SSO joins an existing org, so neither creates a
+                workspace here; the backend accepts or rejects. */}
+            <SsoProviderButtons
+              email={acct.email}
+              onError={(m) => setErrors(m ? { "signup-email": m } : {})}
+            />
             <AuthSwitch prompt="Already have an account?" href="/login" label="Sign in" />
           </>
         ) : null}
       </AuthFrame>
-
-      <SsoOptionsModal
-        open={ssoOpen}
-        onClose={() => setSsoOpen(false)}
-        onPick={(provider) => {
-          setSsoOpen(false);
-          if (provider === "saml") setStep(1);
-          else setSso(provider);
-        }}
-      />
-      <SsoPickerModal provider={sso} onClose={() => setSso(null)} onPicked={() => setStep(1)} />
 
       <PlanDetailsDialog
         open={planInfoOpen}

@@ -262,6 +262,7 @@ export function ProjectFormDialog({
                 <Select
                   value={field.value || null}
                   onValueChange={(v) => field.onChange(v as string)}
+                  items={{ yes: "Billable", no: "Non-billable" }}
                 >
                   <SelectTrigger
                     className={cn("w-full", errors.billable && "border-destructive")}

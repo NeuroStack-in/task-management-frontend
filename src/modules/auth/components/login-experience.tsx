@@ -22,7 +22,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { KeyRound, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { AuthError, DEMO_ACCOUNTS } from "@/modules/auth/services/auth.service";
 import {
@@ -33,7 +33,9 @@ import {
   AuthPasswordField,
   AuthSwitch,
 } from "./auth-frame";
-import { SsoOptionsModal, SsoPickerModal } from "./auth-modals";
+import { SsoProviderButtons } from "./sso-provider-buttons";
+import { discoverSso } from "@/modules/auth/services/sso.service";
+import { beginSso } from "@/lib/oauth";
 
 type Status = "idle" | "loading" | "success";
 type Errors = { email?: string; password?: string; form?: string };
@@ -53,8 +55,6 @@ export function LoginExperience() {
   const [status, setStatus] = useState<Status>("idle");
   const [errors, setErrors] = useState<Errors>({});
   const [submitted, setSubmitted] = useState(false);
-  const [ssoOpen, setSsoOpen] = useState(false);
-  const [sso, setSso] = useState<"google" | "microsoft" | null>(null);
 
   const summaryRef = useRef<HTMLDivElement>(null);
 
@@ -116,6 +116,13 @@ export function LoginExperience() {
     setErrors({});
     setStatus("loading");
     try {
+      // If the org requires SSO for this email's domain, block the password path and send them to
+      // the IdP (the server's pre-auth trigger enforces this too; this is the friendly front door).
+      const disco = await discoverSso(email.trim());
+      if (disco.sso && disco.enforced && disco.idp_name) {
+        await beginSso(disco.idp_name); // navigates away
+        return;
+      }
       await login(email.trim(), password);
       setStatus("success");
       const from = params.get("from");
@@ -134,14 +141,6 @@ export function LoginExperience() {
       });
       requestAnimationFrame(() => summaryRef.current?.focus());
     }
-  };
-
-  // SSO can't be faked: auth is a real Cognito exchange and the pool has no federated providers
-  // (enterprise SSO is a proposal, not a shipped feature). Say so rather than signing someone in.
-  const ssoSignIn = (providerLabel: string) => {
-    setSso(null);
-    setStatus("idle");
-    setErrors({ form: `${providerLabel} isn't available yet — sign in with your email and password.` });
   };
 
   if (hydrated && isAuthenticated) return null;
@@ -231,21 +230,15 @@ export function LoginExperience() {
           </button>
         </form>
 
-        {/* SSO below the primary action. Kept outside the <form> so it can never be caught by an
-            Enter keypress in a field — it isn't a submit path. */}
+        {/* SSO below the primary action, inline (no modal). Kept outside the <form> so it can never
+            be caught by an Enter keypress in a field — it isn't a submit path. */}
         <div className="m-authdiv">or</div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setErrors({});
-            setSsoOpen(true);
-          }}
+        <SsoProviderButtons
+          email={email}
           disabled={status !== "idle"}
-          className="m-btn m-btn-ghost w-full"
-        >
-          <KeyRound className="size-4" /> Continue with SSO
-        </button>
+          onError={(m) => setErrors(m ? { form: m } : {})}
+        />
 
         <AuthSwitch prompt="Don't have an account?" href="/register" label="Create a workspace" />
 
@@ -266,23 +259,6 @@ export function LoginExperience() {
           </p>
         ) : null}
       </AuthFrame>
-
-      {/* `SsoOptionsModal` is the provider chooser; `SsoPickerModal` is the account chooser that
-          follows it. Easy to transpose — the names read the other way round. */}
-      <SsoOptionsModal
-        open={ssoOpen}
-        onClose={() => setSsoOpen(false)}
-        onPick={(provider) => {
-          setSsoOpen(false);
-          if (provider === "saml") ssoSignIn("SAML SSO");
-          else setSso(provider);
-        }}
-      />
-      <SsoPickerModal
-        provider={sso}
-        onClose={() => setSso(null)}
-        onPicked={() => ssoSignIn(sso === "google" ? "Google" : "Microsoft")}
-      />
     </>
   );
 }

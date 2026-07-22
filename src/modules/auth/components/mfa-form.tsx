@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -15,23 +15,31 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuthStore } from "@/stores/auth.store";
+import {
+  AuthError,
+  hasPendingTotpChallenge,
+} from "@/modules/auth/services/auth.service";
 import { cn } from "@/lib/utils";
 
 const LENGTH = 6;
-const RESEND_SECONDS = 30;
 
+/**
+ * Answers the real Cognito TOTP challenge (`SOFTWARE_TOKEN_MFA`). The login page stashes the
+ * half-authenticated `CognitoUser` in the auth service and routes here; that state is in-memory
+ * only, so a hard refresh on this page loses the challenge — we detect that and send the user
+ * back to sign in.
+ */
 export function MfaForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const completeMfa = useAuthStore((s) => s.completeMfa);
   const [digits, setDigits] = useState<string[]>(Array(LENGTH).fill(""));
   const [submitting, setSubmitting] = useState(false);
-  const [seconds, setSeconds] = useState(RESEND_SECONDS);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
 
-  useEffect(() => {
-    if (seconds <= 0) return;
-    const id = setInterval(() => setSeconds((s) => (s > 0 ? s - 1 : 0)), 1000);
-    return () => clearInterval(id);
-  }, [seconds]);
+  // Read once on first render — the challenge only appears via a login redirect, never later.
+  const [hasChallenge] = useState(() => hasPendingTotpChallenge());
 
   const code = digits.join("");
   const complete = code.length === LENGTH;
@@ -63,17 +71,55 @@ export function MfaForm() {
   };
 
   const verify = async () => {
-    if (!complete) return;
+    if (!complete || submitting) return;
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 600));
-    toast.success("Verified", { description: "Welcome back." });
-    router.push("/dashboard");
+    try {
+      await completeMfa(code);
+      toast.success("Verified", { description: "Welcome back." });
+      const from = params.get("from");
+      router.replace(from && from.startsWith("/") ? from : "/dashboard");
+    } catch (err) {
+      const isRetryable = err instanceof AuthError && err.kind === "credentials";
+      toast.error("Verification failed", {
+        description:
+          err instanceof AuthError ? err.message : "Something went wrong.",
+      });
+      if (isRetryable) {
+        // Wrong code — the challenge is still live; clear for another attempt.
+        setDigits(Array(LENGTH).fill(""));
+        inputs.current[0]?.focus();
+        setSubmitting(false);
+      } else {
+        router.replace("/login");
+      }
+    }
   };
 
-  const resend = () => {
-    setSeconds(RESEND_SECONDS);
-    toast.info("A new code has been sent (simulated).");
-  };
+  if (!hasChallenge) {
+    return (
+      <Card>
+        <CardHeader className="items-center text-center">
+          <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <ShieldCheck className="size-6" />
+          </span>
+          <CardTitle className="text-xl">Verification expired</CardTitle>
+          <CardDescription>
+            This page only works right after entering your password. Sign in
+            again to get a new verification prompt.
+          </CardDescription>
+        </CardHeader>
+        <CardFooter>
+          <Button
+            className="w-full"
+            render={<Link href="/login" />}
+            nativeButton={false}
+          >
+            Back to sign in
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -108,18 +154,8 @@ export function MfaForm() {
           ))}
         </div>
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Didn&apos;t get a code?{" "}
-          {seconds > 0 ? (
-            <span>Resend in {seconds}s</span>
-          ) : (
-            <button
-              type="button"
-              onClick={resend}
-              className="font-medium text-primary underline-offset-2 hover:underline"
-            >
-              Resend code
-            </button>
-          )}
+          The code refreshes every 30 seconds — if it doesn&apos;t match, wait
+          for the next one.
         </p>
       </CardContent>
       <CardFooter className="flex-col gap-3">

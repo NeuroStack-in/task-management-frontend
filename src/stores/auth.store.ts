@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AuthSession, User } from "@/types/user";
 import {
+  completeSso as completeSsoService,
+  completeTotpChallenge,
   login as loginService,
   logout as logoutService,
 } from "@/modules/auth/services/auth.service";
@@ -13,6 +15,10 @@ interface AuthState {
   /** Hydration flag — true once the persisted store has loaded on the client. */
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** Finish a TOTP-challenged sign-in (login threw `TotpChallengeError` → /mfa page). */
+  completeMfa: (code: string) => Promise<void>;
+  /** Finish a federated (SSO) sign-in on the /callback route (PKCE exchange → session). */
+  completeSso: () => Promise<void>;
   logout: () => void;
   /** Patch the signed-in user (self-service profile edits). Persisted. */
   updateUser: (patch: Partial<User>) => void;
@@ -29,6 +35,16 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (email, password) => {
         const { session, user } = await loginService(email, password);
+        set({ session, user, isAuthenticated: true });
+      },
+
+      completeMfa: async (code) => {
+        const { session, user } = await completeTotpChallenge(code);
+        set({ session, user, isAuthenticated: true });
+      },
+
+      completeSso: async () => {
+        const { session, user } = await completeSsoService();
         set({ session, user, isAuthenticated: true });
       },
 

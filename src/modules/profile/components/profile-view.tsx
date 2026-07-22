@@ -5,7 +5,6 @@ import type { CSSProperties, ReactNode } from "react";
 import {
   Camera,
   Mail,
-  Building,
   Building2,
   Users as UsersIcon,
   Clock,
@@ -17,7 +16,7 @@ import {
   Briefcase,
   MapPin,
   Phone,
-  Cake,
+  ListTodo,
   Pencil,
   TrendingUp,
   type LucideIcon,
@@ -26,12 +25,21 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
 import { initials } from "@/lib/format";
-import { isEmail, isWithinSize, MB } from "@/lib/validation";
-import { PageHeader } from "@/components/shared/page-header";
-import { Sparkline } from "@/components/shared/sparkline";
+import { isWithinSize, MB } from "@/lib/validation";
+import { ApiError } from "@/lib/api";
 import {
-  BannerBackground,
-} from "@/components/shared/banner-pattern";
+  getAvatarUrl,
+  getMyProfile,
+  updateMyProfile,
+  uploadAvatar,
+  type ApiMyFullProfile,
+  type UpdateMyProfileBody,
+} from "@/modules/profile/services/profile.service";
+import { getMyAttendance } from "@/modules/attendance/services/attendance.service";
+import { getRange, todayLocal } from "@/modules/time-tracking/services/timesheet.service";
+import { listMyTasks } from "@/modules/projects/services/projects.service";
+import { PageHeader } from "@/components/shared/page-header";
+import { BannerBackground } from "@/components/shared/banner-pattern";
 import { Gauge } from "@/components/shared/gauge";
 import { Loader } from "@/components/shared/loader";
 import { Card } from "@/components/ui/card";
@@ -48,13 +56,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -64,15 +65,6 @@ import { PhotoEditor } from "@/modules/profile/components/photo-editor";
 import { getOrg } from "@/modules/settings/services/org.service";
 import type { User } from "@/types/user";
 import { cn } from "@/lib/utils";
-
-const LOCATIONS = [
-  "San Francisco, CA",
-  "New York, NY",
-  "Austin, TX",
-  "Seattle, WA",
-  "Remote",
-];
-const WORK_MODES = ["On-site", "Hybrid", "Remote"];
 
 interface DetailRow {
   icon: LucideIcon;
@@ -85,28 +77,84 @@ const MONTHS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/** "1994-03-14" → "Mar 14, 1994" (no Date, so no timezone drift). */
-function formatDob(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return `${MONTHS[m - 1]} ${d}, ${y}`;
+/** Epoch ms → "Jul 2026" — the honest "member since", from the account's real creation time. */
+function memberSince(ms: number): string {
+  const d = new Date(ms);
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-/** Deterministic personal facts seeded from the user id (no randomness). */
-function personalFacts(user: User) {
-  const seed = [...user.id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return {
-    seed,
-    avgHours: (7 + (seed % 20) / 10).toFixed(1),
-    tasksDone: 40 + (seed % 60),
-    attendance: 88 + (seed % 12),
-    location: LOCATIONS[seed % LOCATIONS.length],
-    workMode: WORK_MODES[seed % WORK_MODES.length],
-    employeeId: `EMP-${String(1000 + (seed % 9000))}`,
-    phone: `+1 (${200 + (seed % 700)}) 555-${String(1000 + (seed % 9000))}`,
-    dobISO: `${1985 + (seed % 15)}-${pad((seed % 12) + 1)}-${pad((seed % 27) + 1)}`,
-  };
+/** Local `YYYY-MM-DD` for `daysAgo` days back — same calendar rule as `todayLocal`. */
+function dayLocal(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return todayLocal(d);
+}
+
+/**
+ * The real last-30-days stats, each independently best-effort. Everything here used to be
+ * *fabricated from a hash of the user id* (`personalFacts`) — plausible-looking numbers that
+ * contradicted the admin's Employees page, which reads the live API. Now both screens read the
+ * same backend; a failed or empty read renders "—", never an invented value.
+ */
+function useMyStats() {
+  const [attendance, setAttendance] = useState<{
+    present: number;
+    late: number;
+    absent: number;
+    rate: number | null;
+  } | null>(null);
+  const [avgHours, setAvgHours] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<{ open: number; done: number } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const from = dayLocal(29);
+    const to = todayLocal();
+
+    getMyAttendance(from, to)
+      .then((r) => {
+        if (!alive) return;
+        const s = r.summary;
+        // `late` qualifies `present` days; the rate counts every worked/on-leave day against the
+        // days that could have been worked (`counted` excludes non-workdays).
+        const rate =
+          s.counted > 0
+            ? Math.round(((s.present + s.partial + s.leave) / s.counted) * 100)
+            : null;
+        setAttendance({ present: s.present, late: s.late, absent: s.absent, rate });
+      })
+      .catch(() => {
+        /* card shows its empty state */
+      });
+
+    getRange(from, to)
+      .then((r) => {
+        if (!alive) return;
+        const workedDays = r.days.filter((d) => d.total_secs > 0).length;
+        setAvgHours(
+          workedDays > 0 ? (r.total_secs / 3600 / workedDays).toFixed(1) : null,
+        );
+      })
+      .catch(() => {
+        /* tile shows "—" */
+      });
+
+    listMyTasks()
+      .then((ts) => {
+        if (!alive) return;
+        const done = ts.filter((t) => t.status === "done").length;
+        setTasks({ open: ts.length - done, done });
+      })
+      .catch(() => {
+        /* tiles show "—" */
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return { attendance, avgHours, tasks };
 }
 
 export function ProfileView() {
@@ -131,7 +179,7 @@ export function ProfileView() {
 /* ──────────────────────────── Profile ──────────────────────────── */
 
 /** The full profile — identity band + productivity + (optionally) attendance.
- *  Personal details are editable in-session via the Edit profile dialog. */
+ *  Identity comes from `GET /v1/me/profile`; edits persist via `PATCH /v1/me/profile`. */
 function RichProfile({
   user,
   roleName,
@@ -143,8 +191,46 @@ function RichProfile({
 }) {
   const updateUser = useAuthStore((s) => s.updateUser);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const facts = personalFacts(user);
-  const productivity = user.productivityScore;
+
+  // Real avatar (`GET /v1/me/avatar`) — presigned view URLs expire, so never trust a stored one:
+  // re-fetch on mount and push the fresh URL into the auth store (the navbar reads it from there).
+  useEffect(() => {
+    let alive = true;
+    getAvatarUrl()
+      .then((url) => {
+        if (alive) updateUser({ avatarUrl: url ?? undefined });
+      })
+      .catch(() => {
+        /* transient — keep the current avatar */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [updateUser]);
+
+  // The stored profile (`GET /v1/me/profile`) — emp id, phone, location, title, department, team,
+  // member-since. This is the same `USER#` record the admin's Employees page reads, which is what
+  // keeps the two screens agreeing. `null` until loaded; absent fields render "—".
+  const [profile, setProfile] = useState<ApiMyFullProfile | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getMyProfile()
+      .then((p) => {
+        if (!alive) return;
+        setProfile(p);
+        // The store's name may be derived from the email at login; the stored one is authoritative.
+        if (p.name && p.name !== user.name) updateUser({ name: p.name });
+      })
+      .catch(() => {
+        /* identity rows fall back to token facts + "—" */
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch once per mount
+  }, []);
+
+  const stats = useMyStats();
 
   // The org's display name (GET /v1/org). Absent/failed (e.g. 404) → omit gracefully, never a placeholder.
   const [orgName, setOrgName] = useState<string | null>(null);
@@ -164,35 +250,28 @@ function RichProfile({
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [editOpen, setEditOpen] = useState(false);
-  // Fields with no backing user record yet live here (self-edited, in-session).
-  const [local, setLocal] = useState({
-    phone: facts.phone,
-    dob: facts.dobISO,
-    location: facts.location,
-    workMode: facts.workMode,
-  });
+  const [saving, setSaving] = useState(false);
+  // Values shown when the edit dialog opened — the diff baseline, so only changes are PATCHed.
+  const baseline = useRef({ name: user.name, phone: "", location: "" });
   const [form, setForm] = useState({
     name: user.name,
     email: user.email,
-    phone: facts.phone,
-    dob: facts.dobISO,
-    location: facts.location,
-    workMode: facts.workMode,
+    phone: "",
+    location: "",
   });
-  // Pending photo: undefined = unchanged, string = new data URL, null = removed.
-  const [photo, setPhoto] = useState<string | null | undefined>(undefined);
+  // Pending photo: undefined = unchanged, {file, preview} = new pick (uploaded on save),
+  // null = removed. The data URL is preview-only — the File is what gets uploaded.
+  const [photo, setPhoto] = useState<{ file: File; preview: string } | null | undefined>(
+    undefined,
+  );
   const set = (k: keyof typeof form) => (v: string) =>
     setForm((s) => ({ ...s, [k]: v }));
 
   const openEdit = () => {
-    setForm({
-      name: user.name,
-      email: user.email,
-      phone: local.phone,
-      dob: local.dob,
-      location: local.location,
-      workMode: local.workMode,
-    });
+    const phone = profile?.phone ?? "";
+    const location = profile?.location ?? "";
+    baseline.current = { name: user.name, phone, location };
+    setForm({ name: user.name, email: user.email, phone, location });
     setPhoto(undefined);
     setEditOpen(true);
   };
@@ -205,62 +284,109 @@ function RichProfile({
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result as string);
+    reader.onload = () => setPhoto({ file, preview: reader.result as string });
     reader.readAsDataURL(file);
   };
-  const save = () => {
+  const save = async () => {
     const name = form.name.trim();
-    const email = form.email.trim();
+    const phone = form.phone.trim();
+    const location = form.location.trim();
     if (!name) {
       toast.error("Name can't be empty.");
       return;
     }
-    if (!isEmail(email)) {
-      toast.error("Enter a valid email address.");
-      return;
+    // Persist changed backend-backed fields via `PATCH /v1/me/profile` — omitted keeps, "" clears.
+    const body: UpdateMyProfileBody = {};
+    if (name !== baseline.current.name) body.name = name;
+    if (phone !== baseline.current.phone) body.phone = phone;
+    if (location !== baseline.current.location) body.location = location;
+    // Photo removed → clear `avatar_s3_key` ("" clears, per the PATCH contract).
+    if (photo === null) body.avatar_s3_key = "";
+    if (Object.keys(body).length > 0) {
+      setSaving(true);
+      try {
+        const p = await updateMyProfile(body);
+        updateUser({ name: p.name });
+        setProfile((prev) =>
+          prev ? { ...prev, name: p.name, phone: p.phone, location: p.location } : prev,
+        );
+        if (photo === null) updateUser({ avatarUrl: undefined });
+        toast.success("Profile updated");
+      } catch (e) {
+        toast.error("Couldn't update profile", {
+          description: e instanceof ApiError ? e.message : "The server rejected the change.",
+        });
+        setSaving(false);
+        return; // keep the dialog open so nothing looks saved when it wasn't
+      }
+      setSaving(false);
     }
-    const patch: Partial<User> = { name, email };
-    if (photo !== undefined) patch.avatarUrl = photo ?? undefined;
-    updateUser(patch);
-    setLocal({
-      phone: form.phone,
-      dob: form.dob,
-      location: form.location,
-      workMode: form.workMode,
-    });
+    // New photo → the real flow: resize/WebP → presigned PUT → PATCH avatar_s3_key → fresh view
+    // URL into the auth store (navbar + hero read it from there).
+    if (photo) {
+      setSaving(true);
+      try {
+        const freshUrl = await uploadAvatar(photo.file);
+        updateUser({ avatarUrl: freshUrl ?? undefined });
+        toast.success("Profile photo updated");
+      } catch (e) {
+        toast.error("Couldn't upload photo", {
+          description:
+            e instanceof ApiError || e instanceof Error ? e.message : "The upload failed.",
+        });
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+    }
     setEditOpen(false);
   };
 
   // Avatar shown inside the dialog reflects the pending choice.
-  const previewSrc = photo === undefined ? user.avatarUrl : (photo ?? undefined);
+  const previewSrc = photo === undefined ? user.avatarUrl : (photo?.preview ?? undefined);
 
-  const presentDays = Math.round((facts.attendance / 100) * 30);
-  const lateDays = Math.round((30 - presentDays) * 0.6);
-  const absentDays = Math.max(0, 30 - presentDays - lateDays);
-  const prodTrend = [62, 65, 63, 70, 72, 69, productivity];
+  // Standalone upload dialog (hero dropdown) — same real flow, progress via toast.promise.
+  const onUploadPhoto = (file: File) => {
+    void toast.promise(
+      uploadAvatar(file).then((freshUrl) => updateUser({ avatarUrl: freshUrl ?? undefined })),
+      {
+        loading: "Uploading photo…",
+        success: "Profile photo updated",
+        error: (e: unknown) =>
+          e instanceof ApiError || e instanceof Error ? e.message : "Couldn't upload photo.",
+      },
+    );
+  };
+
+  const dash = (v: string | undefined | null) => v?.trim() || "—";
+  const empId = dash(profile?.emp_id);
+  const jobTitle = profile?.title ?? user.jobTitle;
+  const department = profile?.department_id ?? user.department;
+  const team = profile?.team_id ?? user.team;
 
   const contact: DetailRow[] = [
     { icon: Mail, label: "Email", value: user.email },
-    { icon: Phone, label: "Contact number", value: local.phone },
-    { icon: Cake, label: "Date of birth", value: formatDob(local.dob) },
-    { icon: MapPin, label: "Location", value: local.location },
-    { icon: Building, label: "Work mode", value: local.workMode },
+    { icon: Phone, label: "Contact number", value: dash(profile?.phone) },
+    { icon: MapPin, label: "Location", value: dash(profile?.location) },
   ];
   const employment: DetailRow[] = [
-    { icon: Hash, label: "Employee ID", value: facts.employeeId },
+    { icon: Hash, label: "Employee ID", value: empId },
     ...(orgName
       ? [{ icon: Building2, label: "Organization", value: orgName }]
       : []),
-    { icon: Briefcase, label: "Job title", value: user.jobTitle },
-    { icon: Building2, label: "Department", value: user.department },
-    { icon: UsersIcon, label: "Team", value: user.team },
+    { icon: Briefcase, label: "Job title", value: dash(jobTitle) },
+    { icon: Building2, label: "Department", value: dash(department) },
+    { icon: UsersIcon, label: "Team", value: dash(team) },
     { icon: ShieldCheck, label: "Role", value: roleName },
-    { icon: CalendarCheck, label: "Member since", value: "Jan 2024" },
+    {
+      icon: CalendarCheck,
+      label: "Member since",
+      value: profile?.created_at ? memberSince(profile.created_at) : "—",
+    },
   ];
-  const onTime =
-    presentDays + lateDays > 0
-      ? Math.round((presentDays / (presentDays + lateDays)) * 100)
-      : 100;
+
+  // The identity subtitle only names what the org actually recorded — no placeholder words.
+  const subtitle = [jobTitle, department, team].filter((v) => v?.trim()).join(" · ");
 
   return (
     <div className="flex flex-col gap-5 pb-2">
@@ -275,11 +401,8 @@ function RichProfile({
         style={{ animationFillMode: "backwards" }}
       >
         {/* Grid lines. The pattern is fixed rather than pickable: `BannerPatternPicker` was a
-            temporary preview control, not a product feature, and shipping it let every user restyle
-            a page header. The `"dots"` variant is deliberately KEPT in
-            `components/shared/banner-pattern.tsx` — it is a real, working alternative and the
-            reference for it must stay in the codebase. To switch, change the literal below to
-            `"dots"`; to bring the picker back, re-render `<BannerPatternPicker />` here. */}
+            temporary preview control, not a product feature. The `"dots"` variant is deliberately
+            KEPT in `components/shared/banner-pattern.tsx`; to switch, change the literal below. */}
         <BannerBackground pattern="grid" />
 
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
@@ -312,9 +435,9 @@ function RichProfile({
                 <h2 className="font-display text-[1.7rem] font-semibold leading-tight tracking-tight">
                   {user.name}
                 </h2>
-                <p className="text-sm text-feature-foreground/80">
-                  {user.jobTitle} · {user.department} · {user.team}
-                </p>
+                {subtitle ? (
+                  <p className="text-sm text-feature-foreground/80">{subtitle}</p>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className="border-white/20 bg-white/15 text-white">{roleName}</Badge>
@@ -327,27 +450,15 @@ function RichProfile({
           </div>
 
           <div className="shrink-0 rounded-xl bg-white/10 p-4 ring-1 ring-inset ring-white/15 backdrop-blur-sm sm:min-w-60">
-            <div className="flex items-center justify-between gap-6">
-              <div>
-                <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-feature-foreground/75">
-                  <TrendingUp className="size-3.5" /> Productivity
-                </p>
-                <p className="mt-1 font-display text-4xl font-semibold leading-none tabular-nums">
-                  {productivity}%
-                </p>
-                <p className="mt-1 text-xs text-feature-foreground/70">this week</p>
-              </div>
-              <Sparkline
-                data={prodTrend}
-                area
-                areaOpacity={0.3}
-                showDot
-                width={104}
-                height={56}
-                strokeWidth={2.5}
-                className="text-white"
-              />
-            </div>
+            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-feature-foreground/75">
+              <Clock className="size-3.5" /> Avg. hours / day
+            </p>
+            <p className="mt-1 font-display text-4xl font-semibold leading-none tabular-nums">
+              {stats.avgHours ?? "—"}
+            </p>
+            <p className="mt-1 text-xs text-feature-foreground/70">
+              {stats.avgHours ? "tracked, last 30 days" : "no tracked time yet"}
+            </p>
           </div>
         </div>
       </section>
@@ -365,7 +476,7 @@ function RichProfile({
           <div className="mb-5 flex items-center justify-between gap-3">
             <h3 className="font-heading text-base font-medium">Account details</h3>
             <div className="flex items-center gap-3">
-              <span className="font-mono text-xs text-muted-foreground">{facts.employeeId}</span>
+              <span className="font-mono text-xs text-muted-foreground">{empId}</span>
               <Button variant="outline" size="sm" onClick={openEdit}>
                 <Pencil className="size-4" /> Edit profile
               </Button>
@@ -385,38 +496,69 @@ function RichProfile({
               <h3 className="font-heading text-base font-medium">Attendance</h3>
               <span className="text-xs text-muted-foreground">last 30 days</span>
             </div>
-            <div className="flex justify-center">
-              <Gauge value={facts.attendance} label="present" size={168} />
-            </div>
-            <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-2 text-center">
-                {[
-                  { label: "Present", value: presentDays, tone: "bg-success", text: "text-success" },
-                  { label: "Late", value: lateDays, tone: "bg-warning", text: "text-warning" },
-                  { label: "Absent", value: absentDays, tone: "bg-destructive", text: "text-destructive" },
-                ].map((s) => (
-                  <div key={s.label}>
-                    <p className={cn("text-lg font-semibold tabular-nums", s.text)}>{s.value}</p>
-                    <span className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                      <span className={cn("size-1.5 rounded-full", s.tone)} />
-                      {s.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {stats.attendance && stats.attendance.rate !== null ? (
+              <>
+                <div className="flex justify-center">
+                  <Gauge value={stats.attendance.rate} label="present" size={168} />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[
+                    { label: "Present", value: stats.attendance.present, tone: "bg-success", text: "text-success" },
+                    { label: "Late", value: stats.attendance.late, tone: "bg-warning", text: "text-warning" },
+                    { label: "Absent", value: stats.attendance.absent, tone: "bg-destructive", text: "text-destructive" },
+                  ].map((s) => (
+                    <div key={s.label}>
+                      <p className={cn("text-lg font-semibold tabular-nums", s.text)}>{s.value}</p>
+                      <span className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                        <span className={cn("size-1.5 rounded-full", s.tone)} />
+                        {s.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No attendance recorded yet — days appear after the agent tracks your first
+                working day.
+              </p>
+            )}
             <div className="h-px bg-border" />
             <div className="grid grid-cols-2 gap-3">
-              <MiniStat icon={Clock} label="Avg. hours / day" value={facts.avgHours} hint="last 30 days" />
-              <MiniStat icon={CheckSquare} label="Tasks done" value={String(facts.tasksDone)} hint="this quarter" />
-              <MiniStat icon={CalendarCheck} label="On-time rate" value={`${onTime}%`} hint="last 30 days" />
-              <MiniStat icon={TrendingUp} label="Productivity" value={`${productivity}%`} hint="this week" />
+              <MiniStat
+                icon={Clock}
+                label="Avg. hours / day"
+                value={stats.avgHours ?? "—"}
+                hint="last 30 days"
+              />
+              <MiniStat
+                icon={CheckSquare}
+                label="Tasks done"
+                value={stats.tasks ? String(stats.tasks.done) : "—"}
+                hint="assigned to you"
+              />
+              <MiniStat
+                icon={ListTodo}
+                label="Open tasks"
+                value={stats.tasks ? String(stats.tasks.open) : "—"}
+                hint="assigned to you"
+              />
+              <MiniStat
+                icon={TrendingUp}
+                label="Attendance"
+                value={
+                  stats.attendance?.rate !== null && stats.attendance?.rate !== undefined
+                    ? `${stats.attendance.rate}%`
+                    : "—"
+                }
+                hint="last 30 days"
+              />
             </div>
           </Card>
         ) : null}
       </div>
 
-      {/* Edit dialog — photo + personal fields (available to every role) */}
+      {/* Edit dialog — photo + the backend-backed personal fields */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -465,17 +607,16 @@ function RichProfile({
 
           <div className="h-px bg-border" />
 
-          {/* Fields */}
+          {/* Fields — exactly what `PATCH /v1/me/profile` accepts. Fields with no backend record
+              (date of birth, work mode) are deliberately gone: showing an editor for a value the
+              server can't store is how this page ended up inventing data in the first place. */}
           <div className="grid gap-4 sm:grid-cols-2">
             <DialogField label="Full name">
               <Input value={form.name} onChange={(e) => set("name")(e.target.value)} />
             </DialogField>
             <DialogField label="Email">
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => set("email")(e.target.value)}
-              />
+              {/* Sign-in identity — not self-editable (`PATCH /v1/me/profile` doesn't accept it). */}
+              <Input type="email" value={form.email} disabled />
             </DialogField>
             <DialogField label="Contact number">
               <Input
@@ -484,42 +625,27 @@ function RichProfile({
                 onChange={(e) => set("phone")(e.target.value)}
               />
             </DialogField>
-            <DialogField label="Date of birth">
-              <Input
-                type="date"
-                value={form.dob}
-                onChange={(e) => set("dob")(e.target.value)}
-              />
-            </DialogField>
             <DialogField label="Location">
               <Input value={form.location} onChange={(e) => set("location")(e.target.value)} />
-            </DialogField>
-            <DialogField label="Work mode">
-              <Select value={form.workMode} onValueChange={(v) => set("workMode")(v as string)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {WORK_MODES.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </DialogField>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={save}>Save changes</Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <PhotoEditor open={uploadOpen} onClose={() => setUploadOpen(false)} />
+      <PhotoEditor
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onApply={onUploadPhoto}
+      />
     </div>
   );
 }

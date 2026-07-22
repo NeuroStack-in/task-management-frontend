@@ -21,6 +21,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useLeave } from "../use-leave";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
+import { LeaveTypesManager } from "./leave-types-manager";
 
 /** The server's request states (LLD §8): pending → approved, or pending/approved → cancelled. */
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -55,6 +56,8 @@ export function LeaveRequestsView() {
   const leave = useLeave();
   const { balances, requests, types, typeName, loading, error, submit, cancel } = leave;
   const [open, setOpen] = useState(false);
+  // Only active types are requestable — the server rejects an archived `type_id` anyway.
+  const requestableTypes = types.filter((t) => t.active !== false);
 
   const handleCancel = async (id: string) => {
     try {
@@ -128,7 +131,11 @@ export function LeaveRequestsView() {
             My requests
           </h2>
           {can("leave:request") ? (
-            <Button size="sm" onClick={() => setOpen(true)} disabled={types.length === 0}>
+            <Button
+              size="sm"
+              onClick={() => setOpen(true)}
+              disabled={requestableTypes.length === 0}
+            >
               <CalendarPlus className="size-4" /> Request leave
             </Button>
           ) : null}
@@ -203,10 +210,13 @@ export function LeaveRequestsView() {
         )}
       </Card>
 
+      {/* Leave-type administration — `leave:manage` (backend `Permission::LeaveManage`) only. */}
+      {can("leave:manage") ? <LeaveTypesManager onCatalogChanged={leave.reload} /> : null}
+
       <RequestLeaveDialog
         open={open}
         onOpenChange={setOpen}
-        types={types}
+        types={requestableTypes}
         onSubmit={submit}
       />
     </div>

@@ -31,44 +31,49 @@ interface WidgetDef {
   render: (d: DashboardData) => ReactNode;
 }
 
+// Keys are the catalog-aligned widget types (`<catalog_id>` or `<catalog_id>.<variant>` —
+// see `WidgetType` in `stores/dashboard.store.ts`, mirroring `wp-contracts::widgets`).
 export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
-  "productivity-trends": {
+  "org_activity.trends": {
     span: 1,
     render: (d) => (
       <ProductivityChart data={d.productivityTrend} rangeLabel={d.rangeLabel} />
     ),
   },
-  heatmap: { span: 1, render: (d) => <ProductivityHeatmap data={d.heatmap} /> },
-  "team-comparison": {
+  "org_activity.heatmap": {
+    span: 1,
+    render: (d) => <ProductivityHeatmap data={d.heatmap} />,
+  },
+  team_activity: {
     span: 1,
     render: (d) => <TeamComparisonChart data={d.teamData} />,
   },
-  attendance: {
+  org_attendance: {
     span: 1,
     render: (d) => <AttendanceDonut counts={d.attendanceCounts} />,
   },
-  "active-inactive": {
+  "org_activity.active_ring": {
     span: 1,
     render: (d) => (
       <ActiveInactiveRing active={d.activeCount} inactive={d.inactiveCount} />
     ),
   },
-  headcount: {
+  "reports.headcount": {
     span: 1,
     render: (d) => <HeadcountStatus counts={d.statusCounts} />,
   },
-  screenshots: {
+  "org_activity.screenshots": {
     span: 1,
     render: (d) => (
       <ScreenshotsWidget count={d.screenshotCount} trend={d.screenshotsTrend} />
     ),
   },
-  "top-employees": {
+  "org_activity.top_performers": {
     span: 1,
     render: (d) => <TopEmployeesWidget people={d.topPerformers} />,
   },
-  "ai-summary": { span: 1, render: () => <OrgAiSummaryWidget /> },
-  billing: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
-  "alerts-deadlines": { span: 1, render: () => <AlertsDeadlinesWidget /> },
-  "upcoming-tasks": { span: 1, render: () => <UpcomingTasksWidget /> },
+  "attention_list.ai_summary": { span: 1, render: () => <OrgAiSummaryWidget /> },
+  payroll_summary: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
+  "attention_list.alerts": { span: 1, render: () => <AlertsDeadlinesWidget /> },
+  "reports.upcoming_tasks": { span: 1, render: () => <UpcomingTasksWidget /> },
 };

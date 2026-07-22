@@ -19,11 +19,11 @@ interface PhotoEditorProps {
   open: boolean
   onClose: () => void
   /**
-   * When provided, the chosen image is applied immediately (as a data URL) —
-   * used by the employee's editable profile. Without it the dialog is a
-   * backend-pending stub.
+   * Called with the chosen image file when the user confirms. The parent owns
+   * the real upload flow (resize → presigned S3 PUT → profile PATCH) and its
+   * progress/error toasts — this dialog only picks the file.
    */
-  onApply?: (dataUrl: string) => void
+  onApply: (file: File) => void
 }
 
 export function PhotoEditor({ open, onClose, onApply }: PhotoEditorProps) {
@@ -60,17 +60,8 @@ export function PhotoEditor({ open, onClose, onApply }: PhotoEditorProps) {
 
   function apply() {
     if (!file) return
-    if (!onApply) {
-      toast.info("Photo upload will be available once the backend is connected.")
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      onApply(reader.result as string)
-      toast.success("Profile photo updated")
-      onClose()
-    }
-    reader.readAsDataURL(file)
+    onApply(file)
+    onClose()
   }
 
   function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -97,9 +88,7 @@ export function PhotoEditor({ open, onClose, onApply }: PhotoEditorProps) {
         <DialogHeader>
           <DialogTitle>Upload profile photo</DialogTitle>
           <DialogDescription>
-            {onApply
-              ? "Choose an image to use as your profile photo."
-              : "Photo upload will be saved to AWS S3 once the backend is connected."}
+            Choose an image to use as your profile photo.
           </DialogDescription>
         </DialogHeader>
 
@@ -176,7 +165,7 @@ export function PhotoEditor({ open, onClose, onApply }: PhotoEditorProps) {
         <DialogFooter showCloseButton>
           <Button disabled={!preview} className="gap-1.5" onClick={apply}>
             <Upload className="size-3.5" />
-            {onApply ? "Save photo" : "Upload photo"}
+            Save photo
           </Button>
         </DialogFooter>
       </DialogContent>

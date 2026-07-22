@@ -14,6 +14,8 @@ import {
   getDeductions,
   getRun,
   listRuns,
+  setCompensation,
+  updateDeductions,
 } from "./payroll.service";
 
 const mock = vi.mocked(apiFetch);
@@ -51,5 +53,23 @@ describe("payroll.service route contract", () => {
     mock.mockResolvedValueOnce({ deductions: [] });
     await getDeductions();
     expect(mock).toHaveBeenCalledWith("/v1/payroll/deductions");
+  });
+
+  it("updateDeductions PUTs the full rule list under `deductions`", async () => {
+    const rules = [{ name: "tax", kind: "percent", value: 10, active: true }];
+    mock.mockResolvedValueOnce({ deductions: rules });
+    await updateDeductions(rules);
+    expect(mock).toHaveBeenCalledWith("/v1/payroll/deductions", {
+      method: "PUT",
+      body: JSON.stringify({ deductions: rules }),
+    });
+  });
+
+  it("setCompensation PUTs pay_type + rate to the user-scoped comp route, encoded", async () => {
+    await setCompensation("u 1", { pay_type: "hourly", rate: 42.5 });
+    expect(mock).toHaveBeenCalledWith("/v1/payroll/comp/u%201", {
+      method: "PUT",
+      body: JSON.stringify({ pay_type: "hourly", rate: 42.5 }),
+    });
   });
 });
