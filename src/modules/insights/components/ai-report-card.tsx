@@ -3,6 +3,7 @@
 import {
   Sparkles,
   ArrowUpRight,
+  RefreshCw,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -45,11 +46,17 @@ export function AiReportCard({
   summary,
   signals = [],
   metrics = [],
+  onRegenerate,
+  regenerating = false,
 }: {
   title?: string;
   summary: string;
   signals?: AiSignal[];
   metrics?: AiMetric[];
+  /** Re-run the model for this period (the narrative is otherwise generate-once-cached).
+   *  Omit to hide the button — e.g. while locked behind the add-on or before data loads. */
+  onRegenerate?: () => void;
+  regenerating?: boolean;
 }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   return (
@@ -120,13 +127,29 @@ export function AiReportCard({
             })}
           </div>
         ) : null}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => openAssistant()}
-        >
-          Ask the assistant <ArrowUpRight className="size-4" />
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => openAssistant()}
+          >
+            Ask the assistant <ArrowUpRight className="size-4" />
+          </Button>
+          {onRegenerate ? (
+            // Each press is a fresh, billed model run over the period's current data — the
+            // narrative is otherwise served from cache, so this is the deliberate re-spend.
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRegenerate}
+              disabled={regenerating}
+              className="bg-white/15 text-white hover:bg-white/25"
+            >
+              <RefreshCw className={cn("size-4", regenerating && "animate-spin")} />
+              {regenerating ? "Regenerating…" : "Regenerate"}
+            </Button>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );

@@ -9,7 +9,13 @@ import { useAttention } from "../use-attention";
 import { PeopleAttentionCard } from "./people-attention";
 
 const mockHook = vi.mocked(useAttention);
-const base = { loading: false, error: null, reload: vi.fn() };
+const base = {
+  loading: false,
+  error: null,
+  reload: vi.fn(),
+  regenerate: vi.fn(),
+  regenerating: false,
+};
 beforeEach(() => mockHook.mockReset());
 
 describe("PeopleAttentionCard", () => {

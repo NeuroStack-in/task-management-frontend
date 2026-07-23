@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
@@ -348,15 +349,25 @@ export function AccountSecuritySettings() {
                 onChange={(e) => setPw((p) => ({ ...p, confirm: e.target.value }))}
               />
             </div>
-            <Button size="sm" onClick={savePassword} disabled={savingPw}>
-              {savingPw ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" /> Updating…
-                </>
-              ) : (
-                "Update password"
-              )}
-            </Button>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <Button size="sm" onClick={savePassword} disabled={savingPw}>
+                {savingPw ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Updating…
+                  </>
+                ) : (
+                  "Update password"
+                )}
+              </Button>
+              {/* For anyone who can't remember their current password — the reset flow verifies by
+                  emailed code instead, so it doesn't need the old one. */}
+              <Link
+                href="/forgot-password"
+                className="text-sm font-medium text-primary underline-offset-2 hover:underline"
+              >
+                Forgot your password?
+              </Link>
+            </div>
           </div>
         </CardContent>
       </Card>
