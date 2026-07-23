@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
@@ -91,12 +91,11 @@ export function ReportsExperimental() {
           >
             <ChevronLeft className="size-4" />
           </Button>
-          <Input
-            type="date"
+          <DatePicker
             value={date}
             max={today}
-            onChange={(e) => setDate(e.target.value)}
-            className="h-8 w-40"
+            onChange={setDate}
+            className="w-40"
           />
           {/* The day's narrative is generate-once-cached; each press is a fresh billed model run. */}
           {aiReport.data?.narrative ? (

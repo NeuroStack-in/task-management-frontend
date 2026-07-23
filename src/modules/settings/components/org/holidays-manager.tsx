@@ -12,6 +12,7 @@ import { Plus, Pencil, Trash2, CalendarDays } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -233,7 +234,11 @@ export function HolidaysManager() {
             </div>
             <div className="space-y-1.5">
               <Label>Date</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={saving} />
+              <DatePicker
+                value={date}
+                onChange={setDate}
+                className={saving ? "pointer-events-none w-full opacity-50" : "w-full"}
+              />
             </div>
           </div>
           <DialogFooter>

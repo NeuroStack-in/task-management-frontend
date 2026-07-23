@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
@@ -276,7 +277,17 @@ export function TaskFormDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Due date">
-                <Input type="date" {...register("dueDate")} />
+                <Controller
+                  control={control}
+                  name="dueDate"
+                  render={({ field }) => (
+                    <DatePicker
+                      value={field.value}
+                      onChange={field.onChange}
+                      className="w-full"
+                    />
+                  )}
+                />
               </Field>
               <Field label="Estimate (hrs)" error={errors.estimateHours?.message}>
                 <Input

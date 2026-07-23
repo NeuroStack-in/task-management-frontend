@@ -48,6 +48,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -673,10 +674,10 @@ function RichProfile({
               />
             </DialogField>
             <DialogField label="Date of birth">
-              <Input
-                type="date"
+              <DatePicker
                 value={form.dob}
-                onChange={(e) => set("dob")(e.target.value)}
+                onChange={set("dob")}
+                className="w-full"
               />
             </DialogField>
             <DialogField label="Location">

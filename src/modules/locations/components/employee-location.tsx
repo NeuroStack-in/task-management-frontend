@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
-import { TimePicker } from "@/components/ui/date-picker";
+import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import { initials } from "@/lib/format";
 import { ApiError } from "@/lib/api";
 import {
@@ -392,12 +392,9 @@ export function EmployeeLocationView({
       {/* "View at" — pick a date + time to pinpoint a moment */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border bg-card px-4 py-3">
         <span className="text-sm font-medium">View at</span>
-        <input
-          type="date"
+        <DatePicker
           value={date}
-          onChange={(e) => e.target.value && onDateChange(e.target.value)}
-          className="h-8 rounded-lg border bg-background px-2 text-sm"
-          aria-label="Date"
+          onChange={(v) => v && onDateChange(v)}
         />
         <TimePicker value={time} onChange={setTime} className="w-28" />
         {momentState === null ? (

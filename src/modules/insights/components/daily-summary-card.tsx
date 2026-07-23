@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
@@ -137,12 +137,11 @@ export function DailySummaryCard() {
           >
             <ChevronLeft className="size-4" />
           </Button>
-          <Input
-            type="date"
+          <DatePicker
             value={date}
             max={today}
-            onChange={(e) => setDate(e.target.value)}
-            className="h-8 w-40"
+            onChange={setDate}
+            className="w-40"
           />
           <Button
             variant="outline"
