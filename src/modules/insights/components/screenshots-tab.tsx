@@ -100,9 +100,9 @@ interface EmployeeGroup {
 }
 
 export function ScreenshotsTab() {
-  // Default to yesterday (a completed capture day); client-side to avoid an SSR date mismatch.
+  // Default to today; client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
-  useEffect(() => setDate(shiftIso(isoOf(new Date()), -1)), []);
+  useEffect(() => setDate(isoOf(new Date())), []);
   const today = isoOf(new Date());
 
   const [query, setQuery] = useState("");

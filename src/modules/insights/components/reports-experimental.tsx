@@ -63,12 +63,13 @@ function healthBand(score: number) {
 /* -------------------------------- component ------------------------------- */
 
 export function ReportsExperimental() {
-  // Default to yesterday (a completed, fully-scored day); client-side to avoid an SSR date mismatch.
+  // Default to today; client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
-  useEffect(() => setDate(shiftIso(isoOf(new Date()), -1)), []);
+  useEffect(() => setDate(isoOf(new Date())), []);
 
   const today = isoOf(new Date());
-  const aiReport = useAiReport(date);
+  // This surface is day-scoped by design (its date pager steps days), so the daily artifact.
+  const aiReport = useAiReport("daily", date);
 
   return (
     <div className="wp-enter space-y-8">
@@ -97,6 +98,18 @@ export function ReportsExperimental() {
             onChange={(e) => setDate(e.target.value)}
             className="h-8 w-40"
           />
+          {/* The day's narrative is generate-once-cached; each press is a fresh billed model run. */}
+          {aiReport.data?.narrative ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={aiReport.regenerate}
+              disabled={aiReport.regenerating}
+            >
+              {aiReport.regenerating ? "Regenerating…" : "Regenerate"}
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             size="icon-sm"
@@ -147,9 +160,16 @@ function ExecutiveOverview({ state }: { state: ReturnType<typeof useAiReport> })
       </div>
     );
   }
-  if (!state.data) return null;
+  // This surface is daily-only, so `metrics` is always present in practice — the guard narrows
+  // the hook's cross-granularity type rather than papering over a real absence.
+  if (!state.data?.metrics) return null;
 
-  const report = state.data;
+  const report = {
+    date: state.data.date ?? "",
+    metrics: state.data.metrics,
+    narrative: state.data.narrative,
+    generated_at: state.data.generated_at ?? 0,
+  };
   const band = healthBand(report.metrics.avg_score ?? 0);
 
   return (

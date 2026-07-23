@@ -3,7 +3,8 @@
 /**
  * "Your day" — a real, self-scoped AI briefing backed by `GET /v1/me/insights/summary`. Real metrics
  * (worked/tracked/billable time, tasks, attendance) plus an AI-written narrative, for a date the user
- * picks. Defaults to yesterday (a completed day). Not agent-gated — it reads attendance + timesheet.
+ * picks. Defaults to today (use the picker for a completed prior day). Not agent-gated — it reads
+ * attendance + timesheet.
  */
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -13,7 +14,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import { AiReportCard, type AiSignal, type AiMetric } from "./ai-report-card";
-import { getDailySummary, type DailySummary } from "../services/insights.service";
+import {
+  getDailySummary,
+  regenerateDailySummary,
+  type DailySummary,
+} from "../services/insights.service";
 
 function isoOf(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -73,13 +78,26 @@ function toSignals(s: DailySummary): AiSignal[] {
 }
 
 export function DailySummaryCard() {
-  // Default to yesterday (a completed day); set client-side to avoid an SSR/client date mismatch.
+  // Default to today; set client-side to avoid an SSR/client date mismatch.
   const [date, setDate] = useState<string>("");
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
 
-  useEffect(() => setDate(shiftIso(isoOf(new Date()), -1)), []);
+  // The narrative is generate-once-cached server-side; this is the deliberate re-spend.
+  const regenerate = () => {
+    if (!date || regenerating) return;
+    setRegenerating(true);
+    regenerateDailySummary(date)
+      .then((s) => setSummary(s))
+      .catch((e) =>
+        setError(e instanceof ApiError ? e.message : "Couldn't regenerate your summary."),
+      )
+      .finally(() => setRegenerating(false));
+  };
+
+  useEffect(() => setDate(isoOf(new Date())), []);
 
   useEffect(() => {
     if (!date) return;
@@ -154,6 +172,8 @@ export function DailySummaryCard() {
           summary={summary.narrative}
           metrics={toMetrics(summary)}
           signals={toSignals(summary)}
+          onRegenerate={summary.narrative ? regenerate : undefined}
+          regenerating={regenerating}
         />
       ) : null}
     </div>
