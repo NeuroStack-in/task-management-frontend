@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Camera,
   ChevronLeft,
   ChevronRight,
   EyeOff,
   Flag,
+  Loader2,
   Search,
   ShieldOff,
+  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -17,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -38,8 +41,14 @@ import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { ApiError } from "@/lib/api";
 import { useScreenshots } from "../use-screenshots";
-import type { ShotRow } from "../services/insights.service";
+import {
+  getScreenshotReport,
+  runScreenshotReports,
+  type ScreenshotReport,
+  type ShotRow,
+} from "../services/insights.service";
 import { AiReportCard } from "./ai-report-card";
 
 /**
@@ -49,10 +58,10 @@ import { AiReportCard } from "./ai-report-card";
  * shot is a presigned image ordered by capture time, so the grid doubles as the day's timeline.
  *
  * **Real, monitoring-fed.** Where the backend has no field, the element stays but degrades honestly:
- * the server exposes no per-shot flag, no per-shot activity %, and no screenshot-specific AI, so the
- * hero's "Needs review" / "Avg activity" read "—", the "Needs review" toggle yields an honest empty,
- * and the tiles/viewer show only the real app + capture time. Nothing is fabricated — a day is empty
- * until the desktop agent captures.
+ * the grid exposes no per-shot activity %, so the hero's "Avg activity" reads "—". The **per-shot AI
+ * read is wired** — the fullscreen viewer fetches each frame's `vision_map` report on open (category,
+ * work-relatedness, a one-line description, a flag) and offers to generate it when the day hasn't been
+ * analyzed. Nothing is fabricated — a day is empty until the desktop agent captures.
  */
 
 function isoOf(d: Date): string {
@@ -100,9 +109,9 @@ interface EmployeeGroup {
 }
 
 export function ScreenshotsTab() {
-  // Default to yesterday (a completed capture day); client-side to avoid an SSR date mismatch.
+  // Default to today; client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
-  useEffect(() => setDate(shiftIso(isoOf(new Date()), -1)), []);
+  useEffect(() => setDate(isoOf(new Date())), []);
   const today = isoOf(new Date());
 
   const [query, setQuery] = useState("");
@@ -271,13 +280,11 @@ export function ScreenshotsTab() {
             >
               <ChevronLeft className="size-4" />
             </Button>
-            <Input
-              type="date"
+            <DatePicker
               value={date}
               max={today}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-8 w-36"
-              aria-label="Capture date"
+              onChange={setDate}
+              className="w-36"
             />
             <Button
               variant="outline"
@@ -416,6 +423,7 @@ export function ScreenshotsTab() {
       <Lightbox
         shots={flatShots}
         index={viewerIdx}
+        date={date}
         nameOf={nameOf}
         onIndexChange={setViewerIdx}
         onClose={() => setViewerIdx(null)}
@@ -515,19 +523,23 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 /**
  * Fullscreen viewer — the image fills its own letterboxed pane, metadata sits in a distinct section
- * below. Prev/next arrows step across every loaded shot (also ←/→), clamped at the ends. Withheld
- * shots show the privacy placeholder in the pane rather than an image. The preview's per-capture
- * activity % / flag reason / AI read are dropped — the backend exposes none of them.
+ * below, and the per-frame AI read (`ShotAiReport`) hangs under the metadata. Prev/next arrows step
+ * across every loaded shot (also ←/→), clamped at the ends. Withheld shots show the privacy
+ * placeholder in the pane rather than an image (and no AI read — a withheld frame never reached the
+ * model).
  */
 function Lightbox({
   shots,
   index,
+  date,
   nameOf,
   onIndexChange,
   onClose,
 }: {
   shots: ShotRow[];
   index: number | null;
+  /** The day being reviewed — needed to fetch/generate the per-frame AI report. */
+  date: string;
   nameOf: (id: string) => string;
   onIndexChange: (i: number) => void;
   onClose: () => void;
@@ -653,6 +665,18 @@ function Lightbox({
                   />
                 ) : null}
               </div>
+              {/* The vision model's read of this frame. A withheld frame was never sent to the model,
+                  so there's nothing to show. */}
+              {!withheld ? (
+                <div className="mx-auto w-full max-w-7xl border-t border-white/10 px-6 py-4 sm:px-8">
+                  <ShotAiReport
+                    key={`${shot.user_id}:${shot.shot_id}`}
+                    shotId={shot.shot_id}
+                    userId={shot.user_id}
+                    date={date}
+                  />
+                </div>
+              ) : null}
             </div>
           </>
         ) : null}
@@ -674,6 +698,160 @@ function PanelDetail({
     <div className="min-w-0">
       <dt className="text-[11px] font-medium uppercase tracking-wide text-white/45">{label}</dt>
       <dd className={cn("mt-1 break-words font-medium text-white", className)}>{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * The vision model's read of one screenshot (`vision_map`), fetched on demand when the frame opens.
+ *
+ * The model runs per-day (not on capture), so a just-captured frame legitimately has no report yet —
+ * that's a 404, surfaced as "not analyzed" with a Generate action, not an error. Generating runs the
+ * day's map (spends the org's AI budget, needs `monitoring:manage`); the server enforces it, so a
+ * viewer who lacks the permission gets a clear message instead of a silent no-op.
+ */
+type AiState =
+  | { kind: "loading" }
+  | { kind: "loaded"; report: ScreenshotReport }
+  | { kind: "none" }
+  | { kind: "error"; message: string };
+
+function ShotAiReport({
+  shotId,
+  userId,
+  date,
+}: {
+  shotId: string;
+  userId: string;
+  date: string;
+}) {
+  const [state, setState] = useState<AiState>({ kind: "loading" });
+  const [running, setRunning] = useState(false);
+
+  // Returns the next state rather than setting it, so `generate` can inspect the result (did the run
+  // actually produce a report?) without racing an async setState.
+  const fetchReport = useCallback(async (): Promise<AiState> => {
+    try {
+      const report = await getScreenshotReport(shotId, date, userId);
+      return { kind: "loaded", report };
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return { kind: "none" };
+      return {
+        kind: "error",
+        message: e instanceof ApiError ? e.message : "Couldn't load the AI read.",
+      };
+    }
+  }, [shotId, userId, date]);
+
+  useEffect(() => {
+    let live = true;
+    setState({ kind: "loading" });
+    void fetchReport().then((s) => live && setState(s));
+    return () => {
+      live = false;
+    };
+  }, [fetchReport]);
+
+  const generate = async () => {
+    setRunning(true);
+    try {
+      const run = await runScreenshotReports(date, userId);
+      const next = await fetchReport();
+      // Still nothing after a run? Explain why (plan doesn't include screenshots, no eligible frames,
+      // provider not configured) instead of silently re-showing "not analyzed".
+      if (next.kind === "none" && run.reason) {
+        setState({ kind: "error", message: `Couldn't analyze this day — ${run.reason}.` });
+      } else {
+        setState(next);
+      }
+    } catch (e) {
+      setState({
+        kind: "error",
+        message:
+          e instanceof ApiError
+            ? e.status === 403
+              ? "You don't have permission to run AI analysis."
+              : e.message
+            : "Couldn't run AI analysis.",
+      });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-white/45">
+        <Sparkles className="size-3.5" /> AI read
+      </div>
+
+      {state.kind === "loading" && (
+        <p className="mt-2 flex items-center gap-2 text-sm text-white/60">
+          <Loader2 className="size-4 animate-spin" /> Loading the AI read…
+        </p>
+      )}
+
+      {state.kind === "loaded" && <AiReadBody report={state.report} />}
+
+      {state.kind === "none" && (
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-white/60">This frame hasn&apos;t been analyzed yet.</p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={running}
+            onClick={generate}
+            className="border-white/20 bg-white/5 text-white hover:bg-white/15 hover:text-white"
+          >
+            {running ? (
+              <>
+                <Loader2 className="size-4 animate-spin" /> Analyzing…
+              </>
+            ) : (
+              <>
+                <Sparkles className="size-4" /> Generate AI report
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+
+      {state.kind === "error" && <p className="mt-2 text-sm text-destructive">{state.message}</p>}
+    </div>
+  );
+}
+
+/** The rendered report — one-line description + category / work-related / flag badges + provenance. */
+function AiReadBody({ report }: { report: ScreenshotReport }) {
+  const catTone =
+    report.category === "distracting"
+      ? "bg-destructive/20 text-destructive"
+      : report.category === "productive"
+        ? "bg-success/20 text-success"
+        : "bg-white/10 text-white/70";
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="max-w-3xl text-sm leading-relaxed text-white/90">{report.description}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cn("rounded-sm px-2 py-0.5 text-[11px] font-medium capitalize", catTone)}>
+          {report.category}
+        </span>
+        <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/70">
+          {report.work_related ? "Work-related" : "Not work-related"}
+        </span>
+        {report.flag ? (
+          <span className="inline-flex items-center gap-1 rounded-sm bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive">
+            <Flag className="size-3" /> Flagged
+          </span>
+        ) : null}
+      </div>
+      {report.flag && report.flag_reason ? (
+        <p className="text-[13px] text-destructive/90">{report.flag_reason}</p>
+      ) : null}
+      <p className="text-[11px] text-white/35">
+        {report.model || "AI"}
+        {report.confidence > 0 ? ` · ${Math.round(report.confidence * 100)}% confidence` : ""}
+      </p>
     </div>
   );
 }
@@ -823,22 +1001,10 @@ function EmployeeCaptures({
       {/* Filters — within the selected day */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
         <Field label="From">
-          <Input
-            type="time"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="h-8 w-32"
-            aria-label="From time"
-          />
+          <TimePicker value={from} onChange={setFrom} className="w-32" />
         </Field>
         <Field label="To">
-          <Input
-            type="time"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-8 w-32"
-            aria-label="To time"
-          />
+          <TimePicker value={to} onChange={setTo} className="w-32" />
         </Field>
         <Field label="Show">
           <div className="flex items-center gap-4 text-sm">
@@ -917,6 +1083,7 @@ function EmployeeCaptures({
       <Lightbox
         shots={flat}
         index={viewerIdx}
+        date={date}
         nameOf={nameOf}
         onIndexChange={setViewerIdx}
         onClose={() => setViewerIdx(null)}

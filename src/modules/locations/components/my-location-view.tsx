@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, MapPin, MonitorSmartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
@@ -98,12 +98,11 @@ export function MyLocationView() {
           >
             <ChevronLeft className="size-4" />
           </Button>
-          <Input
-            type="date"
+          <DatePicker
             value={date}
             max={today}
-            onChange={(e) => setDate(e.target.value)}
-            className="h-8 w-36"
+            onChange={setDate}
+            className="w-36"
           />
           <Button
             variant="outline"

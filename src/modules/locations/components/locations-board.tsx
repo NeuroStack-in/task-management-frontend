@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -345,12 +346,11 @@ function LocationsBoard({
                 >
                   <ChevronLeft className="size-4" />
                 </Button>
-                <Input
-                  type="date"
+                <DatePicker
                   value={date}
                   max={today}
-                  onChange={(e) => e.target.value && setDate(e.target.value)}
-                  className="h-8 w-40"
+                  onChange={(v) => v && setDate(v)}
+                  className="w-40"
                 />
                 <Button
                   variant="outline"

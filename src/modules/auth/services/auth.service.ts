@@ -221,3 +221,78 @@ export async function completeSso(): Promise<LoginResult> {
 export function logout(): void {
   cognitoSignOut();
 }
+
+/* ------------------------------ Password reset ------------------------------ */
+//
+// The logged-out "forgot password" flow — two steps against a fresh CognitoUser (there is no
+// session yet): `forgotPassword` emails a one-time code, then `confirmPassword` sets the new
+// password with that code. This is distinct from the signed-in `changePassword`
+// (account-security.service.ts), which needs the *current* password instead of an emailed code.
+
+/**
+ * Step 1: ask Cognito to email a password-reset code to `email`. Resolves once the code is on its
+ * way. A non-existent account resolves the same way on purpose — telling the caller "no such user"
+ * would turn this into an account-enumeration oracle (same stance as {@link login}); the reset page
+ * asks for the code regardless.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const username = email.trim().toLowerCase();
+  const user = new CognitoUser({ Username: username, Pool: userPool() });
+  await new Promise<void>((resolve, reject) => {
+    user.forgotPassword({
+      onSuccess: () => resolve(),
+      // Fires when the code has been delivered — that's our success signal for step 1.
+      inputVerificationCode: () => resolve(),
+      onFailure: (err: Error) => {
+        const code = (err as { code?: string })?.code ?? "";
+        // Don't reveal whether the account exists.
+        if (code === "UserNotFoundException") return resolve();
+        if (code === "LimitExceededException")
+          return reject(
+            new AuthError("Too many attempts. Wait a bit, then try again.", "state"),
+          );
+        reject(new AuthError("Couldn't start the reset. Please try again.", "state"));
+      },
+    });
+  });
+}
+
+/**
+ * Step 2: complete the reset with the emailed `code` and the chosen `newPassword`. Validate the
+ * password against the pool policy (`lib/password.ts`) before calling so the user gets a specific
+ * message, not Cognito's generic one. A wrong code and an unknown account collapse to the same
+ * "code is incorrect" message (enumeration again).
+ */
+export async function confirmPasswordReset(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  const username = email.trim().toLowerCase();
+  const user = new CognitoUser({ Username: username, Pool: userPool() });
+  await new Promise<void>((resolve, reject) => {
+    user.confirmPassword(code.trim(), newPassword, {
+      onSuccess: () => resolve(),
+      onFailure: (err: Error) => {
+        const c = (err as { code?: string })?.code ?? "";
+        if (c === "CodeMismatchException" || c === "UserNotFoundException")
+          return reject(
+            new AuthError("That code is incorrect. Check your email and try again.", "credentials"),
+          );
+        if (c === "ExpiredCodeException")
+          return reject(
+            new AuthError("That code has expired. Request a new one.", "state"),
+          );
+        if (c === "InvalidPasswordException")
+          return reject(
+            new AuthError("That password doesn't meet the password policy.", "state"),
+          );
+        if (c === "LimitExceededException")
+          return reject(
+            new AuthError("Too many attempts. Wait a bit, then try again.", "state"),
+          );
+        reject(new AuthError("Couldn't reset your password. Please try again.", "state"));
+      },
+    });
+  });
+}

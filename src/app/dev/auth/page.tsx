@@ -85,7 +85,9 @@ function Gallery() {
         <ForgotPasswordForm />
       </ScreenFrame>
       <ScreenFrame title="Reset password">
-        <ResetPasswordForm />
+        <Suspense fallback={<Loader />}>
+          <ResetPasswordForm />
+        </Suspense>
       </ScreenFrame>
       <ScreenFrame title="Multi-factor verification">
         <MfaForm />

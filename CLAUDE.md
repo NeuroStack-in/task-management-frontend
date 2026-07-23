@@ -6,14 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **WorkPulse** — a Workforce Activity & Productivity Management Platform (SaaS).
 
-> **Updated 2026-07-17 — this section said "Phase 1 is frontend-only… There is no backend." That is no longer true.** The Rust backend is **built and deployed** to a live `dev` stack, and this app **already talks to it**: login is real Cognito, and `.env.local` points at the live API.
+> **Updated 2026-07-23 — the migration is essentially DONE. Assume real, not mock.**
+> - **Real:** authentication (Cognito SRP) and **~every module** — 17+ module services all call `lib/api.ts`, consuming 110+ live routes (employees, projects, timesheets, attendance, leave, payroll, billing, roles, security, audit, settings, insights, exports, avatars, dashboard layouts, …).
+> - **Remaining mock, all deliberate:** `mock-integrations.ts` (dead code — Integrations is a ComingSoon stub), `mock-time.ts` (the web timer is design-forbidden — only the desktop agent tracks time, LLD §4), and `stores/projects.store.ts` / `tasks.store.ts` (form types + seed only; pages fetch real data via hooks). Marketing pages are intentionally static.
+> - **Still genuinely absent:** payments (no provider), Inbox/chat, integrations marketplace. Monitoring surfaces are wired but **honest-empty until a desktop agent reports** — that's a data gap, not a wiring gap.
 >
-> **The app is mid-migration, and that is the single most important thing to know here:**
-> - **Real:** authentication + **4 of the backend's 86 deployed routes** (entitlements, projects, timesheets).
-> - **Mock:** everything else — **49 files** import a `lib/mock-*.ts`, **25** import `lib/data.ts`. Employees, approvals, attendance, payroll, insights, security, audit, billing and the dashboard are all still static JSON and simulated workflows.
-> - **Still genuinely absent:** real monitoring data (it needs the desktop agent) and payments.
->
-> So: **assume mock, verify before you trust it** — check whether the module you're touching goes through `lib/api.ts` or `lib/mock-*.ts`. See pattern 3 below.
+> When a monitoring page shows "—", check the QA plan's honest-empty list before assuming a bug.
 
 **Design:** WorkPulse has its own original visual identity (see [Docs/DESIGN.md](Docs/DESIGN.md)). Do not model the UI/layout/aesthetic on any other product.
 
@@ -63,7 +61,7 @@ Module-first, mirroring TDD §4. Key directories under `src/`:
 - `app/` — App Router. Route groups: `(auth)` (login/mfa/etc.), `(app)` (everything authenticated, wrapped by `AuthGuard` + `DashboardShell`). `/` (landing) and `/onboarding` are standalone.
 - `modules/<name>/` — feature code (`auth`, `dashboard`, `roles`, …), each with `components/`, `services/`, etc. **Pages stay thin** and delegate to module components.
 - `stores/` — Zustand stores: `auth`, `roles`, `notification`, `timer`, `dashboard`, `projects`, `tasks`, `assistant`, `features`, and `ui` (sidebar-collapse + ⌘K command-palette open state). Persisted ones use the `persist` middleware with `wp-*` storage keys, and `partialize` to persist only durable prefs (e.g. `wp-ui` persists the sidebar rail but not the palette).
-- `lib/` — `api.ts` (**the real backend client** — `apiFetch`, `ApiError`, envelope unwrapping), `cognito.ts` (**real** user pool, `getIdToken`), `rbac.ts` (access logic), `data.ts` (typed mock-data accessors), `mock-*.ts` (**~17 per-domain mock modules** — the bulk of the app's data), `format.ts` (server-safe helpers), `utils.ts` (`cn`). *(`mock-jwt.ts` was listed here until 2026-07-17 — **deleted**; auth is real Cognito now.)*
+- `lib/` — `api.ts` (**the real backend client** — `apiFetch`, `ApiError`, envelope unwrapping, GET-only retry), `cognito.ts` (**real** user pool, `getIdToken`), `rbac.ts` (UI access logic), `permission-bits.ts` (JWT `perm`-bitset → frontend permission ids, the custom-role UI gate — keep in step with `wp-contracts`), `password.ts` (mirrors the pool policy: **min 8** + upper/lower/number), `format.ts` (server-safe helpers), `utils.ts` (`cn`). Only **2 mock modules remain** (`mock-integrations.ts` dead code, `mock-time.ts` deliberate); `data.ts` survives as types/utilities only.
 - `constants/` — `permissions.ts` (catalog), `roles.ts` (system roles), `navigation.ts` (sidebar tree).
 - `components/shared/` (PageHeader, StatCard, EmptyState, Loader, ComingSoon, plus the **pulse-line primitives** `sparkline`, `delta-pill`, `gauge` — the WorkPulse design signature; reuse these instead of new chart one-offs) and `components/layout/` (shell, sidebar, navbar, global timer, etc.).
 - `data/` — generated JSON (git-tracked output of `npm run seed`). **Never edit by hand; never import directly from components** — go through `lib/data.ts` and module services.
@@ -74,11 +72,10 @@ Module-first, mirroring TDD §4. Key directories under `src/`:
 
 2. **Permission resolution.** `usePermissions()` / `useCurrentRole()` ([src/hooks/use-permissions.ts](src/hooks/use-permissions.ts)) join the auth store's user with the roles store (system + custom roles). Use `can(...)` to gate UI actions, not just routes.
 
-3. **Two data paths — know which one you're on.** The backend is **live** and the app is mid-migration onto it.
-   - **Real:** `component → module service → apiFetch() → live API` ([src/lib/api.ts](src/lib/api.ts)). Every call attaches a fresh Cognito ID token; the server's envelope is `{data, cursor?}` / `{error:{code,message}}` and surfaces as `ApiError`. **Only 4 of the backend's 86 routes are consumed today** — `/v1/org/entitlements`, `/v1/projects`, `/v1/me/timesheet/today`, `/v1/me/timesheet`.
-   - **Mock:** `component → lib/data.ts | lib/mock-*.ts → JSON`, with simulated latency via `delay()`. **Everything else** — employees, approvals, attendance, payroll, insights, security, audit, billing, dashboard.
-   - ⚠️ **The seam is aspirational, not actual.** There are only **3 module services** for ~20 modules; pages and stores import `@/lib/data` / `@/lib/mock-*` **directly** (`dashboard/page.tsx`, `employees/page.tsx`, `stores/tasks.store.ts`, …). So wiring a module usually means **building its service layer first**, not swapping an implementation. When you touch a mock module, route it through a service — that is the migration.
-   - **When porting, the server's shape wins.** It is not the mock's: `projects.service.ts` documents exactly this (`lib/data.ts` exposes a richer `Project` than `/v1/projects` returns). Don't reshape the API to match the mock.
+3. **One data path — the service seam is real and nearly universal.** `component → module service (src/modules/<m>/services/*.service.ts) → apiFetch() → live API` ([src/lib/api.ts](src/lib/api.ts)). Every call attaches a fresh Cognito ID token; the server's envelope is `{data, cursor?}` / `{error:{code,message}}` and surfaces as `ApiError`; only GETs retry (writes never do). 17+ module services exist and **none touch mock data**.
+   - Services carry a JSDoc noting the route + required permission — follow that style ([employees.service.ts](src/modules/employees/services/employees.service.ts) is the reference).
+   - **The server's shape wins.** Mirror the backend DTO (read the Rust `dto.rs` in `backend/crates/<ctx>/src/features/<slice>/`) — never reshape the API to fit a frontend type.
+   - Two hazards that have caused real bugs: bound per-item API fan-outs (parallel bursts trip the 503/429 throttle), and guard `META[serverValue]` lookups (an unknown server value must degrade, not crash).
 
 4. **Auth is REAL.** Login is a genuine **SRP exchange against the live Cognito pool** ([src/modules/auth/services/auth.service.ts](src/modules/auth/services/auth.service.ts), [src/lib/cognito.ts](src/lib/cognito.ts)) — **a wrong password fails**. Needs `.env.local` (copy `.env.example`); without `NEXT_PUBLIC_API_URL` the client throws. The ID token carries the RBAC claims the pre-token trigger stamps (`tenant_id`, `perm` bitset, `is_owner`, `scope`, `custom:roleId`), projected onto the app's `User` so the existing permission/nav gating works unchanged. `AuthGuard` still waits for the `hydrated` flag to avoid SSR/hydration flicker.
    - **`owner@acme.test` is a real seeded Cognito user** in the live `dev` pool, not a fixture — it has a real password.

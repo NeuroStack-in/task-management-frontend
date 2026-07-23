@@ -222,6 +222,71 @@ export function getScreenshots(
   return apiFetch<ScreenshotGrid>(`/v1/insights/screenshots?${q.toString()}`);
 }
 
+// ── Per-screenshot AI report (vision_map) ───────────────────────────────────────────────────────
+// The Stage-1 vision model's read of one frame. Mirrors `insights::vision_map::dto::ShotReport`.
+
+export interface ScreenshotReport {
+  shot_id: string;
+  user_id: string;
+  date: string;
+  /** The model's category — `productive | neutral | distracting` (its read, not the app-name guess). */
+  category: string;
+  work_related: boolean;
+  /** One factual sentence about what is visible in the frame. */
+  description: string;
+  flag: boolean;
+  flag_reason: string;
+  /** Model confidence, 0..1. */
+  confidence: number;
+  model: string;
+  /** Epoch **ms** the report was generated. */
+  generated_at: number;
+}
+
+/**
+ * `GET /v1/insights/screenshots/{id}/report` — the vision model's report for one frame. Needs
+ * `screenshots:view`. **A 404 (`ApiError.status === 404`) means the frame hasn't been analyzed yet**
+ * — the vision map runs per day (not on capture), so treat 404 as "not analyzed", never an error.
+ */
+export function getScreenshotReport(
+  shotId: string,
+  date: string,
+  userId?: string,
+): Promise<ScreenshotReport> {
+  const q = new URLSearchParams({ date });
+  if (userId) q.set("user_id", userId);
+  return apiFetch<ScreenshotReport>(
+    `/v1/insights/screenshots/${encodeURIComponent(shotId)}/report?${q.toString()}`,
+  );
+}
+
+/** Mirrors `vision_map::dto::RunResponse` — the counts from a day's analysis run. */
+export interface ScreenshotReportRun {
+  ran: boolean;
+  reason?: string;
+  scanned: number;
+  already_reported: number;
+  generated: number;
+  flagged: number;
+}
+
+/**
+ * `POST /v1/insights/screenshots/reports` — run the vision map over a day's screenshots (the
+ * request-path stand-in for the nightly cron). Needs **`monitoring:manage`** (server-enforced), and
+ * spends the org's AI budget, so it's a manager action. Idempotent + generate-once — re-running only
+ * analyzes frames that don't yet have a report.
+ */
+export function runScreenshotReports(
+  date: string,
+  userId?: string,
+): Promise<ScreenshotReportRun> {
+  const q = new URLSearchParams({ date });
+  if (userId) q.set("user_id", userId);
+  return apiFetch<ScreenshotReportRun>(`/v1/insights/screenshots/reports?${q.toString()}`, {
+    method: "POST",
+  });
+}
+
 // ── GET /v1/insights/attention?date=  (AI reduce: people who need attention) ──
 
 export interface AttentionRow {
@@ -246,6 +311,14 @@ export interface AttentionList {
 
 export function getAttention(date: string): Promise<AttentionList> {
   return apiFetch<AttentionList>(`/v1/insights/attention?date=${encodeURIComponent(date)}`);
+}
+
+/** `POST /v1/insights/attention/regenerate?date=` — re-run the brief over the current ranking. */
+export function regenerateAttention(date: string): Promise<AttentionList> {
+  return apiFetch<AttentionList>(
+    `/v1/insights/attention/regenerate?date=${encodeURIComponent(date)}`,
+    { method: "POST" },
+  );
 }
 
 // ── GET /v1/insights/reports  +  /v1/insights/reports/ai?date= ──
@@ -286,6 +359,56 @@ export interface AiReport {
 /** Enterprise-gated (`insights.reports.ai_pdf`); throws `ApiError` 403 if the org lacks it. */
 export function getAiReport(date: string): Promise<AiReport> {
   return apiFetch<AiReport>(`/v1/insights/reports/ai?date=${encodeURIComponent(date)}`);
+}
+
+/** `POST /v1/insights/reports/ai/regenerate?date=` — re-run the model for the day, re-cache. */
+export function regenerateAiReport(date: string): Promise<AiReport> {
+  return apiFetch<AiReport>(
+    `/v1/insights/reports/ai/regenerate?date=${encodeURIComponent(date)}`,
+    { method: "POST" },
+  );
+}
+
+/**
+ * The org weekly/monthly AI reports (`org_weekly_report` / `org_monthly_report`) — the same
+ * artifact one resolution up, same gates. Only the fields the AI card renders are typed here;
+ * `reason` is set (with an empty `narrative`) when there is nothing to reduce yet — an honest
+ * "no data" the caller must show instead of prose.
+ */
+export interface AiPeriodReport {
+  narrative: string;
+  reason?: string | null;
+  generated_at?: number | null;
+}
+
+/** `GET /v1/insights/reports/ai/weekly?week=YYYY-Www`. Enterprise-gated like the daily. */
+export function getAiWeeklyReport(week: string): Promise<AiPeriodReport> {
+  return apiFetch<AiPeriodReport>(
+    `/v1/insights/reports/ai/weekly?week=${encodeURIComponent(week)}`,
+  );
+}
+
+/** `POST /v1/insights/reports/ai/weekly/regenerate?week=`. */
+export function regenerateAiWeeklyReport(week: string): Promise<AiPeriodReport> {
+  return apiFetch<AiPeriodReport>(
+    `/v1/insights/reports/ai/weekly/regenerate?week=${encodeURIComponent(week)}`,
+    { method: "POST" },
+  );
+}
+
+/** `GET /v1/insights/reports/ai/monthly?month=YYYY-MM`. Enterprise-gated like the daily. */
+export function getAiMonthlyReport(month: string): Promise<AiPeriodReport> {
+  return apiFetch<AiPeriodReport>(
+    `/v1/insights/reports/ai/monthly?month=${encodeURIComponent(month)}`,
+  );
+}
+
+/** `POST /v1/insights/reports/ai/monthly/regenerate?month=`. */
+export function regenerateAiMonthlyReport(month: string): Promise<AiPeriodReport> {
+  return apiFetch<AiPeriodReport>(
+    `/v1/insights/reports/ai/monthly/regenerate?month=${encodeURIComponent(month)}`,
+    { method: "POST" },
+  );
 }
 
 // ── GET /v1/insights/locations?date=  (org-wide oversight — the admin Locations board) ──

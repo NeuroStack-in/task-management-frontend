@@ -49,6 +49,8 @@ import {
 } from "@/modules/settings/services/org.service";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { buildZip } from "@/lib/zip";
+import { mapWithConcurrency } from "@/lib/concurrency";
 
 /**
  * Ownership & lifecycle — the real backend (`identity` context, LLD §14).
@@ -188,6 +190,7 @@ export function OwnershipSettings() {
 
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [zipping, setZipping] = useState(false);
   // The in-flight/last export job this session. Polled while accepted/running; `files` carries
   // time-limited presigned links once done (~15 min — re-poll refreshes them).
   const [exportJob, setExportJob] = useState<ExportStatusResult | null>(null);
@@ -247,6 +250,38 @@ export function OwnershipSettings() {
       reportError(e, "Couldn't start the export.");
     } finally {
       setExportBusy(false);
+    }
+  }
+
+  /**
+   * Fetch every export file via its presigned URL and bundle one .zip client-side (lib/zip, STORE
+   * — screenshots are already-compressed WebP, JSONL is tiny). Bounded fan-out so a big export
+   * doesn't open hundreds of sockets. Needs the bucket's GET CORS rule; a fetch failure usually
+   * means the ~15-min links expired — re-polling the status refreshes them.
+   */
+  async function handleDownloadAll() {
+    if (!exportJob || exportJob.files.length === 0) return;
+    setZipping(true);
+    try {
+      const entries = await mapWithConcurrency(exportJob.files, 4, async (f) => {
+        const res = await fetch(f.url);
+        if (!res.ok) throw new Error(`${f.name}: ${res.status}`);
+        return { name: f.name, data: new Uint8Array(await res.arrayBuffer()) };
+      });
+      const blob = buildZip(entries);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `workpulse-export-${exportJob.job_id}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch {
+      // Most likely an expired presigned link — refresh them, keep the list usable.
+      toast.error("Couldn't bundle the export", {
+        description: "Refreshing the download links — try again in a moment.",
+      });
+      getExportStatus(exportJob.job_id).then(setExportJob).catch(() => {});
+    } finally {
+      setZipping(false);
     }
   }
 
@@ -414,13 +449,23 @@ export function OwnershipSettings() {
           <div className="border-t border-border px-6 py-4">
             {exportJob.status === "done" ? (
               <div className="space-y-2">
-                <p className="text-sm font-medium">
-                  Export ready — {exportJob.files.length} file
-                  {exportJob.files.length === 1 ? "" : "s"}{" "}
-                  <span className="font-normal text-muted-foreground">
-                    (links expire after ~15 minutes; re-open this page to refresh them)
-                  </span>
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    Export ready — {exportJob.files.length} file
+                    {exportJob.files.length === 1 ? "" : "s"}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (links expire after ~15 minutes; re-open this page to refresh them)
+                    </span>
+                  </p>
+                  <Button size="sm" onClick={handleDownloadAll} disabled={zipping}>
+                    {zipping ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Download className="size-4" />
+                    )}
+                    {zipping ? "Bundling…" : "Download all (.zip)"}
+                  </Button>
+                </div>
                 <ul className="max-h-48 space-y-1 overflow-y-auto">
                   {exportJob.files.map((f) => (
                     <li key={f.name}>

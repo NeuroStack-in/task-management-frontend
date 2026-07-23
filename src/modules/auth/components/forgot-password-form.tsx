@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, MailCheck, ArrowLeft } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -17,12 +19,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { requestPasswordReset } from "@/modules/auth/services/auth.service";
 
 const schema = z.object({ email: z.string().email("Enter a valid email address.") });
 type FormValues = z.infer<typeof schema>;
 
+/**
+ * Step 1 of the real Cognito reset flow: request a verification code by email. On success we hand
+ * off to `/reset-password` (carrying the email) where the code + new password are entered — that
+ * page calls `confirmPassword`. The two steps are separate routes so a refresh mid-flow is harmless.
+ */
 export function ForgotPasswordForm() {
-  const [sentTo, setSentTo] = useState<string | null>(null);
+  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
   const {
@@ -36,54 +44,26 @@ export function ForgotPasswordForm() {
 
   const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setSentTo(values.email);
+    try {
+      await requestPasswordReset(values.email);
+      toast.success("Check your email", {
+        description: "If an account exists, we sent a reset code.",
+      });
+      router.push(`/reset-password?email=${encodeURIComponent(values.email.trim().toLowerCase())}`);
+    } catch (err) {
+      toast.error("Couldn't send a reset code", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+      setSubmitting(false);
+    }
   };
-
-  if (sentTo) {
-    return (
-      <Card>
-        <CardHeader className="items-center text-center">
-          <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-success/12 text-success">
-            <MailCheck className="size-6" />
-          </span>
-          <CardTitle className="text-xl">Check your email</CardTitle>
-          <CardDescription>
-            We sent a password reset link to{" "}
-            <span className="font-medium text-foreground">{sentTo}</span>.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-center text-sm text-muted-foreground">
-          Didn&apos;t get it? Check spam, or{" "}
-          <button
-            type="button"
-            onClick={() => setSentTo(null)}
-            className="font-medium text-primary underline-offset-2 hover:underline"
-          >
-            try another email
-          </button>
-          .
-        </CardContent>
-        <CardFooter>
-          <Button
-            render={<Link href="/login" />}
-            nativeButton={false}
-            variant="outline"
-            className="w-full"
-          >
-            <ArrowLeft className="size-4" /> Back to sign in
-          </Button>
-        </CardFooter>
-      </Card>
-    );
-  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-xl">Forgot password?</CardTitle>
         <CardDescription>
-          Enter your email and we&apos;ll send you a reset link.
+          Enter your email and we&apos;ll send you a verification code to reset it.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -107,7 +87,7 @@ export function ForgotPasswordForm() {
                 <Loader2 className="size-4 animate-spin" /> Sending…
               </>
             ) : (
-              "Send reset link"
+              "Send reset code"
             )}
           </Button>
           <Link

@@ -11,7 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
@@ -60,12 +60,12 @@ export function PeopleAttentionCard({
 }: {
   title?: string;
 }) {
-  // Default to yesterday (a completed, fully-scored day); client-side to avoid an SSR date mismatch.
+  // Default to today; client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
   const [severity, setSeverity] = useState<SeverityFilter>("all");
-  useEffect(() => setDate(shiftIso(isoOf(new Date()), -1)), []);
+  useEffect(() => setDate(isoOf(new Date())), []);
 
-  const { data, loading, error } = useAttention(date);
+  const { data, loading, error, regenerate, regenerating } = useAttention(date);
   const today = isoOf(new Date());
 
   const people = useMemo(() => data?.people ?? [], [data]);
@@ -98,12 +98,11 @@ export function PeopleAttentionCard({
             >
               <ChevronLeft className="size-4" />
             </Button>
-            <Input
-              type="date"
+            <DatePicker
               value={date}
               max={today}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-8 w-36"
+              onChange={setDate}
+              className="w-36"
             />
             <Button
               variant="outline"
@@ -134,11 +133,24 @@ export function PeopleAttentionCard({
       </CardHeader>
 
       <CardContent className="space-y-3 p-0">
-        {/* AI narrative over the ranking (or the factual fallback). */}
+        {/* AI narrative over the ranking (or the factual fallback). Cached per input state
+            server-side; Regenerate is the deliberate re-spend (only shown when people are ranked —
+            an empty day's line is fixed text, nothing to re-run). */}
         {data?.narrative ? (
-          <div className="mx-4 flex gap-2.5 rounded-lg bg-feature-tint/60 p-3 text-sm text-foreground">
+          <div className="mx-4 flex items-start gap-2.5 rounded-lg bg-feature-tint/60 p-3 text-sm text-foreground">
             <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-            <p className="leading-relaxed">{data.narrative}</p>
+            <p className="flex-1 leading-relaxed">{data.narrative}</p>
+            {data.people.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 shrink-0 px-2 text-xs"
+                onClick={regenerate}
+                disabled={regenerating}
+              >
+                {regenerating ? "Regenerating…" : "Regenerate"}
+              </Button>
+            )}
           </div>
         ) : null}
 

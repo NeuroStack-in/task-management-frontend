@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
@@ -242,10 +243,16 @@ export function ProjectFormDialog({
               />
             </Field>
             <Field label="Deadline" error={errors.dueDate?.message}>
-              <Input
-                type="date"
-                aria-invalid={!!errors.dueDate}
-                {...register("dueDate")}
+              <Controller
+                control={control}
+                name="dueDate"
+                render={({ field }) => (
+                  <DatePicker
+                    value={field.value}
+                    onChange={field.onChange}
+                    className={cn("w-full", errors.dueDate && "border-destructive")}
+                  />
+                )}
               />
             </Field>
           </div>

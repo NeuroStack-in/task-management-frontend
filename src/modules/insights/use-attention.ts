@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
-import { getAttention, type AttentionList } from "./services/insights.service";
+import {
+  getAttention,
+  regenerateAttention,
+  type AttentionList,
+} from "./services/insights.service";
 
 export interface AttentionState {
   data: AttentionList | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
+  /** Force a fresh AI brief over the current ranking (a billed model run; otherwise cached). */
+  regenerate: () => void;
+  regenerating: boolean;
 }
 
 /** Loads the AttentionList for a day (`YYYY-MM-DD`). Empty `date` skips the fetch. */
@@ -39,7 +46,18 @@ export function useAttention(date: string): AttentionState {
   }, [date, nonce]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
-  return { data, loading, error, reload };
+
+  const [regenerating, setRegenerating] = useState(false);
+  const regenerate = useCallback(() => {
+    if (!date || regenerating) return;
+    setRegenerating(true);
+    regenerateAttention(date)
+      .then((d) => setData(d))
+      .catch((e) => setError(messageOf(e)))
+      .finally(() => setRegenerating(false));
+  }, [date, regenerating]);
+
+  return { data, loading, error, reload, regenerate, regenerating };
 }
 
 function messageOf(e: unknown): string {

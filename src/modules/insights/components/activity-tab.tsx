@@ -119,13 +119,17 @@ export function ActivityTab() {
   const [date, setDate] = useState("");
   const [showUsage, setShowUsage] = useState(false);
 
-  // Default to yesterday (a completed, fully-scored day); client-side to avoid an SSR date mismatch.
-  useEffect(() => setDate(shiftIso(isoOf(new Date()), -1)), []);
+  // Default to today; set client-side to avoid an SSR/client date mismatch. (Today may read partial
+  // until the day accrues data and the overnight close cron scores it — use the picker for a
+  // completed prior day.)
+  useEffect(() => setDate(isoOf(new Date())), []);
   const today = isoOf(new Date());
   const anchor = date || today;
 
   const org = useOrgActivity(date);
-  const ai = useAiReport(date);
+  // The AI narrative follows BOTH filters: the granularity toggle picks the artifact (org day /
+  // ISO-week / month report — separately cached server-side), the date anchors which one.
+  const ai = useAiReport(granularity, date);
 
   // Weekly / Monthly build the trend by fanning per-day org rollups; Daily has no hourly source.
   const rangeDates = useMemo<string[]>(() => {
@@ -187,10 +191,11 @@ export function ActivityTab() {
   const summary = useMemo(() => {
     if (ai.loading && !ai.data && !ai.locked) return "Generating the AI activity report…";
     if (ai.locked)
-      return "The AI activity report is an Enterprise add-on. The team metrics below are live — upgrade to unlock the AI-written narrative for this day.";
+      return "The AI activity report is an Enterprise add-on. The team metrics below are live — upgrade to unlock the AI-written narrative for this period.";
     if (ai.error) return ai.error;
-    if (ai.data) return ai.data.narrative;
-    return "The AI activity report appears here once there's scored activity for this day.";
+    // A period with nothing to reduce returns an empty narrative + the server's reason — show it.
+    if (ai.data) return ai.data.narrative || ai.data.reason || "";
+    return "The AI activity report appears here once there's scored activity for this period.";
   }, [ai.loading, ai.data, ai.locked, ai.error]);
 
   // Metrics: real org rollup (available regardless of the AI add-on). Empty until someone reports.
@@ -236,7 +241,15 @@ export function ActivityTab() {
         </label>
       </div>
 
-      <AiReportCard title="AI activity report" summary={summary} metrics={metrics} />
+      <AiReportCard
+        title="AI activity report"
+        summary={summary}
+        metrics={metrics}
+        // Only when a narrative actually loaded: locked orgs get the upsell, empty periods have
+        // nothing to re-run, and each press is a fresh billed generation.
+        onRegenerate={ai.data?.narrative ? ai.regenerate : undefined}
+        regenerating={ai.regenerating}
+      />
 
       <Card>
         <CardHeader>

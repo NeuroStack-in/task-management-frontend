@@ -334,9 +334,13 @@ export function InviteDialog({
             <DialogHeader>
               <DialogTitle>Invite created</DialogTitle>
               <DialogDescription>
-                Automated email isn&apos;t enabled here — share the invite link and one-time password
-                with <span className="font-medium text-foreground">{created.email}</span> yourself.
-                They won&apos;t be shown again.
+                {/* The invite email sends automatically (best-effort, via the notifications rail).
+                    The link + OTP stay here as the reliable fallback — delivery can fail without
+                    the server ever knowing (spam filters, SES sandbox), so don't overclaim it. */}
+                An invite email is on its way to{" "}
+                <span className="font-medium text-foreground">{created.email}</span>. If it
+                doesn&apos;t arrive, share the link and one-time password below yourself — they
+                won&apos;t be shown again.
               </DialogDescription>
             </DialogHeader>
 

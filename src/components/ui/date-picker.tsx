@@ -99,9 +99,11 @@ export function DatePicker({
   );
 }
 
+// Full 24h in half-hour steps — a filter clipped to office hours can't select an evening
+// screenshot (the agent captures whenever a timer runs, not 9-to-5).
 const TIMES = (() => {
   const out: string[] = [];
-  for (let h = 6; h <= 21; h++) {
+  for (let h = 0; h <= 23; h++) {
     for (const m of [0, 30]) out.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
   }
   return out;
