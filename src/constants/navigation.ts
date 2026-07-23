@@ -64,19 +64,67 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Work",
     items: [
-      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, permission: "dashboard:view" },
-      { label: "Time Tracking", href: "/time-tracking", icon: Timer, permission: "time-tracking:view" },
-      { label: "Projects", href: "/projects", icon: FolderKanban, permission: "projects:view" },
+      {
+        label: "Dashboard",
+        href: "/dashboard",
+        icon: LayoutDashboard,
+        permission: "dashboard:view",
+        keywords: "home overview widgets summary productivity score my day",
+      },
+      {
+        label: "Time Tracking",
+        href: "/time-tracking",
+        icon: Timer,
+        permission: "time-tracking:view",
+        keywords: "timer timesheet hours sessions billable work log clock in out",
+      },
+      {
+        label: "Projects",
+        href: "/projects",
+        icon: FolderKanban,
+        permission: "projects:view",
+        keywords: "tasks board kanban backlog milestones deadlines assignments",
+      },
     ],
   },
   {
     label: "Manage",
     items: [
-      { label: "Employees", href: "/employees", icon: Users, permission: "employees:view" },
-      { label: "Attendance", href: "/attendance", icon: CalendarCheck, permission: "attendance:view" },
-      { label: "Leave", href: "/leave-requests", icon: DoorOpen, permission: "leave:view" },
-      { label: "Approvals", href: "/approvals", icon: CheckCheck, permission: "approvals:view" },
-      { label: "Payroll", href: "/payroll", icon: Wallet, permission: "payroll:view" },
+      {
+        label: "Employees",
+        href: "/employees",
+        icon: Users,
+        permission: "employees:view",
+        keywords: "people directory staff team members invite hire onboarding profile",
+      },
+      {
+        label: "Attendance",
+        href: "/attendance",
+        icon: CalendarCheck,
+        permission: "attendance:view",
+        keywords: "present absent late check in checkout shifts calendar days off",
+      },
+      {
+        label: "Leave",
+        href: "/leave-requests",
+        icon: DoorOpen,
+        permission: "leave:view",
+        keywords: "vacation holiday pto sick time off request balance allowance wfh",
+      },
+      {
+        label: "Approvals",
+        href: "/approvals",
+        icon: CheckCheck,
+        permission: "approvals:view",
+        keywords: "pending requests approve reject review queue sign off",
+      },
+      {
+        label: "Payroll",
+        href: "/payroll",
+        icon: Wallet,
+        permission: "payroll:view",
+        keywords: "salary payslip compensation deductions pay run wages money",
+      },
       {
         label: "Analytics",
         href: "/insights",
@@ -88,14 +136,27 @@ export const NAV_GROUPS: NavGroup[] = [
           "reports:view",
           "ai:view",
         ],
+        keywords: "insights reports activity monitoring charts statistics trends",
       },
     ],
   },
   {
     label: "Communication",
     items: [
-      { label: "Inbox", href: "/inbox", icon: Mail, permission: "communication:view" },
-      { label: "Notifications", href: "/notifications", icon: Bell, permission: "notifications:view" },
+      {
+        label: "Inbox",
+        href: "/inbox",
+        icon: Mail,
+        permission: "communication:view",
+        keywords: "messages chat conversations mail team talk",
+      },
+      {
+        label: "Notifications",
+        href: "/notifications",
+        icon: Bell,
+        permission: "notifications:view",
+        keywords: "alerts unread mentions activity feed reminders",
+      },
     ],
   },
   {
@@ -103,8 +164,20 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       // Always reachable: also hosts Appearance + the admin hub (incl. Billing).
       // Admin cards inside are individually permission-gated.
-      { label: "Settings", href: "/settings", icon: Settings, permission: null },
-      { label: "Help Center", href: "/help", icon: HelpCircle, permission: "help:view" },
+      {
+        label: "Settings",
+        href: "/settings",
+        icon: Settings,
+        permission: null,
+        keywords: "preferences configuration options account organization admin hub",
+      },
+      {
+        label: "Help Center",
+        href: "/help",
+        icon: HelpCircle,
+        permission: "help:view",
+        keywords: "support docs documentation faq guide ticket contact how to",
+      },
     ],
   },
 ];
@@ -122,6 +195,7 @@ export const INSIGHTS_TABS: NavItem[] = [
     icon: Activity,
     permission: "activity:view",
     description: "Active vs inactive, heatmaps, app & URL usage.",
+    keywords: "productivity idle heatmap apps websites usage monitoring keystrokes",
   },
   {
     label: "Screenshots",
@@ -129,6 +203,7 @@ export const INSIGHTS_TABS: NavItem[] = [
     icon: Camera,
     permission: "screenshots:view",
     description: "Screenshot gallery, timeline, and risk analysis.",
+    keywords: "captures images gallery monitor review flagged blur",
   },
   {
     label: "Locations",
@@ -136,6 +211,7 @@ export const INSIGHTS_TABS: NavItem[] = [
     icon: MapPin,
     permission: "locations:view",
     description: "Live employee locations, login/logout trail, and map.",
+    keywords: "map gps geolocation whereabouts remote field trail tracking",
   },
   {
     label: "AI reports",
@@ -144,6 +220,7 @@ export const INSIGHTS_TABS: NavItem[] = [
     permission: "reports:view",
     description:
       "AI summary, workforce health, alerts, and exportable reports in one place.",
+    keywords: "summary anomalies alerts export pdf csv workforce health assistant",
   },
 ];
 
@@ -185,6 +262,23 @@ export const ACCOUNT_SECTIONS: NavItem[] = [
  * global search lands on the exact section, not just the top of the page.
  */
 export const SETTINGS_SUBSECTIONS: NavItem[] = [
+  {
+    label: "Login & security",
+    href: "/settings/login-security",
+    icon: KeyRound,
+    permission: null,
+    description: "Change your password and manage your authenticator app.",
+    keywords:
+      "password change reset credentials mfa 2fa authenticator totp enrol enroll disable qr code login security",
+  },
+  {
+    label: "Export organization data",
+    href: "/settings/ownership",
+    icon: TriangleAlert,
+    permission: "settings:manage",
+    description: "Request a full export of your organization's data.",
+    keywords: "export download all data backup zip archive gdpr copy organization",
+  },
   {
     label: "Multi-factor authentication",
     href: "/settings/security#mfa",
@@ -314,6 +408,7 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: Plug,
         permission: "integrations:view",
         description: "Slack, Teams, Jira, GitHub, and more.",
+        keywords: "connect apps slack teams jira github webhook api marketplace",
       },
       {
         label: "Device agents",
@@ -321,6 +416,8 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         icon: MonitorSmartphone,
         permission: "agents:view",
         description: "Device agent status, configuration, policies, and health.",
+        keywords:
+          "download install installer setup desktop app tracker agent fleet devices windows mac laptop computer monitor health heartbeat offline",
       },
     ],
   },

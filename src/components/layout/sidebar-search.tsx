@@ -137,8 +137,12 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           .filter((it) => isNavItemVisible(role, it))
           .map((it) => ({ item: it, group: g.label })),
       ),
-      // Personal account settings — always accessible, so no permission filter.
-      ...ACCOUNT_SECTIONS.map((it) => ({ item: it, group: "Account" })),
+      // Personal account settings — all `permission: null` today, but filtered anyway so a
+      // permissioned entry added later can never leak into every user's search results.
+      ...ACCOUNT_SECTIONS.filter((it) => isNavItemVisible(role, it)).map((it) => ({
+        item: it,
+        group: "Account",
+      })),
       // Deep-link sub-sections within a settings page (e.g. Security → MFA).
       ...SETTINGS_SUBSECTIONS.filter((it) => isNavItemVisible(role, it)).map(
         (it) => ({ item: it, group: "Settings" }),
@@ -152,11 +156,14 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           seen.add(item.href);
           return true;
         })
-        .filter(({ item, group }) =>
-          `${item.label} ${group} ${item.description ?? ""} ${item.keywords ?? ""}`
-            .toLowerCase()
-            .includes(q),
-        )
+        .filter(({ item, group }) => {
+          // Token-AND match: every word of the query must appear somewhere in the haystack, in any
+          // order — "download agent" finds "Device agents" via its keywords, where whole-phrase
+          // `includes()` found nothing unless the exact phrase existed contiguously.
+          const hay =
+            `${item.label} ${group} ${item.description ?? ""} ${item.keywords ?? ""}`.toLowerCase();
+          return q.split(/\s+/).every((token) => hay.includes(token));
+        })
         .slice(0, MAX_PAGES)
         .map<Result>(({ item, group }) => ({
           id: `nav-${item.href}`,
