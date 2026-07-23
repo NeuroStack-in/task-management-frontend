@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -279,13 +280,11 @@ export function ScreenshotsTab() {
             >
               <ChevronLeft className="size-4" />
             </Button>
-            <Input
-              type="date"
+            <DatePicker
               value={date}
               max={today}
-              onChange={(e) => setDate(e.target.value)}
-              className="h-8 w-36"
-              aria-label="Capture date"
+              onChange={setDate}
+              className="w-36"
             />
             <Button
               variant="outline"
@@ -729,30 +728,42 @@ function ShotAiReport({
   const [state, setState] = useState<AiState>({ kind: "loading" });
   const [running, setRunning] = useState(false);
 
-  const load = useCallback(async () => {
-    setState({ kind: "loading" });
+  // Returns the next state rather than setting it, so `generate` can inspect the result (did the run
+  // actually produce a report?) without racing an async setState.
+  const fetchReport = useCallback(async (): Promise<AiState> => {
     try {
       const report = await getScreenshotReport(shotId, date, userId);
-      setState({ kind: "loaded", report });
+      return { kind: "loaded", report };
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404) setState({ kind: "none" });
-      else
-        setState({
-          kind: "error",
-          message: e instanceof ApiError ? e.message : "Couldn't load the AI read.",
-        });
+      if (e instanceof ApiError && e.status === 404) return { kind: "none" };
+      return {
+        kind: "error",
+        message: e instanceof ApiError ? e.message : "Couldn't load the AI read.",
+      };
     }
   }, [shotId, userId, date]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let live = true;
+    setState({ kind: "loading" });
+    void fetchReport().then((s) => live && setState(s));
+    return () => {
+      live = false;
+    };
+  }, [fetchReport]);
 
   const generate = async () => {
     setRunning(true);
     try {
-      await runScreenshotReports(date, userId);
-      await load(); // the frame should now have a report
+      const run = await runScreenshotReports(date, userId);
+      const next = await fetchReport();
+      // Still nothing after a run? Explain why (plan doesn't include screenshots, no eligible frames,
+      // provider not configured) instead of silently re-showing "not analyzed".
+      if (next.kind === "none" && run.reason) {
+        setState({ kind: "error", message: `Couldn't analyze this day — ${run.reason}.` });
+      } else {
+        setState(next);
+      }
     } catch (e) {
       setState({
         kind: "error",
@@ -990,22 +1001,10 @@ function EmployeeCaptures({
       {/* Filters — within the selected day */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
         <Field label="From">
-          <Input
-            type="time"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="h-8 w-32"
-            aria-label="From time"
-          />
+          <TimePicker value={from} onChange={setFrom} className="w-32" />
         </Field>
         <Field label="To">
-          <Input
-            type="time"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-8 w-32"
-            aria-label="To time"
-          />
+          <TimePicker value={to} onChange={setTo} className="w-32" />
         </Field>
         <Field label="Show">
           <div className="flex items-center gap-4 text-sm">
