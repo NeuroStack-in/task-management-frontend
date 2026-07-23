@@ -12,8 +12,8 @@
  */
 import { useEffect, useState } from "react";
 import { MonitorSmartphone, Timer as TimerIcon } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { formatDuration } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 /** The open session, as the server reports it. `null` when nothing is running. */
 export interface RunningSession {
@@ -50,45 +50,85 @@ export function TimerHero({
     : 0;
 
   return (
-    <Card>
-      <CardContent className="p-6">
-        {running ? (
-          <div className="flex flex-col items-center gap-1.5 text-center">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 px-2.5 py-1 text-xs font-medium text-success">
-              <span className="size-1.5 animate-pulse rounded-full bg-success" />
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-2xl border",
+        running
+          ? "border-primary/20 bg-gradient-to-br from-feature-tint/70 via-card to-card shadow-soft"
+          : "border-border bg-card",
+      )}
+    >
+      {running ? (
+        <>
+          {/* Ambient teal glow + a faint grid-free radial accent behind the clock. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -top-24 -right-16 size-64 rounded-full bg-primary/10 blur-3xl"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -bottom-24 -left-20 size-64 rounded-full bg-primary/5 blur-3xl"
+          />
+
+          <div className="relative flex flex-col items-center gap-3 px-6 py-8 text-center sm:py-10">
+            {/* Live recording indicator */}
+            <span className="inline-flex items-center gap-2 rounded-full border border-success/25 bg-success/10 px-3 py-1 text-xs font-semibold tracking-wide text-success">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
+                <span className="relative inline-flex size-2 rounded-full bg-success" />
+              </span>
               Recording
             </span>
-            <p className="mt-1 font-mono text-4xl font-semibold tabular-nums">
+
+            {/* Elapsed clock — the hero */}
+            <p className="font-mono text-5xl font-bold tracking-tight tabular-nums text-foreground sm:text-6xl">
               {formatDuration(elapsedSec)}
             </p>
-            <p className="text-sm font-medium">{running.task}</p>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {running.project}
-            </p>
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <MonitorSmartphone className="size-3.5" />
+
+            {/* Task + project */}
+            <div className="space-y-1">
+              <p className="text-base font-semibold">{running.task}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+                {running.project}
+              </p>
+            </div>
+
+            {/* Where it's controlled */}
+            <p className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-background/60 px-3 py-1 text-xs text-muted-foreground ring-1 ring-border/60">
+              <MonitorSmartphone className="size-3.5 text-primary" />
               Started {running.start} · runs in the WorkPulse desktop app
             </p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2 py-4 text-center">
-            <span className="flex size-11 items-center justify-center rounded-full bg-muted">
-              <TimerIcon className="size-5 text-muted-foreground" />
-            </span>
-            <p className="text-sm font-medium">No timer running</p>
-            <p className="max-w-sm text-xs text-muted-foreground">
-              Your timer lives in the WorkPulse desktop app — start and stop it there. Sessions appear
-              here once they sync, about every few minutes.
-            </p>
-          </div>
-        )}
 
-        {todayTotalSec > 0 ? (
-          <p className="mt-4 flex items-center justify-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
-            {formatDuration(todayTotalSec)} logged today
+            {todayTotalSec > 0 ? (
+              <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {formatDuration(todayTotalSec)}
+                </span>{" "}
+                logged today
+              </p>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
+          <span className="flex size-12 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <TimerIcon className="size-5" />
+          </span>
+          <p className="text-sm font-semibold">No timer running</p>
+          <p className="max-w-sm text-xs text-muted-foreground">
+            Your timer lives in the WorkPulse desktop app — start and stop it there. Sessions appear
+            here once they sync, about every few minutes.
           </p>
-        ) : null}
-      </CardContent>
-    </Card>
+          {todayTotalSec > 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                {formatDuration(todayTotalSec)}
+              </span>{" "}
+              logged today
+            </p>
+          ) : null}
+        </div>
+      )}
+    </div>
   );
 }

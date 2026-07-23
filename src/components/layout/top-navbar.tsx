@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Menu } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Download, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -17,6 +19,7 @@ import { NotificationsMenu } from "./notifications-menu";
 
 export function TopNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
   // Pages (e.g. the Dashboard greeting) publish their title/subtitle here so the
   // navbar carries it at the top — the page keeps an sr-only <h1>.
   const title = usePageHeaderStore((s) => s.title);
@@ -73,7 +76,24 @@ export function TopNavbar() {
           and are reachable by setting `data-palette` on `<html>`. To bring the control back, render
           `<PaletteSwitcher />` here again — nothing else was deleted.
         */}
-        <GlobalTimer />
+        {/* Get the desktop agent. Reachable from anywhere by any signed-in user
+            (the /settings/agents management view is admin-gated; the download
+            page is not). Hidden on the download page itself. */}
+        {pathname !== "/download" ? (
+          <Button
+            render={<Link href="/download" />}
+            nativeButton={false}
+            size="sm"
+            className="gap-1.5 rounded-full shadow-soft"
+          >
+            <Download className="size-4" />
+            <span className="hidden sm:inline">Download agent</span>
+          </Button>
+        ) : null}
+        {/* The running-session timer lives in the navbar everywhere EXCEPT the
+            dashboard, where the employee dashboard promotes it to a hero KPI tile
+            (see TimerStatCard) — so it isn't shown twice. */}
+        {pathname !== "/dashboard" ? <GlobalTimer /> : null}
         <div className="flex items-center gap-0.5 rounded-full bg-card p-1 shadow-soft">
           <NotificationsMenu />
           <ThemeSwitcher />

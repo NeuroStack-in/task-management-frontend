@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -142,15 +141,18 @@ export function RoleEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <DialogHeader className="border-b p-6">
+      <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="shrink-0 border-b p-6">
           <DialogTitle>{isEdit ? "Edit role" : "Create role"}</DialogTitle>
           <DialogDescription>
             Define a name, data scope, and the permissions this role grants.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 p-6">
+        {/* Scrollable body: form fields + permission groups. Header and footer
+            stay pinned so the action buttons are always visible. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="space-y-4 p-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="role-name">Name</Label>
@@ -198,11 +200,10 @@ export function RoleEditorDialog({
           </div>
         </div>
 
-        <ScrollArea className="max-h-[42vh] border-t">
           {!catalog ? (
-            <p className="p-6 text-sm text-muted-foreground">Loading permissions…</p>
+            <p className="border-t p-6 text-sm text-muted-foreground">Loading permissions…</p>
           ) : (
-            <div className="divide-y">
+            <div className="divide-y border-t">
               {catalog.groups.map((group) => {
                 const ids = group.permissions.map((p) => p.id);
                 const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
@@ -244,9 +245,9 @@ export function RoleEditorDialog({
               })}
             </div>
           )}
-        </ScrollArea>
+        </div>
 
-        <DialogFooter className="border-t p-6">
+        <DialogFooter className="shrink-0 border-t p-6">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

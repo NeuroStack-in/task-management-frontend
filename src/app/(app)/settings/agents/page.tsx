@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { FleetView } from "@/modules/agents/components/fleet-view";
+import { AgentsManager } from "@/modules/agents/components/agents-manager";
 
 export const metadata: Metadata = { title: "Device agents · Settings" };
 
-// Real fleet, via GET /v1/fleet (fleet context, LLD §18): the AgentDevice records the
-// ingest-processor writes from each agent's heartbeat, with read-time connectivity. Empty until
-// agents are enrolled and reporting — an honest empty state, not a mock fleet.
+// Device agents management UI: fleet roster + per-device detail + fleet-wide agent settings.
+// UI-first — the roster is demo data (see lib/mock-agents) until the real fleet (GET /v1/fleet,
+// LLD §18) and the enrolment/download pipeline are wired. FleetView (the real GET /v1/fleet view)
+// is retained in the module for that reconnection.
 export default function Page() {
-  return <FleetView />;
+  return <AgentsManager />;
 }
