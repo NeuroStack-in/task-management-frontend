@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AGENT_PLATFORMS,
-  LATEST_AGENT_VERSION,
+  AGENT_RELEASE_VERSION,
   type AgentPlatform,
 } from "@/lib/mock-agents";
 import { cn } from "@/lib/utils";
@@ -84,7 +84,7 @@ export default function DownloadPage() {
           </p>
         </div>
         <Badge className="ml-auto hidden shrink-0 self-start bg-background/70 font-normal text-muted-foreground sm:inline-flex">
-          v{LATEST_AGENT_VERSION}
+          v{AGENT_RELEASE_VERSION}
         </Badge>
       </section>
 
