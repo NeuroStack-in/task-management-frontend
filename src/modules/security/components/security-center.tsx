@@ -131,7 +131,7 @@ const MFA_POSTURE_META: Record<
     tone: "success",
     title: "Protected by an authenticator app",
     detail:
-      "Set up when you first signed in. Lost your phone? An admin can reset your device.",
+      "Manage it under Settings → Login & security. Lost your phone? An admin can reset your device.",
   },
   sso: {
     icon: ShieldCheck,
@@ -145,7 +145,7 @@ const MFA_POSTURE_META: Record<
     tone: "warning",
     title: "Not enrolled",
     detail:
-      "You'll be prompted to set up an authenticator the next time you sign in.",
+      "Strongly recommended: set up an authenticator app under Settings → Login & security.",
   },
 }
 
@@ -261,8 +261,13 @@ export function SecurityCenter() {
         <CardHeader>
           <CardTitle>Multi-Factor Authentication</CardTitle>
           <CardDescription>
-            Required for every member who signs in with a password. Managed by the
-            platform — there is nothing to configure.
+            {/* MFA is OPTIONAL and user-managed (product decision 2026-07-23): members enrol,
+                disable, and re-enrol their own authenticator under Settings → Login & security.
+                The pool enforces nothing; don't reintroduce "required" copy here without also
+                building the enforcement. */}
+            Optional and strongly recommended for every member who signs in with a
+            password. Each member manages their own authenticator under Settings →
+            Login &amp; security.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
