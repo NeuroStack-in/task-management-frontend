@@ -19,10 +19,12 @@ export function NotificationsMenu() {
   const unread = notifications.filter((n) => !n.read).length;
   // Real feed (`GET /v1/notifications`) — and mark-read now actually persists. The demo seed is
   // gone: inventing events on a real account is worse than an empty bell.
-  const { markAllRead, markRead } = useNotifications();
+  const { markAllRead, markRead, refresh } = useNotifications();
 
   return (
-    <DropdownMenu>
+    // Refetch when the bell opens, so what's behind the dot is current the moment it's looked at
+    // (a silent refresh — the poll loop keeps it fresh the rest of the time).
+    <DropdownMenu onOpenChange={(open) => open && refresh()}>
       <DropdownMenuTrigger
         render={
           <Button
