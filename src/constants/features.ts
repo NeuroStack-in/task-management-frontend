@@ -36,6 +36,9 @@ export const ROUTE_FEATURES: ReadonlyArray<{
   { href: "/insights/ai-reports", feature: "insights.reports.ai_pdf" },
   { href: "/insights/anomalies", feature: "anomalies" },
   { href: "/insights/reports", feature: "reports.basic" },
+  // Settings lives outside the sidebar nav, but the guard resolves by pathname — so switching
+  // Integrations off closes the page as well as hiding its entry in the settings index.
+  { href: "/settings/integrations", feature: "integrations" },
 ];
 
 /** The feature a given href belongs to, or `null` when it isn't feature-gated. */

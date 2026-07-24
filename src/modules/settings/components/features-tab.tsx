@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
+  Plug,
   Activity,
   Bot,
   CalendarCheck,
@@ -54,7 +55,6 @@ interface FeatureDef {
  *    very plan that gates it.
  *  - **Approvals**, **Device agents** — core, not plan-gated.
  *  - **Communication** (Inbox) — DEFERRED; no backend key exists.
- *  - **Integrations** — DEFERRED, and removed from the backend catalog.
  *  - **Remote support** — CUT entirely.
  */
 const FEATURE_LIST: FeatureDef[] = [
@@ -127,6 +127,13 @@ const FEATURE_LIST: FeatureDef[] = [
     description:
       "Ask questions about your workspace. Session-only — nothing is stored.",
     beta: true,
+  },
+  {
+    key: "integrations",
+    icon: Plug,
+    label: "Integrations",
+    description:
+      "Connect Slack so leave, joiner and payroll updates land in your channels.",
   },
   {
     key: "anomalies",

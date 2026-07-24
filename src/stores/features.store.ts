@@ -27,6 +27,7 @@ export type FeatureKey =
   | "ai.insights"
   | "ai.assistant"
   | "anomalies"
+  | "integrations"
 
 const DEFAULTS: Record<FeatureKey, boolean> = {
   "time.tracking": true,
@@ -40,6 +41,9 @@ const DEFAULTS: Record<FeatureKey, boolean> = {
   "ai.insights": true,
   "ai.assistant": true,
   anomalies: false,
+  // Off by default: connecting hands WorkPulse a credential to the org's Slack workspace, so an
+  // owner opts in rather than discovering it already on.
+  integrations: false,
 }
 
 /**
