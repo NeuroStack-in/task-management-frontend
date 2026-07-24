@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, PanelLeftClose, LogOut, Search } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useOrgName } from "@/hooks/use-org";
 import { useUiStore } from "@/stores/ui.store";
 import { useAuthStore } from "@/stores/auth.store";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -38,6 +39,7 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const { nav, role } = usePermissions();
+  const orgName = useOrgName();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const requestSearchFocus = useUiStore((s) => s.requestSearchFocus);
@@ -241,11 +243,18 @@ export function SidebarNav({
         className={cn("flex h-full min-h-0 w-full flex-col", exiting && "wp-rail-out")}
       >
         <div className="flex h-16 items-center gap-2.5 px-4">
-          <div className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-md">
+          <div className="bg-primary text-primary-foreground flex size-9 shrink-0 items-center justify-center rounded-md">
             <Activity className="size-5" />
           </div>
-          <span className="font-display flex-1 text-lg font-semibold tracking-tight">
-            WorkPulse
+          <span className="flex min-w-0 flex-1 flex-col justify-center">
+            <span className="font-display truncate text-lg font-semibold leading-tight tracking-tight">
+              WorkPulse
+            </span>
+            {orgName ? (
+              <span className="text-muted-foreground truncate text-xs leading-tight">
+                {orgName}
+              </span>
+            ) : null}
           </span>
           <button
             type="button"
