@@ -51,6 +51,11 @@ export interface AgentPlatform {
   available: boolean
   /** Public URL the installer downloads from. */
   url: string
+  /** Optional secondary format (e.g. the Linux AppImage alongside the .deb). */
+  altUrl?: string
+  altFile?: string
+  altLabel?: string
+  altSize?: string
 }
 
 // ── Published installer URLs ──────────────────────────────────────────────────
@@ -68,7 +73,7 @@ export const AGENT_PLATFORMS: AgentPlatform[] = [
   { os: "Windows", label: "Windows 10 / 11", file: "WorkPulse-Setup.exe", size: "3.3 MB", available: true, url: WINDOWS_INSTALLER_URL },
   // macOS is "coming soon" until its universal build ships to S3 (the dmg isn't mirrored yet).
   { os: "macOS", label: "macOS 12 and later", file: "WorkPulse.dmg", size: "9.5 MB", available: false, url: `${DOWNLOADS_BASE}/WorkPulse-universal.dmg` },
-  { os: "Linux", label: "Ubuntu / Debian", file: "WorkPulse.deb", size: "5.2 MB", available: true, url: `${DOWNLOADS_BASE}/WorkPulse-amd64.deb` },
+  { os: "Linux", label: "Ubuntu / Debian", file: "WorkPulse.deb", size: "5.2 MB", available: true, url: `${DOWNLOADS_BASE}/WorkPulse-amd64.deb`, altUrl: `${DOWNLOADS_BASE}/WorkPulse-amd64.AppImage`, altFile: "WorkPulse.AppImage", altLabel: "AppImage", altSize: "79 MB" },
 ]
 
 export const AGENT_ENROLLMENT_TOKEN = "wp_agent_8f3a2b9c4d1e7a60f5c2"

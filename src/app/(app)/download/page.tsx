@@ -45,21 +45,21 @@ const FEATURES = [
 ];
 
 export default function DownloadPage() {
+  function triggerDownload(url: string, file: string) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast.success(`Downloading ${file}…`);
+  }
+
   function downloadFor(p: AgentPlatform) {
-    // Real download once the installer URL is set (see WINDOWS_INSTALLER_URL in
-    // lib/mock-agents). Until then, tell the user it's on the way rather than
-    // navigating to a dead link.
-    if (p.url) {
-      const a = document.createElement("a");
-      a.href = p.url;
-      a.download = p.file;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      toast.success(`Downloading ${p.file}…`);
-    } else {
-      toast(`The ${p.os} installer will be available to download shortly.`);
-    }
+    // Real download once the installer URL is set (see the S3 URLs in lib/mock-agents). Until then,
+    // tell the user it's on the way rather than navigating to a dead link.
+    if (p.url) triggerDownload(p.url, p.file);
+    else toast(`The ${p.os} installer will be available to download shortly.`);
   }
 
   return (
@@ -121,13 +121,25 @@ export default function DownloadPage() {
                 </div>
                 <div className="mt-4">
                   {p.available ? (
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      onClick={() => downloadFor(p)}
-                    >
-                      <Download className="size-4" /> Download
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        onClick={() => downloadFor(p)}
+                      >
+                        <Download className="size-4" /> Download
+                      </Button>
+                      {p.altUrl && p.altFile ? (
+                        <button
+                          type="button"
+                          onClick={() => triggerDownload(p.altUrl!, p.altFile!)}
+                          className="mt-2 w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          or download {p.altLabel ?? "alternative"}
+                          {p.altSize ? ` · ${p.altSize}` : ""}
+                        </button>
+                      ) : null}
+                    </>
                   ) : (
                     <Button
                       size="sm"
