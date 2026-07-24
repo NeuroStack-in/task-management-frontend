@@ -289,14 +289,6 @@ export const SETTINGS_SUBSECTIONS: NavItem[] = [
       "mfa 2fa multifactor multi-factor two-factor authenticator otp passkey two step verification",
   },
   {
-    label: "Single sign-on (SSO)",
-    href: "/settings/security#sso",
-    icon: ShieldCheck,
-    permission: "security:view",
-    description: "SAML / SSO identity provider connection.",
-    keywords: "sso single sign-on saml okta azure identity provider idp",
-  },
-  {
     label: "Session & access policies",
     href: "/settings/security#sessions",
     icon: ShieldCheck,

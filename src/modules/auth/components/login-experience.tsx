@@ -40,8 +40,6 @@ import {
   AuthSwitch,
 } from "./auth-frame";
 import { SsoProviderButtons } from "./sso-provider-buttons";
-import { discoverSso } from "@/modules/auth/services/sso.service";
-import { beginSso } from "@/lib/oauth";
 
 type Status = "idle" | "loading" | "success";
 type Errors = { email?: string; password?: string; form?: string };
@@ -121,13 +119,6 @@ export function LoginExperience() {
     setErrors({});
     setStatus("loading");
     try {
-      // If the org requires SSO for this email's domain, block the password path and send them to
-      // the IdP (the server's pre-auth trigger enforces this too; this is the friendly front door).
-      const disco = await discoverSso(email.trim());
-      if (disco.sso && disco.enforced && disco.idp_name) {
-        await beginSso(disco.idp_name); // navigates away
-        return;
-      }
       await login(email.trim(), password);
       setStatus("success");
       const from = params.get("from");
@@ -257,7 +248,6 @@ export function LoginExperience() {
         <div className="m-authdiv">or</div>
 
         <SsoProviderButtons
-          email={email}
           disabled={status !== "idle"}
           onError={(m) => setErrors(m ? { form: m } : {})}
         />

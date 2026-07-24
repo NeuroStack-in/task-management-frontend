@@ -45,7 +45,7 @@ const PLANS = [
     price: "$22",
     unit: "/ user / mo",
     tagline: "For organizations operating at scale.",
-    features: ["Everything in Starter", "SSO / SAML & SCIM", "AI anomaly & burnout detection", "Audit logs, DPA & data residency", "Advanced security & roles", "Custom contracts & premier SLA", "Dedicated success manager"],
+    features: ["Everything in Starter", "AI anomaly & burnout detection", "Audit logs, DPA & data residency", "Advanced security & roles", "Custom contracts & premier SLA", "Dedicated success manager"],
     cta: "Start free trial",
     featured: true,
   },
@@ -60,7 +60,7 @@ const COMPARISON: { label: string; values: [string | boolean, string | boolean, 
   { label: "Attendance & payroll", values: [false, true, true] },
   { label: "Reports & exports", values: ["Basic", true, true] },
   { label: "AI insights & anomaly detection", values: [false, false, true] },
-  { label: "SSO / SAML & SCIM", values: [false, false, true] },
+  { label: "Google & Microsoft sign-in", values: [true, true, true] },
   { label: "Audit logs, DPA & data residency", values: [false, false, true] },
   { label: "Support", values: ["Community", "Priority", "Dedicated CSM"] },
 ];
@@ -69,7 +69,7 @@ const FAQS = [
   { q: "How does per-seat billing work?", a: "You're billed per active user per month. Suspended and uninvited users don't count. Annual billing saves ~17% over monthly." },
   { q: "Is there really a free plan?", a: "Yes — Free is free forever for up to 5 members. Starter and Enterprise include a 14-day free trial with no card required." },
   { q: "Can I change plans later?", a: "Upgrade or downgrade anytime. Upgrades are prorated immediately; downgrades take effect at the next cycle." },
-  { q: "Do you offer enterprise terms?", a: "Enterprise includes SSO/SAML, SCIM, audit logs, data residency, and a signed DPA. Talk to sales for volume and procurement." },
+  { q: "Do you offer enterprise terms?", a: "Enterprise includes audit logs, data residency, advanced roles, and a signed DPA. Talk to sales for volume and procurement." },
 ];
 
 function Cell({ v }: { v: string | boolean }) {

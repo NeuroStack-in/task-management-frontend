@@ -40,7 +40,6 @@ import { usePermissions } from "@/hooks/use-permissions"
 import { resetMfaDevice } from "../services/security.service"
 import { useSessions } from "../use-sessions"
 import { SecurityEventsFeed } from "./security-events-feed"
-import { SsoConnectionCard } from "./sso-connection-card"
 import { listEmployees } from "@/modules/employees/services/employees.service"
 import { cn } from "@/lib/utils"
 
@@ -221,15 +220,6 @@ export function SecurityCenter() {
           ) : null}
         </CardContent>
       </Card>
-
-      {/* ── Single sign-on — honest placeholder ── */}
-      {/*
-        SSO is PROPOSED (backend/WorkPulse-SSO.md), not approved and not built. The mock
-        showed a fully "Connected" Okta tenant with certificate fingerprints and a last
-        sign-in — all invented. Rather than fabricate a connection, this states plainly
-        that it isn't available yet.
-      */}
-      <SsoConnectionCard />
 
       {/* ── Session & access ── */}
       {/*

@@ -614,11 +614,10 @@ export function SignupExperience() {
         {step === 0 ? (
           <>
             <div className="m-authdiv">or</div>
-            {/* Inline SSO (no modal). On signup these route to sign-IN via the IdP — social is
-                invited-users-only and enterprise SSO joins an existing org, so neither creates a
+            {/* Inline social sign-in (no modal). On signup these route to sign-IN via Google/Microsoft
+                — social is invited-users-only, so it joins an existing org rather than creating a
                 workspace here; the backend accepts or rejects. */}
             <SsoProviderButtons
-              email={acct.email}
               onError={(m) => setErrors(m ? { "signup-email": m } : {})}
             />
             <AuthSwitch prompt="Already have an account?" href="/login" label="Sign in" />

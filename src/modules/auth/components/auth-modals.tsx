@@ -12,7 +12,6 @@ import {
   CreditCard,
   Globe,
   ImagePlus,
-  KeyRound,
   Loader2,
   Search,
   UserPlus,
@@ -99,7 +98,6 @@ export const PLANS = [
     tagline: "For organizations operating at scale.",
     features: [
       "Everything in Starter",
-      "SSO / SAML & SCIM provisioning",
       "AI anomaly & burnout detection",
       "Audit logs, DPA & data residency",
       "Advanced security & roles",
@@ -401,55 +399,6 @@ export function SsoPickerModal({
             </button>
           </li>
         </ul>
-        <p className="mt-4 text-xs" style={{ color: "var(--m-faint)" }}>
-          Demo only — no real authentication occurs.
-        </p>
-      </div>
-    </MModal>
-  );
-}
-
-/* ---------------------- SSO provider options ------------------------ */
-
-export function SsoOptionsModal({
-  open,
-  onClose,
-  onPick,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onPick: (provider: "google" | "microsoft" | "saml") => void;
-}) {
-  const opts: { id: "google" | "microsoft" | "saml"; label: string; icon: React.ReactNode }[] = [
-    { id: "google", label: "Continue with Google", icon: <GoogleIcon className="size-5" /> },
-    { id: "microsoft", label: "Continue with Microsoft", icon: <MicrosoftIcon className="size-5" /> },
-    {
-      id: "saml",
-      label: "Continue with SAML / Enterprise SSO",
-      icon: <KeyRound className="size-5" style={{ color: "var(--m-muted)" }} />,
-    },
-  ];
-  return (
-    <MModal open={open} onClose={onClose} maxW="max-w-sm">
-      <div className="p-7">
-        <h2 className="m-display text-xl font-semibold">Continue with SSO</h2>
-        <p className="text-sm" style={{ color: "var(--m-muted)" }}>
-          Choose your identity provider to continue.
-        </p>
-        <div className="mt-5 space-y-2.5">
-          {opts.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => onPick(o.id)}
-              className="flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition-colors"
-              style={{ borderColor: "var(--m-border-strong)", background: "var(--m-surface)" }}
-            >
-              <span className="shrink-0">{o.icon}</span>
-              <span className="text-sm font-medium">{o.label}</span>
-            </button>
-          ))}
-        </div>
         <p className="mt-4 text-xs" style={{ color: "var(--m-faint)" }}>
           Demo only — no real authentication occurs.
         </p>
