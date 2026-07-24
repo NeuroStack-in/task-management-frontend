@@ -27,6 +27,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { currentRoleSnapshot } from "@/hooks/use-permissions";
+import { safeLandingPath } from "@/lib/rbac";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email address."),
@@ -57,8 +59,7 @@ export function LoginForm() {
     try {
       await login(values.email, values.password);
       toast.success("Signed in");
-      const from = params.get("from");
-      router.replace(from && from.startsWith("/") ? from : "/dashboard");
+      router.replace(safeLandingPath(currentRoleSnapshot(), params.get("from")));
     } catch (err) {
       if (err instanceof TotpChallengeError) {
         // Password accepted — Cognito wants the authenticator code next. The half-signed-in

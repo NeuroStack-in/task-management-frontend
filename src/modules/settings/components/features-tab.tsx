@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
+  Plug,
   Activity,
   Bot,
   CalendarCheck,
@@ -31,6 +32,7 @@ import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { type FeatureKey } from "@/stores/features.store"
 import { toggleFeature } from "@/lib/api"
+import { useEntitlementsStore } from "@/stores/entitlements.store"
 import { Loader } from "@/components/shared/loader"
 import { cn } from "@/lib/utils"
 import { useEntitlements } from "../use-entitlements"
@@ -53,7 +55,6 @@ interface FeatureDef {
  *    very plan that gates it.
  *  - **Approvals**, **Device agents** — core, not plan-gated.
  *  - **Communication** (Inbox) — DEFERRED; no backend key exists.
- *  - **Integrations** — DEFERRED, and removed from the backend catalog.
  *  - **Remote support** — CUT entirely.
  */
 const FEATURE_LIST: FeatureDef[] = [
@@ -128,6 +129,13 @@ const FEATURE_LIST: FeatureDef[] = [
     beta: true,
   },
   {
+    key: "integrations",
+    icon: Plug,
+    label: "Integrations",
+    description:
+      "Connect Slack so leave, joiner and payroll updates land in your channels.",
+  },
+  {
     key: "anomalies",
     icon: TriangleAlert,
     label: "Anomaly detection",
@@ -149,6 +157,9 @@ export function FeaturesTab() {
 
   // Layer 2 (owner activation) is the real source of truth — `GET /v1/org/entitlements`.
   const { enabled, allowed, loading, error, reload } = useEntitlements()
+  // The shared copy the sidebar + route guard read. Re-hydrating it here is what makes a
+  // saved toggle take effect immediately instead of only after a full page reload.
+  const hydrateShared = useEntitlementsStore((s) => s.hydrate)
 
   // Edit a local draft; commit to the server only on Save.
   const [draft, setDraft] = useState<Record<FeatureKey, boolean>>(() => draftFromServer({}))
@@ -183,6 +194,13 @@ export function FeaturesTab() {
     } finally {
       setSaving(false)
       reload() // re-sync to server truth regardless (partial success is possible)
+      // Push the just-saved state into the shared store so the nav re-filters right away. `reload()`
+      // only refreshes this page's copy; without this the owner keeps seeing the section they just
+      // switched off until the next full reload.
+      hydrateShared({
+        allowed: [...allowed],
+        enabled: { ...enabled, ...draft },
+      })
     }
   }
 

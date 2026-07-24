@@ -55,6 +55,8 @@ import {
   AuthSwitch,
   passwordMeetsPolicy,
 } from "./auth-frame";
+import { currentRoleSnapshot } from "@/hooks/use-permissions";
+import { safeLandingPath } from "@/lib/rbac";
 
 type Errors = Record<string, string | undefined>;
 
@@ -100,8 +102,7 @@ export function SignupExperience() {
 
   useEffect(() => {
     if (hydrated && isAuthenticated) {
-      const from = params.get("from");
-      router.replace(from && from.startsWith("/") ? from : "/dashboard");
+      router.replace(safeLandingPath(currentRoleSnapshot(), params.get("from")));
     }
   }, [hydrated, isAuthenticated, params, router]);
 

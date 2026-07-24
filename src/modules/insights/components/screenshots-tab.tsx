@@ -849,7 +849,7 @@ function AiReadBody({ report }: { report: ScreenshotReport }) {
         <p className="text-[13px] text-destructive/90">{report.flag_reason}</p>
       ) : null}
       <p className="text-[11px] text-white/35">
-        {report.model || "AI"}
+        AI analysis
         {report.confidence > 0 ? ` · ${Math.round(report.confidence * 100)}% confidence` : ""}
       </p>
     </div>

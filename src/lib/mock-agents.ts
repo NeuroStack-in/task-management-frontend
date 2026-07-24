@@ -25,6 +25,10 @@ export interface Agent {
 
 export const LATEST_AGENT_VERSION = "2.4.1"
 
+/** The **real** shipped desktop-agent version (the Download page + installers). Distinct from
+ *  `LATEST_AGENT_VERSION`, which the still-mock agents-manager uses to compare its seeded fleet. */
+export const AGENT_RELEASE_VERSION = "0.1.0"
+
 export const AGENTS: Agent[] = [
   { id: "ag-1", hostname: "alex-morgan-mbp", user: "Alex Morgan", email: "owner@acme.test", os: "macOS", osVersion: "14.5", version: "2.4.1", status: "online", lastSeen: "Active now", ip: "198.51.100.10", cpu: 12, memory: 41 },
   { id: "ag-2", hostname: "priya-nair-win", user: "Priya Nair", email: "priya.nair@acme.test", os: "Windows", osVersion: "11", version: "2.4.1", status: "online", lastSeen: "Active now", ip: "198.51.100.31", cpu: 22, memory: 55 },
@@ -43,22 +47,28 @@ export interface AgentPlatform {
   label: string
   file: string
   size: string
-  /** Whether this platform's installer is shipping yet. Only Windows for now. */
+  /** Whether this platform's installer is shipping yet. */
   available: boolean
-  /** Public URL the installer downloads from. Empty until the release is published. */
+  /** Public URL the installer downloads from. */
   url: string
 }
 
 // ── Published installer URLs ──────────────────────────────────────────────────
-// Fill WINDOWS_INSTALLER_URL with the public link to the .msi once it's uploaded
-// (GitHub Release asset / S3 / CloudFront). Empty string = "not published yet",
-// so the Download button falls back to a friendly "available shortly" message.
-export const WINDOWS_INSTALLER_URL = ""
+// The desktop repo is PRIVATE, so its GitHub release assets can't be fetched anonymously. The
+// release pipeline mirrors each build to a public S3 bucket under `agent/latest/*` (a stable pointer
+// overwritten every release), and the web app links there. Override the host per-env with
+// NEXT_PUBLIC_DOWNLOADS_URL; the default is the dev bucket.
+const DOWNLOADS_BASE =
+  process.env.NEXT_PUBLIC_DOWNLOADS_URL?.replace(/\/$/, "") ??
+  "https://wp-downloads-dev.s3.ap-south-1.amazonaws.com/agent/latest"
+
+export const WINDOWS_INSTALLER_URL = `${DOWNLOADS_BASE}/WorkPulse-x64-setup.exe`
 
 export const AGENT_PLATFORMS: AgentPlatform[] = [
-  { os: "Windows", label: "Windows 10 / 11", file: `WorkPulseAgent-${LATEST_AGENT_VERSION}.msi`, size: "24 MB", available: true, url: WINDOWS_INSTALLER_URL },
-  { os: "macOS", label: "macOS 12 and later", file: `WorkPulseAgent-${LATEST_AGENT_VERSION}.dmg`, size: "21 MB", available: false, url: "" },
-  { os: "Linux", label: "Ubuntu / Debian", file: `workpulse-agent_${LATEST_AGENT_VERSION}_amd64.deb`, size: "19 MB", available: false, url: "" },
+  { os: "Windows", label: "Windows 10 / 11", file: "WorkPulse-Setup.exe", size: "3.3 MB", available: true, url: WINDOWS_INSTALLER_URL },
+  // macOS is "coming soon" until its universal build ships to S3 (the dmg isn't mirrored yet).
+  { os: "macOS", label: "macOS 12 and later", file: "WorkPulse.dmg", size: "9.5 MB", available: false, url: `${DOWNLOADS_BASE}/WorkPulse-universal.dmg` },
+  { os: "Linux", label: "Ubuntu / Debian", file: "WorkPulse.deb", size: "5.2 MB", available: true, url: `${DOWNLOADS_BASE}/WorkPulse-amd64.deb` },
 ]
 
 export const AGENT_ENROLLMENT_TOKEN = "wp_agent_8f3a2b9c4d1e7a60f5c2"

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useAssistantStore } from "@/stores/assistant.store";
+import { useIsFeatureOn } from "@/hooks/use-features";
 import { ApiError } from "@/lib/api";
 import {
   listAssistantThreads,
@@ -42,6 +43,9 @@ const SUGGESTIONS = [
 ];
 
 export function ChatBot() {
+  // The assistant is a plan feature: when the org switches it off, the launcher goes with it
+  // rather than sitting there offering a surface every request would be refused for.
+  const isFeatureOn = useIsFeatureOn();
   const open = useAssistantStore((s) => s.open);
   const setOpen = useAssistantStore((s) => s.setOpen);
   const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
@@ -245,6 +249,9 @@ export function ChatBot() {
         return s;
       })()
     : undefined;
+
+  // After every hook, so hook order is identical whether or not the feature is on.
+  if (!isFeatureOn("ai.assistant")) return null;
 
   return (
     <>

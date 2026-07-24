@@ -23,6 +23,7 @@ import {
   Trophy,
   BellRing,
   RefreshCw,
+  Loader2,
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,7 +33,9 @@ import {
   getDailySummary,
   regenerateDailySummary,
   getAiReport,
+  regenerateAiReport,
   getAttention,
+  regenerateAttention,
   type DailySummary,
 } from "@/modules/insights/services/insights.service";
 import {
@@ -378,13 +381,23 @@ export function AiDailySummaryCard() {
       <CardContent className="space-y-4">
         {loading ? (
           <Loader label="Generating your briefing…" />
-        ) : error ? (
-          <p className="py-6 text-sm text-muted-foreground">{error}</p>
         ) : data && m ? (
           <>
             <div className="flex gap-2.5 rounded-lg bg-feature-tint/60 p-3 text-sm text-foreground">
               <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-              <p className="leading-relaxed">{data.narrative}</p>
+              {regenerating ? (
+                // Only the narrative is re-run; the metrics below are unchanged, so they stay put.
+                <span
+                  className="flex items-center gap-2 text-muted-foreground"
+                  aria-live="polite"
+                  aria-busy
+                >
+                  <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                  Regenerating your briefing…
+                </span>
+              ) : (
+                <p className="leading-relaxed">{data.narrative}</p>
+              )}
             </div>
             <ul className="grid grid-cols-2 gap-2">
               <li>
@@ -413,7 +426,11 @@ export function AiDailySummaryCard() {
               Briefing for {data.date}
               {generatedAt ? ` · generated ${generatedAt}` : ""}
             </p>
+            {/* A failed re-run keeps the previous briefing on screen and reports itself here. */}
+            {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
           </>
+        ) : error ? (
+          <p className="py-6 text-sm text-muted-foreground">{error}</p>
         ) : null}
       </CardContent>
     </Card>
@@ -428,6 +445,26 @@ export function AiDailySummaryCard() {
  * org isn't on the Enterprise report), with a **Regenerate** button that re-runs the model and the
  * preview's "Ask the assistant" CTA. Reads yesterday — the last day the close cron has resolved.
  */
+/**
+ * In-card progress for the teal AI card. The model call takes seconds, so the card says it is
+ * working (and shows where the prose will land) instead of sitting on stale text.
+ */
+function AiSummaryPending({ label }: { label: string }) {
+  return (
+    <div className="flex-1 space-y-2.5" aria-live="polite" aria-busy>
+      <p className="flex items-center gap-2 text-feature-foreground/75">
+        <Loader2 className="size-3.5 shrink-0 animate-spin" />
+        {label}
+      </p>
+      <div className="space-y-1.5" aria-hidden>
+        <div className="h-2.5 w-full animate-pulse rounded-full bg-white/15" />
+        <div className="h-2.5 w-11/12 animate-pulse rounded-full bg-white/15 [animation-delay:120ms]" />
+        <div className="h-2.5 w-8/12 animate-pulse rounded-full bg-white/15 [animation-delay:240ms]" />
+      </div>
+    </div>
+  );
+}
+
 export function OrgAiSummaryWidget() {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   const [narrative, setNarrative] = useState<string | null>(null);
@@ -438,27 +475,33 @@ export function OrgAiSummaryWidget() {
 
   // Enterprise org report first (richer, carries generated_at); fall back to the attention narrative
   // (gated only on AiInsightsRead) when the org lacks the report entitlement.
-  const fetchSummary = useCallback(async (): Promise<{
-    narrative: string;
-    generatedAt: number | null;
-  }> => {
-    try {
-      const r = await getAiReport(isoLastWorkday());
-      return { narrative: r.narrative, generatedAt: r.generated_at };
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 403) {
-        const a = await getAttention(isoLastWorkday());
-        return { narrative: a.narrative, generatedAt: null };
+  //
+  // `force` selects the POST `…/regenerate` twin of each read. The plain GETs serve the narrative
+  // **cached server-side**, so re-reading them on Regenerate returned the identical prose instantly —
+  // the button looked inert. The regenerate routes carry the same gates as their reads, so the same
+  // 403 fallback applies.
+  const fetchSummary = useCallback(
+    async (force: boolean): Promise<{ narrative: string; generatedAt: number | null }> => {
+      const date = isoLastWorkday();
+      try {
+        const r = force ? await regenerateAiReport(date) : await getAiReport(date);
+        return { narrative: r.narrative, generatedAt: r.generated_at };
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 403) {
+          const a = force ? await regenerateAttention(date) : await getAttention(date);
+          return { narrative: a.narrative, generatedAt: null };
+        }
+        throw e;
       }
-      throw e;
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     let live = true;
     setLoading(true);
     setError(null);
-    fetchSummary()
+    fetchSummary(false)
       .then((r) => {
         if (!live) return;
         setNarrative(r.narrative);
@@ -476,10 +519,11 @@ export function OrgAiSummaryWidget() {
     setRegenerating(true);
     setError(null);
     try {
-      const r = await fetchSummary();
+      const r = await fetchSummary(true);
       setNarrative(r.narrative);
       setGeneratedAt(r.generatedAt);
     } catch (e) {
+      // Keep the previous narrative on screen — a failed re-run shouldn't blank a good summary.
       setError(errorMessage(e, "Couldn't regenerate the summary."));
     } finally {
       setRegenerating(false);
@@ -504,11 +548,11 @@ export function OrgAiSummaryWidget() {
         </button>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 text-sm leading-relaxed text-feature-foreground/90">
-        {loading ? (
-          <p className="flex-1 text-feature-foreground/70">Generating the org summary…</p>
-        ) : error ? (
-          <p className="flex-1 text-feature-foreground/70">{error}</p>
-        ) : (
+        {loading || regenerating ? (
+          <AiSummaryPending
+            label={regenerating ? "Regenerating the summary…" : "Generating the org summary…"}
+          />
+        ) : narrative ? (
           <>
             <p className="flex-1">{narrative}</p>
             {generatedAt ? (
@@ -517,7 +561,8 @@ export function OrgAiSummaryWidget() {
               </p>
             ) : null}
           </>
-        )}
+        ) : null}
+        {error ? <p className="text-feature-foreground/70">{error}</p> : null}
         <button
           type="button"
           onClick={() =>

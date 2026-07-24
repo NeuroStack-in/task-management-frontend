@@ -83,4 +83,30 @@ export function getIdToken(): Promise<string | null> {
 /** Clear the Cognito session (tokens in localStorage). */
 export function cognitoSignOut(): void {
   userPool().getCurrentUser()?.signOut();
+  // `signOut()` only drops the *current* user's tokens. Sweep the rest so nothing survives.
+  clearCognitoCache();
+}
+
+/**
+ * Remove every cached Cognito artefact for this app's client id.
+ *
+ * The SDK caches more than tokens under `CognitoIdentityServiceProvider.<clientId>.*` — the last
+ * authenticated user, clock drift, and device keys. Those are written during a session and are NOT
+ * all cleared by `signOut()`, so they can outlive it and be replayed into the next SRP exchange.
+ * When that happens Cognito rejects the attempt with `NotAuthorizedException`, which is
+ * indistinguishable from a wrong password — a sign-in that cannot succeed no matter how many times
+ * the password is reset. Starting every sign-in from a clean slate removes that whole failure mode.
+ */
+export function clearCognitoCache(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const clientId = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
+    if (!clientId) return;
+    const prefix = `CognitoIdentityServiceProvider.${clientId}`;
+    for (const key of Object.keys(window.localStorage)) {
+      if (key.startsWith(prefix)) window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Storage blocked/unavailable — there is nothing cached to poison the exchange.
+  }
 }

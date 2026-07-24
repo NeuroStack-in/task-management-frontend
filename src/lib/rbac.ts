@@ -1,4 +1,6 @@
 import type { Role, PermissionId } from "@/types/rbac";
+import type { FeatureKey } from "@/stores/features.store";
+import { featureForHref } from "@/constants/features";
 import { WILDCARD, CONTRIBUTOR_ONLY_PERMISSIONS } from "@/constants/permissions";
 import {
   NAV_GROUPS,
@@ -77,7 +79,19 @@ export function isManagement(role: Role | null | undefined): boolean {
 export function isNavItemVisible(
   role: Role | null | undefined,
   item: NavItem,
+  /**
+   * The org's effective-feature predicate. Optional so callers that legitimately don't care about
+   * entitlements (or run before they load) keep their current behaviour — omitting it gates on
+   * permissions alone, exactly as before.
+   */
+  isFeatureOn?: (key: FeatureKey) => boolean,
 ): boolean {
+  // An org that has switched a feature off should not see it at all, whatever the role allows —
+  // "Disabled features are hidden from all users" (Settings → Features).
+  if (isFeatureOn) {
+    const feature = featureForHref(item.href);
+    if (feature && !isFeatureOn(feature)) return false;
+  }
   if (item.anyPermissions) return canAny(role, item.anyPermissions);
   return canAccess(role, item.permission);
 }
@@ -86,10 +100,15 @@ export function isNavItemVisible(
  * Filters the navigation tree down to the items the role may access, dropping
  * empty groups. Used by the sidebar generator (TDD §8 — "navigation filtering").
  */
-export function getAccessibleNav(role: Role | null | undefined): NavGroup[] {
+export function getAccessibleNav(
+  role: Role | null | undefined,
+  isFeatureOn?: (key: FeatureKey) => boolean,
+): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => isNavItemVisible(role, item)),
+    items: group.items.filter((item) =>
+      isNavItemVisible(role, item, isFeatureOn),
+    ),
   })).filter((group) => group.items.length > 0);
 }
 
@@ -114,6 +133,29 @@ export function permissionForPath(pathname: string): PermissionId | null {
     }
   }
   return match?.permission ?? null;
+}
+
+/**
+ * Where to send a user who has just authenticated, given the `?from=` the login page carried.
+ *
+ * `from` is **not** trustworthy as a destination. `AuthGuard` stamps it from whatever protected path
+ * any *previous* session was bouncing off, and it survives in the URL across a sign-out — so an
+ * owner kicked off `/settings/features` leaves that behind, and the next person to sign in on that
+ * page is thrown at an admin screen their role can't open. The result is "Access denied" as the
+ * first thing you see after a perfectly good login.
+ *
+ * So `from` is honoured only when the *newly signed-in* role can actually reach it; otherwise the
+ * user lands on the dashboard, which every role can. Feature entitlements aren't consulted here —
+ * they haven't loaded yet at redirect time, and `AuthGuard` covers that case with its own message.
+ */
+export function safeLandingPath(
+  role: Role | null | undefined,
+  from: string | null | undefined,
+): string {
+  // Must be a same-origin absolute path. `//evil.com` and `/\evil.com` both start with "/" yet are
+  // protocol-relative URLs to another host — a redirect the attacker controls.
+  if (!from || !from.startsWith("/") || /^\/[\\/]/.test(from)) return "/dashboard";
+  return canAccess(role, permissionForPath(from)) ? from : "/dashboard";
 }
 
 /**

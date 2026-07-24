@@ -10,6 +10,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/stores/auth.store";
 import { Loader } from "@/components/shared/loader";
+import { currentRoleSnapshot } from "@/hooks/use-permissions";
+import { safeLandingPath } from "@/lib/rbac";
 
 export function SsoCallback() {
   const router = useRouter();
@@ -24,8 +26,7 @@ export function SsoCallback() {
     ran.current = true;
     completeSso()
       .then(() => {
-        const from = params.get("from");
-        router.replace(from && from.startsWith("/") ? from : "/dashboard");
+        router.replace(safeLandingPath(currentRoleSnapshot(), params.get("from")));
       })
       .catch(() => {
         setFailed(true);

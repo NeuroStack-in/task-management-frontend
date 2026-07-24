@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/shared/password-input";
 import { Label } from "@/components/ui/label";
 import {
   confirmPasswordReset,
@@ -148,9 +149,8 @@ export function ResetPasswordForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="rp-password">New password</Label>
-            <Input
+            <PasswordInput
               id="rp-password"
-              type="password"
               autoComplete="new-password"
               placeholder="At least 12 characters"
               {...register("password")}
@@ -163,9 +163,8 @@ export function ResetPasswordForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="rp-confirm">Confirm password</Label>
-            <Input
+            <PasswordInput
               id="rp-confirm"
-              type="password"
               autoComplete="new-password"
               placeholder="Re-enter password"
               {...register("confirm")}

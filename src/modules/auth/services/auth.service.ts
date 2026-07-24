@@ -17,7 +17,12 @@ import {
   CognitoUser,
   CognitoUserSession,
 } from "amazon-cognito-identity-js";
-import { claimsOf, cognitoSignOut, userPool } from "@/lib/cognito";
+import {
+  claimsOf,
+  clearCognitoCache,
+  cognitoSignOut,
+  userPool,
+} from "@/lib/cognito";
 import { completeSsoExchange } from "@/lib/oauth";
 import type { AuthSession, User } from "@/types/user";
 
@@ -155,6 +160,11 @@ export async function login(
   password: string,
 ): Promise<LoginResult> {
   const username = email.trim().toLowerCase();
+  // Start every sign-in from a clean slate. A previous session's cached Cognito artefacts (clock
+  // drift, device keys, a half-finished MFA exchange) survive in localStorage and get replayed into
+  // this SRP handshake, which Cognito then rejects as `NotAuthorizedException` — reported to the
+  // user as "your password is incorrect", for a password that is perfectly correct.
+  clearCognitoCache();
   const user = new CognitoUser({ Username: username, Pool: userPool() });
   const details = new AuthenticationDetails({
     Username: username,
@@ -180,7 +190,18 @@ export async function login(
           return reject(
             new AuthError("You need to reset your password before signing in.", "state"),
           );
-        return reject(new AuthError("Your email or password is incorrect.", "credentials"));
+        // ONLY these two are enumeration-sensitive, so only these two collapse to one message.
+        if (code === "NotAuthorizedException" || code === "UserNotFoundException")
+          return reject(new AuthError("Your email or password is incorrect.", "credentials"));
+        // Anything else is a real fault — an unsupported challenge, a misconfigured app client, a
+        // failing trigger, a network error. Reporting those as "wrong password" is what sent MFA
+        // users round in circles resetting a password that was never the problem: surface them.
+        return reject(
+          new AuthError(
+            err?.message || `Sign-in failed${code ? ` (${code})` : ""}.`,
+            "state",
+          ),
+        );
       },
       // The pool allows TOTP MFA; surface these rather than silently hanging.
       newPasswordRequired: () =>
@@ -201,6 +222,23 @@ export async function login(
         pendingTotpUser = user;
         reject(new TotpChallengeError());
       },
+      // Cognito can also answer with MFA_SETUP (must enrol before signing in) or SELECT_MFA_TYPE
+      // (more than one factor configured). Without these the library has no callback to call and
+      // the failure surfaces as something unrelated — name them so the user is told what happened.
+      mfaSetup: () =>
+        reject(
+          new AuthError(
+            "This account must finish setting up multi-factor authentication before signing in.",
+            "state",
+          ),
+        ),
+      selectMFAType: () =>
+        reject(
+          new AuthError(
+            "This account has more than one MFA method configured, which isn't supported yet.",
+            "state",
+          ),
+        ),
     });
   });
 

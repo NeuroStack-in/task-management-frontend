@@ -24,7 +24,13 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
-import { AuthError, DEMO_ACCOUNTS } from "@/modules/auth/services/auth.service";
+import { currentRoleSnapshot } from "@/hooks/use-permissions";
+import { safeLandingPath } from "@/lib/rbac";
+import {
+  AuthError,
+  DEMO_ACCOUNTS,
+  TotpChallengeError,
+} from "@/modules/auth/services/auth.service";
 import {
   AuthErrorSummary,
   AuthField,
@@ -73,8 +79,7 @@ export function LoginExperience() {
 
   useEffect(() => {
     if (hydrated && isAuthenticated) {
-      const from = params.get("from");
-      router.replace(from && from.startsWith("/") ? from : "/dashboard");
+      router.replace(safeLandingPath(currentRoleSnapshot(), params.get("from")));
     }
   }, [hydrated, isAuthenticated, params, router]);
 
@@ -126,8 +131,25 @@ export function LoginExperience() {
       await login(email.trim(), password);
       setStatus("success");
       const from = params.get("from");
-      setTimeout(() => router.replace(from && from.startsWith("/") ? from : "/dashboard"), 600);
+      setTimeout(
+        () => router.replace(safeLandingPath(currentRoleSnapshot(), from)),
+        600,
+      );
     } catch (err) {
+      // The password was CORRECT and Cognito is now asking for the authenticator code. This is a
+      // success path wearing a rejection: `login` signals it by throwing, because it has no session
+      // to return yet. It must be handled before the generic branch below — without this, every
+      // MFA-enrolled user was told "your email or password is incorrect" for a perfectly good
+      // password, with no way through and nothing a password reset could fix.
+      if (err instanceof TotpChallengeError) {
+        const from = params.get("from");
+        router.push(
+          from && from.startsWith("/")
+            ? `/mfa?from=${encodeURIComponent(from)}`
+            : "/mfa",
+        );
+        return;
+      }
       setStatus("idle");
       // Never leave a rejected password in the field.
       setPassword("");

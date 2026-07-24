@@ -1,393 +1,342 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Check, Plug, Search, Sparkles } from "lucide-react"
-import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Link2, Loader2, Plug, Send, Unplug } from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
-import { PageHeader } from "@/components/shared/page-header"
-import { EmptyState } from "@/components/shared/empty-state"
-import { usePermissions } from "@/hooks/use-permissions"
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Loader } from "@/components/shared/loader";
+import { EmptyState } from "@/components/shared/empty-state";
+import { usePermissions } from "@/hooks/use-permissions";
+import { ApiError } from "@/lib/api";
 import {
-  INTEGRATIONS,
-  INTEGRATION_CATEGORIES,
-  type Integration,
-} from "@/lib/mock-integrations"
-import { cn } from "@/lib/utils"
+  disconnect,
+  getAuthorizeUrl,
+  getSlackConfig,
+  listIntegrations,
+  sendSlackTest,
+  setSlackConfig,
+  SLACK_EVENTS,
+  type ApiIntegration,
+  type SlackConfig,
+} from "@/modules/integrations/services/integrations.service";
+import { rememberPendingProvider } from "./integrations-callback";
 
-// ── App logo (real favicon with a monogram fallback) ──────────────────────────
-
-function AppLogo({
-  domain,
-  name,
-  className,
-}: {
-  domain: string
-  name: string
-  className?: string
-}) {
-  const [failed, setFailed] = useState(false)
-  if (failed) {
-    const hue = [...name].reduce((s, c) => s + c.charCodeAt(0), 0) % 360
-    return (
-      <span
-        className={cn(
-          "flex items-center justify-center rounded-xl text-sm font-semibold text-white",
-          className,
-        )}
-        style={{ backgroundColor: `hsl(${hue} 42% 45%)` }}
-      >
-        {name.charAt(0)}
-      </span>
-    )
-  }
-  return (
-    <span
-      className={cn(
-        "flex items-center justify-center overflow-hidden rounded-xl border bg-white",
-        className,
-      )}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`https://www.google.com/s2/favicons?sz=64&domain=${domain}`}
-        alt=""
-        className="size-6 object-contain"
-        onError={() => setFailed(true)}
-      />
-    </span>
-  )
-}
-
-function ConnectedPill() {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-success/12 px-2 py-0.5 text-xs font-medium text-success">
-      <Check className="size-3" /> Connected
-    </span>
-  )
-}
-
+/**
+ * The Integrations marketplace — **server-driven**.
+ *
+ * The provider list comes from `GET /v1/integrations`, not from a local catalog. That is deliberate:
+ * this screen previously rendered ~20 hard-coded apps from `mock-integrations.ts`, none of which the
+ * backend could connect. A card for an app that cannot be connected is a button that lies, so the
+ * only providers shown are the ones the server actually implements.
+ */
 export function IntegrationsMarketplace() {
-  const { can } = usePermissions()
-  const canManage = can("integrations:manage")
+  const { can } = usePermissions();
+  const canManage = can("integrations:manage");
 
-  // Connection state keyed by integration id (seeded from the mock data).
-  const [connections, setConnections] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(INTEGRATIONS.map((i) => [i.id, i.connected])),
-  )
-  const [search, setSearch] = useState("")
-  const [category, setCategory] = useState<string>("all")
-  const [selected, setSelected] = useState<Integration | null>(null)
+  const [rows, setRows] = useState<ApiIntegration[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const connectedCount = Object.values(connections).filter(Boolean).length
+  const load = useCallback(() => {
+    listIntegrations()
+      .then(setRows)
+      .catch((e) =>
+        setError(
+          e instanceof ApiError ? e.message : "Couldn't load your integrations.",
+        ),
+      );
+  }, []);
 
-  function setConnected(id: string, value: boolean, name: string) {
-    setConnections((c) => ({ ...c, [id]: value }))
-    toast.success(value ? `Connected to ${name}` : `Disconnected from ${name}`)
-  }
+  useEffect(load, [load]);
 
-  const filtered = INTEGRATIONS.filter((i) => {
-    if (category !== "all" && i.category !== category) return false
-    if (search) {
-      const q = search.toLowerCase()
-      if (
-        !`${i.name} ${i.description} ${i.category}`.toLowerCase().includes(q)
-      )
-        return false
+  const onConnect = async (provider: string) => {
+    setBusy(provider);
+    try {
+      // Stashed before we navigate away — the callback needs it, and `redirect_uri` must match the
+      // provider's registered value exactly, so it cannot carry the provider itself.
+      rememberPendingProvider(provider);
+      window.location.href = await getAuthorizeUrl(provider);
+    } catch (e) {
+      setBusy(null);
+      toast.error("Couldn't start the connection", {
+        description: e instanceof ApiError ? e.message : undefined,
+      });
     }
-    return true
-  })
+  };
 
-  return (
-    <div className="space-y-5 pt-1">
-      <PageHeader
-        title="Integrations Marketplace"
-        description="Connect WorkPulse to the tools your team already uses."
-        actions={
+  const onDisconnect = async (provider: string, label: string) => {
+    setBusy(provider);
+    try {
+      await disconnect(provider);
+      toast.success(`${label} disconnected`, {
+        description: "The access token was revoked at the provider.",
+      });
+      load();
+    } catch (e) {
+      toast.error("Couldn't disconnect", {
+        description: e instanceof ApiError ? e.message : undefined,
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (error) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Couldn't load integrations"
+        description={error}
+        action={
           <Button
-            variant="outline"
-            onClick={() => toast.success("Integration request sent to our team")}
+            onClick={() => {
+              setError(null);
+              load();
+            }}
           >
-            <Sparkles className="size-4" /> Request integration
+            Try again
           </Button>
         }
       />
+    );
+  }
 
-      {/* ── Toolbar ── */}
-      <div className="space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search integrations…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <span className="text-sm text-muted-foreground sm:ml-auto">
-            <span className="font-medium text-foreground">{connectedCount}</span>{" "}
-            connected · {INTEGRATIONS.length} available
-          </span>
-        </div>
+  if (!rows) return <Loader label="Loading integrations…" />;
 
-        {/* Category filter */}
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {["all", ...INTEGRATION_CATEGORIES].map((cat) => {
-            const active = category === cat
-            return (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat)}
-                className={cn(
-                  "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                  active
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {cat === "all" ? "All" : cat}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* ── Grid ── */}
-      {filtered.length === 0 ? (
-        <div className="rounded-[1.4rem] bg-card py-10 shadow-soft">
-          <EmptyState
-            icon={Plug}
-            title="No integrations found"
-            description="Try a different search term or category."
-          />
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((integration) => {
-            const isConnected = connections[integration.id]
-            return (
-              <div
-                key={integration.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelected(integration)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    setSelected(integration)
-                  }
-                }}
-                className="group flex cursor-pointer flex-col rounded-[1.4rem] bg-card p-5 text-left shadow-soft transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              >
-                <div className="flex items-start gap-3">
-                  <AppLogo
-                    domain={integration.domain}
-                    name={integration.name}
-                    className="size-11 shrink-0"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-display font-semibold">
-                        {integration.name}
-                      </p>
-                      {integration.popular && !isConnected && (
-                        <Badge variant="secondary" className="font-normal">
-                          Popular
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {integration.category}
-                    </p>
-                  </div>
-                  {isConnected && <ConnectedPill />}
-                </div>
-
-                <p className="mt-3 line-clamp-2 flex-1 text-sm text-muted-foreground">
-                  {integration.description}
-                </p>
-
-                <div className="mt-4">
-                  {isConnected ? (
-                    <span className="text-sm font-medium text-primary">
-                      Manage →
-                    </span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      disabled={!canManage}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setConnected(integration.id, true, integration.name)
-                      }}
-                    >
-                      Connect
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* ── Detail sheet ── */}
-      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-          {selected && (
-            <IntegrationDetail
-              integration={selected}
-              connected={connections[selected.id]}
-              canManage={canManage}
-              onConnect={(v) => setConnected(selected.id, v, selected.name)}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
-    </div>
-  )
-}
-
-// ── Detail sheet body ─────────────────────────────────────────────────────────
-
-function IntegrationDetail({
-  integration,
-  connected,
-  canManage,
-  onConnect,
-}: {
-  integration: Integration
-  connected: boolean
-  canManage: boolean
-  onConnect: (value: boolean) => void
-}) {
-  const [notifications, setNotifications] = useState(true)
-  const [twoWaySync, setTwoWaySync] = useState(false)
+  const slack = rows.find((r) => r.provider === "slack");
 
   return (
-    <>
-      <SheetHeader className="pb-2">
-        <div className="flex items-center gap-3">
-          <AppLogo
-            domain={integration.domain}
-            name={integration.name}
-            className="size-12 shrink-0"
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2">
+        {rows.map((row) => (
+          <ProviderCard
+            key={row.provider}
+            row={row}
+            canManage={canManage}
+            busy={busy === row.provider}
+            onConnect={() => onConnect(row.provider)}
+            onDisconnect={() => onDisconnect(row.provider, row.label)}
           />
-          <div className="min-w-0 flex-1">
-            <SheetTitle className="text-left text-lg">
-              {integration.name}
-            </SheetTitle>
-            <p className="text-xs text-muted-foreground">{integration.category}</p>
+        ))}
+      </div>
+
+      {slack?.status === "connected" && canManage ? <SlackRouting /> : null}
+    </div>
+  );
+}
+
+function ProviderCard({
+  row,
+  canManage,
+  busy,
+  onConnect,
+  onDisconnect,
+}: {
+  row: ApiIntegration;
+  canManage: boolean;
+  busy: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  const connected = row.status === "connected";
+  const errored = row.status === "error";
+  // A personal connection is the user's own to make; an org-wide one is an admin action, because
+  // connecting hands WorkPulse a credential to the whole company's workspace.
+  const mayAct = row.org_wide ? canManage : true;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2">
+              {row.label}
+              <Badge variant="secondary" className="text-xs">
+                {row.org_wide ? "Organization" : "Personal"}
+              </Badge>
+            </CardTitle>
+            <CardDescription className="mt-1">
+              {connected && row.external_account
+                ? `Connected to ${row.external_account}`
+                : errored
+                  ? "Needs reconnecting"
+                  : "Not connected"}
+            </CardDescription>
           </div>
-          {connected && <ConnectedPill />}
+          <span
+            className={
+              connected
+                ? "text-success"
+                : errored
+                  ? "text-warning"
+                  : "text-muted-foreground"
+            }
+          >
+            {connected ? (
+              <Link2 className="size-5" />
+            ) : errored ? (
+              <AlertTriangle className="size-5" />
+            ) : (
+              <Plug className="size-5" />
+            )}
+          </span>
         </div>
-        <SheetDescription className="pt-2 text-left">
-          {integration.description}
-        </SheetDescription>
-      </SheetHeader>
-
-      <div className="space-y-6 px-4 pb-8">
-        {/* What it does */}
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            What you can do
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* The reason the provider gave, so "reconnect" is actionable rather than mysterious. */}
+        {errored && row.last_error ? (
+          <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+            {row.last_error}
           </p>
-          <ul className="space-y-2">
-            {integration.features.map((f) => (
-              <li key={f} className="flex items-start gap-2 text-sm">
-                <Check className="mt-0.5 size-4 shrink-0 text-primary" />
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
+        ) : null}
 
-        {connected ? (
-          <>
-            {/* Connection info */}
-            <div className="space-y-1 rounded-xl bg-muted/50 p-4 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Account</span>
-                <span className="font-medium">
-                  {integration.account ?? "Connected"}
-                </span>
-              </div>
-              {integration.lastSync && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Last sync</span>
-                  <span className="tabular-nums">{integration.lastSync}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Settings */}
-            <div className="divide-y rounded-xl border">
-              <div className="flex items-center justify-between gap-4 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Send notifications</p>
-                  <p className="text-xs text-muted-foreground">
-                    Push WorkPulse alerts to {integration.name}.
-                  </p>
-                </div>
-                <Switch
-                  size="sm"
-                  checked={notifications}
-                  disabled={!canManage}
-                  onCheckedChange={setNotifications}
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Two-way sync</p>
-                  <p className="text-xs text-muted-foreground">
-                    Let changes flow both ways between the apps.
-                  </p>
-                </div>
-                <Switch
-                  size="sm"
-                  checked={twoWaySync}
-                  disabled={!canManage}
-                  onCheckedChange={setTwoWaySync}
-                />
-              </div>
-            </div>
-
-            <Button
-              variant="outline"
-              className="w-full text-destructive hover:text-destructive"
-              disabled={!canManage}
-              onClick={() => onConnect(false)}
-            >
+        {!mayAct ? (
+          <p className="text-xs text-muted-foreground">
+            Only an owner or admin can change this connection.
+          </p>
+        ) : connected || errored ? (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onConnect} disabled={busy}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+              Reconnect
+            </Button>
+            <Button variant="ghost" onClick={onDisconnect} disabled={busy}>
+              <Unplug className="size-4" />
               Disconnect
             </Button>
-          </>
+          </div>
         ) : (
-          <>
-            <div className="rounded-xl bg-muted/60 px-4 py-3 text-xs text-muted-foreground">
-              On connecting, WorkPulse will be able to read and write data in{" "}
-              {integration.name} on your organization&apos;s behalf. You can
-              disconnect at any time.
-            </div>
-            <Button
-              className="w-full"
-              disabled={!canManage}
-              onClick={() => onConnect(true)}
-            >
-              <Plug className="size-4" /> Connect {integration.name}
-            </Button>
-          </>
+          <Button onClick={onConnect} disabled={busy}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+            Connect
+          </Button>
         )}
-      </div>
-    </>
-  )
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Which WorkPulse events go to which Slack channel.
+ *
+ * An event with no channel and no default is **dropped**, not guessed — Slack channels are not
+ * private by default and leave data is sensitive, so posting somewhere nobody chose would be worse
+ * than posting nothing. The copy says so rather than leaving it to be discovered.
+ */
+function SlackRouting() {
+  const [config, setConfig] = useState<SlackConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    getSlackConfig()
+      .then(setConfig)
+      // A 404 means "connected, but never configured" — an empty editor, not an error.
+      .catch(() => setConfig({ default_channel: "", channels: {} }));
+  }, []);
+
+  if (!config) return null;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      setConfig(await setSlackConfig(config));
+      toast.success("Channel routing saved");
+    } catch (e) {
+      toast.error("Couldn't save routing", {
+        description: e instanceof ApiError ? e.message : undefined,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const test = async () => {
+    setTesting(true);
+    try {
+      const channel = await sendSlackTest();
+      toast.success(`Test message sent to ${channel}`);
+    } catch (e) {
+      toast.error("Couldn't send the test message", {
+        description: e instanceof ApiError ? e.message : undefined,
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Slack channels</CardTitle>
+        <CardDescription>
+          Choose where each update is posted. Anything left blank falls back to the default
+          channel; with no default, that update isn&apos;t posted at all.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="default-channel">Default channel</Label>
+          <Input
+            id="default-channel"
+            placeholder="#general"
+            value={config.default_channel}
+            onChange={(e) =>
+              setConfig({ ...config, default_channel: e.target.value })
+            }
+          />
+        </div>
+
+        <div className="space-y-3">
+          {SLACK_EVENTS.map((ev) => (
+            <div key={ev.key} className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{ev.label}</p>
+                <p className="text-xs text-muted-foreground">{ev.description}</p>
+              </div>
+              <Input
+                className="w-44"
+                placeholder="default"
+                aria-label={`${ev.label} channel`}
+                value={config.channels[ev.key] ?? ""}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    channels: { ...config.channels, [ev.key]: e.target.value },
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <Button onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+            Save routing
+          </Button>
+          {/* Without this, the first sign that routing is wrong is a leave request that silently
+              never appeared — noticed days later, if at all. */}
+          <Button variant="outline" onClick={test} disabled={testing}>
+            {testing ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Send className="size-4" />
+            )}
+            Send test message
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
