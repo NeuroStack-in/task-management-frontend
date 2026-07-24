@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
-  AlertTriangle,
   ArrowUpRight,
   Lock,
   Monitor,
@@ -35,6 +34,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
+import { MfaCard } from "@/modules/settings/components/mfa-card"
+import { PasswordCard } from "@/modules/settings/components/password-card"
 import { usePermissions } from "@/hooks/use-permissions"
 import { resetMfaDevice } from "../services/security.service"
 import { useSessions } from "../use-sessions"
@@ -110,85 +111,11 @@ function PlatformFixed({ value }: { value: string }) {
   )
 }
 
-// ── MFA posture ───────────────────────────────────────────────────────────────
-
-/**
- * A member's MFA state, mirroring LLD §2. Read-only by design: MFA is a platform
- * invariant, so there is nothing here for a user or an org to change.
- *
- * `sso` exists because Cognito **cannot** force MFA on a federated identity — those
- * users delegate the check to their IdP. That's an accepted stance, not a gap, so it
- * reads as covered rather than as a warning.
- */
-type MfaPosture = "totp" | "sso" | "none"
-
-const MFA_POSTURE_META: Record<
-  MfaPosture,
-  { icon: typeof ShieldCheck; tone: string; title: string; detail: string }
-> = {
-  totp: {
-    icon: ShieldCheck,
-    tone: "success",
-    title: "Protected by an authenticator app",
-    detail:
-      "Manage it under Settings → Login & security. Lost your phone? An admin can reset your device.",
-  },
-  sso: {
-    icon: ShieldCheck,
-    tone: "success",
-    title: "Delegated to your identity provider",
-    detail:
-      "You sign in through SSO, so your provider performs the check. WorkPulse can't add a second factor on top of it.",
-  },
-  none: {
-    icon: AlertTriangle,
-    tone: "warning",
-    title: "Not enrolled",
-    detail:
-      "Strongly recommended: set up an authenticator app under Settings → Login & security.",
-  },
-}
-
-function MfaPostureRow({ posture }: { posture: MfaPosture }) {
-  const meta = MFA_POSTURE_META[posture]
-  const Icon = meta.icon
-  return (
-    <div
-      className={cn(
-        "flex gap-3 rounded-md px-4 py-3",
-        meta.tone === "success" ? "bg-success/10" : "bg-warning/10",
-      )}
-    >
-      <span
-        className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-full",
-          meta.tone === "success"
-            ? "bg-success/15 text-success"
-            : "bg-warning/15 text-warning",
-        )}
-      >
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{meta.title}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{meta.detail}</p>
-      </div>
-    </div>
-  )
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function SecurityCenter() {
   const { can } = usePermissions()
   const canManage = can("security:manage")
-
-  // Your MFA posture — read-only. Enrollment happens in Cognito's MFA_SETUP challenge at
-  // sign-in (LLD §2), not here, so there is no setup flow on this page and nothing to
-  // toggle: MFA is a platform invariant. Every password user is required to hold TOTP, so
-  // for the accounts this app serves today the posture is `totp`; it becomes server-sourced
-  // once `/v1/me` carries it.
-  const mfaPosture: MfaPosture = "totp"
 
   // The lost-phone flow — the single MFA action an admin has (LLD §2):
   // `POST /v1/users/{id}/mfa/reset`, perm `security:manage`.
@@ -250,12 +177,14 @@ export function SecurityCenter() {
 
       {/* ── Multi-factor authentication ── */}
       {/*
-        MFA is a platform invariant, not an org setting (LLD §2): the Cognito pool
-        requires TOTP for password users, with no grace period and nothing org-editable.
-        So this card is a **posture view plus one action** — the "Require MFA" /
-        "grace period" / "adoption %" widgets that used to live here were settings and
-        metrics for a decision the org doesn't get to make and a number the backend
-        doesn't return.
+        MFA is **optional and user-managed** — the Cognito pool enforces nothing (it is
+        `Mfa.OPTIONAL`), so nobody is required to hold TOTP. This card is therefore your own
+        enrolment control plus one admin action (the lost-phone reset). There is deliberately no
+        "Require MFA" / "grace period" / "adoption %" widget: the first two are enforcement that
+        doesn't exist, and the third is a number the backend doesn't return.
+
+        Owner/Admin have no personal /settings/login-security entry in the rail, so without the
+        enrolment control here they had no way to turn their own MFA on at all.
       */}
       <Card id="mfa" className="scroll-mt-24">
         <CardHeader>
@@ -271,8 +200,9 @@ export function SecurityCenter() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          {/* Your own posture — read-only. */}
-          <MfaPostureRow posture={mfaPosture} />
+          {/* Your own authenticator — status + enrol/turn off. Shared with the personal Security
+              page so the two can't drift (modules/settings/components/mfa-card). */}
+          <MfaCard embedded />
 
           {/* The one action (LLD §2): the lost-phone flow. */}
           {canManage ? (
@@ -338,6 +268,11 @@ export function SecurityCenter() {
           </SettingRow>
         </CardContent>
       </Card>
+
+      {/* Your own password — change it, or reset by an emailed code. Owner/Admin have no separate
+          personal security page, so their own credentials live here, next to the org policy that
+          governs them. Employees get the same card on /settings/login-security. */}
+      <PasswordCard />
 
       {/* ── Password policy (platform-fixed, read-only) ── */}
       {/*

@@ -39,8 +39,9 @@ function accountGroup(opts: {
     // Billing is org-level — only roles that can view billing get it.
     if (it.href === "/settings/billing" && !opts.canBilling) continue;
     items.push({ label: it.label, href: it.href, icon: it.icon });
-    // Personal login & security sits after Profile for roles WITHOUT the org
-    // Security Center (Owner/Admin reach security there instead).
+    // Personal security sits after Profile for roles WITHOUT the org Security Center. Owner/Admin
+    // don't get a second entry — their own password + reset lives inside that centre instead, so
+    // there is exactly one "Security" destination per role.
     if (it.href === "/settings/profile" && !opts.canSecurity) {
       items.push({
         label: "Security",

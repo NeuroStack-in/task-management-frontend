@@ -21,6 +21,8 @@ import {
   hasPendingTotpChallenge,
 } from "@/modules/auth/services/auth.service";
 import { cn } from "@/lib/utils";
+import { currentRoleSnapshot } from "@/hooks/use-permissions";
+import { safeLandingPath } from "@/lib/rbac";
 
 const LENGTH = 6;
 
@@ -76,8 +78,7 @@ export function MfaForm() {
     try {
       await completeMfa(code);
       toast.success("Verified", { description: "Welcome back." });
-      const from = params.get("from");
-      router.replace(from && from.startsWith("/") ? from : "/dashboard");
+      router.replace(safeLandingPath(currentRoleSnapshot(), params.get("from")));
     } catch (err) {
       const isRetryable = err instanceof AuthError && err.kind === "credentials";
       toast.error("Verification failed", {
