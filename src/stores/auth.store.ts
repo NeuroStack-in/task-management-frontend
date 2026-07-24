@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AuthSession, User } from "@/types/user";
 import {
+  clearWorkPulseState,
   completeSso as completeSsoService,
   completeTotpChallenge,
   login as loginService,
@@ -27,24 +28,32 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       session: null,
       user: null,
       isAuthenticated: false,
       hydrated: false,
 
       login: async (email, password) => {
+        const prevUserId = get().user?.id;
         const { session, user } = await loginService(email, password);
+        // Signing in as a *different* user without a prior logout (e.g. an expired session, or a
+        // shared machine) must not inherit the previous user's cached org state.
+        if (prevUserId && prevUserId !== user.id) clearWorkPulseState();
         set({ session, user, isAuthenticated: true });
       },
 
       completeMfa: async (code) => {
+        const prevUserId = get().user?.id;
         const { session, user } = await completeTotpChallenge(code);
+        if (prevUserId && prevUserId !== user.id) clearWorkPulseState();
         set({ session, user, isAuthenticated: true });
       },
 
       completeSso: async () => {
+        const prevUserId = get().user?.id;
         const { session, user } = await completeSsoService();
+        if (prevUserId && prevUserId !== user.id) clearWorkPulseState();
         set({ session, user, isAuthenticated: true });
       },
 

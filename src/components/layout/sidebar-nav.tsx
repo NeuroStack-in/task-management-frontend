@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Activity, PanelLeftClose, LogOut, Search } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/stores/ui.store";
@@ -37,7 +37,6 @@ export function SidebarNav({
   collapsed?: boolean;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { nav, role } = usePermissions();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
@@ -86,7 +85,11 @@ export function SidebarNav({
 
   const handleLogout = () => {
     logout();
-    router.replace("/login");
+    // Hard navigation (not router.replace): a full reload discards all in-memory Zustand state, so
+    // the next sign-in starts from a clean slate and re-hydrates from the server. `replace` (not
+    // assign) drops the just-left app page from history, so a Back press after logout can't restore
+    // a now-signed-out page from bfcache.
+    window.location.replace("/login");
   };
 
   // Collapsed rail: expand the sidebar and focus its inline search field rather

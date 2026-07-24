@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Activity, ArrowUpRight } from "lucide-react";
 import { LoginForm } from "@/modules/auth/components/login-form";
@@ -106,6 +107,8 @@ function Gallery() {
 }
 
 export default function AuthPreviewPage() {
+  // A design-preview gallery — dev-only. In production it 404s so it isn't a public, crawlable route.
+  if (process.env.NODE_ENV === "production") notFound();
   return (
     <div className="min-h-screen bg-muted/30 px-6 py-10">
       <div className="mx-auto max-w-6xl space-y-10">

@@ -255,9 +255,33 @@ export async function completeSso(): Promise<LoginResult> {
   return { session: toSession(session), user: toUser(session) };
 }
 
-/** Clear the Cognito session (the auth store clears its own state). */
+/**
+ * Remove **all** WorkPulse local state (the persisted Zustand stores, keyed by static `wp-*` names).
+ *
+ * These caches are keyed by store, not by user — so without this, the next person to sign in on the
+ * same browser inherits the previous user's cached org state (feature toggles, custom roles,
+ * dashboard layout, directory edits), and the two logins disagree. The server is the single source
+ * of truth; every login must start clean and re-hydrate from it. Cognito's own tokens
+ * (`CognitoIdentityServiceProvider.*`) are not `wp-*` and are cleared separately by `cognitoSignOut`.
+ */
+export function clearWorkPulseState(): void {
+  if (typeof window === "undefined") return;
+  // Device-only UI prefs (not account data) are safe to keep across accounts — leaking "the sidebar
+  // was collapsed" to the next user is harmless, and resetting it every login is a needless regression.
+  const KEEP = new Set(["wp-ui"]);
+  try {
+    for (const key of Object.keys(window.localStorage)) {
+      if (key.startsWith("wp-") && !KEEP.has(key)) window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Storage disabled / private mode — nothing cached to clear.
+  }
+}
+
+/** Clear the Cognito session and every WorkPulse local cache (the auth store clears its own state). */
 export function logout(): void {
   cognitoSignOut();
+  clearWorkPulseState();
 }
 
 /* ------------------------------ Password reset ------------------------------ */
