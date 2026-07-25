@@ -38,6 +38,7 @@ import {
   type SlackConfig,
 } from "@/modules/integrations/services/integrations.service";
 import { rememberPendingProvider } from "./integrations-callback";
+import { ProviderLogo } from "./provider-logo";
 
 /**
  * The Integrations marketplace — **server-driven**.
@@ -166,20 +167,25 @@ function ProviderCard({
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2">
-              {row.label}
-              <Badge variant="secondary" className="text-xs">
-                {row.org_wide ? "Organization" : "Personal"}
-              </Badge>
-            </CardTitle>
-            <CardDescription className="mt-1">
-              {connected && row.external_account
-                ? `Connected to ${row.external_account}`
-                : errored
-                  ? "Needs reconnecting"
-                  : "Not connected"}
-            </CardDescription>
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
+              <ProviderLogo provider={row.provider} className="size-6" />
+            </span>
+            <div className="min-w-0">
+              <CardTitle className="flex items-center gap-2">
+                {row.label}
+                <Badge variant="secondary" className="text-xs">
+                  {row.org_wide ? "Organization" : "Personal"}
+                </Badge>
+              </CardTitle>
+              <CardDescription className="mt-1">
+                {connected && row.external_account
+                  ? `Connected to ${row.external_account}`
+                  : errored
+                    ? "Needs reconnecting"
+                    : "Not connected"}
+              </CardDescription>
+            </div>
           </div>
           <span
             className={
