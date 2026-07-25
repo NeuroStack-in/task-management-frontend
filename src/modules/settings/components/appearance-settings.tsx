@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { FONTS, applyFont, currentFont } from "@/lib/fonts";
+import { PALETTES, applyPalette, currentPalette } from "@/lib/palette";
 import { cn } from "@/lib/utils";
 import { useAppearance, type AppearanceTheme } from "../use-appearance";
 
@@ -78,6 +79,7 @@ export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [font, setFont] = useState("ibmplex");
+  const [palette, setPalette] = useState("teal");
 
   // The server holds the account-wide theme; next-themes applies it instantly per browser.
   const { serverTheme, save: saveAppearance } = useAppearance();
@@ -87,6 +89,7 @@ export function AppearanceSettings() {
   useEffect(() => {
     setMounted(true);
     setFont(currentFont());
+    setPalette(currentPalette());
   }, []);
   const active = mounted ? theme : undefined;
 
@@ -109,6 +112,11 @@ export function AppearanceSettings() {
   const chooseFont = (id: string) => {
     applyFont(id);
     setFont(id);
+  };
+
+  const choosePalette = (id: string) => {
+    applyPalette(id);
+    setPalette(id);
   };
 
   return (
@@ -170,6 +178,63 @@ export function AppearanceSettings() {
                       <Check className="size-3" />
                     </span>
                   </div>
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Color theme</CardTitle>
+          <CardDescription>
+            Pick the accent palette used across WorkPulse. Only the brand colors change — the
+            neutrals stay put. Saved on this browser.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div
+            role="radiogroup"
+            aria-label="Color theme"
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"
+          >
+            {PALETTES.map((p) => {
+              const selected = mounted && palette === p.id;
+              return (
+                <button
+                  key={p.id}
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => choosePalette(p.id)}
+                  className={cn(
+                    "group relative flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+                    selected
+                      ? "border-primary ring-1 ring-primary"
+                      : "hover:border-foreground/20 hover:bg-muted/50",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="size-9 shrink-0 rounded-lg border shadow-sm"
+                    style={{
+                      background: `linear-gradient(135deg, ${p.swatch} 0%, ${p.swatch} 55%, color-mix(in srgb, ${p.swatch} 30%, #fff) 55%)`,
+                    }}
+                  />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <p className="truncate text-sm font-medium">{p.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{p.note}</p>
+                  </div>
+                  <span
+                    className={cn(
+                      "flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                      selected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-transparent",
+                    )}
+                  >
+                    <Check className="size-3" />
+                  </span>
                 </button>
               );
             })}
