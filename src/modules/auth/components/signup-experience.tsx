@@ -211,9 +211,12 @@ export function SignupExperience() {
       try {
         await login(acct.email.trim().toLowerCase(), acct.password);
         toast.success("Workspace created", {
-          description: `${created.slug} is ready — let's finish setting things up.`,
+          description: `${created.slug} is ready.`,
         });
-        router.replace("/onboarding");
+        // Straight to the dashboard — the register flow already collected everything, and the org
+        // now ships with the standard departments seeded server-side (create_org), so there's no
+        // setup wizard left to run. Invites happen from Employees → Invite when the owner is ready.
+        router.replace("/dashboard");
       } catch {
         toast.success("Workspace created", {
           description: "Sign in with your new password to continue.",

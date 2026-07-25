@@ -22,7 +22,6 @@ import {
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { DepartmentsManager } from "./departments-manager"
-import { BrandingManager } from "./org/branding-manager"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
 import { HolidaysManager } from "./org/holidays-manager"
@@ -391,9 +390,6 @@ export function OrganizationTab() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Branding — its own singleton load/save (independent of the org-profile save bar). */}
-      <BrandingManager />
 
       {/* Each of these is its own live-backend CRUD, independent of the org-profile save bar. */}
       <DepartmentsManager />
