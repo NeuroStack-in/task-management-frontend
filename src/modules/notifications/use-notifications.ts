@@ -33,6 +33,8 @@ const POLL_MS = 30_000;
 /** One shared timer across all mounts, ref-counted so it stops when the last consumer unmounts. */
 let pollSubscribers = 0;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+/** The push-rail connection (lazy, singleton) — torn down with the last subscriber. */
+let stopPush: (() => void) | null = null;
 
 /** Fetch the feed and seed the store — shared by the initial load and every refresh. */
 async function fetchInto(): Promise<void> {
@@ -102,10 +104,22 @@ export function useNotifications(): NotificationsFeed {
 
   // Background freshness: one shared poll while visible, plus an immediate refetch when the
   // tab/window regains focus. The hidden-tab guard lives in refreshNotifications().
+  // The MQTT push rail rides on top as a doorbell (lib/push.ts): a pushed message just triggers
+  // the same refresh — polls remain the source of truth, push only shortens the wait. Best-effort:
+  // if the rail can't connect, this hook behaves exactly as it did before push existed.
   useEffect(() => {
     pollSubscribers += 1;
     if (!pollTimer) {
       pollTimer = setInterval(() => void refreshNotifications(), POLL_MS);
+    }
+    if (!stopPush) {
+      import("@/lib/push")
+        .then(({ startPush }) => {
+          if (pollSubscribers > 0 && !stopPush) {
+            stopPush = startPush(() => void refreshNotifications());
+          }
+        })
+        .catch(() => {});
     }
     const onFocus = () => void refreshNotifications();
     window.addEventListener("focus", onFocus);
@@ -117,6 +131,8 @@ export function useNotifications(): NotificationsFeed {
       if (pollSubscribers === 0 && pollTimer) {
         clearInterval(pollTimer);
         pollTimer = null;
+        stopPush?.();
+        stopPush = null;
       }
     };
   }, []);

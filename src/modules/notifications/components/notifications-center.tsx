@@ -48,11 +48,14 @@ const TYPES: NotificationType[] = [
  * org-level alert about someone else. This table is therefore a *narrowing* of an already
  * self-scoped feed, and each gate has to be justified against that, not against the type's name.
  *
- * `approval` is the live case, and it was wrong: the server tags a user's **own** leave lifecycle
- * (`leave_requested` / `leave_approved` / `leave_cancelled`) as `approval`, but this required
- * `approvals:view` — a Manager/Admin permission an Employee does not hold. The result was an
- * employee never seeing their own leave approved: the server sent it, the UI filtered it out, and
- * nothing errored. It asks "may you see YOUR leave?", so it gates on `leave:view`.
+ * `approval` has now been wrong TWICE, in opposite directions, which is the lesson:
+ *   1. Gated on `approvals:view` → employees never saw their own "leave approved".
+ *   2. Gated on `leave:view` (contributor-only — the wildcard deliberately does NOT grant it) →
+ *      Owners/Admins never saw "awaiting your approval" (found live 2026-07-25, the moment the
+ *      approver fan-out shipped: the bell counted it, this page filtered it).
+ * Both times the server had already targeted the notification correctly and the client's second
+ * guess broke it. `approval` is therefore ungated: whatever the server addressed to you — your own
+ * lifecycle as a requester, or a decision request as an approver — is yours to see.
  *
  * `productivity` and `billing` are not produced by any consumer today; their gates are unexercised
  * and should be re-checked against the real category the day something starts emitting them.
@@ -60,7 +63,7 @@ const TYPES: NotificationType[] = [
 const TYPE_PERMISSION: Record<NotificationType, PermissionId | null> = {
   task: null,
   system: null,
-  approval: "leave:view",
+  approval: null,
   productivity: "reports:view",
   billing: "billing:view",
 };
