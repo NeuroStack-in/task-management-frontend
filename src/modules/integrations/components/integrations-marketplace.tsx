@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Link2, Loader2, Plug, Send, Unplug } from "lucide-react";
+import {
+  AlertTriangle,
+  Eye,
+  Link2,
+  Loader2,
+  Plug,
+  Send,
+  Unplug,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +20,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -55,6 +70,7 @@ export function IntegrationsMarketplace() {
   const [rows, setRows] = useState<ApiIntegration[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [channelsOpen, setChannelsOpen] = useState(false);
 
   const load = useCallback(() => {
     listIntegrations()
@@ -134,13 +150,35 @@ export function IntegrationsMarketplace() {
             canManage={canManage}
             busy={busy === row.provider}
             comingSoon={COMING_SOON.has(row.provider)}
+            // The channel-routing view is Slack-specific and only meaningful once connected; the
+            // eye button that opens it is shown only then.
+            onViewChannels={
+              row.provider === "slack" &&
+              row.status === "connected" &&
+              canManage
+                ? () => setChannelsOpen(true)
+                : undefined
+            }
             onConnect={() => onConnect(row.provider)}
             onDisconnect={() => onDisconnect(row.provider, row.label)}
           />
         ))}
       </div>
 
-      {slack?.status === "connected" && canManage ? <SlackRouting /> : null}
+      {/* Routing lives in a dialog now, opened from the Slack card's eye button, so the card grid
+          stays compact instead of a tall panel always hanging below it. */}
+      <Dialog open={channelsOpen} onOpenChange={setChannelsOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Slack channels</DialogTitle>
+            <DialogDescription>
+              Choose where each update is posted. Anything left on the default falls back to the
+              default channel; with no default, that update isn&apos;t posted at all.
+            </DialogDescription>
+          </DialogHeader>
+          {slack?.status === "connected" ? <SlackRouting /> : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -157,6 +195,7 @@ function ProviderCard({
   canManage,
   busy,
   comingSoon,
+  onViewChannels,
   onConnect,
   onDisconnect,
 }: {
@@ -164,6 +203,8 @@ function ProviderCard({
   canManage: boolean;
   busy: boolean;
   comingSoon?: boolean;
+  /** When set (Slack, connected), an eye button that opens the channel-routing dialog. */
+  onViewChannels?: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
@@ -264,7 +305,7 @@ function ProviderCard({
             Only an owner or admin can change this connection.
           </p>
         ) : connected || errored ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={onConnect} disabled={busy}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : null}
               Reconnect
@@ -273,6 +314,19 @@ function ProviderCard({
               <Unplug className="size-4" />
               Disconnect
             </Button>
+            {/* Opens the channel-routing dialog. Only present for a connected Slack card. */}
+            {onViewChannels ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="View channel routing"
+                title="Channel routing"
+                onClick={onViewChannels}
+                className="ml-auto"
+              >
+                <Eye className="size-4" />
+              </Button>
+            ) : null}
           </div>
         ) : (
           <Button onClick={onConnect} disabled={busy}>
@@ -352,16 +406,8 @@ function SlackRouting() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Slack channels</CardTitle>
-        <CardDescription>
-          Choose where each update is posted. Anything left blank falls back to the default
-          channel; with no default, that update isn&apos;t posted at all.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-1.5">
+    <div className="space-y-4">
+      <div className="space-y-1.5">
           <Label htmlFor="default-channel">Default channel</Label>
           {usePicker ? (
             <Select
@@ -417,7 +463,15 @@ function SlackRouting() {
                       className="w-44"
                       aria-label={`${ev.label} channel`}
                     >
-                      <SelectValue />
+                      {/* Base UI SelectValue renders the raw value; map the sentinel to a label so
+                          the trigger reads "Default channel", not "__default__". */}
+                      <SelectValue>
+                        {(value) =>
+                          value === USE_DEFAULT
+                            ? "Default channel"
+                            : String(value ?? "")
+                        }
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={USE_DEFAULT}>Default channel</SelectItem>
@@ -463,7 +517,6 @@ function SlackRouting() {
             Send test message
           </Button>
         </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
