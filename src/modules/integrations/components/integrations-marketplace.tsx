@@ -168,7 +168,9 @@ export function IntegrationsMarketplace() {
       {/* Routing lives in a dialog now, opened from the Slack card's eye button, so the card grid
           stays compact instead of a tall panel always hanging below it. */}
       <Dialog open={channelsOpen} onOpenChange={setChannelsOpen}>
-        <DialogContent className="max-w-2xl">
+        {/* `sm:max-w-2xl` (not plain max-w) — DialogContent's base sets `sm:max-w-sm`, and a
+            `sm:` variant only loses to another `sm:` variant. */}
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Slack channels</DialogTitle>
             <DialogDescription>
