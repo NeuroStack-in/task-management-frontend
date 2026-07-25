@@ -14,7 +14,13 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { FONTS, applyFont, currentFont } from "@/lib/fonts";
-import { PALETTES, applyPalette, currentPalette } from "@/lib/palette";
+import {
+  PALETTES,
+  applyPalette,
+  coercePalette,
+  currentPalette,
+  DEFAULT_PALETTE,
+} from "@/lib/palette";
 import { cn } from "@/lib/utils";
 import { useAppearance, type AppearanceTheme } from "../use-appearance";
 
@@ -79,10 +85,11 @@ export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [font, setFont] = useState("ibmplex");
-  const [palette, setPalette] = useState("teal");
+  const [palette, setPalette] = useState(DEFAULT_PALETTE);
 
-  // The server holds the account-wide theme; next-themes applies it instantly per browser.
-  const { serverTheme, save: saveAppearance } = useAppearance();
+  // The server holds the account-wide theme + palette; they apply instantly per browser and sync
+  // across the account's devices.
+  const { serverTheme, serverPalette, saveTheme, savePalette } = useAppearance();
 
   // next-themes + the persisted font resolve on the client; avoid an
   // SSR/hydration mismatch by reading them after mount.
@@ -102,9 +109,22 @@ export function AppearanceSettings() {
     if (serverTheme !== theme) setTheme(serverTheme);
   }, [serverTheme, theme, setTheme]);
 
+  // Same one-shot hydration for the palette: adopt the account's stored palette on load (so it
+  // follows the user across devices), then let their clicks win.
+  const paletteHydratedRef = useRef(false);
+  useEffect(() => {
+    if (paletteHydratedRef.current || serverPalette === null) return;
+    paletteHydratedRef.current = true;
+    const stored = coercePalette(serverPalette);
+    if (stored !== currentPalette()) {
+      applyPalette(stored);
+      setPalette(stored);
+    }
+  }, [serverPalette]);
+
   const chooseTheme = (value: AppearanceTheme) => {
     setTheme(value); // instant, local
-    saveAppearance(value).catch(() =>
+    saveTheme(value).catch(() =>
       toast.error("Theme applied here, but couldn't save it to your account."),
     );
   };
@@ -115,8 +135,11 @@ export function AppearanceSettings() {
   };
 
   const choosePalette = (id: string) => {
-    applyPalette(id);
+    applyPalette(id); // instant, local
     setPalette(id);
+    savePalette(id).catch(() =>
+      toast.error("Palette applied here, but couldn't save it to your account."),
+    );
   };
 
   return (
@@ -189,8 +212,8 @@ export function AppearanceSettings() {
         <CardHeader>
           <CardTitle>Color theme</CardTitle>
           <CardDescription>
-            Pick the accent palette used across WorkPulse. Only the brand colors change — the
-            neutrals stay put. Saved on this browser.
+            Pick the accent palette used across WorkPulse. Applies to your account across your
+            devices; only the brand colors change — the neutrals stay put.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -913,6 +913,89 @@
   --sidebar-ring: #c2c8d0;
 }
 
+/* ---- Grayscale — monochrome brand + chart ramp on pure cool-neutral surfaces.  ---- */
+/*      Semantic status (success/warning/destructive) stays colored for legibility. ---- */
+[data-palette="grayscale"] {
+  --background: #f4f5f6;
+  --foreground: #1f2329;
+  --card: #ffffff;
+  --card-foreground: #1f2329;
+  --popover: #ffffff;
+  --popover-foreground: #1f2329;
+  --primary: #4b5563;
+  --primary-foreground: #ffffff;
+  --secondary: #eceef1;
+  --secondary-foreground: #374151;
+  --muted: #eef0f2;
+  --muted-foreground: #6b7280;
+  --accent: #e9ebee;
+  --accent-foreground: #374151;
+  --destructive: #dc2626;
+  --success: #16a34a;
+  --warning: #d97706;
+  --positive: #16a34a;
+  --negative: #dc2626;
+  --feature: #4b5563;
+  --feature-foreground: #ffffff;
+  --feature-tint: #e9ebee;
+  --border: #e2e5e8;
+  --input: #d6dade;
+  --ring: #4b5563;
+  --chart-1: #374151;
+  --chart-2: #6b7280;
+  --chart-3: #9ca3af;
+  --chart-4: #4b5563;
+  --chart-5: #b6bcc4;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1f2329;
+  --sidebar-primary: #4b5563;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e9ebee;
+  --sidebar-accent-foreground: #374151;
+  --sidebar-border: #e6e9ec;
+  --sidebar-ring: #4b5563;
+}
+[data-palette="grayscale"].dark {
+  --background: #17181b;
+  --foreground: #e7e8ea;
+  --card: #202124;
+  --card-foreground: #e7e8ea;
+  --popover: #202124;
+  --popover-foreground: #e7e8ea;
+  --primary: #c9ccd1;
+  --primary-foreground: #17181b;
+  --secondary: #2a2c30;
+  --secondary-foreground: #e7e8ea;
+  --muted: #232427;
+  --muted-foreground: #9ea0a6;
+  --accent: #2c2e32;
+  --accent-foreground: #d7d9dd;
+  --destructive: #f87171;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --positive: #4ade80;
+  --negative: #f87171;
+  --feature: #2a2c30;
+  --feature-foreground: #ffffff;
+  --feature-tint: #202225;
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #c9ccd1;
+  --chart-1: #b6bcc4;
+  --chart-2: #858b95;
+  --chart-3: #5c626c;
+  --chart-4: #9ea4ae;
+  --chart-5: #6f757f;
+  --sidebar: #202124;
+  --sidebar-foreground: #e7e8ea;
+  --sidebar-primary: #c9ccd1;
+  --sidebar-primary-foreground: #17181b;
+  --sidebar-accent: #2c2e32;
+  --sidebar-accent-foreground: #d7d9dd;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: #c9ccd1;
+}
+
 /* ---- Corporate Blue — refined business blue on a clean, cool-neutral light ---- */
 [data-palette="corporate"] {
   --background: #f5f7fa;
