@@ -102,6 +102,30 @@ export interface UpdateTrackingPolicyInput {
 }
 
 /** Load the org's current agent config, including the tracking policy this screen edits. */
+/** Result of `POST /v1/fleet/{id}/capture-now`. */
+export interface CaptureRequested {
+  agent_id: string;
+  screenshot_id: string;
+  /** Always `requested` — the device's accept/refuse answer arrives later on the push rail. */
+  status: string;
+  requested_at: number;
+}
+
+/**
+ * `POST /v1/fleet/{id}/capture-now` — ask a device for a screenshot now (needs
+ * `monitoring:manage` + `screenshots:view`, and the org's screenshot entitlement).
+ *
+ * **202-shaped, not a result.** The device holds the final veto: it refuses during a privacy pause
+ * and when no timer is running, and that answer comes back as a `capture_result` push — so callers
+ * must show "requested", never "captured", off this response alone.
+ */
+export function captureNow(agentId: string): Promise<CaptureRequested> {
+  return apiFetch<CaptureRequested>(
+    `/v1/fleet/${encodeURIComponent(agentId)}/capture-now`,
+    { method: "POST" },
+  );
+}
+
 export function getTrackingPolicy(): Promise<AgentConfig> {
   return apiFetch<AgentConfig>("/v1/agent/config");
 }
