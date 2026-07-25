@@ -31,6 +31,13 @@ import type {
   NewLeaveRequest,
 } from "../services/leave.service";
 
+/** Today as a local `YYYY-MM-DD` — the earliest a leave request may start. */
+function isoToday(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** Inclusive working-day (Mon–Fri) count between two ISO dates. */
 export function workingDays(startIso: string, endIso: string): number {
   if (!startIso || !endIso) return 0;
@@ -60,6 +67,10 @@ const schema = z
   .refine((d) => d.endDate >= d.startDate, {
     message: "End date can't be before the start date.",
     path: ["endDate"],
+  })
+  .refine((d) => !d.startDate || d.startDate >= isoToday(), {
+    message: "Leave can't start in the past.",
+    path: ["startDate"],
   });
 
 type FormValues = z.infer<typeof schema>;
@@ -90,6 +101,8 @@ export function RequestLeaveDialog({
   const start = watch("startDate");
   const end = watch("endDate");
   const days = useMemo(() => workingDays(start, end), [start, end]);
+  // Earliest selectable day — leave can't start in the past (computed once, client-local).
+  const today = useMemo(() => isoToday(), []);
 
   function close() {
     reset();
@@ -162,6 +175,7 @@ export function RequestLeaveDialog({
                   <DatePicker
                     value={field.value}
                     onChange={field.onChange}
+                    min={today}
                     className="w-full"
                   />
                 )}
@@ -175,7 +189,7 @@ export function RequestLeaveDialog({
                   <DatePicker
                     value={field.value}
                     onChange={field.onChange}
-                    min={start || undefined}
+                    min={start || today}
                     className="w-full"
                   />
                 )}
