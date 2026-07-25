@@ -47,9 +47,16 @@ export function getDevice(agentId: string): Promise<ApiDevice> {
 // returns the whole `AgentConfig` (an optimistic-concurrency `version` + the `tracking` block + the
 // app/site classification `rules`); the write path (`PUT /v1/fleet/update-policy`) only touches the
 // `tracking` block and returns the new `TrackingConfig`. Capture cadence:
-//   off → never · min3 / min5 / min10 → a screenshot every 3 / 5 / 10 minutes while active.
+//   off → never · min3 / min5 / min10 → a screenshot every 3 / 5 / 10 minutes while active ·
+//   { custom: n } → every n minutes (server-validated 1..=60). Mirrors the Rust `Cadence` enum: the
+//   presets are strings, a custom interval is `{"custom": n}`.
 
-export type TrackingCadence = "off" | "min3" | "min5" | "min10";
+export type TrackingCadence =
+  | "off"
+  | "min3"
+  | "min5"
+  | "min10"
+  | { custom: number };
 
 /**
  * The `tracking` block of the agent config (`fleet::dto::TrackingConfig`). Its own `version` is the

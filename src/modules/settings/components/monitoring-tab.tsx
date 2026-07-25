@@ -32,9 +32,21 @@ import {
 } from "@/modules/agents/services/fleet.service"
 import { cn } from "@/lib/utils"
 
-/** The exact set of fields the server persists (agent `TrackingConfig`, sans `version`). */
+/**
+ * The cadence *choice* the dropdown offers. The four presets map straight to the wire strings;
+ * `"custom"` pairs with `customMinutes` and is serialized to `{ custom: n }` on save.
+ */
+type CadenceChoice = "off" | "min3" | "min5" | "min10" | "custom"
+
+const CUSTOM_MIN = 1
+const CUSTOM_MAX = 60
+const CUSTOM_DEFAULT = 7
+
+/** The form fields (agent `TrackingConfig`, sans `version`), with cadence split into choice + minutes. */
 type PolicyForm = {
-  cadence: TrackingCadence
+  cadence: CadenceChoice
+  /** Minutes for the `"custom"` choice; ignored otherwise. */
+  customMinutes: number
   blur_level: number
   retention_days: number
   silent: boolean
@@ -43,18 +55,34 @@ type PolicyForm = {
 
 const EMPTY: PolicyForm = {
   cadence: "off",
+  customMinutes: CUSTOM_DEFAULT,
   blur_level: 0,
   retention_days: 30,
   silent: false,
   auto_update: true,
 }
 
-const CADENCE_OPTIONS: { value: TrackingCadence; label: string }[] = [
+const CADENCE_OPTIONS: { value: CadenceChoice; label: string }[] = [
   { value: "off", label: "Off — no screenshots" },
   { value: "min3", label: "Every 3 minutes" },
   { value: "min5", label: "Every 5 minutes" },
   { value: "min10", label: "Every 10 minutes" },
+  { value: "custom", label: "Custom…" },
 ]
+
+/** Wire cadence → form fields. A `{ custom: n }` object becomes the `"custom"` choice + its minutes. */
+function cadenceToForm(c: TrackingCadence): { cadence: CadenceChoice; customMinutes: number } {
+  return typeof c === "object"
+    ? { cadence: "custom", customMinutes: c.custom }
+    : { cadence: c, customMinutes: CUSTOM_DEFAULT }
+}
+
+/** Form fields → wire cadence. `"custom"` becomes `{ custom: <clamped minutes> }`. */
+function formToCadence(cadence: CadenceChoice, customMinutes: number): TrackingCadence {
+  if (cadence !== "custom") return cadence
+  const m = Math.round(customMinutes)
+  return { custom: Math.min(CUSTOM_MAX, Math.max(CUSTOM_MIN, Number.isFinite(m) ? m : CUSTOM_DEFAULT)) }
+}
 
 function SettingRow({
   label,
@@ -119,7 +147,7 @@ export function MonitoringTab() {
       const cfg = await getTrackingPolicy()
       seed(
         {
-          cadence: cfg.tracking.cadence,
+          ...cadenceToForm(cfg.tracking.cadence),
           blur_level: cfg.tracking.blur_level,
           retention_days: cfg.tracking.retention_days,
           silent: cfg.tracking.silent,
@@ -143,7 +171,7 @@ export function MonitoringTab() {
     setSaving(true)
     try {
       const next = await updateTrackingPolicy({
-        cadence: values.cadence,
+        cadence: formToCadence(values.cadence, values.customMinutes),
         blur_level: values.blur_level,
         retention_days: values.retention_days,
         silent: values.silent,
@@ -152,7 +180,7 @@ export function MonitoringTab() {
       })
       seed(
         {
-          cadence: next.cadence,
+          ...cadenceToForm(next.cadence),
           blur_level: next.blur_level,
           retention_days: next.retention_days,
           silent: next.silent,
@@ -225,29 +253,47 @@ export function MonitoringTab() {
                   control={control}
                   name="cadence"
                   render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onValueChange={(v) =>
-                        field.onChange(v as TrackingCadence)
-                      }
-                      disabled={!canManage}
-                    >
-                      <SelectTrigger className="w-56">
-                        <SelectValue>
-                          {(v) =>
-                            CADENCE_OPTIONS.find((o) => o.value === v)?.label ??
-                            "Select"
-                          }
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CADENCE_OPTIONS.map((o) => (
-                          <SelectItem key={o.value} value={o.value}>
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-col items-end gap-2">
+                      <Select
+                        value={field.value}
+                        onValueChange={(v) =>
+                          field.onChange(v as CadenceChoice)
+                        }
+                        disabled={!canManage}
+                      >
+                        <SelectTrigger className="w-56">
+                          <SelectValue>
+                            {(v) =>
+                              CADENCE_OPTIONS.find((o) => o.value === v)
+                                ?.label ?? "Select"
+                            }
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CADENCE_OPTIONS.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {field.value === "custom" ? (
+                        <Controller
+                          control={control}
+                          name="customMinutes"
+                          render={({ field: mf }) => (
+                            <NumericStepper
+                              value={mf.value}
+                              min={CUSTOM_MIN}
+                              max={CUSTOM_MAX}
+                              suffix="min"
+                              disabled={!canManage}
+                              onChange={mf.onChange}
+                            />
+                          )}
+                        />
+                      ) : null}
+                    </div>
                   )}
                 />
               </SettingRow>
@@ -323,44 +369,9 @@ export function MonitoringTab() {
             </CardContent>
           </Card>
 
-          {/* ── Silent Monitoring ── */}
-          <Card id="silent" className="scroll-mt-24 shadow-none">
-            <CardHeader>
-              <CardTitle>Silent monitoring</CardTitle>
-              <CardDescription>
-                When enabled, employees are not notified when screenshots are taken or when they
-                are actively monitored.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 pb-2">
-              <SettingRow
-                label="Enable silent monitoring"
-                description="Removes system-tray indicators and capture notifications from employee devices."
-                disabled={!canManage}
-              >
-                <Controller
-                  control={control}
-                  name="silent"
-                  render={({ field }) => (
-                    <Switch
-                      checked={field.value}
-                      disabled={!canManage}
-                      onCheckedChange={field.onChange}
-                    />
-                  )}
-                />
-              </SettingRow>
-              <p className="rounded-md border border-border bg-muted/60 px-4 py-3 text-xs text-muted-foreground">
-                <strong className="font-medium text-foreground">
-                  Note on ethics &amp; legal compliance:
-                </strong>{" "}
-                Silent monitoring may have legal implications in certain jurisdictions. Ensure
-                your employee contracts and local employment laws permit undisclosed monitoring
-                before enabling this option. WorkPulse recommends transparent monitoring as a
-                default.
-              </p>
-            </CardContent>
-          </Card>
+          {/* Silent-monitoring toggle removed: the desktop agent doesn't implement a non-silent
+              (notification/tray-indicator) mode, so the control had no effect. The `silent` field is
+              still carried through load→save unchanged to keep the update-policy payload valid. */}
 
           {canManage && (
             <SettingsSaveBar
