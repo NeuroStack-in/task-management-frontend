@@ -1,6 +1,7 @@
 /**
  * Device fleet — the real backend (`fleet` context, LLD §18). `GET /v1/fleet` lists the org's agent
- * devices with **read-time connectivity** (online/idle/offline, derived from the last heartbeat) and
+ * devices with **read-time connectivity** (online/idle/offline — from a live MQTT presence signal
+ * when the device is enrolled on the push rail, else derived from the last heartbeat) and
  * latest telemetry. The devices are the `AgentDevice` items the `ingest-processor` writes from each
  * agent's heartbeat — so the list is empty until agents are actually enrolled and reporting.
  */
@@ -19,6 +20,11 @@ export interface ApiDevice {
   last_heartbeat: number;
   /** `online` | `idle` | `offline`. */
   connectivity: string;
+  /**
+   * True when `connectivity` came from a live MQTT presence signal (the broker observed the socket)
+   * rather than the 10-minute heartbeat window. Absent on responses from before the push rail.
+   */
+  presence_live?: boolean;
   /** `active` | `deactivated`. */
   state: string;
   cpu_pct: number;

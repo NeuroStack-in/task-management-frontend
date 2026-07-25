@@ -129,7 +129,17 @@ function DeviceRow({
 }) {
   const meta = connMeta(d.connectivity);
   return (
-    <TableRow className="cursor-pointer" onClick={onOpen}>
+    <TableRow
+      className="cursor-pointer"
+      onClick={onOpen}
+      // `presence_live` distinguishes an observed socket state from an inferred one — the tooltip
+      // is the only place that difference is worth surfacing; the badge itself stays uncluttered.
+      title={
+        d.presence_live
+          ? "Live connection status (push rail)"
+          : "Status inferred from the last check-in"
+      }
+    >
       <TableCell className="pl-6">
         <div className="flex items-center gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
