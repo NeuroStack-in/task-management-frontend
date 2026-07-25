@@ -133,6 +133,7 @@ export function IntegrationsMarketplace() {
             row={row}
             canManage={canManage}
             busy={busy === row.provider}
+            comingSoon={COMING_SOON.has(row.provider)}
             onConnect={() => onConnect(row.provider)}
             onDisconnect={() => onDisconnect(row.provider, row.label)}
           />
@@ -144,16 +145,25 @@ export function IntegrationsMarketplace() {
   );
 }
 
+/**
+ * Providers shown but temporarily switched off in the UI — rendered blurred and non-interactive
+ * with a "Coming soon" overlay. The backend still lists and can connect them; this is a front-end
+ * gate only (e.g. Google Calendar is parked until its OAuth verification lands).
+ */
+const COMING_SOON = new Set<string>(["google_calendar"]);
+
 function ProviderCard({
   row,
   canManage,
   busy,
+  comingSoon,
   onConnect,
   onDisconnect,
 }: {
   row: ApiIntegration;
   canManage: boolean;
   busy: boolean;
+  comingSoon?: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
@@ -162,6 +172,41 @@ function ProviderCard({
   // A personal connection is the user's own to make; an org-wide one is an admin action, because
   // connecting hands WorkPulse a credential to the whole company's workspace.
   const mayAct = row.org_wide ? canManage : true;
+
+  // Parked in the UI: blur a representative card and overlay a "Coming soon" badge, made inert so
+  // nothing can fire. The backend still supports the provider — this is a front-end pause only.
+  if (comingSoon) {
+    return (
+      <Card className="relative overflow-hidden">
+        <div className="pointer-events-none select-none blur-[3px]" aria-hidden>
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
+                <ProviderLogo provider={row.provider} className="size-6" />
+              </span>
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  {row.label}
+                  <Badge variant="secondary" className="text-xs">
+                    {row.org_wide ? "Organization" : "Personal"}
+                  </Badge>
+                </CardTitle>
+                <CardDescription className="mt-1">Not connected</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Button disabled>Connect</Button>
+          </CardContent>
+        </div>
+        <div className="absolute inset-0 flex items-center justify-center bg-background/40">
+          <Badge variant="secondary" className="text-sm font-medium shadow-soft">
+            Coming soon
+          </Badge>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card>
