@@ -153,4 +153,9 @@ export const SLACK_EVENTS: { key: string; label: string; description: string }[]
     label: "Payroll finalized",
     description: "A pay period is closed",
   },
+  {
+    key: "projects.task_assigned",
+    label: "Task assigned",
+    description: "Someone is assigned a new task",
+  },
 ];
