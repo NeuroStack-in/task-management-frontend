@@ -31,7 +31,6 @@ export const PALETTES: PaletteDef[] = [
   { id: "burgundy", name: "Burgundy", note: "Deep red", swatch: "#8c3f4d" },
   { id: "fireopal", name: "Fire Opal", note: "Warm coral", swatch: "#ef6448" },
   { id: "iron", name: "Iron", note: "Neutral slate", swatch: "#3f4855" },
-  { id: "grayscale", name: "Grayscale", note: "Monochrome", swatch: "#6b7280" },
 ];
 
 const PALETTE_IDS = new Set(PALETTES.map((p) => p.id));
