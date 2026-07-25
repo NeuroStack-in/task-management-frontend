@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { TimerStatCard } from "./timer-stat-card";
+import { MeetingHoursCard } from "@/modules/integrations/components/meeting-hours-card";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader } from "@/components/shared/loader";
@@ -89,6 +90,7 @@ export function PersonalDashboard() {
       {/* Personal KPI strip */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <TimerStatCard />
+        <MeetingHoursCard />
         <StatCard
           label="Hours this week"
           value={mounted ? weekHours.toFixed(1) : "—"}

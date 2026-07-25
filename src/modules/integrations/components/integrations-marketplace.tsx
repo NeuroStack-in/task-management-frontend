@@ -14,6 +14,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -23,6 +30,7 @@ import {
   getAuthorizeUrl,
   getSlackConfig,
   listIntegrations,
+  listSlackChannels,
   sendSlackTest,
   setSlackConfig,
   SLACK_EVENTS,
@@ -233,8 +241,13 @@ function ProviderCard({
  * private by default and leave data is sensitive, so posting somewhere nobody chose would be worse
  * than posting nothing. The copy says so rather than leaving it to be discovered.
  */
+// Sentinel for "no explicit channel — fall back to the default". A Select can't hold "", so the
+// empty routing choice needs a real value; it's mapped back to "" on save.
+const USE_DEFAULT = "__default__";
+
 function SlackRouting() {
   const [config, setConfig] = useState<SlackConfig | null>(null);
+  const [channels, setChannels] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -243,9 +256,21 @@ function SlackRouting() {
       .then(setConfig)
       // A 404 means "connected, but never configured" — an empty editor, not an error.
       .catch(() => setConfig({ default_channel: "", channels: {} }));
+    // The picker's whole reason to exist. If it fails (scope missing, transient), fall back to
+    // free-text entry rather than blocking routing entirely.
+    listSlackChannels()
+      .then(setChannels)
+      .catch(() => setChannels([]));
   }, []);
 
   if (!config) return null;
+
+  // A channel already routed but no longer returned by Slack (renamed/archived) must still be
+  // selectable, or saving would silently drop it. Merge stored values into the option list.
+  const known = channels ?? [];
+  const routed = [config.default_channel, ...Object.values(config.channels)].filter(Boolean);
+  const options = Array.from(new Set([...known, ...routed])).sort();
+  const usePicker = known.length > 0;
 
   const save = async () => {
     setSaving(true);
@@ -287,37 +312,88 @@ function SlackRouting() {
       <CardContent className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="default-channel">Default channel</Label>
-          <Input
-            id="default-channel"
-            placeholder="#general"
-            value={config.default_channel}
-            onChange={(e) =>
-              setConfig({ ...config, default_channel: e.target.value })
-            }
-          />
+          {usePicker ? (
+            <Select
+              value={config.default_channel || ""}
+              onValueChange={(v) =>
+                setConfig({ ...config, default_channel: v as string })
+              }
+            >
+              <SelectTrigger id="default-channel" className="w-full sm:w-64">
+                <SelectValue placeholder="Choose a channel…" />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id="default-channel"
+              placeholder="#general"
+              value={config.default_channel}
+              onChange={(e) =>
+                setConfig({ ...config, default_channel: e.target.value })
+              }
+            />
+          )}
         </div>
 
         <div className="space-y-3">
-          {SLACK_EVENTS.map((ev) => (
-            <div key={ev.key} className="flex items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{ev.label}</p>
-                <p className="text-xs text-muted-foreground">{ev.description}</p>
+          {SLACK_EVENTS.map((ev) => {
+            const current = config.channels[ev.key] ?? "";
+            return (
+              <div key={ev.key} className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{ev.label}</p>
+                  <p className="text-xs text-muted-foreground">{ev.description}</p>
+                </div>
+                {usePicker ? (
+                  <Select
+                    value={current || USE_DEFAULT}
+                    onValueChange={(v) => {
+                      const next = v === USE_DEFAULT ? "" : (v as string);
+                      setConfig({
+                        ...config,
+                        channels: { ...config.channels, [ev.key]: next },
+                      });
+                    }}
+                  >
+                    <SelectTrigger
+                      className="w-44"
+                      aria-label={`${ev.label} channel`}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={USE_DEFAULT}>Default channel</SelectItem>
+                      {options.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    className="w-44"
+                    placeholder="default"
+                    aria-label={`${ev.label} channel`}
+                    value={current}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        channels: { ...config.channels, [ev.key]: e.target.value },
+                      })
+                    }
+                  />
+                )}
               </div>
-              <Input
-                className="w-44"
-                placeholder="default"
-                aria-label={`${ev.label} channel`}
-                value={config.channels[ev.key] ?? ""}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    channels: { ...config.channels, [ev.key]: e.target.value },
-                  })
-                }
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="flex gap-2">

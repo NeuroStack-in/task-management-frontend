@@ -94,6 +94,38 @@ export async function sendSlackTest(channel?: string): Promise<string> {
   return res.channel;
 }
 
+/** `GET /v1/integrations/slack/channels` — public channels for the routing dropdown. */
+export async function listSlackChannels(): Promise<string[]> {
+  const res = await apiFetch<{ channels: { name: string }[] }>(
+    "/v1/integrations/slack/channels",
+  );
+  return (res.channels ?? []).map((c) => c.name);
+}
+
+/** One day's meeting time. Mirrors `calendar_summary::dto::DayMeetings`. */
+export interface DayMeetings {
+  date: string;
+  meeting_sec: number;
+}
+
+export interface CalendarSummary {
+  from: string;
+  to: string;
+  /** Whether the caller has their own calendar connected — drives connect-nudge vs zero-state. */
+  connected: boolean;
+  days: DayMeetings[];
+  total_sec: number;
+}
+
+/** `GET /v1/me/integrations/calendar/summary?from=&to=` — the caller's meeting hours per day. */
+export async function getCalendarSummary(
+  from: string,
+  to: string,
+): Promise<CalendarSummary> {
+  const qs = new URLSearchParams({ from, to }).toString();
+  return apiFetch<CalendarSummary>(`/v1/me/integrations/calendar/summary?${qs}`);
+}
+
 /** The events Slack can announce, for the routing editor. Mirrors the ContextSpec's `consumes`. */
 export const SLACK_EVENTS: { key: string; label: string; description: string }[] = [
   {
