@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { Check, Monitor, Moon, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -17,7 +17,6 @@ import { FONTS, applyFont, currentFont } from "@/lib/fonts";
 import {
   PALETTES,
   applyPalette,
-  coercePalette,
   currentPalette,
   DEFAULT_PALETTE,
 } from "@/lib/palette";
@@ -89,7 +88,7 @@ export function AppearanceSettings() {
 
   // The server holds the account-wide theme + palette; they apply instantly per browser and sync
   // across the account's devices.
-  const { serverTheme, serverPalette, saveTheme, savePalette } = useAppearance();
+  const { serverPalette, saveTheme, savePalette } = useAppearance();
 
   // next-themes + the persisted font resolve on the client; avoid an
   // SSR/hydration mismatch by reading them after mount.
@@ -100,26 +99,12 @@ export function AppearanceSettings() {
   }, []);
   const active = mounted ? theme : undefined;
 
-  // Hydrate the theme from the account once (so it follows the user across devices), but only
-  // adopt it, not re-push it. Guarded so we don't fight the user's clicks after the first sync.
-  const hydratedRef = useRef(false);
+  // Adopting the account's stored theme/palette is the shell's job now (`AppearanceSync`), so it
+  // happens on every screen rather than only this one. This just mirrors whatever ended up applied,
+  // so the selected swatch is right even if the sync landed after this page mounted.
   useEffect(() => {
-    if (hydratedRef.current || !serverTheme) return;
-    hydratedRef.current = true;
-    if (serverTheme !== theme) setTheme(serverTheme);
-  }, [serverTheme, theme, setTheme]);
-
-  // Same one-shot hydration for the palette: adopt the account's stored palette on load (so it
-  // follows the user across devices), then let their clicks win.
-  const paletteHydratedRef = useRef(false);
-  useEffect(() => {
-    if (paletteHydratedRef.current || serverPalette === null) return;
-    paletteHydratedRef.current = true;
-    const stored = coercePalette(serverPalette);
-    if (stored !== currentPalette()) {
-      applyPalette(stored);
-      setPalette(stored);
-    }
+    if (serverPalette === null) return;
+    setPalette(currentPalette());
   }, [serverPalette]);
 
   const chooseTheme = (value: AppearanceTheme) => {
