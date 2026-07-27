@@ -215,9 +215,9 @@ export async function deleteEmployee(userId: string): Promise<void> {
 
 /**
  * The created invite. **`token` and `otp` are returned exactly once** — only their hashes are
- * stored, so they can never be retrieved again. The server also attempts an email, but SES delivery
- * isn't enabled in this environment, so the admin relays these manually. There is **no list-invites
- * endpoint** (GET is 405), so a created invite can only be acted on (revoke/resend) right here.
+ * stored, so they can never be retrieved again. The server emails them (Resend, via the
+ * notifications rail), and **the UI deliberately does not display them**: the invitee is the only
+ * party who should ever hold the credential. Treat them as secrets if you consume this type.
  */
 export interface ApiInviteCreated {
   invite_id: string;
@@ -251,14 +251,42 @@ export function createInvite(body: {
   });
 }
 
-/** `POST /v1/employees/invites/{id}/revoke`. */
+/** One row of `GET /v1/employees/invites`. Carries **no token/OTP** — those are emailed to the
+ *  invitee and never readable again (see `ApiInviteCreated`). */
+export interface ApiInvite {
+  invite_id: string;
+  emp_id: string;
+  email: string;
+  role_id: string;
+  department_id: string;
+  team_id?: string;
+  title: string;
+  /** `pending` · `revoked` · `accepted`. */
+  status: string;
+  /** Epoch **seconds**. Expiry is lazy server-side, so a `pending` row whose `expires_at` is in the
+   *  past is expired — compare against now rather than trusting `status` alone. */
+  expires_at: number;
+  /** Epoch **millis**. */
+  created_at: number;
+  created_by: string;
+}
+
+/** `GET /v1/employees/invites` — every invite the org has minted, newest first.
+ *  Requires `employees:read` (same bit as the directory — an invite is a not-yet-employee). */
+export function listInvites(): Promise<ApiInvite[]> {
+  return apiFetch<ApiInvite[]>("/v1/employees/invites");
+}
+
+/** `POST /v1/employees/invites/{id}/revoke` — marks it revoked and frees the email for re-invite. */
 export async function revokeInvite(inviteId: string): Promise<void> {
   await apiFetch(`/v1/employees/invites/${encodeURIComponent(inviteId)}/revoke`, {
     method: "POST",
   });
 }
 
-/** `POST /v1/employees/invites/{id}/resend` — re-attempts delivery (new email, same invite). */
+/** `POST /v1/employees/invites/{id}/resend` — **rotates** the token + OTP, resets the 7-day expiry,
+ *  and re-emits the invite email. The invitee's previous link/OTP stops working, so this replaces
+ *  a lost invite rather than nudging the same one. */
 export async function resendInvite(inviteId: string): Promise<void> {
   await apiFetch(`/v1/employees/invites/${encodeURIComponent(inviteId)}/resend`, {
     method: "POST",

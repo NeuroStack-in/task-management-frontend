@@ -8,6 +8,7 @@ vi.mock("@/lib/api", () => ({
 import { apiFetch } from "@/lib/api";
 import {
   createInvite,
+  listInvites,
   deactivateEmployee,
   departmentMap,
   getEmployeeProfile,
@@ -72,6 +73,11 @@ describe("employees.service route contract", () => {
       method: "POST",
       body: JSON.stringify(body),
     });
+  });
+
+  it("listInvites GETs /v1/employees/invites", async () => {
+    await listInvites();
+    expect(mock).toHaveBeenCalledWith("/v1/employees/invites");
   });
 
   it("revokeInvite POSTs the encoded revoke path", async () => {
