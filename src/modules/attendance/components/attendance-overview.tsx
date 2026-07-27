@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
+import { todayIso } from "@/lib/format";
 import { LogDatePicker } from "./attendance-log";
 import type {
   AttendanceDate,
@@ -66,6 +67,11 @@ export function AttendanceOverview({
   loading: boolean;
   note: string | null;
 }) {
+  // Attendance is a record of what already happened, so neither end of a custom range may reach
+  // past today. Read per render (not at module scope) so a tab left open overnight still bounds to
+  // the real today rather than the day the page was loaded.
+  const today = todayIso();
+
   // "Present" counts everyone who showed up (present + partial already fold into counts.present;
   // late is 0 from oversight and adds nothing).
   const present = counts.present + counts.late;
@@ -164,7 +170,7 @@ export function AttendanceOverview({
               <DatePicker
                 value={start}
                 onChange={onStartChange}
-                max={end || undefined}
+                max={end || today}
                 placeholder="Start date"
               />
               <span className="text-sm text-muted-foreground">–</span>
@@ -172,6 +178,7 @@ export function AttendanceOverview({
                 value={end}
                 onChange={onEndChange}
                 min={start || undefined}
+                max={today}
                 placeholder="End date"
               />
             </div>

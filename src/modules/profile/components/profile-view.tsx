@@ -26,7 +26,7 @@ import {
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
-import { initials } from "@/lib/format";
+import { initials, todayIso } from "@/lib/format";
 import { isWithinSize, MB } from "@/lib/validation";
 import { ApiError } from "@/lib/api";
 import {
@@ -677,6 +677,7 @@ function RichProfile({
               <DatePicker
                 value={form.dob}
                 onChange={set("dob")}
+                max={todayIso()}
                 className="w-full"
               />
             </DialogField>

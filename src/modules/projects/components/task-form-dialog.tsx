@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
+import { initials, todayIso } from "@/lib/format";
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -50,6 +50,18 @@ const schema = z.object({
 });
 
 type FormShape = z.infer<typeof schema>;
+
+/**
+ * The schema, closed over the earliest due date this form accepts. `dueDate` is optional here (a
+ * task can be undated), so the rule is only "if set, not already past" — enforced alongside the
+ * picker bound because a pre-filled `initial` never passes through the picker.
+ */
+function schemaWithMinDue(minDue: string) {
+  return schema.refine((v) => !v.dueDate || v.dueDate >= minDue, {
+    path: ["dueDate"],
+    message: "Due date can't be in the past",
+  });
+}
 
 const PRIORITY_ORDER: TaskPriority[] = ["high", "medium", "low"];
 
@@ -79,6 +91,13 @@ export function TaskFormDialog({
   initial,
   onSubmit,
 }: TaskFormDialogProps) {
+  // Today, except for an existing task already past due — which keeps its own date as the floor so
+  // editing its status or assignee isn't blocked by a deadline that can no longer be met.
+  const minDue = useMemo(() => {
+    const t = todayIso();
+    return initial?.dueDate && initial.dueDate < t ? initial.dueDate : t;
+  }, [initial?.dueDate]);
+
   const {
     register,
     handleSubmit,
@@ -86,7 +105,7 @@ export function TaskFormDialog({
     control,
     formState: { errors },
   } = useForm<FormShape>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schemaWithMinDue(minDue)),
     defaultValues: { ...EMPTY, ...initial },
   });
 
@@ -284,6 +303,7 @@ export function TaskFormDialog({
                     <DatePicker
                       value={field.value}
                       onChange={field.onChange}
+                      min={minDue}
                       className="w-full"
                     />
                   )}

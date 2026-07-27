@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
+import { initials, todayIso } from "@/lib/format";
 import type { UserMini } from "../lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 
@@ -66,6 +66,21 @@ const schema = z.object({
 });
 
 type FormShape = z.infer<typeof schema>;
+
+/**
+ * The schema, closed over the earliest deadline this form will accept — a deadline that has already
+ * passed is not a deadline. Enforced here as well as on the picker, because the picker only stops
+ * *clicking* a past day; the value can still arrive pre-filled from `initial`.
+ *
+ * `minDue` is normally today, but in edit mode it relaxes to a project's own already-past deadline
+ * (see `minDue` below) so that editing anything *else* on an overdue project isn't blocked by it.
+ */
+function schemaWithMinDue(minDue: string) {
+  return schema.refine((v) => !v.dueDate || v.dueDate >= minDue, {
+    path: ["dueDate"],
+    message: "Deadline can't be in the past",
+  });
+}
 
 const fieldClass =
   "h-9 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
@@ -112,6 +127,14 @@ export function ProjectFormDialog({
     [initial],
   );
 
+  // The deadline floor: today, so a new project can't be created already overdue. An existing
+  // project whose deadline has passed keeps its own value as the floor, so editing its other fields
+  // isn't blocked by a date nobody can now change to something valid.
+  const minDue = useMemo(() => {
+    const t = todayIso();
+    return initial?.dueDate && initial.dueDate < t ? initial.dueDate : t;
+  }, [initial?.dueDate]);
+
   const {
     register,
     handleSubmit,
@@ -121,7 +144,7 @@ export function ProjectFormDialog({
     control,
     formState: { errors },
   } = useForm<FormShape>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schemaWithMinDue(minDue)),
     defaultValues: { ...EMPTY, ...initialForm },
   });
 
@@ -250,6 +273,7 @@ export function ProjectFormDialog({
                   <DatePicker
                     value={field.value}
                     onChange={field.onChange}
+                    min={minDue}
                     className={cn("w-full", errors.dueDate && "border-destructive")}
                   />
                 )}

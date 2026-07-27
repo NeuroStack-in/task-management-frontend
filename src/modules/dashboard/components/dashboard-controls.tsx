@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
+import { todayIso } from "@/lib/format";
 
 export function DashboardControls({
   range,
@@ -38,6 +39,9 @@ export function DashboardControls({
   onStartChange: (v: string) => void;
   onEndChange: (v: string) => void;
 }) {
+  // The dashboard summarises recorded activity, so a range can never extend into the future. Read
+  // per render (not at module scope) so a tab left open overnight bounds to the real today.
+  const today = todayIso();
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       {/* Range segmented control + custom-range pickers */}
@@ -65,7 +69,7 @@ export function DashboardControls({
             <DatePicker
               value={start}
               onChange={onStartChange}
-              max={end || undefined}
+              max={end || today}
               placeholder="Start date"
             />
             <span className="text-sm text-muted-foreground">–</span>
@@ -73,6 +77,7 @@ export function DashboardControls({
               value={end}
               onChange={onEndChange}
               min={start || undefined}
+              max={today}
               placeholder="End date"
             />
           </div>

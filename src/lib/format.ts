@@ -1,5 +1,16 @@
 /** Formatting helpers usable from both server and client components. */
 
+/**
+ * True when `s` is a UUID (e.g. a Cognito `sub` / raw user id). Opaque UUIDs are never shown in the
+ * UI — a display value that's a UUID should be suppressed or replaced with a human id (emp code,
+ * project key). Accepts any hex-quad UUID shape, not just v4.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuid(s: string | null | undefined): boolean {
+  return typeof s === "string" && UUID_RE.test(s.trim());
+}
+
 /** Two-letter uppercase initials from a full name. */
 export function initials(name: string): string {
   return name
@@ -43,6 +54,24 @@ export function formatDuration(totalSeconds: number): string {
   const s = totalSeconds % 60;
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+/**
+ * A `Date` as a **local** ISO day (`YYYY-MM-DD`) — the format every `DatePicker`/`Calendar`
+ * `value`/`min`/`max` speaks.
+ *
+ * Deliberately not `toISOString().slice(0,10)`, which converts to UTC first and so reports
+ * *tomorrow* for anyone east of UTC after their local evening (IST is +5:30) — which would let a
+ * "no future dates" bound leak a day, and make "today" unselectable.
+ */
+export function isoDay(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Today as a local ISO day. The bound for "no future dates" / floor for "no past dates". */
+export function todayIso(): string {
+  return isoDay(new Date());
 }
 
 /** Minutes/hours/days-ago label. */
