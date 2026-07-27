@@ -886,7 +886,10 @@ function groupCaptures(shots: ShotRow[]): Capture[] {
     else byMoment.set(s.captured_at, [s]);
   }
   return [...byMoment.entries()]
-    .sort((a, b) => a[0] - b[0])
+    // Newest first: the useful frame is almost always the most recent one — especially right after
+    // a "Capture now", where the whole point is to see what just came back. The lightbox inherits
+    // this order, so prev/next walks the grid exactly as it reads.
+    .sort((a, b) => b[0] - a[0])
     .map(([capturedAt, group]) => {
       const monitors = [...group].sort(
         (a, b) => (a.display ?? 0) - (b.display ?? 0),
@@ -960,8 +963,8 @@ function EmployeeCaptures({
     [allCaptures, from, to, flag],
   );
 
-  // The viewer walks every monitor of every visible capture in order, so the arrow keys move
-  // through the day exactly as it was captured rather than skipping second monitors.
+  // The viewer walks every monitor of every visible capture in grid order (newest first), so the
+  // arrow keys move through the day exactly as it reads rather than skipping second monitors.
   const flat = useMemo(() => captures.flatMap((c) => c.monitors), [captures]);
   const firstIndexOfCapture = useMemo(() => {
     const m = new Map<string, number>();
