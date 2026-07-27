@@ -61,7 +61,7 @@ import {
 import { TablePagination } from "@/components/shared/table-pagination";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { initials } from "@/lib/format";
+import { initials, isUuid } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -97,7 +97,7 @@ function exportEmployeeCsv(d: EmployeeProfileData) {
   const rows: (string | number)[][] = [
     ["Field", "Value"],
     ["Employee", d.name],
-    ["Employee ID", d.empCode],
+    ["Employee ID", isUuid(d.empCode) ? "—" : d.empCode],
     ["Role", d.roleName],
     ["Title", d.jobTitle],
     ["Department", d.department],

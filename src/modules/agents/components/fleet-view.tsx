@@ -185,9 +185,8 @@ function DeviceRow({
             <span className="truncate">{ownerName}</span>
           </div>
         ) : d.user_id ? (
-          <span className="font-mono text-xs text-muted-foreground" title={d.user_id}>
-            {d.user_id.slice(0, 8)}…
-          </span>
+          // The owner's name hasn't resolved yet — show that, never the raw Cognito sub (a UUID).
+          <span className="text-xs text-muted-foreground">Unknown user</span>
         ) : (
           <span className="text-xs text-muted-foreground">Not reported yet</span>
         )}

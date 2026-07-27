@@ -45,6 +45,7 @@ import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { InviteDialog } from "./invite-dialog";
+import { PendingInvites } from "./pending-invites";
 import { useEmployees, type EmployeeRow } from "../use-employees";
 
 export type { EmployeeRow };
@@ -57,7 +58,8 @@ const REPORT_COLUMNS = [
 ];
 const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
 const reportRow = (e: EmployeeRow) => [
-  e.empId ?? e.id, e.name, e.email, e.roleName, e.jobTitle, e.department, e.team, e.status, pct(e.productivityScore),
+  // Human employee code only — never fall back to the opaque UUID.
+  e.empId ?? "", e.name, e.email, e.roleName, e.jobTitle, e.department, e.team, e.status, pct(e.productivityScore),
 ];
 
 function exportEmployeesCsv(list: EmployeeRow[]) {
@@ -194,6 +196,8 @@ export function EmployeesView() {
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Bumped when an invite is created, so the Invited section refetches without a page reload.
+  const [invitesVersion, setInvitesVersion] = useState(0);
 
   const allEmployees = employees;
   // Every row is a real directory user with a profile page — none are session-only.
@@ -439,7 +443,15 @@ export function EmployeesView() {
         </div>
       </div>
 
-      <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+      {/* Below the roster on purpose: invitees aren't employees yet, and the section renders
+          nothing at all when the org has never invited anyone. */}
+      <PendingInvites refreshKey={invitesVersion} />
+
+      <InviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        onCreated={() => setInvitesVersion((v) => v + 1)}
+      />
     </div>
   );
 }

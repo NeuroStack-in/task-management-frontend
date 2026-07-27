@@ -369,11 +369,10 @@ export function TimesheetGrid({
                             ) : null}
                             {r.name}
                           </p>
+                          {/* No raw id here — it's an opaque UUID (Cognito sub / project id), not a
+                              human-facing code. The project key shows as the badge above. */}
                           <p className="truncate text-xs text-muted-foreground">
-                            <span className="font-mono text-[0.65rem] text-muted-foreground/70">
-                              {r.isProject ? "PID" : "EID"} {r.id}
-                            </span>{" "}
-                            · {r.subtitle}
+                            {r.subtitle}
                           </p>
                         </div>
                       </div>
