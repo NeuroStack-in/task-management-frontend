@@ -14,6 +14,7 @@ import {
   updateRole,
   deleteRole,
   cloneRole,
+  restoreRole,
   type ApiRole,
   type ApiPermissionCatalog,
   type RolePayload,
@@ -29,6 +30,7 @@ export interface RolesState {
   update: (id: string, body: RolePayload) => Promise<ApiRole>;
   remove: (id: string) => Promise<void>;
   clone: (id: string, name?: string) => Promise<ApiRole>;
+  restore: (id: string) => Promise<ApiRole>;
 }
 
 export function useRoles(): RolesState {
@@ -98,7 +100,16 @@ export function useRoles(): RolesState {
     [reload],
   );
 
-  return { roles, catalog, loading, error, reload, create, update, remove, clone };
+  const restore = useCallback(
+    async (id: string) => {
+      const restored = await restoreRole(id);
+      reload();
+      return restored;
+    },
+    [reload],
+  );
+
+  return { roles, catalog, loading, error, reload, create, update, remove, clone, restore };
 }
 
 function messageOf(e: unknown): string {

@@ -58,6 +58,8 @@ export function RoleEditorDialog({
   onUpdate,
 }: RoleEditorDialogProps) {
   const isEdit = Boolean(role);
+  // A default role (Admin/Employee) — its name/scope are canonical; only permissions are editable.
+  const isSystem = Boolean(role?.system && !role?.is_owner);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [scope, setScope] = useState("self");
@@ -143,9 +145,13 @@ export function RoleEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="shrink-0 border-b p-6">
-          <DialogTitle>{isEdit ? "Edit role" : "Create role"}</DialogTitle>
+          <DialogTitle>
+            {isSystem ? `Edit ${role?.name} role` : isEdit ? "Edit role" : "Create role"}
+          </DialogTitle>
           <DialogDescription>
-            Define a name, data scope, and the permissions this role grants.
+            {isSystem
+              ? "This is a default role — its name and scope are fixed. Adjust which permissions it grants; use “Restore to default” to reset."
+              : "Define a name, data scope, and the permissions this role grants."}
           </DialogDescription>
         </DialogHeader>
 
@@ -161,6 +167,7 @@ export function RoleEditorDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Team Lead"
+                disabled={isSystem}
               />
             </div>
             <div className="space-y-2">
@@ -170,6 +177,7 @@ export function RoleEditorDialog({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Short summary"
+                disabled={isSystem}
               />
             </div>
           </div>
@@ -180,6 +188,7 @@ export function RoleEditorDialog({
               value={scope}
               onValueChange={(v) => setScope(v as string)}
               items={Object.fromEntries(SCOPES.map((s) => [s.value, s.label]))}
+              disabled={isSystem}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />

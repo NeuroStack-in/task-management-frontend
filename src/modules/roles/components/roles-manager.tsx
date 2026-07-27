@@ -8,6 +8,7 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -48,7 +49,8 @@ function permissionLabel(role: ApiRole): string {
 }
 
 export function RolesManager() {
-  const { roles, catalog, loading, error, reload, create, update, remove, clone } = useRoles();
+  const { roles, catalog, loading, error, reload, create, update, remove, clone, restore } =
+    useRoles();
   const { can } = usePermissions();
   const canManage = can("roles:manage");
 
@@ -74,6 +76,15 @@ export function RolesManager() {
       openEdit(created);
     } catch {
       toast.error("Couldn't clone the role. Try again.");
+    }
+  };
+
+  const handleRestore = async (role: ApiRole) => {
+    try {
+      await restore(role.id);
+      toast.success(`“${role.name}” restored to its default permissions.`);
+    } catch {
+      toast.error("Couldn't restore the role. Try again.");
     }
   };
 
@@ -192,9 +203,19 @@ export function RolesManager() {
                         <DropdownMenuItem onClick={() => handleClone(role)}>
                           <Copy className="size-4" /> Clone
                         </DropdownMenuItem>
-                        <DropdownMenuItem disabled={role.system} onClick={() => openEdit(role)}>
+                        {/* Owner isn't editable — it bypasses every permission check. Admin/Employee
+                            (and custom roles) are. */}
+                        <DropdownMenuItem
+                          disabled={role.is_owner}
+                          onClick={() => openEdit(role)}
+                        >
                           <Pencil className="size-4" /> Edit
                         </DropdownMenuItem>
+                        {role.system && !role.is_owner ? (
+                          <DropdownMenuItem onClick={() => handleRestore(role)}>
+                            <RotateCcw className="size-4" /> Restore to default
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem
                           variant="destructive"
                           disabled={role.system}

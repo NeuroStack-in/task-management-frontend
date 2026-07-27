@@ -118,6 +118,16 @@ export function cloneRole(id: string, name?: string): Promise<ApiRole> {
   });
 }
 
+/**
+ * Reset a customized system role (Admin/Employee) back to its built-in default permission set —
+ * `POST /v1/roles/{id}/restore`. Owner isn't editable/restorable, and a custom role has no default.
+ */
+export function restoreRole(id: string): Promise<ApiRole> {
+  return apiFetch<ApiRole>(`/v1/roles/${encodeURIComponent(id)}/restore`, {
+    method: "POST",
+  });
+}
+
 export async function assignRole(userId: string, roleId: string): Promise<void> {
   await apiFetch(`/v1/users/${encodeURIComponent(userId)}/role`, {
     method: "PUT",
