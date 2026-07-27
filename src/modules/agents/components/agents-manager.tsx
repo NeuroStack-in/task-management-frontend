@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
   MonitorSmartphone,
@@ -39,13 +40,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
 import {
   TableBody,
   TableCell,
@@ -88,13 +82,17 @@ function StatusIndicator({ status }: { status: AgentStatus }) {
 
 export function AgentsManager() {
   const { can } = usePermissions()
+  const router = useRouter()
   const canManage = can("agents:manage")
 
   const [agents, setAgents] = useState<Agent[]>(() => AGENTS.map((a) => ({ ...a })))
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [osFilter, setOsFilter] = useState("all")
-  const [selected, setSelected] = useState<Agent | null>(null)
+
+  /** A device has more state than a slide-over can hold — open its own page. */
+  const openDevice = (id: string) =>
+    router.push(`/settings/agents/${encodeURIComponent(id)}`)
 
   // Fleet-wide agent settings (dirty-aware save bar).
   const [saved, setSaved] = useState<AgentSettings>({ ...AGENT_SETTINGS_DEFAULTS })
@@ -122,7 +120,6 @@ export function AgentsManager() {
 
   function removeAgent(id: string, hostname: string) {
     setAgents((list) => list.filter((a) => a.id !== id))
-    setSelected(null)
     toast.success(`Removed ${hostname}`)
   }
 
@@ -253,7 +250,7 @@ export function AgentsManager() {
                   {filtered.map((a) => (
                     <TableRow
                       key={a.id}
-                      onClick={() => setSelected(a)}
+                      onClick={() => openDevice(a.id)}
                       className="cursor-pointer"
                     >
                       <TableCell className="py-3 pl-4">
@@ -307,7 +304,7 @@ export function AgentsManager() {
                               align="end"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <DropdownMenuItem onClick={() => setSelected(a)}>
+                              <DropdownMenuItem onClick={() => openDevice(a.id)}>
                                 View details
                               </DropdownMenuItem>
                               <DropdownMenuItem
@@ -432,122 +429,6 @@ export function AgentsManager() {
         />
       )}
 
-      {/* ── Detail sheet ── */}
-      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-          {selected && (
-            <>
-              <SheetHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <StatusIndicator status={selected.status} />
-                  {isOutdated(selected) && (
-                    <Badge className="bg-warning/15 font-normal text-warning">
-                      Outdated
-                    </Badge>
-                  )}
-                </div>
-                <SheetTitle className="text-left text-lg">
-                  {selected.hostname}
-                </SheetTitle>
-                <SheetDescription className="text-left">
-                  {selected.user} · {selected.email}
-                </SheetDescription>
-              </SheetHeader>
-
-              <div className="space-y-5 px-4 pb-8">
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Info label="Operating system" value={`${selected.os} ${selected.osVersion}`} />
-                  <Info label="Agent version" value={`v${selected.version}`} />
-                  <Info label="IP address" value={selected.ip} mono />
-                  <Info label="Last seen" value={selected.lastSeen} />
-                </div>
-
-                {/* Live resource usage */}
-                <div className="space-y-3 rounded-xl border p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Resource usage
-                  </p>
-                  <Meter label="CPU" value={selected.status === "offline" ? 0 : selected.cpu} />
-                  <Meter label="Memory" value={selected.status === "offline" ? 0 : selected.memory} />
-                  {selected.status === "offline" && (
-                    <p className="text-xs text-muted-foreground">
-                      Agent is offline — last reported {selected.lastSeen.toLowerCase()}.
-                    </p>
-                  )}
-                </div>
-
-                {canManage && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => toast.success(`Restart signal sent to ${selected.hostname}`)}
-                    >
-                      <Power className="size-4" /> Restart
-                    </Button>
-                    {isOutdated(selected) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          updateAgent(selected.id)
-                          setSelected((s) =>
-                            s ? { ...s, version: LATEST_AGENT_VERSION } : s,
-                          )
-                        }}
-                      >
-                        <RefreshCw className="size-4" /> Update
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => removeAgent(selected.id, selected.hostname)}
-                    >
-                      <Trash2 className="size-4" /> Remove
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
-    </div>
-  )
-}
-
-function Info({
-  label,
-  value,
-  mono,
-}: {
-  label: string
-  value: string
-  mono?: boolean
-}) {
-  return (
-    <div className="space-y-0.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={cn("font-medium", mono && "font-mono text-xs")}>{value}</p>
-    </div>
-  )
-}
-
-function Meter({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="tabular-nums">{value}%</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn("h-full rounded-full", value > 80 ? "bg-warning" : "bg-primary")}
-          style={{ width: `${value}%` }}
-        />
-      </div>
     </div>
   )
 }
