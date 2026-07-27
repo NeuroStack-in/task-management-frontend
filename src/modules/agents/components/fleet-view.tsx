@@ -44,6 +44,14 @@ const CONN_META: Record<string, { label: string; badge: string; dot: string }> =
 /** Shared with the device detail page — one source for status colors and time formatting. */
 export const connMeta = (c: string) => CONN_META[c] ?? CONN_META.offline;
 
+/** Status filter options — the map is both the option list and the trigger's value→label lookup. */
+const STATUS_FILTER_LABELS: Record<string, string> = {
+  all: "All statuses",
+  online: "Online",
+  idle: "Idle",
+  offline: "Offline",
+};
+
 export function lastSeen(ms: number): string {
   if (!ms) return "never";
   const diff = Date.now() - ms;
@@ -269,18 +277,25 @@ export function FleetView() {
             </div>
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as string)}>
               <SelectTrigger className="w-full sm:w-36">
-                <SelectValue />
+                {/* Base UI renders the raw *value* unless given a render function, so a bare
+                    `<SelectValue />` would show "all"/"online" instead of the option's label. */}
+                <SelectValue>
+                  {(v) => STATUS_FILTER_LABELS[v as string] ?? "All statuses"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="online">Online</SelectItem>
-                <SelectItem value="idle">Idle</SelectItem>
-                <SelectItem value="offline">Offline</SelectItem>
+                {Object.entries(STATUS_FILTER_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={osFilter} onValueChange={(v) => setOsFilter(v as string)}>
               <SelectTrigger className="w-full sm:w-36">
-                <SelectValue />
+                <SelectValue>
+                  {(v) => (v === "all" || !v ? "All OS" : String(v))}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All OS</SelectItem>
