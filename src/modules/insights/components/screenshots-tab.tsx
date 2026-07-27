@@ -39,6 +39,7 @@ import { Loader } from "@/components/shared/loader";
 import { useDataScope } from "@/hooks/use-data-scope";
 import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
+import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
@@ -127,7 +128,8 @@ export function ScreenshotsTab() {
    */
   const [openUser, setOpenUser] = useState<string | null>(null);
 
-  const { shots, loading, loadingMore, error, hasMore, loadMore } = useScreenshots(date);
+  const { shots, loading, loadingMore, error, hasMore, loadMore, reload } =
+    useScreenshots(date);
   const { inScope, loading: scopeLoading } = useDataScope();
   const { employees: directory } = useDirectory();
 
@@ -239,6 +241,7 @@ export function ScreenshotsTab() {
     const deptId = emp?.department_id;
     return (
       <EmployeeCaptures
+        userId={openUser}
         name={nameOf(openUser)}
         dept={deptId ? deptLabel(deptId) : "—"}
         device={mine.find((s) => s.device)?.device ?? ""}
@@ -246,6 +249,7 @@ export function ScreenshotsTab() {
         date={date}
         nameOf={nameOf}
         onBack={() => setOpenUser(null)}
+        onCaptured={reload}
       />
     );
   }
@@ -914,6 +918,7 @@ const hhmm = (ms: number) =>
  * already made instead of fanning out across dates.
  */
 function EmployeeCaptures({
+  userId,
   name,
   dept,
   device,
@@ -921,7 +926,10 @@ function EmployeeCaptures({
   date,
   nameOf,
   onBack,
+  onCaptured,
 }: {
+  /** Whose captures these are — the target for an on-demand capture (device resolved from it). */
+  userId: string;
   name: string;
   dept: string;
   device: string;
@@ -929,6 +937,8 @@ function EmployeeCaptures({
   date: string;
   nameOf: (id: string) => string;
   onBack: () => void;
+  /** Refetch the day's grid once the device confirms a capture landed. */
+  onCaptured: () => void;
 }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -987,7 +997,7 @@ function EmployeeCaptures({
             {device ? " · " + device : ""}
           </p>
         </div>
-        <div className="flex flex-wrap gap-5 text-sm">
+        <div className="flex flex-wrap items-center gap-5 text-sm">
           <Summary label="Captures" value={allCaptures.length} />
           <Summary label="Monitors" value={monitorCount} />
           <Summary
@@ -995,6 +1005,10 @@ function EmployeeCaptures({
             value={flaggedCount}
             tone={flaggedCount > 0 ? "text-destructive" : undefined}
           />
+          {/* On-demand capture belongs here rather than only on the device page: this is where
+              someone is already looking at a person's frames and wants a current one. The device
+              is resolved from the user inside the button. */}
+          <CaptureNowButton userId={userId} onCaptured={onCaptured} />
         </div>
       </div>
 

@@ -4,13 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Camera,
   Clock,
   MonitorSmartphone,
   User as UserIcon,
 } from "lucide-react";
-import { toast } from "sonner";
-import { usePermissions } from "@/hooks/use-permissions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +19,8 @@ import {
   getEmployeeProfile,
   type ApiEmployeeProfile,
 } from "@/modules/employees/services/employees.service";
-import { captureNow, getDevice, type ApiDevice } from "../services/fleet.service";
+import { getDevice, type ApiDevice } from "../services/fleet.service";
+import { CaptureNowButton } from "./capture-now-button";
 import { connMeta, lastSeen, Info, Meter } from "./fleet-view";
 import { cn } from "@/lib/utils";
 
@@ -38,76 +36,6 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
   const [device, setDevice] = useState<ApiDevice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [owner, setOwner] = useState<ApiEmployeeProfile | null>(null);
-  const [capturing, setCapturing] = useState(false);
-  const { can } = usePermissions();
-  // Both bits, mirroring the server: direct monitoring AND be allowed to see the result.
-  const canCapture = can("agents:manage") && can("screenshots:view");
-
-  /**
-   * Ask the device for a screenshot. The response only means "asked" — the device may still refuse
-   * (privacy pause, no timer running), and that answer arrives asynchronously on the push rail, so
-   * the copy here promises a request, never an image.
-   */
-  async function handleCaptureNow() {
-    setCapturing(true);
-    try {
-      await captureNow(agentId);
-      toast.success("Capture requested", {
-        description:
-          "The device decides — it declines during a privacy pause or when no timer is running.",
-      });
-    } catch (e) {
-      toast.error(
-        e instanceof ApiError ? e.message : "Couldn't request a capture.",
-      );
-    } finally {
-      setCapturing(false);
-    }
-  }
-
-  // The device's answer comes back as a `capture_result` push. Subscribing here (rather than
-  // polling) is the whole point of the rail; if the socket is down the toast simply never arrives
-  // and the audit log still records what happened.
-  useEffect(() => {
-    let stop: (() => void) | null = null;
-    if (!canCapture) return;
-    import("@/lib/push")
-      .then(({ startPush }) => {
-        stop = startPush((msg) => {
-          const m = msg as {
-            kind?: string;
-            agent_id?: string;
-            accepted?: boolean;
-            reason?: string;
-          } | null;
-          if (!m || m.kind !== "capture_result" || m.agent_id !== agentId) return;
-          if (m.accepted) {
-            toast.success("Screenshot captured", {
-              description: "It appears in the screenshots grid once the device uploads it.",
-            });
-          } else {
-            // The agent owns this vocabulary and may add reasons faster than this UI learns them
-            // (it already sends six), so an unknown reason must degrade to an honest sentence —
-            // never to a wrong one. See desktop/src-tauri/src/mqtt/capture.rs.
-            const REASONS: Record<string, string> = {
-              privacy_pause: "The employee has capture paused.",
-              not_tracking: "No timer is running on that device.",
-              no_consent: "The employee hasn't consented to capture.",
-              excepted: "The active window is on the exception list.",
-              upload_host_rejected: "The device wouldn't upload to that destination.",
-              capture_failed: "The device couldn't capture right now.",
-            };
-            toast.warning("Capture declined", {
-              description:
-                (m.reason && REASONS[m.reason]) ??
-                "The device declined the request.",
-            });
-          }
-        });
-      })
-      .catch(() => {});
-    return () => stop?.();
-  }, [agentId, canCapture]);
 
   useEffect(() => {
     let alive = true;
@@ -187,18 +115,7 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
           {device.state === "deactivated" && (
             <Badge className="bg-destructive/10 font-medium text-destructive">Deactivated</Badge>
           )}
-          {canCapture && device.state !== "deactivated" && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={capturing}
-              onClick={handleCaptureNow}
-              title="Ask this device for a screenshot now"
-            >
-              <Camera className="size-4" />
-              {capturing ? "Requesting…" : "Capture now"}
-            </Button>
-          )}
+          {device.state !== "deactivated" && <CaptureNowButton agentId={agentId} />}
         </div>
       </section>
 
