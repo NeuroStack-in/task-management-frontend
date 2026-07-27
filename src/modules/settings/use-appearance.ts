@@ -1,29 +1,29 @@
 "use client";
 
 /**
- * Per-user appearance prefs from the live backend (`GET/PUT /v1/me/appearance`, identity, LLD §17).
+ * The Settings → Appearance state: the account's stored theme + palette, and the writes that
+ * persist a new choice.
  *
- * The server stores `theme` (`light|dark|system`) + `palette` + a version. Both are hydrated from the
- * server on mount so they follow the account across devices, then saved back when the user picks a
- * new one — `next-themes` / the `data-palette` attribute still apply the choice instantly client-side;
- * these writes make it durable server-side rather than only in this browser's localStorage.
+ * The reads/writes themselves live in `services/appearance.service.ts` (one path, shared with the
+ * app-wide `AppearanceSync` in the shell). `next-themes` / the `data-palette` attribute still apply
+ * a choice instantly client-side; these writes make it durable for the account rather than only in
+ * this browser's localStorage.
  *
- * **Font is deliberately not synced** — there is no server field for it, so the font stays a
- * per-browser preference, honestly labelled as such in the UI.
- *
- * The writes are fire-and-forget from the UI's perspective: the choice already applied locally, so a
- * failed PUT only means it didn't persist to the account — surfaced (a toast), never silently swallowed.
+ * Writes are fire-and-forget from the UI's perspective — the choice already applied locally, so a
+ * failed PUT only means it didn't persist to the account. That is surfaced (a toast), never
+ * silently swallowed.
  */
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch, ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/api";
+import {
+  coerceTheme,
+  getAppearance,
+  saveAppearance,
+  type ApiAppearance,
+  type AppearanceTheme,
+} from "./services/appearance.service";
 
-export type AppearanceTheme = "light" | "dark" | "system";
-
-interface AppearanceView {
-  theme: string;
-  palette: string;
-  version: number;
-}
+export type { AppearanceTheme };
 
 export interface AppearanceState {
   /** The theme the server has stored for this account, once loaded. `null` until then. */
@@ -38,10 +38,6 @@ export interface AppearanceState {
   savePalette: (palette: string) => Promise<void>;
 }
 
-function coerceTheme(v: unknown): AppearanceTheme {
-  return v === "light" || v === "dark" ? v : "system";
-}
-
 export function useAppearance(): AppearanceState {
   const [serverTheme, setServerTheme] = useState<AppearanceTheme | null>(null);
   const [serverPalette, setServerPalette] = useState<string | null>(null);
@@ -50,7 +46,7 @@ export function useAppearance(): AppearanceState {
 
   useEffect(() => {
     let live = true;
-    apiFetch<AppearanceView>("/v1/me/appearance")
+    getAppearance()
       .then((v) => {
         if (!live) return;
         setServerTheme(coerceTheme(v.theme));
@@ -67,29 +63,17 @@ export function useAppearance(): AppearanceState {
     };
   }, []);
 
-  // The server's PUT merges (each field is `unwrap_or current`), so each save sends only the field it
-  // changes — the other is preserved server-side.
-  const apply = (v: AppearanceView) => {
+  const apply = (v: ApiAppearance) => {
     setServerTheme(coerceTheme(v.theme));
     setServerPalette(v.palette || "default");
   };
 
   const saveTheme = useCallback(async (theme: AppearanceTheme) => {
-    apply(
-      await apiFetch<AppearanceView>("/v1/me/appearance", {
-        method: "PUT",
-        body: JSON.stringify({ theme }),
-      }),
-    );
+    apply(await saveAppearance({ theme }));
   }, []);
 
   const savePalette = useCallback(async (palette: string) => {
-    apply(
-      await apiFetch<AppearanceView>("/v1/me/appearance", {
-        method: "PUT",
-        body: JSON.stringify({ palette }),
-      }),
-    );
+    apply(await saveAppearance({ palette }));
   }, []);
 
   return { serverTheme, serverPalette, loading, error, saveTheme, savePalette };
