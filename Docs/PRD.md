@@ -4,6 +4,8 @@
 
 > **Canonical authority:** [SPEC.md](SPEC.md) reconciles this document with TDD.md and PAGES.md. Where they conflict, SPEC.md wins. Scope is **PAGES.md V2 (29 sections)**; this PRD has been aligned to it.
 
+> **Status as of 2026-07-27:** the "Frontend Phase" framing is historical — the app is now wired to a real backend (Cognito auth + 21 module services over 110+ live routes). This PRD stays authoritative for **product requirements**; see [CLAUDE.md](../CLAUDE.md) for current implementation state.
+
 ## Table of Contents
 
 1. [Overview](#1-overview)

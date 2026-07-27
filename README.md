@@ -2,19 +2,19 @@
 
 A **Workforce Activity & Productivity Management Platform** — time tracking, task management, activity monitoring, and AI-powered productivity insights for modern teams.
 
-> **Phase 1 is frontend-only.** Every feature runs on mock data, static JSON, and simulated workflows — no backend, no real monitoring, no payments. The mock-service layer is the seam a real API drops into later.
+> **Wired to the live backend (as of 2026-07-27).** Authentication is real Cognito (SRP + Hosted-UI social sign-in) and ~every module calls the live API through `lib/api.ts` — 21 module services over 110+ `/v1/*` routes. The only remaining mock is deliberate: `mock-agents.ts` (device-fleet demo fallback) and `mock-time.ts` (a `formatHours` helper — the web timer is design-forbidden). Monitoring surfaces are wired but honest-empty until a desktop agent reports.
 
-WorkPulse has its own original visual identity (see [Docs/DESIGN.md](Docs/DESIGN.md)) — a calm, warm greige canvas with a sage accent and a recurring pulse-line motif. It is not modeled on any existing product.
+WorkPulse has its own original visual identity (see [Docs/DESIGN.md](Docs/DESIGN.md)) — the **Graphite & Indigo** palette (cool graphite neutrals + an indigo accent) with a recurring pulse-line motif. It is not modeled on any existing product.
 
 ## Quick start
 
 ```bash
 npm install
-npm run seed   # generate mock data into src/data/
-npm run dev    # http://localhost:3000
+cp .env.example .env.local   # set NEXT_PUBLIC_API_URL + Cognito pool config (required)
+npm run dev                  # http://localhost:3000
 ```
 
-Sign in with the demo account: **`owner@acme.test`** and any password (Organization Owner — full access).
+Sign in with the seeded Cognito account **`owner@acme.test`** (Organization Owner — full access) using its **real password** — auth is a genuine SRP exchange, so a wrong password fails. `npm run seed` regenerates the local JSON fixtures used for design/seed data.
 
 ## Scripts
 
@@ -26,12 +26,12 @@ Sign in with the demo account: **`owner@acme.test`** and any password (Organizat
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier write |
 | `npm run seed` | Regenerate mock data via Faker |
-| `npm run test` | Vitest (unit/component) |
-| `npm run test:e2e` | Playwright (E2E) |
+| `npm run test` | Vitest (unit/component) — `vitest.config.ts` is wired; ~15 tests run |
+| `npm run test:e2e` | Playwright (E2E) — script/dep exist but no `playwright.config.*` yet |
 
 ## Tech stack
 
-Next.js 15 (App Router) · React 18.3 · TypeScript · Tailwind v4 · shadcn/ui (Base UI primitives) · Zustand · React Hook Form + Zod · TanStack Table · Recharts · dnd-kit · next-themes · Faker.
+Next.js 15 (App Router) · React 18.3 · TypeScript · Tailwind v4 · shadcn/ui (Base UI primitives) · Zustand · React Hook Form + Zod · TanStack Table · Recharts · dnd-kit · next-themes · amazon-cognito-identity-js (auth) · mqtt (push doorbell) · maplibre-gl (maps) · qrcode.react (TOTP) · sonner · Vitest · Faker (dev).
 
 Fonts: **Plus Jakarta Sans** (display), **Inter** (body), **JetBrains Mono** (figures).
 
@@ -41,8 +41,8 @@ Module-first under `src/`:
 
 - `app/` — App Router. Route groups: `(auth)` (login, etc.) and `(app)` (authenticated, wrapped by `AuthGuard` + `DashboardShell`). `/` (landing) and `/onboarding` are standalone.
 - `modules/<name>/` — feature code (components, services, …). Pages stay thin and delegate here.
-- `stores/` — Zustand: `auth`, `roles`, `notification`, `timer`, `dashboard`, `ui`.
-- `lib/` — `rbac.ts`, `data.ts` (typed mock accessors), `format.ts`, `mock-jwt.ts`, `utils.ts`.
+- `stores/` — Zustand: `auth`, `roles`, `notification`, `dashboard`, `projects`, `tasks`, `assistant`, `features`, `entitlements`, `employees`, `geofence`, `page-header`, `ui` (no `timer` store — the web timer is design-forbidden).
+- `lib/` — `api.ts` (real backend client), `cognito.ts` / `oauth.ts` (auth), `push.ts` (MQTT doorbell), `rbac.ts`, `permission-bits.ts`, `format.ts`, `utils.ts`.
 - `constants/` — permission catalog, system roles, navigation tree.
 - `components/shared/` + `components/ui/` (shadcn).
 - `data/` — generated JSON (output of `npm run seed`; never edit by hand).
@@ -51,7 +51,7 @@ Module-first under `src/`:
 
 ## Status
 
-Phase 1 (Core Foundation) is implemented: auth, RBAC, app shell with a collapsible sidebar, the dashboard, and the Roles & Permissions manager. The remaining sections (of 29 total) are navigable placeholders, built out in later phases — see [Docs/SPEC.md](Docs/SPEC.md) §6.
+**Wired to the live backend (2026-07-27).** Real Cognito auth (SRP + Google/Microsoft social sign-in, invited-users-only) and ~every module consuming the live API via its `services/` layer — employees, projects, timesheets, attendance, leave, payroll, billing, roles, security, audit, settings/org, insights, integrations, notifications, fleet, and more. A shrinking few unbuilt sections (of 29 total) still render `<ComingSoon>`; enterprise/SAML SSO and payments are the notable absences. See [Docs/SPEC.md](Docs/SPEC.md) §6 and [CLAUDE.md](CLAUDE.md) for the current picture.
 
 ## Documentation
 

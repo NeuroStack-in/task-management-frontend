@@ -5,6 +5,8 @@
 
 > **Canonical authority:** [SPEC.md](SPEC.md) reconciles this document with PRD.md and PAGES.md. Where they conflict, SPEC.md wins. Scope is **PAGES.md V2 (29 sections)**; the timeline is **MVP-first phasing** (see [§25](#25-development-sequence)), not a literal 5-day target.
 
+> **Status as of 2026-07-27:** the "Backend services intentionally excluded / mock APIs" scope below is historical. The app is now wired to a real backend (Cognito auth + 21 module services over 110+ live `/v1/*` routes). This TDD stays authoritative for **frontend architecture**; see [CLAUDE.md](../CLAUDE.md) and [BACKEND-ALIGNMENT.md](BACKEND-ALIGNMENT.md) for current wiring.
+
 ## Scope
 
 This document defines the technical architecture for the Frontend Phase of the application.

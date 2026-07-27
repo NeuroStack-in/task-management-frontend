@@ -7,6 +7,8 @@
 - **Canonical scope source:** PAGES.md V2 — **29 sections** / 90–120 screens
 - **5-day target:** Aspirational. Real plan is **MVP-first phasing** (see §6).
 
+> **Status as of 2026-07-27:** the "Frontend only / no backend" framing above is historical. The app is now **wired to the live backend** — real Cognito auth and 21 module services over 110+ `/v1/*` routes. This SPEC remains the canonical **scope/behaviour** reference; for current wiring state read [CLAUDE.md](../CLAUDE.md) and [BACKEND-ALIGNMENT.md](BACKEND-ALIGNMENT.md).
+
 ---
 
 ## 1. Decisions (resolved)

@@ -8,6 +8,14 @@
 > **Revised 2026-07-17.** §1 (except 1.2/1.5/1.6), §2 and **all of §3 are done.** What remains is
 > §1.2/§1.5/§1.6 and §4. Read *Status* first — the backend moved a long way and three of the four
 > defects this doc used to warn about are fixed.
+>
+> **Update 2026-07-27 — §4 is now largely built out on the frontend.** The service seam exists for
+> ~every module: **21 module services (23 `*.service.ts` files) consume 110+ live `/v1/*` routes**,
+> none touching mock data. Treat the per-row "designed ≠ available" caveats below as mostly resolved
+> — verify against the actual `services/` file for the module you're touching. **Two corrections to
+> the notes below:** (a) **enterprise/SAML SSO was REMOVED 2026-07-24** — §1.1 is *not* reversed, the
+> product ships social sign-in only (Google/Microsoft via Cognito Hosted UI, invited-users-only);
+> (b) `/v1/me/profile` and `/v1/me/avatar` now exist, so the old "no `/me` endpoint" caveat is void.
 
 > ### Status — 2026-07-17
 >
@@ -24,7 +32,8 @@
 > and the `.route()` calls in each crate's `main.rs`, are the only real routes.**
 >
 > **4. Enterprise SSO is un-cut** — §1.1 is reversed. See `backend/WorkPulse-SSO.md` (**PROPOSED**,
-> still not approved).
+> still not approved). *(Superseded 2026-07-27: enterprise/SAML SSO was **removed** — the product
+> ships social sign-in only. §1.1 stands as originally cut.)*
 
 ---
 
