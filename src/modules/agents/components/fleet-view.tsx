@@ -14,8 +14,11 @@ import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
+import { useDirectory } from "@/hooks/use-directory";
+import { initials } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -129,10 +132,13 @@ export function Info({ label, value, mono }: { label: string; value: string; mon
 function DeviceRow({
   d,
   behind,
+  ownerName,
   onOpen,
 }: {
   d: ApiDevice;
   behind: boolean;
+  /** Resolved from the directory; `null` while it loads or when the id isn't in it. */
+  ownerName: string | null;
   onOpen: () => void;
 }) {
   const meta = connMeta(d.connectivity);
@@ -167,6 +173,26 @@ function DeviceRow({
         </div>
       </TableCell>
       <TableCell>
+        {/* Every agent runs under a signed-in account and the heartbeat stamps that user onto the
+            device row, so this is the device's owner — not a guess. The fallbacks are deliberately
+            distinct: a raw id means the person is outside your directory scope (or deactivated),
+            while "not reported yet" means the agent hasn't heartbeated since being installed. */}
+        {ownerName ? (
+          <div className="flex items-center gap-2">
+            <Avatar className="size-7">
+              <AvatarFallback className="text-[10px]">{initials(ownerName)}</AvatarFallback>
+            </Avatar>
+            <span className="truncate">{ownerName}</span>
+          </div>
+        ) : d.user_id ? (
+          <span className="font-mono text-xs text-muted-foreground" title={d.user_id}>
+            {d.user_id.slice(0, 8)}…
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">Not reported yet</span>
+        )}
+      </TableCell>
+      <TableCell>
         <Badge className={cn("font-medium", meta.badge)}>
           <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
           {meta.label}
@@ -196,6 +222,16 @@ export function FleetView() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [osFilter, setOsFilter] = useState("all");
 
+  // user_id → display name. The directory is cached process-wide by the hook, so this costs at
+  // most one shared fetch; a caller without `employees:view` gets an empty roster and the rows
+  // fall back to the id rather than erroring.
+  const { employees: directory } = useDirectory();
+  const nameById = useMemo(
+    () => new Map(directory.map((e) => [e.user_id, e.name])),
+    [directory],
+  );
+  const ownerName = (userId: string) => (userId ? (nameById.get(userId) ?? null) : null);
+
   const devices = useMemo(() => fleet?.devices ?? [], [fleet]);
   const latest = useMemo(() => latestVersion(devices), [devices]);
   const isBehind = (d: ApiDevice) =>
@@ -213,7 +249,17 @@ export function FleetView() {
     if (osFilter !== "all" && d.os !== osFilter) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    return [d.hostname, d.agent_id, d.os, d.os_version, d.ip, d.agent_version]
+    // The employee name is searchable because it is now a visible column — a field you can read
+    // but not search for reads as broken.
+    return [
+      d.hostname,
+      ownerName(d.user_id) ?? "",
+      d.agent_id,
+      d.os,
+      d.os_version,
+      d.ip,
+      d.agent_version,
+    ]
       .join(" ")
       .toLowerCase()
       .includes(q);
@@ -269,7 +315,7 @@ export function FleetView() {
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search device, OS, IP…"
+                placeholder="Search device, employee, OS, IP…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8"
@@ -328,6 +374,7 @@ export function FleetView() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="pl-6">Device</TableHead>
+                    <TableHead>Employee</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="hidden md:table-cell">CPU · Mem</TableHead>
                     <TableHead className="hidden lg:table-cell">IP</TableHead>
@@ -340,6 +387,7 @@ export function FleetView() {
                       key={d.agent_id}
                       d={d}
                       behind={isBehind(d)}
+                      ownerName={ownerName(d.user_id)}
                       onOpen={() =>
                         router.push(`/settings/agents/${encodeURIComponent(d.agent_id)}`)
                       }
