@@ -7,14 +7,28 @@
  * is gone/expired; a 403 means the server denied the permission (the server is the real gate).
  */
 import { getIdToken } from "@/lib/cognito";
+import { apiErrorMessage } from "@/lib/errors";
 
+/**
+ * A failed request, carrying **display-ready** text.
+ *
+ * `message` is what a user should read (`lib/errors.apiErrorMessage` decides it); `serverMessage` is
+ * what the API actually said, kept for the console and for support tickets. Callers may show
+ * `message` directly — most already do — without leaking `Request failed (500).` to a person.
+ */
 export class ApiError extends Error {
+  /** The API's own words. Not for display; log it, don't render it. */
+  readonly serverMessage?: string;
+
   constructor(
     message: string,
     readonly status: number,
     readonly code?: string,
+    serverMessage?: string,
   ) {
     super(message);
+    this.name = "ApiError";
+    this.serverMessage = serverMessage;
   }
 }
 
@@ -55,14 +69,27 @@ export async function apiFetch<T>(
 
   let res: Response | null = null;
   for (let attempt = 0; ; attempt++) {
-    res = await fetch(`${baseUrl()}${path}`, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...init.headers,
-      },
-    });
+    try {
+      res = await fetch(`${baseUrl()}${path}`, {
+        ...init,
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...init.headers,
+        },
+      });
+    } catch (e) {
+      // `fetch` rejects (rather than resolving with a status) when the request never reached a
+      // server: offline, DNS failure, CORS refusal. That surfaced as the browser's raw
+      // "Failed to fetch". Status 0 marks "no response", and `apiErrorMessage` turns it into a
+      // sentence about the user's connection — the thing they can actually act on.
+      throw new ApiError(
+        apiErrorMessage(0),
+        0,
+        "network",
+        e instanceof Error ? e.message : undefined,
+      );
+    }
     if (res.ok || !retryable || !TRANSIENT.has(res.status) || attempt >= MAX_RETRIES) {
       break;
     }
@@ -84,10 +111,13 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const err = (body as { error?: { code?: string; message?: string } })?.error;
+    // The user-facing sentence is decided once, here — not at each of the ~26 places that show
+    // `e.message` in a toast. `Request failed (500).` never reaches a person again.
     throw new ApiError(
-      err?.message ?? `Request failed (${res.status}).`,
+      apiErrorMessage(res.status, err?.message),
       res.status,
       err?.code,
+      err?.message,
     );
   }
 
@@ -99,11 +129,14 @@ export async function apiFetch<T>(
   if (!raw) return undefined as T;
 
   // An OK response with a body that isn't the envelope is a server contract break, not a caller
-  // error. Say so, rather than letting `.data` throw a TypeError three frames away.
+  // error. Say so in the user's terms and keep the technical fact on `serverMessage`, rather than
+  // letting `.data` throw a TypeError three frames away.
   if (typeof body !== "object" || body === null || !("data" in body)) {
     throw new ApiError(
-      "The server returned an unexpected response shape.",
+      apiErrorMessage(500),
       res.status,
+      "bad_response",
+      "The response body was not the expected {data} envelope.",
     );
   }
   return (body as Envelope<T>).data;

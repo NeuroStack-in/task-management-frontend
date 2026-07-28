@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { requestPasswordReset } from "@/modules/auth/services/auth.service";
+import { friendlyError } from "@/lib/errors";
 
 const schema = z.object({ email: z.string().email("Enter a valid email address.") });
 type FormValues = z.infer<typeof schema>;
@@ -52,7 +53,7 @@ export function ForgotPasswordForm() {
       router.push(`/reset-password?email=${encodeURIComponent(values.email.trim().toLowerCase())}`);
     } catch (err) {
       toast.error("Couldn't send a reset code", {
-        description: err instanceof Error ? err.message : undefined,
+        description: friendlyError(err, "Check the email address and try again."),
       });
       setSubmitting(false);
     }

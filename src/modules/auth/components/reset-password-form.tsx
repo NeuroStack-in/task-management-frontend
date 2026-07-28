@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { validatePassword } from "@/lib/password";
+import { friendlyError } from "@/lib/errors";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -75,7 +76,10 @@ export function ResetPasswordForm() {
       router.push("/login");
     } catch (err) {
       toast.error("Couldn't reset your password", {
-        description: err instanceof Error ? err.message : undefined,
+        description: friendlyError(
+          err,
+          "Check the code and try again — it may have expired.",
+        ),
       });
       setSubmitting(false);
     }
@@ -93,7 +97,7 @@ export function ResetPasswordForm() {
       toast.success("Code sent", { description: "Check your email for a new code." });
     } catch (err) {
       toast.error("Couldn't send a new code", {
-        description: err instanceof Error ? err.message : undefined,
+        description: friendlyError(err, "Wait a moment and try again."),
       });
     } finally {
       setResending(false);

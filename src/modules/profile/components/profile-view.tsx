@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
 import { initials, todayIso } from "@/lib/format";
+import { friendlyError } from "@/lib/errors";
 import { isWithinSize, MB } from "@/lib/validation";
 import { ApiError } from "@/lib/api";
 import {
@@ -375,8 +376,10 @@ function RichProfile({
         toast.success("Profile photo updated");
       } catch (e) {
         toast.error("Couldn't upload photo", {
-          description:
-            e instanceof ApiError || e instanceof Error ? e.message : "The upload failed.",
+          description: friendlyError(
+            e,
+            "The upload didn't finish. Try again with a smaller image.",
+          ),
         });
         setSaving(false);
         return;
@@ -397,7 +400,7 @@ function RichProfile({
         loading: "Uploading photo…",
         success: "Profile photo updated",
         error: (e: unknown) =>
-          e instanceof ApiError || e instanceof Error ? e.message : "Couldn't upload photo.",
+          friendlyError(e, "Couldn't upload the photo. Try again."),
       },
     );
   };

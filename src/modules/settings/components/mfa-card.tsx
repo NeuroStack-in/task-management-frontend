@@ -27,6 +27,7 @@ import {
   type TotpEnrollment,
 } from "@/modules/auth/services/account-security.service";
 import { cn } from "@/lib/utils";
+import { friendlyError } from "@/lib/errors";
 
 const MFA = "Multi-factor authentication";
 
@@ -99,7 +100,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
     } catch (err) {
       if (err instanceof SessionExpiredError) return expireToLogin();
       toast.error("Couldn't start MFA setup", {
-        description: err instanceof Error ? err.message : undefined,
+        description: friendlyError(err, "Try again in a moment."),
       });
     } finally {
       setStarting(false);
@@ -128,7 +129,9 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
       });
     } catch (err) {
       if (err instanceof SessionExpiredError) return expireToLogin();
-      setCodeError(err instanceof Error ? err.message : "Verification failed.");
+      setCodeError(
+        friendlyError(err, "That code isn't right. Check it and try again."),
+      );
     } finally {
       setVerifying(false);
     }
@@ -143,7 +146,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
     } catch (err) {
       if (err instanceof SessionExpiredError) return expireToLogin();
       toast.error("Couldn't turn off MFA", {
-        description: err instanceof Error ? err.message : undefined,
+        description: friendlyError(err, "Try again in a moment."),
       });
     } finally {
       setDisabling(false);

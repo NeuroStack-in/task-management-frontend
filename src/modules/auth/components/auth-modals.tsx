@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { GoogleIcon, MicrosoftIcon } from "@/modules/marketing/brand-icons";
 import { slugify as serverSlugify } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
 
 /* ----------------------------- options ------------------------------- */
 
@@ -643,7 +644,7 @@ export function OrgSetupModal({
       setStatus("success");
     } catch (e) {
       setStatus("idle");
-      setErr(e instanceof Error ? e.message : "Couldn't create your workspace. Try again.");
+      setErr(friendlyError(e, "Couldn't create your workspace. Try again."));
     }
   };
 

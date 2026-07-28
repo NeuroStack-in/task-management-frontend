@@ -39,16 +39,46 @@ describe("apiFetch response handling", () => {
     await expect(apiFetch("/v1/thing", { method: "POST" })).resolves.toBeUndefined();
   });
 
-  it("surfaces the server's error envelope as an ApiError", async () => {
+  /**
+   * The error envelope becomes an `ApiError` whose `message` is display-ready (`lib/errors`) while
+   * the server's own words are kept on `serverMessage` for the console — callers render `message`,
+   * so the raw text must not be it.
+   */
+  it("surfaces the server's error envelope as an ApiError with friendly text", async () => {
     vi.stubGlobal(
       "fetch",
-      reply(403, JSON.stringify({ error: { code: "forbidden", message: "Nope." } })),
+      reply(
+        403,
+        JSON.stringify({ error: { code: "forbidden", message: "missing bit 17" } }),
+      ),
     );
     await expect(apiFetch("/v1/projects")).rejects.toMatchObject({
-      message: "Nope.",
       status: 403,
       code: "forbidden",
+      serverMessage: "missing bit 17",
     });
+    await expect(apiFetch("/v1/projects")).rejects.toThrow(/don't have permission/i);
+  });
+
+  /** A 400 keeps the server's sentence — it names the one thing that was wrong. */
+  it("keeps a validation message from a 400", async () => {
+    vi.stubGlobal(
+      "fetch",
+      reply(400, JSON.stringify({ error: { message: "end_date must be YYYY-MM-DD" } })),
+    );
+    await expect(apiFetch("/v1/projects")).rejects.toThrow("End date must be YYYY-MM-DD.");
+  });
+
+  /** `fetch` rejecting means the request never landed — that is a connection message, not a crash. */
+  it("turns a network failure into an offline ApiError", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await expect(apiFetch("/v1/projects")).rejects.toMatchObject({ status: 0 });
+    await expect(apiFetch("/v1/projects")).rejects.toThrow(/internet connection/i);
   });
 
   /** An empty *error* body must still be an ApiError with its status, not a success. */

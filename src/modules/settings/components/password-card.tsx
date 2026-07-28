@@ -14,6 +14,7 @@ import {
 } from "@/modules/auth/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { PASSWORD_RULES, validatePassword } from "@/lib/password";
+import { friendlyError } from "@/lib/errors";
 
 /**
  * Update the signed-in user's password — **one** flow, verified by a one-time code Cognito emails
@@ -48,7 +49,10 @@ export function PasswordCard() {
       toast.success(`We emailed a code to ${email}`);
     } catch (err) {
       toast.error("Couldn't send the code", {
-        description: err instanceof Error ? err.message : undefined,
+        description: friendlyError(
+          err,
+          "Check the email address and try again.",
+        ),
       });
     } finally {
       setBusy(false);
@@ -81,7 +85,10 @@ export function PasswordCard() {
       toast.success("Password updated — use it the next time you sign in");
     } catch (err) {
       toast.error("Couldn't update your password", {
-        description: err instanceof Error ? err.message : undefined,
+        description: friendlyError(
+          err,
+          "Check the code and try again — it may have expired.",
+        ),
       });
     } finally {
       setBusy(false);

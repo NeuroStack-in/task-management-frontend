@@ -24,6 +24,7 @@ import {
   userPool,
 } from "@/lib/cognito";
 import { completeSsoExchange } from "@/lib/oauth";
+import { friendlyError } from "@/lib/errors";
 import type { AuthSession, User } from "@/types/user";
 
 /** A quick-login shortcut shown on the sign-in screen (email prefill only — a real password is required). */
@@ -196,9 +197,13 @@ export async function login(
         // Anything else is a real fault — an unsupported challenge, a misconfigured app client, a
         // failing trigger, a network error. Reporting those as "wrong password" is what sent MFA
         // users round in circles resetting a password that was never the problem: surface them.
+        // Surfaced, but in the user's language: `friendlyError` knows the Cognito codes, and its
+        // fallback beats `Sign-in failed (InvalidLambdaResponseException).` — which told the user
+        // nothing and looked like a crash. The raw code still reaches the console below.
+        console.error("Cognito sign-in failure", code, err?.message);
         return reject(
           new AuthError(
-            err?.message || `Sign-in failed${code ? ` (${code})` : ""}.`,
+            friendlyError(err, "We couldn't sign you in just now. Try again in a moment."),
             "state",
           ),
         );
