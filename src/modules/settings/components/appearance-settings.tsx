@@ -29,9 +29,14 @@ interface ThemeOption {
   label: string;
   description: string;
   icon: LucideIcon;
-  /** Mini preview swatches (canvas, card, accent). */
-  swatch: { canvas: string; card: string; accent: string };
+  /** Mini preview surfaces. The accent comes from the live palette, not from here. */
+  swatch: { canvas: string; card: string };
 }
+
+/** `light` is the product default — see `AppProviders` (`defaultTheme="light"`, deliberately not
+ *  `system`) and the server's own default in `identity::appearance`. Badged in the UI so it is
+ *  obvious which option a new account lands on. */
+const DEFAULT_THEME: ThemeOption["value"] = "light";
 
 const THEME_OPTIONS: ThemeOption[] = [
   {
@@ -39,25 +44,42 @@ const THEME_OPTIONS: ThemeOption[] = [
     label: "Light",
     description: "Bright graphite canvas for well-lit spaces.",
     icon: Sun,
-    swatch: { canvas: "#F4F5F7", card: "#FFFFFF", accent: "#4338CA" },
+    swatch: { canvas: "#F4F5F7", card: "#FFFFFF" },
   },
   {
     value: "dark",
     label: "Dark",
     description: "Charcoal canvas that's easy on the eyes at night.",
     icon: Moon,
-    swatch: { canvas: "#14161B", card: "#1B1E25", accent: "#6366F1" },
+    swatch: { canvas: "#14161B", card: "#1B1E25" },
   },
   {
     value: "system",
     label: "System",
     description: "Match your device's appearance automatically.",
     icon: Monitor,
-    swatch: { canvas: "#9AA1AD", card: "#E7E9EE", accent: "#4F46E5" },
+    swatch: { canvas: "#9AA1AD", card: "#E7E9EE" },
   },
 ];
 
-function ThemePreview({ swatch }: { swatch: ThemeOption["swatch"] }) {
+/** The "this is what you get by default" pill, used on the default theme + palette. */
+function DefaultBadge() {
+  return (
+    <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      Default
+    </span>
+  );
+}
+
+/** `accent` is the *active* palette's swatch, so the preview shows the colours the app really uses —
+ *  it used to hard-code the retired indigo and quietly lied after every palette change. */
+function ThemePreview({
+  swatch,
+  accent,
+}: {
+  swatch: ThemeOption["swatch"];
+  accent: string;
+}) {
   return (
     <div
       className="flex h-16 w-full items-end gap-1.5 rounded-lg border p-2"
@@ -68,10 +90,7 @@ function ThemePreview({ swatch }: { swatch: ThemeOption["swatch"] }) {
         style={{ backgroundColor: swatch.card }}
       />
       <div className="flex h-full flex-col justify-end gap-1">
-        <span
-          className="block h-2 w-8 rounded-full"
-          style={{ backgroundColor: swatch.accent }}
-        />
+        <span className="block h-2 w-8 rounded-full" style={{ backgroundColor: accent }} />
         <span
           className="block h-2 w-6 rounded-full"
           style={{ backgroundColor: swatch.card }}
@@ -99,6 +118,11 @@ export function AppearanceSettings() {
     setPalette(currentPalette());
   }, []);
   const active = mounted ? theme : undefined;
+
+  // The accent the theme previews draw with — the palette actually in use, so the previews can't
+  // drift from the product's colours the way a hard-coded hex did.
+  const defaultSwatch = PALETTES.find((p) => p.id === DEFAULT_PALETTE)?.swatch ?? "#0f9b8e";
+  const activeSwatch = PALETTES.find((p) => p.id === palette)?.swatch ?? defaultSwatch;
 
   // Adopting the account's stored theme/palette is the shell's job now (`AppearanceSync`), so it
   // happens on every screen rather than only this one. This just mirrors whatever ended up applied,
@@ -168,12 +192,13 @@ export function AppearanceSettings() {
                       : "hover:border-foreground/20 hover:bg-muted/50",
                   )}
                 >
-                  <ThemePreview swatch={option.swatch} />
+                  <ThemePreview swatch={option.swatch} accent={activeSwatch} />
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 space-y-0.5">
                       <p className="flex items-center gap-1.5 text-sm font-medium">
                         <Icon className="size-4 text-muted-foreground" />
                         {option.label}
+                        {option.value === DEFAULT_THEME ? <DefaultBadge /> : null}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {option.description}
@@ -234,7 +259,10 @@ export function AppearanceSettings() {
                     }}
                   />
                   <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="truncate text-sm font-medium">{p.name}</p>
+                    <p className="flex items-center gap-1.5 text-sm font-medium">
+                      <span className="truncate">{p.name}</span>
+                      {p.id === DEFAULT_PALETTE ? <DefaultBadge /> : null}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">{p.note}</p>
                   </div>
                   <span

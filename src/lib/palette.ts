@@ -17,8 +17,8 @@ export interface PaletteDef {
 }
 
 export const PALETTES: PaletteDef[] = [
-  { id: "meridian", name: "Meridian", note: "Default · slate & teal", swatch: "#0e7490" },
-  { id: "teal", name: "Teal", note: "Bright teal", swatch: "#0f9b8e" },
+  { id: "teal", name: "Teal", note: "Default · bright teal", swatch: "#0f9b8e" },
+  { id: "meridian", name: "Meridian", note: "Slate & teal", swatch: "#0e7490" },
   { id: "petrol", name: "Petrol", note: "Deep teal", swatch: "#1b6b77" },
   { id: "evergreen", name: "Evergreen", note: "Fresh green", swatch: "#059669" },
   { id: "indigo", name: "Indigo", note: "Graphite & indigo", swatch: "#4f46e5" },
@@ -35,8 +35,11 @@ export const PALETTES: PaletteDef[] = [
 
 const PALETTE_IDS = new Set(PALETTES.map((p) => p.id));
 const STORAGE_KEY = "wp-palette";
-/** The shipped default (matches the inline pre-paint script in app/layout.tsx). */
-export const DEFAULT_PALETTE = "meridian";
+/**
+ * The shipped default — **keep in step with the inline pre-paint script in `app/layout.tsx`**, which
+ * hard-codes the same id (it runs before any module loads, so it cannot import this).
+ */
+export const DEFAULT_PALETTE = "teal";
 
 /** Coerce a stored/server value to a known palette id. The server's `"default"` (a fresh account)
  *  and any unrecognized value fall back to the shipped default. */

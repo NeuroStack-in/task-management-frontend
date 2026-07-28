@@ -88,11 +88,11 @@ export default function RootLayout({
         {/* Apply the saved colour palette + font pairing before paint (no flash). */}
         <script
           dangerouslySetInnerHTML={{
-            // Default palette is `teal` — "Slate & Teal / Calm · HR-grade". The in-app switcher was
-            // removed (see `palette-switcher.tsx`), so this literal is now the *only* thing that
-            // decides the product's colours; every other palette in `PALETTES` remains defined and
-            // reachable by setting `data-palette` by hand.
-            __html: `(function(){try{var d=document.documentElement;var p=localStorage.getItem('wp-palette')||'meridian';if(p!=='indigo'){d.setAttribute('data-palette',p);}var f=localStorage.getItem('wp-font');if(f&&f!=='ibmplex'){d.setAttribute('data-font',f);}}catch(e){document.documentElement.setAttribute('data-palette','meridian');}})();`,
+            // The default palette is `teal` (bright teal) — this literal must match
+            // `DEFAULT_PALETTE` in lib/palette.ts. It runs before any module loads, so it cannot
+            // import it; a mismatch shows as the wrong colours for one frame on a first visit.
+            // Settings → Appearance switches palettes; every id in `PALETTES` is available there.
+            __html: `(function(){try{var d=document.documentElement;var p=localStorage.getItem('wp-palette')||'teal';if(p!=='indigo'){d.setAttribute('data-palette',p);}var f=localStorage.getItem('wp-font');if(f&&f!=='ibmplex'){d.setAttribute('data-font',f);}}catch(e){document.documentElement.setAttribute('data-palette','teal');}})();`,
           }}
         />
         <AppProviders>{children}</AppProviders>
