@@ -20,6 +20,7 @@
 import { useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import { applyPalette, coercePalette, currentPalette } from "@/lib/palette";
+import { hasChosenTheme } from "@/lib/theme";
 import { explicitTheme, getAppearance } from "@/modules/settings/services/appearance.service";
 
 export function AppearanceSync() {
@@ -38,12 +39,15 @@ export function AppearanceSync() {
         // An unset account ("default") coerces to meridian — slate & teal, the product default.
         const palette = coercePalette(v.palette);
         if (palette !== currentPalette()) applyPalette(palette);
-        // Theme: adopt only an explicit light/dark choice. The server can't express "unset" (it
-        // returns "system" for that too), and adopting "system" would drop an employee who never
-        // opened Settings into their laptop's mode — overriding the product's light default. So
-        // "unset" leaves next-themes exactly as it was.
-        const chosen = explicitTheme(v.theme);
-        if (chosen && chosen !== theme) setTheme(chosen);
+        // Theme, in priority order (see lib/theme.ts):
+        //   1. the account's explicit light/dark  — a real choice, so it follows the user anywhere
+        //   2. a pick made in this browser        — respected, including "System"
+        //   3. otherwise                          — LIGHT, the product default
+        // Step 3 deliberately overrides whatever is sitting in next-themes' storage: that key is
+        // per-origin, not per-account, so one stale `dark` was turning every sign-in on every account
+        // dark. Only a recorded choice may keep it.
+        const target = explicitTheme(v.theme) ?? (hasChosenTheme() ? null : "light");
+        if (target && target !== theme) setTheme(target);
       })
       .catch(() => {
         /* keep whatever the pre-paint script applied */

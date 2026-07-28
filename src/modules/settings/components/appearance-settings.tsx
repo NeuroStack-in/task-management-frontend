@@ -20,6 +20,7 @@ import {
   currentPalette,
   DEFAULT_PALETTE,
 } from "@/lib/palette";
+import { markThemeChosen } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { useAppearance, type AppearanceTheme } from "../use-appearance";
 
@@ -109,6 +110,9 @@ export function AppearanceSettings() {
 
   const chooseTheme = (value: AppearanceTheme) => {
     setTheme(value); // instant, local
+    // Record the deliberate pick so the shell stops forcing the light default here (lib/theme.ts) —
+    // this is what lets "System" survive, given the server can't distinguish it from "unset".
+    markThemeChosen();
     saveTheme(value).catch(() =>
       toast.error("Theme applied here, but couldn't save it to your account."),
     );
