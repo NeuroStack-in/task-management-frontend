@@ -175,6 +175,7 @@ export function useProjectsData(): ProjectsData {
           end_date: v.dueDate || undefined,
           manager_user_id: manager,
           key: deriveKey(v.name),
+          ...(v.department ? { department: v.department } : {}),
         }),
       });
       // The manager is a member already (created with the project). Add the rest, best-effort — a
@@ -251,8 +252,7 @@ function toProject(d: Awaited<ReturnType<typeof getProject>>): Project {
     leadUserId: d.manager_user_id,
     managerId: d.manager_user_id || undefined,
     memberIds: d.members.map((m) => m.user_id),
-    // The server doesn't model a project department; blank rather than invented.
-    department: "",
+    department: d.department ?? "",
     startDate: d.start_date,
     dueDate: d.end_date ?? "",
   };

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  Building2,
   CalendarRange,
   ChevronRight,
   Crown,
@@ -187,8 +188,14 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     try {
       await updateProject(values);
       toast.success("Project updated", { description: `“${values.name}” saved.` });
-    } catch {
-      toast.error("Couldn't save the project. Try again.");
+    } catch (e) {
+      // A partial save has its own message (the details went through, the team didn't). Showing the
+      // generic "try again" there would be a second lie on top of the one this fixes.
+      toast.error(
+        e instanceof Error && e.message
+          ? e.message
+          : "Couldn't save the project. Try again.",
+      );
     }
   };
 
@@ -354,7 +361,14 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             ) : null}
 
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-white/75">
-              <span>{project.department}</span>
+              {/* Conditional: an unset department must leave no empty span, which is what put a
+                  phantom gap before the date range on every project that had none. */}
+              {project.department ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Building2 className="size-4" />
+                  {project.department}
+                </span>
+              ) : null}
               <span className="inline-flex items-center gap-1.5">
                 <CalendarRange className="size-4" />
                 {formatDate(project.startDate)} – {formatDate(project.dueDate)}
@@ -576,7 +590,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                 <DialogDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <Mono>{project.key}</Mono>
                   <Mono>{project.id}</Mono>
-                  <span>· {project.department}</span>
+                  {project.department ? <span>· {project.department}</span> : null}
                 </DialogDescription>
               </div>
             </div>
@@ -603,7 +617,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                 <DetailRow label="Lead" value={lead?.name ?? "—"} />
                 <DetailRow label="Manager" value={manager?.name ?? "—"} />
-                <DetailRow label="Department" value={project.department} />
+                <DetailRow label="Department" value={project.department || "—"} />
                 <DetailRow
                   label="Billing"
                   value={project.billable ? "Billable" : "Non-billable"}

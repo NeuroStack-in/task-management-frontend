@@ -27,6 +27,8 @@ export interface ApiProject {
   status_reason?: string;
   billable: boolean;
   manager_user_id: string;
+  /** Owning department label. Absent when the project has none. */
+  department?: string;
 }
 
 interface ProjectsResponse {
@@ -101,6 +103,8 @@ export interface ApiProjectDetail {
   end_date?: string;
   manager_user_id: string;
   auto_hold: boolean;
+  /** Owning department label. Absent when the project has none. */
+  department?: string;
   members: ApiProjectMember[];
   /** The caller's resolved project role — the UI renders from this, never re-deriving the matrix. */
   authority: string;

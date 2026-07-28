@@ -17,6 +17,8 @@ import {
   createTask as apiCreateTask,
   updateTask as apiUpdateTask,
   deleteTask as apiDeleteTask,
+  addMember,
+  removeMember,
 } from "./services/projects.service";
 import type { Project, Task, TaskPriority, TaskStatus } from "./types";
 import { mapProjectStatus } from "./use-projects-data";
@@ -106,20 +108,25 @@ export function useProjectDetail(id: string): ProjectDetailData {
 
   const updateProject = useCallback(
     async (v: ProjectFormValues) => {
-      // Only the fields the server's PATCH supports (LLD §5). Manager/members/department are edited
-      // via the membership routes / aren't modelled server-side — see the detail page's team dialog.
       await apiFetch(`/v1/projects/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify({
           name: v.name,
           description: v.description,
           billable: v.billable,
+          // Always sent, empty string included: the server reads "" as "clear it", so deselecting a
+          // department is a real edit rather than an unreachable state.
+          department: v.department ?? "",
           ...(v.dueDate ? { end_date: v.dueDate } : {}),
         }),
       });
+      // Membership is a separate resource, and the form edits it in the same dialog. Without this the
+      // PATCH succeeded, the toast said "saved", and the member the admin just added was never
+      // written — the edit silently lost half of itself.
+      await syncMembers(id, project?.memberIds ?? [], v.memberIds, project?.managerId);
       reload();
     },
-    [id, reload],
+    [id, project, reload],
   );
 
   const createTask = useCallback(
@@ -205,10 +212,51 @@ function toProject(d: Awaited<ReturnType<typeof getProject>>): Project {
     leadUserId: d.manager_user_id,
     managerId: d.manager_user_id || undefined,
     memberIds: d.members.map((m) => m.user_id),
-    department: "",
+    department: d.department ?? "",
     startDate: d.start_date,
     dueDate: d.end_date ?? "",
   };
+}
+
+/**
+ * Reconcile the project's membership with what the form now says.
+ *
+ * Two rules keep this honest:
+ * - **The manager is never removed here.** They are a member by construction (`create_project` writes
+ *   the `MEMBER#` row alongside the project) and the server refuses to mint or move a manager through
+ *   the membership routes — handing over a project is its own action. Dropping their chip in the form
+ *   must not attempt a delete that would 400, or worse, orphan the project's administration.
+ * - **Failures are reported, not swallowed.** The caller shows a success toast when this resolves, so
+ *   a rejected add has to surface; otherwise we are back to the bug this fixes — a "saved" message
+ *   over a change that never happened.
+ */
+async function syncMembers(
+  projectId: string,
+  current: string[],
+  next: string[],
+  managerId?: string,
+): Promise<void> {
+  const before = new Set(current);
+  const after = new Set(next.filter(Boolean));
+  const added = [...after].filter((uid) => !before.has(uid));
+  const removed = [...before].filter(
+    (uid) => !after.has(uid) && uid !== managerId,
+  );
+  if (!added.length && !removed.length) return;
+
+  const results = await Promise.allSettled([
+    ...added.map((uid) => addMember(projectId, uid, "member")),
+    ...removed.map((uid) => removeMember(projectId, uid)),
+  ]);
+  const failed = results.filter((r) => r.status === "rejected").length;
+  if (failed) {
+    const total = added.length + removed.length;
+    throw new Error(
+      failed === total
+        ? "The project was saved but its members weren't updated. You may not have permission to manage this project's team."
+        : `The project was saved, but ${failed} of ${total} team changes failed. Reopen the dialog to check.`,
+    );
+  }
 }
 
 async function resolveUserMap(): Promise<Record<string, UserMini>> {
