@@ -7,6 +7,7 @@
  * (no Date.now() in render paths — CLAUDE.md convention).
  */
 import type { User } from "@/types/user";
+import type { ApiProjectMember } from "./services/projects.service";
 import type { Project, Task, TaskStatus } from "./types";
 
 /** Fixed reference date — same anchor the seed uses. */
@@ -29,6 +30,31 @@ export function buildUserMap(users: User[]): Record<string, UserMini> {
       name: u.name,
       avatarUrl: u.avatarUrl,
       jobTitle: u.jobTitle,
+    };
+  }
+  return map;
+}
+
+/**
+ * A project's own members as a user lookup — the names the **server** resolved onto each member row.
+ *
+ * This is the source every caller has, including an Employee. The alternative, `GET /v1/employees`,
+ * needs `EmployeesRead`; an Employee 403s on it, so building names only from the directory left the
+ * project's team dialog showing "—" for Lead/Manager and rows with no names. Merge this first and let
+ * the directory (when the caller can read it) layer avatars and non-member people on top.
+ *
+ * A member whose `User` item is gone arrives with an empty name; we fall back to the id so a real
+ * membership is never invisible.
+ */
+export function membersToUserMap(
+  members: ApiProjectMember[],
+): Record<string, UserMini> {
+  const map: Record<string, UserMini> = {};
+  for (const m of members) {
+    map[m.user_id] = {
+      id: m.user_id,
+      name: m.name?.trim() || m.user_id,
+      jobTitle: m.title ?? "",
     };
   }
   return map;

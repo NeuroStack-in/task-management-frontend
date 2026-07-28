@@ -74,6 +74,19 @@ export interface ApiProjectKpi {
 export interface ApiProjectMember {
   user_id: string;
   project_role: string;
+  /**
+   * Display name, resolved **server-side** from the `User` item (`projects::project_detail`).
+   *
+   * This exists so a project's members are visible to anyone who can read the project. Building the
+   * names from `GET /v1/employees` needs `EmployeesRead`, which an Employee does not have — that call
+   * 403s for them, so the dialog showed a member count with no names and "—" for Lead/Manager.
+   *
+   * Empty string when the `User` item is gone (a deleted employee whose membership row remains).
+   * Optional on the type because a response from before the field shipped simply omits it.
+   */
+  name?: string;
+  /** Job title, same resolution and degradation as `name`. */
+  title?: string;
 }
 
 export interface ApiProjectDetail {

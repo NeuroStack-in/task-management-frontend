@@ -20,7 +20,7 @@ import {
 } from "./services/projects.service";
 import type { Project, Task, TaskPriority, TaskStatus } from "./types";
 import { mapProjectStatus } from "./use-projects-data";
-import type { UserMini } from "./lib";
+import { membersToUserMap, type UserMini } from "./lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 import type { TaskFormValues } from "@/stores/tasks.store";
 
@@ -84,7 +84,12 @@ export function useProjectDetail(id: string): ProjectDetailData {
             })),
           ),
         );
-        setUserMap(names);
+        // Names come from the project itself first, the org directory second. `GET /v1/employees`
+        // needs `EmployeesRead`, which an Employee doesn't have — it 403s, `names` is `{}`, and this
+        // dialog used to show a member count with no rows and "—" for Lead/Manager. The detail
+        // response carries each member's name/title, so the directory is now only an enhancement
+        // (it covers people who aren't project members, e.g. an assignee picker for admins).
+        setUserMap({ ...membersToUserMap(detail.members), ...names });
       } catch (e) {
         if (!live) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);

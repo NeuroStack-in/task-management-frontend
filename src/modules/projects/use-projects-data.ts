@@ -33,7 +33,7 @@ import type {
   TaskPriority,
   TaskStatus,
 } from "./types";
-import type { UserMini } from "./lib";
+import { membersToUserMap, type UserMini } from "./lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 
 /**
@@ -121,9 +121,16 @@ export function useProjectsData(): ProjectsData {
 
         const projs: Project[] = [];
         const allTasks: Task[] = [];
+        // Names carried by the projects themselves. `resolveUserMap` (the org directory) needs
+        // `EmployeesRead`, which an Employee doesn't have — it 403s and `names` is `{}`, which is why
+        // the cards and the team dialog showed ids instead of people. Every detail we already fetched
+        // carries its members' server-resolved names, so accumulate those and let the directory —
+        // when the caller can read it — win for avatars and non-members.
+        const fromMembers: Record<string, UserMini> = {};
         for (const item of enriched) {
           if (!item) continue;
           const { detail, board } = item;
+          Object.assign(fromMembers, membersToUserMap(detail.members));
           projs.push(toProject(detail));
           for (const col of board) {
             for (const t of col.tasks) {
@@ -143,7 +150,7 @@ export function useProjectsData(): ProjectsData {
 
         setProjects(projs);
         setTasks(allTasks);
-        setUserMap(names);
+        setUserMap({ ...fromMembers, ...names });
       } catch (e) {
         if (live) setError(messageOf(e));
       } finally {
