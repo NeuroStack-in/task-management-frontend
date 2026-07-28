@@ -34,6 +34,19 @@ import {
   type ApiTeam,
 } from "../services/employees.service";
 
+/**
+ * Most addresses one bulk invite may carry.
+ *
+ * Not a technical ceiling — nothing breaks at 51. It bounds the failure modes a single run can
+ * produce: at four requests in flight a larger batch is a long run with no resumability, and closing
+ * the tab halfway leaves the rest unsent with no record of which. Fifty is also the point past which
+ * a paste is usually a mistake — a whole spreadsheet column rather than a team.
+ *
+ * The dialog **refuses** above this rather than truncating: silently dropping people from a paste
+ * is worse than making someone split it, because nothing on screen would say who was left out.
+ */
+const MAX_INVITES = 50;
+
 export function InviteDialog({
   open,
   onOpenChange,
@@ -62,6 +75,7 @@ export function InviteDialog({
   // invite", which a raw textarea can't give.
   const parsed = useMemo(() => parseEmails(email), [email]);
   const count = parsed.emails.length;
+  const overBy = Math.max(0, count - MAX_INVITES);
 
   // Load assignable roles (never the Owner) + the org structure when the dialog opens. Departments/
   // teams are best-effort: if either read fails the selects just stay empty and the invite still
@@ -118,6 +132,12 @@ export function InviteDialog({
           ? "None of those look like email addresses. Check them and try again."
           : "Enter at least one work email.",
       );
+      return;
+    }
+    if (overBy) {
+      toast.error(`Invite up to ${MAX_INVITES} people at a time.`, {
+        description: `Remove ${overBy} ${overBy === 1 ? "address" : "addresses"} and send the rest as a second batch.`,
+      });
       return;
     }
     if (!roleId) {
@@ -223,8 +243,13 @@ export function InviteDialog({
             <div className="flex items-baseline justify-between gap-3">
               <Label htmlFor="inv-email">Work emails</Label>
               {count ? (
-                <span className="text-xs text-muted-foreground">
+                <span
+                  className={
+                    overBy ? "text-xs font-medium text-destructive" : "text-xs text-muted-foreground"
+                  }
+                >
                   {count} {count === 1 ? "person" : "people"}
+                  {overBy ? ` · ${MAX_INVITES} max` : ""}
                   {parsed.duplicates
                     ? ` · ${parsed.duplicates} duplicate${parsed.duplicates === 1 ? "" : "s"} ignored`
                     : ""}
@@ -240,9 +265,17 @@ export function InviteDialog({
               className="min-h-20"
             />
             <p className="text-xs text-muted-foreground">
-              Invite one person or many — separate addresses with commas, spaces or new lines.
-              Everyone here gets the same role, department, team and title.
+              Invite one person or up to {MAX_INVITES} at a time — separate addresses with commas,
+              spaces or new lines. Everyone here gets the same role, department, team and title.
             </p>
+
+            {overBy ? (
+              <p className="text-xs font-medium text-destructive">
+                That&apos;s {overBy} too many. Remove{" "}
+                {overBy === 1 ? "one address" : `${overBy} addresses`} and send the rest as a second
+                batch — nothing is dropped for you.
+              </p>
+            ) : null}
 
             {/* What we actually parsed. A textarea alone can't tell you that a stray character split
                 an address in two, and finding that out from a failed invite is too late. */}
@@ -371,7 +404,10 @@ export function InviteDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={submitting || !roles.length}>
+          <Button
+            onClick={submit}
+            disabled={submitting || !roles.length || overBy > 0}
+          >
             {submitting
               ? count > 1
                 ? `Inviting ${progress} of ${count}…`
