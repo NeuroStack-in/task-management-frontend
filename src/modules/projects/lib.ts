@@ -43,17 +43,23 @@ export function buildUserMap(users: User[]): Record<string, UserMini> {
  * project's team dialog showing "—" for Lead/Manager and rows with no names. Merge this first and let
  * the directory (when the caller can read it) layer avatars and non-member people on top.
  *
- * A member whose `User` item is gone arrives with an empty name; we fall back to the id so a real
- * membership is never invisible.
+ * The two ways a name can be missing are deliberately treated differently, because the frontend
+ * deploys before the backend does:
+ * - **`name` absent** — a server from before the field shipped. Contribute nothing and let the
+ *   directory answer, exactly as before; otherwise every member would render as a raw ULID for the
+ *   hours between the two deploys.
+ * - **`name` empty** — the server looked and the `User` item is gone (a deleted employee whose
+ *   membership row survives). Fall back to the id so a real membership is never invisible.
  */
 export function membersToUserMap(
   members: ApiProjectMember[],
 ): Record<string, UserMini> {
   const map: Record<string, UserMini> = {};
   for (const m of members) {
+    if (m.name === undefined) continue;
     map[m.user_id] = {
       id: m.user_id,
-      name: m.name?.trim() || m.user_id,
+      name: m.name.trim() || m.user_id,
       jobTitle: m.title ?? "",
     };
   }
