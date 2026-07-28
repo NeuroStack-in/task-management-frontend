@@ -70,7 +70,17 @@ export async function apiFetch<T>(
     await new Promise((r) => setTimeout(r, 200 * 2 ** attempt + Math.random() * 100));
   }
 
-  const body: unknown = await res.json().catch(() => null);
+  // Read as text first so an empty body and an unparseable one stay distinguishable. `res.json()`
+  // collapses both to the same failure, which is what made a successful no-content write look broken.
+  const raw = await res.text();
+  let body: unknown = null;
+  if (raw) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      body = null;
+    }
+  }
 
   if (!res.ok) {
     const err = (body as { error?: { code?: string; message?: string } })?.error;
@@ -78,6 +88,22 @@ export async function apiFetch<T>(
       err?.message ?? `Request failed (${res.status}).`,
       res.status,
       err?.code,
+    );
+  }
+
+  // **A successful no-content response has no envelope to unwrap.** `DELETE …/members/{user_id}`
+  // and `DELETE …/tasks/{id}` answer `204`, and axum handlers returning `Ok(())` answer `200` with
+  // an empty body. Reading `.data` off `null` threw a TypeError, so the write succeeded on the
+  // server while the UI reported failure — a member really was removed under a "members weren't
+  // updated" toast. Callers of these routes type the result `void`, so `undefined` is the answer.
+  if (!raw) return undefined as T;
+
+  // An OK response with a body that isn't the envelope is a server contract break, not a caller
+  // error. Say so, rather than letting `.data` throw a TypeError three frames away.
+  if (typeof body !== "object" || body === null || !("data" in body)) {
+    throw new ApiError(
+      "The server returned an unexpected response shape.",
+      res.status,
     );
   }
   return (body as Envelope<T>).data;
