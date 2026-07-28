@@ -21,6 +21,7 @@ import { Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
+import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { captureNow, listFleet, type ApiDevice } from "../services/fleet.service";
 
@@ -43,6 +44,7 @@ export function CaptureNowButton({
   onRequested,
   onCaptured,
   size = "sm",
+  tone = "default",
 }: {
   /** Target device directly (device detail). Takes precedence over `userId`. */
   agentId?: string;
@@ -53,6 +55,12 @@ export function CaptureNowButton({
   /** Fired when the device confirms a capture — the caller can refetch the grid. */
   onCaptured?: () => void;
   size?: "sm" | "default";
+  /**
+   * Where the button sits. `onFeature` is for the saturated `bg-feature` hero on device detail:
+   * the default `outline` variant paints `bg-background` with a `border-input`, which on teal reads
+   * as a washed-out ghost of a button rather than the page's main action.
+   */
+  tone?: "default" | "onFeature";
 }) {
   const { can } = usePermissions();
   // Mirrors the server: direct monitoring AND be allowed to see the result.
@@ -156,13 +164,29 @@ export function CaptureNowButton({
 
   if (!allowed) return null;
 
+  const onFeature = tone === "onFeature";
+
   return (
     <Button
-      variant="outline"
+      variant={onFeature ? "ghost" : "outline"}
       size={size}
       onClick={request}
       disabled={busy || resolving || !targetId || Boolean(blocked)}
       title={title}
+      className={cn(
+        onFeature && [
+          // Inverted rather than translucent: a solid surface makes this read as the hero's action
+          // at a glance. `text-feature` is safe on white in every palette — each one's `--feature`
+          // is a saturated or dark colour (indigo, teal, espresso, terracotta).
+          "bg-white font-medium text-feature shadow-sm hover:bg-white/90 active:bg-white/80",
+          // The ring has to be visible against the banner, not against the page background.
+          "focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-0",
+          // Blocked (offline, deactivated, no device) is a *state*, not a broken button: it settles
+          // into the banner's own glass language instead of a 50%-opacity white smear. The title
+          // still carries the reason.
+          "disabled:bg-white/15 disabled:text-feature-foreground/70 disabled:opacity-100 disabled:shadow-none disabled:ring-1 disabled:ring-inset disabled:ring-white/25",
+        ],
+      )}
     >
       {busy ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
       {busy ? "Requesting…" : "Capture now"}

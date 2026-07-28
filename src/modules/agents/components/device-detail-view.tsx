@@ -115,7 +115,9 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
           {device.state === "deactivated" && (
             <Badge className="bg-destructive/10 font-medium text-destructive">Deactivated</Badge>
           )}
-          {device.state !== "deactivated" && <CaptureNowButton agentId={agentId} />}
+          {device.state !== "deactivated" && (
+            <CaptureNowButton agentId={agentId} tone="onFeature" />
+          )}
         </div>
       </section>
 
