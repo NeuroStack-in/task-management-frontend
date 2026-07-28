@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -20,8 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isEmail } from "@/lib/validation";
-import { ApiError } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
+import { mapWithConcurrency } from "@/lib/concurrency";
+import { parseEmails } from "../lib/parse-emails";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
   createInvite,
@@ -50,6 +53,15 @@ export function InviteDialog({
   const [teamId, setTeamId] = useState("");
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  /** `n of total` while a bulk run is in flight — ten invites take visible seconds. */
+  const [progress, setProgress] = useState(0);
+  /** Per-address failures from the last run, kept on screen so they can be fixed and retried. */
+  const [failures, setFailures] = useState<{ email: string; reason: string }[]>([]);
+
+  // Parsed on every keystroke: the chips below the box are the honest answer to "who am I about to
+  // invite", which a raw textarea can't give.
+  const parsed = useMemo(() => parseEmails(email), [email]);
+  const count = parsed.emails.length;
 
   // Load assignable roles (never the Owner) + the org structure when the dialog opens. Departments/
   // teams are best-effort: if either read fails the selects just stay empty and the invite still
@@ -90,11 +102,22 @@ export function InviteDialog({
     setTeamId("");
     setTitle("");
     setSubmitting(false);
+    setProgress(0);
+    setFailures([]);
+  }
+
+  /** Drop one address from the pending list — the chips are editable, not just a preview. */
+  function removeEmail(target: string) {
+    setEmail(parsed.emails.filter((e) => e !== target).join(", "));
   }
 
   async function submit() {
-    if (!isEmail(email)) {
-      toast.error("Enter a valid work email.");
+    if (!count) {
+      toast.error(
+        parsed.invalid.length
+          ? "None of those look like email addresses. Check them and try again."
+          : "Enter at least one work email.",
+      );
       return;
     }
     if (!roleId) {
@@ -109,29 +132,71 @@ export function InviteDialog({
       toast.error("Enter a job title.");
       return;
     }
+
     setSubmitting(true);
-    try {
-      // The invite email is sent server-side (Resend, via the notifications rail). The link and
-      // one-time password used to be surfaced here as a manual fallback; now that delivery is real
-      // they stay secret — the invitee is the only one who ever sees them.
-      const invite = await createInvite({
-        email: email.trim(),
-        role_id: roleId,
-        department_id: departmentId,
-        title: title.trim(),
-        ...(teamId ? { team_id: teamId } : {}),
-      });
-      toast.success(`Invite sent to ${invite.email}`, {
-        description: "They'll get an email with a link and a one-time password.",
-      });
+    setFailures([]);
+    setProgress(0);
+
+    // The invite email is sent server-side (Resend, via the notifications rail). The link and
+    // one-time password stay secret — the invitee is the only one who ever sees them.
+    //
+    // Bounded concurrency, not `Promise.all`: firing twenty POSTs at once bursts the Lambda into
+    // throttling, and writes are never retried (lib/api), so a throttled invite would simply be
+    // lost. Four at a time keeps a bulk run flat and quick.
+    const results = await mapWithConcurrency(parsed.emails, 4, async (address) => {
+      try {
+        await createInvite({
+          email: address,
+          role_id: roleId,
+          department_id: departmentId,
+          title: title.trim(),
+          ...(teamId ? { team_id: teamId } : {}),
+        });
+        return { email: address, ok: true as const };
+      } catch (e) {
+        // One bad address must not abandon the other nineteen — collect and report.
+        return {
+          email: address,
+          ok: false as const,
+          reason: friendlyError(e, "Couldn't create this invite."),
+        };
+      } finally {
+        setProgress((n) => n + 1);
+      }
+    });
+
+    const failed = results.filter((r) => !r.ok) as {
+      email: string;
+      reason: string;
+    }[];
+    const sent = results.length - failed.length;
+
+    if (sent) {
+      toast.success(
+        sent === 1 ? `Invite sent to ${results.find((r) => r.ok)?.email}` : `${sent} invites sent`,
+        { description: "They'll each get an email with a link and a one-time password." },
+      );
       onCreated?.();
-      reset();
-      onOpenChange(false);
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Couldn't create the invite. Try again.");
-    } finally {
-      setSubmitting(false);
     }
+
+    if (failed.length) {
+      // The successes are done and reported; leave only what still needs attention in the box so
+      // pressing the button again retries exactly those.
+      setEmail(failed.map((f) => f.email).join(", "));
+      setFailures(failed);
+      setSubmitting(false);
+      setProgress(0);
+      toast.error(
+        failed.length === 1
+          ? `1 invite couldn't be created`
+          : `${failed.length} invites couldn't be created`,
+        { description: "They're still in the box with the reason for each." },
+      );
+      return;
+    }
+
+    reset();
+    onOpenChange(false);
   }
 
   return (
@@ -144,23 +209,82 @@ export function InviteDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Invite employee</DialogTitle>
+          <DialogTitle>
+            {count > 1 ? `Invite ${count} employees` : "Invite employee"}
+          </DialogTitle>
           <DialogDescription>
-            Create an invite. Role, department, team and title are fixed by you — the invitee only
-            fills in their personal details.
+            Role, department, team and title are fixed by you — each invitee only fills in their
+            personal details.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="inv-email">Work email</Label>
-            <Input
+            <div className="flex items-baseline justify-between gap-3">
+              <Label htmlFor="inv-email">Work emails</Label>
+              {count ? (
+                <span className="text-xs text-muted-foreground">
+                  {count} {count === 1 ? "person" : "people"}
+                  {parsed.duplicates
+                    ? ` · ${parsed.duplicates} duplicate${parsed.duplicates === 1 ? "" : "s"} ignored`
+                    : ""}
+                </span>
+              ) : null}
+            </div>
+            <Textarea
               id="inv-email"
-              type="email"
+              rows={3}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="jordan@acme.test"
+              placeholder={"jordan@acme.test, sam@acme.test\nor paste a whole list"}
+              className="min-h-20"
             />
+            <p className="text-xs text-muted-foreground">
+              Invite one person or many — separate addresses with commas, spaces or new lines.
+              Everyone here gets the same role, department, team and title.
+            </p>
+
+            {/* What we actually parsed. A textarea alone can't tell you that a stray character split
+                an address in two, and finding that out from a failed invite is too late. */}
+            {count ? (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {parsed.emails.map((address) => (
+                  <span
+                    key={address}
+                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-muted py-0.5 pr-1 pl-2.5 text-xs"
+                  >
+                    <span className="truncate">{address}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeEmail(address)}
+                      disabled={submitting}
+                      aria-label={`Remove ${address}`}
+                      className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:pointer-events-none"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
+            {parsed.invalid.length ? (
+              <p className="pt-1 text-xs text-warning">
+                Not an email address, so {parsed.invalid.length === 1 ? "it" : "they"} won&apos;t be
+                invited: {parsed.invalid.slice(0, 5).join(", ")}
+                {parsed.invalid.length > 5 ? ` +${parsed.invalid.length - 5} more` : ""}
+              </p>
+            ) : null}
+
+            {failures.length ? (
+              <ul className="space-y-1 pt-1 text-xs text-destructive">
+                {failures.map((f) => (
+                  <li key={f.email}>
+                    <span className="font-medium">{f.email}</span> — {f.reason}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label>Role</Label>
@@ -248,7 +372,13 @@ export function InviteDialog({
             Cancel
           </Button>
           <Button onClick={submit} disabled={submitting || !roles.length}>
-            {submitting ? "Creating…" : "Create invite"}
+            {submitting
+              ? count > 1
+                ? `Inviting ${progress} of ${count}…`
+                : "Creating…"
+              : count > 1
+                ? `Invite ${count} people`
+                : "Create invite"}
           </Button>
         </DialogFooter>
       </DialogContent>

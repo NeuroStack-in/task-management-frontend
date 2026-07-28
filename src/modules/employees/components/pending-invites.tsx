@@ -20,6 +20,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -217,15 +219,31 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
                             >
                               <MoreVertical className="size-4" />
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleResend(invite)}>
-                                <RotateCcw className="size-4" /> Send a new invite
+                            {/* `w-auto`: the popup primitive pins `w-(--anchor-width)`, and the
+                                anchor here is a 32px icon button — so the menu came out 8rem wide
+                                and wrapped "Send a new invite" onto two lines. */}
+                            <DropdownMenuContent
+                              align="end"
+                              className="w-auto min-w-52"
+                            >
+                              <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground">
+                                {invite.email}
+                              </DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="gap-2 whitespace-nowrap"
+                                onClick={() => handleResend(invite)}
+                              >
+                                <RotateCcw className="size-4 text-muted-foreground" />
+                                Send a new invite
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                className="text-destructive"
+                                variant="destructive"
+                                className="gap-2 whitespace-nowrap"
                                 onClick={() => handleRevoke(invite)}
                               >
-                                <Trash2 className="size-4" /> Revoke
+                                <Trash2 className="size-4" />
+                                Revoke invite
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
