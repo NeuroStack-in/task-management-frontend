@@ -20,7 +20,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -226,9 +225,15 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
                               align="end"
                               className="w-auto min-w-52"
                             >
-                              <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground">
+                              {/* A plain element, not `DropdownMenuLabel`. That component wraps Base
+                                  UI's `Menu.GroupLabel`, which reads context from a `Menu.Group`
+                                  and **throws when rendered without one** — opening this menu
+                                  crashed the whole Employees page. This was the app's only use of
+                                  it, so the trap had never been hit before. The email is decorative
+                                  here anyway: the trigger already announces it via aria-label. */}
+                              <div className="truncate px-2 py-1.5 text-xs text-muted-foreground">
                                 {invite.email}
-                              </DropdownMenuLabel>
+                              </div>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="gap-2 whitespace-nowrap"
