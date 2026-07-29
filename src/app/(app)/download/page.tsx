@@ -1,16 +1,26 @@
 "use client";
 
+import { useState } from "react";
 import {
   Activity,
   Clock,
   Download,
+  Info,
   MonitorSmartphone,
+  RefreshCw,
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AGENT_PLATFORMS,
   AGENT_RELEASE_VERSION,
@@ -44,7 +54,28 @@ const FEATURES = [
   },
 ];
 
+/**
+ * The macOS first-run steps.
+ *
+ * They exist because the build is **not signed with an Apple Developer ID**, so Gatekeeper blocks
+ * the first launch with a message that reads like a virus warning. Behind an info icon rather than
+ * on the card: it is a one-time ritual, and printing eight steps under one of three platforms would
+ * unbalance the page for the Windows and Linux majority who don't need any of it.
+ */
+const MAC_STEPS = [
+  "Open the downloaded WorkPulse.dmg and drag WorkPulse into your Applications folder.",
+  "Open WorkPulse from Applications. macOS will say it can't verify the app — that's expected, our app isn't registered with Apple yet. Click Done.",
+  "Open System Settings → Privacy & Security and scroll to the Security section.",
+  "You'll see a line saying WorkPulse was blocked. Click Open Anyway and confirm with your password or Touch ID.",
+  "Sign in with the same email and password you use here.",
+  "Still in Privacy & Security, turn WorkPulse ON under Screen & System Audio Recording, and under Accessibility.",
+  "Quit WorkPulse completely and open it again — macOS only applies those permissions after a restart.",
+  "Pick a project and press Start.",
+];
+
 export default function DownloadPage() {
+  const [macHelpOpen, setMacHelpOpen] = useState(false);
+
   function triggerDownload(url: string, file: string) {
     const a = document.createElement("a");
     a.href = url;
@@ -86,6 +117,29 @@ export default function DownloadPage() {
         <Badge className="ml-auto hidden shrink-0 self-start bg-background/70 font-normal text-muted-foreground sm:inline-flex">
           v{AGENT_RELEASE_VERSION}
         </Badge>
+      </section>
+
+      {/* Re-install notice. The sign-in fix is compiled into the binary, so an existing install
+          cannot pick it up — and the in-app updater can't deliver it either. Everyone who installed
+          an earlier build has to download once more, and the page is the only place they'll find
+          that out. Remove this once the updater is fixed and the old builds have aged out. */}
+      <section className="flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/5 p-4">
+        <RefreshCw className="mt-0.5 size-4 shrink-0 text-warning" />
+        <div className="min-w-0 text-sm">
+          <p className="font-medium">
+            Already have WorkPulse installed? Please download it again.
+          </p>
+          <p className="mt-1 leading-relaxed text-muted-foreground">
+            Version {AGENT_RELEASE_VERSION} fixes the{" "}
+            <span className="font-medium text-foreground">
+              &ldquo;This agent isn&apos;t configured for your organization
+              yet&rdquo;
+            </span>{" "}
+            error at sign-in. Run the new installer over your existing copy —
+            there&apos;s no need to uninstall first, nothing is lost, and your
+            device keeps its history. Then sign in as normal.
+          </p>
+        </div>
       </section>
 
       {/* Platforms */}
@@ -139,19 +193,15 @@ export default function DownloadPage() {
                           {p.altSize ? ` · ${p.altSize}` : ""}
                         </button>
                       ) : null}
-                      {/* The macOS build is not yet signed with an Apple Developer ID, so Gatekeeper
-                          blocks it on first open. Saying so here costs one line; not saying it costs
-                          a support ticket per Mac user, who reasonably reads the warning as "this
-                          download is broken". Delete this once notarisation is in the release. */}
                       {p.os === "macOS" ? (
-                        <p className="mt-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-                          First open: right-click the app and choose{" "}
-                          <span className="font-medium">Open</span>, or allow it under{" "}
-                          <span className="font-medium">
-                            System Settings › Privacy &amp; Security
-                          </span>
-                          .
-                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setMacHelpOpen(true)}
+                          className="mt-2 flex w-full items-center justify-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <Info className="size-3.5" />
+                          First-time setup steps
+                        </button>
                       ) : null}
                     </>
                   ) : (
@@ -210,6 +260,43 @@ export default function DownloadPage() {
           </p>
         </aside>
       </div>
+
+      {/* macOS first-run walkthrough */}
+      <Dialog open={macHelpOpen} onOpenChange={setMacHelpOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Installing on macOS</DialogTitle>
+            <DialogDescription>
+              A one-time setup. macOS blocks the first launch because the app
+              isn&apos;t registered with Apple yet — it is safe to open.
+            </DialogDescription>
+          </DialogHeader>
+
+          <ol className="space-y-3">
+            {MAC_STEPS.map((step, i) => (
+              <li key={i} className="flex gap-3 text-sm leading-relaxed">
+                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-feature-tint text-[0.7rem] font-medium text-primary">
+                  {i + 1}
+                </span>
+                <span className="text-muted-foreground">{step}</span>
+              </li>
+            ))}
+          </ol>
+
+          <div className="rounded-xl border bg-muted/30 p-3">
+            <p className="text-xs font-medium">
+              If &ldquo;Open Anyway&rdquo; doesn&apos;t appear
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Open the Terminal app, paste this line, press Enter, then open
+              WorkPulse again:
+            </p>
+            <code className="mt-2 block overflow-x-auto rounded-lg bg-background px-3 py-2 font-mono text-[0.7rem] break-all">
+              xattr -dr com.apple.quarantine /Applications/WorkPulse.app
+            </code>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -27,7 +27,7 @@ export const LATEST_AGENT_VERSION = "2.4.1"
 
 /** The **real** shipped desktop-agent version (the Download page + installers). Distinct from
  *  `LATEST_AGENT_VERSION`, which the still-mock agents-manager uses to compare its seeded fleet. */
-export const AGENT_RELEASE_VERSION = "0.1.0"
+export const AGENT_RELEASE_VERSION = "0.1.1"
 
 export const AGENTS: Agent[] = [
   { id: "ag-1", hostname: "alex-morgan-mbp", user: "Alex Morgan", email: "owner@acme.test", os: "macOS", osVersion: "14.5", version: "2.4.1", status: "online", lastSeen: "Active now", ip: "198.51.100.10", cpu: 12, memory: 41 },
