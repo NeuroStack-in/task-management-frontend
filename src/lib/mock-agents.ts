@@ -69,11 +69,14 @@ const DOWNLOADS_BASE =
 
 export const WINDOWS_INSTALLER_URL = `${DOWNLOADS_BASE}/WorkPulse-x64-setup.exe`
 
+// Sizes are the real v0.1.1 artifacts in `agent/latest/` — they are shown before the download
+// starts, so a stale number is a small lie about what someone is about to pull over their connection.
 export const AGENT_PLATFORMS: AgentPlatform[] = [
   { os: "Windows", label: "Windows 10 / 11", file: "WorkPulse-Setup.exe", size: "3.3 MB", available: true, url: WINDOWS_INSTALLER_URL },
-  // macOS is "coming soon" until its universal build ships to S3 (the dmg isn't mirrored yet).
-  { os: "macOS", label: "macOS 12 and later", file: "WorkPulse.dmg", size: "9.5 MB", available: false, url: `${DOWNLOADS_BASE}/WorkPulse-universal.dmg` },
-  { os: "Linux", label: "Ubuntu / Debian", file: "WorkPulse.deb", size: "5.2 MB", available: true, url: `${DOWNLOADS_BASE}/WorkPulse-amd64.deb`, altUrl: `${DOWNLOADS_BASE}/WorkPulse-amd64.AppImage`, altFile: "WorkPulse.AppImage", altLabel: "AppImage", altSize: "79 MB" },
+  // Live since v0.1.1: the macOS job had never produced a dmg before (its `rustup target add` list
+  // was comma-separated, so it died in 17s), and the build is unsigned — see the note on the card.
+  { os: "macOS", label: "macOS 12 and later", file: "WorkPulse.dmg", size: "7.9 MB", available: true, url: `${DOWNLOADS_BASE}/WorkPulse-universal.dmg` },
+  { os: "Linux", label: "Ubuntu / Debian", file: "WorkPulse.deb", size: "5.5 MB", available: true, url: `${DOWNLOADS_BASE}/WorkPulse-amd64.deb`, altUrl: `${DOWNLOADS_BASE}/WorkPulse-amd64.AppImage`, altFile: "WorkPulse.AppImage", altLabel: "AppImage", altSize: "79 MB" },
 ]
 
 export const AGENT_ENROLLMENT_TOKEN = "wp_agent_8f3a2b9c4d1e7a60f5c2"

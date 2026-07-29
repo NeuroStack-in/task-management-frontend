@@ -139,6 +139,20 @@ export default function DownloadPage() {
                           {p.altSize ? ` · ${p.altSize}` : ""}
                         </button>
                       ) : null}
+                      {/* The macOS build is not yet signed with an Apple Developer ID, so Gatekeeper
+                          blocks it on first open. Saying so here costs one line; not saying it costs
+                          a support ticket per Mac user, who reasonably reads the warning as "this
+                          download is broken". Delete this once notarisation is in the release. */}
+                      {p.os === "macOS" ? (
+                        <p className="mt-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+                          First open: right-click the app and choose{" "}
+                          <span className="font-medium">Open</span>, or allow it under{" "}
+                          <span className="font-medium">
+                            System Settings › Privacy &amp; Security
+                          </span>
+                          .
+                        </p>
+                      ) : null}
                     </>
                   ) : (
                     <Button
