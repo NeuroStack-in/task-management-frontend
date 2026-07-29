@@ -119,15 +119,16 @@ export default function DownloadPage() {
         </Badge>
       </section>
 
-      {/* Re-install notice. The sign-in fix is compiled into the binary, so an existing install
-          cannot pick it up — and the in-app updater can't deliver it either. Everyone who installed
-          an earlier build has to download once more, and the page is the only place they'll find
-          that out. Remove this once the updater is fixed and the old builds have aged out. */}
+      {/* Re-install notice. The sign-in fix is compiled into the binary and the old builds' updater
+          pointed at a private repo that 404s, so neither could deliver itself — everyone on an
+          earlier build has to download once, and this page is the only place they'd find that out.
+          The second paragraph is the point: from this version on, it is self-updating, so this
+          notice can be deleted once the old builds have aged out of the fleet. */}
       <section className="flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/5 p-4">
         <RefreshCw className="mt-0.5 size-4 shrink-0 text-warning" />
         <div className="min-w-0 text-sm">
           <p className="font-medium">
-            Already have WorkPulse installed? Please download it again.
+            Already have WorkPulse installed? Please download it once more.
           </p>
           <p className="mt-1 leading-relaxed text-muted-foreground">
             Version {AGENT_RELEASE_VERSION} fixes the{" "}
@@ -137,7 +138,14 @@ export default function DownloadPage() {
             </span>{" "}
             error at sign-in. Run the new installer over your existing copy —
             there&apos;s no need to uninstall first, nothing is lost, and your
-            device keeps its history. Then sign in as normal.
+            device keeps its history.
+          </p>
+          <p className="mt-1.5 leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">
+              This is the last time you&apos;ll download it by hand.
+            </span>{" "}
+            From this version on the agent updates itself in the background — new
+            releases arrive automatically, with nothing for you to do.
           </p>
         </div>
       </section>
