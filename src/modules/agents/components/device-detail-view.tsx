@@ -108,8 +108,9 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Badge className={cn("font-medium", meta.badge)}>
-            <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
+          {/* Banner variant: the card colours are unreadable on `bg-feature` (see CONN_META). */}
+          <Badge className={cn("font-medium", meta.onBadge)}>
+            <span className={cn("mr-1.5 size-1.5 rounded-full", meta.onDot)} />
             {meta.label}
           </Badge>
           {device.state === "deactivated" && (

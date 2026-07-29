@@ -39,10 +39,43 @@ import { cn } from "@/lib/utils";
 import { useFleet } from "../use-fleet";
 import type { ApiDevice } from "../services/fleet.service";
 
-const CONN_META: Record<string, { label: string; badge: string; dot: string }> = {
-  online: { label: "Online", badge: "bg-success/12 text-success", dot: "bg-success" },
-  idle: { label: "Idle", badge: "bg-warning/15 text-warning", dot: "bg-warning" },
-  offline: { label: "Offline", badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" },
+/**
+ * Status colours in two flavours, because the same badge appears on two very different surfaces.
+ *
+ * `badge`/`dot` are tuned for a **card** — tinted background, coloured text. Reused on the device
+ * page's saturated `bg-feature` banner they fail: `text-success` green on teal is barely legible,
+ * which is the one word on that banner someone actually needs to read.
+ *
+ * `onBadge`/`onDot` are the banner versions: the glass language the rest of the feature surfaces use
+ * (`white/15` + a white inset ring), with the label in `feature-foreground` so contrast comes from
+ * the text and the **colour survives in the dot**. Offline's dot goes white/60 — `muted-foreground/40`
+ * is invisible on teal.
+ */
+const CONN_META: Record<
+  string,
+  { label: string; badge: string; dot: string; onBadge: string; onDot: string }
+> = {
+  online: {
+    label: "Online",
+    badge: "bg-success/12 text-success",
+    dot: "bg-success",
+    onBadge: "bg-white/15 text-feature-foreground ring-1 ring-inset ring-white/25",
+    onDot: "bg-success",
+  },
+  idle: {
+    label: "Idle",
+    badge: "bg-warning/15 text-warning",
+    dot: "bg-warning",
+    onBadge: "bg-white/15 text-feature-foreground ring-1 ring-inset ring-white/25",
+    onDot: "bg-warning",
+  },
+  offline: {
+    label: "Offline",
+    badge: "bg-muted text-muted-foreground",
+    dot: "bg-muted-foreground/40",
+    onBadge: "bg-white/10 text-feature-foreground/80 ring-1 ring-inset ring-white/20",
+    onDot: "bg-white/60",
+  },
 };
 /** Shared with the device detail page — one source for status colors and time formatting. */
 export const connMeta = (c: string) => CONN_META[c] ?? CONN_META.offline;
