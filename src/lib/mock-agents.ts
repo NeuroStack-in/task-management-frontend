@@ -69,6 +69,18 @@ const DOWNLOADS_BASE =
 
 export const WINDOWS_INSTALLER_URL = `${DOWNLOADS_BASE}/WorkPulse-x64-setup.exe`
 
+/**
+ * The release manifest the desktop agent's self-updater reads — `{ version, platforms: {…} }`.
+ *
+ * The Download page reads it too, so the version it advertises is the version it actually serves.
+ * {@link AGENT_RELEASE_VERSION} is a hand-maintained constant and had already gone stale twice in a
+ * day: `agent/latest/*` is overwritten by every release, so the files move whether or not anyone
+ * remembers to edit this file. The constant survives only as the fallback for a failed fetch.
+ *
+ * Publicly readable and CORS-enabled (GET/HEAD from any origin), same as the installers beside it.
+ */
+export const AGENT_MANIFEST_URL = `${DOWNLOADS_BASE}/latest.json`
+
 // Sizes are the real v0.1.1 artifacts in `agent/latest/` — they are shown before the download
 // starts, so a stale number is a small lie about what someone is about to pull over their connection.
 export const AGENT_PLATFORMS: AgentPlatform[] = [

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   Clock,
@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AGENT_MANIFEST_URL,
   AGENT_PLATFORMS,
   AGENT_RELEASE_VERSION,
   type AgentPlatform,
@@ -76,6 +77,31 @@ const MAC_STEPS = [
 export default function DownloadPage() {
   const [macHelpOpen, setMacHelpOpen] = useState(false);
 
+  /**
+   * The version actually being served, read from the release manifest rather than a constant.
+   *
+   * `agent/latest/*` is overwritten by every release, so the files move whether or not anyone
+   * remembers to edit the constant — which had already gone stale twice in a day, telling people
+   * they were downloading 0.1.3 while the button handed them 0.1.4. The constant remains as the
+   * fallback: if the fetch fails, a slightly old number beats an empty space.
+   */
+  const [version, setVersion] = useState(AGENT_RELEASE_VERSION);
+
+  useEffect(() => {
+    let live = true;
+    fetch(AGENT_MANIFEST_URL, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m: { version?: string } | null) => {
+        if (live && m?.version) setVersion(m.version);
+      })
+      .catch(() => {
+        // Offline, or the bucket is unreachable — the fallback constant is already displayed.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
   function triggerDownload(url: string, file: string) {
     const a = document.createElement("a");
     a.href = url;
@@ -115,7 +141,7 @@ export default function DownloadPage() {
           </p>
         </div>
         <Badge className="ml-auto hidden shrink-0 self-start bg-background/70 font-normal text-muted-foreground sm:inline-flex">
-          v{AGENT_RELEASE_VERSION}
+          v{version}
         </Badge>
       </section>
 
@@ -131,7 +157,7 @@ export default function DownloadPage() {
             Already have WorkPulse installed? Please download it once more.
           </p>
           <p className="mt-1 leading-relaxed text-muted-foreground">
-            Version {AGENT_RELEASE_VERSION} fixes the{" "}
+            Version {version} fixes the{" "}
             <span className="font-medium text-foreground">
               &ldquo;This agent isn&apos;t configured for your organization
               yet&rdquo;
