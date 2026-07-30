@@ -186,9 +186,10 @@ export function IntegrationsMarketplace() {
 }
 
 /**
- * Providers shown but temporarily switched off in the UI — rendered blurred and non-interactive
- * with a "Coming soon" overlay. The backend still lists and can connect them; this is a front-end
- * gate only (e.g. Google Calendar is parked until its OAuth verification lands).
+ * Providers shown but temporarily switched off in the UI — rendered softly blurred and
+ * non-interactive with a "Coming soon" overlay. Softly: the point is to say *this one isn't ready
+ * yet*, not to hide which provider it is. The backend still lists and can connect them; this is a
+ * front-end gate only (e.g. Google Calendar is parked until its OAuth verification lands).
  */
 const COMING_SOON = new Set<string>(["google_calendar"]);
 
@@ -221,7 +222,10 @@ function ProviderCard({
   if (comingSoon) {
     return (
       <Card className="relative overflow-hidden">
-        <div className="pointer-events-none select-none blur-[3px]" aria-hidden>
+        {/* 1px, not 3px: enough to read as "parked" without hiding *which* provider is parked.
+            At 3px the name and logo were unreadable, so the card said "Coming soon" about nothing
+            in particular. The scrim below carries most of the de-emphasis; the blur only softens. */}
+        <div className="pointer-events-none select-none blur-[1px]" aria-hidden>
           <CardHeader>
             <div className="flex items-start gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
@@ -242,7 +246,7 @@ function ProviderCard({
             <Button disabled>Connect</Button>
           </CardContent>
         </div>
-        <div className="absolute inset-0 flex items-center justify-center bg-background/40">
+        <div className="absolute inset-0 flex items-center justify-center bg-background/25">
           <Badge variant="secondary" className="text-sm font-medium shadow-soft">
             Coming soon
           </Badge>
