@@ -47,7 +47,6 @@ import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Loader } from "@/components/shared/loader";
-import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
 import type { ProjectFormValues } from "@/stores/projects.store";
@@ -81,9 +80,6 @@ interface ProjectDetailPageProps {
 }
 
 export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
-  const { can } = usePermissions();
-  const canManage = can("projects:manage");
-
   // Real backend. The server 404s a project the caller isn't a member of (no oversight bit), so the
   // "no access" case is `notFound` — there's no client-side scope check anymore.
   const {
@@ -98,7 +94,22 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     createTask,
     updateTaskFull,
     moveTask,
+    authority,
   } = useProjectDetail(id);
+
+  /**
+   * Project administration — **the server's resolved authority, not an org-wide bit.**
+   *
+   * This used to read `can("projects:manage")`, which was wrong in both directions. A project's own
+   * Manager who didn't also hold the org bit could not see "Edit project" for a project they run;
+   * and the org bit is what an admin would have to grant every employee to unblock task work, which
+   * would make them Manager of every project instead.
+   *
+   * `authority` is what the API returns precisely so the UI renders the server's answer rather than
+   * re-deriving the matrix (LLD §5). Task actions need no gate at all now — any member of a project
+   * may add and assign tasks, which is why "Add task" is always offered.
+   */
+  const canManageProject = authority === "manager";
 
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -280,7 +291,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               <FileDown className="size-4" />
               Report (PDF)
             </Button>
-            {canManage ? (
+            {canManageProject ? (
               <>
                 <Button
                   variant="outline"

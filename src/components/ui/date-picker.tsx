@@ -39,6 +39,38 @@ function useDismiss(open: boolean, close: () => void) {
 const TRIGGER =
   "flex h-8 items-center gap-2 rounded-md border bg-background px-3 text-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
+/**
+ * Rough popup extents, used only to choose a side before the popup exists.
+ *
+ * Measuring for real would need a render-then-measure pass and a reflow; the popup is a fixed
+ * layout, so a constant is honest and cheaper. Slightly over-estimating is the safe direction — it
+ * flips a fraction early rather than a fraction late.
+ */
+const CAL_W = 264;
+const CAL_H = 320;
+const TIME_H = 240;
+const EDGE = 8;
+
+/**
+ * Which side to open on, given the trigger's position.
+ *
+ * The horizontal half already existed; the vertical half is new. A picker inside a dialog was
+ * hardcoded to `top-full`, so on the Add-task form — where the field sits low in a scrollable body —
+ * the calendar opened downward into the dialog's bottom edge and was clipped. The user then had to
+ * scroll the dialog to reach dates, and the last week of the month was simply unreachable.
+ *
+ * Flip up only when there genuinely isn't room below **and** there is more room above: an
+ * unconditional flip would just clip against the top edge instead on a short viewport.
+ */
+function pickSide(rect: DOMRect, height: number) {
+  const below = window.innerHeight - rect.bottom;
+  const above = rect.top;
+  return {
+    alignRight: rect.left + CAL_W > window.innerWidth - EDGE,
+    dropUp: below < height + EDGE && above > below,
+  };
+}
+
 export function DatePicker({
   value,
   onChange,
@@ -55,16 +87,15 @@ export function DatePicker({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [alignRight, setAlignRight] = useState(false);
+  const [side, setSide] = useState({ alignRight: false, dropUp: false });
   const ref = useDismiss(open, () => setOpen(false));
   const toggle = () => {
     setOpen((o) => {
       const next = !o;
-      // Anchor to the trigger's right edge if the calendar (≈264px) would
-      // overflow the viewport on the right.
+      // Decide the side from the trigger's live position, on every open — the same field can sit high
+      // or low depending on how far a scrollable dialog has been scrolled.
       if (next && ref.current) {
-        const r = ref.current.getBoundingClientRect();
-        setAlignRight(r.left + 264 > window.innerWidth - 8);
+        setSide(pickSide(ref.current.getBoundingClientRect(), CAL_H));
       }
       return next;
     });
@@ -80,8 +111,9 @@ export function DatePicker({
       {open ? (
         <div
           className={cn(
-            "absolute top-full z-50 mt-2",
-            alignRight ? "right-0" : "left-0",
+            "absolute z-50",
+            side.dropUp ? "bottom-full mb-2" : "top-full mt-2",
+            side.alignRight ? "right-0" : "left-0",
           )}
         >
           <Calendar
@@ -121,14 +153,15 @@ export function TimePicker({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [alignRight, setAlignRight] = useState(false);
+  // Same flip-when-there's-no-room-below as DatePicker: this list is ~240px and appears in the same
+  // dialogs, so hardcoding `top-full` clipped it against the bottom edge in exactly the same way.
+  const [side, setSide] = useState({ alignRight: false, dropUp: false });
   const ref = useDismiss(open, () => setOpen(false));
   const toggle = () => {
     setOpen((o) => {
       const next = !o;
       if (next && ref.current) {
-        const r = ref.current.getBoundingClientRect();
-        setAlignRight(r.left + 140 > window.innerWidth - 8);
+        setSide(pickSide(ref.current.getBoundingClientRect(), TIME_H));
       }
       return next;
     });
@@ -148,8 +181,9 @@ export function TimePicker({
       {open ? (
         <div
           className={cn(
-            "absolute top-full z-50 mt-2 w-32 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
-            alignRight ? "right-0" : "left-0",
+            "absolute z-50 w-32 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
+            side.dropUp ? "bottom-full mb-2" : "top-full mt-2",
+            side.alignRight ? "right-0" : "left-0",
           )}
         >
           <button
