@@ -72,11 +72,13 @@ export function Calendar({
   return (
     <div
       className={cn(
-        "w-64 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
+        // Compact by design: this opens inside dialogs whose body is only a few hundred pixels tall
+        // (Add task), so every row of padding is a row of the month that gets clipped instead.
+        "w-60 rounded-lg border bg-popover p-2.5 text-popover-foreground shadow-lg ring-1 ring-foreground/10",
         className,
       )}
     >
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-1.5 flex items-center justify-between">
         <span className="text-sm font-medium">
           {MONTHS[view.m0]} {view.y}
         </span>
@@ -102,11 +104,11 @@ export function Calendar({
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-0.5">
         {WEEKDAYS.map((w) => (
           <div
             key={w}
-            className="flex h-7 items-center justify-center text-xs font-medium text-muted-foreground"
+            className="flex h-6 items-center justify-center text-[11px] font-medium text-muted-foreground"
           >
             {w}
           </div>
@@ -118,7 +120,7 @@ export function Calendar({
             disabled={c.disabled}
             onClick={() => onSelect(c.iso)}
             className={cn(
-              "flex size-8 items-center justify-center rounded-md text-sm transition-colors",
+              "flex size-7 items-center justify-center rounded-md text-[13px] transition-colors",
               c.selected
                 ? "bg-primary font-medium text-primary-foreground hover:bg-primary"
                 : c.inMonth
