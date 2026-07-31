@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { cn } from "@/lib/utils";
+import { Markdown } from "@/components/shared/markdown";
 
 export type AiTone = "up" | "down" | "flat";
 export interface AiSignal {
@@ -67,9 +68,8 @@ export function AiReportCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 pt-3">
-        <p className="text-sm leading-relaxed text-feature-foreground/90">
-          {summary}
-        </p>
+        {/* The model writes Markdown; printed raw it arrived as literal `**` and pipes. */}
+        <Markdown className="text-feature-foreground/90">{summary}</Markdown>
 
         {metrics.length ? (
           <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-white/15 pt-3">

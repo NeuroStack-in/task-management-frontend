@@ -13,6 +13,7 @@ import {
   sendAssistantMessage,
 } from "@/modules/communication/services/assistant.service";
 import { cn } from "@/lib/utils";
+import { Markdown } from "@/components/shared/markdown";
 
 interface Message {
   id: number;
@@ -352,7 +353,10 @@ export function ChatBot() {
                         : "bg-muted text-foreground self-start",
                     )}
                   >
-                    {m.text}
+                    {/* Only the assistant writes Markdown. A user's message is rendered as the
+                        literal text they typed — running it through a renderer would silently
+                        reformat their own words back at them. */}
+                    {m.role === "user" ? m.text : <Markdown>{m.text}</Markdown>}
                   </div>
                 ))}
                 {pending ? (

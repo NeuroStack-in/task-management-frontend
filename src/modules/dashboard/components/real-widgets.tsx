@@ -43,6 +43,7 @@ import {
   type ApiDayResponse,
 } from "@/modules/attendance/services/attendance.service";
 import { useAssistantStore } from "@/stores/assistant.store";
+import { Markdown } from "@/components/shared/markdown";
 import type { DashboardSummary } from "../use-dashboard-summary";
 
 /** Yesterday in the caller's local calendar as `YYYY-MM-DD` — a completed, fully-closed day. */
@@ -396,7 +397,7 @@ export function AiDailySummaryCard() {
                   Regenerating your briefing…
                 </span>
               ) : (
-                <p className="leading-relaxed">{data.narrative}</p>
+                <Markdown>{data.narrative}</Markdown>
               )}
             </div>
             <ul className="grid grid-cols-2 gap-2">

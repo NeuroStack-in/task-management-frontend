@@ -17,6 +17,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
+import { Markdown } from "@/components/shared/markdown";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { PeopleAttentionCard } from "./people-attention";
 import { ReportsLibrary } from "./reports-library";
@@ -217,9 +218,9 @@ function AiBriefing({ report }: { report: AiReport }) {
           <Sparkles className="size-4" /> Executive summary · {prettyDate(report.date)}
         </div>
 
-        <p className="mt-3 max-w-2xl text-[0.95rem] leading-relaxed text-feature-foreground/90">
+        <Markdown className="mt-3 max-w-2xl text-[0.95rem] text-feature-foreground/90">
           {report.narrative}
-        </p>
+        </Markdown>
 
         {attention.length > 0 ? (
           <div className="mt-5 space-y-2 border-t border-white/15 pt-4">
