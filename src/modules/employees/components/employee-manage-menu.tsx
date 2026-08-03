@@ -93,7 +93,10 @@ export function EmployeeManageMenu({
       onChanged();
     } catch (e) {
       toast.error(
-        messageOf(e, `Couldn't ${isActive ? "deactivate" : "reactivate"} ${name}. Try again.`),
+        messageOf(
+          e,
+          `Couldn't ${isActive ? "deactivate" : "reactivate"} ${name}. Try again.`,
+        ),
       );
     } finally {
       setBusy(false);
@@ -120,25 +123,35 @@ export function EmployeeManageMenu({
         <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
           <MoreVertical className="size-4" /> Manage
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setActivationOpen(true)}>
+        {/* `w-auto` overrides the shared content's `w-(--anchor-width)`, which pins the popup to the
+            trigger. "Manage" is a narrow button, so inheriting its width wrapped "Delete permanently"
+            onto a second line and left the icon floating beside the wrap. Size to content instead. */}
+        <DropdownMenuContent align="end" className="w-auto min-w-44">
+          <DropdownMenuItem
+            onClick={() => setActivationOpen(true)}
+            className="gap-2 py-1.5 whitespace-nowrap"
+          >
             {isActive ? (
               <>
-                <UserX className="size-4" /> Deactivate
+                <UserX className="text-muted-foreground size-4" /> Deactivate
               </>
             ) : (
               <>
-                <UserCheck className="size-4" /> Reactivate
+                <UserCheck className="text-muted-foreground size-4" /> Reactivate
               </>
             )}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          {/* `variant="destructive"` rather than hand-rolled text colours: it also carries the
+              destructive focus background and tints the icon, which the ad-hoc classes missed —
+              the row highlighted in plain grey on hover, like a neutral action. */}
           <DropdownMenuItem
+            variant="destructive"
             onClick={() => {
               setConfirmName("");
               setDeleteOpen(true);
             }}
-            className="text-destructive focus:text-destructive"
+            className="gap-2 py-1.5 whitespace-nowrap"
           >
             <Trash2 className="size-4" /> Delete permanently
           </DropdownMenuItem>
@@ -149,7 +162,9 @@ export function EmployeeManageMenu({
       <Dialog open={activationOpen} onOpenChange={(o) => !busy && setActivationOpen(o)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{isActive ? `Deactivate ${name}?` : `Reactivate ${name}?`}</DialogTitle>
+            <DialogTitle>
+              {isActive ? `Deactivate ${name}?` : `Reactivate ${name}?`}
+            </DialogTitle>
             <DialogDescription>
               {isActive
                 ? "Their sign-in is disabled immediately, and their projects and tasks are reassigned. Their record and history stay — you can reactivate them any time."
@@ -157,7 +172,11 @@ export function EmployeeManageMenu({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setActivationOpen(false)} disabled={busy}>
+            <Button
+              variant="outline"
+              onClick={() => setActivationOpen(false)}
+              disabled={busy}
+            >
               Cancel
             </Button>
             <Button onClick={toggleActivation} disabled={busy}>
@@ -173,27 +192,32 @@ export function EmployeeManageMenu({
           <DialogHeader>
             <DialogTitle>Delete {name} permanently?</DialogTitle>
             <DialogDescription>
-              This removes the employee from the organization entirely — not the same as deactivating,
-              and it <span className="font-medium text-foreground">cannot be undone</span>. Their time,
-              attendance and payroll history stay on record; their login, directory entry and email are
-              erased.
+              This removes the employee from the organization entirely — not the same as
+              deactivating, and it{" "}
+              <span className="text-foreground font-medium">cannot be undone</span>. Their
+              time, attendance and payroll history stay on record; their login, directory
+              entry and email are erased.
             </DialogDescription>
           </DialogHeader>
 
           {isActive ? (
             // Permanent delete is only allowed once the deactivation saga has reassigned their work
             // and released their seat/devices — so an active employee is steered there first.
-            <div className="min-w-0 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm">
-              <span className="font-medium text-foreground">Deactivate {name} first.</span>{" "}
+            <div className="border-warning/40 bg-warning/10 min-w-0 rounded-lg border px-3 py-2.5 text-sm">
+              <span className="text-foreground font-medium">
+                Deactivate {name} first.
+              </span>{" "}
               <span className="text-muted-foreground">
-                Permanent deletion is only allowed on a deactivated employee — deactivating reassigns
-                their projects and revokes access. Close this, choose Deactivate, then delete.
+                Permanent deletion is only allowed on a deactivated employee —
+                deactivating reassigns their projects and revokes access. Close this,
+                choose Deactivate, then delete.
               </span>
             </div>
           ) : (
             <div className="min-w-0 space-y-1.5">
-              <p className="text-xs text-muted-foreground">
-                Type <span className="font-medium text-foreground">{name}</span> to confirm.
+              <p className="text-muted-foreground text-xs">
+                Type <span className="text-foreground font-medium">{name}</span> to
+                confirm.
               </p>
               <Input
                 value={confirmName}
@@ -206,7 +230,11 @@ export function EmployeeManageMenu({
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={busy}>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteOpen(false)}
+              disabled={busy}
+            >
               Cancel
             </Button>
             <Button
