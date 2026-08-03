@@ -37,6 +37,7 @@ import { formatDuration } from "@/lib/format";
 import { formatHours } from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
 import { useTimesheet } from "../use-timesheet";
+import { TimesheetHistory } from "./timesheet-history";
 import { TimerHero } from "./timer-hero";
 import { WeeklyHoursChart } from "./weekly-hours-chart";
 import { PayrollWidget } from "./payroll-widget";
@@ -55,8 +56,7 @@ import { PayrollWidget } from "./payroll-widget";
  * something to paper over; the table below shows only what the backend actually has.
  */
 export function PersonalTimeView({ canExport }: { canExport: boolean }) {
-  const { rows, totalSec, billableSec, running, loading, error, reload } =
-    useTimesheet();
+  const { rows, totalSec, billableSec, running, loading, error, reload } = useTimesheet();
 
   const dayStats = useMemo(
     () => ({
@@ -96,9 +96,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
         Billable: e.billable ? "Yes" : "No",
       })),
     );
-    const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8;" }),
-    );
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = "my-timesheet.csv";
@@ -132,15 +130,13 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
           <CardTitle>Today&apos;s timesheet</CardTitle>
           <CardDescription className="flex flex-wrap items-center gap-x-1.5">
             <CalendarDays className="size-3.5" />
-            <span className="font-medium text-foreground">
-              {today || "Today"}
-            </span>
+            <span className="text-foreground font-medium">{today || "Today"}</span>
             <span>
               · {rows.length} {rows.length === 1 ? "entry" : "entries"}
             </span>
             {running ? (
               <Badge variant="secondary" className="gap-1.5">
-                <span className="size-1.5 animate-pulse rounded-full bg-success" />
+                <span className="bg-success size-1.5 animate-pulse rounded-full" />
                 Session running
               </Badge>
             ) : null}
@@ -159,10 +155,10 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
         <CardContent className="space-y-5">
           {error ? (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-10 text-center">
-              <TriangleAlert className="size-5 text-warning" />
+              <TriangleAlert className="text-warning size-5" />
               <div>
                 <p className="text-sm font-medium">Couldn&apos;t load your timesheet</p>
-                <p className="text-sm text-muted-foreground">{error}</p>
+                <p className="text-muted-foreground text-sm">{error}</p>
               </div>
               <Button variant="outline" size="sm" onClick={reload}>
                 Retry
@@ -170,132 +166,140 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
             </div>
           ) : (
             <>
-          <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-xl border sm:grid-cols-4 sm:divide-y-0">
-            <SummaryCell
-              icon={BadgeDollarSign}
-              label="Billable today"
-              value={dayStats.billable}
-              tone="success"
-              loading={loading}
-            />
-            <SummaryCell
-              icon={Clock}
-              label="Total tracked"
-              value={formatDuration(totalSec)}
-              loading={loading}
-            />
-            <SummaryCell
-              icon={Timer}
-              label="Longest session"
-              value={dayStats.longest}
-              loading={loading}
-            />
-            <SummaryCell
-              icon={ListChecks}
-              label="Tasks tracked"
-              value={dayStats.tasks}
-              loading={loading}
-            />
-          </div>
+              <div className="divide-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-xl border sm:grid-cols-4 sm:divide-y-0">
+                <SummaryCell
+                  icon={BadgeDollarSign}
+                  label="Billable today"
+                  value={dayStats.billable}
+                  tone="success"
+                  loading={loading}
+                />
+                <SummaryCell
+                  icon={Clock}
+                  label="Total tracked"
+                  value={formatDuration(totalSec)}
+                  loading={loading}
+                />
+                <SummaryCell
+                  icon={Timer}
+                  label="Longest session"
+                  value={dayStats.longest}
+                  loading={loading}
+                />
+                <SummaryCell
+                  icon={ListChecks}
+                  label="Tasks tracked"
+                  value={dayStats.tasks}
+                  loading={loading}
+                />
+              </div>
 
-          <div className="overflow-x-auto rounded-xl border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="pl-6 text-xs font-medium uppercase tracking-wide">
-                    Task
-                  </TableHead>
-                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
-                    Project
-                  </TableHead>
-                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
-                    Time
-                  </TableHead>
-                  <TableHead className="text-center text-xs font-medium uppercase tracking-wide">
-                    Duration
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  Array.from({ length: 3 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="pl-6" colSpan={4}>
-                        <Skeleton className="h-5 w-full" />
-                      </TableCell>
+              <div className="overflow-x-auto rounded-xl border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableHead className="pl-6 text-xs font-medium tracking-wide uppercase">
+                        Task
+                      </TableHead>
+                      <TableHead className="text-center text-xs font-medium tracking-wide uppercase">
+                        Project
+                      </TableHead>
+                      <TableHead className="text-center text-xs font-medium tracking-wide uppercase">
+                        Time
+                      </TableHead>
+                      <TableHead className="text-center text-xs font-medium tracking-wide uppercase">
+                        Duration
+                      </TableHead>
                     </TableRow>
-                  ))
-                ) : rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={4}
-                      className="py-10 text-center text-sm text-muted-foreground"
-                    >
-                      No time tracked today. Sessions appear here once the desktop
-                      agent syncs them.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  rows.map((e) => (
-                    <TableRow key={e.id}>
-                      <TableCell className="pl-6">
-                        {/* Two distinct facts, stacked rather than competing for one label: the
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="pl-6" colSpan={4}>
+                            <Skeleton className="h-5 w-full" />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="text-muted-foreground py-10 text-center text-sm"
+                        >
+                          No time tracked today. Sessions appear here once the desktop
+                          agent syncs them.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      rows.map((e) => (
+                        <TableRow key={e.id}>
+                          <TableCell className="pl-6">
+                            {/* Two distinct facts, stacked rather than competing for one label: the
                             **description** is what the person typed and is the thing they recognise,
                             so it leads; the **task** is the assignment it was booked against and is
                             optional (a project-only session has none). Showing whichever happened to
                             be present made one row read "New One" and the next "Api testing", which
                             looks like inconsistent data rather than two different fields. */}
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
-                            {e.description || e.task || "No description"}
-                          </span>
-                          {e.billable ? <Badge variant="secondary">Billable</Badge> : null}
-                          {/* The task was deleted or unassigned by the time the session folded.
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">
+                                {e.description || e.task || "No description"}
+                              </span>
+                              {e.billable ? (
+                                <Badge variant="secondary">Billable</Badge>
+                              ) : null}
+                              {/* The task was deleted or unassigned by the time the session folded.
                               The entry still counts — the time was really worked (LLD §4). */}
-                          {e.taskInvalid ? (
-                            <Badge variant="outline" className="gap-1 text-warning">
-                              <TriangleAlert className="size-3" /> Task removed
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {/* Only when it adds something the line above doesn't already say. */}
-                        {e.task && e.description ? (
-                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                            {e.task}
-                          </span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-center text-muted-foreground">{e.project}</TableCell>
-                      <TableCell className="text-center font-mono text-xs tabular-nums text-muted-foreground">
-                        {e.start} – {e.end ?? "…"}
-                      </TableCell>
-                      <TableCell className="text-center font-mono tabular-nums">
-                        {/* A running session has no duration yet — not a zero-length one. */}
-                        {e.running ? (
-                          <span className="text-muted-foreground">Running</span>
-                        ) : (
-                          formatDuration(e.durationSec)
-                        )}
+                              {e.taskInvalid ? (
+                                <Badge variant="outline" className="text-warning gap-1">
+                                  <TriangleAlert className="size-3" /> Task removed
+                                </Badge>
+                              ) : null}
+                            </div>
+                            {/* Only when it adds something the line above doesn't already say. */}
+                            {e.task && e.description ? (
+                              <span className="text-muted-foreground mt-0.5 block truncate text-xs">
+                                {e.task}
+                              </span>
+                            ) : null}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-center">
+                            {e.project}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-center font-mono text-xs tabular-nums">
+                            {e.start} – {e.end ?? "…"}
+                          </TableCell>
+                          <TableCell className="text-center font-mono tabular-nums">
+                            {/* A running session has no duration yet — not a zero-length one. */}
+                            {e.running ? (
+                              <span className="text-muted-foreground">Running</span>
+                            ) : (
+                              formatDuration(e.durationSec)
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell className="pl-6 font-medium">Total</TableCell>
+                      <TableCell colSpan={2} />
+                      <TableCell className="text-center font-mono font-semibold tabular-nums">
+                        {formatDuration(totalSec)}
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TableCell className="pl-6 font-medium">Total</TableCell>
-                  <TableCell colSpan={2} />
-                  <TableCell className="text-center font-mono font-semibold tabular-nums">
-                    {formatDuration(totalSec)}
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          </div>
+                  </TableFooter>
+                </Table>
+              </div>
             </>
           )}
         </CardContent>
       </Card>
+
+      {/* Previous days sit directly under today: today stays the primary view, and history is one
+          date-pick away rather than a separate page. */}
+      <TimesheetHistory />
 
       {/* Weekly hours (stacked bar + week arrows) alongside personal payroll */}
       <div className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
@@ -320,7 +324,7 @@ function SummaryCell({
   loading?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3 bg-card px-4 py-3.5">
+    <div className="bg-card flex items-center gap-3 px-4 py-3.5">
       <span
         className={cn(
           "flex size-9 shrink-0 items-center justify-center rounded-lg",
@@ -332,13 +336,13 @@ function SummaryCell({
         <Icon className="size-[1.15rem]" />
       </span>
       <div className="min-w-0">
-        <p className="truncate text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="text-muted-foreground truncate text-[0.7rem] font-medium tracking-wide uppercase">
           {label}
         </p>
         {loading ? (
           <Skeleton className="mt-1 h-5 w-16" />
         ) : (
-          <p className="text-lg font-semibold leading-tight tabular-nums">{value}</p>
+          <p className="text-lg leading-tight font-semibold tabular-nums">{value}</p>
         )}
       </div>
     </div>

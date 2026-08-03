@@ -19,14 +19,17 @@ import { useEffect, useRef } from "react";
  * `fn` should be a **background** refresh — one that updates state without flashing a loading spinner.
  * A poll that blanks the screen every interval is worse than no poll.
  */
-export function usePoll(fn: () => void, intervalMs: number) {
+export function usePoll(fn: () => void, intervalMs: number | null) {
   const fnRef = useRef(fn);
   useEffect(() => {
     fnRef.current = fn;
   });
 
   useEffect(() => {
-    if (intervalMs <= 0) return;
+    // `null` (or a non-positive interval) disables polling outright — including the
+    // refetch-on-return listener, which would otherwise still fire for a caller that asked for no
+    // polling at all. Callers use this for data that cannot change, e.g. a past day's timesheet.
+    if (intervalMs === null || intervalMs <= 0) return;
     let id: ReturnType<typeof setInterval> | undefined;
 
     const start = () => {
