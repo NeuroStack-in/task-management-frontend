@@ -41,12 +41,7 @@ export interface Project {
 
 // `blocked` matches the backend's TaskStatus (LLD §5) — an exception state reachable from any
 // column, not a stage. It was missing here while the board was mock; the real board serves it.
-export type TaskStatus =
-  | "todo"
-  | "in_progress"
-  | "in_review"
-  | "done"
-  | "blocked";
+export type TaskStatus = "todo" | "in_progress" | "in_review" | "done" | "blocked";
 export type TaskPriority = "low" | "medium" | "high";
 
 export interface Task {
@@ -58,6 +53,14 @@ export interface Task {
   priority: TaskPriority;
   dueDate: string | null;
   estimateHours: number;
+  /**
+   * Who created the task (the server's `created_by`). Delete authority depends on it — a project
+   * Member may remove only their own tasks (`canDeleteTask` in `./lib`).
+   *
+   * Optional because tasks predating the attribute omit it, and the seed/store copies never had it.
+   * Absent means "not mine" — never assume ownership from a missing value.
+   */
+  createdBy?: string | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -77,11 +80,7 @@ export const PROJECT_STATUS_META: Record<ProjectStatus, StatusMeta> = {
   completed: { label: "Completed", tone: "success" },
 };
 
-export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
-  "active",
-  "on_hold",
-  "completed",
-];
+export const PROJECT_STATUS_ORDER: ProjectStatus[] = ["active", "on_hold", "completed"];
 
 export interface TaskStatusMeta {
   label: string;

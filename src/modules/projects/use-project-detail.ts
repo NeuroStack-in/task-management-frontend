@@ -83,6 +83,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
               priority: (t.priority as TaskPriority) ?? "medium",
               dueDate: t.due ?? null,
               estimateHours: t.estimate_hours ?? 0,
+              createdBy: t.created_by ?? null,
             })),
           ),
         );
@@ -239,9 +240,7 @@ async function syncMembers(
   const before = new Set(current);
   const after = new Set(next.filter(Boolean));
   const added = [...after].filter((uid) => !before.has(uid));
-  const removed = [...before].filter(
-    (uid) => !after.has(uid) && uid !== managerId,
-  );
+  const removed = [...before].filter((uid) => !after.has(uid) && uid !== managerId);
   if (!added.length && !removed.length) return;
 
   const results = await Promise.allSettled([

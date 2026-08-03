@@ -51,9 +51,7 @@ export function buildUserMap(users: User[]): Record<string, UserMini> {
  * - **`name` empty** — the server looked and the `User` item is gone (a deleted employee whose
  *   membership row survives). Fall back to the id so a real membership is never invisible.
  */
-export function membersToUserMap(
-  members: ApiProjectMember[],
-): Record<string, UserMini> {
+export function membersToUserMap(members: ApiProjectMember[]): Record<string, UserMini> {
   const map: Record<string, UserMini> = {};
   for (const m of members) {
     if (m.name === undefined) continue;
@@ -69,8 +67,18 @@ export function membersToUserMap(
 /* ----------------------------- formatting ----------------------------- */
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 export function formatDate(iso: string): string {
@@ -114,9 +122,7 @@ export interface ProjectStats {
 
 export function projectStats(projects: Project[]): ProjectStats {
   const active = projects.filter((p) => p.status === "active");
-  const live = projects.filter(
-    (p) => p.status === "active" || p.status === "on_hold",
-  );
+  const live = projects.filter((p) => p.status === "active" || p.status === "on_hold");
   const avgProgress = live.length
     ? Math.round(live.reduce((s, p) => s + p.progress, 0) / live.length)
     : 0;
@@ -150,6 +156,27 @@ export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
   };
   for (const t of tasks) counts[t.status] += 1;
   return counts;
+}
+
+/**
+ * May this caller delete this task? Mirrors `projects::delete_task` (backend LLD §5).
+ *
+ * - **Manager | Lead** — any task in the project. An org admin holding `projects:manage` arrives
+ *   here as `manager`, because that override is what `GET /v1/projects/{id}` resolves it to.
+ * - **Member** — only tasks they created. A task with no recorded `createdBy` (written before the
+ *   server stored it) is not theirs: the server's `created_by = :me` condition fails it too, so
+ *   offering the button would only produce a 403.
+ *
+ * This is UX, not security — the server re-decides on every DELETE. It exists so the card shows an
+ * action that will actually work, rather than one that fails on click or is hidden when it wouldn't.
+ */
+export function canDeleteTask(
+  task: Pick<Task, "createdBy">,
+  authority: string,
+  currentUserId: string | null | undefined,
+): boolean {
+  if (authority === "manager" || authority === "lead") return true;
+  return Boolean(currentUserId && task.createdBy === currentUserId);
 }
 
 /* --------------------- tone → literal class maps ---------------------- */

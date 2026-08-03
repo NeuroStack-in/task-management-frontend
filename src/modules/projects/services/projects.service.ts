@@ -127,6 +127,14 @@ export interface ApiBoardTask {
   /** `low` | `medium` | `high`. */
   priority: string;
   estimate_hours?: number;
+  /**
+   * Who created the task (Cognito `sub`). Drives the delete affordance: a project **Member** may
+   * delete only their own tasks, so the card can't know whether to offer Delete without this.
+   *
+   * Absent on tasks written before the server recorded it — read that as "not mine", which is how
+   * the server answers too (`delete_task` fails the `created_by = :me` condition).
+   */
+  created_by?: string;
 }
 
 export interface ApiBoardColumn {
@@ -207,6 +215,14 @@ export function updateTask(
   );
 }
 
+/**
+ * `DELETE /v1/projects/{id}/tasks/{taskId}` — 204, and idempotent (deleting a task that is already
+ * gone succeeds).
+ *
+ * **Authority is the server's**: Manager/Lead — and an admin holding `projects:manage` — delete any
+ * task; a plain Member deletes only tasks they created and gets a 403 otherwise. Gate the button
+ * with `canDeleteTask` (`../lib`) so the UI agrees with that answer, never stands in for it.
+ */
 export async function deleteTask(projectId: string, taskId: string): Promise<void> {
   await apiFetch(
     `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`,

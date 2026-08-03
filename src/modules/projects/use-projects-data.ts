@@ -26,13 +26,7 @@ import {
   addMember,
 } from "./services/projects.service";
 import type { NewTask, TaskPatch } from "./services/projects.service";
-import type {
-  Project,
-  ProjectStatus,
-  Task,
-  TaskPriority,
-  TaskStatus,
-} from "./types";
+import type { Project, ProjectStatus, Task, TaskPriority, TaskStatus } from "./types";
 import { membersToUserMap, type UserMini } from "./lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 
@@ -143,6 +137,7 @@ export function useProjectsData(): ProjectsData {
                 priority: (t.priority as TaskPriority) ?? "medium",
                 dueDate: t.due ?? null,
                 estimateHours: t.estimate_hours ?? 0,
+                createdBy: t.created_by ?? null,
               });
             }
           }

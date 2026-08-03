@@ -29,11 +29,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,6 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ApiError } from "@/lib/api";
 import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
@@ -61,6 +58,7 @@ import {
   type TaskStatus,
 } from "../types";
 import {
+  canDeleteTask,
   daysUntil,
   dueLabel,
   formatDate,
@@ -70,6 +68,7 @@ import {
   toneSoft,
   type UserMini,
 } from "../lib";
+import { useAuthStore } from "@/stores/auth.store";
 import { MemberStack, Segmented, StatusBadge } from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { TaskFormDialog } from "./task-form-dialog";
@@ -94,8 +93,10 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     createTask,
     updateTaskFull,
     moveTask,
+    deleteTask,
     authority,
   } = useProjectDetail(id);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
 
   /**
    * Project administration — **the server's resolved authority, not an org-wide bit.**
@@ -111,9 +112,19 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
    */
   const canManageProject = authority === "manager";
 
+  /**
+   * Who may delete which task — the same rule the server enforces (`projects::delete_task`):
+   * Manager/Lead (and an admin with `projects:manage`, which resolves to `manager`) delete any task;
+   * everyone else deletes only what they created. Rendered per-task rather than as one page-level
+   * flag, because for a Member the answer genuinely differs card by card.
+   */
+  const canDelete = (t: Task) => canDeleteTask(t, authority, currentUserId);
+
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
   const [taskView, setTaskView] = useState<"board" | "list">("board");
@@ -238,8 +249,34 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
       setTaskOpen(false);
     } catch (e) {
       const msg =
-        e instanceof Error && e.message ? e.message : "Couldn't save the task. Try again.";
+        e instanceof Error && e.message
+          ? e.message
+          : "Couldn't save the task. Try again.";
       toast.error(msg);
+    }
+  };
+
+  const handleTaskDelete = async () => {
+    if (!taskToDelete) return;
+    setDeleting(true);
+    try {
+      await deleteTask(taskToDelete.id);
+      toast.success("Task deleted", { description: taskToDelete.title });
+      setTaskToDelete(null);
+    } catch (e) {
+      // 403 is the one outcome worth naming: the gate above should have hidden the button, so
+      // reaching it means the server disagreed — a stale board, or a role that changed underfoot.
+      const denied = e instanceof ApiError && e.status === 403;
+      toast.error(
+        denied
+          ? "You can only delete tasks you created. Ask a project lead to remove this one."
+          : e instanceof Error && e.message
+            ? e.message
+            : "Couldn't delete the task. Try again.",
+      );
+      if (denied) reload();
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -267,11 +304,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     if (!over) return;
     const target = over.id as TaskStatus;
     const moved = tasks.find((t) => t.id === active.id);
-    if (
-      moved &&
-      moved.status !== target &&
-      TASK_STATUS_ORDER.includes(target)
-    ) {
+    if (moved && moved.status !== target && TASK_STATUS_ORDER.includes(target)) {
       moveTask(moved.id, target);
     }
   };
@@ -283,11 +316,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         title={project.name}
         actions={
           <>
-            <Button
-              variant="outline"
-              className="gap-1.5"
-              onClick={downloadReport}
-            >
+            <Button variant="outline" className="gap-1.5" onClick={downloadReport}>
               <FileDown className="size-4" />
               Report (PDF)
             </Button>
@@ -303,7 +332,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                 </Button>
                 <Button
                   variant="outline"
-                  className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive gap-1.5"
                   onClick={() => setConfirmOpen(true)}
                 >
                   <Trash2 className="size-4" />
@@ -317,7 +346,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
 
       <Link
         href="/projects"
-        className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1.5 text-sm font-medium transition-colors"
       >
         <ArrowLeft className="size-4" />
         All projects
@@ -361,7 +390,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               ) : null}
             </div>
 
-            <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h1 className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
               {project.name}
             </h1>
 
@@ -407,37 +436,35 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             </p>
             <p
               className={cn(
-                "mt-1 font-heading text-2xl font-semibold tabular-nums",
+                "font-heading mt-1 text-2xl font-semibold tabular-nums",
                 daysLeft < 0 ? "text-rose-200" : "text-white",
               )}
             >
               {deadlineText}
             </p>
-            <p className="mt-0.5 text-xs text-white/70">
-              {formatDate(project.dueDate)}
-            </p>
+            <p className="mt-0.5 text-xs text-white/70">{formatDate(project.dueDate)}</p>
           </div>
         </div>
       </header>
 
       {/* KPI row */}
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="flex flex-col items-center justify-center rounded-2xl border bg-card p-5">
-          <p className="self-start text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        <div className="bg-card flex flex-col items-center justify-center rounded-2xl border p-5">
+          <p className="text-muted-foreground self-start text-xs font-medium tracking-wide uppercase">
             Progress
           </p>
           <Gauge value={project.progress} label="of work done" size={172} />
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="text-muted-foreground mt-1 text-xs">
             {completed} of {tasks.length} tasks done
           </p>
         </div>
 
-        <div className="flex flex-col rounded-2xl border bg-card p-5">
+        <div className="bg-card flex flex-col rounded-2xl border p-5">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
               Tasks
             </p>
-            <span className="flex size-8 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <span className="bg-feature-tint text-primary flex size-8 items-center justify-center rounded-full">
               <ListChecks className="size-4" />
             </span>
           </div>
@@ -445,24 +472,20 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             <span className="font-display text-3xl font-semibold tabular-nums">
               {tasks.length}
             </span>
-            <span className="text-sm text-muted-foreground">total</span>
+            <span className="text-muted-foreground text-sm">total</span>
           </div>
           <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
             <TaskStat label="Done" value={completed} dot="bg-primary" />
-            <TaskStat
-              label="Open"
-              value={pending}
-              dot="bg-muted-foreground/40"
-            />
+            <TaskStat label="Open" value={pending} dot="bg-muted-foreground/40" />
           </div>
         </div>
 
-        <div className="flex flex-col rounded-2xl border bg-card p-5">
+        <div className="bg-card flex flex-col rounded-2xl border p-5">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
               Team details
             </p>
-            <span className="flex size-8 items-center justify-center rounded-full bg-feature-tint text-primary">
+            <span className="bg-feature-tint text-primary flex size-8 items-center justify-center rounded-full">
               <Users className="size-4" />
             </span>
           </div>
@@ -470,14 +493,14 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             <span className="font-display text-3xl font-semibold tabular-nums">
               {project.memberIds.length}
             </span>
-            <span className="text-sm text-muted-foreground">members</span>
+            <span className="text-muted-foreground text-sm">members</span>
           </div>
           <div className="mt-auto flex items-center justify-between gap-2 pt-5">
             <MemberStack members={teamOf(project.memberIds, userMap)} max={6} />
             <button
               type="button"
               onClick={() => setTeamOpen(true)}
-              className="inline-flex shrink-0 items-center gap-0.5 text-xs font-medium text-primary transition-colors hover:text-primary/80"
+              className="text-primary hover:text-primary/80 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium transition-colors"
             >
               View more
               <ChevronRight className="size-3.5" />
@@ -526,6 +549,8 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   userMap={userMap}
                   onAdd={() => openCreateTask(col)}
                   onEdit={openEditTask}
+                  onDelete={setTaskToDelete}
+                  canDelete={canDelete}
                 />
               ))}
             </div>
@@ -536,6 +561,8 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             userMap={userMap}
             onEdit={openEditTask}
             onAdd={() => openCreateTask("todo")}
+            onDelete={setTaskToDelete}
+            canDelete={canDelete}
           />
         )}
       </section>
@@ -566,8 +593,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           <DialogHeader>
             <DialogTitle>Delete project?</DialogTitle>
             <DialogDescription>
-              “{project.name}” will be removed for this session. This can’t be
-              undone.
+              “{project.name}” will be removed for this session. This can’t be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -575,10 +601,45 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               Cancel
             </Button>
             <Button
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
               onClick={handleDelete}
             >
               Delete project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task delete confirm — deletion is irreversible and takes the context for any hours logged
+          against the task with it, so it always asks, even for a Manager. */}
+      <Dialog
+        open={taskToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setTaskToDelete(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete task?</DialogTitle>
+            <DialogDescription>
+              “{taskToDelete?.title}” will be permanently removed from this project. This
+              can’t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={deleting}
+              onClick={() => setTaskToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-destructive hover:bg-destructive/90 text-white"
+              disabled={deleting}
+              onClick={handleTaskDelete}
+            >
+              {deleting ? "Deleting…" : "Delete task"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -590,7 +651,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           {/* Header band */}
           <DialogHeader className="gap-0 border-b px-6 py-5 pr-12 text-left">
             <div className="flex items-start gap-3">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
+              <span className="bg-feature-tint text-primary flex size-11 shrink-0 items-center justify-center rounded-xl">
                 <FolderKanban className="size-5" />
               </span>
               <div className="min-w-0">
@@ -611,10 +672,10 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
             {project.description ? (
               <section>
-                <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
                   About
                 </p>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+                <p className="text-muted-foreground text-sm leading-relaxed">
                   {project.description}
                 </p>
               </section>
@@ -622,7 +683,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
 
             {/* Details */}
             <section>
-              <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              <p className="text-muted-foreground mb-3 text-xs font-medium tracking-wide uppercase">
                 Details
               </p>
               <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
@@ -645,9 +706,9 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   label="Health"
                   value={
                     atRisk ? (
-                      <span className="font-medium text-warning">Overdue</span>
+                      <span className="text-warning font-medium">Overdue</span>
                     ) : (
-                      <span className="font-medium text-success">On track</span>
+                      <span className="text-success font-medium">On track</span>
                     )
                   }
                 />
@@ -658,7 +719,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
 
             {/* Members */}
             <section>
-              <p className="mb-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              <p className="text-muted-foreground mb-3 text-xs font-medium tracking-wide uppercase">
                 Members · {project.memberIds.length}
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -682,13 +743,10 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                         <p className="flex items-center gap-1 truncate text-sm font-medium">
                           {u.name}
                           {isLead ? (
-                            <Crown
-                              className="size-3 text-warning"
-                              aria-label="Lead"
-                            />
+                            <Crown className="text-warning size-3" aria-label="Lead" />
                           ) : null}
                         </p>
-                        <p className="truncate text-xs text-muted-foreground">
+                        <p className="text-muted-foreground truncate text-xs">
                           {u.jobTitle}
                         </p>
                       </div>
@@ -718,50 +776,29 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
 
 /* ----------------------------- helpers ------------------------------- */
 
-function teamOf(
-  memberIds: string[],
-  userMap: Record<string, UserMini>,
-): UserMini[] {
+function teamOf(memberIds: string[], userMap: Record<string, UserMini>): UserMini[] {
   return memberIds.map((id) => userMap[id]).filter(Boolean) as UserMini[];
 }
 
 function Mono({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-      {children}
-    </span>
+    <span className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">{children}</span>
   );
 }
 
-function TaskStat({
-  label,
-  value,
-  dot,
-}: {
-  label: string;
-  value: number;
-  dot: string;
-}) {
+function TaskStat({ label, value, dot }: { label: string; value: number; dot: string }) {
   return (
-    <div className="rounded-xl border bg-muted/30 px-3 py-2.5">
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="bg-muted/30 rounded-xl border px-3 py-2.5">
+      <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
         <span className={cn("size-1.5 rounded-full", dot)} />
         {label}
       </p>
-      <p className="mt-1 font-heading text-xl font-semibold tabular-nums">
-        {value}
-      </p>
+      <p className="font-heading mt-1 text-xl font-semibold tabular-nums">{value}</p>
     </div>
   );
 }
 
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <dt className="text-muted-foreground">{label}</dt>
@@ -776,12 +813,16 @@ function KanbanColumn({
   userMap,
   onAdd,
   onEdit,
+  onDelete,
+  canDelete,
 }: {
   col: TaskStatus;
   tasks: Task[];
   userMap: Record<string, UserMini>;
   onAdd: () => void;
   onEdit: (t: Task) => void;
+  onDelete: (t: Task) => void;
+  canDelete: (t: Task) => boolean;
 }) {
   const meta = TASK_STATUS_META[col];
   const { setNodeRef, isOver } = useDroppable({ id: col });
@@ -789,17 +830,15 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex min-h-[140px] flex-col rounded-2xl border bg-muted/40 p-3 transition-colors",
-        isOver && "bg-primary/5 ring-2 ring-primary/40",
+        "bg-muted/40 flex min-h-[140px] flex-col rounded-2xl border p-3 transition-colors",
+        isOver && "bg-primary/5 ring-primary/40 ring-2",
       )}
     >
       <div className="mb-3 flex items-center px-1">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
           <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
           {meta.label}
-          <span className="text-muted-foreground tabular-nums">
-            {tasks.length}
-          </span>
+          <span className="text-muted-foreground tabular-nums">{tasks.length}</span>
         </span>
       </div>
 
@@ -807,14 +846,20 @@ function KanbanColumn({
         <button
           type="button"
           onClick={onAdd}
-          className="rounded-xl border border-dashed py-6 text-center text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="text-muted-foreground hover:border-primary/40 hover:text-foreground rounded-xl border border-dashed py-6 text-center text-xs transition-colors"
         >
           Add a task
         </button>
       ) : (
         <ul className="space-y-2">
           {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} userMap={userMap} onEdit={onEdit} />
+            <TaskCard
+              key={t.id}
+              task={t}
+              userMap={userMap}
+              onEdit={onEdit}
+              onDelete={canDelete(t) ? onDelete : undefined}
+            />
           ))}
         </ul>
       )}
@@ -826,13 +871,17 @@ function TaskCard({
   task,
   userMap,
   onEdit,
+  onDelete,
 }: {
   task: Task;
   userMap: Record<string, UserMini>;
   onEdit: (t: Task) => void;
+  /** Absent when the caller may not delete this task — see `canDeleteTask`. */
+  onDelete?: (t: Task) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id: task.id });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: task.id,
+  });
   const style = transform
     ? {
         transform: `${CSS.Translate.toString(transform)} rotate(2deg)`,
@@ -847,19 +896,34 @@ function TaskCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "group/task relative cursor-grab touch-none rounded-xl border bg-card p-3 active:cursor-grabbing",
-        isDragging && "shadow-xl ring-2 ring-primary/30",
+        "group/task bg-card relative cursor-grab touch-none rounded-xl border p-3 active:cursor-grabbing",
+        isDragging && "ring-primary/30 shadow-xl ring-2",
       )}
     >
-      <button
-        type="button"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={() => onEdit(task)}
-        aria-label="Edit task"
-        className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover/task:opacity-100"
-      >
-        <Pencil className="size-3.5" />
-      </button>
+      {/* Both actions stop the pointer from reaching the drag sensor — otherwise a click on the
+          icon starts a drag and the button never fires. */}
+      <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/task:opacity-100 focus-within:opacity-100">
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => onEdit(task)}
+          aria-label="Edit task"
+          className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6 items-center justify-center rounded-md"
+        >
+          <Pencil className="size-3.5" />
+        </button>
+        {onDelete ? (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onDelete(task)}
+            aria-label="Delete task"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-6 items-center justify-center rounded-md"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        ) : null}
+      </div>
       <TaskCardContent task={task} userMap={userMap} />
     </li>
   );
@@ -870,22 +934,21 @@ function TaskListView({
   userMap,
   onEdit,
   onAdd,
+  onDelete,
+  canDelete,
 }: {
   tasks: Task[];
   userMap: Record<string, UserMini>;
   onEdit: (t: Task) => void;
   onAdd: () => void;
+  onDelete: (t: Task) => void;
+  canDelete: (t: Task) => boolean;
 }) {
   if (tasks.length === 0) {
     return (
-      <div className="rounded-2xl border bg-card p-10 text-center">
-        <p className="text-sm text-muted-foreground">No tasks yet.</p>
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-3 gap-1.5"
-          onClick={onAdd}
-        >
+      <div className="bg-card rounded-2xl border p-10 text-center">
+        <p className="text-muted-foreground text-sm">No tasks yet.</p>
+        <Button size="sm" variant="outline" className="mt-3 gap-1.5" onClick={onAdd}>
           <Plus className="size-4" /> Add task
         </Button>
       </div>
@@ -900,22 +963,23 @@ function TaskListView({
     blocked: 4,
   };
   const sorted = [...tasks].sort((a, b) => {
-    if (order[a.status] !== order[b.status])
-      return order[a.status] - order[b.status];
+    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
     const ad = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
     const bd = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
     return ad - bd;
   });
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-card">
+    <div className="bg-card overflow-hidden rounded-2xl border">
       {/* Column header — aligns with the fixed-width cells below */}
-      <div className="hidden items-center gap-4 border-b bg-muted/40 px-4 py-2.5 text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase sm:flex">
+      <div className="bg-muted/40 text-muted-foreground hidden items-center gap-4 border-b px-4 py-2.5 text-[0.7rem] font-medium tracking-wide uppercase sm:flex">
         <span className="flex-1 pl-5">Task</span>
         <span className="w-24 shrink-0">Due</span>
         <span className="hidden w-24 shrink-0 md:block">Priority</span>
         <span className="w-24 shrink-0">Status</span>
         <span className="w-44 shrink-0">Assignee</span>
+        {/* Spacer keeping the header aligned with the row's trailing action cell. */}
+        <span className="w-8 shrink-0" aria-hidden />
       </div>
 
       <ul className="divide-y">
@@ -924,27 +988,29 @@ function TaskListView({
           const status = TASK_STATUS_META[t.status];
           const assignee = t.assigneeId ? userMap[t.assigneeId] : null;
           const due = dueLabel(t.dueDate);
+          const deletable = canDelete(t);
           return (
-            <li key={t.id}>
+            // The row is a flex container rather than one big button: a delete control nested
+            // inside a button is invalid HTML and doesn't reliably receive the click.
+            <li
+              key={t.id}
+              className="group/row hover:bg-muted/50 flex items-center pr-4 transition-colors"
+            >
               <button
                 type="button"
                 onClick={() => onEdit(t)}
-                className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                className="flex min-w-0 flex-1 items-center gap-4 py-3 pl-4 text-left"
               >
                 {/* Task */}
                 <span className="flex min-w-0 flex-1 items-center gap-3">
                   <span
-                    className={cn(
-                      "size-2 shrink-0 rounded-full",
-                      toneDot[prio.tone],
-                    )}
+                    className={cn("size-2 shrink-0 rounded-full", toneDot[prio.tone])}
                     title={`${prio.label} priority`}
                   />
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-sm font-medium",
-                      t.status === "done" &&
-                        "text-muted-foreground line-through",
+                      t.status === "done" && "text-muted-foreground line-through",
                     )}
                   >
                     {t.title}
@@ -988,26 +1054,35 @@ function TaskListView({
                     <>
                       <Avatar size="sm" className="size-6 shrink-0">
                         {assignee.avatarUrl ? (
-                          <AvatarImage
-                            src={assignee.avatarUrl}
-                            alt={assignee.name}
-                          />
+                          <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
                         ) : null}
                         <AvatarFallback className="text-[0.55rem]">
                           {initials(assignee.name)}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="hidden truncate text-xs text-muted-foreground lg:inline">
+                      <span className="text-muted-foreground hidden truncate text-xs lg:inline">
                         {assignee.name}
                       </span>
                     </>
                   ) : (
-                    <span className="text-xs text-muted-foreground/50">
-                      Unassigned
-                    </span>
+                    <span className="text-muted-foreground/50 text-xs">Unassigned</span>
                   )}
                 </span>
               </button>
+
+              {/* Always occupies its cell so rows stay aligned whether or not the action shows. */}
+              <span className="ml-4 flex w-8 shrink-0 items-center justify-center">
+                {deletable ? (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(t)}
+                    aria-label={`Delete ${t.title}`}
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-7 items-center justify-center rounded-md opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                ) : null}
+              </span>
             </li>
           );
         })}
@@ -1059,9 +1134,7 @@ function TaskCardContent({
               </AvatarFallback>
             </Avatar>
           ) : (
-            <span className="text-[0.7rem] text-muted-foreground/60">
-              Unassigned
-            </span>
+            <span className="text-muted-foreground/60 text-[0.7rem]">Unassigned</span>
           )}
         </div>
       </div>
