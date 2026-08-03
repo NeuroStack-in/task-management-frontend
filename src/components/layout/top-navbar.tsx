@@ -5,13 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Download, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { usePageHeaderStore } from "@/stores/page-header.store";
+import { useAgentRelease } from "@/hooks/use-agent-release";
 import { SidebarNav } from "./sidebar-nav";
 import { GlobalTimer } from "./global-timer";
 import { ThemeSwitcher } from "./theme-switcher";
@@ -25,8 +21,16 @@ export function TopNavbar() {
   const title = usePageHeaderStore((s) => s.title);
   const description = usePageHeaderStore((s) => s.description);
 
+  // "A newer agent than the one you were last told about." The version comes from the release
+  // manifest the pipeline writes, so this needs no code change per release — see `useAgentRelease`.
+  const {
+    version: agentVersion,
+    isNew: hasNewAgent,
+    acknowledge: acknowledgeAgentRelease,
+  } = useAgentRelease();
+
   return (
-    <header className="sticky top-0 z-30 flex h-20 items-center gap-3 bg-background/85 px-4 backdrop-blur-md sm:px-6">
+    <header className="bg-background/85 sticky top-0 z-30 flex h-20 items-center gap-3 px-4 backdrop-blur-md sm:px-6">
       {/* Mobile sidebar trigger */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetTrigger
@@ -34,7 +38,7 @@ export function TopNavbar() {
             <Button
               variant="ghost"
               size="icon"
-              className="size-10 rounded-full bg-card shadow-soft hover:bg-card lg:hidden"
+              className="bg-card shadow-soft hover:bg-card size-10 rounded-full lg:hidden"
               aria-label="Open menu"
             />
           }
@@ -51,11 +55,11 @@ export function TopNavbar() {
           vertically centered in the bar, level with the right-hand controls. */}
       {title ? (
         <div className="min-w-0">
-          <span className="block truncate font-display text-3xl font-semibold leading-tight tracking-tight">
+          <span className="font-display block truncate text-3xl leading-tight font-semibold tracking-tight">
             {title}
           </span>
           {description ? (
-            <span className="mt-0.5 hidden truncate text-base leading-tight text-muted-foreground sm:block">
+            <span className="text-muted-foreground mt-0.5 hidden truncate text-base leading-tight sm:block">
               {description}
             </span>
           ) : null}
@@ -84,17 +88,48 @@ export function TopNavbar() {
             render={<Link href="/download" />}
             nativeButton={false}
             size="sm"
-            className="gap-1.5 rounded-full shadow-soft"
+            // `relative` anchors the dot; `overflow-visible` because the pill's rounded-full clips
+            // the badge that sits proud of its top-right corner.
+            className="shadow-soft relative gap-1.5 overflow-visible rounded-full"
+            // Acknowledging on click, not on arrival at /download, is deliberate: the click is the
+            // moment the user has actually seen the announcement. Tying it to the destination would
+            // also dismiss it for anyone who reaches the page by any other route, and would leave the
+            // dot up for someone who clicked but never finished navigating.
+            onClick={acknowledgeAgentRelease}
+            aria-label={
+              hasNewAgent
+                ? `Download agent — version ${agentVersion} available`
+                : "Download agent"
+            }
           >
             <Download className="size-4" />
             <span className="hidden sm:inline">Download agent</span>
+            {hasNewAgent ? (
+              <>
+                {/* The version rides the button on wide screens — "something is new" is a weaker
+                    message than "0.1.7 is out", and it costs no extra row. */}
+                <span className="bg-primary-foreground/20 ml-0.5 hidden rounded-full px-1.5 py-px text-[0.65rem] font-semibold tabular-nums lg:inline">
+                  v{agentVersion}
+                </span>
+                {/* Below lg the label has no room, so the state degrades to a dot rather than
+                    disappearing. `aria-hidden` — the accessible name above already says it, and a
+                    screen reader should not hear a decorative dot twice. */}
+                <span
+                  aria-hidden
+                  className="absolute -top-0.5 -right-0.5 flex size-2.5 lg:hidden"
+                >
+                  <span className="bg-destructive/70 absolute inline-flex size-full animate-ping rounded-full" />
+                  <span className="bg-destructive ring-background relative inline-flex size-2.5 rounded-full ring-2" />
+                </span>
+              </>
+            ) : null}
           </Button>
         ) : null}
         {/* The running-session timer lives in the navbar everywhere EXCEPT the
             dashboard, where the employee dashboard promotes it to a hero KPI tile
             (see TimerStatCard) — so it isn't shown twice. */}
         {pathname !== "/dashboard" ? <GlobalTimer /> : null}
-        <div className="flex items-center gap-0.5 rounded-full bg-card p-1 shadow-soft">
+        <div className="bg-card shadow-soft flex items-center gap-0.5 rounded-full p-1">
           <NotificationsMenu />
           <ThemeSwitcher />
         </div>
