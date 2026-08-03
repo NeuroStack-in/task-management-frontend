@@ -18,6 +18,36 @@ export type TimesheetStatus = "on-track" | "flagged";
 export interface TimesheetDayEntry {
   label: string;
   hours: number;
+  /**
+   * The individual session behind this entry. Present for real API rows; absent only for synthesised
+   * or rolled-up entries.
+   *
+   * The drill-down used to group by `label` and show one line per project, which answered "how long
+   * on this project" but not "what was actually done" — an admin opening a day saw a single total
+   * with no sessions, no task, and no clock times. The API has always returned per-session rows
+   * (`ApiDayRow.entries`); the UI was discarding everything except the project and the duration.
+   */
+  session?: TimesheetSession;
+}
+
+/** One tracked session, as the drill-down shows it. Mirrors the fields of `ApiEntryRow` worth reading. */
+export interface TimesheetSession {
+  id: string;
+  /** What the person typed in the agent ("what are you working on?"). Empty when they typed nothing. */
+  description: string;
+  /** The task id; the title is not resolvable for another user's tasks, so this is the fallback label. */
+  taskId: string;
+  /** Local `HH:MM`. */
+  start: string;
+  /** Local `HH:MM`, or null while the session is still running. */
+  end: string | null;
+  billable: boolean;
+  /** No `end` yet — shown as a state, never as a zero duration. */
+  running: boolean;
+  /** How the session ended: `user`, `shutdown`, `abandoned`, `superseded`… */
+  stopReason?: string;
+  /** The task was gone/unassigned at fold. The time still counts; this flags it for a human. */
+  taskInvalid: boolean;
 }
 
 export interface TeamMemberTime {

@@ -34,6 +34,7 @@ import { listProjects } from "@/modules/projects/services/projects.service";
 import { getUserActivity } from "@/modules/insights/services/insights.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import {
+  clockOf,
   getUserTimesheet,
   type ApiGridResponse,
 } from "./services/timesheet.service";
@@ -76,8 +77,18 @@ function isForbidden(e: unknown): boolean {
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 const pad2 = (n: number) => String(n).padStart(2, "0");
 /** Local `YYYY-MM-DD` (not `toISOString()`, which shifts to UTC and can hand back yesterday). */
@@ -278,9 +289,7 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
         // Only flag on a *real* low score for someone who tracked time. Missing agent data
         // (activity 0) is not evidence of a problem, so it must not fabricate a flag.
         const status: TimesheetStatus =
-          daysScored > 0 && trackedHrs > 0 && activity < 50
-            ? "flagged"
-            : "on-track";
+          daysScored > 0 && trackedHrs > 0 && activity < 50 ? "flagged" : "on-track";
 
         // Real per-day hours + entries, aligned Mon→Sun to `dates`.
         const days = new Array(7).fill(0) as number[];
@@ -296,6 +305,19 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
             dayEntries[di].push({
               label: projectName(entry.project_id),
               hours: round1((entry.duration_secs ?? 0) / 3600),
+              // Carry the session itself, not just its project and length: the drill-down shows an
+              // admin what was worked on, which a per-project roll-up cannot answer.
+              session: {
+                id: entry.session_id,
+                description: entry.description?.trim() ?? "",
+                taskId: entry.task_id,
+                start: clockOf(entry.start),
+                end: entry.end === undefined ? null : clockOf(entry.end),
+                billable: entry.billable,
+                running: entry.end === undefined,
+                stopReason: entry.stop_reason,
+                taskInvalid: entry.task_invalid ?? false,
+              },
             });
           }
         }
@@ -375,33 +397,31 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
         }
       }
     }
-    const projectRows: ProjectTimesheet[] = [...byProject.entries()].map(
-      ([pid, agg]) => {
-        const meta = projects.get(pid);
-        // Projects carry no department in the API; the honest stand-in is the team doing the
-        // most work on it (the modal contributor department), or "—" if unknown.
-        let dept = "—";
-        let best = 0;
-        for (const [d, c] of agg.deptCounts) {
-          if (c > best) {
-            best = c;
-            dept = d;
-          }
+    const projectRows: ProjectTimesheet[] = [...byProject.entries()].map(([pid, agg]) => {
+      const meta = projects.get(pid);
+      // Projects carry no department in the API; the honest stand-in is the team doing the
+      // most work on it (the modal contributor department), or "—" if unknown.
+      let dept = "—";
+      let best = 0;
+      for (const [d, c] of agg.deptCounts) {
+        if (c > best) {
+          best = c;
+          dept = d;
         }
-        const trackedHrs = round1(agg.secs / 3600);
-        return {
-          id: pid,
-          name: meta?.name ?? pid,
-          key: meta?.key ?? "",
-          department: dept,
-          members: agg.users.size,
-          trackedHrs,
-          days: agg.days,
-          dayEntries: agg.dayEntries,
-          status: trackedHrs > 0 ? "on-track" : "flagged",
-        };
-      },
-    );
+      }
+      const trackedHrs = round1(agg.secs / 3600);
+      return {
+        id: pid,
+        name: meta?.name ?? pid,
+        key: meta?.key ?? "",
+        department: dept,
+        members: agg.users.size,
+        trackedHrs,
+        days: agg.days,
+        dayEntries: agg.dayEntries,
+        status: trackedHrs > 0 ? "on-track" : "flagged",
+      };
+    });
 
     return { teamRows, projectRows, teamWeekly };
   }, [data]);

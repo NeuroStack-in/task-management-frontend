@@ -9,17 +9,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import {
-  formatHours,
-  type TimesheetDayEntry,
-  type TimesheetStatus,
-} from "../types";
+import { formatHours, type TimesheetDayEntry, type TimesheetStatus } from "../types";
 import { cn } from "@/lib/utils";
 
-const STATUS_META: Record<
-  TimesheetStatus,
-  { label: string; className: string }
-> = {
+const STATUS_META: Record<TimesheetStatus, { label: string; className: string }> = {
   "on-track": { label: "On track", className: "bg-success/12 text-success" },
   flagged: { label: "Flagged", className: "bg-destructive/12 text-destructive" },
 };
@@ -93,7 +86,7 @@ export function ActivityDialog({
                 {view.status === "flagged" ? (
                   <Badge className={meta!.className}>{meta!.label}</Badge>
                 ) : null}
-                <span className="text-xs text-muted-foreground">
+                <span className="text-muted-foreground text-xs">
                   {view.kind === "day"
                     ? `Daily time · ${view.dateLabel}`
                     : `Weekly time · ${view.weekRange}`}
@@ -117,34 +110,57 @@ export function ActivityDialog({
   );
 }
 
-function DayDetail({
-  view,
-}: {
-  view: Extract<ActivityView, { kind: "day" }>;
-}) {
+function DayDetail({ view }: { view: Extract<ActivityView, { kind: "day" }> }) {
   if (view.hours <= 0) {
     return (
-      <div className="rounded-2xl border border-dashed bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
+      <div className="bg-muted/20 text-muted-foreground rounded-2xl border border-dashed px-4 py-10 text-center text-sm">
         No time tracked on this day.
       </div>
     );
   }
 
-  const entries = rollUp(view.entries);
+  // Sessions, when the rows carry them — one line per session, in the order they were worked. A
+  // per-project roll-up answers "how long on this project" but not "what was actually done", which
+  // is the question someone opens a day to ask. The project total is still shown, as a heading per
+  // project, so nothing is lost.
+  const sessions = view.entries.filter((e) => e.session);
+  const rolled = rollUp(view.entries);
 
   return (
     <>
       <Tile icon={Clock} label="Tracked" value={formatHours(view.hours)} />
 
-      <Section title={view.isProject ? "Contributors" : "Time entries"}>
-        {entries.length > 0 ? (
+      <Section title={view.isProject ? "Contributors" : "Sessions"}>
+        {sessions.length > 0 ? (
+          <div className="space-y-4">
+            {groupByLabel(sessions).map(([label, group]) => (
+              <div key={label}>
+                <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b pb-1">
+                  <span className="truncate text-xs font-semibold tracking-wide uppercase">
+                    {label}
+                  </span>
+                  <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
+                    {formatHours(group.reduce((t, e) => t + e.hours, 0))}
+                  </span>
+                </div>
+                <ul className="space-y-2">
+                  {group.map((e) => (
+                    <SessionRow key={e.session!.id} entry={e} />
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ) : rolled.length > 0 ? (
+          // Rows without session detail (a synthesised or project-rolled view) keep the old shape
+          // rather than rendering an empty panel.
           <ul className="space-y-2.5">
-            {entries.map((e, i) => (
+            {rolled.map((e, i) => (
               <EntryRow key={i} entry={e} />
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             No individual entries — a running session with no duration yet.
           </p>
         )}
@@ -153,11 +169,54 @@ function DayDetail({
   );
 }
 
-function WeekDetail({
-  view,
-}: {
-  view: Extract<ActivityView, { kind: "week" }>;
-}) {
+/** Group entries under their label (project), preserving first-seen order. */
+function groupByLabel(entries: TimesheetDayEntry[]): [string, TimesheetDayEntry[]][] {
+  const map = new Map<string, TimesheetDayEntry[]>();
+  for (const e of entries) {
+    const list = map.get(e.label);
+    if (list) list.push(e);
+    else map.set(e.label, [e]);
+  }
+  return [...map.entries()];
+}
+
+/**
+ * One session: what was worked on, when, for how long.
+ *
+ * The label falls back description → task id → "Untitled session". A task *title* is deliberately not
+ * attempted: task titles resolve from the caller's own task list, which does not cover another
+ * employee's tasks, so an admin would see blanks or — worse — the wrong name. The typed description
+ * is what the person actually wrote, and is the honest label.
+ */
+function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
+  const s = entry.session!;
+  const label = s.description || s.taskId || "Untitled session";
+  return (
+    <li className="flex items-start justify-between gap-3 text-sm">
+      <span className="min-w-0">
+        <span className="block truncate font-medium">{label}</span>
+        <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+          <span className="font-mono tabular-nums">
+            {s.start} – {s.end ?? "now"}
+          </span>
+          {s.billable ? <span className="text-success">Billable</span> : null}
+          {s.running ? <span className="text-primary font-medium">Running</span> : null}
+          {/* Surfaced because it explains a session the person did not stop themselves — an
+              abandoned or superseded one was closed by the server, not by them. */}
+          {s.stopReason && s.stopReason !== "user" ? (
+            <span className="text-warning">{s.stopReason}</span>
+          ) : null}
+          {s.taskInvalid ? <span className="text-warning">task removed</span> : null}
+        </span>
+      </span>
+      <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
+        {s.running ? "—" : formatHours(entry.hours)}
+      </span>
+    </li>
+  );
+}
+
+function WeekDetail({ view }: { view: Extract<ActivityView, { kind: "week" }> }) {
   const total = Math.round(view.days.reduce((s, h) => s + h, 0) * 100) / 100;
   const max = Math.max(...view.days, 1);
   const entries = rollUp(view.entriesByDay.flat());
@@ -169,21 +228,19 @@ function WeekDetail({
         <div className="flex items-end justify-between gap-2 pt-1">
           {view.days.map((h, i) => (
             <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
-              <span className="text-[0.7rem] tabular-nums text-muted-foreground">
+              <span className="text-muted-foreground text-[0.7rem] tabular-nums">
                 {h > 0 ? formatHours(h) : "—"}
               </span>
-              <div className="flex h-24 w-full max-w-9 flex-col justify-end overflow-hidden rounded-md bg-muted">
+              <div className="bg-muted flex h-24 w-full max-w-9 flex-col justify-end overflow-hidden rounded-md">
                 {h > 0 ? (
                   <div
-                    className="w-full bg-primary"
+                    className="bg-primary w-full"
                     style={{ height: `${(h / max) * 100}%` }}
                     title={`${DAY_LABELS[i]} · ${formatHours(h)}`}
                   />
                 ) : null}
               </div>
-              <span className="text-[0.7rem] text-muted-foreground">
-                {DAY_LABELS[i]}
-              </span>
+              <span className="text-muted-foreground text-[0.7rem]">{DAY_LABELS[i]}</span>
             </div>
           ))}
         </div>
@@ -191,9 +248,7 @@ function WeekDetail({
 
       <Tile icon={Clock} label="Total tracked" value={formatHours(total)} />
 
-      <Section
-        title={view.isProject ? "Contributors this week" : "Projects this week"}
-      >
+      <Section title={view.isProject ? "Contributors this week" : "Projects this week"}>
         {entries.length > 0 ? (
           <ul className="space-y-2.5">
             {entries.map((e, i) => (
@@ -201,7 +256,7 @@ function WeekDetail({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             No entries with a recorded duration this week.
           </p>
         )}
@@ -222,28 +277,20 @@ function Tile({
   value: string;
 }) {
   return (
-    <div className="rounded-xl border bg-muted/30 p-3">
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="bg-muted/30 rounded-xl border p-3">
+      <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
         <Icon className="size-3.5" />
         {label}
       </p>
-      <p className="mt-1 font-heading text-lg font-semibold tabular-nums">
-        {value}
-      </p>
+      <p className="font-heading mt-1 text-lg font-semibold tabular-nums">{value}</p>
     </div>
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-3">
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+      <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
         {title}
       </p>
       {children}
@@ -255,7 +302,7 @@ function EntryRow({ entry }: { entry: TimesheetDayEntry }) {
   return (
     <li className="flex items-center justify-between gap-3 text-sm">
       <span className="min-w-0 truncate font-medium">{entry.label}</span>
-      <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+      <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
         {entry.hours > 0 ? formatHours(entry.hours) : "—"}
       </span>
     </li>
