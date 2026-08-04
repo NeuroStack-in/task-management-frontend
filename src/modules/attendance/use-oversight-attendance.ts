@@ -72,11 +72,30 @@ export interface OversightCounts {
   total: number;
 }
 
+/** One closed workday's attendance distribution — the unit of the trend series. */
+export interface DayPoint {
+  iso: string;
+  present: number;
+  leave: number;
+  absent: number;
+  total: number;
+  /** `present / total` as a 0–100 percentage, rounded. */
+  rate: number;
+}
+
+/** Trailing closed workdays averaged for the "Today vs recent" benchmark. */
+export const BENCHMARK_DAYS = 10;
+
 export interface OversightAttendance {
   counts: OversightCounts;
   label: string;
   rows: OversightRow[];
   mode: OversightMode;
+  /** Per closed workday in the range, chronological. Empty for `today`/single `day`; drives the trend. */
+  series: DayPoint[];
+  /** A comparison baseline (0–100): for `today`, the trailing-workday average; for a multi-day range,
+   *  the range's own mean daily rate. `null` when there is nothing to compare against. */
+  benchmarkRate: number | null;
   /** Sorted distinct department names for the filter, with a leading `"all"`. */
   departments: string[];
   loading: boolean;
@@ -229,10 +248,72 @@ interface DirEntry {
   active: boolean;
 }
 
+/** A day's oversight users → one `DayPoint`, applying the department filter. `non_workday` is excluded
+ *  from every tally (§7); anything that isn't present/partial/leave is counted as absent. */
+function dayPoint(
+  iso: string,
+  users: { user_id: string; status: string }[],
+  dir: Map<string, DirEntry>,
+  dept: string,
+): DayPoint {
+  let present = 0;
+  let leave = 0;
+  let absent = 0;
+  let total = 0;
+  for (const u of users) {
+    const uDept = dir.get(u.user_id)?.dept ?? "—";
+    if (dept !== "all" && uDept !== dept) continue;
+    if (u.status === "non_workday") continue;
+    total += 1;
+    if (u.status === "present" || u.status === "partial") present += 1;
+    else if (u.status === "leave") leave += 1;
+    else absent += 1;
+  }
+  return { iso, present, leave, absent, total, rate: total ? Math.round((present / total) * 100) : 0 };
+}
+
+/** The last `count` **closed** workdays before `todayIso`, chronological. Weekends skipped. */
+function trailingWorkdays(todayIso: string, count: number): string[] {
+  const [y, m, d] = todayIso.split("-").map(Number);
+  const cur = new Date(y, m - 1, d);
+  const out: string[] = [];
+  let guard = 0;
+  while (out.length < count && guard < 60) {
+    cur.setDate(cur.getDate() - 1);
+    if (mondayIndex(cur.getDay()) < 5) {
+      out.push(isoOf(cur.getFullYear(), cur.getMonth(), cur.getDate()));
+    }
+    guard += 1;
+  }
+  return out.reverse();
+}
+
+/** Fetch a set of closed workdays and reduce each to a `DayPoint`. Best-effort: a failed day is simply
+ *  omitted (used for the trailing benchmark, which must never fail the page). */
+async function fetchDayPoints(
+  isos: string[],
+  dir: Map<string, DirEntry>,
+  dept: string,
+): Promise<DayPoint[]> {
+  const entries = await mapWithConcurrency(isos, 3, (iso) =>
+    getDayOversight(iso).then(
+      (r) => [iso, r] as const,
+      () => [iso, null] as const,
+    ),
+  );
+  const out: DayPoint[] = [];
+  for (const [iso, resp] of entries) {
+    if (resp) out.push(dayPoint(iso, resp.users, dir, dept));
+  }
+  return out.sort((a, b) => a.iso.localeCompare(b.iso));
+}
+
 interface ComputedState {
   counts: OversightCounts;
   rows: OversightRow[];
   mode: OversightMode;
+  series: DayPoint[];
+  benchmarkRate: number | null;
   loading: boolean;
   error: string | null;
   note: string | null;
@@ -244,12 +325,16 @@ export function useOversightAttendance({
   date,
   start,
   end,
+  benchmark = true,
 }: {
   range: AttendanceRange;
   dept: string;
   date: AttendanceDate;
   start: string;
   end: string;
+  /** Fetch the trailing-workday average for the "Today vs recent" delta. Off for the header's
+   *  always-today read, which only needs the live count and must stay fast. */
+  benchmark?: boolean;
 }): OversightAttendance {
   // Directory (names + departments + active flag) — loaded once, reused by every range.
   const [dir, setDir] = useState<Map<string, DirEntry> | null>(null);
@@ -318,6 +403,8 @@ export function useOversightAttendance({
     counts: EMPTY_COUNTS,
     rows: [],
     mode: "today",
+    series: [],
+    benchmarkRate: null,
     loading: true,
     error: null,
     note: null,
@@ -361,10 +448,24 @@ export function useOversightAttendance({
           // Clock-in/out for today comes from each person's live TIME# sessions.
           const rows = await enrichClock(baseRows, todayIso);
           if (!live) return;
+          // "vs recent" baseline: the mean attendance rate over the trailing closed workdays, honouring
+          // the department filter. Best-effort — a failure just hides the delta, never the page.
+          let benchmarkRate: number | null = null;
+          if (benchmark) {
+            const pts = (
+              await fetchDayPoints(trailingWorkdays(todayIso, BENCHMARK_DAYS), dir, dept)
+            ).filter((p) => p.total > 0);
+            if (!live) return;
+            if (pts.length) {
+              benchmarkRate = Math.round(pts.reduce((s, p) => s + p.rate, 0) / pts.length);
+            }
+          }
           setState({
             counts: { present, late: 0, leave: 0, total: emp.length },
             rows,
             mode: "today",
+            series: [],
+            benchmarkRate,
             loading: false,
             error: null,
             note,
@@ -446,10 +547,23 @@ export function useOversightAttendance({
             .sort((a, b) => a.name.localeCompare(b.name));
         }
 
+        // Per-day trend from the days already fetched above — no extra requests. The benchmark line is
+        // the range's own mean daily rate.
+        const series: DayPoint[] = [];
+        for (const [iso, resp] of entries) {
+          if (resp) series.push(dayPoint(iso, resp.users, dir, dept));
+        }
+        series.sort((a, b) => a.iso.localeCompare(b.iso));
+        const benchmarkRate = series.length
+          ? Math.round(series.reduce((s, p) => s + p.rate, 0) / series.length)
+          : null;
+
         setState({
           counts: { present, late: 0, leave, total },
           rows,
           mode,
+          series,
+          benchmarkRate,
           loading: false,
           error: null,
           note:
@@ -472,13 +586,15 @@ export function useOversightAttendance({
     return () => {
       live = false;
     };
-  }, [dir, range, dept, dayList]);
+  }, [dir, range, dept, dayList, benchmark, todayIso]);
 
   return {
     counts: state.counts,
     label,
     rows: state.rows,
     mode: state.mode,
+    series: state.series,
+    benchmarkRate: state.benchmarkRate,
     departments,
     loading: state.loading && !dirError,
     error: state.error ?? dirError,
