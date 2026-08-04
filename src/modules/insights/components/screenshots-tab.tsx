@@ -759,12 +759,20 @@ function ShotAiReport({
   const generate = async () => {
     setRunning(true);
     try {
-      const run = await runScreenshotReports(date, userId);
+      // Scoped to **this** frame. Without `shotId` the server maps the whole day — dozens of model
+      // calls against a 28s Lambda, which timed out and came back as a bare gateway 500.
+      const run = await runScreenshotReports(date, userId, shotId);
       const next = await fetchReport();
-      // Still nothing after a run? Explain why (plan doesn't include screenshots, no eligible frames,
-      // provider not configured) instead of silently re-showing "not analyzed".
-      if (next.kind === "none" && run.reason) {
-        setState({ kind: "error", message: `Couldn't analyze this day — ${run.reason}.` });
+      // Still nothing after a run? Explain why (plan doesn't include screenshots, frame withheld by
+      // privacy, provider not configured or unreachable) instead of silently re-showing
+      // "not analyzed", which reads as the button having done nothing at all.
+      if (next.kind === "none") {
+        setState({
+          kind: "error",
+          message: run.reason
+            ? `Couldn't analyze this frame — ${run.reason}.`
+            : "Couldn't analyze this frame. Try again in a moment.",
+        });
       } else {
         setState(next);
       }

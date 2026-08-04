@@ -271,17 +271,22 @@ export interface ScreenshotReportRun {
 }
 
 /**
- * `POST /v1/insights/screenshots/reports` — run the vision map over a day's screenshots (the
- * request-path stand-in for the nightly cron). Needs **`monitoring:manage`** (server-enforced), and
- * spends the org's AI budget, so it's a manager action. Idempotent + generate-once — re-running only
- * analyzes frames that don't yet have a report.
+ * `POST /v1/insights/screenshots/reports` — run the vision map (the request-path stand-in for the
+ * nightly cron). Needs **`monitoring:manage`** (server-enforced), and spends the org's AI budget, so
+ * it's a manager action. Idempotent + generate-once — re-running only analyzes frames that don't yet
+ * have a report.
+ *
+ * **Pass `shotId` for a single frame.** Omitting it runs the whole day, which is the cron's shape,
+ * not a person's: a day is dozens of model calls and overruns the insights Lambda's 28s ceiling.
  */
 export function runScreenshotReports(
   date: string,
   userId?: string,
+  shotId?: string,
 ): Promise<ScreenshotReportRun> {
   const q = new URLSearchParams({ date });
   if (userId) q.set("user_id", userId);
+  if (shotId) q.set("shot_id", shotId);
   return apiFetch<ScreenshotReportRun>(`/v1/insights/screenshots/reports?${q.toString()}`, {
     method: "POST",
   });
