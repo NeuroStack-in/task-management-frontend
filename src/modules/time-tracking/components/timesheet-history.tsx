@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Clock } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Loader } from "@/components/shared/loader";
 import { formatDuration } from "@/lib/format";
 import { useTimesheet } from "../use-timesheet";
@@ -35,6 +37,25 @@ export function TimesheetHistory() {
   const { rows, totalSec, billableSec, loading, error } = useTimesheet(date || undefined);
 
   const max = useMemo(() => todayLocal(), []);
+
+  // Client-side, for the same hydration reason the default date is: `new Date()` in a render path
+  // would differ between server and client.
+  const [shortcuts, setShortcuts] = useState({
+    yesterday: "",
+    dayBefore: "",
+    dayBeforeLabel: "",
+  });
+  useEffect(() => {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const b = new Date();
+    b.setDate(b.getDate() - 2);
+    setShortcuts({
+      yesterday: localIso(y),
+      dayBefore: localIso(b),
+      dayBeforeLabel: b.toLocaleDateString(undefined, { weekday: "short" }),
+    });
+  }, []);
   const showing = Boolean(date);
 
   return (
@@ -44,19 +65,33 @@ export function TimesheetHistory() {
           <CalendarDays className="text-muted-foreground size-4" />
           Previous days
         </CardTitle>
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground hidden sm:inline">Date</span>
-          <input
-            type="date"
-            value={date}
-            // Capped at today: a future day has no entries by construction, and offering it invites a
-            // confusing empty state that looks like data loss.
-            max={max}
-            onChange={(e) => setDate(e.target.value)}
-            aria-label="Show the timesheet for this date"
-            className="border-input bg-background rounded-lg border px-2.5 py-1.5 text-sm"
-          />
-        </label>
+        <div className="flex items-center gap-1.5">
+          {/* Shortcuts for the two days people actually ask for, so the common case is one click
+              rather than opening a calendar and finding the date. */}
+          <Button
+            variant={date === shortcuts.yesterday ? "secondary" : "ghost"}
+            size="sm"
+            className="h-8 px-2.5 text-xs"
+            onClick={() => setDate(shortcuts.yesterday)}
+          >
+            Yesterday
+          </Button>
+          <Button
+            variant={date === shortcuts.dayBefore ? "secondary" : "ghost"}
+            size="sm"
+            className="hidden h-8 px-2.5 text-xs sm:inline-flex"
+            onClick={() => setDate(shortcuts.dayBefore)}
+          >
+            {shortcuts.dayBeforeLabel}
+          </Button>
+          {/* The app's own picker, not `<input type="date">`. This was the only raw date input left
+              in the codebase: it rendered the browser's native calendar, which looks nothing like
+              the rest of the app and positions itself over whatever happens to be above it. The
+              shared DatePicker portals into the body, so it is anchored and cannot be clipped.
+              `max` still caps it at today — a future day has no entries by construction, and its
+              empty state reads as data loss. */}
+          <DatePicker value={date} onChange={setDate} max={max} className="w-[10.5rem]" />
+        </div>
       </CardHeader>
 
       <CardContent>
