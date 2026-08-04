@@ -1,17 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, X, ArrowUp, History, MessagesSquare, AlertCircle } from "lucide-react";
+import { Sparkles, X, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { EmptyState } from "@/components/shared/empty-state";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { useIsFeatureOn } from "@/hooks/use-features";
 import { ApiError } from "@/lib/api";
-import {
-  listAssistantThreads,
-  sendAssistantMessage,
-} from "@/modules/communication/services/assistant.service";
+import { sendAssistantMessage } from "@/modules/communication/services/assistant.service";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 
@@ -59,50 +55,6 @@ export function ChatBot() {
   ]);
   const idRef = useRef(1);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  /* ── Thread history (GET /v1/assistant/threads) ────────────────────── */
-  // The server lists past-thread summaries as bare strings and — being session-only today —
-  // always returns []. There is no route to load a thread's messages, so "resume" is impossible
-  // server-side; selecting a summary can only start a new conversation about it.
-  const [view, setView] = useState<"chat" | "history">("chat");
-  const [threads, setThreads] = useState<string[] | null>(null);
-  const [threadsError, setThreadsError] = useState<string | null>(null);
-  const [threadsLoading, setThreadsLoading] = useState(false);
-
-  const openHistory = async () => {
-    setView("history");
-    setThreadsLoading(true);
-    setThreadsError(null);
-    try {
-      setThreads(await listAssistantThreads());
-    } catch (e) {
-      setThreads(null);
-      setThreadsError(
-        e instanceof ApiError && e.status === 403
-          ? "You don't have access to the assistant."
-          : "Couldn't load your conversation history. Please try again.",
-      );
-    } finally {
-      setThreadsLoading(false);
-    }
-  };
-
-  /**
-   * A past thread's messages aren't retrievable (the server stores none), so selecting one starts
-   * a fresh conversation contextually: seed the composer with the summary for the user to edit/send.
-   */
-  const resumeThread = (summary: string) => {
-    setView("chat");
-    setMessages((m) => [
-      ...m,
-      {
-        id: idRef.current++,
-        role: "assistant",
-        text: `Past messages aren't stored, so I can't reload "${summary}" — but we can pick the topic back up. I've placed it in the box below; edit or send it to continue.`,
-      },
-    ]);
-    setInput(summary);
-  };
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -274,145 +226,80 @@ export function ChatBot() {
             <div className="flex-1">
               <p className="text-sm leading-none font-medium">WorkPulse Assistant</p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                {view === "history"
-                  ? "Conversation history"
-                  : "AI productivity assistant"}
+                AI productivity assistant
               </p>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-8 shrink-0"
-              aria-label={view === "history" ? "Back to chat" : "Conversation history"}
-              aria-pressed={view === "history"}
-              onClick={() => (view === "history" ? setView("chat") : openHistory())}
-            >
-              {view === "history" ? (
-                <MessagesSquare className="size-4" />
-              ) : (
-                <History className="size-4" />
-              )}
-            </Button>
           </header>
 
-          {view === "history" ? (
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {threadsLoading ? (
-                <p className="text-muted-foreground py-8 text-center text-sm">
-                  Loading conversations…
-                </p>
-              ) : threadsError ? (
-                <EmptyState
-                  icon={AlertCircle}
-                  title="History unavailable"
-                  description={threadsError}
-                  action={
-                    <Button
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+            <div className="flex flex-col gap-3 p-4">
+              {messages.map((m) => (
+                <div
+                  key={m.id}
+                  className={cn(
+                    "max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed",
+                    m.role === "user"
+                      ? "bg-primary text-primary-foreground self-end"
+                      : "bg-muted text-foreground self-start",
+                  )}
+                >
+                  {/* Only the assistant writes Markdown. A user's message is rendered as the
+                      literal text they typed — running it through a renderer would silently
+                      reformat their own words back at them. */}
+                  {m.role === "user" ? m.text : <Markdown>{m.text}</Markdown>}
+                </div>
+              ))}
+              {pending ? (
+                <div className="bg-muted text-muted-foreground self-start rounded-lg px-3 py-2 text-sm">
+                  <span className="inline-flex gap-1">
+                    <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.2s]" />
+                    <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.1s]" />
+                    <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full" />
+                  </span>
+                </div>
+              ) : null}
+
+              {messages.length <= 1 ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={openHistory}
+                      onClick={() => send(s)}
+                      className="border-border bg-card text-muted-foreground hover:border-primary hover:text-primary rounded-md border px-3 py-1 text-xs transition-colors"
                     >
-                      Retry
-                    </Button>
-                  }
-                />
-              ) : !threads || threads.length === 0 ? (
-                <EmptyState
-                  icon={MessagesSquare}
-                  title="No past conversations"
-                  description="The assistant is session-only right now — conversations aren't stored on the server, so there's no history to show."
-                />
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {threads.map((t, i) => (
-                    <li key={`${i}-${t}`}>
-                      <button
-                        type="button"
-                        onClick={() => resumeThread(t)}
-                        className="border-border bg-card hover:border-primary hover:text-primary w-full rounded-md border px-3 py-2 text-left text-sm transition-colors"
-                      >
-                        {t}
-                      </button>
-                    </li>
+                      {s}
+                    </button>
                   ))}
-                </ul>
-              )}
+                </div>
+              ) : null}
             </div>
-          ) : (
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-              <div className="flex flex-col gap-3 p-4">
-                {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={cn(
-                      "max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed",
-                      m.role === "user"
-                        ? "bg-primary text-primary-foreground self-end"
-                        : "bg-muted text-foreground self-start",
-                    )}
-                  >
-                    {/* Only the assistant writes Markdown. A user's message is rendered as the
-                        literal text they typed — running it through a renderer would silently
-                        reformat their own words back at them. */}
-                    {m.role === "user" ? m.text : <Markdown>{m.text}</Markdown>}
-                  </div>
-                ))}
-                {pending ? (
-                  <div className="bg-muted text-muted-foreground self-start rounded-lg px-3 py-2 text-sm">
-                    <span className="inline-flex gap-1">
-                      <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.2s]" />
-                      <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.1s]" />
-                      <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full" />
-                    </span>
-                  </div>
-                ) : null}
+          </div>
 
-                {messages.length <= 1 ? (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {SUGGESTIONS.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => send(s)}
-                        className="border-border bg-card text-muted-foreground hover:border-primary hover:text-primary rounded-md border px-3 py-1 text-xs transition-colors"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          )}
-
-          {view === "chat" ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                send(input);
-              }}
-              className="flex items-center gap-2 border-t p-3"
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+            className="flex items-center gap-2 border-t p-3"
+          >
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask the assistant…"
+              className="h-10 rounded-md"
+              aria-label="Message"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className="size-10 shrink-0 rounded-md"
+              disabled={!input.trim() || pending}
+              aria-label="Send message"
             >
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask the assistant…"
-                className="h-10 rounded-md"
-                aria-label="Message"
-              />
-              <Button
-                type="submit"
-                size="icon"
-                className="size-10 shrink-0 rounded-md"
-                disabled={!input.trim() || pending}
-                aria-label="Send message"
-              >
-                <ArrowUp className="size-4" />
-              </Button>
-            </form>
-          ) : null}
+              <ArrowUp className="size-4" />
+            </Button>
+          </form>
         </div>
       ) : null}
 
