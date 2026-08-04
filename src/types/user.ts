@@ -15,6 +15,14 @@ export interface User {
   avatarUrl?: string;
   /** Role id (see Role). */
   roleId: string;
+  /**
+   * The Cognito `is_owner` claim — the organization's creator.
+   *
+   * Kept as its own field rather than inferred from `roleId === "role-owner"`: that id is only a
+   * *fallback* when the token carries no `custom:roleId`, so an Owner who also holds a custom role
+   * would silently stop reading as one. The backend gates on the same claim.
+   */
+  isOwner?: boolean;
   jobTitle: string;
   department: string;
   team: string;

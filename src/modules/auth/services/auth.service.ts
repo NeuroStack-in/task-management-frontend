@@ -17,12 +17,7 @@ import {
   CognitoUser,
   CognitoUserSession,
 } from "amazon-cognito-identity-js";
-import {
-  claimsOf,
-  clearCognitoCache,
-  cognitoSignOut,
-  userPool,
-} from "@/lib/cognito";
+import { claimsOf, clearCognitoCache, cognitoSignOut, userPool } from "@/lib/cognito";
 import { completeSsoExchange } from "@/lib/oauth";
 import { friendlyError } from "@/lib/errors";
 import type { AuthSession, User } from "@/types/user";
@@ -74,8 +69,7 @@ export function hasPendingTotpChallenge(): boolean {
 /** Answer the TOTP challenge (`sendMFACode(code, …, "SOFTWARE_TOKEN_MFA")`) and finish sign-in. */
 export async function completeTotpChallenge(code: string): Promise<LoginResult> {
   const user = pendingTotpUser;
-  if (!user)
-    throw new AuthError("Your sign-in expired. Please sign in again.", "state");
+  if (!user) throw new AuthError("Your sign-in expired. Please sign in again.", "state");
   const session = await new Promise<CognitoUserSession>((resolve, reject) => {
     user.sendMFACode(
       code,
@@ -84,7 +78,9 @@ export async function completeTotpChallenge(code: string): Promise<LoginResult> 
         onFailure: (err: { code?: string }) => {
           if (err?.code === "CodeMismatchException")
             // Keep the pending user — the challenge is still answerable, let them retry.
-            return reject(new AuthError("That code didn't match. Try again.", "credentials"));
+            return reject(
+              new AuthError("That code didn't match. Try again.", "credentials"),
+            );
           pendingTotpUser = null;
           reject(new AuthError("Verification failed. Please sign in again.", "state"));
         },
@@ -135,6 +131,8 @@ function toUser(session: CognitoUserSession): User {
     // Same ids the backend seeds — the roles store resolves the permission set from this.
     roleId:
       c["custom:roleId"] || (c.is_owner === "true" ? "role-owner" : "role-employee"),
+    // Every Cognito custom claim is a STRING — comparing to the literal, never a truthiness check.
+    isOwner: c.is_owner === "true",
     jobTitle: "",
     department: "",
     team: "",
@@ -156,10 +154,7 @@ function toSession(session: CognitoUserSession): AuthSession {
   };
 }
 
-export async function login(
-  email: string,
-  password: string,
-): Promise<LoginResult> {
+export async function login(email: string, password: string): Promise<LoginResult> {
   const username = email.trim().toLowerCase();
   // Start every sign-in from a clean slate. A previous session's cached Cognito artefacts (clock
   // drift, device keys, a half-finished MFA exchange) survive in localStorage and get replayed into
@@ -186,14 +181,18 @@ export async function login(
         // otherwise stranded with no way to act, and both are only reachable for an account an
         // admin already invited.
         if (code === "UserNotConfirmedException")
-          return reject(new AuthError("This account hasn't been confirmed yet.", "state"));
+          return reject(
+            new AuthError("This account hasn't been confirmed yet.", "state"),
+          );
         if (code === "PasswordResetRequiredException")
           return reject(
             new AuthError("You need to reset your password before signing in.", "state"),
           );
         // ONLY these two are enumeration-sensitive, so only these two collapse to one message.
         if (code === "NotAuthorizedException" || code === "UserNotFoundException")
-          return reject(new AuthError("Your email or password is incorrect.", "credentials"));
+          return reject(
+            new AuthError("Your email or password is incorrect.", "credentials"),
+          );
         // Anything else is a real fault — an unsupported challenge, a misconfigured app client, a
         // failing trigger, a network error. Reporting those as "wrong password" is what sent MFA
         // users round in circles resetting a password that was never the problem: surface them.
@@ -203,7 +202,10 @@ export async function login(
         console.error("Cognito sign-in failure", code, err?.message);
         return reject(
           new AuthError(
-            friendlyError(err, "We couldn't sign you in just now. Try again in a moment."),
+            friendlyError(
+              err,
+              "We couldn't sign you in just now. Try again in a moment.",
+            ),
             "state",
           ),
         );
@@ -344,7 +346,10 @@ export async function confirmPasswordReset(
         const c = (err as { code?: string })?.code ?? "";
         if (c === "CodeMismatchException" || c === "UserNotFoundException")
           return reject(
-            new AuthError("That code is incorrect. Check your email and try again.", "credentials"),
+            new AuthError(
+              "That code is incorrect. Check your email and try again.",
+              "credentials",
+            ),
           );
         if (c === "ExpiredCodeException")
           return reject(

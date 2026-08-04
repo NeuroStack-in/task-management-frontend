@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, PanelLeftClose, LogOut, Search } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsFeatureOffForOthers } from "@/hooks/use-features";
+import { featureForHref } from "@/constants/features";
 import { useOrgName } from "@/hooks/use-org";
 import { useUiStore } from "@/stores/ui.store";
 import { useAuthStore } from "@/stores/auth.store";
@@ -38,6 +40,7 @@ export function SidebarNav({
   collapsed?: boolean;
 }) {
   const pathname = usePathname();
+  const offForOthers = useIsFeatureOffForOthers();
   const { nav, role } = usePermissions();
   const orgName = useOrgName();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
@@ -247,7 +250,7 @@ export function SidebarNav({
             <Activity className="size-5" />
           </div>
           <span className="flex min-w-0 flex-1 flex-col justify-center">
-            <span className="font-display truncate text-lg font-semibold leading-tight tracking-tight">
+            <span className="font-display truncate text-lg leading-tight font-semibold tracking-tight">
               WorkPulse
             </span>
             {orgName ? (
@@ -315,6 +318,17 @@ export function SidebarNav({
                           >
                             <Icon className="size-4 shrink-0" />
                             <span className="truncate">{item.label}</span>
+                            {/* Owner-only: this feature is switched off org-wide and the Owner is
+                                the sole exemption. Without a marker they would have no way to tell
+                                which surfaces their team can actually see. */}
+                            {offForOthers(featureForHref(item.href)) ? (
+                              <span
+                                title="Switched off for everyone else"
+                                className="bg-warning/15 text-warning ml-auto shrink-0 rounded-full px-1.5 py-px text-[0.6rem] font-semibold"
+                              >
+                                OFF
+                              </span>
+                            ) : null}
                           </Link>
                         </li>
                       );
