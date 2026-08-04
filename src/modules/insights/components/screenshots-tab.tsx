@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Camera,
   ChevronLeft,
@@ -109,6 +117,81 @@ interface EmployeeGroup {
   shots: ShotRow[];
 }
 
+/* ── Expiring screenshot URLs ─────────────────────────────────────────────────────────────────
+ *
+ * Thumbnails are presigned S3 GET URLs with a **15-minute** TTL (`READ_URL_TTL`), and a presigned
+ * URL signed with the Lambda's temporary role credentials also dies when those credentials are
+ * replaced — which a `cdk deploy` does to every function at once. Either way the browser is left
+ * holding URLs that 403, and an <img> whose src fails just renders a broken icon forever: React
+ * never re-runs anything, so the page stays broken until someone manually reloads.
+ *
+ * That is what made this look like a deploy bug. It is really "a URL outlived its signature", and
+ * leaving a tab open past 15 minutes produces the identical result with no deploy involved.
+ *
+ * The fix is recovery, not a longer TTL: a longer window still expires, and a *shorter* one would
+ * break more often. A failed image asks for freshly-signed URLs once, and re-renders.
+ */
+const RefreshUrls = createContext<() => void>(() => {});
+
+/** One re-sign per burst. Thirty broken thumbnails must cause one refetch, not thirty. */
+function useUrlRefresher(reload: () => void): () => void {
+  const pending = useRef(false);
+  return useCallback(() => {
+    if (pending.current) return;
+    pending.current = true;
+    // A short delay lets the rest of the grid fail first, so a whole screenful is repaired by the
+    // same request rather than the first failure racing ahead of its neighbours.
+    setTimeout(() => {
+      pending.current = false;
+      reload();
+    }, 400);
+  }, [reload]);
+}
+
+/**
+ * A screenshot thumbnail that repairs itself when its URL has expired.
+ *
+ * Asks for fresh URLs on the first failure and shows a quiet placeholder meanwhile — never a broken
+ * image icon. `key`ing state to `src` matters: when the refetch returns a new URL the component is
+ * reused, so without resetting on `src` change it would stay stuck in its failed state and the
+ * repair would be invisible.
+ */
+function ScreenshotImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const refresh = useContext(RefreshUrls);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+
+  if (failed) {
+    return (
+      <div className="bg-muted text-muted-foreground flex size-full items-center justify-center">
+        <Loader2 className="size-5 animate-spin" />
+        <span className="sr-only">Refreshing screenshot…</span>
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      className={className}
+      onError={() => {
+        setFailed(true);
+        refresh();
+      }}
+    />
+  );
+}
+
 export function ScreenshotsTab() {
   // Default to today; client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
@@ -130,6 +213,8 @@ export function ScreenshotsTab() {
 
   const { shots, loading, loadingMore, error, hasMore, loadMore, reload } =
     useScreenshots(date);
+  // Re-signs every URL on the page when one is found to have expired — see `useUrlRefresher`.
+  const refreshUrls = useUrlRefresher(reload);
   const { inScope, loading: scopeLoading } = useDataScope();
   const { employees: directory } = useDirectory();
 
@@ -255,184 +340,185 @@ export function ScreenshotsTab() {
   }
 
   return (
-    <div className="space-y-5">
-      <AiReportCard
-        title="AI screenshot report"
-        summary={summary}
-        metrics={[
-          { label: "Monitored", value: monitored },
-          {
-            label: "Screenshots",
-            value: total.toLocaleString(),
-            hint: hasMore ? "so far" : undefined,
-          },
-          { label: "Needs review", value: needsReview },
-          { label: "Avg activity", value: `${onTaskPct}%`, hint: "on-task rate" },
-        ]}
-      />
-
-      {/* Filters: day · search · department · review toggle */}
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
-        <Field label="Date">
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Previous day"
-              disabled={!date}
-              onClick={() => setDate((d) => (d ? shiftIso(d, -1) : d))}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <DatePicker
-              value={date}
-              max={today}
-              onChange={setDate}
-              className="w-36"
-            />
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Next day"
-              disabled={!date || date >= today}
-              onClick={() => setDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        </Field>
-
-        <Field label="Search">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Employee name…"
-              className="h-8 w-56 pl-8"
-            />
-          </div>
-        </Field>
-
-        {departments.length > 0 ? (
-          <Field label="Department">
-            <Select value={dept} onValueChange={(v) => setDept(v as string)}>
-              <SelectTrigger className="h-8 w-48" aria-label="Department">
-                <SelectValue>
-                  {(v) =>
-                    v == null || v === ALL_DEPTS
-                      ? "All departments"
-                      : deptLabel(String(v))
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                <SelectItem value={ALL_DEPTS}>All departments</SelectItem>
-                {departments.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {deptLabel(d)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        ) : null}
-
-        <fieldset className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground">Show</span>
-          <div className="flex h-8 items-center gap-3">
-            {(["all", "flagged"] as const).map((opt) => (
-              <label key={opt} className="flex items-center gap-1.5 text-sm">
-                <input
-                  type="radio"
-                  name="ss-flag-filter"
-                  className="size-4"
-                  style={{ accentColor: "var(--primary)" }}
-                  checked={flag === opt}
-                  onChange={() => setFlag(opt)}
-                />
-                {opt === "all" ? "All" : "Needs review"}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      </div>
-
-      {filteredShots.length > 0 ? (
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{groups.length}</span>{" "}
-          {groups.length === 1 ? "person" : "people"} ·{" "}
-          <span className="font-medium text-foreground">{filteredShots.length}</span>{" "}
-          {filteredShots.length === 1 ? "screenshot" : "screenshots"}
-          {withheld > 0 ? ` · ${withheld} withheld by privacy policy` : ""}
-          {hasMore ? " · more available" : ""} · select one to view it full screen.
-        </p>
-      ) : null}
-
-      {loading || scopeLoading ? (
-        <div className="flex min-h-[16rem] items-center justify-center">
-          <Loader label="Loading screenshots…" />
-        </div>
-      ) : error ? (
-        <EmptyState icon={ShieldOff} title="Couldn't load screenshots" description={error} />
-      ) : scopedShots.length === 0 ? (
-        <EmptyState
-          icon={Camera}
-          title="No screenshots for this day"
-          description="Screenshots appear here once the desktop agent captures them. Nothing was reported for the selected day."
+    <RefreshUrls.Provider value={refreshUrls}>
+      <div className="space-y-5">
+        <AiReportCard
+          title="AI screenshot report"
+          summary={summary}
+          metrics={[
+            { label: "Monitored", value: monitored },
+            {
+              label: "Screenshots",
+              value: total.toLocaleString(),
+              hint: hasMore ? "so far" : undefined,
+            },
+            { label: "Needs review", value: needsReview },
+            { label: "Avg activity", value: `${onTaskPct}%`, hint: "on-task rate" },
+          ]}
         />
-      ) : flag === "flagged" && filteredShots.length === 0 ? (
-        <EmptyState
-          icon={Flag}
-          title="Nothing flagged for review"
-          description="No captures on this day were in a distracting app. Flagged captures appear here for review."
-        />
-      ) : filteredShots.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No people match"
-          description="Try a different name or department."
-        />
-      ) : (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {groups.map((g) => {
-              const cover = coverOf(g.shots);
-              const emp = dirById.get(g.userId);
-              const deptId = emp?.department_id;
-              return (
-                <EmployeeCard
-                  key={g.userId}
-                  name={emp?.name ?? shortUser(g.userId)}
-                  dept={deptId ? deptLabel(deptId) : "—"}
-                  cover={cover}
-                  count={g.shots.length}
-                  flaggedCount={g.shots.filter((s) => s.flagged).length}
-                  onOpen={() => setOpenUser(g.userId)}
-                />
-              );
-            })}
-          </div>
 
-          {hasMore ? (
-            <div className="flex justify-center pt-1">
-              <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
-                {loadingMore ? "Loading…" : "Load more"}
+        {/* Filters: day · search · department · review toggle */}
+        <div className="bg-card shadow-soft flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl px-5 py-3">
+          <Field label="Date">
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Previous day"
+                disabled={!date}
+                onClick={() => setDate((d) => (d ? shiftIso(d, -1) : d))}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <DatePicker value={date} max={today} onChange={setDate} className="w-36" />
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Next day"
+                disabled={!date || date >= today}
+                onClick={() => setDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
+              >
+                <ChevronRight className="size-4" />
               </Button>
             </div>
-          ) : null}
-        </>
-      )}
+          </Field>
 
-      <Lightbox
-        shots={flatShots}
-        index={viewerIdx}
-        date={date}
-        nameOf={nameOf}
-        onIndexChange={setViewerIdx}
-        onClose={() => setViewerIdx(null)}
-      />
-    </div>
+          <Field label="Search">
+            <div className="relative">
+              <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Employee name…"
+                className="h-8 w-56 pl-8"
+              />
+            </div>
+          </Field>
+
+          {departments.length > 0 ? (
+            <Field label="Department">
+              <Select value={dept} onValueChange={(v) => setDept(v as string)}>
+                <SelectTrigger className="h-8 w-48" aria-label="Department">
+                  <SelectValue>
+                    {(v) =>
+                      v == null || v === ALL_DEPTS
+                        ? "All departments"
+                        : deptLabel(String(v))
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value={ALL_DEPTS}>All departments</SelectItem>
+                  {departments.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {deptLabel(d)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ) : null}
+
+          <fieldset className="flex flex-col gap-1.5">
+            <span className="text-muted-foreground text-xs font-medium">Show</span>
+            <div className="flex h-8 items-center gap-3">
+              {(["all", "flagged"] as const).map((opt) => (
+                <label key={opt} className="flex items-center gap-1.5 text-sm">
+                  <input
+                    type="radio"
+                    name="ss-flag-filter"
+                    className="size-4"
+                    style={{ accentColor: "var(--primary)" }}
+                    checked={flag === opt}
+                    onChange={() => setFlag(opt)}
+                  />
+                  {opt === "all" ? "All" : "Needs review"}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </div>
+
+        {filteredShots.length > 0 ? (
+          <p className="text-muted-foreground text-sm">
+            <span className="text-foreground font-medium">{groups.length}</span>{" "}
+            {groups.length === 1 ? "person" : "people"} ·{" "}
+            <span className="text-foreground font-medium">{filteredShots.length}</span>{" "}
+            {filteredShots.length === 1 ? "screenshot" : "screenshots"}
+            {withheld > 0 ? ` · ${withheld} withheld by privacy policy` : ""}
+            {hasMore ? " · more available" : ""} · select one to view it full screen.
+          </p>
+        ) : null}
+
+        {loading || scopeLoading ? (
+          <div className="flex min-h-[16rem] items-center justify-center">
+            <Loader label="Loading screenshots…" />
+          </div>
+        ) : error ? (
+          <EmptyState
+            icon={ShieldOff}
+            title="Couldn't load screenshots"
+            description={error}
+          />
+        ) : scopedShots.length === 0 ? (
+          <EmptyState
+            icon={Camera}
+            title="No screenshots for this day"
+            description="Screenshots appear here once the desktop agent captures them. Nothing was reported for the selected day."
+          />
+        ) : flag === "flagged" && filteredShots.length === 0 ? (
+          <EmptyState
+            icon={Flag}
+            title="Nothing flagged for review"
+            description="No captures on this day were in a distracting app. Flagged captures appear here for review."
+          />
+        ) : filteredShots.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No people match"
+            description="Try a different name or department."
+          />
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {groups.map((g) => {
+                const cover = coverOf(g.shots);
+                const emp = dirById.get(g.userId);
+                const deptId = emp?.department_id;
+                return (
+                  <EmployeeCard
+                    key={g.userId}
+                    name={emp?.name ?? shortUser(g.userId)}
+                    dept={deptId ? deptLabel(deptId) : "—"}
+                    cover={cover}
+                    count={g.shots.length}
+                    flaggedCount={g.shots.filter((s) => s.flagged).length}
+                    onOpen={() => setOpenUser(g.userId)}
+                  />
+                );
+              })}
+            </div>
+
+            {hasMore ? (
+              <div className="flex justify-center pt-1">
+                <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+                  {loadingMore ? "Loading…" : "Load more"}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+
+        <Lightbox
+          shots={flatShots}
+          index={viewerIdx}
+          date={date}
+          nameOf={nameOf}
+          onIndexChange={setViewerIdx}
+          onClose={() => setViewerIdx(null)}
+        />
+      </div>
+    </RefreshUrls.Provider>
   );
 }
 
@@ -461,43 +547,41 @@ function EmployeeCard({
   const withheld = cover.redacted || !cover.url;
   return (
     <Card
-      className="group cursor-pointer gap-0 overflow-hidden p-0 transition hover:ring-1 hover:ring-primary/40"
+      className="group hover:ring-primary/40 cursor-pointer gap-0 overflow-hidden p-0 transition hover:ring-1"
       onClick={onOpen}
     >
-      <div className="relative aspect-[16/10] overflow-hidden bg-muted">
+      <div className="bg-muted relative aspect-[16/10] overflow-hidden">
         {withheld ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-muted p-4 text-center">
-            <EyeOff className="size-5 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground">
+          <div className="bg-muted flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center">
+            <EyeOff className="text-muted-foreground size-5" />
+            <span className="text-muted-foreground text-xs font-medium">
               Withheld by privacy policy
             </span>
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <ScreenshotImage
             src={cover.url}
             alt={`${name} — ${cover.app}`}
-            loading="lazy"
             className="size-full max-w-full object-cover transition group-hover:scale-[1.02]"
           />
         )}
-        <div className="absolute left-2 top-2 max-w-[70%] truncate rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
+        <div className="bg-background/85 absolute top-2 left-2 max-w-[70%] truncate rounded-full px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
           {cover.app || "Unknown app"}
         </div>
         {flaggedCount > 0 ? (
-          <Badge className="absolute right-2 top-2 gap-1 border-transparent bg-destructive text-destructive-foreground shadow-sm">
+          <Badge className="bg-destructive text-destructive-foreground absolute top-2 right-2 gap-1 border-transparent shadow-sm">
             <Flag className="size-3" />
             {flaggedCount}
           </Badge>
         ) : withheld ? (
-          <Badge className="absolute right-2 top-2 border-transparent bg-muted text-muted-foreground shadow-sm">
+          <Badge className="bg-muted text-muted-foreground absolute top-2 right-2 border-transparent shadow-sm">
             Redacted
           </Badge>
         ) : null}
-        <span className="absolute bottom-2 left-2 rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
+        <span className="bg-background/85 absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
           {count} {count === 1 ? "shot" : "shots"}
         </span>
-        <span className="absolute bottom-2 right-2 rounded-full bg-background/85 px-2 py-0.5 font-mono text-[11px] tabular-nums backdrop-blur-sm">
+        <span className="bg-background/85 absolute right-2 bottom-2 rounded-full px-2 py-0.5 font-mono text-[11px] tabular-nums backdrop-blur-sm">
           {formatTime(cover.captured_at)}
         </span>
       </div>
@@ -508,9 +592,9 @@ function EmployeeCard({
         </Avatar>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{name}</p>
-          <p className="truncate text-xs text-muted-foreground">{dept}</p>
+          <p className="text-muted-foreground truncate text-xs">{dept}</p>
         </div>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
+        <ChevronRight className="text-muted-foreground size-4 shrink-0 transition group-hover:translate-x-0.5" />
       </div>
     </Card>
   );
@@ -519,7 +603,7 @@ function EmployeeCard({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="text-muted-foreground text-xs font-medium">{label}</span>
       {children}
     </div>
   );
@@ -593,8 +677,7 @@ function Lightbox({
                   <p className="text-sm font-medium">Withheld by privacy policy</p>
                 </div>
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <ScreenshotImage
                   src={shot.url}
                   alt={`${shot.app} screenshot`}
                   className="max-h-full max-w-full object-contain"
@@ -605,7 +688,7 @@ function Lightbox({
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="absolute right-4 top-4 z-20 flex size-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/20"
+                className="absolute top-4 right-4 z-20 flex size-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/20"
               >
                 <X className="size-5" />
               </button>
@@ -614,26 +697,30 @@ function Lightbox({
                 <>
                   <button
                     type="button"
-                    onClick={() => index !== null && index > 0 && onIndexChange(index - 1)}
+                    onClick={() =>
+                      index !== null && index > 0 && onIndexChange(index - 1)
+                    }
                     disabled={atStart}
                     aria-label="Previous screenshot"
-                    className="absolute left-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-opacity duration-200 hover:bg-white/25 focus-visible:opacity-100 disabled:pointer-events-none disabled:!opacity-0 sm:left-5"
+                    className="absolute top-1/2 left-3 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-opacity duration-200 hover:bg-white/25 focus-visible:opacity-100 disabled:pointer-events-none disabled:!opacity-0 sm:left-5"
                   >
                     <ChevronLeft className="size-6" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => index !== null && index < count - 1 && onIndexChange(index + 1)}
+                    onClick={() =>
+                      index !== null && index < count - 1 && onIndexChange(index + 1)
+                    }
                     disabled={atEnd}
                     aria-label="Next screenshot"
-                    className="absolute right-3 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-opacity duration-200 hover:bg-white/25 focus-visible:opacity-100 disabled:pointer-events-none disabled:!opacity-0 sm:right-5"
+                    className="absolute top-1/2 right-3 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-opacity duration-200 hover:bg-white/25 focus-visible:opacity-100 disabled:pointer-events-none disabled:!opacity-0 sm:right-5"
                   >
                     <ChevronRight className="size-6" />
                   </button>
                 </>
               ) : null}
 
-              <span className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium tabular-nums text-white/80 backdrop-blur-sm">
+              <span className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/80 tabular-nums backdrop-blur-sm">
                 {(index ?? 0) + 1} / {count}
               </span>
             </div>
@@ -644,9 +731,7 @@ function Lightbox({
                 <PanelDetail label="Application" value={shot.app || "Unknown app"} />
                 <PanelDetail label="Person" value={nameOf(shot.user_id)} />
                 <PanelDetail label="Captured" value={formatDateTime(shot.captured_at)} />
-                {shot.device ? (
-                  <PanelDetail label="Device" value={shot.device} />
-                ) : null}
+                {shot.device ? <PanelDetail label="Device" value={shot.device} /> : null}
                 {/*
                   Only shown on multi-monitor machines. `display` is 0-based on the wire and +1 only
                   here for the label, so "Monitor 1 of 2" reads naturally while the sort order stays
@@ -700,8 +785,12 @@ function PanelDetail({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-medium uppercase tracking-wide text-white/45">{label}</dt>
-      <dd className={cn("mt-1 break-words font-medium text-white", className)}>{value}</dd>
+      <dt className="text-[11px] font-medium tracking-wide text-white/45 uppercase">
+        {label}
+      </dt>
+      <dd className={cn("mt-1 font-medium break-words text-white", className)}>
+        {value}
+      </dd>
     </div>
   );
 }
@@ -764,7 +853,10 @@ function ShotAiReport({
       // Still nothing after a run? Explain why (plan doesn't include screenshots, no eligible frames,
       // provider not configured) instead of silently re-showing "not analyzed".
       if (next.kind === "none" && run.reason) {
-        setState({ kind: "error", message: `Couldn't analyze this day — ${run.reason}.` });
+        setState({
+          kind: "error",
+          message: `Couldn't analyze this day — ${run.reason}.`,
+        });
       } else {
         setState(next);
       }
@@ -785,7 +877,7 @@ function ShotAiReport({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-white/45">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-white/45 uppercase">
         <Sparkles className="size-3.5" /> AI read
       </div>
 
@@ -799,7 +891,9 @@ function ShotAiReport({
 
       {state.kind === "none" && (
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <p className="text-sm text-white/60">This frame hasn&apos;t been analyzed yet.</p>
+          <p className="text-sm text-white/60">
+            This frame hasn&apos;t been analyzed yet.
+          </p>
           <Button
             size="sm"
             variant="outline"
@@ -820,7 +914,9 @@ function ShotAiReport({
         </div>
       )}
 
-      {state.kind === "error" && <p className="mt-2 text-sm text-destructive">{state.message}</p>}
+      {state.kind === "error" && (
+        <p className="text-destructive mt-2 text-sm">{state.message}</p>
+      )}
     </div>
   );
 }
@@ -835,26 +931,35 @@ function AiReadBody({ report }: { report: ScreenshotReport }) {
         : "bg-white/10 text-white/70";
   return (
     <div className="mt-2 space-y-2">
-      <p className="max-w-3xl text-sm leading-relaxed text-white/90">{report.description}</p>
+      <p className="max-w-3xl text-sm leading-relaxed text-white/90">
+        {report.description}
+      </p>
       <div className="flex flex-wrap items-center gap-2">
-        <span className={cn("rounded-sm px-2 py-0.5 text-[11px] font-medium capitalize", catTone)}>
+        <span
+          className={cn(
+            "rounded-sm px-2 py-0.5 text-[11px] font-medium capitalize",
+            catTone,
+          )}
+        >
           {report.category}
         </span>
         <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/70">
           {report.work_related ? "Work-related" : "Not work-related"}
         </span>
         {report.flag ? (
-          <span className="inline-flex items-center gap-1 rounded-sm bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive">
+          <span className="bg-destructive/20 text-destructive inline-flex items-center gap-1 rounded-sm px-2 py-0.5 text-[11px] font-medium">
             <Flag className="size-3" /> Flagged
           </span>
         ) : null}
       </div>
       {report.flag && report.flag_reason ? (
-        <p className="text-[13px] text-destructive/90">{report.flag_reason}</p>
+        <p className="text-destructive/90 text-[13px]">{report.flag_reason}</p>
       ) : null}
       <p className="text-[11px] text-white/35">
         AI analysis
-        {report.confidence > 0 ? ` · ${Math.round(report.confidence * 100)}% confidence` : ""}
+        {report.confidence > 0
+          ? ` · ${Math.round(report.confidence * 100)}% confidence`
+          : ""}
       </p>
     </div>
   );
@@ -885,25 +990,25 @@ function groupCaptures(shots: ShotRow[]): Capture[] {
     if (list) list.push(s);
     else byMoment.set(s.captured_at, [s]);
   }
-  return [...byMoment.entries()]
-    // Newest first: the useful frame is almost always the most recent one — especially right after
-    // a "Capture now", where the whole point is to see what just came back. The lightbox inherits
-    // this order, so prev/next walks the grid exactly as it reads.
-    .sort((a, b) => b[0] - a[0])
-    .map(([capturedAt, group]) => {
-      const monitors = [...group].sort(
-        (a, b) => (a.display ?? 0) - (b.display ?? 0),
-      );
-      return {
-        key: String(capturedAt),
-        capturedAt,
-        monitors,
-        flagged: monitors.some((s) => s.flagged),
-        // Lead with the frame that earned the flag — a reviewer should see *why* it is flagged
-        // without first clicking past whichever monitor happens to be primary.
-        cover: monitors.find((s) => s.flagged) ?? monitors[0],
-      };
-    });
+  return (
+    [...byMoment.entries()]
+      // Newest first: the useful frame is almost always the most recent one — especially right after
+      // a "Capture now", where the whole point is to see what just came back. The lightbox inherits
+      // this order, so prev/next walks the grid exactly as it reads.
+      .sort((a, b) => b[0] - a[0])
+      .map(([capturedAt, group]) => {
+        const monitors = [...group].sort((a, b) => (a.display ?? 0) - (b.display ?? 0));
+        return {
+          key: String(capturedAt),
+          capturedAt,
+          monitors,
+          flagged: monitors.some((s) => s.flagged),
+          // Lead with the frame that earned the flag — a reviewer should see *why* it is flagged
+          // without first clicking past whichever monitor happens to be primary.
+          cover: monitors.find((s) => s.flagged) ?? monitors[0],
+        };
+      })
+  );
 }
 
 const hhmm = (ms: number) =>
@@ -989,13 +1094,13 @@ function EmployeeCaptures({
         <ChevronLeft className="size-4" /> All employees
       </Button>
 
-      <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-card px-5 py-4 shadow-soft">
+      <div className="bg-card shadow-soft flex flex-wrap items-center gap-4 rounded-2xl px-5 py-4">
         <Avatar className="size-12">
           <AvatarFallback>{initials(name)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
           <h2 className="font-heading text-lg font-semibold">{name}</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             {dept}
             {device ? " · " + device : ""}
           </p>
@@ -1016,7 +1121,7 @@ function EmployeeCaptures({
       </div>
 
       {/* Filters — within the selected day */}
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
+      <div className="bg-card shadow-soft flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl px-5 py-3">
         <Field label="From">
           <TimePicker value={from} onChange={setFrom} className="w-32" />
         </Field>
@@ -1063,11 +1168,11 @@ function EmployeeCaptures({
         ) : null}
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">{captures.length}</span>{" "}
+      <p className="text-muted-foreground text-sm">
+        <span className="text-foreground font-medium">{captures.length}</span>{" "}
         {captures.length === 1 ? "capture" : "captures"}
-        {monitorCount > 1 ? " · " + monitorCount + " monitors" : ""} on{" "}
-        {dateLabel(date)} · select one to view it full screen.
+        {monitorCount > 1 ? " · " + monitorCount + " monitors" : ""} on {dateLabel(date)}{" "}
+        · select one to view it full screen.
       </p>
 
       {captures.length === 0 ? (
@@ -1121,9 +1226,7 @@ function Summary({
   return (
     <div className="text-center">
       <p className={cn("text-lg font-semibold tabular-nums", tone)}>{value}</p>
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
+      <p className="text-muted-foreground text-[11px] tracking-wide uppercase">{label}</p>
     </div>
   );
 }
@@ -1145,37 +1248,35 @@ function CaptureCard({
       type="button"
       onClick={onOpen}
       className={cn(
-        "group overflow-hidden rounded-2xl bg-card text-left shadow-soft transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-        capture.flagged && "ring-1 ring-destructive/40",
+        "group bg-card shadow-soft focus-visible:ring-primary overflow-hidden rounded-2xl text-left transition hover:shadow-md focus:outline-none focus-visible:ring-2",
+        capture.flagged && "ring-destructive/40 ring-1",
       )}
     >
-      <div className="relative aspect-video w-full overflow-hidden bg-muted">
+      <div className="bg-muted relative aspect-video w-full overflow-hidden">
         {withheld ? (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
+          <div className="text-muted-foreground flex h-full items-center justify-center">
             <ShieldOff className="size-6" />
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <ScreenshotImage
             src={shot.url}
             alt={shot.app + " at " + hhmm(capture.capturedAt)}
             className="size-full object-cover"
-            loading="lazy"
           />
         )}
-        <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+        <span className="absolute top-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
           {shot.app || "—"}
         </span>
         {capture.flagged ? (
-          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-medium text-white">
+          <span className="bg-destructive absolute top-2 right-2 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-white">
             <Flag className="size-3" /> Needs review
           </span>
         ) : monitorCount > 1 ? (
-          <span className="absolute right-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+          <span className="absolute top-2 right-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
             {capture.monitors.length} of {monitorCount}
           </span>
         ) : null}
-        <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white">
+        <span className="absolute right-2 bottom-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white tabular-nums">
           {hhmm(capture.capturedAt)}
         </span>
       </div>
