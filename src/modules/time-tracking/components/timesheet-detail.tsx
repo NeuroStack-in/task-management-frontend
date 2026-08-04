@@ -77,7 +77,7 @@ export function ActivityDialog({
 
   return (
     <Dialog open={!!view} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent className="max-h-[85vh] gap-0 overflow-y-auto p-0 sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] gap-0 overflow-x-hidden overflow-y-auto p-0 sm:max-w-lg">
         {view ? (
           <>
             <DialogHeader className="border-b p-5 pr-12 text-left">
@@ -136,7 +136,7 @@ function DayDetail({ view }: { view: Extract<ActivityView, { kind: "day" }> }) {
             {groupByLabel(sessions).map(([label, group]) => (
               <div key={label}>
                 <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b pb-1">
-                  <span className="truncate text-xs font-semibold tracking-wide uppercase">
+                  <span className="min-w-0 text-xs font-semibold tracking-wide break-words uppercase">
                     {label}
                   </span>
                   <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
@@ -193,8 +193,12 @@ function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
   const label = s.description || s.taskId || "Untitled session";
   return (
     <li className="flex items-start justify-between gap-3 text-sm">
-      <span className="min-w-0">
-        <span className="block truncate font-medium">{label}</span>
+      <span className="min-w-0 flex-1">
+        {/* Wraps rather than truncating: a typed description is the whole point of the row, and an
+            ellipsis hides exactly the part someone opened the dialog to read. `break-words` also
+            breaks a single unbroken token (a pasted URL, a long ID), which is what was pushing the
+            panel wider than the dialog and producing a horizontal scrollbar. */}
+        <span className="block font-medium break-words">{label}</span>
         <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
           <span className="font-mono tabular-nums">
             {s.start} – {s.end ?? "now"}
