@@ -199,14 +199,24 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   };
 
   return (
-    <div className="space-y-4">
+    // `data-tour` anchors for the product tour. Deliberately on the header and the Customize
+    // trigger, NOT on a widget: widgets are user-removable and permission-filtered, so a step
+    // anchored to one would stall for exactly the people who tidied their dashboard.
+    <div className="space-y-4" data-tour="dash:widgets">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-lg font-semibold tracking-tight">
           Your widgets
         </h2>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="outline" size="sm" className="gap-2" />}
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                data-tour="dash:customize"
+              />
+            }
           >
             <SlidersHorizontal className="size-4" /> Customize
           </DropdownMenuTrigger>

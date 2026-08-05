@@ -166,7 +166,10 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
             </div>
           ) : (
             <>
-              <div className="divide-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-xl border sm:grid-cols-4 sm:divide-y-0">
+              <div
+                className="divide-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-xl border sm:grid-cols-4 sm:divide-y-0"
+                data-tour="time:totals"
+              >
                 <SummaryCell
                   icon={BadgeDollarSign}
                   label="Billable today"

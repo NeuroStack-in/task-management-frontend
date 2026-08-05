@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useTourStore } from "@/stores/tour.store";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import { getTour, type TourStep } from "@/modules/help/lib/tours";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +104,8 @@ export function ProductTour() {
   const router = useRouter();
   const pathname = usePathname();
   const { can } = usePermissions();
+  // Which /dashboard this caller lands on — decides which dashboard steps are real for them.
+  const personalDashboard = useIsPersonalDashboard();
 
   const activeTourId = useTourStore((s) => s.activeTourId);
   const stepIndex = useTourStore((s) => s.stepIndex);
@@ -121,8 +124,14 @@ export function ProductTour() {
   const steps: TourStep[] = useMemo(() => {
     const tour = activeTourId ? getTour(activeTourId) : undefined;
     if (!tour) return [];
-    return tour.steps.filter((s) => !s.permission || can(s.permission));
-  }, [activeTourId, can]);
+    return tour.steps.filter(
+      (s) =>
+        (!s.permission || can(s.permission)) &&
+        // `/dashboard` renders one of two components; a step anchored to the other one has no
+        // target on screen and would burn the full target-wait before skipping.
+        (!s.dashboard || s.dashboard === (personalDashboard ? "personal" : "org")),
+    );
+  }, [activeTourId, can, personalDashboard]);
 
   const step: TourStep | undefined = steps[stepIndex];
   const isLast = stepIndex === steps.length - 1;

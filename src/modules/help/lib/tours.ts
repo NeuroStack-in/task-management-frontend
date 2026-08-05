@@ -36,6 +36,17 @@ export interface TourStep {
   content: string;
   /** Required to see the target. Steps whose permission the caller lacks are dropped up front. */
   permission?: PermissionId;
+  /**
+   * Which dashboard this step's target lives on. Dropped up front for the other one.
+   *
+   * **Not the same thing as `permission`.** `/dashboard` renders two different components: a
+   * self-scoped role gets `PersonalDashboard` (fixed KPI/tasks/week sections), everyone else gets
+   * `CustomizableDashboard` (a user-arranged widget grid). An Owner holds *every* permission and
+   * still has no `dash:kpis` on screen — so a permission gate cannot express this, and without it
+   * the three personal steps each burned the full 8 s target-wait before skipping, for the people
+   * most likely to run a tour.
+   */
+  dashboard?: "personal" | "org";
 }
 
 export interface Tour {
@@ -60,6 +71,7 @@ export const TOURS: Record<string, Tour> = {
       {
         route: "/dashboard",
         target: "dash:kpis",
+        dashboard: "personal",
         title: "Your day at a glance",
         content:
           "Time tracked today, hours this week, open tasks and your projects. The timer counts the whole day, not just the current session — pausing and resuming doesn't reset it.",
@@ -67,6 +79,7 @@ export const TOURS: Record<string, Tour> = {
       {
         route: "/dashboard",
         target: "dash:tasks",
+        dashboard: "personal",
         title: "What's on your plate",
         content:
           "Tasks assigned to you across every project, newest first. Open one to see its project, due date and status.",
@@ -74,9 +87,28 @@ export const TOURS: Record<string, Tour> = {
       {
         route: "/dashboard",
         target: "dash:week",
+        dashboard: "personal",
         title: "Your week",
         content:
           "Attendance per day, built from what the desktop agent reported. Non-working days are marked so a blank Saturday never looks like a missed day.",
+      },
+      // The org counterparts. Anchored to the header and the Customize trigger rather than to a
+      // widget, because the grid is user-arranged — any given widget may have been removed.
+      {
+        route: "/dashboard",
+        target: "dash:widgets",
+        dashboard: "org",
+        title: "Your team at a glance",
+        content:
+          "Org-wide widgets: who's active now, hours and productivity across the team, and where attention is needed. Each one reads live data — a widget showing “—” is waiting on the desktop agent, not broken.",
+      },
+      {
+        route: "/dashboard",
+        target: "dash:customize",
+        dashboard: "org",
+        title: "Make it yours",
+        content:
+          "Add, remove and drag widgets into the order you want. The layout is saved to your account, so it follows you between devices — and Reset layout puts it back.",
       },
       {
         route: "/dashboard",
@@ -105,7 +137,10 @@ export const TOURS: Record<string, Tour> = {
       },
       {
         route: "/time-tracking",
-        target: "dash:kpis",
+        // `time:totals`, not `dash:kpis` — that anchor only ever existed on the personal dashboard,
+        // so this step waited the full 8 s on every route before skipping itself, for every role.
+        target: "time:totals",
+        dashboard: "personal",
         title: "Today's totals",
         content:
           "Tracked and billable time for the day. A session that's still open shows as running and hasn't contributed settled time yet.",
