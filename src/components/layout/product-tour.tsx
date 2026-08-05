@@ -1,62 +1,104 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
-import { EVENTS, STATUS, type EventData, type Step } from "react-joyride";
+import { Button } from "@/components/ui/button";
 import { useTourStore } from "@/stores/tour.store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getTour, type TourStep } from "@/modules/help/lib/tours";
+import { cn } from "@/lib/utils";
 
 /**
- * Joyride measures the DOM as it initialises, so it cannot render on the server — a plain import
- * makes the whole route bail out of prerendering. Loading it lazily also keeps it out of the bundle
- * for the majority of sessions that never start a tour.
+ * Guided product tours — the overlay behind the Help Center's "Start tour" buttons.
  *
- * **v3 has no default export**, only the named `Joyride`, so the promise is mapped explicitly.
+ * ## Why this is hand-rolled
+ *
+ * `react-joyride` was tried first (it was already an unused dependency). Two things killed it: v2
+ * calls React DOM APIs removed in React 18, and v3 parses every colour through `hexToRGB`, so the
+ * theme's `var(--primary)` tokens became `NaN` — a full-screen grey overlay with an invisible
+ * tooltip. Patching around that meant either hardcoding hexes (abandoning light/dark theming) or
+ * fighting a library whose API had already changed under us once.
+ *
+ * The actual requirement is small and entirely ours: dim the page, cut a hole around one element,
+ * and float a card near it. Doing it directly costs ~200 lines and buys exact design-system
+ * fidelity — real `Button`s, real tokens, correct in both themes — with no third-party CSS.
+ *
+ * ## The spotlight is a box-shadow, not a mask
+ *
+ * A `<div>` the size of the target with `box-shadow: 0 0 0 9999px <dim>` paints the dimmer
+ * *everywhere except itself*. That gets a spotlight with one CSS property — no SVG mask, no
+ * four-rectangle backdrop with seams at the corners, and it animates smoothly when the rect moves.
+ *
+ * ## Everything is measured from the live element
+ *
+ * The rect is re-measured on scroll and resize, and the target is scrolled into view before the
+ * first measurement, so a step never points at something off-screen or stale.
  */
-const Joyride = dynamic(() => import("react-joyride").then((m) => m.Joyride), {
-  ssr: false,
-});
 
-/**
- * How long a step waits for its target after we navigate.
- *
- * Joyride's own `targetWaitTimeout` (default 1000 ms) covers an element that renders late; this is
- * the budget for a *route change* — Next has to fetch the route, mount it and paint before the
- * element can exist at all, which is comfortably more than a second on a cold chunk.
- */
-const STEP_WAIT_MS = 8000;
+/** Gap between the spotlight and the tooltip. */
+const GAP = 14;
+/** Breathing room around the highlighted element. */
+const PAD = 8;
+/** Tooltip width. Wide enough for two lines of prose, narrow enough to sit beside a sidebar item. */
+const CARD_W = 380;
+/** Keep the card this far from the viewport edge. */
+const MARGIN = 16;
+/** How long to wait for a step's target after navigating before giving up on it. */
+const WAIT_MS = 8000;
 const POLL_MS = 80;
+
+type Rect = { top: number; left: number; width: number; height: number };
+type Placement = "top" | "bottom" | "left" | "right" | "center";
 
 const selector = (target: string) => `[data-tour="${CSS.escape(target)}"]`;
 
-/**
- * Drives the guided walkthroughs launched from the Help Center.
- *
- * Mounted once in the app shell, **not** on the Help page: a tour's later steps live on other
- * routes, by which point the Help page has unmounted and would have taken the tour with it. Living
- * in the shell is precisely what lets a tour walk someone across the product.
- *
- * ## Route changes are the whole problem
- *
- * Joyride positions a tooltip against an element that must already exist. Across a route change
- * there is a window where the old page is gone and the new one hasn't painted, and a tooltip
- * rendered into that gap pins itself to the corner over nothing.
- *
- * v3 solves this properly with `options.before`: an async hook per step that the tour **waits on**,
- * showing a loader. So navigation lives there — push the route, poll until the target exists, then
- * resolve. No manual pausing, no racing Joyride's internal state machine.
- *
- * ## Steps that can't apply are removed, not skipped
- *
- * The sidebar is generated from the caller's permissions, so an employee genuinely has no Employees
- * or Settings link — a tour written for an owner would dead-end for them. Steps declaring a
- * permission the caller lacks are filtered out **before** the tour starts, so the progress counter
- * reads "2 of 3" rather than "2 of 6" with four silent skips. If that leaves nothing, we say so
- * rather than opening an empty tour.
- */
+/** Choose a side with room for the card, preferring below → above → right → left. */
+function place(rect: Rect, cardH: number): Placement {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  if (rect.top + rect.height + GAP + cardH + MARGIN < vh) return "bottom";
+  if (rect.top - GAP - cardH - MARGIN > 0) return "top";
+  if (rect.left + rect.width + GAP + CARD_W + MARGIN < vw) return "right";
+  if (rect.left - GAP - CARD_W - MARGIN > 0) return "left";
+  return "bottom";
+}
+
+/** Card position for a placement, clamped so it can never leave the viewport. */
+function cardPos(rect: Rect, placement: Placement, cardH: number) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const clampX = (x: number) => Math.min(Math.max(x, MARGIN), vw - CARD_W - MARGIN);
+  const clampY = (y: number) => Math.min(Math.max(y, MARGIN), vh - cardH - MARGIN);
+
+  switch (placement) {
+    case "bottom":
+      return {
+        top: clampY(rect.top + rect.height + GAP),
+        left: clampX(rect.left + rect.width / 2 - CARD_W / 2),
+      };
+    case "top":
+      return {
+        top: clampY(rect.top - GAP - cardH),
+        left: clampX(rect.left + rect.width / 2 - CARD_W / 2),
+      };
+    case "right":
+      return {
+        top: clampY(rect.top + rect.height / 2 - cardH / 2),
+        left: clampX(rect.left + rect.width + GAP),
+      };
+    case "left":
+      return {
+        top: clampY(rect.top + rect.height / 2 - cardH / 2),
+        left: clampX(rect.left - GAP - CARD_W),
+      };
+    default:
+      return { top: vh / 2 - cardH / 2, left: vw / 2 - CARD_W / 2 };
+  }
+}
+
 export function ProductTour() {
   const router = useRouter();
   const pathname = usePathname();
@@ -64,147 +106,260 @@ export function ProductTour() {
 
   const activeTourId = useTourStore((s) => s.activeTourId);
   const stepIndex = useTourStore((s) => s.stepIndex);
-  const running = useTourStore((s) => s.running);
   const setStepIndex = useTourStore((s) => s.setStepIndex);
   const stopTour = useTourStore((s) => s.stopTour);
 
-  // `dynamic(ssr:false)` still renders nothing on the first client pass; starting before that would
-  // measure a DOM that hasn't settled.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  /** The steps this caller can actually be shown. */
+  const [rect, setRect] = useState<Rect | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const [cardH, setCardH] = useState(180);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  /** Steps this caller can actually be shown — see `tours.ts` on why they're removed, not skipped. */
   const steps: TourStep[] = useMemo(() => {
     const tour = activeTourId ? getTour(activeTourId) : undefined;
     if (!tour) return [];
     return tour.steps.filter((s) => !s.permission || can(s.permission));
   }, [activeTourId, can]);
 
-  // `before` runs inside Joyride and must see the *current* route and step list without being
-  // re-created on every render (a changing hook identity restarts the step).
-  const pathnameRef = useRef(pathname);
-  pathnameRef.current = pathname;
-  const stepsRef = useRef(steps);
-  stepsRef.current = steps;
-  const indexRef = useRef(stepIndex);
-  indexRef.current = stepIndex;
+  const step: TourStep | undefined = steps[stepIndex];
+  const isLast = stepIndex === steps.length - 1;
 
-  /**
-   * Put the app on the right route and wait for the step's target.
-   *
-   * Resolves either way — a target that never appears must not hang the tour behind a loader. In
-   * that case Joyride raises `TARGET_NOT_FOUND`, which {@link onEvent} advances past.
-   */
-  const before = useCallback(async () => {
-    const step = stepsRef.current[indexRef.current];
-    if (!step) return;
-
-    if (step.route && step.route !== pathnameRef.current) {
-      router.push(step.route);
-    }
-    if (!step.target) return;
-
-    const deadline = Date.now() + STEP_WAIT_MS;
-    while (Date.now() < deadline) {
-      if (document.querySelector(selector(step.target))) return;
-      await new Promise((r) => setTimeout(r, POLL_MS));
-    }
-  }, [router]);
-
-  // Opening a tour: validate it can be shown at all before anything renders.
-  const startedFor = useRef<string | null>(null);
+  // A tour with nothing to show for this role says so rather than opening empty.
+  const checked = useRef<string | null>(null);
   useEffect(() => {
     if (!activeTourId || !mounted) {
-      startedFor.current = null;
+      checked.current = null;
       return;
     }
-    if (startedFor.current === activeTourId) return;
-    startedFor.current = activeTourId;
-
+    if (checked.current === activeTourId) return;
+    checked.current = activeTourId;
     if (steps.length === 0) {
       toast.info("That walkthrough isn't available for your role.");
       stopTour();
     }
   }, [activeTourId, mounted, steps.length, stopTour]);
 
-  const joyrideSteps: Step[] = useMemo(
-    () =>
-      steps.map((s) => ({
-        target: s.target ? selector(s.target) : "body",
-        placement: s.target ? "auto" : "center",
-        title: s.title,
-        content: s.content,
-        // Go straight to the tooltip. A beacon is for a tour the user opts into from the page
-        // itself; this one was started by pressing a button that said "Start tour".
-        skipBeacon: true,
-      })),
-    [steps],
-  );
+  // Navigate to the step's route. Separate from the measuring effect so a re-measure (scroll,
+  // resize) never re-triggers navigation.
+  useEffect(() => {
+    if (!step) return;
+    if (step.route && step.route !== pathname) router.push(step.route);
+  }, [step, pathname, router]);
 
-  const onEvent = useCallback(
-    (data: EventData) => {
-      const { index, status, type } = data;
+  /**
+   * Find and measure the step's target, waiting for it to exist.
+   *
+   * A route change means the element cannot be there yet — Next has to fetch, mount and paint — so
+   * this polls rather than assuming. A target that never arrives advances instead of hanging:
+   * a stuck overlay with a live Next button that does nothing is the worst available failure, and
+   * is exactly what the previous implementation did.
+   */
+  useEffect(() => {
+    if (!mounted || !step) return;
+    let cancelled = false;
 
-      if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
-        stopTour();
+    // A centred step needs no target — show it immediately.
+    if (!step.target) {
+      setRect(null);
+      setWaiting(false);
+      return;
+    }
+
+    setWaiting(true);
+    const deadline = Date.now() + WAIT_MS;
+
+    const tick = () => {
+      if (cancelled) return;
+      const el = document.querySelector(selector(step.target!)) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        // Let the smooth scroll settle before measuring, or the spotlight lands where the element
+        // *was* and slides away from it.
+        setTimeout(() => {
+          if (cancelled) return;
+          const r = el.getBoundingClientRect();
+          setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+          setWaiting(false);
+        }, 320);
         return;
       }
-      // STEP_AFTER fires once a step is dismissed; TARGET_NOT_FOUND covers an element that never
-      // arrived despite `before` waiting for it. Both mean "move on".
-      if (type === EVENTS.STEP_AFTER || type === EVENTS.TARGET_NOT_FOUND) {
-        const next = index + 1;
-        if (next >= steps.length) {
-          stopTour();
-          return;
-        }
-        setStepIndex(next);
+      if (Date.now() > deadline) {
+        // Don't strand them: move on if there's anywhere to go.
+        setWaiting(false);
+        if (stepIndex + 1 < steps.length) setStepIndex(stepIndex + 1);
+        else stopTour();
         return;
       }
-      // Closing the tooltip, pressing Escape, or the tour ending on its own.
-      if (type === EVENTS.TOUR_END) {
-        stopTour();
-      }
-    },
-    [steps.length, setStepIndex, stopTour],
-  );
+      setTimeout(tick, POLL_MS);
+    };
+    // `querySelector` uses the selector built in tours.ts; assert non-null after the guard above.
+    tick();
 
-  if (!mounted || !activeTourId || joyrideSteps.length === 0) return null;
+    return () => {
+      cancelled = true;
+    };
+    // `step.target` is the identity that matters; pathname re-runs it after a navigation lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, step?.target, step?.route, pathname, stepIndex, steps.length]);
 
-  return (
-    <Joyride
-      steps={joyrideSteps}
-      stepIndex={stepIndex}
-      run={running}
-      continuous
-      onEvent={onEvent}
-      options={{
-        before,
-        // The route change is the slow part, so allow for it and show the loader almost at once
-        // rather than leaving a dead overlay while Next fetches a chunk.
-        beforeTimeout: STEP_WAIT_MS + 1000,
-        loaderDelay: 250,
-        targetWaitTimeout: 2000,
-        showProgress: true,
-        // Read from the theme so the tour follows light/dark and the Graphite & Indigo palette
-        // instead of shipping its own hardcoded blue.
-        primaryColor: "var(--primary)",
-        textColor: "var(--foreground)",
-        backgroundColor: "var(--card)",
-        arrowColor: "var(--card)",
-        overlayColor: "rgba(0,0,0,0.55)",
-        spotlightPadding: 6,
-        spotlightRadius: 10,
-        zIndex: 10000,
-        width: 380,
-        // Clicking the dimmed backdrop should not silently kill a tour someone is halfway through;
-        // Skip and the close button are the deliberate exits.
-        overlayClickAction: false,
-        dismissKeyAction: "close",
-        buttons: ["back", "skip", "primary", "close"],
-      }}
-      // `locale` is on the component, not in `options` — v3 keeps the strings with the other
-      // presentation props (`styles`, `*Component`) rather than with behaviour.
-      locale={{ back: "Back", close: "Close", last: "Done", next: "Next", skip: "Skip tour" }}
-    />
+  // Keep the spotlight glued to the element while the page moves under it.
+  useEffect(() => {
+    if (!step?.target || waiting) return;
+    const remeasure = () => {
+      const el = document.querySelector(selector(step.target!)) as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+    };
+    window.addEventListener("scroll", remeasure, true);
+    window.addEventListener("resize", remeasure);
+    return () => {
+      window.removeEventListener("scroll", remeasure, true);
+      window.removeEventListener("resize", remeasure);
+    };
+  }, [step?.target, waiting]);
+
+  // Measure the card so placement can account for its real height rather than a guess.
+  useLayoutEffect(() => {
+    if (cardRef.current) setCardH(cardRef.current.offsetHeight);
+  }, [step, waiting]);
+
+  const next = useCallback(() => {
+    if (isLast) stopTour();
+    else setStepIndex(stepIndex + 1);
+  }, [isLast, stepIndex, setStepIndex, stopTour]);
+
+  const back = useCallback(() => {
+    if (stepIndex > 0) setStepIndex(stepIndex - 1);
+  }, [stepIndex, setStepIndex]);
+
+  // Escape exits, arrows navigate. A tour is a modal state; leaving the keyboard inert in it is the
+  // kind of thing that reads as broken.
+  useEffect(() => {
+    if (!activeTourId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") stopTour();
+      else if (e.key === "ArrowRight") next();
+      else if (e.key === "ArrowLeft") back();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeTourId, next, back, stopTour]);
+
+  if (!mounted || !activeTourId || !step) return null;
+
+  const placement: Placement = rect ? place(rect, cardH) : "center";
+  const pos = rect ? cardPos(rect, placement, cardH) : cardPos({ top: 0, left: 0, width: 0, height: 0 }, "center", cardH);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998]" role="dialog" aria-modal="true" aria-label="Product tour">
+      {/* Dimmer + spotlight in one element: the box-shadow paints everywhere EXCEPT this rect. */}
+      {rect ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute rounded-lg ring-2 ring-primary/70 transition-all duration-300 ease-out"
+          style={{
+            top: rect.top - PAD,
+            left: rect.left - PAD,
+            width: rect.width + PAD * 2,
+            height: rect.height + PAD * 2,
+            boxShadow: "0 0 0 9999px rgba(2, 6, 23, 0.62)",
+          }}
+        />
+      ) : (
+        <div aria-hidden className="absolute inset-0 bg-[rgba(2,6,23,0.62)]" />
+      )}
+
+      {/* Swallows clicks on the dimmed area so the page can't be interacted with mid-tour, without
+          closing the tour — a misclick shouldn't lose someone's place. */}
+      <div className="absolute inset-0" onClick={(e) => e.stopPropagation()} />
+
+      {waiting ? (
+        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2.5 rounded-full bg-card px-4 py-2.5 text-sm text-card-foreground shadow-lg">
+          <Loader2 className="size-4 animate-spin text-primary" />
+          Loading step…
+          <button
+            onClick={stopTour}
+            className="ml-1 text-muted-foreground underline-offset-2 hover:underline"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div
+          ref={cardRef}
+          className={cn(
+            "absolute rounded-xl border border-border bg-card p-5 text-card-foreground shadow-2xl",
+            "transition-all duration-300 ease-out",
+          )}
+          style={{ top: pos.top, left: pos.left, width: CARD_W }}
+        >
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary">
+                Step {stepIndex + 1} of {steps.length}
+              </p>
+              <h3 className="font-display text-base font-semibold leading-snug">{step.title}</h3>
+            </div>
+            <button
+              onClick={stopTour}
+              aria-label="Close tour"
+              className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+
+          <p className="text-sm leading-relaxed text-muted-foreground">{step.content}</p>
+
+          {/* Progress bar doubles as the step map — a count alone doesn't show how much is left. */}
+          <div className="mt-4 flex gap-1" aria-hidden>
+            {steps.map((_, i) => (
+              <span
+                key={i}
+                className={cn(
+                  "h-1 flex-1 rounded-full transition-colors",
+                  i <= stepIndex ? "bg-primary" : "bg-border",
+                )}
+              />
+            ))}
+          </div>
+
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <button
+              onClick={stopTour}
+              className="text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Skip tour
+            </button>
+            <div className="flex items-center gap-2">
+              {stepIndex > 0 && (
+                <Button size="sm" variant="outline" onClick={back}>
+                  <ArrowLeft className="size-3.5" />
+                  Back
+                </Button>
+              )}
+              <Button size="sm" onClick={next}>
+                {isLast ? (
+                  <>
+                    <Check className="size-3.5" />
+                    Done
+                  </>
+                ) : (
+                  <>
+                    Next
+                    <ArrowRight className="size-3.5" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>,
+    document.body,
   );
 }
