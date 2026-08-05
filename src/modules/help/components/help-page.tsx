@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   BarChart2,
   ChevronDown,
   Clock,
   Compass,
+  Loader2,
   Paperclip,
   Play,
   PlayCircle,
@@ -16,6 +17,7 @@ import {
   Ticket,
   Timer,
   Users,
+  X,
 } from "lucide-react"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -68,6 +70,10 @@ import {
   createTicket,
   getThread,
   addReply,
+  uploadAttachment,
+  ATTACHMENT_TYPES,
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_BYTES,
   type ApiTicketSummary,
   type ApiThread,
 } from "../services/support.service"
@@ -107,9 +113,17 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-/** Epoch seconds → short date. */
-function fmtDate(secs: number): string {
-  return new Date(secs * 1000).toLocaleDateString(undefined, {
+
+/**
+ * Ticket and reply stamps are epoch **milliseconds**, not seconds.
+ *
+ * The server writes every one of them with `now_ms()`
+ * (`workforce::support_tickets::data`), but this multiplied by 1000 anyway — so a ticket
+ * opened today rendered as **"29 Sept 58563"**. The server's shape wins (CLAUDE.md
+ * pattern 3): it emits ms, so read ms.
+ */
+function fmtDate(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -376,6 +390,16 @@ export function HelpPage() {
   const [tickets, setTickets] = useState<ApiTicketSummary[]>([])
   const [ticketsLoading, setTicketsLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  /**
+   * Files already uploaded to S3 and waiting to be named on the ticket.
+   *
+   * Uploaded on pick, not on submit: by the time someone presses "Submit ticket" the bytes are
+   * already in S3 and the create call carries only keys. It also means a failed upload is reported
+   * next to the file that failed, rather than sinking the whole submission at the end.
+   */
+  const [files, setFiles] = useState<{ key: string; name: string; size: number }[]>([])
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [openThreadId, setOpenThreadId] = useState<string | null>(null)
   const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
 
@@ -421,6 +445,44 @@ export function HelpPage() {
   }
   useEffect(loadTickets, [])
 
+  /**
+   * Upload each picked file, one at a time.
+   *
+   * Sequential rather than `Promise.all`: a burst of parallel presign calls is exactly the
+   * per-item fan-out that trips the API's 429/503 throttle (frontend CLAUDE.md pattern 3), and
+   * nobody attaches enough screenshots for the latency to matter.
+   */
+  async function onPickFiles(picked: FileList | null) {
+    if (!picked?.length) return
+    const room = MAX_ATTACHMENTS - files.length
+    const chosen = Array.from(picked).slice(0, room)
+    if (picked.length > room) {
+      toast.info(`Only ${MAX_ATTACHMENTS} attachments per ticket — the rest were skipped.`)
+    }
+    setUploading(true)
+    try {
+      for (const file of chosen) {
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          toast.error(
+            `${file.name} is too large — ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB max.`,
+          )
+          continue
+        }
+        try {
+          const key = await uploadAttachment(file)
+          setFiles((prev) => [...prev, { key, name: file.name, size: file.size }])
+        } catch (e) {
+          // Named per file: "upload failed" with three selected is not actionable.
+          toast.error(
+            `Couldn't upload ${file.name}${e instanceof ApiError ? ` — ${e.message}` : ""}`,
+          )
+        }
+      }
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function onTicketSubmit(data: TicketForm) {
     setSubmitting(true)
     try {
@@ -428,8 +490,10 @@ export function HelpPage() {
         subject: data.subject,
         description: data.message,
         category: data.category,
+        attachments: files.map((f) => f.key),
       })
       reset()
+      setFiles([])
       toast.success(`Ticket submitted — ${created.ticket_id}`)
       loadTickets()
     } catch (e) {
@@ -604,14 +668,64 @@ export function HelpPage() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => toast.info("File attachments are coming soon")}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-                >
-                  <Paperclip className="size-3.5" />
-                  Attach screenshots or files
-                </button>
+                <div className="space-y-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept={ATTACHMENT_TYPES.join(",")}
+                    className="hidden"
+                    onChange={(e) => {
+                      void onPickFiles(e.target.files);
+                      // Clear it, so re-picking the same file still fires `change`.
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={uploading || files.length >= MAX_ATTACHMENTS}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {uploading ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Paperclip className="size-3.5" />
+                    )}
+                    {uploading
+                      ? "Uploading…"
+                      : files.length >= MAX_ATTACHMENTS
+                        ? `Attachment limit reached (${MAX_ATTACHMENTS})`
+                        : "Attach screenshots or files"}
+                  </button>
+
+                  {files.length > 0 && (
+                    <ul className="space-y-1">
+                      {files.map((f) => (
+                        <li
+                          key={f.key}
+                          className="flex items-center gap-2 rounded-md border bg-muted/40 px-2.5 py-1.5 text-xs"
+                        >
+                          <Paperclip className="size-3 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                          <span className="shrink-0 tabular-nums text-muted-foreground">
+                            {Math.max(1, Math.round(f.size / 1024))} KB
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${f.name}`}
+                            onClick={() =>
+                              setFiles((prev) => prev.filter((x) => x.key !== f.key))
+                            }
+                            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
 
                 <Button type="submit" className="w-full" disabled={submitting}>
                   <Send className="size-4" />

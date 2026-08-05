@@ -8,17 +8,28 @@ import { useTimesheet } from "@/modules/time-tracking/use-timesheet";
 import { formatDuration } from "@/lib/format";
 
 /**
- * Employee-dashboard hero KPI — the live session timer, in place of the static
- * "My Productivity" tile. **View-only** (LLD §4): the timer runs in the WorkPulse
- * desktop agent; this only mirrors the open session the server folded from its
- * batches. The navbar's GlobalTimer is hidden on /dashboard, so this tile is the
- * single timer surface there. Clicks through to the full Time Tracking view.
+ * Employee-dashboard hero KPI — **today's total tracked time**, ticking live while a
+ * session is open. **View-only** (LLD §4): the timer runs in the WorkPulse desktop
+ * agent; this only mirrors what the server folded from its batches. The navbar's
+ * GlobalTimer is hidden on /dashboard, so this tile is the single timer surface there.
+ * Clicks through to the full Time Tracking view.
+ *
+ * **It shows the day, not the segment.** This used to render
+ * `Date.now() - running.startMs` — the time since the *current* session opened. Pause
+ * and resume and it restarted from zero, so someone six hours into their day saw
+ * `00:06:39` on the tile that is meant to answer "how much have I worked today". A
+ * session is a segment; the day is the sum of them.
+ *
+ * `totalSec` counts **settled** sessions only — the server's `total_secs` sums
+ * `duration_secs`, which an open entry does not have yet (`shared::entry::total_secs`).
+ * So the open session's elapsed time has to be added here, and only here: adding it
+ * server-side would make a cached read drift the moment it was cached.
  */
 export function TimerStatCard() {
-  const { rows } = useTimesheet();
+  const { rows, totalSec } = useTimesheet();
   const running = rows.find((r) => r.running) ?? null;
 
-  // Advance the elapsed clock once a second while a session is open (read-only).
+  // Advance the clock once a second while a session is open (read-only).
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!running) return;
@@ -26,10 +37,18 @@ export function TimerStatCard() {
     return () => clearInterval(id);
   }, [running]);
 
-  const elapsedSec = running
+  const liveSec = running
     ? Math.max(0, Math.floor((Date.now() - running.startMs) / 1000))
     : 0;
-  const label = running ? (running.task ?? running.project) : null;
+  const todaySec = totalSec + liveSec;
+  // What the number is *of* matters as much as the number. Running: name the work in
+  // progress. Stopped with time on the clock: say it's the day's total, so a static
+  // figure isn't mistaken for a stalled timer.
+  const label = running
+    ? (running.task ?? running.project ?? "Tracking now")
+    : todaySec > 0
+      ? "Total tracked today"
+      : "Start it in the WorkPulse desktop app";
 
   return (
     <Link
@@ -49,7 +68,7 @@ export function TimerStatCard() {
                 Recording
               </>
             ) : (
-              "Live timer"
+              "Today"
             )}
           </span>
           <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-white/15 text-feature-foreground">
@@ -60,11 +79,9 @@ export function TimerStatCard() {
         {/* Bottom row: elapsed clock + what's running */}
         <div className="min-w-0">
           <p className="font-mono text-2xl font-semibold leading-none tabular-nums">
-            {running ? formatDuration(elapsedSec) : "00:00:00"}
+            {formatDuration(todaySec)}
           </p>
-          <p className="mt-1.5 truncate text-xs text-feature-foreground/80">
-            {running ? label : "Start it in the WorkPulse desktop app"}
-          </p>
+          <p className="mt-1.5 truncate text-xs text-feature-foreground/80">{label}</p>
         </div>
       </Card>
     </Link>
