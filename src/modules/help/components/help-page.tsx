@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/sheet"
 import { EmptyState } from "@/components/shared/empty-state"
 import { useAssistantStore } from "@/stores/assistant.store"
+import { useTourStore } from "@/stores/tour.store"
 import { usePageTitle } from "@/stores/page-header.store"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { PermissionId } from "@/types/rbac"
@@ -404,6 +405,9 @@ export function HelpPage() {
   const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
+  // The tour outlives this page — its later steps are on other routes — so it is driven by
+  // ProductTour in the app shell and only *started* from here.
+  const startTour = useTourStore((s) => s.startTour)
   const askAi = () => openAssistant(search.trim() || undefined)
   const { can } = usePermissions()
 
@@ -996,7 +1000,7 @@ export function HelpPage() {
                         size="sm"
                         variant="outline"
                         className="gap-1.5"
-                        onClick={() => toast.success(`"${tour.title}" tour started`)}
+                        onClick={() => startTour(tour.id)}
                       >
                         <PlayCircle className="size-4" />
                         Start tour

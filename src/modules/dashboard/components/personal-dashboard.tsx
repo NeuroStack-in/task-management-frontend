@@ -88,7 +88,7 @@ export function PersonalDashboard() {
   return (
     <>
       {/* Personal KPI strip */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
         <TimerStatCard />
         <MeetingHoursCard />
         <StatCard
@@ -116,7 +116,10 @@ export function PersonalDashboard() {
 
       <div className="grid gap-4 xl:grid-cols-3">
         {/* My tasks */}
-        <Card className="gap-0 p-0 [--card-spacing:0px] xl:col-span-2">
+        <Card
+          data-tour="dash:tasks"
+          className="gap-0 p-0 [--card-spacing:0px] xl:col-span-2"
+        >
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">My tasks</h2>
             <Link
@@ -180,7 +183,7 @@ export function PersonalDashboard() {
         </Card>
 
         {/* This week's attendance */}
-        <Card className="gap-0 p-0 [--card-spacing:0px]">
+        <Card data-tour="dash:week" className="gap-0 p-0 [--card-spacing:0px]">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">This week</h2>
             <Link

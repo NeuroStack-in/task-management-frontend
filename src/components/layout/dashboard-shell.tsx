@@ -7,6 +7,7 @@ import { useHydrateProfile } from "@/modules/profile/use-hydrate-profile";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
 import { ChatBot } from "./chat-bot";
+import { ProductTour } from "./product-tour";
 import { cn } from "@/lib/utils";
 
 /**
@@ -54,6 +55,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
       <ChatBot />
+      {/* Mounted in the shell, not on the Help page: a tour's later steps live on other routes, by
+          which point the Help page has unmounted and would take the tour with it. */}
+      <ProductTour />
     </div>
   );
 }
