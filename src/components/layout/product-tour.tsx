@@ -259,12 +259,15 @@ export function ProductTour() {
       const el = visibleTarget(selector(step.target!));
       if (el) {
         // Only scroll when the element isn't already comfortably in view; scrolling something
-        // already visible makes every step twitch.
-        const r0 = el.getBoundingClientRect();
-        const inView = r0.top >= 0 && r0.bottom <= window.innerHeight;
-        if (!inView) {
-          el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
-        }
+        // **Always** scroll, and let `block: "nearest"` decide whether anything moves.
+        //
+        // The previous "is it in view?" check compared the rect against `window.innerHeight`, which
+        // is wrong for anything inside a scroll container: a sidebar item scrolled out of the nav's
+        // own ScrollArea still reports a rect within the window — usually overlapping the header —
+        // so the check said "visible", the scroll was skipped, and the spotlight was drawn over the
+        // logo. `nearest` is a no-op when the element is genuinely visible (so nothing twitches)
+        // and scrolls the right container when it isn't.
+        el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
         // Measure once it has stopped moving, however long the scroll takes.
         whenStill(
           el,
@@ -297,24 +300,45 @@ export function ProductTour() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, step?.target, step?.route, pathname, stepIndex, steps.length]);
 
-  // Keep the spotlight glued to the element while the page moves under it.
+  /**
+   * Keep the spotlight glued to its element, every frame.
+   *
+   * This was `scroll` + `resize` listeners, which only cover the ways we thought of. An element can
+   * also move because a container scrolled without bubbling a window-level event, because a layout
+   * shifted as data loaded, because a CSS transition ran, or because a breakpoint swapped which of
+   * the two sidebar mounts is live. Every one of those leaves a spotlight sitting confidently over
+   * the wrong thing — the failure this tour has produced in three different disguises.
+   *
+   * A rAF loop is immune to all of them: it re-reads the rect from the DOM rather than inferring
+   * that it might have changed. It runs only while a step is on screen, and `setRect` is called only
+   * when the numbers actually differ, so React re-renders no more than the listeners caused.
+   */
   useEffect(() => {
     if (!step?.target || waiting) return;
-    const remeasure = () => {
+    let raf = 0;
+    let last: Rect | null = null;
+
+    const follow = () => {
       // Same visible-match rule as the initial measure — a resize across the `lg` breakpoint swaps
-      // which of the two sidebar mounts is on screen, and following the wrong one would jump the
-      // spotlight to a hidden element's rect.
+      // which sidebar mount is on screen, and following the hidden one would jump the spotlight.
       const el = visibleTarget(selector(step.target!));
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (
+          !last ||
+          Math.abs(r.top - last.top) > 0.5 ||
+          Math.abs(r.left - last.left) > 0.5 ||
+          Math.abs(r.width - last.width) > 0.5 ||
+          Math.abs(r.height - last.height) > 0.5
+        ) {
+          last = { top: r.top, left: r.left, width: r.width, height: r.height };
+          setRect(last);
+        }
+      }
+      raf = requestAnimationFrame(follow);
     };
-    window.addEventListener("scroll", remeasure, true);
-    window.addEventListener("resize", remeasure);
-    return () => {
-      window.removeEventListener("scroll", remeasure, true);
-      window.removeEventListener("resize", remeasure);
-    };
+    raf = requestAnimationFrame(follow);
+    return () => cancelAnimationFrame(raf);
   }, [step?.target, waiting]);
 
   // Measure the card so placement can account for its real height rather than a guess.
