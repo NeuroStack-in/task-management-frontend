@@ -45,7 +45,16 @@ import type { PermissionId } from "@/types/rbac";
  * Adding one means proving it renders in *all* role branches of its page — see the table above
  * before you do.
  */
-export const SAFE_TARGET_PREFIXES = ["page:header", "nav:", "dash:kpis"] as const;
+export const SAFE_TARGET_PREFIXES = [
+  "page:header",
+  "nav:",
+  "dash:kpis",
+  // Settings content. Allowed because every step that uses one is gated on `settings:view`, and
+  // Settings renders the same components for everyone holding it — there is no role branch to fall
+  // through. `page:header` is the wrong target on these routes: the navbar reads a generic
+  // "Settings" while the page's own heading (Monitoring, Tracking rules) sits in the content area.
+  "settings:",
+] as const;
 
 export interface TourStep {
   /** Route this step lives on. The driver navigates here first if we aren't already. */
@@ -228,6 +237,10 @@ export const TOURS: Record<string, Tour> = {
     ],
   },
 
+  // Every step is gated on `settings:view`, and Settings renders the same components for everyone
+  // who holds it — so unlike /dashboard this tour can safely spotlight real page content. The
+  // navbar header is deliberately NOT used here: on a Settings route it reads a generic "Settings",
+  // so highlighting it while talking about screenshot cadence pointed at the wrong words.
   "monitoring-setup": {
     id: "monitoring-setup",
     permission: "settings:view",
@@ -241,26 +254,26 @@ export const TOURS: Record<string, Tour> = {
       },
       {
         route: "/settings/monitoring",
-        target: "page:header",
+        target: "settings:capture",
         title: "What gets captured",
         content:
-          "Screenshot cadence, blur level and retention. Blur is the lever for reducing what's legible — per-frame and auditable, unlike quietly lowering quality.",
+          "Screenshot cadence, blur level and retention, all in one card. Blur is the lever for reducing what's legible — per-frame and auditable, unlike quietly lowering quality.",
         permission: "settings:view",
       },
       {
         route: "/settings/tracking-rules",
-        target: "page:header",
-        title: "Idle and activity rules",
+        target: "settings:weights",
+        title: "What counts as productive",
         content:
-          "How long counts as idle, and which apps read as productive or distracting. These feed the score, so changing them changes how days are graded from that point on.",
+          "Each category carries a score weight — productive 1, neutral 0.5, distracting 0. These multiply the tracked minutes, so changing them changes how days are graded from that point on.",
         permission: "settings:view",
       },
       {
         route: "/settings/monitoring",
-        target: "nav:/settings",
-        title: "Everything is gated twice",
+        target: "settings:updates",
+        title: "Keeping agents current",
         content:
-          "A feature has to be in your plan and switched on by the Owner. Turn monitoring off and the agent stops capturing — nothing is collected that you haven't enabled.",
+          "Agents can self-update to the latest release, so a fix reaches every device without anyone reinstalling. Turn it off and updates become deliberate.",
         permission: "settings:view",
       },
     ],

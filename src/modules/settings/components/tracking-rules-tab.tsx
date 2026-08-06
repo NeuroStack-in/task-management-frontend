@@ -109,7 +109,7 @@ function CategoriesPanel({
   canManage: boolean;
 }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-tour="settings:weights">
       {CATEGORIES.map((cat) => (
         <div
           key={cat}

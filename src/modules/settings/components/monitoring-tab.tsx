@@ -235,7 +235,14 @@ export function MonitoringTab() {
       ) : (
         <div className="space-y-6">
           {/* ── Screenshot capture ── */}
-          <Card id="screenshots" className="scroll-mt-24 shadow-none">
+          {/* `data-tour`: the Monitoring Setup walkthrough spotlights this card. Safe to mark
+              here because the whole tour is gated on `settings:view`, so anyone who reaches it
+              renders this component — unlike /dashboard, which swaps component per role. */}
+          <Card
+            id="screenshots"
+            data-tour="settings:capture"
+            className="scroll-mt-24 shadow-none"
+          >
             <CardHeader>
               <CardTitle>Screenshot capture</CardTitle>
               <CardDescription>
@@ -341,7 +348,7 @@ export function MonitoringTab() {
           </Card>
 
           {/* ── Agent updates ── */}
-          <Card id="updates" className="scroll-mt-24 shadow-none">
+          <Card id="updates" data-tour="settings:updates" className="scroll-mt-24 shadow-none">
             <CardHeader>
               <CardTitle>Agent updates</CardTitle>
               <CardDescription>
