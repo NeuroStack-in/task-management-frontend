@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { TOURS } from "./tours";
+import { SAFE_TARGET_PREFIXES, TOURS } from "./tours";
 import { NAV_GROUPS } from "@/constants/navigation";
 
 const steps = Object.values(TOURS).flatMap((t) =>
@@ -37,6 +37,35 @@ describe("tour data", () => {
         navHrefs.has(href),
         `tour "${s.tour}" targets nav:${href}, which is not in NAV_GROUPS`,
       ).toBe(true);
+    }
+  });
+
+  /**
+   * The bug that broke this twice: a marker placed inside one role's branch of a page.
+   *
+   * `/dashboard`, `/time-tracking` and `/attendance` all render a different component for a manager
+   * than for an employee, so a target inside one branch is simply absent for everyone on the other
+   * — and the step waits for an element that can never appear. Only targets verified present for
+   * every role are allowed.
+   */
+  it("only uses targets verified to exist for every role", () => {
+    for (const s of steps) {
+      expect(
+        SAFE_TARGET_PREFIXES.some((p) => s.target === p || s.target.startsWith(p)),
+        `tour "${s.tour}" targets "${s.target}", which is not a verified-safe target ` +
+          `(${SAFE_TARGET_PREFIXES.join(", ")}). Prove it renders in EVERY role branch of its ` +
+          `page before adding it.`,
+      ).toBe(true);
+    }
+  });
+
+  /**
+   * Every step gets a spotlight. A targetless step renders as a bare centred dialog, which reads as
+   * a different and lesser thing than the rest of the tour.
+   */
+  it("spotlights every step", () => {
+    for (const s of steps) {
+      expect(s.target?.trim().length, `a step in "${s.tour}" has no target`).toBeGreaterThan(0);
     }
   });
 

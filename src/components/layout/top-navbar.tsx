@@ -54,7 +54,10 @@ export function TopNavbar() {
       {/* Active page title with its subtitle beneath it; the whole block is
           vertically centered in the bar, level with the right-hand controls. */}
       {title ? (
-        <div className="min-w-0">
+        // `data-tour` anchor for the guided walkthroughs. This is the one element present on every
+        // route for every role, so it's the reliable "you are here" target — unlike the dashboard's
+        // GreetingHeader, which renders null and only publishes into this store.
+        <div className="min-w-0" data-tour="page:header">
           <span className="font-display block truncate text-3xl leading-tight font-semibold tracking-tight">
             {title}
           </span>

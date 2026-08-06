@@ -29,12 +29,7 @@ export function DashboardView() {
   if (personal) {
     return (
       <div className="space-y-4 pt-1">
-        {/* `data-tour` marks the guided-walkthrough targets (modules/help/lib/tours.ts). Marked in
-            BOTH branches deliberately: an Owner renders OrgDashboard and an Employee renders
-            PersonalDashboard, so a marker on only one silently breaks the tour for half the roles. */}
-        <div data-tour="dash:greeting">
-          <GreetingHeader />
-        </div>
+        <GreetingHeader />
         <PersonalDashboard />
       </div>
     );
@@ -42,9 +37,7 @@ export function DashboardView() {
 
   return (
     <div className="space-y-4 pt-1">
-      <div data-tour="dash:greeting">
-        <GreetingHeader />
-      </div>
+      <GreetingHeader />
       <OrgDashboard />
     </div>
   );
