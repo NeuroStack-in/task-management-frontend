@@ -54,6 +54,10 @@ export const SAFE_TARGET_PREFIXES = [
   // through. `page:header` is the wrong target on these routes: the navbar reads a generic
   // "Settings" while the page's own heading (Monitoring, Tracking rules) sits in the content area.
   "settings:",
+  // Employees + Roles content. Same reasoning as `settings:` — every step using one is gated on
+  // the permission that renders it, and neither page branches by role beyond that gate.
+  "emp:",
+  "roles:",
 ] as const;
 
 export interface TourStep {
@@ -199,6 +203,10 @@ export const TOURS: Record<string, Tour> = {
     ],
   },
 
+  // Like monitoring-setup, this one can spotlight real page content: `/employees` and
+  // `/settings/roles` render the same components for everyone holding the gate. Note step 2 is
+  // gated on employees:**manage**, not view — the button it points at is itself behind that
+  // permission, so a view-only member simply doesn't get a step about an action they can't take.
   "team-management": {
     id: "team-management",
     permission: "employees:view",
@@ -212,23 +220,23 @@ export const TOURS: Record<string, Tour> = {
       },
       {
         route: "/employees",
-        target: "page:header",
+        target: "emp:invite",
         title: "Inviting someone",
         content:
-          "An invite emails a one-time link and code. The account only exists once they accept it, so a pending invite is never a half-created user.",
-        permission: "employees:view",
+          "Add employee emails a one-time link and code. The account only exists once they accept it, so a pending invite is never a half-created user.",
+        permission: "employees:manage",
       },
       {
         route: "/employees",
-        target: "nav:/employees",
+        target: "emp:roster",
         title: "Roles decide what people see",
         content:
-          "A role is a set of permissions, and the sidebar is generated from it — someone without Payroll access doesn't see a locked Payroll page, they don't see Payroll at all.",
+          "Everyone's role sits in this table. A role is a set of permissions and the sidebar is generated from it — someone without Payroll access doesn't get a locked Payroll page, they don't see Payroll at all.",
         permission: "employees:view",
       },
       {
         route: "/settings/roles",
-        target: "page:header",
+        target: "roles:list",
         title: "Custom roles",
         content:
           "Build your own when the system roles don't fit. You can only grant permissions you hold yourself, so a role can never escalate beyond its author.",

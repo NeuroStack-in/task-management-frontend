@@ -331,7 +331,7 @@ export function EmployeesView() {
             </DropdownMenuContent>
           </DropdownMenu>
           {can("employees:manage") ? (
-            <Button onClick={() => setInviteOpen(true)}>
+            <Button data-tour="emp:invite" onClick={() => setInviteOpen(true)}>
               <UserPlus className="size-4" /> Add employee
             </Button>
           ) : null}
@@ -348,7 +348,7 @@ export function EmployeesView() {
               className="m-4 border-0"
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" data-tour="emp:roster">
               <Table>
                 <TableHeader>
                   <TableRow>

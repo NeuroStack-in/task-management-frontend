@@ -138,7 +138,10 @@ export function RolesManager() {
         }
       />
 
-      <div className="overflow-hidden rounded-[1.4rem] bg-card shadow-soft">
+      <div
+        data-tour="roles:list"
+        className="overflow-hidden rounded-[1.4rem] bg-card shadow-soft"
+      >
         <table className="w-full caption-bottom text-sm">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
