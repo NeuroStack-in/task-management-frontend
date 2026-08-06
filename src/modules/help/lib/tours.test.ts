@@ -10,10 +10,38 @@
  * broke *can* be checked cheaply: sidebar targets resolve to real nav entries, and every route is
  * one the router could actually serve.
  */
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { SAFE_TARGET_PREFIXES, TOURS } from "./tours";
 import { NAV_GROUPS } from "@/constants/navigation";
+
+/** Every `data-tour` value written anywhere in the source, and how many files declare it. */
+function declaredTargets(): Map<string, number> {
+  const counts = new Map<string, number>();
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) {
+        walk(p);
+        continue;
+      }
+      if (!/\.tsx?$/.test(e.name)) continue;
+      const src = readFileSync(p, "utf8");
+      // Literal attributes: data-tour="foo".
+      for (const m of src.matchAll(/data-tour="([^"{]+)"/g)) {
+        counts.set(m[1], (counts.get(m[1]) ?? 0) + 1);
+      }
+      // Templated ones: data-tour={`nav:${item.href}`} — record the static prefix.
+      for (const m of src.matchAll(/data-tour=\{`([^$`]+)\$\{/g)) {
+        counts.set(`${m[1]}*`, (counts.get(`${m[1]}*`) ?? 0) + 1);
+      }
+    }
+  };
+  walk(join(process.cwd(), "src"));
+  return counts;
+}
 
 const steps = Object.values(TOURS).flatMap((t) =>
   t.steps.map((s) => ({ ...s, tour: t.id })),
@@ -56,6 +84,41 @@ describe("tour data", () => {
           `(${SAFE_TARGET_PREFIXES.join(", ")}). Prove it renders in EVERY role branch of its ` +
           `page before adding it.`,
       ).toBe(true);
+    }
+  });
+
+  /**
+   * The guard that would have caught every round of this.
+   *
+   * A step whose target is written nowhere in the source waits for an element that cannot exist,
+   * then silently skips — which looked, in turn, like a hang, a bare dialog, and a spotlight on the
+   * wrong thing. Grepping the source is crude but it is the only check that spans the tour data and
+   * the markup it depends on.
+   */
+  it("only names targets that are actually declared in the source", () => {
+    const declared = declaredTargets();
+    for (const s of steps) {
+      const ok =
+        declared.has(s.target) ||
+        // `nav:` targets are stamped from the nav tree: data-tour={`nav:${item.href}`}.
+        [...declared.keys()].some((d) => d.endsWith("*") && s.target.startsWith(d.slice(0, -1)));
+      expect(ok, `tour "${s.tour}" targets "${s.target}", which no component declares`).toBe(true);
+    }
+  });
+
+  /**
+   * Pages that render a different component per role need the SAME target in both branches, or the
+   * step is invisible to half the roles. That is the bug that broke the dashboard, time-tracking
+   * and attendance steps in turn — a marker inside one branch only.
+   */
+  it("marks role-branched targets in both branches", () => {
+    const declared = declaredTargets();
+    for (const target of ["dash:kpis", "time:sessions", "att:summary"]) {
+      expect(
+        declared.get(target) ?? 0,
+        `"${target}" is on a page that branches by role, so it must be declared in BOTH ` +
+          `branches — found ${declared.get(target) ?? 0}`,
+      ).toBeGreaterThanOrEqual(2);
     }
   });
 

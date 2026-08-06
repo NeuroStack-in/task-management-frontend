@@ -31,7 +31,9 @@ export function TeamTimeView({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Manager-side counterpart of PersonalTimeView's `time:sessions` — same tour step, whichever
+          branch of /time-tracking this role renders. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-tour="time:sessions">
         {/* `trend` is the real Mon–Sun hours from `teamWeekly`; the mock `delta` seeds on the
             Billable/Activity cards were fabricated and are dropped — the values are real. */}
         <StatCard

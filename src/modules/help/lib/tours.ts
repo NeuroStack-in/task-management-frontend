@@ -62,6 +62,11 @@ export const SAFE_TARGET_PREFIXES = [
   // tab, and within a tab there is no further role branch.
   "insights:",
   "shots:",
+  // Time tracking + attendance. These pages DO branch by role, so unlike the gated tours above the
+  // safety here comes from marking the same name in **both** branches — `time:sessions` in
+  // PersonalTimeView and TeamTimeView, `att:summary` in PersonalAttendanceView and the org view.
+  "time:",
+  "att:",
 ] as const;
 
 export interface TourStep {
@@ -134,8 +139,9 @@ export const TOURS: Record<string, Tour> = {
     ],
   },
 
-  // Ungated. Steps stay on the page header because /time-tracking and /attendance both render a
-  // different component for a manager than for an employee.
+  // Ungated, so every step must work for an Employee *and* an Owner. Both pages this visits render
+  // a different component per role, so `time:sessions` and `att:summary` are each marked in BOTH
+  // branches — the same treatment `dash:kpis` gets. Nothing here falls back to `page:header`.
   "time-tracking": {
     id: "time-tracking",
     steps: [
@@ -147,24 +153,24 @@ export const TOURS: Record<string, Tour> = {
       },
       {
         route: "/time-tracking",
-        target: "page:header",
+        target: "time:sessions",
         title: "The desktop agent does the tracking",
         content:
-          "There's no start/stop button on the web, by design. The agent records your sessions and the server folds them into this timesheet, so what you see always matches what was captured.",
+          "There's no start/stop button on the web, by design. The agent records each session and the server folds them into this — so what you see always matches what was actually captured.",
       },
       {
         route: "/dashboard",
         target: "nav:/attendance",
         title: "Attendance is the other half",
         content:
-          "Sessions become attendance: present days, hours worked, lateness. Both come from the same agent batches, so they can't disagree.",
+          "Sessions become attendance: present days, hours worked, lateness. Both come from the same agent batches, so the two can't disagree.",
       },
       {
         route: "/attendance",
-        target: "page:header",
+        target: "att:summary",
         title: "Your attendance record",
         content:
-          "Presence per day for the period you pick. A non-working day is marked as such, so a blank Saturday never reads as a missed day.",
+          "Presence for the period you pick, summarised. A non-working day is marked as such, so a blank Saturday never reads as a missed day.",
       },
     ],
   },

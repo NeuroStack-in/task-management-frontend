@@ -198,7 +198,8 @@ export function PersonalAttendanceView() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* `att:summary` is marked in BOTH branches of /attendance — here and in the org view. */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="att:summary">
         <StatCard
           label="Attendance rate"
           value={`${rate}%`}

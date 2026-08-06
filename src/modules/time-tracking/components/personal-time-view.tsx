@@ -125,7 +125,10 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
         todayTotalSec={totalSec}
       />
 
-      <Card>
+      {/* `time:sessions` is marked in BOTH branches of /time-tracking — PersonalTimeView here and
+          TeamTimeView for anyone who can manage a team. A marker in only one is invisible to half
+          the roles, which is how the dashboard steps broke. */}
+      <Card data-tour="time:sessions">
         <CardHeader>
           <CardTitle>Today&apos;s timesheet</CardTitle>
           <CardDescription className="flex flex-wrap items-center gap-x-1.5">

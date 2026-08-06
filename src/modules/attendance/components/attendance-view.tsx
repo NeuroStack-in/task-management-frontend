@@ -80,28 +80,33 @@ function OversightAttendance() {
         }
       />
 
-      <AttendanceOverview
-        range={range}
-        onRangeChange={setRange}
-        date={date}
-        onDateChange={selectDay}
-        start={start}
-        end={end}
-        onStartChange={setStart}
-        onEndChange={setEnd}
-        dept={dept}
-        onDeptChange={setDept}
-        departments={data.departments}
-        counts={data.counts}
-        series={data.series}
-        benchmarkRate={data.benchmarkRate}
-        label={data.label}
-        loading={data.loading}
-        note={data.note}
-      />
+      {/* Org-side counterpart of PersonalAttendanceView's `att:summary`. Wrapped in a div rather
+          than given the attribute directly: AttendanceOverview doesn't spread rest props, so a
+          `data-tour` on it would never reach the DOM. */}
+      <div data-tour="att:summary">
+        <AttendanceOverview
+          range={range}
+          onRangeChange={setRange}
+          date={date}
+          onDateChange={selectDay}
+          start={start}
+          end={end}
+          onStartChange={setStart}
+          onEndChange={setEnd}
+          dept={dept}
+          onDeptChange={setDept}
+          departments={data.departments}
+          counts={data.counts}
+          series={data.series}
+          benchmarkRate={data.benchmarkRate}
+          label={data.label}
+          loading={data.loading}
+          note={data.note}
+        />
+      </div>
 
       {month.error ? (
-        <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm">
+        <div className="border-destructive/30 bg-destructive/5 flex items-center justify-between rounded-lg border px-4 py-2 text-sm">
           <span className="text-muted-foreground">{month.error}</span>
           <Button variant="outline" size="sm" onClick={month.reload}>
             Retry
