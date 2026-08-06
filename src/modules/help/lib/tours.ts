@@ -40,6 +40,14 @@ export interface TourStep {
 
 export interface Tour {
   id: string;
+  /**
+   * What a person needs to be offered this tour at all — the gate on the Help Center's card.
+   *
+   * Lives here, beside the steps, rather than in the page: the card's gate and the steps' gates are
+   * the same idea, and when they were separate they could drift into a card that opens a tour with
+   * no steps — a button that does nothing. `tours.test.ts` asserts they agree.
+   */
+  permission?: PermissionId;
   steps: TourStep[];
 }
 
@@ -59,24 +67,24 @@ export const TOURS: Record<string, Tour> = {
       },
       {
         route: "/dashboard",
+        target: "dash:greeting",
+        title: "Your day, summarised",
+        content:
+          "The header tells you whose view this is and what day it covers. An Owner sees the organization; everyone else sees their own work.",
+      },
+      {
+        route: "/dashboard",
         target: "dash:kpis",
-        title: "Your day at a glance",
+        title: "The numbers that matter",
         content:
-          "Time tracked today, hours this week, open tasks and your projects. The timer counts the whole day, not just the current session — pausing and resuming doesn't reset it.",
+          "Your headline figures for the period. They come from what the desktop agent actually reported — a dash means no data yet, never a guess.",
       },
       {
         route: "/dashboard",
-        target: "dash:tasks",
-        title: "What's on your plate",
+        target: "nav:/time-tracking",
+        title: "Where your hours live",
         content:
-          "Tasks assigned to you across every project, newest first. Open one to see its project, due date and status.",
-      },
-      {
-        route: "/dashboard",
-        target: "dash:week",
-        title: "Your week",
-        content:
-          "Attendance per day, built from what the desktop agent reported. Non-working days are marked so a blank Saturday never looks like a missed day.",
+          "Every session the agent recorded, day by day. The web view is read-only — the desktop app does the tracking.",
       },
       {
         route: "/dashboard",
@@ -105,7 +113,6 @@ export const TOURS: Record<string, Tour> = {
       },
       {
         route: "/time-tracking",
-        target: "dash:kpis",
         title: "Today's totals",
         content:
           "Tracked and billable time for the day. A session that's still open shows as running and hasn't contributed settled time yet.",
@@ -121,23 +128,24 @@ export const TOURS: Record<string, Tour> = {
 
   insights: {
     id: "insights",
+    permission: "reports:view",
     steps: [
       {
         route: "/dashboard",
-        target: "nav:/analytics",
+        target: "nav:/insights",
         title: "Analytics",
         content: "Productivity scores, trends and anomalies live here.",
         permission: "reports:view",
       },
       {
-        route: "/analytics",
+        route: "/insights",
         title: "How the score is built",
         content:
           "A deterministic 0–100 from four parts — utilization, quality, focus and reliability. Rust computes it from the day's activity; the AI never decides your score, it only narrates it.",
         permission: "reports:view",
       },
       {
-        route: "/analytics",
+        route: "/insights",
         title: "Anomalies flag the exceptions",
         content:
           "Overtime, idle stretches and policy hits are surfaced as anomalies so you're reading the days that need attention rather than every day.",
@@ -155,6 +163,7 @@ export const TOURS: Record<string, Tour> = {
 
   "team-management": {
     id: "team-management",
+    permission: "employees:view",
     steps: [
       {
         route: "/dashboard",
@@ -189,6 +198,7 @@ export const TOURS: Record<string, Tour> = {
 
   "monitoring-setup": {
     id: "monitoring-setup",
+    permission: "settings:view",
     steps: [
       {
         route: "/dashboard",

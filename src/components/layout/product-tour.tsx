@@ -46,9 +46,26 @@ const PAD = 8;
 const CARD_W = 380;
 /** Keep the card this far from the viewport edge. */
 const MARGIN = 16;
-/** How long to wait for a step's target after navigating before giving up on it. */
-const WAIT_MS = 8000;
-const POLL_MS = 80;
+/**
+ * How long to wait for a step's target — **budgeted by what we're actually waiting for.**
+ *
+ * A single 8 s timeout was wrong in both directions. When the target simply doesn't exist for this
+ * user, 8 s of "Loading step…" is indistinguishable from a hang; when a route is genuinely being
+ * fetched, anything less is too short. So they're separate:
+ *
+ * - Already on the step's route ⇒ the element is either mounted or a render away. `SAME_ROUTE_MS`.
+ * - Changing route ⇒ Next has to fetch a chunk, mount and paint. `NAV_MS`.
+ */
+const SAME_ROUTE_MS = 1200;
+const NAV_MS = 5000;
+const POLL_MS = 60;
+/**
+ * Don't show the loader until a step has actually been slow.
+ *
+ * Most steps resolve in a frame or two. Rendering a spinner for them makes a smooth tour flicker,
+ * which is what made the last one feel broken even on the steps that worked.
+ */
+const LOADER_DELAY_MS = 450;
 
 type Rect = { top: number; left: number; width: number; height: number };
 type Placement = "top" | "bottom" | "left" | "right" | "center";
@@ -168,27 +185,49 @@ export function ProductTour() {
       return;
     }
 
-    setWaiting(true);
-    const deadline = Date.now() + WAIT_MS;
+    // Budget by what we're waiting for: a same-route element is a render away, a route change is a
+    // network fetch. Using the navigation budget for both is what turned an absent target into
+    // eight seconds of "Loading step…".
+    const navigating = !!step.route && step.route !== pathname;
+    const deadline = Date.now() + (navigating ? NAV_MS : SAME_ROUTE_MS);
+
+    // The loader appears only if the step is genuinely slow; a fast step never flickers.
+    setWaiting(false);
+    const loaderTimer = setTimeout(() => !cancelled && setWaiting(true), LOADER_DELAY_MS);
+
+    const settle = () => {
+      clearTimeout(loaderTimer);
+      setWaiting(false);
+    };
 
     const tick = () => {
       if (cancelled) return;
       const el = document.querySelector(selector(step.target!)) as HTMLElement | null;
       if (el) {
-        el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
-        // Let the smooth scroll settle before measuring, or the spotlight lands where the element
-        // *was* and slides away from it.
-        setTimeout(() => {
-          if (cancelled) return;
-          const r = el.getBoundingClientRect();
-          setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-          setWaiting(false);
-        }, 320);
+        // Only scroll when the element isn't already comfortably in view. Scrolling something
+        // that's already visible makes every step twitch.
+        const r0 = el.getBoundingClientRect();
+        const inView = r0.top >= 0 && r0.bottom <= window.innerHeight;
+        if (!inView) {
+          el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+        }
+        // Let a smooth scroll settle before measuring, or the spotlight lands where the element
+        // *was* and slides away from it. No scroll ⇒ measure on the next frame.
+        setTimeout(
+          () => {
+            if (cancelled) return;
+            const r = el.getBoundingClientRect();
+            setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+            settle();
+          },
+          inView ? 16 : 320,
+        );
         return;
       }
       if (Date.now() > deadline) {
-        // Don't strand them: move on if there's anywhere to go.
-        setWaiting(false);
+        // The target doesn't exist for this user. Skip on rather than strand them — a stuck overlay
+        // with a live Next button that does nothing is the worst failure available.
+        settle();
         if (stepIndex + 1 < steps.length) setStepIndex(stepIndex + 1);
         else stopTour();
         return;
@@ -200,6 +239,7 @@ export function ProductTour() {
 
     return () => {
       cancelled = true;
+      clearTimeout(loaderTimer);
     };
     // `step.target` is the identity that matters; pathname re-runs it after a navigation lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps

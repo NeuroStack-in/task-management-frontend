@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import {
   BarChart2,
+  CheckCircle2,
   ChevronDown,
   Clock,
   Compass,
@@ -54,6 +55,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state"
 import { useAssistantStore } from "@/stores/assistant.store"
 import { useTourStore } from "@/stores/tour.store"
+import { getTour } from "../lib/tours"
 import { usePageTitle } from "@/stores/page-header.store"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { PermissionId } from "@/types/rbac"
@@ -71,6 +73,7 @@ import {
   createTicket,
   getThread,
   addReply,
+  closeTicket,
   uploadAttachment,
   ATTACHMENT_TYPES,
   MAX_ATTACHMENTS,
@@ -135,36 +138,164 @@ function fmtDate(ms: number): string {
 // Article sheet
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Split an article body into paragraphs.
+ *
+ * Bodies are authored as one long string, which rendered verbatim is a wall of text. Where an
+ * author used real breaks we honour them; otherwise whole **sentences** are grouped in pairs. The
+ * match is on sentence-ending punctuation, so "Settings → Organization, then…" stays intact.
+ * Presentation only — no word is added, removed or reordered.
+ */
+function paragraphs(body: string): string[] {
+  const authored = body
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (authored.length > 1) return authored
+
+  const sentences = body.match(/[^.!?]+[.!?]+(\s|$)/g)?.map((s) => s.trim()) ?? [body]
+  const out: string[] = []
+  for (let i = 0; i < sentences.length; i += 2) {
+    out.push(sentences.slice(i, i + 2).join(" "))
+  }
+  return out
+}
+
+/**
+ * The documentation reading panel.
+ *
+ * Was a badge, a title and an undifferentiated block of body text. Now it has the shape of
+ * something written for a person: an accent header carrying the category's own icon, the excerpt
+ * set apart as a lead-in, paragraphed prose, and — the part that matters most for a help centre —
+ * somewhere to go next. An article ending in whitespace makes a stuck reader close the panel; one
+ * ending in related reading and a support CTA does not.
+ */
 function ArticleSheet({
   article,
   onClose,
+  onSelectArticle,
+  onAskAi,
 }: {
   article: HelpArticle | null
   onClose: () => void
+  onSelectArticle: (a: HelpArticle) => void
+  onAskAi: () => void
 }) {
+  const meta = article ? HELP_CATEGORIES.find((c) => c.key === article.category) : undefined
+  const Icon = meta?.icon ?? Compass
+  const related = article
+    ? HELP_ARTICLES.filter(
+        (a) => a.category === article.category && a.slug !== article.slug,
+      ).slice(0, 3)
+    : []
+
   return (
     <Sheet open={!!article} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+      {/* `data-[side=right]:` matches the variant the primitive sets its own max-width with, so
+          tailwind-merge replaces it instead of leaving two competing rules. */}
+      <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:sm:max-w-lg">
         {article && (
           <>
-            <SheetHeader className="pb-4">
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="capitalize">
-                  {HELP_CATEGORIES.find((c) => c.key === article.category)?.label ??
-                    article.category}
-                </Badge>
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Clock className="size-3" />
-                  {article.readMins} min read
-                </span>
+            {/* `shrink-0` is load-bearing: SheetContent is `flex flex-col`, so without it this
+                header is a shrinkable flex child and a long article squeezes it until the title
+                clips. The body scrolls; the header stays. */}
+            <div className="relative shrink-0 overflow-hidden bg-feature px-6 pb-6 pt-7 text-feature-foreground">
+              {/* A soft corner wash for depth. The shared `BannerBackground` grid was tried here
+                  and read as stray diagonal lines — that motif is drawn for a full-width hero, not
+                  a 512px drawer. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_100%_0%,rgb(255_255_255/0.16),transparent_60%)]"
+              />
+              <SheetHeader className="relative gap-0 p-0">
+                {/* `pr-10` keeps the meta row clear of the primitive's absolute close button. */}
+                <div className="mb-4 flex items-center gap-2.5 pr-10">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15">
+                    <Icon className="size-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-medium">
+                      {meta?.label ?? article.category}
+                    </p>
+                    <p className="flex items-center gap-1 text-[11px] text-feature-foreground/75">
+                      <Clock className="size-3" />
+                      {article.readMins} min read
+                    </p>
+                  </div>
+                </div>
+                <SheetTitle className="text-left font-display text-xl font-semibold leading-snug text-feature-foreground">
+                  {article.title}
+                </SheetTitle>
+                <SheetDescription className="mt-2 text-left text-[13px] leading-relaxed text-feature-foreground/85">
+                  {article.excerpt}
+                </SheetDescription>
+              </SheetHeader>
+            </div>
+
+            {/* The one scrolling region. `min-h-0` lets a flex child shrink below its content
+                height — without it the panel grows and nothing scrolls. */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <article className="px-6 py-6">
+                {paragraphs(article.body).map((p, i) => (
+                  <p
+                    key={i}
+                    className={cn(
+                      "text-[15px] leading-7 text-foreground/90",
+                      i > 0 && "mt-4",
+                      i === 0 && "text-foreground",
+                    )}
+                  >
+                    {p}
+                  </p>
+                ))}
+              </article>
+
+              {related.length > 0 && (
+                <div className="border-t border-border px-6 py-5">
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Related articles
+                  </p>
+                  <ul className="space-y-1">
+                    {related.map((a) => (
+                      <li key={a.slug}>
+                        <button
+                          onClick={() => onSelectArticle(a)}
+                          className="group/rel flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{a.title}</p>
+                            <p className="truncate text-xs text-muted-foreground">{a.excerpt}</p>
+                          </div>
+                          <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                            <Clock className="size-3" />
+                            {a.readMins}m
+                          </span>
+                          <ChevronDown className="size-4 shrink-0 -rotate-90 text-muted-foreground transition-transform group-hover/rel:translate-x-0.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* The exit for a reader the article didn't help. Without it the panel's only ending
+                  is a scrollbar that stops. */}
+              <div className="border-t border-border bg-muted/40 px-6 py-5">
+                <p className="text-sm font-medium">Didn&apos;t answer your question?</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Ask the assistant, or send it to our support team.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={onAskAi}>
+                    <Sparkles className="size-3.5" />
+                    Ask the AI assistant
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={onClose}>
+                    <Ticket className="size-3.5" />
+                    Submit a ticket
+                  </Button>
+                </div>
               </div>
-              <SheetTitle className="text-left text-lg leading-snug">
-                {article.title}
-              </SheetTitle>
-              <SheetDescription className="text-left">{article.excerpt}</SheetDescription>
-            </SheetHeader>
-            <div className="px-4 pb-8 text-sm leading-relaxed text-foreground/90">
-              {article.body}
             </div>
           </>
         )}
@@ -244,15 +375,6 @@ const CATEGORY_PERMISSION: Record<HelpCategory, PermissionId | null> = {
   reports: "reports:view",
   billing: "billing:view",
   integrations: "integrations:view",
-}
-
-/** Same idea for guided walkthroughs (keyed by their own ids). */
-const WALKTHROUGH_PERMISSION: Record<string, PermissionId | null> = {
-  "getting-started": null,
-  "time-tracking": null,
-  insights: "reports:view",
-  "team-management": "employees:view",
-  "monitoring-setup": "settings:view",
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -402,6 +524,8 @@ export function HelpPage() {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [openThreadId, setOpenThreadId] = useState<string | null>(null)
+  /** Ticket currently being closed — per-id, so one row's spinner can't disable the others. */
+  const [closingId, setClosingId] = useState<string | null>(null)
   const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
@@ -487,6 +611,26 @@ export function HelpPage() {
     }
   }
 
+  /**
+   * Close a ticket the caller opened.
+   *
+   * No confirmation dialog: closing is reversible — replying to a closed ticket reopens it — so a
+   * misclick costs one more click, which is cheaper than a modal on every close. The toast says so
+   * rather than leaving them to wonder.
+   */
+  async function onCloseTicket(id: string) {
+    setClosingId(id)
+    try {
+      await closeTicket(id)
+      toast.success("Ticket closed. Replying to it will reopen it.")
+      loadTickets()
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Couldn't close the ticket. Try again.")
+    } finally {
+      setClosingId(null)
+    }
+  }
+
   async function onTicketSubmit(data: TicketForm) {
     setSubmitting(true)
     try {
@@ -515,7 +659,10 @@ export function HelpPage() {
   const visibleCategories = HELP_CATEGORIES.filter((c) => canCategory(c.key))
   const visibleVideos = VIDEO_TUTORIALS.filter((v) => canCategory(v.category))
   const visibleWalkthroughs = WALKTHROUGHS.filter((t) => {
-    const perm = WALKTHROUGH_PERMISSION[t.id]
+    // The gate lives with the tour data, not here. When it was duplicated in this file the two
+    // could drift into a visible card whose tour has no steps for that role — a button that does
+    // nothing. `tours.test.ts` asserts they agree.
+    const perm = getTour(t.id)?.permission
     return !perm || can(perm)
   })
   const visibleFaqs = FAQS.filter((f) => !f.permission || can(f.permission))
@@ -772,10 +919,16 @@ export function HelpPage() {
               ) : (
                 <ul className="divide-y">
                   {tickets.map((ticket) => (
-                    <li key={ticket.ticket_id}>
+                    <li
+                      key={ticket.ticket_id}
+                      className="group/ticket flex items-center gap-3 px-6 py-3.5 transition-colors hover:bg-muted/50"
+                    >
+                      {/* A <li> with a button inside, not a button wrapping everything: Close needs
+                          to be its own control, and a button inside a button is invalid HTML that
+                          browsers resolve by silently dropping one of them. */}
                       <button
                         onClick={() => setOpenThreadId(ticket.ticket_id)}
-                        className="flex w-full items-center gap-3 px-6 py-3.5 text-left transition-colors hover:bg-muted/50"
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
                       >
                         <span
                           className={cn("size-2 shrink-0 rounded-full", statusDot(ticket.status))}
@@ -787,8 +940,23 @@ export function HelpPage() {
                             {fmtDate(ticket.created_at)}
                           </p>
                         </div>
-                        <StatusBadge status={ticket.status} />
                       </button>
+                      <StatusBadge status={ticket.status} />
+                      {ticket.status !== "closed" && (
+                        <button
+                          onClick={() => onCloseTicket(ticket.ticket_id)}
+                          disabled={closingId === ticket.ticket_id}
+                          title="Close this ticket"
+                          className="flex shrink-0 items-center gap-1 rounded-md border border-transparent px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground disabled:opacity-60 sm:opacity-0 sm:group-hover/ticket:opacity-100 sm:focus-visible:opacity-100"
+                        >
+                          {closingId === ticket.ticket_id ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="size-3.5" />
+                          )}
+                          Close
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1048,6 +1216,13 @@ export function HelpPage() {
       <ArticleSheet
         article={selectedArticle}
         onClose={() => setSelectedArticle(null)}
+        // Swaps content in place rather than closing and reopening, so following a related link
+        // reads as turning a page.
+        onSelectArticle={setSelectedArticle}
+        onAskAi={() => {
+          setSelectedArticle(null)
+          openAssistant(selectedArticle?.title)
+        }}
       />
 
       {/* Support ticket thread */}

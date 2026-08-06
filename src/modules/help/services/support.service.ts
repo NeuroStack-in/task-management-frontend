@@ -119,6 +119,23 @@ export function getThread(ticketId: string): Promise<ApiThread> {
   return apiFetch<ApiThread>(`/v1/support/tickets/${encodeURIComponent(ticketId)}`);
 }
 
+/**
+ * `POST /v1/support/tickets/{id}/close` — the reporter marks their own issue resolved.
+ *
+ * An action route rather than a `PATCH {status}`: closing is the only transition a customer may
+ * make (`in_progress`/`resolved` are the support desk's words about its own work). Idempotent, so a
+ * double-click or a stale second tab is harmless. Returns the updated ticket.
+ *
+ * **Replying to a closed ticket reopens it** — worth knowing before hiding closed tickets from a
+ * user's view.
+ */
+export function closeTicket(ticketId: string): Promise<ApiTicketView> {
+  return apiFetch<ApiTicketView>(
+    `/v1/support/tickets/${encodeURIComponent(ticketId)}/close`,
+    { method: "POST" },
+  );
+}
+
 export async function addReply(ticketId: string, body: string): Promise<void> {
   await apiFetch(`/v1/support/tickets/${encodeURIComponent(ticketId)}/replies`, {
     method: "POST",

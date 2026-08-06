@@ -29,7 +29,12 @@ export function DashboardView() {
   if (personal) {
     return (
       <div className="space-y-4 pt-1">
-        <GreetingHeader />
+        {/* `data-tour` marks the guided-walkthrough targets (modules/help/lib/tours.ts). Marked in
+            BOTH branches deliberately: an Owner renders OrgDashboard and an Employee renders
+            PersonalDashboard, so a marker on only one silently breaks the tour for half the roles. */}
+        <div data-tour="dash:greeting">
+          <GreetingHeader />
+        </div>
         <PersonalDashboard />
       </div>
     );
@@ -37,7 +42,9 @@ export function DashboardView() {
 
   return (
     <div className="space-y-4 pt-1">
-      <GreetingHeader />
+      <div data-tour="dash:greeting">
+        <GreetingHeader />
+      </div>
       <OrgDashboard />
     </div>
   );
@@ -116,7 +123,7 @@ function OrgDashboard() {
       {/* KPI strip — reactive to the active range/team. The "Today" range shows point-in-time counts;
           longer ranges show period aggregates. Deltas are omitted (no cheap real prior-window compare —
           a seeded % would be fabricated); sparklines render only where a real per-day series exists. */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
         <StatCard
           label="Productivity Score"
           value={`${kpis.productivity.value}%`}
