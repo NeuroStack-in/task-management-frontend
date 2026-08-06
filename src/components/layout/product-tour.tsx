@@ -72,6 +72,54 @@ type Placement = "top" | "bottom" | "left" | "right" | "center";
 
 const selector = (target: string) => `[data-tour="${CSS.escape(target)}"]`;
 
+/**
+ * The **visible** element for a target, not merely the first in the DOM.
+ *
+ * `SidebarNav` is mounted twice — once in the desktop aside, once inside the navbar's mobile sheet —
+ * so every `nav:` target has two matches. `querySelector` returns whichever comes first in document
+ * order, which can be the hidden one, and the spotlight then draws around a zero-ish rect at the
+ * wrong place. That is exactly what put the highlight over the sidebar's logo instead of the nav
+ * item someone was being shown.
+ *
+ * A hidden element (`display:none`, or an unmounted sheet) reports no client rects, so filtering on
+ * that picks the one actually on screen — whichever mount it belongs to, at whatever viewport width.
+ */
+function visibleTarget(sel: string): HTMLElement | null {
+  const all = Array.from(document.querySelectorAll<HTMLElement>(sel));
+  for (const el of all) {
+    const r = el.getBoundingClientRect();
+    if (el.getClientRects().length > 0 && r.width > 0 && r.height > 0) return el;
+  }
+  return null;
+}
+
+/**
+ * Measure once the element has stopped moving.
+ *
+ * `scrollIntoView({behavior:"smooth"})` animates for an unspecified duration, and the sidebar's nav
+ * lives in its own scroll container, so a fixed delay is a guess that is sometimes wrong — measure
+ * too early and the spotlight sits where the element *was*. Polling until the rect repeats is the
+ * only honest way to know the scroll finished.
+ */
+function whenStill(el: HTMLElement, done: (r: DOMRect) => void, cancelled: () => boolean) {
+  let last: DOMRect | null = null;
+  let stable = 0;
+  const step = () => {
+    if (cancelled()) return;
+    const r = el.getBoundingClientRect();
+    if (last && Math.abs(r.top - last.top) < 0.5 && Math.abs(r.left - last.left) < 0.5) {
+      stable += 1;
+    } else {
+      stable = 0;
+    }
+    last = r;
+    // Three identical frames: enough to be sure, short enough to feel immediate.
+    if (stable >= 3) done(r);
+    else requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 /** Choose a side with room for the card, preferring below → above → right → left. */
 function place(rect: Rect, cardH: number): Placement {
   const vw = window.innerWidth;
@@ -178,9 +226,14 @@ export function ProductTour() {
     if (!mounted || !step) return;
     let cancelled = false;
 
-    // A centred step needs no target — show it immediately.
+    // Clear the previous step's spotlight up front. Without this, a step that has to wait keeps
+    // drawing the *last* step's rectangle — a highlight that points confidently at the wrong thing,
+    // which is worse than none.
+    setRect(null);
+
+    // A centred step needs no target — show it immediately. (`target` is required by the type, so
+    // this is a guard against data that bypassed it, not a supported shape.)
     if (!step.target) {
-      setRect(null);
       setWaiting(false);
       return;
     }
@@ -202,25 +255,24 @@ export function ProductTour() {
 
     const tick = () => {
       if (cancelled) return;
-      const el = document.querySelector(selector(step.target!)) as HTMLElement | null;
+      // The visible match — `nav:` targets exist twice (desktop aside + mobile sheet).
+      const el = visibleTarget(selector(step.target!));
       if (el) {
-        // Only scroll when the element isn't already comfortably in view. Scrolling something
-        // that's already visible makes every step twitch.
+        // Only scroll when the element isn't already comfortably in view; scrolling something
+        // already visible makes every step twitch.
         const r0 = el.getBoundingClientRect();
         const inView = r0.top >= 0 && r0.bottom <= window.innerHeight;
         if (!inView) {
           el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
         }
-        // Let a smooth scroll settle before measuring, or the spotlight lands where the element
-        // *was* and slides away from it. No scroll ⇒ measure on the next frame.
-        setTimeout(
-          () => {
-            if (cancelled) return;
-            const r = el.getBoundingClientRect();
+        // Measure once it has stopped moving, however long the scroll takes.
+        whenStill(
+          el,
+          (r) => {
             setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
             settle();
           },
-          inView ? 16 : 320,
+          () => cancelled,
         );
         return;
       }
@@ -249,7 +301,10 @@ export function ProductTour() {
   useEffect(() => {
     if (!step?.target || waiting) return;
     const remeasure = () => {
-      const el = document.querySelector(selector(step.target!)) as HTMLElement | null;
+      // Same visible-match rule as the initial measure — a resize across the `lg` breakpoint swaps
+      // which of the two sidebar mounts is on screen, and following the wrong one would jump the
+      // spotlight to a hidden element's rect.
+      const el = visibleTarget(selector(step.target!));
       if (!el) return;
       const r = el.getBoundingClientRect();
       setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
