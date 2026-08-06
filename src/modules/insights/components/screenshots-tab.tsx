@@ -255,7 +255,7 @@ export function ScreenshotsTab() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-tour="shots:review">
       <AiReportCard
         title="AI screenshot report"
         summary={summary}

@@ -58,6 +58,10 @@ export const SAFE_TARGET_PREFIXES = [
   // the permission that renders it, and neither page branches by role beyond that gate.
   "emp:",
   "roles:",
+  // Analytics tabs. Same reasoning again: each step is gated on the permission that renders its
+  // tab, and within a tab there is no further role branch.
+  "insights:",
+  "shots:",
 ] as const;
 
 export interface TourStep {
@@ -165,6 +169,13 @@ export const TOURS: Record<string, Tour> = {
     ],
   },
 
+  // **Never route a step to `/insights`.** That page has no content of its own — it is a client
+  // redirect that `router.replace`s to the first tab the role can open, so a step there would land
+  // on a loader and be navigated out from under itself. Steps go straight to the real tabs.
+  //
+  // Each step is gated on the permission that renders *its* tab (`activity:view`,
+  // `screenshots:view`), not on the card's `reports:view` — the tabs are separately permissioned,
+  // so a role can hold one and not another.
   insights: {
     id: "insights",
     permission: "reports:view",
@@ -173,28 +184,37 @@ export const TOURS: Record<string, Tour> = {
         route: "/dashboard",
         target: "nav:/insights",
         title: "Analytics",
-        content: "Productivity scores, trends and anomalies live here.",
+        content:
+          "Scores, trends, screenshots and the AI reports all live behind here, as separate tabs.",
         permission: "reports:view",
       },
       {
-        route: "/insights",
-        target: "page:header",
-        title: "How the score is built",
+        route: "/insights/activity",
+        target: "insights:trend",
+        title: "How the score moves",
         content:
-          "A deterministic 0–100 from four parts — utilization, quality, focus and reliability. Rust computes it from the day's activity; the AI never decides your score, it only narrates it.",
-        permission: "reports:view",
+          "A deterministic 0–100 per day, from utilization, quality, focus and reliability. Rust computes it from the day's activity — the AI never decides a score, it only narrates one.",
+        permission: "activity:view",
       },
       {
-        route: "/insights",
-        target: "nav:/insights",
-        title: "Anomalies flag the exceptions",
+        route: "/insights/activity",
+        target: "insights:categories",
+        title: "Where the time went",
         content:
-          "Overtime, idle stretches and policy hits surface as anomalies, so you read the days that need attention rather than every day.",
+          "Tracked minutes split by category. This is the Quality input to the score, and the weights behind it are yours to set in Settings → Tracking rules.",
+        permission: "activity:view",
+      },
+      {
+        route: "/insights/ai-reports",
+        target: "insights:ai",
+        title: "The written summary",
+        content:
+          "A narrative over the numbers already computed — who stood out, what needs attention. Generated once per day and cached, so re-reading it costs nothing.",
         permission: "reports:view",
       },
       {
         route: "/insights/screenshots",
-        target: "page:header",
+        target: "shots:review",
         title: "Screenshot review",
         content:
           "Captures from the agent, each with an AI read of what was on screen. Distracting content is flagged with a reason — the reason is what makes a flag defensible.",

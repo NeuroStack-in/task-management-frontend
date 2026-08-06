@@ -251,7 +251,7 @@ export function ActivityTab() {
         regenerating={ai.regenerating}
       />
 
-      <Card>
+      <Card data-tour="insights:trend">
         <CardHeader>
           <CardTitle>{CHART_TITLE[granularity]}</CardTitle>
         </CardHeader>
@@ -306,7 +306,7 @@ export function ActivityTab() {
 
       {/* Two balanced summary cards of similar height */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
+        <Card data-tour="insights:categories">
           <CardHeader>
             <CardTitle>Time by category</CardTitle>
           </CardHeader>

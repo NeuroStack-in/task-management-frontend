@@ -69,6 +69,21 @@ describe("tour data", () => {
     }
   });
 
+  /**
+   * `/insights` has no content of its own — it is a client redirect that `router.replace`s to the
+   * first tab the role can open. A step routed there lands on a loader and is then navigated out
+   * from under itself, so its target can never resolve. Steps must name the real tab.
+   */
+  it("never routes a step at a redirect-only page", () => {
+    const REDIRECT_ONLY = ["/insights"];
+    for (const s of steps) {
+      expect(
+        REDIRECT_ONLY.includes(s.route),
+        `tour "${s.tour}" routes to ${s.route}, which only redirects — name the real tab instead`,
+      ).toBe(false);
+    }
+  });
+
   it("uses absolute in-app routes", () => {
     for (const s of steps) {
       expect(s.route, `tour "${s.tour}" has an empty route`).toBeTruthy();

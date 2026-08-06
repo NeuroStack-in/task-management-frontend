@@ -174,7 +174,7 @@ function ExecutiveOverview({ state }: { state: ReturnType<typeof useAiReport> })
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-4 xl:grid-cols-12">
+      <section className="grid gap-4 xl:grid-cols-12" data-tour="insights:ai">
         <AiBriefing report={report} />
         <HealthScoreCard report={report} band={band} />
       </section>
