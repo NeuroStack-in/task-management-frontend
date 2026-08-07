@@ -267,6 +267,15 @@ export interface VideoTutorial {
   kind?: "file" | "embed"
   /** Still frame shown before playback. Without one the tile keeps its gradient. */
   poster?: string
+  /**
+   * Required to be shown this video — the same idiom the FAQs use.
+   *
+   * Getting-started exists as two cuts because the product genuinely differs by role: an employee
+   * has no Employees, Payroll, Analytics or Settings, so a walkthrough of those is noise to them.
+   * Ungated ⇒ everyone, which is right for the team-facing cut. An owner sees both, and the titles
+   * say which is which — knowing what your team is shown is a fair thing for an owner to want.
+   */
+  permission?: PermissionId
 }
 
 /**
@@ -279,11 +288,21 @@ const VIDEO_HOST = "https://wp-downloads-dev.s3.ap-south-1.amazonaws.com/help/vi
 
 export const VIDEO_TUTORIALS: VideoTutorial[] = [
   {
-    title: "Getting started with WorkPulse",
+    title: "Getting started — for your team",
     duration: "2:20",
     category: "getting-started",
     src: `${VIDEO_HOST}/getting-started-employee.mp4`,
     kind: "file",
+  },
+  {
+    title: "Getting started — for owners and admins",
+    duration: "2:17",
+    category: "getting-started",
+    src: `${VIDEO_HOST}/getting-started-owner.mp4`,
+    kind: "file",
+    // Held by Owner/Admin/Manager, never by Employee — so this cut appears only for the people
+    // whose screens it actually shows.
+    permission: "employees:view",
   },
   { title: "Setting up your first project", duration: "3:45", category: "getting-started" },
   { title: "How time gets tracked", duration: "2:18", category: "time-tracking" },

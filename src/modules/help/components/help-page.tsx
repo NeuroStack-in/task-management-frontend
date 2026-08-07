@@ -671,7 +671,11 @@ export function HelpPage() {
     return perm === null || can(perm)
   }
   const visibleCategories = HELP_CATEGORIES.filter((c) => canCategory(c.key))
-  const visibleVideos = VIDEO_TUTORIALS.filter((v) => canCategory(v.category))
+  // Gated on BOTH the category (as before) and the video's own permission — getting-started
+  // ships as two cuts, and an employee has no use for a walkthrough of Payroll and Settings.
+  const visibleVideos = VIDEO_TUTORIALS.filter(
+    (v) => canCategory(v.category) && (!v.permission || can(v.permission)),
+  )
   const visibleWalkthroughs = WALKTHROUGHS.filter((t) => {
     // The gate lives with the tour data, not here. When it was duplicated in this file the two
     // could drift into a visible card whose tour has no steps for that role — a button that does
