@@ -46,6 +46,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -527,6 +534,13 @@ export function HelpPage() {
   /** Ticket currently being closed — per-id, so one row's spinner can't disable the others. */
   const [closingId, setClosingId] = useState<string | null>(null)
   const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
+  /**
+   * The video being watched, or null.
+   *
+   * Nothing is mounted until this is set — the tiles are a facade. Six <video> elements on a page
+   * people mostly skim would start six range requests against a 125 MB file each.
+   */
+  const [playing, setPlaying] = useState<(typeof VIDEO_TUTORIALS)[number] | null>(null)
 
   const openAssistant = useAssistantStore((s) => s.openAssistant)
   // The tour outlives this page — its later steps are on other routes — so it is driven by
@@ -1116,8 +1130,13 @@ export function HelpPage() {
               return (
                 <button
                   key={video.title}
-                  onClick={() => toast.info("Video player coming soon")}
-                  className="group relative overflow-hidden rounded-2xl border text-left"
+                  disabled={!video.src}
+                  onClick={() => video.src && setPlaying(video)}
+                  title={video.src ? `Play ${video.title}` : "Not filmed yet"}
+                  className={cn(
+                    "group relative overflow-hidden rounded-2xl border text-left",
+                    !video.src && "cursor-not-allowed opacity-60",
+                  )}
                 >
                   {/* Gradient thumbnail */}
                   <div
@@ -1126,9 +1145,15 @@ export function HelpPage() {
                       background: `linear-gradient(135deg, hsl(${hue} 60% 30%), hsl(${hue + 40} 70% 50%))`,
                     }}
                   >
-                    <div className="flex size-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110">
-                      <Play className="size-5 fill-white text-white" />
-                    </div>
+                    {video.src ? (
+                      <div className="flex size-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110">
+                        <Play className="size-5 fill-white text-white" />
+                      </div>
+                    ) : (
+                      <span className="rounded-full bg-black/35 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+                        Coming soon
+                      </span>
+                    )}
                   </div>
                   {/* Duration badge */}
                   <div className="absolute top-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
@@ -1213,6 +1238,46 @@ export function HelpPage() {
       </section>
 
       {/* Article reader sheet */}
+      {/* Video player. `key` forces a fresh <video> per title, so switching videos can't leave the
+          previous one's buffered stream attached. */}
+      <Dialog open={!!playing} onOpenChange={(open) => !open && setPlaying(null)}>
+        <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0">
+          <DialogHeader className="px-5 pb-3 pt-4">
+            <DialogTitle className="text-base">{playing?.title}</DialogTitle>
+            <DialogDescription className="text-xs">
+              {HELP_CATEGORIES.find((c) => c.key === playing?.category)?.label} · {playing?.duration}
+            </DialogDescription>
+          </DialogHeader>
+          {playing?.src ? (
+            playing.kind === "embed" ? (
+              <iframe
+                key={playing.title}
+                src={playing.src}
+                title={playing.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture"
+                allowFullScreen
+                className="aspect-video w-full border-0 bg-black"
+              />
+            ) : (
+              <video
+                key={playing.title}
+                src={playing.src}
+                poster={playing.poster}
+                controls
+                autoPlay
+                controlsList="nodownload"
+                // `preload` is irrelevant here (we only mount on click) but explicit beats implicit:
+                // the browser should stream, never fetch the whole file up front.
+                preload="metadata"
+                className="aspect-video w-full bg-black"
+              >
+                Your browser can&apos;t play this video.
+              </video>
+            )
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
       <ArticleSheet
         article={selectedArticle}
         onClose={() => setSelectedArticle(null)}

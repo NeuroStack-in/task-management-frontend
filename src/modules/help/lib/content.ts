@@ -253,12 +253,40 @@ export interface VideoTutorial {
   title: string
   duration: string
   category: HelpCategory
+  /**
+   * Where the video lives. **Absent = not filmed yet**, and the card says so rather than pretending
+   * — six tiles that all open nothing is worse than one that plays and five that are honest.
+   */
+  src?: string
+  /**
+   * `file` → a direct MP4/WebM played by `<video>`. `embed` → an iframe (YouTube, Loom, Vimeo).
+   *
+   * This one field is why the host isn't a lock-in: moving from S3 to Cloudflare Stream or an
+   * unlisted YouTube link is an edit here, not a component rewrite.
+   */
+  kind?: "file" | "embed"
+  /** Still frame shown before playback. Without one the tile keeps its gradient. */
+  poster?: string
 }
 
+/**
+ * Hosted in the **existing public downloads bucket**, alongside the agent installers — not in
+ * `public/`. A 125 MB file in the repo would bloat every clone and every Vercel deploy forever,
+ * and S3 already serves large public binaries here with a bucket policy that allows exactly
+ * `s3:GetObject`.
+ */
+const VIDEO_HOST = "https://wp-downloads-dev.s3.ap-south-1.amazonaws.com/help/videos"
+
 export const VIDEO_TUTORIALS: VideoTutorial[] = [
-  { title: "WorkPulse in 5 minutes", duration: "5:02", category: "getting-started" },
+  {
+    title: "Getting started with WorkPulse",
+    duration: "2:20",
+    category: "getting-started",
+    src: `${VIDEO_HOST}/getting-started-employee.mp4`,
+    kind: "file",
+  },
   { title: "Setting up your first project", duration: "3:45", category: "getting-started" },
-  { title: "Using the global timer", duration: "2:18", category: "time-tracking" },
+  { title: "How time gets tracked", duration: "2:18", category: "time-tracking" },
   { title: "Reading activity reports", duration: "4:30", category: "monitoring" },
   { title: "Configuring monitoring thresholds", duration: "6:12", category: "monitoring" },
   { title: "Exporting and scheduling reports", duration: "3:55", category: "reports" },
