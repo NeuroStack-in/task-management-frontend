@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   ChevronLeft,
@@ -97,6 +97,16 @@ function formatDateTime(ms: number): string {
 function shortUser(id: string): string {
   return id.length > 12 ? `${id.slice(0, 12)}…` : id;
 }
+/**
+ * Ceiling on the gallery's automatic paging — a backstop against a pathological day, not a target.
+ * At the hook's page size this is several thousand captures; beyond it the roster stops filling and
+ * says so rather than paging forever.
+ */
+const MAX_AUTO_PAGES = 20;
+
+/** How many of one person's captures to reveal per "Load more" press in their detail view. */
+const DETAIL_PAGE = 60;
+
 /** Latest capture in a group — the tile's cover. */
 function coverOf(shots: ShotRow[]): ShotRow {
   return shots.reduce((a, b) => (b.captured_at > a.captured_at ? b : a), shots[0]);
@@ -130,6 +140,30 @@ export function ScreenshotsTab() {
 
   const { shots, loading, loadingMore, error, hasMore, loadMore, reload } =
     useScreenshots(date);
+
+  /**
+   * Page the day to exhaustion instead of making the admin ask for it.
+   *
+   * The gallery is a roster — one tile per person, each captioned with that person's shot count. A
+   * single page can support neither. The grid reads newest-first, so one page is whoever captured
+   * most recently (two people, on a day eleven worked), and every count would be "shots in the page"
+   * rather than shots in the day. Who appears on the roster must not depend on how far someone
+   * scrolled, so the roster loads the whole day up front and "Load more" belongs inside a person's
+   * captures, not out here.
+   *
+   * Bounded, and stops on the first error: `loadMore` leaves the cursor intact when a request fails,
+   * so an unguarded effect would retry the same failing page forever.
+   */
+  const autoPages = useRef(0);
+  useEffect(() => {
+    autoPages.current = 0;
+  }, [date]);
+  useEffect(() => {
+    if (!hasMore || loading || loadingMore || error) return;
+    if (autoPages.current >= MAX_AUTO_PAGES) return;
+    autoPages.current += 1;
+    loadMore();
+  }, [hasMore, loading, loadingMore, error, loadMore]);
   const { inScope, loading: scopeLoading } = useDataScope();
   const { employees: directory } = useDirectory();
 
@@ -414,12 +448,19 @@ export function ScreenshotsTab() {
             })}
           </div>
 
-          {hasMore ? (
-            <div className="flex justify-center pt-1">
-              <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
-                {loadingMore ? "Loading…" : "Load more"}
-              </Button>
-            </div>
+          {/* No "Load more" here by design — the roster loads the whole day itself (see the
+              auto-paging effect), so a button would only ever be a spinner. Paging lives inside a
+              person's captures instead. This shows the roster is still filling, and is the one place
+              the automatic cap becomes visible if a day ever exceeds it. */}
+          {loadingMore ? (
+            <p className="pt-1 text-center text-sm text-muted-foreground">
+              Loading the rest of the day…
+            </p>
+          ) : hasMore ? (
+            <p className="pt-1 text-center text-sm text-muted-foreground">
+              Showing the most recent {filteredShots.length} captures — this day is unusually large,
+              so older ones aren&apos;t listed.
+            </p>
           ) : null}
         </>
       )}
@@ -971,18 +1012,32 @@ function EmployeeCaptures({
     [allCaptures, from, to, flag],
   );
 
-  // The viewer walks every monitor of every visible capture in grid order (newest first), so the
-  // arrow keys move through the day exactly as it reads rather than skipping second monitors.
-  const flat = useMemo(() => captures.flatMap((c) => c.monitors), [captures]);
+  /**
+   * Reveal this person's captures a page at a time.
+   *
+   * The whole day is already in memory — the roster loaded it to count the tiles — so this is a
+   * render budget, not a fetch: "Load more" is instant and cannot fail. It exists because a long day
+   * is hundreds of images, and mounting them all at once costs a visibly slow open for frames nobody
+   * has scrolled to. Resets whenever the filters change which captures qualify, so a narrowed range
+   * never starts part-way down a list it no longer describes.
+   */
+  const [visible, setVisible] = useState(DETAIL_PAGE);
+  useEffect(() => setVisible(DETAIL_PAGE), [from, to, flag, userId]);
+  const shown = useMemo(() => captures.slice(0, visible), [captures, visible]);
+
+  // The viewer walks every monitor of every **shown** capture in grid order (newest first), so the
+  // arrow keys move through the day exactly as it reads rather than skipping second monitors — and
+  // never into a capture that isn't on screen yet.
+  const flat = useMemo(() => shown.flatMap((c) => c.monitors), [shown]);
   const firstIndexOfCapture = useMemo(() => {
     const m = new Map<string, number>();
     let i = 0;
-    for (const c of captures) {
+    for (const c of shown) {
       m.set(c.key, i);
       i += c.monitors.length;
     }
     return m;
-  }, [captures]);
+  }, [shown]);
 
   const monitorCount = useMemo(
     () => new Set(shots.map((s) => s.display ?? 0)).size,
@@ -1093,16 +1148,32 @@ function EmployeeCaptures({
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {captures.map((c) => (
-            <CaptureCard
-              key={c.key}
-              capture={c}
-              monitorCount={monitorCount}
-              onOpen={() => setViewerIdx(firstIndexOfCapture.get(c.key) ?? 0)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {shown.map((c) => (
+              <CaptureCard
+                key={c.key}
+                capture={c}
+                monitorCount={monitorCount}
+                onOpen={() => setViewerIdx(firstIndexOfCapture.get(c.key) ?? 0)}
+              />
+            ))}
+          </div>
+
+          {shown.length < captures.length ? (
+            <div className="flex flex-col items-center gap-1.5 pt-1">
+              <Button
+                variant="outline"
+                onClick={() => setVisible((v) => v + DETAIL_PAGE)}
+              >
+                Load more
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Showing {shown.length} of {captures.length} captures
+              </p>
+            </div>
+          ) : null}
+        </>
       )}
 
       <Lightbox
