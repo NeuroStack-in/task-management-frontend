@@ -596,11 +596,26 @@ function Lightbox({
   useEffect(() => {
     if (!open || index === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight" && index < count - 1) onIndexChange(index + 1);
-      else if (e.key === "ArrowLeft" && index > 0) onIndexChange(index - 1);
+      // Never steal keys from a field. Nothing in the viewer takes text today, but the AI panel is
+      // the obvious place a note box lands later, and arrows must keep moving the caret there.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))
+        return;
+      if (e.key === "ArrowRight" && index < count - 1) {
+        e.preventDefault(); // also stops the arrow scrolling the dialog behind the image
+        onIndexChange(index + 1);
+      } else if (e.key === "ArrowLeft" && index > 0) {
+        e.preventDefault();
+        onIndexChange(index - 1);
+      }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // **Capture phase, deliberately.** This viewer is a Base UI `Dialog`, which traps focus and
+    // handles keys on the popup itself. A bubble-phase listener on `window` is last in line and only
+    // runs if nothing between the focused element and the window stopped propagation — which is why
+    // the arrows did nothing. Capturing runs on the way *down*, before any of that, so they work
+    // wherever focus happens to sit inside the dialog.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [open, index, count, onIndexChange]);
 
   const atStart = index === 0;
