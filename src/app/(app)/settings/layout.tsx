@@ -1,13 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { ArrowUpRight, Lock } from "lucide-react";
 import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { InPaneHeaderContext } from "@/components/shared/page-header";
 import { usePageTitle } from "@/stores/page-header.store";
+import { useUnsavedStore } from "@/stores/unsaved.store";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 interface RailItem {
@@ -59,6 +70,12 @@ export default function SettingsLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  // The visible pane publishes this via `useUnsavedGuard`; the rail is the only thing that can act
+  // on it, because it owns the links that would throw the draft away.
+  const dirtyRef = useUnsavedStore((s) => s.dirty);
+  const setDirty = useUnsavedStore((s) => s.setDirty);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const { can } = usePermissions();
 
   // The navbar stays pinned to "Settings" across every sub-section; each
@@ -116,6 +133,13 @@ export default function SettingsLayout({
                       <Link
                         href={item.href}
                         aria-current={active ? "page" : undefined}
+                        // The rail sits beside the pane being edited, so leaving mid-edit is the
+                        // natural move — and used to discard the draft silently. Ask instead.
+                        onClick={(e) => {
+                          if (!dirtyRef || item.external || item.href === pathname) return;
+                          e.preventDefault();
+                          setPendingHref(item.href);
+                        }}
                         className={cn(
                           "group flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-colors",
                           active
@@ -144,6 +168,37 @@ export default function SettingsLayout({
       </nav>
 
       {/* ── Content pane ── */}
+      {/* Discard confirmation for rail navigation while a pane holds unsaved edits. */}
+      <Dialog open={!!pendingHref} onOpenChange={(o) => !o && setPendingHref(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Discard unsaved changes?</DialogTitle>
+            <DialogDescription>
+              You have edits on this page that haven&apos;t been saved. Leaving now discards them.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPendingHref(null)}>
+              Stay on this page
+            </Button>
+            <Button
+              size="sm"
+              className="border-destructive/40 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                const href = pendingHref;
+                setPendingHref(null);
+                // Clear before navigating: the outgoing pane's unmount would clear it anyway, but
+                // not before the next pane mounts, and a stale `true` would block that one too.
+                setDirty(false);
+                if (href) router.push(href);
+              }}
+            >
+              Discard and leave
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Sub-pages render their header in-pane; the navbar shows "Settings". */}
       <InPaneHeaderContext.Provider value={true}>
         <div className="min-w-0 flex-1 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1">

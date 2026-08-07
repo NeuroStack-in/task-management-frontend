@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { AlertCircle, Lock } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -176,6 +177,8 @@ export function OrganizationTab() {
     () => JSON.stringify(draft) !== JSON.stringify(saved),
     [draft, saved],
   )
+  // Leaving via the settings rail now asks before discarding this draft.
+  useUnsavedGuard(dirty)
 
   const update = (patch: Partial<OrgProfileForm>) =>
     setDraft((d) => ({ ...d, ...patch }))

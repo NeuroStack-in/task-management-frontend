@@ -15,6 +15,7 @@ import { SettingsSaveBar } from "@/components/shared/settings-save-bar";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { getPrefs, updatePrefs } from "@/modules/notifications/services/notifications.service";
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils";
 
 type Channel = "inApp" | "email";
@@ -153,6 +154,8 @@ export function NotificationPreferences() {
     () => JSON.stringify(draft) !== JSON.stringify(saved),
     [draft, saved],
   );
+  // Leaving via the settings rail now asks before discarding this draft.
+  useUnsavedGuard(dirty);
 
   function toggleChannel(key: string, channel: Channel) {
     setDraft((p) => ({

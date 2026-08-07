@@ -30,6 +30,7 @@ import {
   updateTrackingPolicy,
   type TrackingCadence,
 } from "@/modules/agents/services/fleet.service"
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils"
 
 /**
@@ -123,6 +124,9 @@ export function MonitoringTab() {
     reset,
     formState: { isDirty },
   } = useForm<PolicyForm>({ defaultValues: EMPTY })
+
+  // Leaving via the settings rail now asks before discarding these edits.
+  useUnsavedGuard(isDirty)
 
   // The optimistic-concurrency token from `tracking.version`. Retained across edits and sent back as
   // `expected_version`; bumped from each successful save's response.

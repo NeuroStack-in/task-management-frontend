@@ -34,6 +34,7 @@ import { type FeatureKey } from "@/stores/features.store"
 import { toggleFeature } from "@/lib/api"
 import { useEntitlementsStore } from "@/stores/entitlements.store"
 import { Loader } from "@/components/shared/loader"
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils"
 import { useEntitlements } from "../use-entitlements"
 
@@ -166,6 +167,8 @@ export function FeaturesTab() {
   const [saving, setSaving] = useState(false)
   const server = draftFromServer(enabled)
   const dirty = JSON.stringify(draft) !== JSON.stringify(server)
+  // Leaving via the settings rail now asks before discarding this draft.
+  useUnsavedGuard(dirty)
 
   // Adopt server state when it (re)loads — but only when the draft is clean, so a save/reload
   // never clobbers edits in flight. `serverKey` changes only when the server value actually does.
@@ -189,18 +192,23 @@ export function FeaturesTab() {
         await toggleFeature(f.key, draft[f.key])
       }
       toast.success("Feature settings saved")
+      // Push the saved state into the shared store so the nav re-filters right away — `reload()`
+      // only refreshes this page's copy, and without this the owner keeps seeing the section they
+      // just switched off until a full reload.
+      //
+      // **In the success path, not `finally`.** It used to run either way, so a failed save showed
+      // "Couldn't save every change" *and* removed the section from the sidebar anyway: the error
+      // said one thing and the nav said the opposite, with only a hard refresh to resolve it. The
+      // nav must follow what the server accepted, never what the user intended.
+      hydrateShared({
+        allowed: [...allowed],
+        enabled: { ...enabled, ...draft },
+      })
     } catch {
       toast.error("Couldn't save every change. Reloading the current settings.")
     } finally {
       setSaving(false)
       reload() // re-sync to server truth regardless (partial success is possible)
-      // Push the just-saved state into the shared store so the nav re-filters right away. `reload()`
-      // only refreshes this page's copy; without this the owner keeps seeing the section they just
-      // switched off until the next full reload.
-      hydrateShared({
-        allowed: [...allowed],
-        enabled: { ...enabled, ...draft },
-      })
     }
   }
 

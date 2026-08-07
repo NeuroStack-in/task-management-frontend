@@ -27,6 +27,7 @@ import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import { isDomain } from "@/lib/validation";
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils";
 import {
   useOrgRules,
@@ -457,6 +458,8 @@ export function TrackingRulesTab() {
     () => Boolean(doc && draft && JSON.stringify(doc) !== JSON.stringify(draft)),
     [doc, draft],
   );
+  // Leaving via the settings rail now asks before discarding this draft.
+  useUnsavedGuard(dirty);
 
   function patch<K extends keyof RulesDoc>(key: K, value: RulesDoc[K]) {
     setDraft((d) => (d ? { ...d, [key]: value } : d));
