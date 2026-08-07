@@ -225,13 +225,26 @@ export function SignupExperience() {
       }
     } catch (e) {
       setSubmitting(false);
+      // Two different 409s, and they need different instructions — branch on the server's code, not
+      // the status. `slug_taken` means change the workspace address; `email_taken` means this email
+      // already has an account, and telling that person to pick another workspace address sends them
+      // round the loop forever. (`email_taken` is new: create_org used to adopt an existing login
+      // instead of refusing, which is the account-takeover this replaced.)
+      const emailTaken = e instanceof ApiError && e.code === "email_taken";
       const msg =
         e instanceof ApiError && e.status === 409
-          ? "That workspace address is already taken — go back and try another."
+          ? emailTaken
+            ? "An account already uses that email. Sign in instead, or use a different address."
+            : "That workspace address is already taken — go back and try another."
           : e instanceof ApiError
             ? e.message
             : "Couldn't create your workspace. Try again.";
-      setErrors({ "org-plan": msg });
+      // Anchor the message to the field that actually caused it. The error summary collects every
+      // key regardless of step, so this shows either way — but keying it to `signup-email` also
+      // marks the input itself, and stepping back to 0 is what makes that visible. Wizard state is
+      // all held in this component, so nothing entered on steps 1-4 is lost going back.
+      setErrors({ [emailTaken ? "signup-email" : "org-plan"]: msg });
+      if (emailTaken) setStep(0);
       requestAnimationFrame(() => summaryRef.current?.focus());
     }
   };
