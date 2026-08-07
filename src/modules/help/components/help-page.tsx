@@ -1241,7 +1241,10 @@ export function HelpPage() {
       {/* Video player. `key` forces a fresh <video> per title, so switching videos can't leave the
           previous one's buffered stream attached. */}
       <Dialog open={!!playing} onOpenChange={(open) => !open && setPlaying(null)}>
-        <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0">
+        {/* `sm:` prefixed to match the variant DialogContent sets its own width with
+            (`sm:max-w-sm`). An unprefixed `max-w-*` is a different tailwind-merge key, so it
+            loses at every breakpoint above sm — which is why this opened at 384px. */}
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-5xl">
           <DialogHeader className="px-5 pb-3 pt-4">
             <DialogTitle className="text-base">{playing?.title}</DialogTitle>
             <DialogDescription className="text-xs">
@@ -1256,7 +1259,7 @@ export function HelpPage() {
                 title={playing.title}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture"
                 allowFullScreen
-                className="aspect-video w-full border-0 bg-black"
+                className="aspect-video max-h-[72vh] w-full border-0 bg-black"
               />
             ) : (
               <video
@@ -1269,7 +1272,7 @@ export function HelpPage() {
                 // `preload` is irrelevant here (we only mount on click) but explicit beats implicit:
                 // the browser should stream, never fetch the whole file up front.
                 preload="metadata"
-                className="aspect-video w-full bg-black"
+                className="aspect-video max-h-[72vh] w-full bg-black object-contain"
               >
                 Your browser can&apos;t play this video.
               </video>
