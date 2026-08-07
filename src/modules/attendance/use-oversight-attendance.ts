@@ -151,10 +151,20 @@ async function mapWithConcurrency<T, R>(
  * Enrich per-person rows (day / today mode) with clock-in/out + worked minutes from the per-user
  * timesheet endpoint. One call per row, bounded to 4 in flight; a failed row just keeps no clock data
  * (renders `—`) rather than failing the table.
+ *
+ * `deriveStatus` (today only) also re-derives in/out from the same response.
+ *
+ * **Why status is decided here and not by the caller.** Today's in/out used to come from the device
+ * fleet while these columns came from the timesheet — two independent signals that routinely
+ * disagreed. Someone with their laptop on but no timer running read as "In now" with `—` for every
+ * clock column, and someone who had clocked out at 21:06 still read as "In now" *with* a clock-out
+ * time. Deciding both from one response makes them consistent by construction: a row can no longer
+ * claim someone is working while showing the moment they stopped.
  */
 async function enrichClock(
   rows: OversightRow[],
   iso: string,
+  deriveStatus = false,
 ): Promise<OversightRow[]> {
   const details = await mapWithConcurrency(rows, 4, (r) =>
     getUserDay(r.userId, iso).then(
@@ -164,15 +174,18 @@ async function enrichClock(
   );
   return rows.map((r, i) => {
     const d = details[i];
-    return d
-      ? {
-          ...r,
-          clockIn: d.clock_in,
-          clockOut: d.clock_out,
-          workedMinutes: d.worked_minutes,
-          running: d.running,
-        }
-      : r;
+    // `d === null` is a *failed* call, not an absent session — we don't know whether they're working,
+    // so the row keeps whatever the caller derived (today: live device presence) rather than
+    // asserting "Out" and quietly marking a working person absent.
+    if (!d) return r;
+    return {
+      ...r,
+      clockIn: d.clock_in,
+      clockOut: d.clock_out,
+      workedMinutes: d.worked_minutes,
+      running: d.running,
+      ...(deriveStatus ? { status: d.running ? "in" : "out" } : {}),
+    };
   });
 }
 
@@ -444,10 +457,13 @@ export function useOversightAttendance({
               status: onlineIds.has(userId) ? "in" : "out",
             }))
             .sort((a, b) => a.name.localeCompare(b.name));
-          const present = baseRows.filter((r) => r.status === "in").length;
-          // Clock-in/out for today comes from each person's live TIME# sessions.
-          const rows = await enrichClock(baseRows, todayIso);
+          // Clock-in/out for today comes from each person's live TIME# sessions — and so does the
+          // in/out status now (`deriveStatus`). The fleet-derived status above survives only as the
+          // fallback for a row whose timesheet call failed.
+          const rows = await enrichClock(baseRows, todayIso, true);
           if (!live) return;
+          // Counted after enrichment, so the headline figure agrees with the roster beneath it.
+          const present = rows.filter((r) => r.status === "in").length;
           // "vs recent" baseline: the mean attendance rate over the trailing closed workdays, honouring
           // the department filter. Best-effort — a failure just hides the delta, never the page.
           let benchmarkRate: number | null = null;

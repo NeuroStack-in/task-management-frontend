@@ -81,6 +81,24 @@ const STATUS_META: Record<string, { label: string; badge: string; dot: string }>
 const statusMeta = (s: string) =>
   STATUS_META[s] ?? { label: s, badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" };
 
+/**
+ * Sort weight per status — who a manager needs to see first, not alphabetical order.
+ *
+ * Explicit because the previous comparator sorted on the *label*, so the useful ordering was an
+ * accident of spelling ("In now" < "Out") that any future rename would silently reverse. Unknown
+ * statuses sort last rather than crashing, matching `statusMeta`'s guard.
+ */
+const STATUS_RANK: Record<string, number> = {
+  in: 0,
+  present: 1,
+  partial: 2,
+  leave: 3,
+  absent: 4,
+  out: 5,
+  non_workday: 6,
+};
+const statusRank = (s?: string) => STATUS_RANK[s ?? ""] ?? 99;
+
 /** Epoch ms → local `HH:MM`, or `—`. Client-only (the log renders after mount), so no SSR skew. */
 const fmtTime = (ms?: number) =>
   ms
@@ -112,8 +130,12 @@ export function AttendanceLog({
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
+  // Today's roster leads with whoever is working right now — that is the question the live view is
+  // open to answer, and alphabetical order buries it (four In-now people scattered through seven
+  // Out rows). Name stays the tiebreak, and the column headers still re-sort on demand. A past day
+  // is a record rather than a live board, so it keeps opening alphabetically.
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
-    key: "name",
+    key: mode === "today" ? "status" : "name",
     dir: "asc",
   });
   const [page, setPage] = useState(0);
@@ -147,7 +169,7 @@ export function AttendanceLog({
     out.sort((a, b) => {
       if (sort.key === "rate") return ((a.rate ?? 0) - (b.rate ?? 0)) * dir || a.name.localeCompare(b.name);
       if (sort.key === "status")
-        return (statusMeta(a.status ?? "").label).localeCompare(statusMeta(b.status ?? "").label) * dir ||
+        return (statusRank(a.status) - statusRank(b.status)) * dir ||
           a.name.localeCompare(b.name);
       return a.name.localeCompare(b.name) * dir;
     });
