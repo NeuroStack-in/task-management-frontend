@@ -33,13 +33,19 @@ const GESTURES = [
 
 function setGestures(map: MaplibreNS.Map, on: boolean) {
   for (const name of GESTURES) {
-    // `touchPitch` is absent on older builds — treat the whole list as best-effort.
-    const h = (map as unknown as Record<string, { enable(): void; disable(): void } | undefined>)[
-      name
-    ];
-    if (!h) continue;
-    if (on) h.enable();
-    else h.disable();
+    // Best-effort per handler. `touchPitch` is absent on older builds, and locking the map is a
+    // convenience — it must never be able to take the map down with it, which is exactly what
+    // happened when a throw here aborted setup before the map was registered.
+    try {
+      const h = (map as unknown as Record<string, { enable(): void; disable(): void } | undefined>)[
+        name
+      ];
+      if (!h) continue;
+      if (on) h.enable();
+      else h.disable();
+    } catch {
+      /* handler unavailable on this build — leave it as it is */
+    }
   }
 }
 
@@ -185,6 +191,10 @@ export function LiveMap({
         attributionControl: { compact: true },
       });
       map.addControl(new gl.NavigationControl({ showCompass: false }), "top-right");
+      // Register the map BEFORE anything optional runs. Locking is a convenience; if it fails, the
+      // map must still be usable. Doing this last meant a throw in between left `mapRef` null, so
+      // nothing was ever drawn and the toggle had no map to act on.
+      mapRef.current = map;
       // Locked from the first frame, before the user can wheel over it. The zoom buttons stay live
       // — those take a deliberate click and can't be triggered by scrolling past.
       setGestures(map, false);
@@ -192,7 +202,6 @@ export function LiveMap({
         map.resize();
         setReady((r) => r + 1);
       });
-      mapRef.current = map;
     })();
     return () => {
       cancelled = true;
@@ -345,13 +354,17 @@ export function LiveMap({
   }, [ready, geoKey, editableCenter]);
 
   return (
-    <div
-      className={cn(
-        "relative z-0 aspect-[5/2] w-full overflow-hidden rounded-2xl border",
-        className,
-      )}
-    >
-      <div ref={containerRef} className="absolute inset-0" />
+    // Wrapper exists only to position the button. The map's own container keeps exactly the classes
+    // it had before — it sizes itself from them, and moving them here left MapLibre with a container
+    // it could not measure, so nothing rendered.
+    <div className="relative">
+      <div
+        ref={containerRef}
+        className={cn(
+          "relative z-0 aspect-[5/2] w-full overflow-hidden rounded-2xl border",
+          className,
+        )}
+      />
 
       {/* Bottom-left: clear of the zoom buttons (top-right) and the attribution (bottom-right). */}
       <Button
