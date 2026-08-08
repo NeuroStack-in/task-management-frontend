@@ -3,9 +3,45 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import type * as MaplibreNS from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
+import { Hand, Lock } from "lucide-react";
 import { initials } from "@/lib/format";
 import type { GeoPoint, Geofence } from "@/modules/locations/types";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+/**
+ * Every MapLibre gesture handler, so the map can be locked as a unit.
+ *
+ * A map that eats the page's scroll wheel is a scroll trap: this one sits mid-page above a filter
+ * row and a legend, and any wheel gesture that crossed it zoomed the map instead of scrolling past
+ * it — leaving the bottom of the page unreachable. Locking by default makes the map behave like an
+ * image until it is deliberately switched on.
+ *
+ * Named rather than passing `interactive: false` at construction, because that option omits the
+ * handlers entirely and they can never be turned back on.
+ */
+const GESTURES = [
+  "scrollZoom",
+  "boxZoom",
+  "dragRotate",
+  "dragPan",
+  "keyboard",
+  "doubleClickZoom",
+  "touchZoomRotate",
+  "touchPitch",
+] as const;
+
+function setGestures(map: MaplibreNS.Map, on: boolean) {
+  for (const name of GESTURES) {
+    // `touchPitch` is absent on older builds — treat the whole list as best-effort.
+    const h = (map as unknown as Record<string, { enable(): void; disable(): void } | undefined>)[
+      name
+    ];
+    if (!h) continue;
+    if (on) h.enable();
+    else h.disable();
+  }
+}
 
 export type MarkerVariant =
   | "avatar"
@@ -127,6 +163,8 @@ export function LiveMap({
   const markersRef = useRef<MaplibreNS.Marker[]>([]);
   const centerMarkerRef = useRef<MaplibreNS.Marker | null>(null);
   const [ready, setReady] = useState(0);
+  /** Whether the map may respond to gestures. Off until asked for — see `GESTURES`. */
+  const [unlocked, setUnlocked] = useState(false);
 
   const geoKey = geofence
     ? `${geofence.center.lat.toFixed(5)},${geofence.center.lng.toFixed(5)},${geofence.radiusM}`
@@ -147,6 +185,9 @@ export function LiveMap({
         attributionControl: { compact: true },
       });
       map.addControl(new gl.NavigationControl({ showCompass: false }), "top-right");
+      // Locked from the first frame, before the user can wheel over it. The zoom buttons stay live
+      // — those take a deliberate click and can't be triggered by scrolling past.
+      setGestures(map, false);
       map.on("load", () => {
         map.resize();
         setReady((r) => r + 1);
@@ -162,6 +203,21 @@ export function LiveMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Apply the lock. Keyed on `ready` too, so it re-asserts once the style has loaded rather than
+  // relying solely on the call made at construction.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map) setGestures(map, unlocked);
+  }, [unlocked, ready]);
+
+  // Placing the office pin means clicking an exact spot, which usually means panning to find it
+  // first — so entering edit mode unlocks the map rather than making the user ask twice. Leaving
+  // edit mode does NOT re-lock: by then they are deliberately working with the map, and yanking
+  // control back mid-gesture is worse than a map that stays on until dismissed.
+  useEffect(() => {
+    if (editableCenter) setUnlocked(true);
+  }, [editableCenter]);
 
   // Re-center when the key changes.
   useEffect(() => {
@@ -290,11 +346,30 @@ export function LiveMap({
 
   return (
     <div
-      ref={containerRef}
       className={cn(
         "relative z-0 aspect-[5/2] w-full overflow-hidden rounded-2xl border",
         className,
       )}
-    />
+    >
+      <div ref={containerRef} className="absolute inset-0" />
+
+      {/* Bottom-left: clear of the zoom buttons (top-right) and the attribution (bottom-right). */}
+      <Button
+        type="button"
+        size="sm"
+        variant={unlocked ? "default" : "secondary"}
+        onClick={() => setUnlocked((v) => !v)}
+        aria-pressed={unlocked}
+        className="absolute bottom-3 left-3 z-10 gap-1.5 shadow-md"
+        title={
+          unlocked
+            ? "Lock the map so the page scrolls normally over it"
+            : "Unlock the map to pan and zoom"
+        }
+      >
+        {unlocked ? <Lock className="size-3.5" /> : <Hand className="size-3.5" />}
+        {unlocked ? "Lock map" : "Use map"}
+      </Button>
+    </div>
   );
 }
