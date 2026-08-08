@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Clock } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,21 +40,11 @@ export function TimesheetHistory() {
 
   // Client-side, for the same hydration reason the default date is: `new Date()` in a render path
   // would differ between server and client.
-  const [shortcuts, setShortcuts] = useState({
-    yesterday: "",
-    dayBefore: "",
-    dayBeforeLabel: "",
-  });
+  const [shortcuts, setShortcuts] = useState({ yesterday: "" });
   useEffect(() => {
     const y = new Date();
     y.setDate(y.getDate() - 1);
-    const b = new Date();
-    b.setDate(b.getDate() - 2);
-    setShortcuts({
-      yesterday: localIso(y),
-      dayBefore: localIso(b),
-      dayBeforeLabel: b.toLocaleDateString(undefined, { weekday: "short" }),
-    });
+    setShortcuts({ yesterday: localIso(y) });
   }, []);
   const showing = Boolean(date);
 
@@ -66,8 +56,10 @@ export function TimesheetHistory() {
           Previous days
         </CardTitle>
         <div className="flex items-center gap-1.5">
-          {/* Shortcuts for the two days people actually ask for, so the common case is one click
-              rather than opening a calendar and finding the date. */}
+          {/* One shortcut, for the day people ask for most. The second chip used to be the day
+              before, labelled with its bare weekday ("Thu") — a different kind of label from
+              "Yesterday" sitting right beside it, and ambiguous about *which* Thursday. Stepping
+              back a day at a time now does that job unambiguously. */}
           <Button
             variant={date === shortcuts.yesterday ? "secondary" : "ghost"}
             size="sm"
@@ -76,13 +68,17 @@ export function TimesheetHistory() {
           >
             Yesterday
           </Button>
+          {/* Same day-stepper as Analytics and Locations, so every date control in the app walks
+              days identically. `disabled` while the date is still resolving on the client, and the
+              forward step stops at today for the same reason `max` does. */}
           <Button
-            variant={date === shortcuts.dayBefore ? "secondary" : "ghost"}
-            size="sm"
-            className="hidden h-8 px-2.5 text-xs sm:inline-flex"
-            onClick={() => setDate(shortcuts.dayBefore)}
+            variant="outline"
+            size="icon-sm"
+            aria-label="Previous day"
+            disabled={!date}
+            onClick={() => setDate((d) => (d ? shiftIso(d, -1) : d))}
           >
-            {shortcuts.dayBeforeLabel}
+            <ChevronLeft className="size-4" />
           </Button>
           {/* The app's own picker, not `<input type="date">`. This was the only raw date input left
               in the codebase: it rendered the browser's native calendar, which looks nothing like
@@ -91,6 +87,15 @@ export function TimesheetHistory() {
               `max` still caps it at today — a future day has no entries by construction, and its
               empty state reads as data loss. */}
           <DatePicker value={date} onChange={setDate} max={max} className="w-[10.5rem]" />
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Next day"
+            disabled={!date || date >= max}
+            onClick={() => setDate((d) => (d && d < max ? shiftIso(d, 1) : d))}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
         </div>
       </CardHeader>
 
@@ -175,4 +180,16 @@ function localIso(d: Date): string {
   const m = `${d.getMonth() + 1}`.padStart(2, "0");
   const day = `${d.getDate()}`.padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/**
+ * Move an ISO date by whole days.
+ *
+ * Built from the date's own parts rather than `new Date(iso)`, which parses a bare `YYYY-MM-DD` as
+ * UTC midnight — west of Greenwich that is the *previous* day once read back locally, so stepping
+ * would slip a day. `Date` still normalises month and year rollovers here.
+ */
+function shiftIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return localIso(new Date(y, m - 1, d + days));
 }
