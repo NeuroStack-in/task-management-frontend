@@ -19,6 +19,7 @@ import {
   type DayCell,
 } from "../lib/calendar";
 import { LogDatePicker } from "./attendance-log";
+import { useWorkdays } from "@/hooks/use-working-hours";
 import {
   useMyAttendance,
   ymd,
@@ -79,9 +80,10 @@ export function PersonalAttendanceView() {
   const [selected, setSelected] = useState({ ...TODAY });
   const view = { year: selected.year, month: selected.month };
 
+  const workdays = useWorkdays();
   const weeks = useMemo(
-    () => monthMatrix(view.year, view.month),
-    [view.year, view.month],
+    () => monthMatrix(view.year, view.month, workdays),
+    [view.year, view.month, workdays],
   );
 
   // Two range reads from the real backend (GET /v1/me/attendance):

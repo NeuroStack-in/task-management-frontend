@@ -12,6 +12,8 @@
  */
 export { isCounted, type DayStatus } from "@/types/attendance";
 
+import { DEFAULT_WORKDAYS, type IsoWeekday } from "@/lib/workdays";
+
 /**
  * "Today" and the month the calendar opens on — the **real current date**.
  *
@@ -36,7 +38,7 @@ export interface DayCell {
   inMonth: boolean;
   /** 0 = Mon … 6 = Sun. */
   weekday: number;
-  /** Weekday (Mon–Fri) and in-month. */
+  /** One of the org's **scheduled** days (see `monthMatrix`'s `workdays`) and in-month. */
   isWorkday: boolean;
   isToday: boolean;
 }
@@ -58,15 +60,24 @@ export function isFutureDate(year: number, month: number, day: number): boolean 
 /**
  * Six-week (Monday-first) matrix for a month, including leading/trailing days
  * from adjacent months (flagged `inMonth: false`).
+ *
+ * `workdays` are the org's scheduled ISO weekdays (1 = Mon … 7 = Sun) — pass `useWorkdays()` so the
+ * grid greys out the same days the backend treats as off. Defaults to Mon–Fri, which is what the
+ * server assumes for an org that has never configured a schedule.
  */
-export function monthMatrix(year: number, month: number): DayCell[][] {
+export function monthMatrix(
+  year: number,
+  month: number,
+  workdays: readonly IsoWeekday[] = DEFAULT_WORKDAYS,
+): DayCell[][] {
   const firstWeekday = mondayIndex(new Date(year, month, 1).getDay());
   const total = daysInMonth(year, month);
   const prevTotal = daysInMonth(year, month - 1);
 
   const make = (d: number, m: number, y: number, inMonth: boolean): DayCell => {
     const weekday = mondayIndex(new Date(y, m, d).getDay());
-    const isWorkday = inMonth && weekday < 5;
+    // `weekday` is 0 = Mon; ISO is 1 = Mon.
+    const isWorkday = inMonth && workdays.includes((weekday + 1) as IsoWeekday);
     return {
       day: d,
       month: m,
@@ -74,8 +85,7 @@ export function monthMatrix(year: number, month: number): DayCell[][] {
       inMonth,
       weekday,
       isWorkday,
-      isToday:
-        inMonth && y === TODAY.year && m === TODAY.month && d === TODAY.day,
+      isToday: inMonth && y === TODAY.year && m === TODAY.month && d === TODAY.day,
     };
   };
 
@@ -100,8 +110,18 @@ export function monthMatrix(year: number, month: number): DayCell[][] {
 }
 
 export const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 export const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

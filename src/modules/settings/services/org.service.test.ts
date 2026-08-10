@@ -9,9 +9,11 @@ import { apiFetch } from "@/lib/api";
 import {
   closeOrg,
   exportOrg,
+  getWorkingHours,
   reopenOrg,
   transferOwnership,
   updateOrg,
+  updateWorkingHours,
 } from "./org.service";
 
 const mock = vi.mocked(apiFetch);
@@ -49,6 +51,19 @@ describe("org.service route contract", () => {
     expect(mock).toHaveBeenCalledWith("/v1/org/export", {
       method: "POST",
       body: JSON.stringify({ confirm: "acme" }),
+    });
+  });
+
+  it("getWorkingHours reads the singleton", async () => {
+    await getWorkingHours();
+    expect(mock).toHaveBeenCalledWith("/v1/org/working-hours");
+  });
+
+  it("updateWorkingHours PATCHes only the fields given", async () => {
+    await updateWorkingHours({ workdays: [1, 2, 3, 4, 7] });
+    expect(mock).toHaveBeenCalledWith("/v1/org/working-hours", {
+      method: "PATCH",
+      body: JSON.stringify({ workdays: [1, 2, 3, 4, 7] }),
     });
   });
 });

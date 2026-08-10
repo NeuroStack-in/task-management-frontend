@@ -28,6 +28,8 @@ import {
 import { listFleet } from "@/modules/agents/services/fleet.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import { monthMatrix, MONTH_NAMES } from "./lib/calendar";
+import { useWorkdays } from "@/hooks/use-working-hours";
+import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 
 export type AttendanceRange = "today" | "week" | "month" | "custom" | "day";
 
@@ -108,7 +110,6 @@ const EMPTY_COUNTS: OversightCounts = { present: 0, late: 0, leave: 0, total: 0 
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const isoOf = (y: number, m: number, d: number) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
-const mondayIndex = (jsDay: number) => (jsDay + 6) % 7;
 
 const shortDate = (iso: string) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -189,13 +190,19 @@ async function enrichClock(
   });
 }
 
-/** The **closed** workdays (ISO) a past range covers. `today`/future are never fetched (no record). */
+/**
+ * The **closed** workdays (ISO) a past range covers. `today`/future are never fetched (no record).
+ *
+ * `workdays` is the org's configured schedule, so a Sun–Thu or six-day org fans out over the days it
+ * actually works instead of a hardcoded Mon–Fri.
+ */
 function rangeDays(
   range: AttendanceRange,
   date: AttendanceDate,
   start: string,
   end: string,
   todayIso: string,
+  workdays: readonly IsoWeekday[],
 ): string[] {
   if (range === "today") return [];
   if (range === "day") {
@@ -208,7 +215,7 @@ function rangeDays(
     for (let i = 6; i >= 0; i--) {
       const d = new Date(t);
       d.setDate(t.getDate() - i);
-      if (mondayIndex(d.getDay()) < 5) {
+      if (isWorkday(d, workdays)) {
         const iso = isoOf(d.getFullYear(), d.getMonth(), d.getDate());
         if (iso < todayIso) out.push(iso);
       }
@@ -216,7 +223,7 @@ function rangeDays(
     return out;
   }
   if (range === "month") {
-    return monthMatrix(date.year, date.month)
+    return monthMatrix(date.year, date.month, workdays)
       .flat()
       .filter((c) => c.inMonth && c.isWorkday)
       .map((c) => isoOf(c.year, c.month, c.day))
@@ -230,7 +237,7 @@ function rangeDays(
   const d = new Date(s);
   let guard = 0;
   while (d.getTime() <= e.getTime() && guard < 400) {
-    if (mondayIndex(d.getDay()) < 5) {
+    if (isWorkday(d, workdays)) {
       const iso = isoOf(d.getFullYear(), d.getMonth(), d.getDate());
       if (iso < todayIso) out.push(iso);
     }
@@ -282,18 +289,35 @@ function dayPoint(
     else if (u.status === "leave") leave += 1;
     else absent += 1;
   }
-  return { iso, present, leave, absent, total, rate: total ? Math.round((present / total) * 100) : 0 };
+  return {
+    iso,
+    present,
+    leave,
+    absent,
+    total,
+    rate: total ? Math.round((present / total) * 100) : 0,
+  };
 }
 
-/** The last `count` **closed** workdays before `todayIso`, chronological. Weekends skipped. */
-function trailingWorkdays(todayIso: string, count: number): string[] {
+/**
+ * The last `count` **closed** workdays before `todayIso`, chronological. Days the org does not
+ * schedule are skipped — they resolve `non_workday` server-side and would drag the benchmark down
+ * with days nobody was expected to work.
+ */
+function trailingWorkdays(
+  todayIso: string,
+  count: number,
+  workdays: readonly IsoWeekday[],
+): string[] {
   const [y, m, d] = todayIso.split("-").map(Number);
   const cur = new Date(y, m - 1, d);
   const out: string[] = [];
   let guard = 0;
-  while (out.length < count && guard < 60) {
+  // The guard bounds the walk-back; a 1-day week needs ~7 calendar days per workday found.
+  const limit = count * 7 + 14;
+  while (out.length < count && guard < limit) {
     cur.setDate(cur.getDate() - 1);
-    if (mondayIndex(cur.getDay()) < 5) {
+    if (isWorkday(cur, workdays)) {
       out.push(isoOf(cur.getFullYear(), cur.getMonth(), cur.getDate()));
     }
     guard += 1;
@@ -373,7 +397,8 @@ export function useOversightAttendance({
           // `TimeTrackSelf` by construction — would be marked absent every working day and pull the
           // org attendance rate down with them. Keyed on the permission, not `is_owner`: see
           // `contributorRoleIds`.
-          if (contributors !== null && e.role_id && !contributors.has(e.role_id)) continue;
+          if (contributors !== null && e.role_id && !contributors.has(e.role_id))
+            continue;
           const dName = depts.get(e.department_id) ?? "—";
           m.set(e.user_id, {
             name: e.name,
@@ -403,9 +428,10 @@ export function useOversightAttendance({
     () => isoOf(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()),
     [],
   );
+  const workdays = useWorkdays();
   const dayList = useMemo(
-    () => rangeDays(range, date, start, end, todayIso),
-    [range, date.year, date.month, date.day, start, end, todayIso],
+    () => rangeDays(range, date, start, end, todayIso, workdays),
+    [range, date.year, date.month, date.day, start, end, todayIso, workdays],
   );
   const label = useMemo(
     () => rangeLabel(range, date, start, end),
@@ -469,11 +495,17 @@ export function useOversightAttendance({
           let benchmarkRate: number | null = null;
           if (benchmark) {
             const pts = (
-              await fetchDayPoints(trailingWorkdays(todayIso, BENCHMARK_DAYS), dir, dept)
+              await fetchDayPoints(
+                trailingWorkdays(todayIso, BENCHMARK_DAYS, workdays),
+                dir,
+                dept,
+              )
             ).filter((p) => p.total > 0);
             if (!live) return;
             if (pts.length) {
-              benchmarkRate = Math.round(pts.reduce((s, p) => s + p.rate, 0) / pts.length);
+              benchmarkRate = Math.round(
+                pts.reduce((s, p) => s + p.rate, 0) / pts.length,
+              );
             }
           }
           setState({
@@ -602,7 +634,7 @@ export function useOversightAttendance({
     return () => {
       live = false;
     };
-  }, [dir, range, dept, dayList, benchmark, todayIso]);
+  }, [dir, range, dept, dayList, benchmark, todayIso, workdays]);
 
   return {
     counts: state.counts,

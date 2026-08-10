@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { MONTH_NAMES, WEEKDAY_LABELS, monthMatrix, type DayCell } from "../lib/calendar";
+import { useWorkdays } from "@/hooks/use-working-hours";
 import type { ApiDayResponse, ApiDaySummary } from "../services/attendance.service";
 
 interface AttendanceDate {
@@ -76,7 +77,11 @@ export function AttendanceCalendar({
   loading: boolean;
 }) {
   const view = { year: selected.year, month: selected.month };
-  const weeks = useMemo(() => monthMatrix(view.year, view.month), [view.year, view.month]);
+  const workdays = useWorkdays();
+  const weeks = useMemo(
+    () => monthMatrix(view.year, view.month, workdays),
+    [view.year, view.month, workdays],
+  );
 
   const step = (dir: -1 | 1) => {
     let m = selected.month + dir;

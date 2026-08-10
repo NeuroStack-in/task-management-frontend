@@ -12,12 +12,7 @@ import {
 } from "recharts";
 import { Activity, ChevronDown } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ActiveInactiveRing } from "@/modules/dashboard/components/insight-widgets";
@@ -26,6 +21,8 @@ import { AiReportCard } from "./ai-report-card";
 import { useOrgActivity } from "../use-activity";
 import { useAiReport } from "../use-reports";
 import { useOrgActivityRange } from "../use-activity-range";
+import { useWorkdays } from "@/hooks/use-working-hours";
+import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 
 /**
  * Activity — the preview's Analytics layout (granularity toggle · AI report card · activity area
@@ -90,17 +87,18 @@ function shiftIso(iso: string, days: number): string {
 }
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** Mon–Fri ISO dates of the week containing `anchor`. */
-function weekWorkdays(anchor: string): string[] {
+/** The org's **scheduled** ISO dates in the week containing `anchor`. */
+function weekWorkdays(anchor: string, workdays: readonly IsoWeekday[]): string[] {
   const d = parseIso(anchor);
   const dow = d.getDay(); // 0 Sun … 6 Sat
   const mondayOffset = dow === 0 ? -6 : 1 - dow;
   const monday = shiftIso(anchor, mondayOffset);
-  return [0, 1, 2, 3, 4].map((i) => shiftIso(monday, i));
+  // `workdays` is ISO (1 = Mon), so day N sits N-1 days after the week's Monday.
+  return [...workdays].sort((a, b) => a - b).map((iso) => shiftIso(monday, iso - 1));
 }
 
-/** All Mon–Fri ISO dates of the month containing `anchor`. */
-function monthWorkdays(anchor: string): string[] {
+/** All the org's **scheduled** ISO dates in the month containing `anchor`. */
+function monthWorkdays(anchor: string, workdays: readonly IsoWeekday[]): string[] {
   const d = parseIso(anchor);
   const year = d.getFullYear();
   const month = d.getMonth();
@@ -108,8 +106,7 @@ function monthWorkdays(anchor: string): string[] {
   const out: string[] = [];
   for (let day = 1; day <= last; day++) {
     const cur = new Date(year, month, day);
-    const dow = cur.getDay();
-    if (dow >= 1 && dow <= 5) out.push(isoOf(cur));
+    if (isWorkday(cur, workdays)) out.push(isoOf(cur));
   }
   return out;
 }
@@ -131,13 +128,15 @@ export function ActivityTab() {
   // ISO-week / month report — separately cached server-side), the date anchors which one.
   const ai = useAiReport(granularity, date);
 
+  const workdays = useWorkdays();
+
   // Weekly / Monthly build the trend by fanning per-day org rollups; Daily has no hourly source.
   const rangeDates = useMemo<string[]>(() => {
     if (!date) return [];
-    if (granularity === "weekly") return weekWorkdays(anchor);
-    if (granularity === "monthly") return monthWorkdays(anchor);
+    if (granularity === "weekly") return weekWorkdays(anchor, workdays);
+    if (granularity === "monthly") return monthWorkdays(anchor, workdays);
     return [];
-  }, [granularity, date, anchor]);
+  }, [granularity, date, anchor, workdays]);
 
   const range = useOrgActivityRange(rangeDates);
 
@@ -183,9 +182,12 @@ export function ActivityTab() {
   const inactive = Math.max(0, totalPeople - scored);
 
   const catTotal = rollup
-    ? rollup.productive_sec_total + rollup.neutral_sec_total + rollup.distracting_sec_total
+    ? rollup.productive_sec_total +
+      rollup.neutral_sec_total +
+      rollup.distracting_sec_total
     : 0;
-  const prodPct = catTotal > 0 ? Math.round((rollup!.productive_sec_total / catTotal) * 100) : 0;
+  const prodPct =
+    catTotal > 0 ? Math.round((rollup!.productive_sec_total / catTotal) * 100) : 0;
 
   // AI narrative: real, or an honest note when locked / loading / unavailable — never a fabricated paragraph.
   const summary = useMemo(() => {
@@ -203,7 +205,11 @@ export function ActivityTab() {
     if (!rollup || rollup.avg_score === null) return [];
     return [
       { label: "People scored", value: `${rollup.scored_people}/${rollup.total_people}` },
-      { label: "Team avg score", value: `${Math.round(rollup.avg_score)}`, hint: "/ 100" },
+      {
+        label: "Team avg score",
+        value: `${Math.round(rollup.avg_score)}`,
+        hint: "/ 100",
+      },
       { label: "Active", value: fmtHours(rollup.active_sec_total) },
       { label: "Productive time", value: `${prodPct}%` },
     ];
@@ -212,8 +218,8 @@ export function ActivityTab() {
   return (
     <div className="space-y-4">
       {/* Range filter: granularity + specific date */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card px-4 py-2.5 shadow-soft">
-        <div className="flex rounded-full border bg-background p-0.5">
+      <div className="bg-card shadow-soft flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-2.5">
+        <div className="bg-background flex rounded-full border p-0.5">
           {GRANULARITIES.map((g) => (
             <button
               key={g.key}
@@ -230,7 +236,7 @@ export function ActivityTab() {
             </button>
           ))}
         </div>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+        <label className="text-muted-foreground flex items-center gap-2 text-sm">
           Date
           <DatePicker
             value={date}
@@ -285,8 +291,18 @@ export function ActivityTab() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="var(--border)" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
-                  <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  />
+                  <YAxis
+                    domain={[0, 100]}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  />
                   <Tooltip
                     contentStyle={{
                       background: "var(--popover)",
@@ -296,7 +312,15 @@ export function ActivityTab() {
                       color: "var(--popover-foreground)",
                     }}
                   />
-                  <Area type="monotone" dataKey="active" stroke="var(--chart-1)" fill="url(#fillActiveHr)" strokeWidth={2} name="Active %" connectNulls />
+                  <Area
+                    type="monotone"
+                    dataKey="active"
+                    stroke="var(--chart-1)"
+                    fill="url(#fillActiveHr)"
+                    strokeWidth={2}
+                    name="Active %"
+                    connectNulls
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -325,18 +349,24 @@ export function ActivityTab() {
                     <div key={cat.key} className="space-y-1">
                       <div className="flex items-center justify-between text-sm">
                         <span className="flex items-center gap-2">
-                          <span className="size-2.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                          <span
+                            className="size-2.5 rounded-full"
+                            style={{ backgroundColor: cat.color }}
+                          />
                           {cat.label}
                         </span>
                         <span className="font-medium tabular-nums">{pct}%</span>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: cat.color }} />
+                      <div className="bg-muted h-2 overflow-hidden rounded-full">
+                        <div
+                          className="h-full rounded-full"
+                          style={{ width: `${pct}%`, backgroundColor: cat.color }}
+                        />
                       </div>
                     </div>
                   );
                 })}
-                <p className="mt-auto pt-1 text-xs text-muted-foreground">
+                <p className="text-muted-foreground mt-auto pt-1 text-xs">
                   Based on {fmtHours(catTotal)} of categorised activity across the team.
                 </p>
               </>
@@ -357,7 +387,7 @@ export function ActivityTab() {
         <button
           type="button"
           onClick={() => setShowUsage((v) => !v)}
-          className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-sm font-medium transition-colors"
         >
           <ChevronDown
             className={cn("size-4 transition-transform", showUsage && "rotate-180")}
@@ -413,11 +443,11 @@ function UsageList({ title, items }: { title: string; items: UsageItem[] }) {
                   />
                   {it.name}
                 </span>
-                <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                <span className="text-muted-foreground font-mono text-xs tabular-nums">
                   {formatMinutes(it.minutes)}
                 </span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="bg-muted h-1.5 overflow-hidden rounded-full">
                 <div
                   className="h-full rounded-full"
                   style={{

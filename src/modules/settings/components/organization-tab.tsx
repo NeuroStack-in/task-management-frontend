@@ -25,6 +25,7 @@ import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { DepartmentsManager } from "./departments-manager"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
+import { WorkingDaysManager } from "./org/working-days-manager"
 import { HolidaysManager } from "./org/holidays-manager"
 import { PoliciesManager } from "./org/policies-manager"
 import { Loader } from "@/components/shared/loader"
@@ -398,6 +399,7 @@ export function OrganizationTab() {
       <DepartmentsManager />
       <TeamsManager />
       <LocationsManager />
+      <WorkingDaysManager />
       <HolidaysManager />
       <PoliciesManager />
 

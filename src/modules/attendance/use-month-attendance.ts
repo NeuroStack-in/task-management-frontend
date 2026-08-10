@@ -22,6 +22,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getDayOversight, type ApiDayResponse } from "./services/attendance.service";
 import { monthMatrix } from "./lib/calendar";
+import { useWorkdays } from "@/hooks/use-working-hours";
 
 /** Run `fn` over `items` with at most `limit` in flight. Mirrors `use-projects-data`. */
 async function mapWithConcurrency<T, R>(
@@ -62,19 +63,23 @@ export function useMonthAttendance(year: number, month: number): MonthAttendance
   const [nonce, setNonce] = useState(0);
 
   // Today's iso, computed once client-side (avoids SSR drift). Days ≥ today are open → skip.
-  const todayIso = useRef(isoOf(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()));
+  const todayIso = useRef(
+    isoOf(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()),
+  );
+
+  const workdays = useWorkdays();
 
   // The closed workdays of the visible month — what we actually fetch.
   // `year === 0` is the caller's "date not resolved yet" sentinel (the date defaults client-side in
   // an effect): fetch nothing until a real month arrives, or we'd fire ~22 requests for year 0.
   const targets = useMemo(() => {
     if (year <= 0) return [];
-    return monthMatrix(year, month)
+    return monthMatrix(year, month, workdays)
       .flat()
       .filter((c) => c.inMonth && c.isWorkday)
       .map((c) => isoOf(c.year, c.month, c.day))
       .filter((iso) => iso < todayIso.current);
-  }, [year, month]);
+  }, [year, month, workdays]);
 
   useEffect(() => {
     let live = true;
@@ -105,7 +110,12 @@ export function useMonthAttendance(year: number, month: number): MonthAttendance
         setDays(map);
       })
       .catch((e) => {
-        if (live) setError(isForbidden(e) ? "You don't have access to team attendance." : "Couldn't load the month. Retry.");
+        if (live)
+          setError(
+            isForbidden(e)
+              ? "You don't have access to team attendance."
+              : "Couldn't load the month. Retry.",
+          );
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -120,5 +130,10 @@ export function useMonthAttendance(year: number, month: number): MonthAttendance
 }
 
 function isForbidden(e: unknown): boolean {
-  return typeof e === "object" && e !== null && "status" in e && (e as { status: number }).status === 403;
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "status" in e &&
+    (e as { status: number }).status === 403
+  );
 }

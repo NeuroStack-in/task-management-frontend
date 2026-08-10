@@ -206,10 +206,7 @@ export function createLocation(
 }
 
 /** `PATCH /v1/org/locations/{id}` — edit a location. Needs `settings:manage`. */
-export function updateLocation(
-  id: string,
-  body: LocationInput,
-): Promise<OrgLocation> {
+export function updateLocation(id: string, body: LocationInput): Promise<OrgLocation> {
   return apiFetch<OrgLocation>(`/v1/org/locations/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(body),
@@ -220,6 +217,50 @@ export function updateLocation(
 export async function deleteLocation(id: string): Promise<void> {
   await apiFetch(`/v1/org/locations/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+// ── Working hours (singleton) — `GET`/`PATCH /v1/org/working-hours` ───────────────────────────────
+// The org's schedule: which ISO weekdays are scheduled, the day's bounds, the lateness threshold and
+// the minimum minutes that separate `partial` from `present`. One row per org, so one GET + one
+// PATCH, no id. The server fills every absent field with the product default, so a GET always
+// returns the *effective* schedule the attendance close cron will apply.
+//
+// **A designated day off is "not expected", not "not recorded".** Work on an off day is still
+// tracked and still counts — the schedule only decides who is *absent*.
+
+/** ISO weekday: 1 = Monday … 7 = Sunday. */
+export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export interface OrgWorkingHours {
+  /** `HH:MM`, 24-hour. */
+  work_start: string;
+  /** `HH:MM`, 24-hour. */
+  work_end: string;
+  /** Scheduled weekdays, sorted. Defaults to Mon–Fri (`[1,2,3,4,5]`). Never empty. */
+  workdays: IsoWeekday[];
+  /** `HH:MM` — a first session after this qualifies `present` as **late**. */
+  late_threshold: string;
+  /** Below this, a worked day is `partial` rather than `present`. */
+  min_present_minutes: number;
+}
+
+/** A PATCH may carry any subset; the server rejects an empty body. */
+export type WorkingHoursInput = Partial<OrgWorkingHours>;
+
+/** `GET /v1/org/working-hours` — the effective schedule. Any member may read it. */
+export function getWorkingHours(): Promise<OrgWorkingHours> {
+  return apiFetch<OrgWorkingHours>("/v1/org/working-hours");
+}
+
+/**
+ * `PATCH /v1/org/working-hours` — update the schedule. Needs `settings:manage`
+ * (server `OrgSettingsManage`). An empty `workdays` list is a `400`.
+ */
+export function updateWorkingHours(body: WorkingHoursInput): Promise<OrgWorkingHours> {
+  return apiFetch<OrgWorkingHours>("/v1/org/working-hours", {
+    method: "PATCH",
+    body: JSON.stringify(body),
   });
 }
 
@@ -240,16 +281,11 @@ export interface HolidayInput {
 
 /** `GET /v1/org/holidays` → the org's holiday calendar. */
 export function listHolidays(): Promise<OrgHoliday[]> {
-  return apiFetch<{ holidays: OrgHoliday[] }>("/v1/org/holidays").then(
-    (r) => r.holidays,
-  );
+  return apiFetch<{ holidays: OrgHoliday[] }>("/v1/org/holidays").then((r) => r.holidays);
 }
 
 /** `POST /v1/org/holidays` — add a holiday (`name` + `date` required). Needs `settings:manage`. */
-export function createHoliday(body: {
-  name: string;
-  date: string;
-}): Promise<OrgHoliday> {
+export function createHoliday(body: { name: string; date: string }): Promise<OrgHoliday> {
   return apiFetch<OrgHoliday>("/v1/org/holidays", {
     method: "POST",
     body: JSON.stringify(body),
@@ -257,10 +293,7 @@ export function createHoliday(body: {
 }
 
 /** `PATCH /v1/org/holidays/{id}`. Needs `settings:manage`. */
-export function updateHoliday(
-  id: string,
-  body: HolidayInput,
-): Promise<OrgHoliday> {
+export function updateHoliday(id: string, body: HolidayInput): Promise<OrgHoliday> {
   return apiFetch<OrgHoliday>(`/v1/org/holidays/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(body),
@@ -291,15 +324,11 @@ export interface PolicyInput {
 
 /** `GET /v1/org/policies` → the org's policy documents. */
 export function listPolicies(): Promise<OrgPolicy[]> {
-  return apiFetch<{ policies: OrgPolicy[] }>("/v1/org/policies").then(
-    (r) => r.policies,
-  );
+  return apiFetch<{ policies: OrgPolicy[] }>("/v1/org/policies").then((r) => r.policies);
 }
 
 /** `POST /v1/org/policies` — add a policy (`title` required). Needs `settings:manage`. */
-export function createPolicy(
-  body: PolicyInput & { title: string },
-): Promise<OrgPolicy> {
+export function createPolicy(body: PolicyInput & { title: string }): Promise<OrgPolicy> {
   return apiFetch<OrgPolicy>("/v1/org/policies", {
     method: "POST",
     body: JSON.stringify(body),
@@ -307,10 +336,7 @@ export function createPolicy(
 }
 
 /** `PATCH /v1/org/policies/{id}`. Needs `settings:manage`. */
-export function updatePolicy(
-  id: string,
-  body: PolicyInput,
-): Promise<OrgPolicy> {
+export function updatePolicy(id: string, body: PolicyInput): Promise<OrgPolicy> {
   return apiFetch<OrgPolicy>(`/v1/org/policies/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(body),
