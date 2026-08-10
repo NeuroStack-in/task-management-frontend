@@ -96,15 +96,21 @@ const isoLocal = (d: Date) =>
   `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-/** Mon–Sun of the week containing `now` (local). Returns the 7 iso dates + from/to. */
-function currentWeek(now = new Date()): {
+/**
+ * Mon–Sun of the week `offset` weeks from the one containing `now` (local).
+ * `0` = this week, `-1` = last week. Returns the 7 iso dates + from/to.
+ */
+function weekOf(
+  now: Date,
+  offset = 0,
+): {
   from: string;
   to: string;
   dates: string[];
 } {
   const dow = (now.getDay() + 6) % 7; // Mon = 0
   const monday = new Date(now);
-  monday.setDate(now.getDate() - dow);
+  monday.setDate(now.getDate() - dow + offset * 7);
   monday.setHours(0, 0, 0, 0);
   const dates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
@@ -143,7 +149,7 @@ export interface TeamTimesheet {
   teamWeekly: DailyHours[];
   /** The 7 iso dates (Mon→Sun) the rows' `days` arrays are aligned to. */
   dates: string[];
-  /** Human range for the current week, e.g. "Jun 23 – 29, 2026". */
+  /** Human range for the **selected** week, e.g. "Jun 23 – 29, 2026". */
   weekLabel: string;
   loading: boolean;
   /** Set on a hard failure; a `403` on the team endpoint reads as an access problem. */
@@ -161,8 +167,11 @@ const EMPTY_WEEK: DailyHours[] = DAY_LABELS.map((day) => ({
 /**
  * @param enabled Only fetch when the caller can actually see the team view — a pure employee never
  *   triggers the fan-out.
+ * @param weekOffset Which week to read: `0` = this week, `-1` = last week, and so on. Each change
+ *   re-runs the whole fan-out for that week — the per-user endpoints take an arbitrary `from`/`to`,
+ *   so no week is privileged, but a step back costs one round of (employees × 2) requests.
  */
-export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
+export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimesheet {
   const [data, setData] = useState<{
     fetched: Fetched[];
     depts: Map<string, string>;
@@ -172,8 +181,11 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
-  // The current week is resolved once, client-side (avoids SSR drift + keeps the range stable).
-  const week = useRef(currentWeek());
+  // "Today" is resolved once, client-side (avoids SSR drift + keeps the range stable). The visible
+  // week is derived from that fixed anchor plus the caller's offset, so paging back never re-reads
+  // the clock — a session open across midnight keeps a stable notion of which week is "this" one.
+  const anchor = useRef(new Date());
+  const week = useMemo(() => weekOf(anchor.current, weekOffset), [weekOffset]);
 
   useEffect(() => {
     if (!enabled) {
@@ -185,7 +197,7 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
     setError(null);
     setForbidden(false);
 
-    const { from, to } = week.current;
+    const { from, to } = week;
 
     (async () => {
       // Directory + label maps + the project catalog — one call each, before the fan-out.
@@ -256,7 +268,7 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
     return () => {
       live = false;
     };
-  }, [enabled]);
+  }, [enabled, week]);
 
   const derived = useMemo(() => {
     if (!data) {
@@ -267,7 +279,7 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
       };
     }
     const { fetched, depts, projects } = data;
-    const { dates } = week.current;
+    const { dates } = week;
     // Weekday index for an iso date; -1 for anything outside the current week.
     const dateIndex = new Map(dates.map((d, i) => [d, i] as const));
     const projectName = (pid: string | undefined) => {
@@ -424,12 +436,14 @@ export function useTeamTimesheet(enabled: boolean): TeamTimesheet {
     });
 
     return { teamRows, projectRows, teamWeekly };
-  }, [data]);
+    // `week` is a real input: the rows are mapped onto its 7 dates, so a week change must re-derive
+    // them. (It was a ref before the week became selectable, which is why it wasn't listed.)
+  }, [data, week]);
 
   const { dates, weekLabel } = useMemo(() => {
-    const d = week.current.dates;
+    const d = week.dates;
     return { dates: d, weekLabel: weekLabelOf(d) };
-  }, []);
+  }, [week]);
 
   return { ...derived, dates, weekLabel, loading, error, forbidden };
 }

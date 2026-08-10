@@ -3,11 +3,7 @@
 import { Clock, BadgeDollarSign, Activity } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { TimesheetGrid } from "./timesheet-grid";
-import type {
-  DailyHours,
-  ProjectTimesheet,
-  TeamMemberTime,
-} from "../types";
+import type { DailyHours, ProjectTimesheet, TeamMemberTime } from "../types";
 
 export function TeamTimeView({
   rows,
@@ -15,12 +11,16 @@ export function TeamTimeView({
   weekly,
   dates,
   weekLabel,
+  weekOffset,
+  onWeekOffsetChange,
 }: {
   rows: TeamMemberTime[];
   projectRows: ProjectTimesheet[];
   weekly: DailyHours[];
   dates: string[];
   weekLabel: string;
+  weekOffset: number;
+  onWeekOffsetChange: (offset: number) => void;
 }) {
   const teamHours = weekly.reduce((s, d) => s + d.hours, 0);
   const teamBillable = weekly.reduce((s, d) => s + d.billable, 0);
@@ -40,20 +40,14 @@ export function TeamTimeView({
           label="Team hours"
           value={`${Math.round(teamHours).toLocaleString()}h`}
           icon={Clock}
-          hint="this week"
+          // The card totals whichever week the grid is showing, so it must not claim "this week"
+          // once you page back — that read as a live figure for a historical range.
+          hint={weekOffset === 0 ? "this week" : weekLabel}
           trend={weekly.map((d) => d.hours)}
           featured
         />
-        <StatCard
-          label="Billable"
-          value={`${billablePct}%`}
-          icon={BadgeDollarSign}
-        />
-        <StatCard
-          label="Avg activity"
-          value={`${avgActivity}%`}
-          icon={Activity}
-        />
+        <StatCard label="Billable" value={`${billablePct}%`} icon={BadgeDollarSign} />
+        <StatCard label="Avg activity" value={`${avgActivity}%`} icon={Activity} />
       </div>
 
       <TimesheetGrid
@@ -61,6 +55,8 @@ export function TeamTimeView({
         projectRows={projectRows}
         dates={dates}
         weekLabel={weekLabel}
+        weekOffset={weekOffset}
+        onWeekOffsetChange={onWeekOffsetChange}
       />
     </div>
   );

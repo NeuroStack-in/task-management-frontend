@@ -2,18 +2,18 @@
 
 import { useMemo, useState } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   FolderKanban,
   Search,
   UserRound,
   Users2,
   X,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar";
+import { MAX_WEEKS_BACK } from "../use-weekly-hours";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import {
   Select,
@@ -33,12 +33,28 @@ import { cn } from "@/lib/utils";
 import { ActivityDialog, type ActivityView } from "./timesheet-detail";
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const DAY_FULL = [
-  "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
 ];
 
 type GroupBy = "person" | "project";
@@ -83,19 +99,26 @@ export function TimesheetGrid({
   projectRows,
   dates,
   weekLabel,
+  weekOffset,
+  onWeekOffsetChange,
 }: {
   personRows: TeamMemberTime[];
   projectRows: ProjectTimesheet[];
   /** The 7 iso dates (Mon→Sun) the rows' `days`/`dayEntries` align to. */
   dates: string[];
-  /** Human range for the current week, from the hook. */
+  /** Human range for the selected week, from the hook. */
   weekLabel: string;
+  /** 0 = this week, −1 = last week, … */
+  weekOffset: number;
+  onWeekOffsetChange: (offset: number) => void;
 }) {
   const [group, setGroup] = useState<GroupBy>("person");
   const [query, setQuery] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [selection, setSelection] = useState<
-    { rowId: string; kind: "day"; dayIndex: number } | { rowId: string; kind: "week" } | null
+    | { rowId: string; kind: "day"; dayIndex: number }
+    | { rowId: string; kind: "week" }
+    | null
   >(null);
 
   const weekRange = weekLabel;
@@ -206,16 +229,59 @@ export function TimesheetGrid({
       {/* Toolbar: week nav + filter + search */}
       <div className="flex flex-col gap-4 border-b p-4 sm:px-5 sm:py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          {/* Current week — pinned. Only this week's data is fetched, so there is no
-              navigation; the range is the hook's real week label. */}
-          <div className="leading-tight">
-            <p className="font-heading text-base font-semibold">This Week</p>
-            <p className="text-xs text-muted-foreground">{weekRange}</p>
+          {/* Week stepper. The per-user endpoints take an arbitrary from/to, so any week is
+              readable; stepping re-runs the fan-out for that range. Forward is capped at the
+              current week — a future week has no records and would only ever render dashes. */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                aria-label="Previous week"
+                onClick={() =>
+                  onWeekOffsetChange(Math.max(-MAX_WEEKS_BACK, weekOffset - 1))
+                }
+                disabled={weekOffset <= -MAX_WEEKS_BACK}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                aria-label="Next week"
+                onClick={() => onWeekOffsetChange(Math.min(0, weekOffset + 1))}
+                disabled={weekOffset === 0}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+            <div className="leading-tight">
+              <p className="font-heading text-base font-semibold">
+                {weekOffset === 0
+                  ? "This Week"
+                  : weekOffset === -1
+                    ? "Last Week"
+                    : `${-weekOffset} weeks ago`}
+              </p>
+              <p className="text-muted-foreground text-xs">{weekRange}</p>
+            </div>
+            {weekOffset !== 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => onWeekOffsetChange(0)}
+              >
+                Today
+              </Button>
+            ) : null}
           </div>
 
           {/* Filter + search */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="inline-flex items-center gap-0.5 rounded-full border bg-card p-0.5 shadow-soft">
+            <div className="bg-card shadow-soft inline-flex items-center gap-0.5 rounded-full border p-0.5">
               <FilterTab
                 active={group === "person"}
                 onClick={() => setGroup("person")}
@@ -230,21 +296,16 @@ export function TimesheetGrid({
               />
             </div>
             {/* Team (department) filter */}
-            <Select
-              value={deptFilter}
-              onValueChange={(v) => setDeptFilter(v as string)}
-            >
+            <Select value={deptFilter} onValueChange={(v) => setDeptFilter(v as string)}>
               <SelectTrigger
                 aria-label="Filter by department"
                 className="h-9 w-full gap-2 sm:w-44"
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <Users2 className="size-4 shrink-0 text-muted-foreground" />
+                  <Users2 className="text-muted-foreground size-4 shrink-0" />
                   <SelectValue>
                     {(value) =>
-                      value === "all" || value == null
-                        ? "All departments"
-                        : String(value)
+                      value === "all" || value == null ? "All departments" : String(value)
                     }
                   </SelectValue>
                 </div>
@@ -259,7 +320,7 @@ export function TimesheetGrid({
               </SelectContent>
             </Select>
             <div className="relative sm:w-56">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -277,7 +338,7 @@ export function TimesheetGrid({
         {/* Active filter tags */}
         {hasFilters ? (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">Filters:</span>
+            <span className="text-muted-foreground text-xs">Filters:</span>
             {deptFilter !== "all" ? (
               <FilterTagChip
                 label={`Department: ${deptFilter}`}
@@ -293,7 +354,7 @@ export function TimesheetGrid({
             <button
               type="button"
               onClick={clearFilters}
-              className="text-xs font-medium text-primary hover:underline"
+              className="text-primary text-xs font-medium hover:underline"
             >
               Clear all
             </button>
@@ -305,25 +366,25 @@ export function TimesheetGrid({
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] border-collapse text-sm">
           <thead>
-            <tr className="border-b bg-muted/30">
-              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2.5 text-left align-middle text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            <tr className="bg-muted/30 border-b">
+              <th className="bg-muted/30 text-muted-foreground sticky left-0 z-10 px-4 py-2.5 text-left align-middle text-xs font-semibold tracking-wide uppercase">
                 {group === "person" ? "Employee" : "Project"}
               </th>
               {DAY_LABELS.map((d, i) => (
                 <th
                   key={d}
                   className={cn(
-                    "px-2 py-2.5 text-center align-middle text-xs font-semibold tracking-wide text-muted-foreground",
+                    "text-muted-foreground px-2 py-2.5 text-center align-middle text-xs font-semibold tracking-wide",
                     i >= 5 && "bg-muted/50",
                   )}
                 >
                   <span className="block">{d}</span>
-                  <span className="block text-[0.7rem] font-normal text-muted-foreground/70 tabular-nums">
+                  <span className="text-muted-foreground/70 block text-[0.7rem] font-normal tabular-nums">
                     {parseIso(dates[i]).d}
                   </span>
                 </th>
               ))}
-              <th className="px-3 py-2.5 text-center align-middle text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              <th className="text-muted-foreground px-3 py-2.5 text-center align-middle text-xs font-semibold tracking-wide uppercase">
                 Total
               </th>
             </tr>
@@ -334,92 +395,95 @@ export function TimesheetGrid({
               <tr>
                 <td
                   colSpan={9}
-                  className="px-4 py-12 text-center text-sm text-muted-foreground"
+                  className="text-muted-foreground px-4 py-12 text-center text-sm"
                 >
-                  No matches for “{query}”.
+                  {/* An empty grid means "nobody tracked time" far more often than "your search
+                      missed" now that past weeks are reachable — saying "no matches for ''" for a
+                      quiet week reads as a broken filter. */}
+                  {hasFilters
+                    ? query.trim()
+                      ? `No matches for “${query.trim()}”.`
+                      : "No one matches this filter."
+                    : "No tracked time in this week."}
                 </td>
               </tr>
             ) : (
               rows.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-b transition-colors last:border-b-0 hover:bg-muted/30"
-                  >
-                    {/* Entity */}
-                    <td className="sticky left-0 z-10 bg-card px-4 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        {r.isProject ? (
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
-                            <FolderKanban className="size-4" />
-                          </span>
-                        ) : (
-                          <Avatar className="size-8">
-                            <AvatarImage src={r.avatarUrl} alt={r.name} />
-                            <AvatarFallback className="text-xs">
-                              {initials(r.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                        )}
-                        <div className="min-w-0">
-                          <p className="flex items-center gap-1.5 truncate font-medium">
-                            {r.badge ? (
-                              <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
-                                {r.badge}
-                              </span>
-                            ) : null}
-                            {r.name}
-                          </p>
-                          {/* No raw id here — it's an opaque UUID (Cognito sub / project id), not a
+                <tr
+                  key={r.id}
+                  className="hover:bg-muted/30 border-b transition-colors last:border-b-0"
+                >
+                  {/* Entity */}
+                  <td className="bg-card sticky left-0 z-10 px-4 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      {r.isProject ? (
+                        <span className="bg-feature-tint text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
+                          <FolderKanban className="size-4" />
+                        </span>
+                      ) : (
+                        <Avatar className="size-8">
+                          <AvatarImage src={r.avatarUrl} alt={r.name} />
+                          <AvatarFallback className="text-xs">
+                            {initials(r.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5 truncate font-medium">
+                          {r.badge ? (
+                            <span className="bg-accent text-accent-foreground rounded px-1 font-mono text-[0.65rem] font-semibold">
+                              {r.badge}
+                            </span>
+                          ) : null}
+                          {r.name}
+                        </p>
+                        {/* No raw id here — it's an opaque UUID (Cognito sub / project id), not a
                               human-facing code. The project key shows as the badge above. */}
-                          <p className="truncate text-xs text-muted-foreground">
-                            {r.subtitle}
-                          </p>
-                        </div>
+                        <p className="text-muted-foreground truncate text-xs">
+                          {r.subtitle}
+                        </p>
                       </div>
-                    </td>
+                    </div>
+                  </td>
 
-                    {/* Day cells — click for daily activity */}
-                    {r.days.map((h, i) => (
-                      <td
-                        key={i}
-                        className={cn("p-0 text-center", i >= 5 && "bg-muted/20")}
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSelection({
-                              rowId: r.id,
-                              kind: "day",
-                              dayIndex: i,
-                            })
-                          }
-                          title="View daily activity"
-                          className={cn(
-                            "w-full px-2 py-2.5 font-mono tabular-nums transition-colors hover:bg-primary/10 hover:text-primary",
-                            h <= 0
-                              ? "text-muted-foreground/40"
-                              : "text-foreground",
-                          )}
-                        >
-                          {fmtHM(h)}
-                        </button>
-                      </td>
-                    ))}
-
-                    {/* Total — click for weekly activity */}
-                    <td className="p-0 text-center">
+                  {/* Day cells — click for daily activity */}
+                  {r.days.map((h, i) => (
+                    <td
+                      key={i}
+                      className={cn("p-0 text-center", i >= 5 && "bg-muted/20")}
+                    >
                       <button
                         type="button"
                         onClick={() =>
-                          setSelection({ rowId: r.id, kind: "week" })
+                          setSelection({
+                            rowId: r.id,
+                            kind: "day",
+                            dayIndex: i,
+                          })
                         }
-                        title="View weekly activity"
-                        className="w-full px-3 py-2.5 text-center font-mono font-semibold tabular-nums transition-colors hover:bg-primary/10 hover:text-primary"
+                        title="View daily activity"
+                        className={cn(
+                          "hover:bg-primary/10 hover:text-primary w-full px-2 py-2.5 font-mono tabular-nums transition-colors",
+                          h <= 0 ? "text-muted-foreground/40" : "text-foreground",
+                        )}
                       >
-                        {fmtHM(r.total)}
+                        {fmtHM(h)}
                       </button>
                     </td>
-                  </tr>
+                  ))}
+
+                  {/* Total — click for weekly activity */}
+                  <td className="p-0 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setSelection({ rowId: r.id, kind: "week" })}
+                      title="View weekly activity"
+                      className="hover:bg-primary/10 hover:text-primary w-full px-3 py-2.5 text-center font-mono font-semibold tabular-nums transition-colors"
+                    >
+                      {fmtHM(r.total)}
+                    </button>
+                  </td>
+                </tr>
               ))
             )}
           </tbody>
@@ -427,8 +491,8 @@ export function TimesheetGrid({
           {/* Totals footer */}
           {rows.length > 0 ? (
             <tfoot>
-              <tr className="border-t-2 bg-muted/40 font-semibold">
-                <td className="sticky left-0 z-10 bg-muted/40 px-4 py-3 align-middle text-xs tracking-wide uppercase">
+              <tr className="bg-muted/40 border-t-2 font-semibold">
+                <td className="bg-muted/40 sticky left-0 z-10 px-4 py-3 align-middle text-xs tracking-wide uppercase">
                   Total time
                 </td>
                 {colTotals.map((h, i) => (
@@ -442,7 +506,7 @@ export function TimesheetGrid({
                     {fmtHM(h)}
                   </td>
                 ))}
-                <td className="px-3 py-3 text-center align-middle font-mono tabular-nums text-primary">
+                <td className="text-primary px-3 py-3 text-center align-middle font-mono tabular-nums">
                   {fmtHM(grandTotal)}
                 </td>
               </tr>
@@ -456,21 +520,15 @@ export function TimesheetGrid({
   );
 }
 
-function FilterTagChip({
-  label,
-  onClear,
-}: {
-  label: string;
-  onClear: () => void;
-}) {
+function FilterTagChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-accent py-0.5 pr-1 pl-2 text-xs font-medium text-accent-foreground">
+    <span className="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-full py-0.5 pr-1 pl-2 text-xs font-medium">
       {label}
       <button
         type="button"
         onClick={onClear}
         aria-label={`Remove ${label}`}
-        className="rounded-full p-0.5 transition-colors hover:bg-foreground/10"
+        className="hover:bg-foreground/10 rounded-full p-0.5 transition-colors"
       >
         <X className="size-3" />
       </button>

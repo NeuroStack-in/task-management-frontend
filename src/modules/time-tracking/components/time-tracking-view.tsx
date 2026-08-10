@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Users, UserRound, MonitorSmartphone, TriangleAlert, ShieldAlert } from "lucide-react";
+import {
+  Users,
+  UserRound,
+  MonitorSmartphone,
+  TriangleAlert,
+  ShieldAlert,
+} from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
@@ -32,6 +38,10 @@ export function TimeTrackingView() {
   const canTrack = can("time-tracking:self");
   const showToggle = canManageTeam && canTrack;
 
+  // Which week the team grid is showing: 0 = this week, -1 = last week, … Lives here because the
+  // fan-out hook is called here; the grid's stepper drives it.
+  const [weekOffset, setWeekOffset] = useState(0);
+
   // Only fetch the team roll-up when the caller can actually see it — a pure employee never fans out.
   const {
     teamRows,
@@ -42,7 +52,7 @@ export function TimeTrackingView() {
     loading,
     error,
     forbidden,
-  } = useTeamTimesheet(canManageTeam);
+  } = useTeamTimesheet(canManageTeam, weekOffset);
 
   // Team leads only see their own team's timesheets; org roles see everyone.
   const scopedTeamRows = teamRows.filter((r) => inScope(r.id));
@@ -61,7 +71,7 @@ export function TimeTrackingView() {
         description={description}
         actions={
           showToggle ? (
-            <div className="flex rounded-full border bg-card p-0.5 shadow-soft">
+            <div className="bg-card shadow-soft flex rounded-full border p-0.5">
               <ToggleButton
                 active={view === "personal"}
                 onClick={() => setView("personal")}
@@ -92,14 +102,23 @@ export function TimeTrackingView() {
             title="Couldn't load team timesheets"
             description={error}
             action={
-              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.location.reload()}
+              >
                 Retry
               </Button>
             }
           />
         ) : loading ? (
           <Loader label="Assembling team timesheets…" className="min-h-64" />
-        ) : scopedTeamRows.length === 0 && projectRows.length === 0 ? (
+        ) : scopedTeamRows.length === 0 &&
+          projectRows.length === 0 &&
+          weekOffset === 0 ? (
+          // Only the *current* week short-circuits to a standalone empty state. On a past week the
+          // grid must still render, because it carries the week stepper — swapping it out would
+          // strand the viewer on a quiet week with no way back.
           <EmptyState
             icon={MonitorSmartphone}
             title="No tracked time this week"
@@ -112,6 +131,8 @@ export function TimeTrackingView() {
             weekly={teamWeekly}
             dates={dates}
             weekLabel={weekLabel}
+            weekOffset={weekOffset}
+            onWeekOffsetChange={setWeekOffset}
           />
         )
       ) : (
