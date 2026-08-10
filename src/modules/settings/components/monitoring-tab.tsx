@@ -380,9 +380,38 @@ export function MonitoringTab() {
             </CardContent>
           </Card>
 
-          {/* Silent-monitoring toggle removed: the desktop agent doesn't implement a non-silent
-              (notification/tray-indicator) mode, so the control had no effect. The `silent` field is
-              still carried through load→save unchanged to keep the update-policy payload valid. */}
+          {/* ── Employee disclosure ── */}
+          {/* Re-added: the desktop agent DOES honour `silent` (agent v0.1.11+) — it hides the capture
+              indicator and suppresses its on-screen notices (screenshot-taken, restricted-app warning).
+              The earlier "no effect" note is stale. */}
+          <Card id="disclosure" className="scroll-mt-24 shadow-none">
+            <CardHeader>
+              <CardTitle>Employee disclosure</CardTitle>
+              <CardDescription>
+                Controls what the desktop agent shows the employee on their own machine. Capture and
+                reporting are unaffected either way.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-0 pb-2">
+              <SettingRow
+                label="Silent monitoring"
+                description="Hide the agent's capture indicator and suppress its on-screen notices (screenshot taken, restricted-app warnings). Covert monitoring is restricted or unlawful in some regions — confirm your local notice and consent obligations before enabling."
+                disabled={!canManage}
+              >
+                <Controller
+                  control={control}
+                  name="silent"
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value}
+                      disabled={!canManage}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
+                />
+              </SettingRow>
+            </CardContent>
+          </Card>
 
           {canManage && (
             <SettingsSaveBar

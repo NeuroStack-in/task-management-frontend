@@ -81,6 +81,17 @@ export interface TourStep {
   content: string;
   /** Required to see the target. Steps whose permission the caller lacks are dropped up front. */
   permission?: PermissionId;
+  /**
+   * Which dashboard this step's target lives on. Dropped up front for the other one.
+   *
+   * **Not the same thing as `permission`.** `/dashboard` renders two different components: a
+   * self-scoped role gets `PersonalDashboard` (fixed KPI/tasks/week sections), everyone else gets
+   * `CustomizableDashboard` (a user-arranged widget grid). An Owner holds *every* permission and
+   * still has no `dash:kpis` on screen — so a permission gate cannot express this, and without it
+   * the three personal steps each burned the full 8 s target-wait before skipping, for the people
+   * most likely to run a tour.
+   */
+  dashboard?: "personal" | "org";
 }
 
 export interface Tour {
@@ -112,16 +123,44 @@ export const TOURS: Record<string, Tour> = {
       {
         route: "/dashboard",
         target: "dash:kpis",
-        title: "The numbers that matter",
+        dashboard: "personal",
+        title: "Your day at a glance",
         content:
           "Your headline figures for the period. Every one comes from what the desktop agent actually reported — a dash means no data yet, never a guess.",
       },
       {
         route: "/dashboard",
-        target: "nav:/time-tracking",
-        title: "Where your hours live",
+        target: "dash:tasks",
+        dashboard: "personal",
+        title: "What's on your plate",
         content:
-          "Every session the agent recorded, day by day. The web view is read-only — the desktop app does the tracking.",
+          "Tasks assigned to you across every project, newest first. Open one to see its project, due date and status.",
+      },
+      {
+        route: "/dashboard",
+        target: "dash:week",
+        dashboard: "personal",
+        title: "Your week",
+        content:
+          "Attendance per day, built from what the desktop agent reported. Non-working days are marked so a blank Saturday never looks like a missed day.",
+      },
+      // The org counterparts. Anchored to the header and the Customize trigger rather than to a
+      // widget, because the grid is user-arranged — any given widget may have been removed.
+      {
+        route: "/dashboard",
+        target: "dash:widgets",
+        dashboard: "org",
+        title: "Your team at a glance",
+        content:
+          "Org-wide widgets: who's active now, hours and productivity across the team, and where attention is needed. Each one reads live data — a widget showing “—” is waiting on the desktop agent, not broken.",
+      },
+      {
+        route: "/dashboard",
+        target: "dash:customize",
+        dashboard: "org",
+        title: "Make it yours",
+        content:
+          "Add, remove and drag widgets into the order you want. The layout is saved to your account, so it follows you between devices — and Reset layout puts it back.",
       },
       {
         route: "/dashboard",
@@ -159,9 +198,12 @@ export const TOURS: Record<string, Tour> = {
           "There's no start/stop button on the web, by design. The agent records each session and the server folds them into this — so what you see always matches what was actually captured.",
       },
       {
-        route: "/dashboard",
-        target: "nav:/attendance",
-        title: "Attendance is the other half",
+        route: "/time-tracking",
+        // `time:totals`, not `dash:kpis` — that anchor only ever existed on the personal dashboard,
+        // so this step waited the full 8 s on every route before skipping itself, for every role.
+        target: "time:totals",
+        dashboard: "personal",
+        title: "Today's totals",
         content:
           "Sessions become attendance: present days, hours worked, lateness. Both come from the same agent batches, so the two can't disagree.",
       },

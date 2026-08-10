@@ -78,13 +78,39 @@ describe("tour data", () => {
    */
   it("only uses targets verified to exist for every role", () => {
     for (const s of steps) {
+      // A step that declares which dashboard it belongs to is exempt, and only that step.
+      //
+      // The rule above exists because a step could not say where it applied, so any target absent
+      // from one role's branch was a step that hung. `dashboard` removes that: `product-tour`
+      // filters on it before running, so such a step never reaches the branch its target is missing
+      // from. The invariant is unchanged — it is still "a step must never wait for an element that
+      // cannot appear" — but it is now satisfiable two ways: a target present in every branch, or a
+      // step scoped to the branch its target lives in.
+      //
+      // Deliberately narrow. Only `dashboard` grants this, and the sibling test still proves the
+      // target exists somewhere in the source, so a typo is caught even when scoped.
+      if (s.dashboard) continue;
       expect(
         SAFE_TARGET_PREFIXES.some((p) => s.target === p || s.target.startsWith(p)),
         `tour "${s.tour}" targets "${s.target}", which is not a verified-safe target ` +
           `(${SAFE_TARGET_PREFIXES.join(", ")}). Prove it renders in EVERY role branch of its ` +
-          `page before adding it.`,
+          `page before adding it, or scope the step with \`dashboard: "personal" | "org"\`.`,
       ).toBe(true);
     }
+  });
+
+  /**
+   * The exemption above is only sound if the runtime actually honours `dashboard`. If that filter
+   * were ever dropped, scoped steps would start running on the branch their target is missing from
+   * and hang — with the guard above waved through, which is the worst of both.
+   */
+  it("the runtime still filters on `dashboard`, which the exemption above relies on", () => {
+    const src = readFileSync("src/components/layout/product-tour.tsx", "utf8");
+    expect(
+      /s\.dashboard/.test(src),
+      "product-tour.tsx no longer reads `s.dashboard`. Either restore the filter or delete the " +
+        "`dashboard` exemption in the previous test — scoped steps are unsafe without it.",
+    ).toBe(true);
   });
 
   /**

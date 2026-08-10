@@ -75,7 +75,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Send invitations, assign roles, and guide new members through the onboarding flow.",
     readMins: 3,
-    body: "Navigate to Employees → Invite and enter the email addresses of your team members. Each person will receive an invitation email with a link to create their account. During onboarding, they'll be guided through connecting the device agent and setting their preferences. You can track invitation status (Pending, Active, Declined) from the Employees list. For bulk invites, use the CSV import feature in the Employees section.",
+    body: "Navigate to Employees → Invite and enter the email addresses of your team members. Each person will receive an invitation email with a link to create their account. During onboarding, they'll be guided through connecting the device agent and setting their preferences. Outstanding invites appear in the Invited section below the employee list, where you can resend or revoke one. To invite several people at once, paste up to 50 addresses into the email field — they all get the same role, department and job title.",
   },
   {
     slug: "roles-and-permissions",
@@ -84,7 +84,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "Learn how the Owner, Admin, Manager, HR, Finance, and Employee roles differ.",
     readMins: 5,
-    body: "WorkPulse uses a role-based access control (RBAC) system with six built-in roles: Owner, Admin, Manager, HR, Finance, and Employee. Each role has a predefined set of permissions controlling what they can see and do. Owners have full access and can manage billing. Admins control organization settings. Managers can view reports and approve time-off. HR can access employee profiles. Finance can view billing. You can create custom roles in Settings → Roles & Permissions to fit your exact needs.",
+    body: "WorkPulse ships with three built-in roles: Owner, Admin and Employee. Owners have full access and can manage billing; Admins control organization settings; Employees see their own data. Everything else is a custom role — create one in Settings → Roles & Permissions, starting from a built-in role and adding or removing individual permissions. Roles like Manager, HR or Finance are custom roles you define, not presets.",
   },
   {
     slug: "dashboard-overview",
@@ -223,7 +223,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "How is the productivity score calculated?",
-    a: "Productivity scores combine three signals: the ratio of active to total logged time, the proportion of time spent in productive vs distracting applications, and task completion rate. Each signal is weighted and combined into a 0–100 score. Thresholds can be adjusted in Settings → Monitoring → Productivity Thresholds.",
+    a: "The score combines four signals into a 0–100 number: Utilization (25%) — active time against the expected day; Quality (40%) — time weighted by app category, where productive counts fully, neutral counts half and distracting counts zero; Focus (15%) — the share of active time with real keyboard or mouse input, which is what stops idle time being passed off as work; and Reliability (20%) — punctuality and hours worked. Task completion is not part of the score. App categories are configured in Settings → Monitoring.",
   },
   {
     q: "What data is collected by the device agent?",
