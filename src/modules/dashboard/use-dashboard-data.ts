@@ -252,18 +252,43 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
 
         const shortWindow = days.length <= 8;
 
-        // ── Productivity + hours + trend, from each day's scored people (dept-aware). ──
+        // ── Productivity + hours + trend, over the whole trackable team (dept-aware). ──
+        //
+        // **The denominator is the team, not the people who happened to report.** It was
+        // `scored.length`, so one person scoring 58 while thirteen colleagues logged nothing made
+        // the organisation read "Productivity Score 58%". That is a true statement about that one
+        // person and a false one about the org, and it was published as the latter — a headline
+        // figure with no indication it covered a single employee.
+        //
+        // Unscored people contribute 0. At org level "nobody logged productive time" is itself a
+        // productivity outcome, so a score of 50% now genuinely requires about half the team to
+        // have worked productively, which is what the number claims to mean. The coverage travels
+        // with it (`productivityCoverage`) so a low score is readable as thin reporting rather
+        // than mysterious.
+        //
+        // Who counts is the same rule this file already applies to "working now": active employees
+        // holding a contributor role. An Owner/Admin cannot run the agent by construction, so
+        // including them would cap the achievable score below 100% forever.
+        const trackableIds = new Set(timerHolders.map((e) => e.user_id));
         let scoreSum = 0;
         let scoredDayCount = 0;
         let activeSecTotal = 0;
+        let coverageScored = 0;
+        let coverageTeam = 0;
         const productivityTrend = bundles.map((b) => {
-          const people = (b.activity?.people ?? []).filter((p) =>
-            inScopeDept(p.department_id),
+          const people = (b.activity?.people ?? []).filter(
+            (p) => inScopeDept(p.department_id) && trackableIds.has(p.user_id),
           );
           const scored = people.filter((p) => p.breakdown);
-          const dayScore = scored.length
-            ? scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) / scored.length
-            : null;
+          // A day nobody reported stays `null` (an unknown, excluded from the average) rather than
+          // becoming a 0 that would drag the window down with a day we simply have no data for.
+          const dayScore =
+            scored.length && people.length
+              ? scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) /
+                people.length
+              : null;
+          coverageScored = Math.max(coverageScored, scored.length);
+          coverageTeam = Math.max(coverageTeam, people.length);
           const daytotals = people.reduce(
             (acc, p) => {
               acc.active += p.totals?.active_sec ?? 0;
@@ -427,6 +452,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           heatmap: [], // no per-hour productivity endpoint — the widget shows an honest empty state.
           attendanceCounts: latestCounts,
           attendanceResolvedDays,
+          productivityCoverage: { scored: coverageScored, team: coverageTeam },
           statusCounts,
           activeCount,
           inactiveCount,

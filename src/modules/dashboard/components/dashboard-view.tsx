@@ -118,11 +118,17 @@ function OrgDashboard() {
           longer ranges show period aggregates. Deltas are omitted (no cheap real prior-window compare —
           a seeded % would be fabricated); sparklines render only where a real per-day series exists. */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
+        {/* The score covers the whole trackable team, so state how much of it actually reported —
+            otherwise a low number reads as "the org collapsed" when it means "one agent is on". */}
         <StatCard
           label="Productivity Score"
           value={`${kpis.productivity.value}%`}
           icon={Gauge}
-          hint={rangeLabel}
+          hint={
+            data.productivityCoverage.team > 0
+              ? `${data.productivityCoverage.scored} of ${data.productivityCoverage.team} reporting · ${rangeLabel}`
+              : rangeLabel
+          }
           trend={kpis.productivity.trend}
           href="/insights/reports"
           featured
