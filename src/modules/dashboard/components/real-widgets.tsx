@@ -43,6 +43,8 @@ import {
   type ApiDayResponse,
 } from "@/modules/attendance/services/attendance.service";
 import { useAssistantStore } from "@/stores/assistant.store";
+import { useWorkdays } from "@/hooks/use-working-hours";
+import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 import { Markdown } from "@/components/shared/markdown";
 import type { DashboardSummary } from "../use-dashboard-summary";
 
@@ -54,12 +56,19 @@ function isoYesterday(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/** The most recent completed **workday** (Mon–Fri) before today — org scores/attendance only exist on
- *  workdays, so the org summary reads this rather than a bare "yesterday" that may be a weekend. */
-function isoLastWorkday(): string {
+/** The most recent completed **workday** before today — org scores/attendance only exist on
+ *  workdays, so the org summary reads this rather than a bare "yesterday" that may be a day off.
+ *
+ *  `workdays` is the org's configured schedule (ISO 1 = Mon … 7 = Sun). This skipped Sat/Sun
+ *  unconditionally, so a Sun–Thu org asked for a report on a day nobody worked. */
+function isoLastWorkday(workdays: readonly IsoWeekday[]): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1); // skip Sun/Sat
+  // Bounded: a schedule always has at least one day (the API rejects an empty list), but don't
+  // trust that enough to risk an unbounded loop here.
+  for (let guard = 0; guard < 14 && !isWorkday(d, workdays); guard += 1) {
+    d.setDate(d.getDate() - 1);
+  }
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
@@ -468,6 +477,7 @@ function AiSummaryPending({ label }: { label: string }) {
 
 export function OrgAiSummaryWidget() {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
+  const workdays = useWorkdays();
   const [narrative, setNarrative] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -483,7 +493,7 @@ export function OrgAiSummaryWidget() {
   // 403 fallback applies.
   const fetchSummary = useCallback(
     async (force: boolean): Promise<{ narrative: string; generatedAt: number | null }> => {
-      const date = isoLastWorkday();
+      const date = isoLastWorkday(workdays);
       try {
         const r = force ? await regenerateAiReport(date) : await getAiReport(date);
         return { narrative: r.narrative, generatedAt: r.generated_at };
@@ -495,7 +505,7 @@ export function OrgAiSummaryWidget() {
         throw e;
       }
     },
-    [],
+    [workdays],
   );
 
   useEffect(() => {
