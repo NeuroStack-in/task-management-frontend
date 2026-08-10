@@ -5,7 +5,7 @@
  *
  * Given the active filters (`range` + optional `team` department + custom bounds) this resolves the
  * window's dates, then fans out the per-day monitoring reads (bounded, skip-on-fail — an unbounded
- * burst throttles the Lambda and 503s the page) and joins them with the directory / fleet / billing:
+ * burst throttles the Lambda and 503s the page) and joins them with the directory / roles / billing:
  *
  *   - productivity, hours, top performers, team comparison  ← `getOrgActivity(day)` per day
  *   - attendance rate + the attendance donut                ← `getDayOversight(day)` per day
@@ -26,7 +26,9 @@ import {
   listEmployees,
   departmentMap,
 } from "@/modules/employees/services/employees.service";
-import { listFleet } from "@/modules/agents/services/fleet.service";
+import { contributorRoleIds } from "@/modules/roles/services/roles.service";
+import { getUserDay } from "@/modules/attendance/services/attendance.service";
+import { todayIso } from "@/lib/format";
 import { getBillingOverview } from "@/modules/billing/services/billing.service";
 import {
   getOrgActivity,
@@ -145,11 +147,12 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
       try {
         const days = resolveDays({ range, team, start, end });
 
-        // Range-independent org context. Billing/fleet are best-effort (a 403 must not blank the board).
-        const [roster, deptNames, fleet] = await Promise.all([
+        // Range-independent org context. Billing/roles are best-effort (a 403 must not blank the board).
+        const [roster, deptNames, contributorIds] = await Promise.all([
           listEmployees(),
           departmentMap().catch(() => new Map<string, string>()),
-          listFleet().catch(() => null),
+          // A failed roles read must not empty the KPI — fall back to counting everyone.
+          contributorRoleIds().catch(() => null),
         ]);
         const billing = await getBillingOverview().catch(() => null);
         if (!live) return;
@@ -184,6 +187,37 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const scopedRoster = roster.filter((e) => inScopeUser(e.user_id));
         const activeCount = scopedRoster.filter((e) => e.status === "active").length;
         const inactiveCount = scopedRoster.filter((e) => e.status !== "active").length;
+
+        /**
+         * Who is actually working right now — the same derivation `/attendance` uses, deliberately.
+         *
+         * The KPI cards link to that roster, so a card reading 14 above a table listing 1 is the
+         * card being wrong, not a difference of opinion. Two things have to match for the numbers
+         * to agree:
+         *
+         *  - **Who counts.** Only people who can run a timer. An Owner/Admin holds no
+         *    `TimeTrackSelf` by construction, so counting them makes everyone permanently "not
+         *    working". This is why the roster says 12 where the directory says 14.
+         *  - **What "working" means.** A running timer, read per-user off the same endpoint the
+         *    roster reads. Device presence is a different fact and disagreed with it constantly.
+         *
+         * Bounded fan-out, skip-on-failure: one call per timer-holding employee. A failed row
+         * counts as not-working rather than failing the dashboard.
+         */
+        const timerHolders = scopedRoster.filter(
+          (e) =>
+            e.status === "active" &&
+            (contributorIds === null || contributorIds.has(e.role_id ?? "")),
+        );
+        const todayForTimers = todayIso();
+        const runningFlags = await mapWithConcurrency(timerHolders, 4, (e) =>
+          getUserDay(e.user_id, todayForTimers).then(
+            (d) => d.running === true,
+            () => false,
+          ),
+        );
+        const workingNow = runningFlags.filter(Boolean).length;
+        const notWorkingNow = timerHolders.length - workingNow;
 
         // Per-day monitoring reads — bounded + skip-on-fail. A day with no agent data just contributes
         // nothing (nulls), never a seeded number.
@@ -293,11 +327,6 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const screenshotsTrend = bundles.map((b) => b.shots);
         const screenshotCount = screenshotsTrend.reduce((a, b) => a + b, 0);
 
-        // ── Running timers = online agent devices in scope. ──
-        const runningTimers = fleet
-          ? fleet.devices.filter((d) => d.connectivity === "online" && inScopeUser(d.user_id)).length
-          : 0;
-
         // ── Billing seats. ──
         const seatsTotal = billing && billing.seat_cap > 0 ? billing.seat_cap : roster.length || 1;
         const billingBlock = {
@@ -328,9 +357,11 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           rangeLabel: rangeLabelFor({ range, team, start, end }, days),
           kpis: {
             productivity: { value: productivityValue, deltaPct: 0, trend: productivityTrendSeries },
-            active: flat(activeCount),
-            inactive: flat(inactiveCount),
-            timers: flat(runningTimers),
+            // Working-now, not headcount — see the derivation above. `activeCount`/`inactiveCount`
+            // remain directory headcount further down, because the status ring widget means that.
+            active: flat(workingNow),
+            inactive: flat(notWorkingNow),
+            timers: flat(workingNow),
             hours: flat(hoursTracked),
             attendance: flat(attendanceRate),
             newHires: flat(0), // directory list carries no join date → honest 0 (see hint).

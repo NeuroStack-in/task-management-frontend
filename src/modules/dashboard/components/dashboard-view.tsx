@@ -149,8 +149,10 @@ function OrgDashboard() {
               label="Running Timers"
               value={kpis.timers.value}
               icon={Timer}
-              hint="online agents"
-              href="/time-tracking"
+              // Was "online agents", which described the old fleet-presence source. It counts
+              // running timers now, and the roster below the link is where you see whose.
+              hint="tracking now"
+              href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
             />
           </>
         ) : (
