@@ -12,7 +12,7 @@
  * It carries no attendance data and is shared by the personal attendance view and the locations
  * module, so it stays exported here unchanged.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import {
@@ -107,6 +107,15 @@ const fmtTime = (ms?: number) =>
 /** Worked minutes → one-decimal hours, or `—`. */
 const fmtHours = (mins?: number) => (mins && mins > 0 ? (mins / 60).toFixed(1) : "—");
 
+/**
+ * Anchor for deep links into this section — the dashboard's employee KPI cards land here.
+ *
+ * Exported so the two sides cannot drift: a link built from a hand-typed string keeps working right
+ * up until someone renames the id, and then fails by silently landing at the top of the page, which
+ * looks like the link "sort of" working.
+ */
+export const ATTENDANCE_LOG_ANCHOR = "attendance-log";
+
 const PAGE_SIZE = 10;
 type SortKey = "name" | "rate" | "status";
 
@@ -142,6 +151,29 @@ export function AttendanceLog({
 
   // Reset paging when the underlying window changes.
   useEffect(() => setPage(0), [label, mode]);
+
+  /**
+   * Honour `#attendance-log` once the table is actually on screen.
+   *
+   * The browser's own hash scroll fires on navigation, before this section has data — at that point
+   * the card is a loading spinner a few rows tall, so it either scrolls nowhere or lands on a box
+   * that then grows and pushes the content off-screen. Waiting for `loading` to clear means the
+   * element is its real height before we move to it.
+   *
+   * `getElementById`, not a ref: `Card` is a plain function component and does not forward refs, so
+   * a ref here would warn in development and be null in production.
+   */
+  const scrolledToAnchor = useRef(false);
+  useEffect(() => {
+    if (loading || scrolledToAnchor.current) return;
+    if (window.location.hash !== `#${ATTENDANCE_LOG_ANCHOR}`) return;
+    // Once per mount. Without the latch every later re-render that flips `loading` — a filter
+    // change, a poll — would yank the page back down while someone is reading it.
+    scrolledToAnchor.current = true;
+    document
+      .getElementById(ATTENDANCE_LOG_ANCHOR)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [loading]);
 
   // Status chips only make sense for a per-person status column (day / today), not a rate column.
   const statusOptions = useMemo(() => {
@@ -217,7 +249,7 @@ export function AttendanceLog({
   };
 
   return (
-    <Card>
+    <Card id={ATTENDANCE_LOG_ANCHOR} className="scroll-mt-24">
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div>
           <CardTitle>Attendance log</CardTitle>

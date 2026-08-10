@@ -19,6 +19,7 @@ import { DashboardControls } from "./dashboard-controls";
 import { CustomizableDashboard } from "./customizable-dashboard";
 import { PersonalDashboard } from "./personal-dashboard";
 import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
+import { ATTENDANCE_LOG_ANCHOR } from "@/modules/attendance/components/attendance-log";
 import { useDashboardData } from "../use-dashboard-data";
 import type { DashboardRange } from "../lib/dashboard-data";
 
@@ -128,17 +129,21 @@ function OrgDashboard() {
         />
         {range === "today" ? (
           <>
+            {/* Straight to the attendance log rather than the employee directory. Both numbers are
+                about who is working *today*, and the roster answering that is below the fold on
+                /attendance — the hash lands the reader on it instead of at the top of a page whose
+                answer they then have to scroll for. */}
             <StatCard
               label="Active employees"
               value={kpis.active.value}
               icon={Users}
-              href="/employees"
+              href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
             />
             <StatCard
               label="Inactive employees"
               value={kpis.inactive.value}
               icon={UserMinus}
-              href="/employees"
+              href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
             />
             <StatCard
               label="Running Timers"
