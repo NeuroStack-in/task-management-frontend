@@ -30,7 +30,10 @@ import { isWorkday, type IsoWeekday } from "@/lib/workdays";
  * productivity-score read models (LLD §12), element-for-element. Where the server has a real source
  * the element shows it; where it doesn't yet, the element degrades to an honest empty **in place**
  * rather than being removed or fabricated:
- *  • Time by category / AI metrics / active-vs-inactive ring — real (org day rollup).
+ *  • Time by category / AI metrics / active-vs-inactive ring — real, and **scoped to the selected
+ *    granularity**: the day's rollup for Daily, an aggregate of the period's per-day rollups for
+ *    Weekly/Monthly. They previously always read the single day, so Weekly and Monthly showed a
+ *    day's figures beside a narrative correctly reporting no weekly/monthly data existed.
  *  • AI narrative — real (`GET /v1/insights/reports/ai`), Enterprise-gated → honest upsell note.
  *  • Weekly / Monthly trend — real, aggregated from per-day org rollups (fan-out, concurrency 3).
  *  • Daily trend — no hourly source (the scorer stores daily totals), so the chart body is an honest
@@ -176,18 +179,96 @@ export function ActivityTab() {
 
   const hasTrend = trendData.some((d) => d.active !== null);
 
-  const rollup = org.data?.rollup;
-  const scored = rollup?.scored_people ?? 0;
-  const totalPeople = rollup?.total_people ?? 0;
-  const inactive = Math.max(0, totalPeople - scored);
+  /**
+   * Every figure on this tab, resolved for the **selected period** — one source, so the cards
+   * cannot disagree with each other or with the narrative.
+   *
+   * This used to read the single-day rollup unconditionally, with no dependency on `granularity`.
+   * Weekly and Monthly therefore showed one day's numbers: identical "People scored" and "Team avg
+   * score" on all three tabs, sitting next to a narrative correctly saying no weekly/monthly report
+   * had been generated. The numbers were real, but they were answering a different question than
+   * the one the toggle asked.
+   *
+   * `null` means **there is nothing scored in this period** — every consumer then renders its empty
+   * state rather than a zero, because "0" is a measurement and this is an absence of one.
+   */
+  const stats = useMemo(() => {
+    const build = (
+      r: {
+        total_people: number;
+        scored_people: number;
+        active_sec_total: number;
+        productive_sec_total: number;
+        neutral_sec_total: number;
+        distracting_sec_total: number;
+      },
+      avgScore: number,
+      coverage: { label: string; value: string },
+    ) => {
+      const catTotal =
+        r.productive_sec_total + r.neutral_sec_total + r.distracting_sec_total;
+      return {
+        coverage,
+        avgScore: Math.round(avgScore),
+        activeSec: r.active_sec_total,
+        productiveSec: r.productive_sec_total,
+        neutralSec: r.neutral_sec_total,
+        distractingSec: r.distracting_sec_total,
+        catTotal,
+        prodPct: catTotal > 0 ? Math.round((r.productive_sec_total / catTotal) * 100) : 0,
+        scored: r.scored_people,
+        inactive: Math.max(0, r.total_people - r.scored_people),
+      };
+    };
 
-  const catTotal = rollup
-    ? rollup.productive_sec_total +
-      rollup.neutral_sec_total +
-      rollup.distracting_sec_total
-    : 0;
-  const prodPct =
-    catTotal > 0 ? Math.round((rollup!.productive_sec_total / catTotal) * 100) : 0;
+    if (granularity === "daily") {
+      const r = org.data?.rollup;
+      if (!r || r.avg_score === null) return null;
+      return build(r, r.avg_score, {
+        label: "People scored",
+        value: `${r.scored_people}/${r.total_people}`,
+      });
+    }
+
+    // Weekly / monthly: aggregate the same per-day rollups that already feed the trend chart.
+    const days = range.points.filter((p) => p.rollup && p.score !== null);
+    if (days.length === 0) return null;
+
+    const sum = days.reduce(
+      (a, p) => {
+        const r = p.rollup!;
+        a.active_sec_total += r.active_sec_total;
+        a.productive_sec_total += r.productive_sec_total;
+        a.neutral_sec_total += r.neutral_sec_total;
+        a.distracting_sec_total += r.distracting_sec_total;
+        // Per-day counts cannot be de-duplicated into distinct people over a period, so the
+        // headcount figures are the period's **peak day** — a number the data actually supports.
+        a.scored_people = Math.max(a.scored_people, r.scored_people);
+        a.total_people = Math.max(a.total_people, r.total_people);
+        return a;
+      },
+      {
+        total_people: 0,
+        scored_people: 0,
+        active_sec_total: 0,
+        productive_sec_total: 0,
+        neutral_sec_total: 0,
+        distracting_sec_total: 0,
+      },
+    );
+    // Mean of the scored days — the same mean-of-means the trend chart plots, so the tile and the
+    // chart above it can never tell different stories.
+    const avg = days.reduce((s, p) => s + (p.score ?? 0), 0) / days.length;
+    return build(sum, avg, {
+      // "Days scored", not "People scored": we have per-day counts, not identities.
+      label: "Days scored",
+      value: `${days.length}/${range.points.length}`,
+    });
+  }, [granularity, org.data, range.points]);
+
+  const scored = stats?.scored ?? 0;
+  const inactive = stats?.inactive ?? 0;
+  const catTotal = stats?.catTotal ?? 0;
 
   // AI narrative: real, or an honest note when locked / loading / unavailable — never a fabricated paragraph.
   const summary = useMemo(() => {
@@ -200,20 +281,18 @@ export function ActivityTab() {
     return "The AI activity report appears here once there's scored activity for this period.";
   }, [ai.loading, ai.data, ai.locked, ai.error]);
 
-  // Metrics: real org rollup (available regardless of the AI add-on). Empty until someone reports.
+  // Metrics: the real rollup for the selected period (available regardless of the AI add-on).
+  // Empty when nothing was scored in that period — the tiles must never assert a figure the
+  // narrative beside them is simultaneously calling non-existent.
   const metrics = useMemo(() => {
-    if (!rollup || rollup.avg_score === null) return [];
+    if (!stats) return [];
     return [
-      { label: "People scored", value: `${rollup.scored_people}/${rollup.total_people}` },
-      {
-        label: "Team avg score",
-        value: `${Math.round(rollup.avg_score)}`,
-        hint: "/ 100",
-      },
-      { label: "Active", value: fmtHours(rollup.active_sec_total) },
-      { label: "Productive time", value: `${prodPct}%` },
+      { label: stats.coverage.label, value: stats.coverage.value },
+      { label: "Team avg score", value: `${stats.avgScore}`, hint: "/ 100" },
+      { label: "Active", value: fmtHours(stats.activeSec) },
+      { label: "Productive time", value: `${stats.prodPct}%` },
     ];
-  }, [rollup, prodPct]);
+  }, [stats]);
 
   return (
     <div className="space-y-4">
@@ -340,10 +419,10 @@ export function ActivityTab() {
                 {CATEGORIES.map((cat) => {
                   const value =
                     cat.key === "productive"
-                      ? rollup!.productive_sec_total
+                      ? stats!.productiveSec
                       : cat.key === "neutral"
-                        ? rollup!.neutral_sec_total
-                        : rollup!.distracting_sec_total;
+                        ? stats!.neutralSec
+                        : stats!.distractingSec;
                   const pct = Math.round((value / catTotal) * 100);
                   return (
                     <div key={cat.key} className="space-y-1">
@@ -374,13 +453,29 @@ export function ActivityTab() {
               <EmptyState
                 icon={Activity}
                 title="No activity to categorise"
-                description="Category time appears once agents report productive / neutral / distracting activity for this day."
+                description={
+                  granularity === "daily"
+                    ? "Category time appears once agents report productive / neutral / distracting activity for this day."
+                    : "No agent reported categorised activity in this period. Pick a period with scored days, or check that the desktop agents are syncing."
+                }
                 className="border-0"
               />
             )}
           </CardContent>
         </Card>
-        <ActiveInactiveRing active={scored} inactive={inactive} layout="row" />
+        <ActiveInactiveRing
+          active={scored}
+          inactive={inactive}
+          layout="row"
+          // Per-day counts can't be de-duplicated into distinct people across a period, so a
+          // multi-day figure is the best single day — say so rather than let it read as "this many
+          // people were active all week".
+          note={
+            granularity === "daily"
+              ? undefined
+              : "Peak day in this period — per-day counts can't be combined into distinct people."
+          }
+        />
       </div>
 
       <div className="space-y-4">

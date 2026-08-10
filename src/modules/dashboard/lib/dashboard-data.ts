@@ -81,6 +81,14 @@ export interface DashboardData {
   billing: { plan: string; seatsUsed: number; seatsTotal: number };
   heatmap: number[][];
   attendanceCounts: Record<AttendanceStatus, number>;
+  /**
+   * How many **closed** days in the window actually carry attendance statuses.
+   *
+   * `0` means the rate is not measurable yet, not that it is zero — today's statuses don't exist
+   * until the 00:15 close cron runs. Consumers must render an absence, never `0%`, or the card
+   * reads "nobody attended" next to a live productivity score built from those same people.
+   */
+  attendanceResolvedDays: number;
   statusCounts: Record<UserStatus, number>;
   activeCount: number;
   inactiveCount: number;

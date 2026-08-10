@@ -1,12 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getOrgActivity } from "./services/insights.service";
+import { getOrgActivity, type OrgActivity } from "./services/insights.service";
 
-/** One day's org average score, or `null` when that day's fetch failed or has no scores. */
+/**
+ * One day's org rollup. `score` is `null` when that day's fetch failed or nothing was scored.
+ *
+ * The whole rollup is kept, not just the score: the period metric tiles are aggregated from these
+ * days. Previously only `score` survived the fan-out, so anything shown for a week or a month had
+ * to fall back to a single day's rollup — which is how the tiles came to contradict a narrative
+ * saying no weekly data existed.
+ */
 export interface RangePoint {
   date: string;
   score: number | null;
+  /** `null` when the day's fetch failed — distinguishable from a real zero. */
+  rollup: OrgActivity["rollup"] | null;
 }
 
 export interface RangeState {
@@ -21,16 +30,24 @@ export interface RangeState {
  * built by aggregating day calls rather than a dedicated range endpoint.
  */
 async function fanOut(dates: string[]): Promise<RangePoint[]> {
-  const results: RangePoint[] = dates.map((date) => ({ date, score: null }));
+  const results: RangePoint[] = dates.map((date) => ({
+    date,
+    score: null,
+    rollup: null,
+  }));
   let cursor = 0;
   const worker = async () => {
     while (cursor < dates.length) {
       const i = cursor++;
       try {
         const d = await getOrgActivity(dates[i]);
-        results[i] = { date: dates[i], score: d.rollup.avg_score };
+        results[i] = {
+          date: dates[i],
+          score: d.rollup.avg_score,
+          rollup: d.rollup,
+        };
       } catch {
-        results[i] = { date: dates[i], score: null };
+        results[i] = { date: dates[i], score: null, rollup: null };
       }
     }
   };

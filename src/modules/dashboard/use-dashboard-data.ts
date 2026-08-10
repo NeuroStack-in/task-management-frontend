@@ -39,11 +39,7 @@ import {
   getDayOversight,
   type ApiDayResponse,
 } from "@/modules/attendance/services/attendance.service";
-import type {
-  DashboardData,
-  DashboardFilters,
-  Performer,
-} from "./lib/dashboard-data";
+import type { DashboardData, DashboardFilters, Performer } from "./lib/dashboard-data";
 
 /** Bounded per-day fan-out — a small cap so a month window doesn't burst the Lambda. */
 const DAY_FANOUT = 3;
@@ -54,12 +50,23 @@ const MAX_DAYS = 62;
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SHORT_MONTH = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const isoOf = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 /** Resolve the filter window to a list of `YYYY-MM-DD` days in the client's local calendar. */
 function resolveDays(f: DashboardFilters): string[] {
@@ -92,7 +99,11 @@ function resolveDays(f: DashboardFilters): string[] {
   const e = new Date(`${f.end}T00:00:00`);
   if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e < s) return [];
   const days: string[] = [];
-  for (let d = new Date(s); d <= e && days.length < MAX_DAYS; d.setDate(d.getDate() + 1)) {
+  for (
+    let d = new Date(s);
+    d <= e && days.length < MAX_DAYS;
+    d.setDate(d.getDate() + 1)
+  ) {
     days.push(isoOf(new Date(d)));
   }
   return days;
@@ -181,7 +192,8 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
                   .map((e) => e.user_id),
               );
         const inScopeUser = (id: string) => scopeUserIds === null || scopeUserIds.has(id);
-        const inScopeDept = (id: string) => selectedDeptIds === null || selectedDeptIds.has(id);
+        const inScopeDept = (id: string) =>
+          selectedDeptIds === null || selectedDeptIds.has(id);
 
         // Directory-derived KPIs (dept-filtered). Real the moment the roster loads.
         const scopedRoster = roster.filter((e) => inScopeUser(e.user_id));
@@ -221,15 +233,21 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
 
         // Per-day monitoring reads — bounded + skip-on-fail. A day with no agent data just contributes
         // nothing (nulls), never a seeded number.
-        const bundles = await mapWithConcurrency<string, DayBundle>(days, DAY_FANOUT, async (iso) => {
-          const [activity, oversight, grid] = await Promise.all([
-            getOrgActivity(iso).catch(() => null),
-            getDayOversight(iso).catch(() => null),
-            getScreenshots(iso, { limit: SHOT_PAGE }).catch(() => null),
-          ]);
-          const shots = grid ? grid.shots.filter((s) => inScopeUser(s.user_id)).length : 0;
-          return { iso, activity, oversight, shots };
-        });
+        const bundles = await mapWithConcurrency<string, DayBundle>(
+          days,
+          DAY_FANOUT,
+          async (iso) => {
+            const [activity, oversight, grid] = await Promise.all([
+              getOrgActivity(iso).catch(() => null),
+              getDayOversight(iso).catch(() => null),
+              getScreenshots(iso, { limit: SHOT_PAGE }).catch(() => null),
+            ]);
+            const shots = grid
+              ? grid.shots.filter((s) => inScopeUser(s.user_id)).length
+              : 0;
+            return { iso, activity, oversight, shots };
+          },
+        );
         if (!live) return;
 
         const shortWindow = days.length <= 8;
@@ -239,7 +257,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         let scoredDayCount = 0;
         let activeSecTotal = 0;
         const productivityTrend = bundles.map((b) => {
-          const people = (b.activity?.people ?? []).filter((p) => inScopeDept(p.department_id));
+          const people = (b.activity?.people ?? []).filter((p) =>
+            inScopeDept(p.department_id),
+          );
           const scored = people.filter((p) => p.breakdown);
           const dayScore = scored.length
             ? scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) / scored.length
@@ -265,7 +285,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               : 0,
           };
         });
-        const productivityValue = scoredDayCount ? Math.round(scoreSum / scoredDayCount) : 0;
+        const productivityValue = scoredDayCount
+          ? Math.round(scoreSum / scoredDayCount)
+          : 0;
         const productivityTrendSeries = productivityTrend.map((t) => t.active);
         const hoursTracked = Math.round(activeSecTotal / 3600);
 
@@ -273,10 +295,20 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         let presentSum = 0;
         let countedSum = 0;
         let latestCounts = { present: 0, partial: 0, leave: 0, absent: 0 };
-        for (const b of bundles) {
+        // **Closed days only.** Attendance statuses are stamped by the 00:15 close cron, so today
+        // has no attendance record yet — every user comes back unresolved and counts as "not
+        // present". Including today therefore reported `0 present` next to a live productivity
+        // score built from the very same people's agent activity: two clocks, shown as one fact.
+        // `use-oversight-attendance` and `use-month-attendance` already fetch closed days only;
+        // this is the dashboard catching up to them.
+        const today = todayIso();
+        const closedBundles = bundles.filter((b) => b.iso < today);
+        for (const b of closedBundles) {
           const users = (b.oversight?.users ?? []).filter((u) => inScopeUser(u.user_id));
           const counted = users.filter((u) => u.status !== "non_workday");
-          const present = users.filter((u) => u.status === "present" || u.status === "partial").length;
+          const present = users.filter(
+            (u) => u.status === "present" || u.status === "partial",
+          ).length;
           presentSum += present;
           countedSum += counted.length;
           if (counted.length > 0) {
@@ -288,11 +320,24 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             };
           }
         }
-        const attendanceRate = countedSum ? Math.round((presentSum / countedSum) * 100) : 0;
+        const attendanceRate = countedSum
+          ? Math.round((presentSum / countedSum) * 100)
+          : 0;
+        // Days that actually produced statuses. 0 => not measurable yet (see DashboardData) — the
+        // consumer renders an absence rather than this 0.
+        const attendanceResolvedDays = closedBundles.filter(
+          (b) =>
+            (b.oversight?.users ?? []).filter(
+              (u) => inScopeUser(u.user_id) && u.status !== "non_workday",
+            ).length > 0,
+        ).length;
 
         // ── Latest day with scored people → team comparison + top performers. ──
-        const latestActivity = [...bundles].reverse().find((b) => (b.activity?.people?.length ?? 0) > 0)
-          ?.activity ?? bundles[bundles.length - 1]?.activity ?? null;
+        const latestActivity =
+          [...bundles].reverse().find((b) => (b.activity?.people?.length ?? 0) > 0)
+            ?.activity ??
+          bundles[bundles.length - 1]?.activity ??
+          null;
         const latestPeople = latestActivity?.people ?? [];
 
         // Team comparison stays global across departments (it is the cross-team view).
@@ -328,7 +373,8 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const screenshotCount = screenshotsTrend.reduce((a, b) => a + b, 0);
 
         // ── Billing seats. ──
-        const seatsTotal = billing && billing.seat_cap > 0 ? billing.seat_cap : roster.length || 1;
+        const seatsTotal =
+          billing && billing.seat_cap > 0 ? billing.seat_cap : roster.length || 1;
         const billingBlock = {
           plan: billing?.plan ?? "—",
           seatsUsed: roster.filter((e) => e.status === "active").length,
@@ -345,7 +391,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
 
         // No cheap prior-window comparison → deltas stay 0 (honest, not seeded). Trends are the real
         // per-day series where one exists (productivity), empty otherwise so the sparkline is omitted.
-        const flat = (value: number): { value: number; deltaPct: number; trend: number[] } => ({
+        const flat = (
+          value: number,
+        ): { value: number; deltaPct: number; trend: number[] } => ({
           value,
           deltaPct: 0,
           trend: [],
@@ -356,7 +404,11 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           team,
           rangeLabel: rangeLabelFor({ range, team, start, end }, days),
           kpis: {
-            productivity: { value: productivityValue, deltaPct: 0, trend: productivityTrendSeries },
+            productivity: {
+              value: productivityValue,
+              deltaPct: 0,
+              trend: productivityTrendSeries,
+            },
             // Working-now, not headcount — see the derivation above. `activeCount`/`inactiveCount`
             // remain directory headcount further down, because the status ring widget means that.
             active: flat(workingNow),
@@ -374,6 +426,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           billing: billingBlock,
           heatmap: [], // no per-hour productivity endpoint — the widget shows an honest empty state.
           attendanceCounts: latestCounts,
+          attendanceResolvedDays,
           statusCounts,
           activeCount,
           inactiveCount,

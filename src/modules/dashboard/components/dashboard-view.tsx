@@ -86,7 +86,7 @@ function OrgDashboard() {
       <div className="space-y-5">
         <PageHeader title="Dashboard" description="Your organization at a glance." />
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="text-muted-foreground text-sm">{error}</p>
           <Button variant="outline" size="sm" onClick={reload}>
             Retry
           </Button>
@@ -164,11 +164,18 @@ function OrgDashboard() {
               hint={rangeLabel}
               href="/time-tracking"
             />
+            {/* An unresolved rate is an absence, not a zero: statuses are stamped by the nightly
+                close, so a window covering only today has nothing to measure. Showing 0% there put
+                "nobody attended" beside a live productivity score for the same people. */}
             <StatCard
               label="Attendance Rate"
-              value={`${kpis.attendance.value}%`}
+              value={
+                data.attendanceResolvedDays === 0 ? "—" : `${kpis.attendance.value}%`
+              }
               icon={CalendarCheck}
-              hint={rangeLabel}
+              hint={
+                data.attendanceResolvedDays === 0 ? "awaiting nightly close" : rangeLabel
+              }
               href="/attendance"
             />
             <StatCard

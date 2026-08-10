@@ -2,12 +2,7 @@
 
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Grid3x3 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { UserStatus } from "@/types/user";
 import type { AttendanceStatus } from "@/modules/dashboard/lib/dashboard-data";
 import { cn } from "@/lib/utils";
@@ -30,13 +25,13 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
         </CardHeader>
         <CardContent>
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
-            <span className="flex size-10 items-center justify-center rounded-md bg-muted">
-              <Grid3x3 className="size-5 text-muted-foreground" />
+            <span className="bg-muted flex size-10 items-center justify-center rounded-md">
+              <Grid3x3 className="text-muted-foreground size-5" />
             </span>
             <p className="text-sm font-medium">Hourly activity pending</p>
-            <p className="max-w-xs text-xs text-muted-foreground">
-              When the team is most productive across the week appears here once the desktop agent
-              reports the hourly activity it captures.
+            <p className="text-muted-foreground max-w-xs text-xs">
+              When the team is most productive across the week appears here once the
+              desktop agent reports the hourly activity it captures.
             </p>
           </div>
         </CardContent>
@@ -52,7 +47,7 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
       <CardContent className="space-y-1.5">
         {data.map((row, d) => (
           <div key={HEATMAP_DAYS[d]} className="flex items-center gap-2">
-            <span className="w-8 shrink-0 text-xs text-muted-foreground">
+            <span className="text-muted-foreground w-8 shrink-0 text-xs">
               {HEATMAP_DAYS[d]}
             </span>
             <div className="flex flex-1 gap-1">
@@ -73,13 +68,13 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
           {HEATMAP_HOURS.map((h, i) => (
             <span
               key={i}
-              className="flex-1 text-center text-[10px] text-muted-foreground"
+              className="text-muted-foreground flex-1 text-center text-[10px]"
             >
               {h}
             </span>
           ))}
         </div>
-        <div className="flex items-center justify-end gap-1.5 pt-1 text-[10px] text-muted-foreground">
+        <div className="text-muted-foreground flex items-center justify-end gap-1.5 pt-1 text-[10px]">
           <span>Less</span>
           {[18, 40, 62, 84, 100].map((v) => (
             <span
@@ -145,10 +140,10 @@ function Donut({
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-display text-2xl font-semibold leading-none tabular-nums">
+          <span className="font-display text-2xl leading-none font-semibold tabular-nums">
             {center}
           </span>
-          <span className="mt-1 text-xs text-muted-foreground">{caption}</span>
+          <span className="text-muted-foreground mt-1 text-xs">{caption}</span>
         </div>
       </div>
       <ul className={cn("w-full space-y-2", layout === "row" && "sm:flex-1")}>
@@ -158,11 +153,12 @@ function Donut({
               className="size-2.5 shrink-0 rounded-full"
               style={{ backgroundColor: s.color }}
             />
-            <span className="flex-1 text-muted-foreground">{s.label}</span>
+            <span className="text-muted-foreground flex-1">{s.label}</span>
             <span className="tabular-nums">
               <span className="font-medium">{s.value}</span>
-              <span className="text-xs text-muted-foreground">
-                {" "}- {Math.round((s.value / total) * 100)}%
+              <span className="text-muted-foreground text-xs">
+                {" "}
+                - {Math.round((s.value / total) * 100)}%
               </span>
             </span>
           </li>
@@ -181,6 +177,30 @@ export function AttendanceDonut({
 }) {
   const total = counts.present + counts.partial + counts.leave + counts.absent;
   const presentPct = Math.round(((counts.present + counts.partial) / (total || 1)) * 100);
+
+  // Nothing resolved => say so. Attendance statuses are stamped by the 00:15 close cron, so a range
+  // covering only today has no record yet. Dividing by `total || 1` turned that into a confident
+  // "0% clocked in" sitting beside a live productivity score — the number read as "nobody came in"
+  // when it actually meant "not computed yet".
+  if (total === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Attendance</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground py-6 text-center text-sm">
+            No attendance resolved for this range yet.
+            <br />
+            <span className="text-xs">
+              Days are classified by the nightly close, so today appears here tomorrow.
+            </span>
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -208,10 +228,13 @@ export function ActiveInactiveRing({
   active,
   inactive,
   layout,
+  note,
 }: {
   active: number;
   inactive: number;
   layout?: "column" | "row";
+  /** Optional qualifier under the donut — e.g. that a multi-day figure is the period's peak day. */
+  note?: string;
 }) {
   const total = active + inactive || 1;
   return (
@@ -229,6 +252,7 @@ export function ActiveInactiveRing({
             { label: "Inactive", value: inactive, color: "var(--muted-foreground)" },
           ]}
         />
+        {note ? <p className="text-muted-foreground mt-3 text-xs">{note}</p> : null}
       </CardContent>
     </Card>
   );
@@ -243,11 +267,7 @@ const STATUS_LABEL: Record<UserStatus, { label: string; color: string }> = {
   suspended: { label: "Suspended", color: "var(--destructive)" },
 };
 
-export function HeadcountStatus({
-  counts,
-}: {
-  counts: Record<UserStatus, number>;
-}) {
+export function HeadcountStatus({ counts }: { counts: Record<UserStatus, number> }) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
   const order: UserStatus[] = ["active", "inactive", "invited", "suspended"];
   return (
@@ -268,7 +288,7 @@ export function HeadcountStatus({
                   {counts[s]} · {pct}%
                 </span>
               </div>
-              <div className={cn("h-2 overflow-hidden rounded-full bg-muted")}>
+              <div className={cn("bg-muted h-2 overflow-hidden rounded-full")}>
                 <div
                   className="h-full rounded-full"
                   style={{ width: `${pct}%`, backgroundColor: meta.color }}
