@@ -307,7 +307,19 @@ export function ActivityTab() {
       { label: stats.coverage.label, value: stats.coverage.value },
       { label: "Team avg score", value: `${stats.avgScore}`, hint: "/ 100" },
       { label: "Active", value: fmtHours(stats.activeSec) },
-      { label: "Productive time", value: `${stats.prodPct}%` },
+      // `0%` here meant "no app-level categorisation was reported", not "none of the time was
+      // productive". Category seconds come only from the agent's `top_apps` spans, which are
+      // optional and classified on-device (`wp-agent-contract`: `#[serde(default)] top_apps`), so
+      // an agent reporting `active_sec` without them leaves productive/neutral/distracting all
+      // zero. Dividing by that produced a confident 0% — a verdict on the team drawn from a gap in
+      // instrumentation. Absent stays absent.
+      stats.catTotal > 0
+        ? { label: "Productive time", value: `${stats.prodPct}%` }
+        : {
+            label: "Productive time",
+            value: "—",
+            hint: "no app data",
+          },
     ];
   }, [stats]);
 
