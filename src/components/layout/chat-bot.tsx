@@ -71,8 +71,14 @@ export function ChatBot() {
     setInput("");
     setPending(true);
     try {
-      // Real Groq Llama 3.3 70B via /v1/assistant/messages (session-only; nothing stored server-side).
-      const reply = await sendAssistantMessage(trimmed);
+      // Real Groq Llama 3.3 70B via /v1/assistant/messages (session-only; nothing stored
+      // server-side — so the conversation so far is replayed with each turn, or a follow-up
+      // reaches the model with no question attached to it). `messages` here is deliberately the
+      // state *before* this turn was appended: it is the history, not the message.
+      const reply = await sendAssistantMessage(
+        trimmed,
+        messages.map((m) => ({ role: m.role, content: m.text })),
+      );
       setMessages((m) => [...m, { id: idRef.current++, role: "assistant", text: reply }]);
     } catch (e) {
       const text =

@@ -11,11 +11,27 @@ interface MessageReply {
   reply: string;
 }
 
-/** Send one message, get the assistant's reply. Throws `ApiError` on 401/403/5xx. */
-export async function sendAssistantMessage(message: string): Promise<string> {
+/** One earlier turn of the open conversation. Mirrors `assistant::…::dto::HistoryTurn`. */
+export interface AssistantTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Send one message, get the assistant's reply. Throws `ApiError` on 401/403/5xx.
+ *
+ * `history` is the conversation so far, oldest first, **excluding** the message being sent. The
+ * server stores nothing, so it only knows what the client replays — without this the model saw a
+ * single turn and a follow-up like "from 2/8/26 to 8/8/26" had no question to attach to, which
+ * read as the assistant forgetting the conversation. The server bounds and role-filters it.
+ */
+export async function sendAssistantMessage(
+  message: string,
+  history: AssistantTurn[] = [],
+): Promise<string> {
   const res = await apiFetch<MessageReply>("/v1/assistant/messages", {
     method: "POST",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, history }),
   });
   return res.reply;
 }
