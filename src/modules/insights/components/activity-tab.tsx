@@ -21,6 +21,7 @@ import { AiReportCard } from "./ai-report-card";
 import { useOrgActivity } from "../use-activity";
 import { useAiReport } from "../use-reports";
 import { useOrgActivityRange } from "../use-activity-range";
+import { useHourlyActivity } from "../use-hourly-activity";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 
@@ -36,8 +37,10 @@ import { isWorkday, type IsoWeekday } from "@/lib/workdays";
  *    day's figures beside a narrative correctly reporting no weekly/monthly data existed.
  *  • AI narrative — real (`GET /v1/insights/reports/ai`), Enterprise-gated → honest upsell note.
  *  • Weekly / Monthly trend — real, aggregated from per-day org rollups (fan-out, concurrency 3).
- *  • Daily trend — no hourly source (the scorer stores daily totals), so the chart body is an honest
- *    "waiting on minute-level capture" note; the card and toggle stay.
+ *  • Daily trend — real, from the day's **screenshot captures** (`captured_at` + the server's
+ *    category), bucketed into local hours. The scorer stores daily totals so there is no hourly
+ *    *score*; captures are a real record of when work happened, and are labelled as moments rather
+ *    than minutes. Empty only when the day genuinely has no captures.
  *  • App & website breakdown — no per-app endpoint, so both lists are an honest "waiting on the
  *    agent" note; the section and toggle stay.
  */
@@ -133,7 +136,21 @@ export function ActivityTab() {
 
   const workdays = useWorkdays();
 
-  // Weekly / Monthly build the trend by fanning per-day org rollups; Daily has no hourly source.
+  // Hour-by-hour comes from the day's captures (see the hook) — only fetched on the Daily tab,
+  // which is the only place an hourly curve is shown.
+  const hourly = useHourlyActivity(granularity === "daily" ? date : "");
+
+  /** `0` → "12a", `13` → "1p" — compact enough for 24 ticks. */
+  const hourLabel = (h: number) =>
+    h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`;
+
+  const hourlyData = useMemo(
+    () => hourly.hours.map((b) => ({ ...b, label: hourLabel(b.hour) })),
+    [hourly.hours],
+  );
+
+  // Weekly / Monthly build the trend by fanning per-day org rollups; Daily draws its curve from
+  // the day's captures instead (`useHourlyActivity`), so it needs no range.
   const rangeDates = useMemo<string[]>(() => {
     if (!date) return [];
     if (granularity === "weekly") return weekWorkdays(anchor, workdays);
@@ -342,12 +359,89 @@ export function ActivityTab() {
         </CardHeader>
         <CardContent>
           {granularity === "daily" ? (
-            <EmptyState
-              icon={Activity}
-              title="No hour-by-hour data yet"
-              description="Hour-by-hour activity appears once the desktop agent reports minute-level capture — the server stores daily totals only, so there's no hourly curve to draw."
-              className="border-0"
-            />
+            hourly.loading ? (
+              <div className="flex h-[260px] items-center justify-center">
+                <Loader label="Reading the day's captures…" />
+              </div>
+            ) : hourly.captures === 0 ? (
+              <EmptyState
+                icon={Activity}
+                title="No hour-by-hour data yet"
+                description="Hour-by-hour activity is drawn from the day's screenshot captures. None were recorded for this date — it appears here once the desktop agent reports."
+                className="border-0"
+              />
+            ) : (
+              <>
+                <div className="h-[260px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={hourlyData} margin={{ left: -18, right: 8, top: 4 }}>
+                      <defs>
+                        {CATEGORIES.map((c) => (
+                          <linearGradient
+                            key={c.key}
+                            id={`fillHour-${c.key}`}
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop offset="5%" stopColor={c.color} stopOpacity={0.45} />
+                            <stop offset="95%" stopColor={c.color} stopOpacity={0} />
+                          </linearGradient>
+                        ))}
+                      </defs>
+                      <CartesianGrid vertical={false} stroke="var(--border)" />
+                      <XAxis
+                        dataKey="label"
+                        interval={1}
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                      />
+                      {/* Counts, not a percentage — this axis must scale to the data, unlike the
+                          0–100 score axis the weekly/monthly trend uses. */}
+                      <YAxis
+                        allowDecimals={false}
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--popover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--radius)",
+                          fontSize: 12,
+                          color: "var(--popover-foreground)",
+                        }}
+                      />
+                      {CATEGORIES.map((c) => (
+                        <Area
+                          key={c.key}
+                          type="monotone"
+                          dataKey={c.key}
+                          stackId="hourly"
+                          stroke={c.color}
+                          fill={`url(#fillHour-${c.key})`}
+                          strokeWidth={2}
+                          name={c.label}
+                        />
+                      ))}
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Say what the curve measures. These are capture *moments*, not minutes — the
+                    agent samples periodically, so this shows when work happened, not how much. */}
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {hourly.captures.toLocaleString()} screenshot capture
+                  {hourly.captures === 1 ? "" : "s"} across the team, by the hour they
+                  were taken — when work happened, not hours worked.
+                  {hourly.truncated
+                    ? " Showing the most recent captures only; the day has more than this view reads."
+                    : ""}
+                </p>
+              </>
+            )
           ) : range.loading ? (
             <div className="flex h-[260px] items-center justify-center">
               <Loader label="Aggregating the team's scores…" />
