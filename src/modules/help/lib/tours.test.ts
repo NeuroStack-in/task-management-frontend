@@ -215,4 +215,14 @@ describe("tour data", () => {
       ).toBeGreaterThan(0);
     }
   });
+
+  // The feature markings that drop timer/project content in an org that has those off
+  // (MANAGED-AGENT.md §8 / F-A). Pinned so a rename doesn't silently un-gate them.
+  it("marks the timer/project surfaces with their feature", () => {
+    expect(TOURS["time-tracking"].feature).toBe("time.tracking");
+    const projectsStep = TOURS["getting-started"].steps.find(
+      (s) => s.target === "nav:/projects",
+    );
+    expect(projectsStep?.feature).toBe("projects");
+  });
 });

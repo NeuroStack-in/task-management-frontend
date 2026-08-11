@@ -38,6 +38,8 @@
  * different, lesser thing than the rest of the tour — and made the tour look half-finished.
  */
 import type { PermissionId } from "@/types/rbac";
+import type { FeatureKey } from "@/stores/features.store";
+import type { TrackingMode } from "@/lib/tracking-mode";
 
 /**
  * Targets verified to exist for every role that can reach them. Enforced by `tours.test.ts`.
@@ -92,6 +94,16 @@ export interface TourStep {
    * most likely to run a tour.
    */
   dashboard?: "personal" | "org";
+  /**
+   * The org feature this step's target belongs to. Dropped **up front** when the org has it off (the
+   * target won't be on screen), same reasoning as `permission`/`dashboard` (MANAGED-AGENT.md §8).
+   */
+  feature?: FeatureKey;
+  /**
+   * Tracking modes this step applies to. Absent = all modes. A step for a surface a mode hides is
+   * dropped up front (e.g. a project-timer step in `machine` mode).
+   */
+  modes?: readonly TrackingMode[];
 }
 
 export interface Tour {
@@ -104,6 +116,11 @@ export interface Tour {
    * no steps — a button that does nothing. `tours.test.ts` asserts they agree.
    */
   permission?: PermissionId;
+  /**
+   * The org feature the whole tour belongs to — the Help Center hides the "Start tour" card when the
+   * org has it off, so it never launches a tour whose every step would drop (MANAGED-AGENT.md §8).
+   */
+  feature?: FeatureKey;
   steps: TourStep[];
 }
 
@@ -165,6 +182,7 @@ export const TOURS: Record<string, Tour> = {
       {
         route: "/dashboard",
         target: "nav:/projects",
+        feature: "projects", // gone when Projects is off (incl. machine mode)
         title: "Where the work lives",
         content: "Projects and the tasks assigned to you.",
       },
@@ -183,6 +201,9 @@ export const TOURS: Record<string, Tour> = {
   // branches — the same treatment `dash:kpis` gets. Nothing here falls back to `page:header`.
   "time-tracking": {
     id: "time-tracking",
+    // The whole tour is about the timesheet surface — hide its Help Center card when Time Tracking
+    // is switched off, so it never opens a tour whose steps would all drop (MANAGED-AGENT.md §8).
+    feature: "time.tracking",
     steps: [
       {
         route: "/dashboard",

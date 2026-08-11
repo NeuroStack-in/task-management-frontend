@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useTourStore } from "@/stores/tour.store";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsSurfaceOn, useTrackingMode } from "@/hooks/use-features";
 import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import { getTour, type TourStep } from "@/modules/help/lib/tours";
 import { cn } from "@/lib/utils";
@@ -171,6 +172,9 @@ export function ProductTour() {
   const { can } = usePermissions();
   // Which /dashboard this caller lands on — decides which dashboard steps are real for them.
   const personalDashboard = useIsPersonalDashboard();
+  // A step whose feature the org switched off (or whose mode hides it) has no target on screen.
+  const isSurfaceOn = useIsSurfaceOn();
+  const mode = useTrackingMode();
 
   const activeTourId = useTourStore((s) => s.activeTourId);
   const stepIndex = useTourStore((s) => s.stepIndex);
@@ -194,9 +198,12 @@ export function ProductTour() {
         (!s.permission || can(s.permission)) &&
         // `/dashboard` renders one of two components; a step anchored to the other one has no
         // target on screen and would burn the full target-wait before skipping.
-        (!s.dashboard || s.dashboard === (personalDashboard ? "personal" : "org")),
+        (!s.dashboard || s.dashboard === (personalDashboard ? "personal" : "org")) &&
+        // A feature the org switched off, or a surface its tracking mode hides, isn't on screen.
+        (!s.feature || isSurfaceOn(s.feature)) &&
+        (!s.modes || s.modes.includes(mode)),
     );
-  }, [activeTourId, can, personalDashboard]);
+  }, [activeTourId, can, personalDashboard, isSurfaceOn, mode]);
 
   const step: TourStep | undefined = steps[stepIndex];
   const isLast = stepIndex === steps.length - 1;

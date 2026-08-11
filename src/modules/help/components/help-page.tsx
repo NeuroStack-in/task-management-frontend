@@ -65,6 +65,7 @@ import { useTourStore } from "@/stores/tour.store"
 import { getTour } from "../lib/tours"
 import { usePageTitle } from "@/stores/page-header.store"
 import { usePermissions } from "@/hooks/use-permissions"
+import { useIsSurfaceOn } from "@/hooks/use-features"
 import type { PermissionId } from "@/types/rbac"
 import {
   FAQS,
@@ -548,6 +549,7 @@ export function HelpPage() {
   const startTour = useTourStore((s) => s.startTour)
   const askAi = () => openAssistant(search.trim() || undefined)
   const { can } = usePermissions()
+  const isSurfaceOn = useIsSurfaceOn()
 
   // Show the page title in the top navbar (this page has no PageHeader).
   usePageTitle("Help Center", "Find answers, guides, and support.")
@@ -680,8 +682,12 @@ export function HelpPage() {
     // The gate lives with the tour data, not here. When it was duplicated in this file the two
     // could drift into a visible card whose tour has no steps for that role — a button that does
     // nothing. `tours.test.ts` asserts they agree.
-    const perm = getTour(t.id)?.permission
-    return !perm || can(perm)
+    const tour = getTour(t.id)
+    if (tour?.permission && !can(tour.permission)) return false
+    // …and hide a tour whose feature the org switched off (or whose mode hides it), so we never
+    // launch a walkthrough whose every step would drop (MANAGED-AGENT.md §8).
+    if (tour?.feature && !isSurfaceOn(tour.feature)) return false
+    return true
   })
   const visibleFaqs = FAQS.filter((f) => !f.permission || can(f.permission))
   const visiblePopular = POPULAR_SEARCHES.filter((p) => canCategory(p.category))
