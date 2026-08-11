@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { usePageHeaderStore } from "@/stores/page-header.store";
 import { useAgentRelease } from "@/hooks/use-agent-release";
+import { useTrackingMode } from "@/hooks/use-features";
 import { SidebarNav } from "./sidebar-nav";
 import { GlobalTimer } from "./global-timer";
 import { ThemeSwitcher } from "./theme-switcher";
@@ -16,6 +17,7 @@ import { NotificationsMenu } from "./notifications-menu";
 export function TopNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const mode = useTrackingMode();
   // Pages (e.g. the Dashboard greeting) publish their title/subtitle here so the
   // navbar carries it at the top — the page keeps an sr-only <h1>.
   const title = usePageHeaderStore((s) => s.title);
@@ -85,8 +87,11 @@ export function TopNavbar() {
         */}
         {/* Get the desktop agent. Reachable from anywhere by any signed-in user
             (the /settings/agents management view is admin-gated; the download
-            page is not). Hidden on the download page itself. */}
-        {pathname !== "/download" ? (
+            page is not). Hidden on the download page itself — and in `machine`
+            mode, where IT deploys the managed service and nobody self-installs
+            (MANAGED-AGENT.md §8). Deliberately NOT feature-gated: the agent is
+            core, never plan-gated. */}
+        {pathname !== "/download" && mode !== "machine" ? (
           <Button
             render={<Link href="/download" />}
             nativeButton={false}
