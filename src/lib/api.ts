@@ -150,6 +150,12 @@ export interface Entitlements {
   /** Feature key → owner-activated flag. */
   enabled: Record<string, boolean>;
   version: number;
+  /**
+   * The org's tracking mode — `"project"` (default) | `"machine"` | `"both"` (MANAGED-AGENT.md §4).
+   * Rides here rather than `GET /v1/org` so the gate reads it from the store it already hydrates.
+   * Optional/absent ⇒ `project` (see `trackingModeOf`), so this is safe before the backend populates it.
+   */
+  tracking_mode?: string;
 }
 
 export function getEntitlements(): Promise<Entitlements> {

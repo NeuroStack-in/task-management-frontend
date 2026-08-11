@@ -1,4 +1,5 @@
 import type { FeatureKey } from "@/stores/features.store";
+import type { TrackingMode } from "@/lib/tracking-mode";
 
 /**
  * Which route belongs to which org feature — the **single** place that mapping lives.
@@ -45,6 +46,41 @@ export const ROUTE_FEATURES: ReadonlyArray<{
 export function featureForHref(href: string): FeatureKey | null {
   return ROUTE_FEATURES.find((r) => r.href === href)?.feature ?? null;
 }
+
+/**
+ * Routes a **tracking mode** hides, whatever the plan and the owner's toggles say (MANAGED-AGENT.md
+ * §4/§8). This is the source of truth (hrefs, so it can cover modules with no feature key — e.g.
+ * `/payroll`); `MODE_HIDDEN_FEATURES` below is *derived* from it, for badging the Features tab.
+ *
+ * `machine` mode is a **monitoring-only console**: it hides Projects, Leave/Approvals and Payroll —
+ * surfaces a login-less org has no operator for. **`/time-tracking` is deliberately NOT here**: that
+ * is where logon time surfaces; what machine mode hides is the *project timer*, not *time*.
+ *
+ * ⚠️ The API stays open for these routes — mode hiding is a **UI shape, not a security boundary**
+ * (MANAGED-AGENT.md §4.3). `/payroll` in particular has no feature key and is hidden by route only.
+ */
+export const MODE_HIDDEN_ROUTES: Record<TrackingMode, readonly string[]> = {
+  project: [],
+  machine: ["/projects", "/leave-requests", "/approvals", "/payroll"],
+  both: [],
+};
+
+/**
+ * The feature keys a mode hides — derived from `MODE_HIDDEN_ROUTES` via `featureForHref`, so a route
+ * with no key (e.g. `/payroll`) simply contributes nothing here. Used to badge the Features tab and
+ * to layer the mode onto `useIsSurfaceOn`.
+ */
+function hiddenFeaturesFor(mode: TrackingMode): readonly FeatureKey[] {
+  return MODE_HIDDEN_ROUTES[mode]
+    .map((href) => featureForHref(href))
+    .filter((f): f is FeatureKey => f !== null);
+}
+
+export const MODE_HIDDEN_FEATURES: Record<TrackingMode, readonly FeatureKey[]> = {
+  project: hiddenFeaturesFor("project"),
+  machine: hiddenFeaturesFor("machine"),
+  both: hiddenFeaturesFor("both"),
+};
 
 /**
  * The feature governing a pathname — most specific (longest href) match wins, so

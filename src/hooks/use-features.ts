@@ -5,6 +5,8 @@ import { useCallback, useEffect } from "react";
 import { getEntitlements } from "@/lib/api";
 import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store";
 import type { FeatureKey } from "@/stores/features.store";
+import { MODE_HIDDEN_FEATURES } from "@/constants/features";
+import type { TrackingMode } from "@/lib/tracking-mode";
 
 /**
  * `(key) => boolean` for the org's effective features, re-computed when entitlements land.
@@ -49,6 +51,33 @@ export function useIsFeatureOn(): (key: FeatureKey) => boolean {
   );
 }
 
+/** The org's tracking mode (MANAGED-AGENT.md §4). Defaults `project` until entitlements load. */
+export function useTrackingMode(): TrackingMode {
+  return useEntitlementsStore((s) => s.trackingMode);
+}
+
+/**
+ * `(key) => boolean` — the plan/owner gate **and** the org's tracking mode (layer 3).
+ *
+ * Use this for anything a **user can see**. `useIsFeatureOn` remains the plan/owner layer alone (for
+ * the Features tab's "Off for others" markers, which must not be hidden by the mode).
+ *
+ * ⚠️ **The Owner exemption does NOT extend to the mode.** `useIsFeatureOn` exempts the Owner from
+ * layer 2 so they can reach the switch they turned off. There is no equivalent switch inside a
+ * mode-hidden surface — the control lives on `/settings/organization` — and an Owner seeing a
+ * Projects rail item that literally nobody else in the org has reads as a bug, not a courtesy
+ * (MANAGED-AGENT.md §8).
+ */
+export function useIsSurfaceOn(): (key: FeatureKey) => boolean {
+  const isFeatureOn = useIsFeatureOn();
+  const mode = useTrackingMode();
+  return useCallback(
+    (key: FeatureKey) =>
+      isFeatureOn(key) && !MODE_HIDDEN_FEATURES[mode].includes(key),
+    [isFeatureOn, mode],
+  );
+}
+
 /**
  * Is this feature switched off for everyone *except* the Owner looking at it?
  *
@@ -86,7 +115,12 @@ export function useEntitlementsSync(active: boolean): void {
     let live = true;
     getEntitlements()
       .then((e) => {
-        if (live) hydrate({ allowed: e.allowed, enabled: e.enabled });
+        if (live)
+          hydrate({
+            allowed: e.allowed,
+            enabled: e.enabled,
+            tracking_mode: e.tracking_mode,
+          });
       })
       .catch(() => {
         /* Stay fail-open — see the doc comment. */

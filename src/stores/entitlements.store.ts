@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { trackingModeOf, type TrackingMode } from "@/lib/tracking-mode";
 
 /**
  * The org's live entitlements, fetched **once** per session and read everywhere.
@@ -17,7 +18,13 @@ interface EntitlementsState {
   allowed: string[];
   /** The owner's per-key activation flags (layer 2). */
   enabled: Record<string, boolean>;
-  hydrate: (e: { allowed: string[]; enabled: Record<string, boolean> }) => void;
+  /** The org's tracking mode (layer 3 — MANAGED-AGENT.md §4). Defaults `project` until loaded. */
+  trackingMode: TrackingMode;
+  hydrate: (e: {
+    allowed: string[];
+    enabled: Record<string, boolean>;
+    tracking_mode?: string;
+  }) => void;
   clear: () => void;
 }
 
@@ -25,9 +32,16 @@ export const useEntitlementsStore = create<EntitlementsState>()((set) => ({
   loaded: false,
   allowed: [],
   enabled: {},
+  trackingMode: "project",
   hydrate: (e) =>
-    set({ loaded: true, allowed: e.allowed, enabled: e.enabled }),
-  clear: () => set({ loaded: false, allowed: [], enabled: {} }),
+    set({
+      loaded: true,
+      allowed: e.allowed,
+      enabled: e.enabled,
+      trackingMode: trackingModeOf(e.tracking_mode),
+    }),
+  clear: () =>
+    set({ loaded: false, allowed: [], enabled: {}, trackingMode: "project" }),
 }));
 
 /**
