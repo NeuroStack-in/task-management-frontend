@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Timer as TimerIcon } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsSurfaceOn } from "@/hooks/use-features";
 import { useTimesheet } from "@/modules/time-tracking/use-timesheet";
 import { formatDuration } from "@/lib/format";
 
@@ -18,7 +19,11 @@ import { formatDuration } from "@/lib/format";
  */
 export function GlobalTimer() {
   const { can } = usePermissions();
-  if (!can("time-tracking:self")) return null;
+  const isSurfaceOn = useIsSurfaceOn();
+  // Gate on the org feature too — an org with Time Tracking switched off shouldn't show the chip (the
+  // outer gate keeps `useTimesheet` from mounting at all). The permission gate stays: oversight roles
+  // don't run a personal timer.
+  if (!can("time-tracking:self") || !isSurfaceOn("time.tracking")) return null;
   return <RunningIndicator />;
 }
 

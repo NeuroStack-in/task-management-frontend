@@ -4,7 +4,9 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { INSIGHTS_TABS } from "@/constants/navigation";
 import { useCurrentRole } from "@/hooks/use-permissions";
-import { canAccess } from "@/lib/rbac";
+import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import { isNavItemVisible } from "@/lib/rbac";
+import { isPathModeHidden } from "@/constants/features";
 import { Loader } from "@/components/shared/loader";
 
 /**
@@ -19,7 +21,13 @@ import { Loader } from "@/components/shared/loader";
 export default function InsightsIndex() {
   const router = useRouter();
   const role = useCurrentRole();
-  const first = INSIGHTS_TABS.find((t) => canAccess(role, t.permission));
+  const isFeatureOn = useIsFeatureOn();
+  const mode = useTrackingMode();
+  // Pick the first tab the role can access **and** the org has on — picking by permission alone
+  // redirected straight into the "feature turned off" wall for a tab the org had switched off.
+  const first = INSIGHTS_TABS.find((t) =>
+    isNavItemVisible(role, t, isFeatureOn, (href) => isPathModeHidden(href, mode)),
+  );
   const target = first ? first.href : "/dashboard";
 
   useEffect(() => {

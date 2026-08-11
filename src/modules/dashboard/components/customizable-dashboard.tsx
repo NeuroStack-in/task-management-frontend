@@ -28,8 +28,12 @@ import {
 } from "lucide-react";
 import { useDashboardStore, type DashboardWidget } from "@/stores/dashboard.store";
 import { useDashboardLayoutSync } from "@/modules/dashboard/use-layout-sync";
-import { widgetPermission } from "@/modules/dashboard/services/dashboard.service";
+import {
+  widgetFeature,
+  widgetPermission,
+} from "@/modules/dashboard/services/dashboard.service";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsSurfaceOn } from "@/hooks/use-features";
 import { WIDGET_REGISTRY, type DashboardData } from "@/modules/dashboard/widget-registry";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -148,18 +152,23 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   );
 
   const { can } = usePermissions();
+  const isSurfaceOn = useIsSurfaceOn();
 
   const ordered = useMemo(
     () => [...widgets].sort((a, b) => a.position - b.position),
     [widgets],
   );
-  // Catalog `required_perm` pre-filter (mirrors `wp-contracts::widgets`): a widget whose catalog
-  // permission the user lacks is neither rendered nor offered in Customize — matching the server's
-  // per-widget gate, and keeping unpermitted placements out of the layout PUT.
-  const permitted = ordered.filter((w) => can(widgetPermission(w.type)));
-  const blockedIds = ordered
-    .filter((w) => !can(widgetPermission(w.type)))
-    .map((w) => w.id);
+  // A widget is *available* when the user holds its catalog permission AND the org has its feature on
+  // (and its tracking mode doesn't hide it — MANAGED-AGENT.md §8). Unavailable widgets join
+  // `blockedIds`, NOT dropped: filtering them out of the persisted layout would lose the owner's
+  // arrangement forever the moment the feature came back.
+  const available = (w: (typeof ordered)[number]) => {
+    if (!can(widgetPermission(w.type))) return false;
+    const feature = widgetFeature(w.type);
+    return feature ? isSurfaceOn(feature) : true;
+  };
+  const permitted = ordered.filter(available);
+  const blockedIds = ordered.filter((w) => !available(w)).map((w) => w.id);
   const visible = permitted.filter((w) => w.visible);
   const visibleIds = visible.map((w) => w.id);
   const hiddenIds = permitted.filter((w) => !w.visible).map((w) => w.id);

@@ -25,6 +25,7 @@
  */
 import { apiFetch } from "@/lib/api";
 import type { PermissionId } from "@/types/rbac";
+import type { FeatureKey } from "@/stores/features.store";
 import {
   DEFAULT_WIDGETS,
   LEGACY_WIDGET_TYPE,
@@ -112,6 +113,30 @@ export const CATALOG_REQUIRED_PERMISSION: Record<string, PermissionId> = {
 /** The frontend permission gating a widget, from its catalog entry's `required_perm`. */
 export function widgetPermission(type: WidgetType): PermissionId | null {
   return CATALOG_REQUIRED_PERMISSION[catalogIdOf(type)] ?? null;
+}
+
+/**
+ * The org **feature** a widget belongs to (MANAGED-AGENT.md §8) — the sibling of `widgetPermission`,
+ * so a widget whose feature the org switched off (or whose tracking mode hides it) disappears the
+ * same way its route would. Three widgets don't inherit their catalog's feature and are overridden.
+ * `payroll_summary` is deliberately absent (no feature key exists for payroll).
+ */
+const WIDGET_FEATURE_OVERRIDE: Partial<Record<WidgetType, FeatureKey>> = {
+  "org_activity.screenshots": "monitoring.screenshots", // not the catalog's monitoring.activity
+  "reports.upcoming_tasks": "projects", // it lists tasks, not reports
+  "attention_list.ai_summary": "ai.insights",
+};
+const CATALOG_FEATURE: Record<string, FeatureKey> = {
+  org_activity: "monitoring.activity",
+  team_activity: "monitoring.activity",
+  org_attendance: "attendance",
+  reports: "reports.basic",
+  // payroll_summary: intentionally omitted — /payroll has no catalog key.
+};
+export function widgetFeature(type: WidgetType): FeatureKey | null {
+  return (
+    WIDGET_FEATURE_OVERRIDE[type] ?? CATALOG_FEATURE[catalogIdOf(type)] ?? null
+  );
 }
 
 // ── Frontend widget ⇄ catalog placement mapping ──────────────────────────────────────────────────

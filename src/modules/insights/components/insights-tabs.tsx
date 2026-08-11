@@ -4,13 +4,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { INSIGHTS_TABS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import { isNavItemVisible } from "@/lib/rbac";
+import { isPathModeHidden } from "@/constants/features";
 import { cn } from "@/lib/utils";
 
-/** Tab bar for the merged Insights page. Tabs are filtered by permission. */
+/**
+ * Tab bar for the merged Insights page. Filtered by **permission AND entitlement/mode** — a tab whose
+ * feature the org switched off (or whose route its tracking mode hides) previously still rendered and
+ * then 403'd when clicked (`isNavItemVisible` resolves its feature via `ROUTE_FEATURES`).
+ */
 export function InsightsTabs() {
   const pathname = usePathname();
-  const { can } = usePermissions();
-  const tabs = INSIGHTS_TABS.filter((t) => can(t.permission));
+  const { role } = usePermissions();
+  const isFeatureOn = useIsFeatureOn();
+  const mode = useTrackingMode();
+  const tabs = INSIGHTS_TABS.filter((t) =>
+    isNavItemVisible(role, t, isFeatureOn, (href) =>
+      isPathModeHidden(href, mode),
+    ),
+  );
 
   if (tabs.length === 0) return null;
 

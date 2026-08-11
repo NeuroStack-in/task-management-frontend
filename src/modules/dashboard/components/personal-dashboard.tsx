@@ -18,6 +18,7 @@ import { Loader } from "@/components/shared/loader";
 import { TASK_STATUS_META, type TaskStatus } from "@/modules/projects/types";
 import { useMyWork } from "../use-my-work";
 import { useMyAttendance, ymd } from "@/modules/attendance/use-my-attendance";
+import { useIsSurfaceOn } from "@/hooks/use-features";
 import { cn } from "@/lib/utils";
 
 const TONE: Record<string, string> = {
@@ -51,6 +52,12 @@ function formatDue(iso: string | null): string {
 
 export function PersonalDashboard() {
   const { openTasks, doneCount, myProjects, loading } = useMyWork();
+  const isSurfaceOn = useIsSurfaceOn();
+  // These surfaces are gated: Time Tracking (the timer tile) and Projects (task/project cards + the
+  // work sections below). Hidden when the org switched the feature off, or its tracking mode hides
+  // it (MANAGED-AGENT.md §8). Grid children auto-flow, so dropping cards leaves no hole.
+  const showTimer = isSurfaceOn("time.tracking");
+  const showProjects = isSurfaceOn("projects");
 
   // Compute the trailing 7-day window on the client (real "today"); render it only after mount to
   // avoid an SSR/client date mismatch.
@@ -89,7 +96,7 @@ export function PersonalDashboard() {
     <>
       {/* Personal KPI strip */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
-        <TimerStatCard />
+        {showTimer && <TimerStatCard />}
         <MeetingHoursCard />
         <StatCard
           label="Hours this week"
@@ -98,22 +105,27 @@ export function PersonalDashboard() {
           hint="from attendance"
           href="/attendance"
         />
-        <StatCard
-          label="Open Tasks"
-          value={openTasks.length}
-          icon={ListChecks}
-          hint={`${doneCount} completed`}
-          href="/projects"
-        />
-        <StatCard
-          label="My Projects"
-          value={myProjects.length}
-          icon={FolderKanban}
-          hint="you're a member of"
-          href="/projects"
-        />
+        {showProjects && (
+          <>
+            <StatCard
+              label="Open Tasks"
+              value={openTasks.length}
+              icon={ListChecks}
+              hint={`${doneCount} completed`}
+              href="/projects"
+            />
+            <StatCard
+              label="My Projects"
+              value={myProjects.length}
+              icon={FolderKanban}
+              hint="you're a member of"
+              href="/projects"
+            />
+          </>
+        )}
       </div>
 
+      {showProjects && (
       <div className="grid gap-4 xl:grid-cols-3">
         {/* My tasks */}
         <Card
@@ -259,6 +271,7 @@ export function PersonalDashboard() {
           )}
         </Card>
       </div>
+      )}
     </>
   );
 }
