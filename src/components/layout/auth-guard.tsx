@@ -5,8 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { ShieldX } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
-import { useEntitlementsSync, useIsFeatureOn } from "@/hooks/use-features";
-import { featureForPath } from "@/constants/features";
+import {
+  useEntitlementsSync,
+  useIsFeatureOn,
+  useTrackingMode,
+} from "@/hooks/use-features";
+import { featureForPath, isPathModeHidden } from "@/constants/features";
 import { canAccess, permissionForPath } from "@/lib/rbac";
 import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -28,6 +32,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // result. This is the first point inside the authenticated tree, so everything downstream has it.
   useEntitlementsSync(hydrated && isAuthenticated);
   const isFeatureOn = useIsFeatureOn();
+  const mode = useTrackingMode();
 
   useEffect(() => {
     if (hydrated && !isAuthenticated) {
@@ -49,6 +54,25 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           icon={ShieldX}
           title="This feature is turned off"
           description="Your organization has disabled this feature. An owner can switch it back on under Settings → Features."
+          action={
+            <Button onClick={() => router.push("/dashboard")}>
+              Back to Dashboard
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // A route the org's tracking mode hides (e.g. Projects/Payroll in machine mode) is closed the same
+  // way — including the key-less ones a feature check can't catch (MANAGED-AGENT.md §4/§8).
+  if (isPathModeHidden(pathname, mode)) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <EmptyState
+          icon={ShieldX}
+          title="Not available here"
+          description="This section isn't part of your organization's tracking setup. An owner can change how this organization tracks work under Settings → Organization."
           action={
             <Button onClick={() => router.push("/dashboard")}>
               Back to Dashboard

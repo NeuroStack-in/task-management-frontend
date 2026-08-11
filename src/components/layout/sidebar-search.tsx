@@ -7,7 +7,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/stores/ui.store";
 import { isNavItemVisible } from "@/lib/rbac";
-import { useIsFeatureOn } from "@/hooks/use-features";
+import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import { isPathModeHidden } from "@/constants/features";
 import {
   INSIGHTS_TABS,
   ADMIN_SECTIONS,
@@ -45,6 +46,8 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
   const { can, role, nav } = usePermissions();
   const isFeatureOn = useIsFeatureOn();
+  const mode = useTrackingMode();
+  const hideHref = (href: string) => isPathModeHidden(href, mode);
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -116,7 +119,8 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
       );
     }
 
-    if (can("projects:view")) {
+    // Projects are hidden entirely in machine mode — don't surface their deep-links either.
+    if (can("projects:view") && !hideHref("/projects")) {
       out.push(
         ...remote.projects.slice(0, MAX_PROJECTS).map<Result>((h) => ({
           id: `p-${h.id}`,
@@ -131,24 +135,24 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     const pages = [
       ...nav.flatMap((g) => g.items.map((it) => ({ item: it, group: g.label }))),
       ...INSIGHTS_TABS.filter(
-        (t) => can(t.permission) && isNavItemVisible(role, t, isFeatureOn),
+        (t) => can(t.permission) && isNavItemVisible(role, t, isFeatureOn, hideHref),
       ).map((it) => ({
         item: it,
         group: "Analytics",
       })),
       ...ADMIN_SECTIONS.flatMap((g) =>
         g.items
-          .filter((it) => isNavItemVisible(role, it, isFeatureOn))
+          .filter((it) => isNavItemVisible(role, it, isFeatureOn, hideHref))
           .map((it) => ({ item: it, group: g.label })),
       ),
       // Personal account settings — all `permission: null` today, but filtered anyway so a
       // permissioned entry added later can never leak into every user's search results.
-      ...ACCOUNT_SECTIONS.filter((it) => isNavItemVisible(role, it, isFeatureOn)).map((it) => ({
+      ...ACCOUNT_SECTIONS.filter((it) => isNavItemVisible(role, it, isFeatureOn, hideHref)).map((it) => ({
         item: it,
         group: "Account",
       })),
       // Deep-link sub-sections within a settings page (e.g. Security → MFA).
-      ...SETTINGS_SUBSECTIONS.filter((it) => isNavItemVisible(role, it, isFeatureOn)).map(
+      ...SETTINGS_SUBSECTIONS.filter((it) => isNavItemVisible(role, it, isFeatureOn, hideHref)).map(
         (it) => ({ item: it, group: "Settings" }),
       ),
     ];
@@ -183,7 +187,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     // `isFeatureOn` belongs here: it changes identity when entitlements land, and without it the
     // results stay computed against the fail-open default — search would keep offering sections the
     // org has switched off.
-  }, [query, can, role, nav, remote, isFeatureOn]);
+  }, [query, can, role, nav, remote, isFeatureOn, mode]);
 
   const activeIdx = results.length ? Math.min(active, results.length - 1) : 0;
 

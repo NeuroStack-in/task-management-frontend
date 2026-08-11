@@ -70,6 +70,17 @@ export const MODE_HIDDEN_ROUTES: Record<TrackingMode, readonly string[]> = {
  * with no key (e.g. `/payroll`) simply contributes nothing here. Used to badge the Features tab and
  * to layer the mode onto `useIsSurfaceOn`.
  */
+/**
+ * Is this pathname hidden by the org's tracking mode? True when any route the mode hides equals or is
+ * a prefix of `pathname` (so `/projects/123` is hidden with `/projects`). Covers the key-less routes
+ * (`/payroll`) that `featureForPath` cannot, since `MODE_HIDDEN_ROUTES` lists hrefs, not feature keys.
+ */
+export function isPathModeHidden(pathname: string, mode: TrackingMode): boolean {
+  return MODE_HIDDEN_ROUTES[mode].some(
+    (href) => pathname === href || pathname.startsWith(`${href}/`),
+  );
+}
+
 function hiddenFeaturesFor(mode: TrackingMode): readonly FeatureKey[] {
   return MODE_HIDDEN_ROUTES[mode]
     .map((href) => featureForHref(href))

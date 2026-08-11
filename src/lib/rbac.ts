@@ -85,6 +85,11 @@ export function isNavItemVisible(
    * permissions alone, exactly as before.
    */
   isFeatureOn?: (key: FeatureKey) => boolean,
+  /**
+   * The org's tracking-mode route hider (MANAGED-AGENT.md §4). Optional, same reasoning. Covers the
+   * routes a mode hides that have **no** feature key (e.g. `/payroll`), which `isFeatureOn` can't.
+   */
+  isHrefHidden?: (href: string) => boolean,
 ): boolean {
   // An org that has switched a feature off should not see it at all, whatever the role allows —
   // "Disabled features are hidden from all users" (Settings → Features).
@@ -92,6 +97,8 @@ export function isNavItemVisible(
     const feature = featureForHref(item.href);
     if (feature && !isFeatureOn(feature)) return false;
   }
+  // A route the org's tracking mode hides is gone regardless of plan/role.
+  if (isHrefHidden?.(item.href)) return false;
   if (item.anyPermissions) return canAny(role, item.anyPermissions);
   return canAccess(role, item.permission);
 }
@@ -103,11 +110,12 @@ export function isNavItemVisible(
 export function getAccessibleNav(
   role: Role | null | undefined,
   isFeatureOn?: (key: FeatureKey) => boolean,
+  isHrefHidden?: (href: string) => boolean,
 ): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) =>
-      isNavItemVisible(role, item, isFeatureOn),
+      isNavItemVisible(role, item, isFeatureOn, isHrefHidden),
     ),
   })).filter((group) => group.items.length > 0);
 }

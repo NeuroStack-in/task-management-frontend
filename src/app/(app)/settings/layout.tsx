@@ -7,6 +7,9 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowUpRight, Lock } from "lucide-react";
 import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
+import { isNavItemVisible } from "@/lib/rbac";
+import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import { isPathModeHidden } from "@/constants/features";
 import { InPaneHeaderContext } from "@/components/shared/page-header";
 import { usePageTitle } from "@/stores/page-header.store";
 import { useUnsavedStore } from "@/stores/unsaved.store";
@@ -76,7 +79,12 @@ export default function SettingsLayout({
   const dirtyRef = useUnsavedStore((s) => s.dirty);
   const setDirty = useUnsavedStore((s) => s.setDirty);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
-  const { can } = usePermissions();
+  const { can, role } = usePermissions();
+  // The rail must honour the same two gates as the sidebar: a feature the org switched off, or a
+  // route its tracking mode hides, should not link into the "turned off" wall (a live bug when it
+  // filtered on permission alone).
+  const isFeatureOn = useIsFeatureOn();
+  const mode = useTrackingMode();
 
   // The navbar stays pinned to "Settings" across every sub-section; each
   // sub-page renders its own title/subtitle in-pane (via InPaneHeaderContext).
@@ -89,7 +97,11 @@ export default function SettingsLayout({
   const adminGroups: RailGroup[] = ADMIN_SECTIONS.map((group) => ({
     label: group.label,
     items: group.items
-      .filter((item) => can(item.permission))
+      .filter((item) =>
+        isNavItemVisible(role, item, isFeatureOn, (href) =>
+          isPathModeHidden(href, mode),
+        ),
+      )
       .map((item) => ({
         label: item.label,
         href: item.href,

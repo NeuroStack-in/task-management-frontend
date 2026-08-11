@@ -6,7 +6,8 @@ import { useRolesStore } from "@/stores/roles.store";
 import { SYSTEM_ROLES } from "@/constants/roles";
 import { canAccess, canAll, canAny, getAccessibleNav } from "@/lib/rbac";
 import { permissionsFromBitset } from "@/lib/permission-bits";
-import { useIsFeatureOn } from "@/hooks/use-features";
+import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import { isPathModeHidden } from "@/constants/features";
 import type { PermissionId, Role } from "@/types/rbac";
 
 /**
@@ -64,11 +65,16 @@ export function usePermissions() {
   // switched on. Without the second, disabling a feature left its nav entry and pages fully
   // usable for everyone — including the owner who had just turned it off.
   const isFeatureOn = useIsFeatureOn();
+  // …and by the org's tracking mode, which hides whole route families (Projects/Leave/Payroll in
+  // `machine` mode) including key-less ones (MANAGED-AGENT.md §4/§8).
+  const mode = useTrackingMode();
   return {
     role,
     can: (permission: PermissionId | null) => canAccess(role, permission),
     canAll: (permissions: PermissionId[]) => canAll(role, permissions),
     canAny: (permissions: PermissionId[]) => canAny(role, permissions),
-    nav: getAccessibleNav(role, isFeatureOn),
+    nav: getAccessibleNav(role, isFeatureOn, (href) =>
+      isPathModeHidden(href, mode),
+    ),
   };
 }
