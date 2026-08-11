@@ -24,6 +24,8 @@ export interface OrgView {
   industry?: string;
   /** Company-size bucket (e.g. "11-50"). Optional org meta. */
   size?: string;
+  /** How the org tracks work — `"project"` (default) | `"machine"` | `"both"` (MANAGED-AGENT.md §4). */
+  tracking_mode?: string;
   version: number;
 }
 
@@ -39,6 +41,8 @@ export interface UpdateOrgRequest {
   emp_id_prefix?: string;
   industry?: string;
   size?: string;
+  /** Change the tracking mode (owner-only server-side; `version` becomes **required** when set). */
+  tracking_mode?: string;
   version?: number;
   /** Optionally mark one onboarding-wizard step (LLD §2): step ∈ org_setup|invite_team|tracking|
    * personalize, state ∈ pending|done|skipped. A pure onboarding update needs no meta field. */

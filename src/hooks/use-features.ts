@@ -27,7 +27,9 @@ import type { TrackingMode } from "@/lib/tracking-mode";
  * an Owner who also holds a custom role gets that id instead, which is why the explicit flag exists
  * and wins once the session is refreshed.
  */
-function isOwnerOf(s: { user?: { isOwner?: boolean; roleId?: string } | null }): boolean {
+export function isOwnerOf(s: {
+  user?: { isOwner?: boolean; roleId?: string } | null;
+}): boolean {
   return s.user?.isOwner === true || s.user?.roleId === "role-owner";
 }
 

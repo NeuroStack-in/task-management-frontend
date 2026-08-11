@@ -25,6 +25,7 @@ import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { DepartmentsManager } from "./departments-manager"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
+import { TrackingModeCard } from "./org/tracking-mode-card"
 import { WorkingDaysManager } from "./org/working-days-manager"
 import { HolidaysManager } from "./org/holidays-manager"
 import { PoliciesManager } from "./org/policies-manager"
@@ -396,6 +397,7 @@ export function OrganizationTab() {
       </Card>
 
       {/* Each of these is its own live-backend CRUD, independent of the org-profile save bar. */}
+      <TrackingModeCard />
       <DepartmentsManager />
       <TeamsManager />
       <LocationsManager />
