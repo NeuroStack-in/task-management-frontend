@@ -48,7 +48,8 @@ export interface EmployeeProfileData {
   teamId: string;
   roleName: string;
   status: "active" | "inactive" | "invited" | "suspended";
-  productivityScore: number;
+  /** `null` = no scored day in the window (agent not reporting) — **not** a score of zero. */
+  productivityScore: number | null;
   empCode: string;
   phone: string;
   dob: string;
@@ -203,8 +204,15 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           ? Math.round(projects.reduce((s, pr) => s + pr.progress, 0) / projects.length)
           : 0;
 
+        // **`null` means "not measured", and it must stay `null`.** The server already draws this
+        // distinction — `avg_score` is `Option<f64>` and is `None` when no day in the window carries
+        // a score. Collapsing it to `0` here published a fabricated verdict: the profile rendered a
+        // confident "0%" and the summary card called the person a "developing performer, averaging
+        // 0% productivity", which is a statement about a missing agent feed, not about them. The
+        // directory list already shows "—" for the same person (`use-employees.ts`), so the two
+        // pages disagreed about the same employee.
         const productivityScore =
-          activity?.trend.avg_score != null ? Math.round(activity.trend.avg_score) : 0;
+          activity?.trend.avg_score != null ? Math.round(activity.trend.avg_score) : null;
         const kpi = buildKpi(
           (activity?.days ?? []).map((d) => ({ date: d.date, productiveSec: d.productive_sec })),
           now,
