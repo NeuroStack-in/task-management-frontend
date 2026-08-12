@@ -299,7 +299,19 @@ export function EmployeesView() {
           icon={UserCheck}
           hint="not deactivated"
         />
-        <StatCard label="Avg. productivity" value={pct(liveStats.avgProductivity)} icon={GaugeIcon} hint="pending activity monitoring" />
+        {/* The hint used to read "pending activity monitoring" unconditionally — it was describing
+            the hardcoded null, not the data. Scores are joined in now, so it states the window when
+            there is one and stays honest when there isn't. */}
+        <StatCard
+          label="Avg. productivity"
+          value={pct(liveStats.avgProductivity)}
+          icon={GaugeIcon}
+          hint={
+            liveStats.avgProductivity === null
+              ? "no agent activity in the last 7 days"
+              : "7-day average of reporting employees"
+          }
+        />
         <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />
       </div>
 

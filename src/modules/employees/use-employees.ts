@@ -4,21 +4,82 @@
  * The employee directory, from the real backend.
  *
  * Maps the lean directory rows into the view's `EmployeeRow`, filling in department **names** from
- * the departments endpoint. Fields the directory doesn't serve degrade honestly rather than being
- * invented: email/role/team are blank (they live on the full profile), and `productivityScore` is
- * `null` — "not available yet", because the score needs the desktop agent's activity data.
+ * the departments endpoint. Fields the directory genuinely doesn't serve degrade honestly rather
+ * than being invented: email/role/team are blank, because they live on the full profile.
+ *
+ * **Productivity is joined in from `insights`, not left null.** The directory list is
+ * GSI-projected and carries no score, so this hook used to hardcode `productivityScore: null` with
+ * a note saying the score "needs the desktop agent". That note outlived its truth — agents have
+ * been reporting daily, and the scorer has been writing `SUMMARY#` rows the whole time. The column
+ * read "—" for every employee not because the data was missing but because nothing ever asked for
+ * it. `GET /v1/insights/activity` serves exactly these numbers and the dashboard already consumes
+ * it; this joins the same source by `user_id`.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { useRolesStore } from "@/stores/roles.store";
+import { getOrgActivity } from "@/modules/insights/services/insights.service";
 import {
-  listEmployees,
+  listAllEmployees,
   departmentMap,
   deactivateEmployee,
   reactivateEmployee,
 } from "./services/employees.service";
 
-/** The row shape the view renders. `productivityScore: null` = unavailable (agent-blocked). */
+/**
+ * How many days back to average a person's score over.
+ *
+ * A single day is too sparse to put in a directory column — only a handful of an org's agents
+ * report on any given day, so "yesterday" would blank most of the roster and look broken again.
+ * Averaging a person's *scored* days across a week gives a stable number and survives one quiet
+ * day, while still being recent enough to mean something.
+ */
+const SCORE_WINDOW_DAYS = 7;
+/** Small cap: a per-day fan-out is exactly the burst that trips the Lambda's 503 throttle. */
+const SCORE_FANOUT = 3;
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** The last `SCORE_WINDOW_DAYS` local calendar days, oldest first, as `YYYY-MM-DD`. */
+function recentDays(): string[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: SCORE_WINDOW_DAYS }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (SCORE_WINDOW_DAYS - 1 - i));
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  });
+}
+
+/**
+ * `user_id → mean score` over the window, counting only days the person actually scored.
+ *
+ * Entirely best-effort. Reading activity needs a higher permission than viewing the directory, so a
+ * 403 (or any failure) must leave the roster rendering with "—" rather than break the page — the
+ * directory is the point of this screen, the score is an enrichment.
+ */
+async function scoresByUser(): Promise<Map<string, number>> {
+  const days = await mapWithConcurrency(recentDays(), SCORE_FANOUT, (date) =>
+    getOrgActivity(date).catch(() => null),
+  );
+  const sum = new Map<string, { total: number; days: number }>();
+  for (const day of days) {
+    for (const p of day?.people ?? []) {
+      // `breakdown` is absent when that person had no summary that day — a gap, never a zero.
+      if (!p.breakdown) continue;
+      const acc = sum.get(p.user_id) ?? { total: 0, days: 0 };
+      acc.total += p.breakdown.score;
+      acc.days += 1;
+      sum.set(p.user_id, acc);
+    }
+  }
+  return new Map(
+    [...sum.entries()].map(([id, a]) => [id, Math.round(a.total / a.days)]),
+  );
+}
+
+/** The row shape the view renders. `productivityScore: null` = no scored day in the window. */
 export interface EmployeeRow {
   id: string;
   /** Human-facing employee id (e.g. `EMP-0001`); `null` for legacy rows that predate ids. */
@@ -72,9 +133,12 @@ export function useEmployees(): EmployeesData {
 
     (async () => {
       try {
-        const [roster, depts] = await Promise.all([
-          listEmployees(),
+        // `listAllEmployees` pages every department; the bare directory call truncates at 50 with
+        // no cursor to follow, which would silently cap this page (and its "Total employees").
+        const [roster, depts, scores] = await Promise.all([
+          listAllEmployees(),
           departmentMap().catch(() => new Map<string, string>()),
+          scoresByUser().catch(() => new Map<string, number>()),
         ]);
         if (!live) return;
         // role_id → display name (system + custom roles); blank if the id is unknown.
@@ -92,8 +156,9 @@ export function useEmployees(): EmployeesData {
             status: mapStatus(e.status),
             // Absent on every row that predates the field, so this reads false for existing orgs.
             monitored: e.login === "none",
-            // Needs insights (activity monitoring), which needs the agent. Null, not a fake 0.
-            productivityScore: null,
+            // Mean of this person's scored days over the last week. `null` — rendered "—" — means
+            // no agent reported for them in that window, which is a real gap, not a zero.
+            productivityScore: scores.get(e.user_id) ?? null,
           })),
         );
       } catch (e) {
