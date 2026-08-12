@@ -130,6 +130,76 @@ export function getTrackingPolicy(): Promise<AgentConfig> {
   return apiFetch<AgentConfig>("/v1/agent/config");
 }
 
+// ── Managed-agent enrolment (MANAGED-AGENT.md §6.2, Ph3-4) ────────────────────────────────────────
+// The 1:1 device binding: a technician mints a single-use code for a named employee, installs the
+// MSI with it, and the device is bound to that person. All `agents:manage`.
+
+/** Mirrors `fleet::mint_enrollment_code::MintedCode`. `code` is shown **once** and never again. */
+export interface MintedCode {
+  code_id: string;
+  /** `<tenant>.<code_id>.<secret>` — the value pasted into `msiexec … ENROLLTOKEN=<code>`. */
+  code: string;
+  user_id: string;
+  /** Epoch **seconds** (the code's TTL). */
+  expires_at: number;
+}
+
+/** Mirrors `fleet::enrollment_codes::PendingCode` — the technician's worklist. No secret, no hash. */
+export interface PendingCode {
+  code_id: string;
+  user_id: string;
+  assign_upn?: string;
+  created_by: string;
+  created_at: number;
+  expires_at: number;
+}
+
+/**
+ * `POST /v1/fleet/enrollment-codes` — mint a code for one employee. Rejects with a typed 409 the UI
+ * must handle inline, not as a toast:
+ *   - `tracking_mode_not_managed` → the org isn't in machine/both mode (switch it in Settings);
+ *   - `employee_already_has_device` → that employee already has a live agent (release it first).
+ */
+export function mintEnrollmentCode(body: {
+  user_id: string;
+  assign_upn?: string;
+}): Promise<MintedCode> {
+  return apiFetch<MintedCode>("/v1/fleet/enrollment-codes", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** `GET /v1/fleet/enrollment-codes` — pending (unused, unexpired) codes, newest first. */
+export function listEnrollmentCodes(): Promise<PendingCode[]> {
+  return apiFetch<PendingCode[]>("/v1/fleet/enrollment-codes");
+}
+
+/** `DELETE /v1/fleet/enrollment-codes/{id}` — revoke a code that was minted by mistake. */
+export async function revokeEnrollmentCode(codeId: string): Promise<void> {
+  await apiFetch(`/v1/fleet/enrollment-codes/${encodeURIComponent(codeId)}`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * `POST /v1/fleet/{id}/release` — free the employee's 1:1 claim, revoke the credential, clear the
+ * assignment. The agent stops on its next batch; the employee can then be assigned a replacement.
+ * History stays on the employee's record.
+ */
+export async function releaseDevice(deviceId: string): Promise<void> {
+  await apiFetch(`/v1/fleet/${encodeURIComponent(deviceId)}/release`, {
+    method: "POST",
+  });
+}
+
+/** `POST /v1/fleet/{id}/revoke` — kill the credential without freeing the employee (lost/stolen). */
+export async function revokeDevice(deviceId: string): Promise<void> {
+  await apiFetch(`/v1/fleet/${encodeURIComponent(deviceId)}/revoke`, {
+    method: "POST",
+  });
+}
+
 /** Persist a new tracking policy. Returns the new `TrackingConfig` (with a bumped `version`). */
 export function updateTrackingPolicy(
   body: UpdateTrackingPolicyInput,

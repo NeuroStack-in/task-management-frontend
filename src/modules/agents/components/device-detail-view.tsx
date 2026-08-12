@@ -19,8 +19,10 @@ import {
   getEmployeeProfile,
   type ApiEmployeeProfile,
 } from "@/modules/employees/services/employees.service";
+import { usePermissions } from "@/hooks/use-permissions";
 import { getDevice, type ApiDevice } from "../services/fleet.service";
 import { CaptureNowButton } from "./capture-now-button";
+import { ReleaseDeviceButton } from "./release-device-button";
 import { connMeta, lastSeen, Info, Meter } from "./fleet-view";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +38,8 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
   const [device, setDevice] = useState<ApiDevice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [owner, setOwner] = useState<ApiEmployeeProfile | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const { can } = usePermissions();
 
   useEffect(() => {
     let alive = true;
@@ -64,7 +68,7 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
     return () => {
       alive = false;
     };
-  }, [agentId]);
+  }, [agentId, nonce]);
 
   if (error) {
     return (
@@ -150,14 +154,24 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                       </p>
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    render={<Link href={`/employees/${encodeURIComponent(owner.user_id)}`} />}
-                    nativeButton={false}
-                  >
-                    View employee profile
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      render={<Link href={`/employees/${encodeURIComponent(owner.user_id)}`} />}
+                      nativeButton={false}
+                    >
+                      View employee profile
+                    </Button>
+                    {/* Release the 1:1 binding — only meaningful for a live managed device. */}
+                    {can("agents:manage") && device.state !== "deactivated" && (
+                      <ReleaseDeviceButton
+                        deviceId={device.agent_id}
+                        employeeName={owner.name}
+                        onReleased={() => setNonce((n) => n + 1)}
+                      />
+                    )}
+                  </div>
                 </div>
               ) : (
                 <p className="font-mono text-xs text-muted-foreground">
