@@ -24,6 +24,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { captureNow, listFleet, type ApiDevice } from "../services/fleet.service";
+import { effectiveUserId } from "../lib/presence";
 
 /**
  * Why a device can't be asked right now. `null` = it can. Kept as prose because it goes straight
@@ -79,7 +80,9 @@ export function CaptureNowButton({
     listFleet()
       .then((fleet) => {
         if (!alive) return;
-        const theirs = fleet.devices.filter((d) => d.user_id === userId);
+        // Route through effectiveUserId: a managed device attributes to its assigned employee, whose
+        // id may not be in `user_id` at all (MANAGED-AGENT.md §8 Ph2).
+        const theirs = fleet.devices.filter((d) => effectiveUserId(d) === userId);
         // Most recently heard from wins: a person with a desktop and a laptop should get the one
         // they're actually sitting at, not whichever the API happened to list first.
         const best =

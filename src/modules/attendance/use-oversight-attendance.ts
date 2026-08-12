@@ -26,6 +26,7 @@ import {
   departmentMap,
 } from "@/modules/employees/services/employees.service";
 import { listFleet } from "@/modules/agents/services/fleet.service";
+import { effectiveUserId, isPresent } from "@/modules/agents/lib/presence";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import { monthMatrix, MONTH_NAMES } from "./lib/calendar";
 import { useWorkdays } from "@/hooks/use-working-hours";
@@ -466,8 +467,12 @@ export function useOversightAttendance({
           try {
             const fleet = await listFleet();
             for (const d of fleet.devices) {
-              if (d.connectivity === "online" || d.connectivity === "idle")
-                onlineIds.add(d.user_id);
+              // Presence, not raw connectivity: a managed machine heartbeats from boot with nobody
+              // signed in (would falsely read "in"), and a slept laptop reads offline mid-shift.
+              // `presenceOf` handles both; `effectiveUserId` covers a managed device's empty
+              // `user_id` (MANAGED-AGENT.md §8 Ph2). A missed one is a silently wrong headcount.
+              const uid = effectiveUserId(d);
+              if (uid && isPresent(d)) onlineIds.add(uid);
             }
           } catch (e) {
             note = isForbidden(e)

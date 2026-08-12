@@ -38,6 +38,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useFleet } from "../use-fleet";
 import type { ApiDevice } from "../services/fleet.service";
+import { effectiveUserId, presenceOf } from "../lib/presence";
 
 /**
  * Status colours in two flavours, because the same badge appears on two very different surfaces.
@@ -125,6 +126,20 @@ function latestVersion(devices: ApiDevice[]): string | null {
     }
   }
   return max;
+}
+
+/** The interactive `.exe` and the managed `.msi` are **separate release streams** (§8 Ph1), so a
+ *  single fleet-wide max would falsely flag every device of the lagging variant as "behind latest".
+ *  Compute the latest per variant, then compare each device against its own. */
+function latestByVariant(devices: ApiDevice[]): (d: ApiDevice) => string | null {
+  const service = latestVersion(devices.filter((d) => d.variant === "service"));
+  const interactive = latestVersion(devices.filter((d) => d.variant !== "service"));
+  return (d) => (d.variant === "service" ? service : interactive);
+}
+
+/** Display label for the device variant. `service` → "Managed service", else "Interactive app". */
+function variantLabel(variant?: string): string {
+  return variant === "service" ? "Managed service" : "Interactive app";
 }
 
 /** A labelled utilization bar (CPU/Memory from the last heartbeat). Shared with the detail page. */
@@ -217,17 +232,23 @@ function DeviceRow({
             </Avatar>
             <span className="truncate">{ownerName}</span>
           </div>
-        ) : d.user_id ? (
-          // The owner's name hasn't resolved yet — show that, never the raw Cognito sub (a UUID).
+        ) : effectiveUserId(d) ? (
+          // The name hasn't resolved yet — show that, never the raw Cognito sub (a UUID).
           <span className="text-xs text-muted-foreground">Unknown user</span>
         ) : (
           <span className="text-xs text-muted-foreground">Not reported yet</span>
         )}
       </TableCell>
+      <TableCell className="hidden sm:table-cell">
+        <Badge variant="outline" className="text-[11px] font-normal">
+          {variantLabel(d.variant)}
+        </Badge>
+      </TableCell>
       <TableCell>
         <Badge className={cn("font-medium", meta.badge)}>
           <span className={cn("mr-1.5 size-1.5 rounded-full", meta.dot)} />
-          {meta.label}
+          {/* A managed device that slept mid-shift reads "asleep" rather than a bare offline. */}
+          {d.variant === "service" && presenceOf(d) === "asleep" ? "Asleep" : meta.label}
         </Badge>
       </TableCell>
       <TableCell className="hidden text-muted-foreground tabular-nums md:table-cell">
@@ -263,11 +284,17 @@ export function FleetView() {
     [directory],
   );
   const ownerName = (userId: string) => (userId ? (nameById.get(userId) ?? null) : null);
+  // A managed device attributes to its assigned employee, whose id may not be `user_id` at all —
+  // so "Attributed to" is always populated (§8 Ph1/Ph3), never an unmapped state.
+  const attributedName = (d: ApiDevice) => ownerName(effectiveUserId(d) ?? "");
 
   const devices = useMemo(() => fleet?.devices ?? [], [fleet]);
-  const latest = useMemo(() => latestVersion(devices), [devices]);
-  const isBehind = (d: ApiDevice) =>
-    latest !== null && d.agent_version !== "" && cmpVersion(d.agent_version, latest) < 0;
+  // Per-variant latest: the .exe and .msi are separate release streams (§8 Ph1).
+  const latestFor = useMemo(() => latestByVariant(devices), [devices]);
+  const isBehind = (d: ApiDevice) => {
+    const latest = latestFor(d);
+    return latest !== null && d.agent_version !== "" && cmpVersion(d.agent_version, latest) < 0;
+  };
   const outdated = devices.filter(isBehind).length;
 
   // Distinct OS names, for the filter — derived from the fleet, never a hardcoded list.
@@ -285,7 +312,7 @@ export function FleetView() {
     // but not search for reads as broken.
     return [
       d.hostname,
-      ownerName(d.user_id) ?? "",
+      attributedName(d) ?? "",
       d.agent_id,
       d.os,
       d.os_version,
@@ -336,7 +363,11 @@ export function FleetView() {
           label="Behind latest"
           value={outdated}
           icon={AlertTriangle}
-          hint={latest ? `newest enrolled is ${latest}` : "no versions reported"}
+          hint={
+            devices.length > 0
+              ? "compared per agent type — app and service update separately"
+              : "no versions reported"
+          }
         />
       </div>
 
@@ -406,7 +437,8 @@ export function FleetView() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="pl-6">Device</TableHead>
-                    <TableHead>Employee</TableHead>
+                    <TableHead>Attributed to</TableHead>
+                    <TableHead className="hidden sm:table-cell">Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="hidden md:table-cell">CPU · Mem</TableHead>
                     <TableHead className="hidden lg:table-cell">IP</TableHead>
@@ -419,7 +451,7 @@ export function FleetView() {
                       key={d.agent_id}
                       d={d}
                       behind={isBehind(d)}
-                      ownerName={ownerName(d.user_id)}
+                      ownerName={attributedName(d)}
                       onOpen={() =>
                         router.push(`/settings/agents/${encodeURIComponent(d.agent_id)}`)
                       }

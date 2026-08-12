@@ -25,12 +25,23 @@ export interface ApiDevice {
    * rather than the 10-minute heartbeat window. Absent on responses from before the push rail.
    */
   presence_live?: boolean;
-  /** `active` | `deactivated`. */
+  /** `active` | `deactivated` | `released` | `revoked`. */
   state: string;
   cpu_pct: number;
   mem_pct: number;
   outbox_mb: number;
   idle: boolean;
+  // ── Managed-agent discriminators (MANAGED-AGENT.md §8 Ph1) — all optional, absent on interactive
+  //    devices and on any row that predates the managed agent. Every consumer guards its lookup. ──
+  /** `interactive` | `service`. Absent ⇒ interactive (the default and every pre-Ph1 row). */
+  variant?: string;
+  /** The 1:1-assigned employee (managed only) — attribution independent of who is signed in. Always
+   *  populated for a managed device, so "Attributed to" never renders an unmapped state (§8 Ph3). */
+  assigned_user_id?: string;
+  /** `signed_in` | `asleep` | `signed_out` — the managed logon state driving live presence. */
+  logon_state?: string;
+  /** Epoch ms the device enrolled (managed only). */
+  enrolled_at?: number;
 }
 
 export interface ApiFleet {
