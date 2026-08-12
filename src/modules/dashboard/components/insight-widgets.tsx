@@ -3,8 +3,10 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Grid3x3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { UserStatus } from "@/types/user";
-import type { AttendanceStatus } from "@/modules/dashboard/lib/dashboard-data";
+import type {
+  AttendanceStatus,
+  HeadcountCounts,
+} from "@/modules/dashboard/lib/dashboard-data";
 import { cn } from "@/lib/utils";
 
 /** Heatmap axis labels (formerly from mock-metrics) — pure labels, no seeded data. */
@@ -224,14 +226,33 @@ export function AttendanceDonut({
 
 /* ------------------------- Active vs inactive ring ------------------------- */
 
+/**
+ * A two-slice donut. **The labels are required** — this widget is used for two genuinely different
+ * facts and hardcoding "Active/Inactive" made them look like one:
+ *
+ *  - the dashboard shows **employment status** (on the books vs deactivated);
+ *  - Insights → Activity shows **who reported** (an agent produced a score vs it didn't).
+ *
+ * "Inactive" was doing duty for both "no longer employed" and "no agent data", which are unrelated.
+ * Callers now have to say which they mean.
+ */
 export function ActiveInactiveRing({
   active,
   inactive,
+  activeLabel,
+  inactiveLabel,
+  title,
+  caption,
   layout,
   note,
 }: {
   active: number;
   inactive: number;
+  activeLabel: string;
+  inactiveLabel: string;
+  title: string;
+  /** Word under the centre percentage — what the percentage is *of*. */
+  caption: string;
   layout?: "column" | "row";
   /** Optional qualifier under the donut — e.g. that a multi-day figure is the period's peak day. */
   note?: string;
@@ -240,16 +261,16 @@ export function ActiveInactiveRing({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Active vs inactive</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="flex-1">
         <Donut
           center={`${Math.round((active / total) * 100)}%`}
-          caption="active"
+          caption={caption}
           layout={layout}
           slices={[
-            { label: "Active", value: active, color: "var(--primary)" },
-            { label: "Inactive", value: inactive, color: "var(--muted-foreground)" },
+            { label: activeLabel, value: active, color: "var(--primary)" },
+            { label: inactiveLabel, value: inactive, color: "var(--muted-foreground)" },
           ]}
         />
         {note ? <p className="text-muted-foreground mt-3 text-xs">{note}</p> : null}
@@ -260,16 +281,23 @@ export function ActiveInactiveRing({
 
 /* ------------------------- Headcount by status ------------------------- */
 
-const STATUS_LABEL: Record<UserStatus, { label: string; color: string }> = {
+/**
+ * The buckets the **server** can actually distinguish — see `HeadcountCounts`.
+ *
+ * There used to be a fourth, `suspended`, rendered as a permanent "0 · 0%" row: the backend has no
+ * such state and never emits one. (It survives in `UserStatus` only because the Faker seed still
+ * generates it for the projects/tasks fixtures.) `invited` was equally misleading — it was hardcoded
+ * to 0 while invited people were being counted under `inactive`.
+ */
+const STATUS_LABEL: Record<keyof HeadcountCounts, { label: string; color: string }> = {
   active: { label: "Active", color: "var(--success)" },
-  inactive: { label: "Inactive", color: "var(--muted-foreground)" },
+  inactive: { label: "Deactivated", color: "var(--muted-foreground)" },
   invited: { label: "Invited", color: "var(--warning)" },
-  suspended: { label: "Suspended", color: "var(--destructive)" },
 };
 
-export function HeadcountStatus({ counts }: { counts: Record<UserStatus, number> }) {
+export function HeadcountStatus({ counts }: { counts: HeadcountCounts }) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
-  const order: UserStatus[] = ["active", "inactive", "invited", "suspended"];
+  const order: (keyof HeadcountCounts)[] = ["active", "inactive", "invited"];
   return (
     <Card>
       <CardHeader>

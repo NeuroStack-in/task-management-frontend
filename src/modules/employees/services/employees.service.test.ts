@@ -12,6 +12,7 @@ import {
   deactivateEmployee,
   departmentMap,
   getEmployeeProfile,
+  listAllEmployees,
   listEmployees,
   reactivateEmployee,
   resendInvite,
@@ -34,6 +35,13 @@ describe("employees.service route contract", () => {
     await departmentMap();
     expect(mock).toHaveBeenCalledWith("/v1/departments");
   });
+
+  it("listEmployees passes dept/limit/cursor through as query params", async () => {
+    mock.mockResolvedValueOnce({ employees: [] });
+    await listEmployees({ dept: "d1", limit: 100, cursor: "c1" });
+    expect(mock).toHaveBeenCalledWith("/v1/employees?dept=d1&limit=100&cursor=c1");
+  });
+
 
   it("getEmployeeProfile GETs the encoded user path", async () => {
     await getEmployeeProfile("u1");
@@ -94,3 +102,84 @@ describe("employees.service route contract", () => {
     });
   });
 });
+
+
+/**
+ * `listAllEmployees` exists because `GET /v1/employees` **without** `dept` truncates to `limit` and
+ * returns no cursor — the rest of the org is unreachable. Anything deriving a headcount or a
+ * filter's option list from the bare call silently loses whole departments, which is what made the
+ * dashboard's department filter look broken.
+ */
+describe("listAllEmployees — the whole roster, not the first page", () => {
+  it("walks every department plus the unassigned bucket, following cursors", async () => {
+    // GET /v1/departments
+    mock.mockResolvedValueOnce([{ id: "eng", name: "Engineering" }]);
+    // eng, page 1 (has a cursor) then page 2 (no cursor)
+    mock.mockResolvedValueOnce({
+      employees: [{ user_id: "u1", name: "Ann", status: "active", department_id: "eng" }],
+      cursor: "next",
+    });
+    mock.mockResolvedValueOnce({
+      employees: [{ user_id: "u2", name: "Bob", status: "active", department_id: "eng" }],
+    });
+    // the unassigned partition
+    mock.mockResolvedValueOnce({
+      employees: [
+        { user_id: "u3", name: "Cara", status: "active", department_id: "unassigned" },
+      ],
+    });
+
+    const all = await listAllEmployees();
+
+    expect(all.map((e) => e.user_id)).toEqual(["u1", "u2", "u3"]);
+    const urls = mock.mock.calls.map((c) => c[0]);
+    expect(urls).toContain("/v1/employees?dept=eng&limit=100");
+    expect(urls).toContain("/v1/employees?dept=eng&limit=100&cursor=next");
+    // The unassigned bucket is a real partition — skipping it drops those people from every total.
+    expect(urls).toContain("/v1/employees?dept=unassigned&limit=100");
+  });
+
+  it("dedupes a user seen under two partitions rather than double-counting", async () => {
+    mock.mockResolvedValueOnce([
+      { id: "a", name: "A" },
+      { id: "b", name: "B" },
+    ]);
+    const row = { user_id: "u1", name: "Ann", status: "active", department_id: "a" };
+    mock.mockResolvedValueOnce({ employees: [row] });
+    mock.mockResolvedValueOnce({ employees: [row] });
+    mock.mockResolvedValueOnce({ employees: [] });
+
+    expect(await listAllEmployees()).toHaveLength(1);
+  });
+
+  it("falls back to a single capped page when departments are unreadable", async () => {
+    mock.mockRejectedValueOnce(new Error("403"));
+    mock.mockResolvedValueOnce({
+      employees: [{ user_id: "u1", name: "Ann", status: "active", department_id: "eng" }],
+    });
+
+    const all = await listAllEmployees();
+
+    expect(all).toHaveLength(1);
+    expect(mock).toHaveBeenLastCalledWith("/v1/employees?limit=100");
+  });
+
+  it("one unreadable department does not empty the roster", async () => {
+    mock.mockResolvedValueOnce([
+      { id: "ok", name: "OK" },
+      { id: "bad", name: "Bad" },
+    ]);
+    // Partitions are fanned out concurrently, so resolve by URL rather than call order.
+    mock.mockImplementation((url: string) => {
+      if (url.includes("dept=bad")) return Promise.reject(new Error("boom"));
+      if (url.includes("dept=ok")) {
+        return Promise.resolve({
+          employees: [{ user_id: "u1", name: "Ann", status: "active", department_id: "ok" }],
+        });
+      }
+      return Promise.resolve({ employees: [] });
+    });
+
+    expect(await listAllEmployees()).toHaveLength(1);
+    mock.mockReset();
+  });});

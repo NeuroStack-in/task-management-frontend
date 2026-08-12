@@ -139,16 +139,22 @@ function OrgDashboard() {
                 about who is working *today*, and the roster answering that is below the fold on
                 /attendance — the hash lands the reader on it instead of at the top of a page whose
                 answer they then have to scroll for. */}
+            {/* "Working now", not "Active employees". These count **running timers** among people
+                who can run one, while the Active/Inactive ring further down counts **employment
+                status** — two different numbers that both used to be labelled "Active" on this one
+                screen. */}
             <StatCard
-              label="Active employees"
+              label="Working now"
               value={kpis.active.value}
               icon={Users}
+              hint="timer running"
               href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
             />
             <StatCard
-              label="Inactive employees"
+              label="Not working"
               value={kpis.inactive.value}
               icon={UserMinus}
+              hint="no timer running"
               href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
             />
             <StatCard

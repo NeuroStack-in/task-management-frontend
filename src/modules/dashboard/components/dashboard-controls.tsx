@@ -4,6 +4,7 @@ import { Users2 } from "lucide-react";
 import {
   RANGE_OPTIONS,
   type DashboardRange,
+  type TeamOption,
 } from "@/modules/dashboard/lib/dashboard-data";
 import {
   Select,
@@ -30,9 +31,10 @@ export function DashboardControls({
 }: {
   range: DashboardRange;
   onRangeChange: (r: DashboardRange) => void;
+  /** `"all"` or a `department_id` — the id, never the label (see `DashboardFilters.team`). */
   team: string;
   onTeamChange: (t: string) => void;
-  teams: string[];
+  teams: TeamOption[];
   lastUpdated: string;
   start: string;
   end: string;
@@ -88,22 +90,28 @@ export function DashboardControls({
         <span className="hidden text-xs text-muted-foreground sm:inline">
           Updated {lastUpdated || "just now"}
         </span>
+        {/* Departments, not teams. `team_id` is not in the Directory GSI projection, so the server
+            cannot filter by team at all (workforce::directory_list::data) — this axis has always
+            been the department. Saying "team" made a working filter look broken to anyone who
+            expected their team in the list. */}
         <Select value={team} onValueChange={(v) => onTeamChange(v as string)}>
-          <SelectTrigger aria-label="Filter by team" className="h-9 w-52 gap-2">
+          <SelectTrigger aria-label="Filter by department" className="h-9 w-52 gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <Users2 className="size-4 shrink-0 text-muted-foreground" />
               <SelectValue className="truncate whitespace-nowrap">
                 {(value) =>
-                  value === "all" || value == null ? "All teams" : String(value)
+                  value === "all" || value == null
+                    ? "All departments"
+                    : (teams.find((t) => t.id === value)?.label ?? String(value))
                 }
               </SelectValue>
             </div>
           </SelectTrigger>
           <SelectContent className="min-w-44">
-            <SelectItem value="all">All teams</SelectItem>
+            <SelectItem value="all">All departments</SelectItem>
             {teams.map((t) => (
-              <SelectItem key={t} value={t}>
-                {t}
+              <SelectItem key={t.id} value={t.id}>
+                {t.label}
               </SelectItem>
             ))}
           </SelectContent>

@@ -23,7 +23,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
-  listEmployees,
+  listAllEmployees,
+  listInvites,
   departmentMap,
 } from "@/modules/employees/services/employees.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
@@ -39,7 +40,12 @@ import {
   getDayOversight,
   type ApiDayResponse,
 } from "@/modules/attendance/services/attendance.service";
-import type { DashboardData, DashboardFilters, Performer } from "./lib/dashboard-data";
+import type {
+  DashboardData,
+  DashboardFilters,
+  Performer,
+  TeamOption,
+} from "./lib/dashboard-data";
 
 /** Bounded per-day fan-out — a small cap so a month window doesn't burst the Lambda. */
 const DAY_FANOUT = 3;
@@ -130,11 +136,13 @@ interface DayBundle {
   activity: OrgActivity | null;
   oversight: ApiDayResponse | null;
   shots: number;
+  /** The day's grid was cut off at `SHOT_PAGE`, so `shots` is a floor, not a total. */
+  shotsTruncated: boolean;
 }
 
 export interface DashboardDataState {
   data: DashboardData | null;
-  teams: string[];
+  teams: TeamOption[];
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -142,7 +150,7 @@ export interface DashboardDataState {
 
 export function useDashboardData(filters: DashboardFilters): DashboardDataState {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [teams, setTeams] = useState<string[]>([]);
+  const [teams, setTeams] = useState<TeamOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -159,46 +167,62 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const days = resolveDays({ range, team, start, end });
 
         // Range-independent org context. Billing/roles are best-effort (a 403 must not blank the board).
-        const [roster, deptNames, contributorIds] = await Promise.all([
-          listEmployees(),
+        //
+        // `listAllEmployees` (not `listEmployees`) is load-bearing: the bare directory call returns
+        // the alphabetically-first 50 people with **no cursor to page past them**, so departments
+        // sorting late simply never appeared in the filter below. A filter missing its options reads
+        // as "filtering is broken", which is exactly what it was.
+        const [roster, deptNames, contributorIds, invites] = await Promise.all([
+          listAllEmployees(),
           departmentMap().catch(() => new Map<string, string>()),
           // A failed roles read must not empty the KPI — fall back to counting everyone.
           contributorRoleIds().catch(() => null),
+          // Invited people are **not** directory rows (see `HeadcountCounts`), so the only way to
+          // count them is the invites list. Needs a higher permission than the dashboard does, so a
+          // 403 degrades to "no invites known" rather than blanking the board.
+          listInvites().catch(() => []),
         ]);
         const billing = await getBillingOverview().catch(() => null);
         if (!live) return;
 
-        // department_id → label, and the reverse (the `team` filter carries a department *name*).
+        // The filter matches on `department_id`; the label is display-only (see DashboardFilters).
         const deptLabel = (id: string) => deptNames.get(id) ?? id;
-        const teamList = Array.from(
-          new Set(roster.map((e) => deptLabel(e.department_id))),
-        ).sort();
+        const teamList: TeamOption[] = Array.from(
+          new Set(roster.map((e) => e.department_id).filter(Boolean)),
+        )
+          .map((id) => ({ id, label: deptLabel(id) }))
+          .sort((a, b) => a.label.localeCompare(b.label));
         setTeams(teamList);
 
-        const selectedDeptIds =
-          team === "all"
-            ? null
-            : new Set(
-                roster
-                  .filter((e) => deptLabel(e.department_id) === team)
-                  .map((e) => e.department_id),
-              );
+        // A `team` that no longer exists (renamed away, or a stale selection) scopes to nobody
+        // rather than silently reverting to the whole org — an empty board is honest, a full one
+        // pretending to be filtered is not.
         const scopeUserIds =
           team === "all"
             ? null
             : new Set(
-                roster
-                  .filter((e) => selectedDeptIds!.has(e.department_id))
-                  .map((e) => e.user_id),
+                roster.filter((e) => e.department_id === team).map((e) => e.user_id),
               );
         const inScopeUser = (id: string) => scopeUserIds === null || scopeUserIds.has(id);
-        const inScopeDept = (id: string) =>
-          selectedDeptIds === null || selectedDeptIds.has(id);
+        const inScopeDept = (id: string) => team === "all" || id === team;
 
-        // Directory-derived KPIs (dept-filtered). Real the moment the roster loads.
+        // Directory-derived headcount (dept-filtered) — **employment status**, not "working now".
+        // `inactive` is the server's `deactivated`, matched explicitly rather than as
+        // `!== "active"`: the catch-all silently swept up any future status the server adds, and it
+        // is what made an invited person count as "inactive".
         const scopedRoster = roster.filter((e) => inScopeUser(e.user_id));
         const activeCount = scopedRoster.filter((e) => e.status === "active").length;
-        const inactiveCount = scopedRoster.filter((e) => e.status !== "active").length;
+        const inactiveCount = scopedRoster.filter((e) => e.status === "deactivated").length;
+
+        // Pending invites, scoped to the selected department. Expiry is lazy server-side, so a
+        // `pending` row whose `expires_at` (epoch **seconds**) has passed is really expired.
+        const nowSec = Date.now() / 1000;
+        const invitedCount = invites.filter(
+          (i) =>
+            i.status === "pending" &&
+            i.expires_at > nowSec &&
+            inScopeDept(i.department_id),
+        ).length;
 
         /**
          * Who is actually working right now — the same derivation `/attendance` uses, deliberately.
@@ -242,10 +266,18 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               getDayOversight(iso).catch(() => null),
               getScreenshots(iso, { limit: SHOT_PAGE }).catch(() => null),
             ]);
+            // ⚠️ One page only, and `SHOT_PAGE` is already the server's `MAX_LIMIT`. Following the
+            // cursor here would mean up to 62 days × N pages of sequential requests, which is
+            // exactly the fan-out that throttles the Lambda. So the count can be a floor — and when
+            // it is, say so (`shotsTruncated`) rather than publish a precise-looking undercount.
+            // Filtering by team makes this sharper: the scoped user's frames may sit past the cut.
             const shots = grid
               ? grid.shots.filter((s) => inScopeUser(s.user_id)).length
               : 0;
-            return { iso, activity, oversight, shots };
+            const shotsTruncated = grid
+              ? Boolean(grid.cursor) || grid.shots.length >= SHOT_PAGE
+              : false;
+            return { iso, activity, oversight, shots, shotsTruncated };
           },
         );
         if (!live) return;
@@ -358,16 +390,35 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         ).length;
 
         // ── Latest day with scored people → team comparison + top performers. ──
-        const latestActivity =
-          [...bundles].reverse().find((b) => (b.activity?.people?.length ?? 0) > 0)
-            ?.activity ??
-          bundles[bundles.length - 1]?.activity ??
-          null;
-        const latestPeople = latestActivity?.people ?? [];
+        //
+        // **Scope first, then pick the day.** This used to find the newest day with *anybody* in it
+        // and only then filter by department — so if the most recent reporting day happened to hold
+        // no one from the selected team, Top performers came back empty even though that team had
+        // plenty of data earlier in the same window. Switching teams appeared to blank the widget at
+        // random. The day now has to be the newest one that carries someone *in scope*.
+        const latestScopedPeople =
+          [...bundles]
+            .reverse()
+            .map((b) =>
+              (b.activity?.people ?? []).filter(
+                (p) => inScopeDept(p.department_id) && p.breakdown,
+              ),
+            )
+            .find((people) => people.length > 0) ?? [];
 
-        // Team comparison stays global across departments (it is the cross-team view).
+        // Team comparison is deliberately the **cross-team** view and stays org-wide even when a
+        // team is selected — otherwise "compare teams" would render a single bar. It reads off the
+        // newest day with any scored person, independent of the filter. The widget says so in its
+        // description, because a chart ignoring the active filter is otherwise indistinguishable
+        // from a bug.
+        const latestAnyPeople =
+          [...bundles]
+            .reverse()
+            .map((b) => (b.activity?.people ?? []).filter((p) => p.breakdown))
+            .find((people) => people.length > 0) ?? [];
+
         const byDept = new Map<string, number[]>();
-        for (const p of latestPeople) {
+        for (const p of latestAnyPeople) {
           if (!p.breakdown) continue;
           const label = deptLabel(p.department_id);
           const arr = byDept.get(label) ?? [];
@@ -382,8 +433,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           .sort((a, b) => b.score - a.score)
           .slice(0, 7);
 
-        const topPerformers: Performer[] = latestPeople
-          .filter((p) => p.breakdown && inScopeDept(p.department_id))
+        const topPerformers: Performer[] = [...latestScopedPeople]
           .sort((a, b) => (b.breakdown?.score ?? 0) - (a.breakdown?.score ?? 0))
           .slice(0, 5)
           .map((p) => ({
@@ -396,6 +446,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         // ── Screenshots over the window (agent-dependent — 0 is honest). ──
         const screenshotsTrend = bundles.map((b) => b.shots);
         const screenshotCount = screenshotsTrend.reduce((a, b) => a + b, 0);
+        const screenshotCountPartial = bundles.some((b) => b.shotsTruncated);
 
         // ── Billing seats. ──
         const seatsTotal =
@@ -406,13 +457,13 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           seatsTotal,
         };
 
-        // ── Headcount by status (directory: active | deactivated). ──
+        // ── Headcount by status. See `HeadcountCounts` for why `invited` can't come from the
+        // directory, and why there is no `suspended`. ──
         const statusCounts = {
           active: activeCount,
           inactive: inactiveCount,
-          invited: 0,
-          suspended: 0,
-        } as const;
+          invited: invitedCount,
+        };
 
         // No cheap prior-window comparison → deltas stay 0 (honest, not seeded). Trends are the real
         // per-day series where one exists (productivity), empty otherwise so the sparkline is omitted.
@@ -446,6 +497,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           productivityTrend,
           teamData,
           screenshotCount,
+          screenshotCountPartial,
           screenshotsTrend,
           topPerformers,
           billing: billingBlock,

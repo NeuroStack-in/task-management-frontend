@@ -8,6 +8,7 @@
  *     flowing yet. So the roster is real; the monitoring numbers degrade honestly to "unavailable".
  */
 import { apiFetch } from "@/lib/api";
+import { mapWithConcurrency } from "@/lib/concurrency";
 
 /** Mirrors `workforce::directory_list::dto::EmployeeRow`. */
 export interface ApiEmployee {
@@ -37,8 +38,98 @@ interface DirectoryResponse {
   cursor?: string;
 }
 
-export function listEmployees(): Promise<ApiEmployee[]> {
-  return apiFetch<DirectoryResponse>("/v1/employees").then((r) => r.employees);
+/**
+ * One page of the directory.
+ *
+ * ⚠️ **`GET /v1/employees` has two server-side modes with different pagination** (see
+ * `workforce::directory_list::data`):
+ *   - **`dept` given** → one GSI query, genuinely cursor-paginated. Page until `cursor` is absent.
+ *   - **`dept` absent** → a fan-out over every department, merged, name-sorted, then
+ *     **`truncate(limit)` with `cursor: None`**. The rest of the org is unreachable — there is no
+ *     cursor to follow.
+ *
+ * So a bare `listEmployees()` returns *at most* `limit` (server default 50, max 100) people,
+ * alphabetically, with no signal that anything was dropped. Anything that derives a total, a
+ * headcount, or a filter's option list must use {@link listAllEmployees} instead.
+ */
+export function listEmployees(
+  opts: { dept?: string; status?: string; limit?: number; cursor?: string } = {},
+): Promise<ApiEmployee[]> {
+  return listEmployeesPage(opts).then((r) => r.employees);
+}
+
+/** As {@link listEmployees}, but keeps the `cursor` so callers can page. */
+export function listEmployeesPage(
+  opts: { dept?: string; status?: string; limit?: number; cursor?: string } = {},
+): Promise<DirectoryResponse> {
+  const q = new URLSearchParams();
+  if (opts.dept) q.set("dept", opts.dept);
+  if (opts.status) q.set("status", opts.status);
+  if (opts.limit) q.set("limit", String(opts.limit));
+  if (opts.cursor) q.set("cursor", opts.cursor);
+  const qs = q.toString();
+  return apiFetch<DirectoryResponse>(`/v1/employees${qs ? `?${qs}` : ""}`);
+}
+
+/** Server-side page cap (`MAX_LIMIT` in `directory_list::data`) — ask for the largest legal page. */
+const DIR_PAGE = 100;
+/** Stop-loss on cursor following, so a pathological partition can't loop forever. 100 × 50 = 5,000. */
+const MAX_DIR_PAGES = 50;
+/**
+ * The Directory GSI's bucket for employees with no department (`UNASSIGNED_DEPT` in
+ * `wp_platform::keys`). It is a real partition, so it must be walked like any other department or
+ * those people vanish from every total.
+ */
+const UNASSIGNED_DEPT = "unassigned";
+
+/** Page one department to exhaustion. */
+async function listDepartmentEmployees(dept: string): Promise<ApiEmployee[]> {
+  const out: ApiEmployee[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_DIR_PAGES; page++) {
+    const res = await listEmployeesPage({ dept, limit: DIR_PAGE, cursor });
+    out.push(...res.employees);
+    if (!res.cursor) break;
+    cursor = res.cursor;
+  }
+  return out;
+}
+
+/**
+ * **The complete roster.** Walks every department partition (plus the unassigned bucket) with real
+ * cursor pagination and merges the result, so the caller sees the whole org rather than the
+ * alphabetically-first 50.
+ *
+ * This is the only correct source for a headcount, a KPI denominator, or the option list of a
+ * department filter — a truncated roster silently drops whole departments out of the filter, which
+ * reads as "filtering is broken" rather than "the list was cut short".
+ *
+ * Cost is one request per department (each usually a single page), fanned out at a **small**
+ * concurrency — the standing hazard here is that unbounded per-item bursts trip the Lambda's
+ * 503/429 throttle. Departments are few; this stays well inside that budget.
+ *
+ * Falls back to a single fan-out page if `GET /v1/departments` is unavailable (a 403 for a role
+ * without `employees:view` on departments) — degraded and capped, but never empty.
+ */
+export async function listAllEmployees(): Promise<ApiEmployee[]> {
+  let deptIds: string[];
+  try {
+    deptIds = (await listDepartments()).map((d) => d.id);
+  } catch {
+    return listEmployees({ limit: DIR_PAGE });
+  }
+
+  const partitions = [...deptIds, UNASSIGNED_DEPT];
+  const pages = await mapWithConcurrency(partitions, 4, (dept) =>
+    // One unreadable partition must not empty the roster.
+    listDepartmentEmployees(dept).catch(() => [] as ApiEmployee[]),
+  );
+
+  // A user could in principle appear under two partitions (a department change mid-read); dedupe by
+  // id so a total is never double-counted.
+  const byId = new Map<string, ApiEmployee>();
+  for (const row of pages.flat()) byId.set(row.user_id, row);
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export interface ApiDepartment {

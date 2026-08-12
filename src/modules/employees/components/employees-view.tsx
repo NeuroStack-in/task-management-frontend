@@ -290,7 +290,15 @@ export function EmployeesView() {
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total employees" value={liveStats.total} icon={Users} hint="in this organization" featured />
-        <StatCard label="Active" value={liveStats.active} icon={UserCheck} delta={4} />
+        {/* `delta={4}` used to sit here — a hardcoded "+4%" rendered as a real trend pill beside a
+            real count. There is no prior-window comparison to draw it from, so it was invented.
+            Dropped rather than seeded, like every other delta on the dashboard. */}
+        <StatCard
+          label="Active"
+          value={liveStats.active}
+          icon={UserCheck}
+          hint="not deactivated"
+        />
         <StatCard label="Avg. productivity" value={pct(liveStats.avgProductivity)} icon={GaugeIcon} hint="pending activity monitoring" />
         <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />
       </div>

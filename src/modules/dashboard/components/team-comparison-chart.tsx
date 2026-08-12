@@ -23,6 +23,13 @@ interface TeamDatum {
   score: number;
 }
 
+/**
+ * Cross-department productivity comparison.
+ *
+ * **Deliberately ignores the dashboard's department filter** — scoping it would leave a single bar,
+ * which is not a comparison. The description says "always org-wide" because a chart that visibly
+ * ignores the active filter is otherwise indistinguishable from a broken one.
+ */
 export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
   // Per-team scores come from the desktop agent's activity data. With no agent reporting there is
   // nothing to compare — show an honest empty state rather than an empty axis or a seeded bar.
@@ -31,7 +38,9 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
       <Card>
         <CardHeader>
           <CardTitle>Team comparison</CardTitle>
-          <CardDescription>Average productivity by department</CardDescription>
+          <CardDescription>
+            Average productivity by department — always org-wide
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-1 flex-col items-center justify-center gap-1.5 py-10 text-center">
@@ -51,7 +60,9 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
     <Card>
       <CardHeader>
         <CardTitle>Team comparison</CardTitle>
-        <CardDescription>Average productivity by department</CardDescription>
+        <CardDescription>
+            Average productivity by department — always org-wide
+          </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-full min-h-[150px] w-full">

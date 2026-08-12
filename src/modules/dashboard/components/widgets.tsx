@@ -89,9 +89,17 @@ export function TopEmployeesWidget({ people }: { people: Performer[] }) {
 export function ScreenshotsWidget({
   count,
   trend,
+  /**
+   * The count is a **floor** — at least one day in the window hit the screenshot grid's page cap, so
+   * frames beyond it were never fetched and could not be counted. Shown as "1,234+" rather than a
+   * precise figure, because a capped total rendered as exact silently under-reports (and does so
+   * hardest when a department filter is active, since the scoped frames may sit past the cut).
+   */
+  partial = false,
 }: {
   count: number;
   trend: number[];
+  partial?: boolean;
 }) {
   return (
     <Card className="justify-between">
@@ -106,11 +114,14 @@ export function ScreenshotsWidget({
       <CardContent className="space-y-2">
         <p className="font-display text-3xl font-semibold tabular-nums">
           {count.toLocaleString()}
+          {partial && count > 0 ? "+" : ""}
         </p>
         <p className="text-xs text-muted-foreground">
           {count === 0
             ? "none captured — the desktop agent isn't reporting yet"
-            : "captured over the selected range"}
+            : partial
+              ? "at least this many over the selected range — busy days are counted up to a page limit"
+              : "captured over the selected range"}
         </p>
         <Sparkline data={trend} area showDot={false} width={220} height={48} className="w-full" />
         <ViewAllLink href="/insights/screenshots" label="Open Screenshot Center" />

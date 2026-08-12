@@ -7,7 +7,7 @@
  * the field degrades honestly to 0 / empty and its widget shows a "waiting on the agent" state — no
  * fabricated numbers.
  */
-import type { User, UserStatus } from "@/types/user";
+import type { User } from "@/types/user";
 
 /* --------------------------------- filters -------------------------------- */
 
@@ -22,10 +22,51 @@ export const RANGE_OPTIONS: { value: DashboardRange; label: string }[] = [
 
 export interface DashboardFilters {
   range: DashboardRange;
-  team: string; // "all" or a department name
+  /**
+   * `"all"` or a **`department_id`**.
+   *
+   * It holds the id, not the display name, deliberately. Matching on the label meant the filter
+   * broke in three ways: two departments sharing a name silently merged; a department whose label
+   * was missing from `GET /v1/departments` fell back to its raw UUID and appeared in the dropdown as
+   * one; and a rename mid-session stopped matching entirely. The id is also what the server's
+   * `?dept=` query wants, which is what makes the roster properly paginated.
+   */
+  team: string;
   /** ISO "YYYY-MM-DD" bounds, only used when range === "range". */
   start?: string;
   end?: string;
+}
+
+/** One entry in the dashboard's department ("team") filter — id for matching, label for display. */
+export interface TeamOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * Headcount buckets the **server can actually distinguish** — deliberately *not*
+ * `Record<UserStatus, number>`.
+ *
+ * `UserStatus` is the mock/seed vocabulary (`active | inactive | invited | suspended`). The real
+ * `workforce` context only ever produces three states, and they don't line up with it:
+ *
+ * | Server | Where it lives | Here |
+ * |---|---|---|
+ * | `active` | `USER#` row | `active` |
+ * | `deactivated` | `USER#` row | `inactive` (the UI's word — normalised at the service seam) |
+ * | `invited` | an `INVITE#` row, **not** in the directory | `invited` |
+ * | — | there is no suspended state | *(dropped)* |
+ *
+ * The third row is the trap: `create_invite` writes `INVITE#`/`EMAILREF#` items and **no `USER#`
+ * row**, so an invited person is absent from `GET /v1/employees` entirely. Counting the directory
+ * alone can never produce a non-zero `invited` — it has to come from `GET /v1/employees/invites`.
+ */
+export interface HeadcountCounts {
+  active: number;
+  /** Employment ended — the server's `deactivated`. */
+  inactive: number;
+  /** Invite sent, not yet accepted, not yet expired. */
+  invited: number;
 }
 
 /* ------------------------------- shared types ----------------------------- */
@@ -76,6 +117,13 @@ export interface DashboardData {
   productivityTrend: TrendPoint[];
   teamData: { team: string; score: number }[];
   screenshotCount: number;
+  /**
+   * `true` when at least one day in the window hit the screenshot grid's page cap, so
+   * `screenshotCount` is a **floor**, not a total. Render it as "1,234+" rather than a precise
+   * figure — silently publishing a capped count as exact is how a filtered view ends up quietly
+   * under-reporting.
+   */
+  screenshotCountPartial: boolean;
   screenshotsTrend: number[];
   topPerformers: Performer[];
   billing: { plan: string; seatsUsed: number; seatsTotal: number };
@@ -95,7 +143,14 @@ export interface DashboardData {
    * "4% · 1 of 14 reporting" is thin coverage, not a collapsed workforce.
    */
   productivityCoverage: { scored: number; team: number };
-  statusCounts: Record<UserStatus, number>;
+  statusCounts: HeadcountCounts;
+  /**
+   * Directory headcount — **employment status**, not "working right now".
+   *
+   * The KPI strip's live pair (`kpis.active` / `kpis.inactive`) counts *running timers* and is
+   * labelled "Working now / Not working" for exactly this reason: both facts used to be called
+   * "active" and rendered on the same screen with different values.
+   */
   activeCount: number;
   inactiveCount: number;
 }

@@ -55,7 +55,14 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   "org_activity.active_ring": {
     span: 1,
     render: (d) => (
-      <ActiveInactiveRing active={d.activeCount} inactive={d.inactiveCount} />
+      <ActiveInactiveRing
+        active={d.activeCount}
+        inactive={d.inactiveCount}
+        title="Employment status"
+        caption="active"
+        activeLabel="Active"
+        inactiveLabel="Deactivated"
+      />
     ),
   },
   "reports.headcount": {
@@ -65,7 +72,11 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   "org_activity.screenshots": {
     span: 1,
     render: (d) => (
-      <ScreenshotsWidget count={d.screenshotCount} trend={d.screenshotsTrend} />
+      <ScreenshotsWidget
+        count={d.screenshotCount}
+        trend={d.screenshotsTrend}
+        partial={d.screenshotCountPartial}
+      />
     ),
   },
   "org_activity.top_performers": {

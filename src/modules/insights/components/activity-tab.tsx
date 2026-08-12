@@ -306,7 +306,9 @@ export function ActivityTab() {
     return [
       { label: stats.coverage.label, value: stats.coverage.value },
       { label: "Team avg score", value: `${stats.avgScore}`, hint: "/ 100" },
-      { label: "Active", value: fmtHours(stats.activeSec) },
+      // "Active **time**" — this is `active_sec` (hours with input detected, the opposite of idle).
+      // Bare "Active" sat next to people-counts and read as a headcount.
+      { label: "Active time", value: fmtHours(stats.activeSec) },
       // `0%` here meant "no app-level categorisation was reported", not "none of the time was
       // productive". Category seconds come only from the agent's `top_apps` spans, which are
       // optional and classified on-device (`wp-agent-contract`: `#[serde(default)] top_apps`), so
@@ -572,6 +574,12 @@ export function ActivityTab() {
         <ActiveInactiveRing
           active={scored}
           inactive={inactive}
+          // Not employment status: this is who produced agent data. "Inactive" read as
+          // "deactivated employee" — it means the agent reported nothing for them.
+          title="Reporting coverage"
+          caption="reporting"
+          activeLabel="Reported"
+          inactiveLabel="Not reporting"
           layout="row"
           // Per-day counts can't be de-duplicated into distinct people across a period, so a
           // multi-day figure is the best single day — say so rather than let it read as "this many
