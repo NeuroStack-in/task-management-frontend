@@ -36,6 +36,7 @@ import {
 import { formatDuration } from "@/lib/format";
 import { formatHours } from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
+import { useTrackingMode } from "@/hooks/use-features";
 import { useTimesheet } from "../use-timesheet";
 import { TimesheetHistory } from "./timesheet-history";
 import { TimerHero } from "./timer-hero";
@@ -57,6 +58,9 @@ import { PayrollWidget } from "./payroll-widget";
  */
 export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   const { rows, totalSec, billableSec, running, loading, error, reload } = useTimesheet();
+  // Machine-mode orgs track laptop uptime, not projects: no task/project/billable, and the timer is a
+  // background service (§8 Ph5). The web still only *mirrors* — start/stop lives on the device.
+  const isMachine = useTrackingMode() === "machine";
 
   const dayStats = useMemo(
     () => ({
@@ -86,15 +90,24 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   }, []);
 
   const exportCsv = () => {
+    // Machine mode drops Project/Task/Billable (they don't exist for a device) — one union header.
     const csv = Papa.unparse(
-      rows.map((e) => ({
-        Task: e.task,
-        Project: e.project,
-        Start: e.start,
-        End: e.end ?? "",
-        Duration: e.running ? "" : formatDuration(e.durationSec),
-        Billable: e.billable ? "Yes" : "No",
-      })),
+      rows.map((e) =>
+        isMachine
+          ? {
+              Start: e.start,
+              End: e.end ?? "",
+              Duration: e.running ? "" : formatDuration(e.durationSec),
+            }
+          : {
+              Task: e.task,
+              Project: e.project,
+              Start: e.start,
+              End: e.end ?? "",
+              Duration: e.running ? "" : formatDuration(e.durationSec),
+              Billable: e.billable ? "Yes" : "No",
+            },
+      ),
     );
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     const a = document.createElement("a");
@@ -112,14 +125,21 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
       <TimerHero
         running={
           runningRow
-            ? {
-                // Same precedence as the table: the typed description is what the person
-                // recognises; the task title is the fallback, and only then a neutral placeholder.
-                task: runningRow.description || runningRow.task || "No description",
-                project: runningRow.project,
-                start: runningRow.start,
-                startMs: runningRow.startMs,
-              }
+            ? isMachine
+              ? {
+                  kind: "machine",
+                  start: runningRow.start,
+                  startMs: runningRow.startMs,
+                }
+              : {
+                  kind: "task",
+                  // Same precedence as the table: the typed description is what the person
+                  // recognises; the task title is the fallback, and only then a neutral placeholder.
+                  task: runningRow.description || runningRow.task || "No description",
+                  project: runningRow.project,
+                  start: runningRow.start,
+                  startMs: runningRow.startMs,
+                }
             : null
         }
         todayTotalSec={totalSec}

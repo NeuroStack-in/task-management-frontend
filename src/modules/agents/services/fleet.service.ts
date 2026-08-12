@@ -93,12 +93,44 @@ export interface TrackingPolicy {
   auto_update: boolean;
 }
 
+/**
+ * The org's **legal capture gate** (`wp_agent_contract::CaptureGateConfig`, MANAGED-AGENT.md §9.2) —
+ * what the managed agent enforces before any capture. Its own `version` is the optimistic-lock token,
+ * exactly like `TrackingPolicy.version`. Every field is fail-closed when absent (heartbeat only).
+ */
+export interface CaptureWindow {
+  /** Permitted weekdays, ISO Mon=1 … Sun=7. Empty ⇒ every day. */
+  weekdays: number[];
+  /** Start minute-of-day, device-local, 0 … 1439. */
+  start_minute: number;
+  /** End minute-of-day, device-local, 0 … 1439. `end < start` ⇒ spans midnight. */
+  end_minute: number;
+}
+
+export interface CaptureGate {
+  version: number;
+  /** Org-level authorisation to capture at all — off by default. */
+  capture_policy_active: boolean;
+  /** The permitted hours (device-local). `null` ⇒ no time restriction. */
+  capture_window: CaptureWindow | null;
+}
+
 /** The full agent config document (`fleet::dto::AgentConfig`). */
 export interface AgentConfig {
   version: number;
   tracking: TrackingPolicy;
   /** App/site classification rules — opaque to this screen. */
   rules: unknown;
+  /** The legal capture gate (§9.2). */
+  capture_gate: CaptureGate;
+}
+
+/** The write payload for `PUT /v1/fleet/capture-gate` (D16). */
+export interface UpdateCaptureGateInput {
+  capture_policy_active: boolean;
+  capture_window: CaptureWindow | null;
+  /** The `capture_gate.version` last loaded — a 409 (`version_conflict`) means it moved on. */
+  expected_version: number;
 }
 
 /** The exact write payload for `PUT /v1/fleet/update-policy`. */
@@ -139,6 +171,17 @@ export function captureNow(agentId: string): Promise<CaptureRequested> {
 
 export function getTrackingPolicy(): Promise<AgentConfig> {
   return apiFetch<AgentConfig>("/v1/agent/config");
+}
+
+/**
+ * `PUT /v1/fleet/capture-gate` (D16) — set the org's legal capture gate. Needs `monitoring:manage`.
+ * Optimistic-locked on `expected_version`; a 409 (`version_conflict`) means reload and retry.
+ */
+export function updateCaptureGate(body: UpdateCaptureGateInput): Promise<CaptureGate> {
+  return apiFetch<CaptureGate>("/v1/fleet/capture-gate", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 // ── Managed-agent enrolment (MANAGED-AGENT.md §6.2, Ph3-4) ────────────────────────────────────────

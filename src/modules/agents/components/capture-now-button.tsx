@@ -126,7 +126,10 @@ export function CaptureNowButton({
             // so an unknown one degrades to an honest sentence rather than a wrong one.
             const REASONS: Record<string, string> = {
               privacy_pause: "The employee has capture paused.",
-              not_tracking: "No timer is running on that device.",
+              // A managed device has no project timer — "not tracking" means it isn't in a
+              // capture-eligible state right now (out of hours, policy off, or an exception).
+              not_tracking: "That device isn't tracking right now.",
+              no_session: "No one is signed in on that device.",
               no_consent: "The employee hasn't consented to capture.",
               excepted: "The active window is on the exception list.",
               upload_host_rejected: "The device wouldn't upload to that destination.",

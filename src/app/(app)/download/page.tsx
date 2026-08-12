@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
+import { EmptyState } from "@/components/shared/empty-state";
+import { useTrackingMode } from "@/hooks/use-features";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +78,7 @@ const MAC_STEPS = [
 
 export default function DownloadPage() {
   const [macHelpOpen, setMacHelpOpen] = useState(false);
+  const isMachine = useTrackingMode() === "machine";
 
   /**
    * The version actually being served, read from the release manifest rather than a constant.
@@ -117,6 +120,29 @@ export default function DownloadPage() {
     // tell the user it's on the way rather than navigating to a dead link.
     if (p.url) triggerDownload(p.url, p.file);
     else toast(`The ${p.os} installer will be available to download shortly.`);
+  }
+
+  // Machine-mode orgs don't self-install — IT deploys the login-less managed agent to company
+  // laptops centrally (there is nothing for an employee to download or sign into). Point there.
+  if (isMachine) {
+    return (
+      <div className="flex min-h-[calc(100dvh-7rem)] flex-col gap-4 pt-1">
+        <PageHeader
+          title="WorkPulse agent"
+          description="On this plan the agent is deployed to company devices by IT — there's nothing to install here."
+        />
+        <EmptyState
+          icon={MonitorSmartphone}
+          title="Managed by IT"
+          description="Your organisation tracks company-owned devices with the managed agent, installed centrally. Ask your administrator to enrol a device, then it appears under Devices."
+          action={
+            <Button render={<a href="/agents" />} nativeButton={false}>
+              Go to Devices
+            </Button>
+          }
+        />
+      </div>
+    );
   }
 
   return (

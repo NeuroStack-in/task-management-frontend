@@ -11,14 +11,20 @@
  * rather than implying a live mirror.
  */
 import { useEffect, useState } from "react";
-import { MonitorSmartphone, Timer as TimerIcon } from "lucide-react";
+import { MonitorSmartphone, MoonStar, Radio, Timer as TimerIcon } from "lucide-react";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-/** The open session, as the server reports it. `null` when nothing is running. */
-export interface RunningSession {
-  task: string;
-  project: string;
+/**
+ * The open session, as the server reports it — a **discriminated union** (§8 Ph5):
+ * - `task` — a project timer running in the interactive desktop app (task + project).
+ * - `machine` — a managed device is up and being tracked (no task/project; there is no timer to
+ *   start or stop, it's a background service). `asleep` freezes the clock and warns.
+ * `null` when nothing is running.
+ */
+export type RunningSession = TaskSession | MachineSession;
+
+interface BaseSession {
   /** Local `HH:MM` the session started — display only, never the tick anchor. */
   start: string;
   /**
@@ -27,6 +33,18 @@ export interface RunningSession {
    * the seconds and read up to 59 s ahead of the agent.
    */
   startMs: number;
+}
+
+export interface TaskSession extends BaseSession {
+  kind: "task";
+  task: string;
+  project: string;
+}
+
+export interface MachineSession extends BaseSession {
+  kind: "machine";
+  /** The device is asleep/idle — the clock is frozen and the tone shifts to a warning. */
+  asleep?: boolean;
 }
 
 export function TimerHero({
@@ -45,9 +63,13 @@ export function TimerHero({
     return () => clearInterval(id);
   }, [running]);
 
-  const elapsedSec = running
-    ? Math.max(0, Math.floor((Date.now() - running.startMs) / 1000))
-    : 0;
+  const isMachine = running?.kind === "machine";
+  const asleep = isMachine && running.asleep === true;
+  // A managed device that is asleep freezes its clock (sleep accrues zero time, mirroring the agent).
+  const elapsedSec =
+    running && !asleep
+      ? Math.max(0, Math.floor((Date.now() - running.startMs) / 1000))
+      : 0;
 
   return (
     <div
@@ -71,32 +93,58 @@ export function TimerHero({
           />
 
           <div className="relative flex flex-col items-center gap-3 px-6 py-8 text-center sm:py-10">
-            {/* Live recording indicator */}
-            <span className="inline-flex items-center gap-2 rounded-full border border-success/25 bg-success/10 px-3 py-1 text-xs font-semibold tracking-wide text-success">
-              <span className="relative flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
-                <span className="relative inline-flex size-2 rounded-full bg-success" />
+            {/* Status pill — "Recording" (task), "Tracking" (machine up), or "Asleep" (machine idle) */}
+            {asleep ? (
+              <span className="inline-flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs font-semibold tracking-wide text-warning">
+                <MoonStar className="size-3.5" />
+                Asleep
               </span>
-              Recording
-            </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 rounded-full border border-success/25 bg-success/10 px-3 py-1 text-xs font-semibold tracking-wide text-success">
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60" />
+                  <span className="relative inline-flex size-2 rounded-full bg-success" />
+                </span>
+                {isMachine ? "Tracking" : "Recording"}
+              </span>
+            )}
 
-            {/* Elapsed clock — the hero */}
-            <p className="font-mono text-5xl font-bold tracking-tight tabular-nums text-foreground sm:text-6xl">
+            {/* Elapsed clock — the hero (frozen when a device is asleep) */}
+            <p
+              className={cn(
+                "font-mono text-5xl font-bold tracking-tight tabular-nums sm:text-6xl",
+                asleep ? "text-muted-foreground" : "text-foreground",
+              )}
+            >
               {formatDuration(elapsedSec)}
             </p>
 
-            {/* Task + project */}
-            <div className="space-y-1">
-              <p className="text-base font-semibold">{running.task}</p>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
-                {running.project}
-              </p>
-            </div>
+            {/* What's running */}
+            {running.kind === "task" ? (
+              <div className="space-y-1">
+                <p className="text-base font-semibold">{running.task}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+                  {running.project}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <p className="text-base font-semibold">
+                  {asleep ? "This device is asleep" : "This device is being tracked"}
+                </p>
+                <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-primary">
+                  <Radio className="size-3" />
+                  Attendance
+                </p>
+              </div>
+            )}
 
             {/* Where it's controlled */}
             <p className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-background/60 px-3 py-1 text-xs text-muted-foreground ring-1 ring-border/60">
               <MonitorSmartphone className="size-3.5 text-primary" />
-              Started {running.start} · runs in the WorkPulse desktop app
+              {running.kind === "task"
+                ? `Started ${running.start} · runs in the WorkPulse desktop app`
+                : `Since ${running.start} · runs as a background service — nothing to start or stop`}
             </p>
 
             {todayTotalSec > 0 ? (

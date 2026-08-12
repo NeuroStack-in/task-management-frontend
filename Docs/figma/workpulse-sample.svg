@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="2364" viewBox="0 0 1520 2364" font-family="Inter, sans-serif">
+  <!--
+    WorkPulse — sample design file (Figma-importable SVG)
+    Drag onto a Figma canvas: every <g id="…"> lands as a named group, every <text> as a live text layer.
+    Palette: [data-palette="meridian"] light, from src/app/globals.css.
+  -->
+  <rect id="Canvas" x="0" y="0" width="1520" height="2364" fill="#eef1f5"/>
+
+  <!-- ============================================================ -->
+  <!-- 01 · Foundations                                             -->
+  <!-- ============================================================ -->
+  <g id="01 - Foundations">
+    <rect x="40" y="40" width="1440" height="620" rx="14" fill="#ffffff" stroke="#e3e7ed"/>
+
+    <text x="72" y="98" font-size="30" font-weight="600" letter-spacing="-0.4" fill="#0f1729">WorkPulse Design System</text>
+    <text x="72" y="124" font-size="13" fill="#5b6573">Meridian · Slate &amp; Teal — light. Tokens mirror src/app/globals.css.</text>
+
+    <g id="Swatches - brand and neutrals">
+      <g><rect x="72" y="150" width="128" height="76" rx="10" fill="#0e7490"/><text x="72" y="248" font-size="12" font-weight="500" fill="#0f1729">Primary</text><text x="72" y="264" font-size="11" fill="#5b6573">#0E7490</text></g>
+      <g><rect x="220" y="150" width="128" height="76" rx="10" fill="#0b5e74"/><text x="220" y="248" font-size="12" font-weight="500" fill="#0f1729">Primary hover</text><text x="220" y="264" font-size="11" fill="#5b6573">#0B5E74</text></g>
+      <g><rect x="368" y="150" width="128" height="76" rx="10" fill="#e2f0f4"/><text x="368" y="248" font-size="12" font-weight="500" fill="#0f1729">Primary soft</text><text x="368" y="264" font-size="11" fill="#5b6573">#E2F0F4</text></g>
+      <g><rect x="516" y="150" width="128" height="76" rx="10" fill="#0f1729"/><text x="516" y="248" font-size="12" font-weight="500" fill="#0f1729">Foreground</text><text x="516" y="264" font-size="11" fill="#5b6573">#0F1729</text></g>
+      <g><rect x="664" y="150" width="128" height="76" rx="10" fill="#5b6573"/><text x="664" y="248" font-size="12" font-weight="500" fill="#0f1729">Muted fg</text><text x="664" y="264" font-size="11" fill="#5b6573">#5B6573</text></g>
+      <g><rect x="812" y="150" width="128" height="76" rx="10" fill="#e3e7ed"/><text x="812" y="248" font-size="12" font-weight="500" fill="#0f1729">Border</text><text x="812" y="264" font-size="11" fill="#5b6573">#E3E7ED</text></g>
+      <g><rect x="960" y="150" width="128" height="76" rx="10" fill="#f7f8fa"/><text x="960" y="248" font-size="12" font-weight="500" fill="#0f1729">Background</text><text x="960" y="264" font-size="11" fill="#5b6573">#F7F8FA</text></g>
+      <g><rect x="1108" y="150" width="128" height="76" rx="10" fill="#ffffff" stroke="#e3e7ed"/><text x="1108" y="248" font-size="12" font-weight="500" fill="#0f1729">Card</text><text x="1108" y="264" font-size="11" fill="#5b6573">#FFFFFF</text></g>
+    </g>
+
+    <g id="Swatches - status and charts">
+      <g><rect x="72" y="290" width="128" height="76" rx="10" fill="#157f5b"/><text x="72" y="388" font-size="12" font-weight="500" fill="#0f1729">Success</text><text x="72" y="404" font-size="11" fill="#5b6573">#157F5B</text></g>
+      <g><rect x="220" y="290" width="128" height="76" rx="10" fill="#b7791f"/><text x="220" y="388" font-size="12" font-weight="500" fill="#0f1729">Warning</text><text x="220" y="404" font-size="11" fill="#5b6573">#B7791F</text></g>
+      <g><rect x="368" y="290" width="128" height="76" rx="10" fill="#c0392b"/><text x="368" y="388" font-size="12" font-weight="500" fill="#0f1729">Destructive</text><text x="368" y="404" font-size="11" fill="#5b6573">#C0392B</text></g>
+      <g><rect x="516" y="290" width="128" height="76" rx="10" fill="#2563eb"/><text x="516" y="388" font-size="12" font-weight="500" fill="#0f1729">Info</text><text x="516" y="404" font-size="11" fill="#5b6573">#2563EB</text></g>
+      <g><rect x="664" y="290" width="128" height="76" rx="10" fill="#6d4ce0"/><text x="664" y="388" font-size="12" font-weight="500" fill="#0f1729">AI</text><text x="664" y="404" font-size="11" fill="#5b6573">#6D4CE0</text></g>
+      <g><rect x="812" y="290" width="128" height="76" rx="10" fill="#2563eb"/><text x="812" y="388" font-size="12" font-weight="500" fill="#0f1729">Chart 2</text><text x="812" y="404" font-size="11" fill="#5b6573">#2563EB</text></g>
+      <g><rect x="960" y="290" width="128" height="76" rx="10" fill="#0f766e"/><text x="960" y="388" font-size="12" font-weight="500" fill="#0f1729">Chart 3</text><text x="960" y="404" font-size="11" fill="#5b6573">#0F766E</text></g>
+      <g><rect x="1108" y="290" width="128" height="76" rx="10" fill="#7c3aed"/><text x="1108" y="388" font-size="12" font-weight="500" fill="#0f1729">Chart 5</text><text x="1108" y="404" font-size="11" fill="#5b6573">#7C3AED</text></g>
+    </g>
+
+    <g id="Type scale">
+      <text x="72" y="440" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">TYPOGRAPHY — INTER</text>
+      <text x="72" y="478" font-size="12" font-weight="500" fill="#5b6573">Display / 32</text>
+      <text x="220" y="482" font-size="32" font-weight="600" letter-spacing="-0.4" fill="#0f1729">Workforce activity, at a glance</text>
+      <text x="72" y="522" font-size="12" font-weight="500" fill="#5b6573">Heading / 20</text>
+      <text x="220" y="524" font-size="20" font-weight="600" letter-spacing="-0.2" fill="#0f1729">Workforce activity, at a glance</text>
+      <text x="72" y="558" font-size="12" font-weight="500" fill="#5b6573">Body / 14</text>
+      <text x="220" y="558" font-size="14" fill="#0f1729">Workforce activity, at a glance</text>
+      <text x="72" y="588" font-size="12" font-weight="500" fill="#5b6573">Caption / 12</text>
+      <text x="220" y="588" font-size="12" font-weight="500" letter-spacing="0.1" fill="#5b6573">Workforce activity, at a glance</text>
+      <text x="72" y="624" font-size="12" font-weight="500" fill="#5b6573">Radius</text>
+      <text x="220" y="624" font-size="13" fill="#0f1729">--radius: 0.625rem → 10px (6 / 10 / 14 / 999 in use)</text>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- 02 · Components                                              -->
+  <!-- ============================================================ -->
+  <g id="02 - Components">
+    <rect x="40" y="700" width="1440" height="560" rx="14" fill="#ffffff" stroke="#e3e7ed"/>
+    <text x="72" y="754" font-size="20" font-weight="600" letter-spacing="-0.2" fill="#0f1729">Components</text>
+
+    <g id="Buttons">
+      <g><rect x="72" y="790" width="112" height="38" rx="10" fill="#0e7490"/><text x="128" y="814" font-size="14" font-weight="500" fill="#ffffff" text-anchor="middle">Assign task</text><text x="128" y="850" font-size="12" fill="#5b6573" text-anchor="middle">Primary</text></g>
+      <g><rect x="208" y="790" width="112" height="38" rx="10" fill="#0b5e74"/><text x="264" y="814" font-size="14" font-weight="500" fill="#ffffff" text-anchor="middle">Assign task</text><text x="264" y="850" font-size="12" fill="#5b6573" text-anchor="middle">Primary · hover</text></g>
+      <g><rect x="344" y="790" width="112" height="38" rx="10" fill="#eef1f5"/><text x="400" y="814" font-size="14" font-weight="500" fill="#28303d" text-anchor="middle">Assign task</text><text x="400" y="850" font-size="12" fill="#5b6573" text-anchor="middle">Secondary</text></g>
+      <g><rect x="480" y="790" width="112" height="38" rx="10" fill="#ffffff" stroke="#d7dce4"/><text x="536" y="814" font-size="14" font-weight="500" fill="#0f1729" text-anchor="middle">Assign task</text><text x="536" y="850" font-size="12" fill="#5b6573" text-anchor="middle">Outline</text></g>
+      <g><rect x="616" y="790" width="112" height="38" rx="10" fill="#c0392b"/><text x="672" y="814" font-size="14" font-weight="500" fill="#ffffff" text-anchor="middle">Assign task</text><text x="672" y="850" font-size="12" fill="#5b6573" text-anchor="middle">Destructive</text></g>
+      <g><rect x="752" y="790" width="112" height="38" rx="10" fill="#0e7490" opacity="0.45"/><text x="808" y="814" font-size="14" font-weight="500" fill="#ffffff" text-anchor="middle" opacity="0.45">Assign task</text><text x="808" y="850" font-size="12" fill="#5b6573" text-anchor="middle">Disabled</text></g>
+    </g>
+
+    <g id="Status badges">
+      <g><rect x="72" y="880" width="78" height="26" rx="13" fill="#e6f4ee"/><circle cx="84" cy="893" r="3" fill="#157f5b"/><text x="94" y="897" font-size="12" font-weight="500" fill="#106349">Active</text></g>
+      <g><rect x="166" y="880" width="92" height="26" rx="13" fill="#fbf1de"/><circle cx="178" cy="893" r="3" fill="#b7791f"/><text x="188" y="897" font-size="12" font-weight="500" fill="#8a5c14">On break</text></g>
+      <g><rect x="274" y="880" width="62" height="26" rx="13" fill="#f1f3f6"/><circle cx="286" cy="893" r="3" fill="#5b6573"/><text x="296" y="897" font-size="12" font-weight="500" fill="#5b6573">Idle</text></g>
+      <g><rect x="352" y="880" width="74" height="26" rx="13" fill="#eef1f5"/><circle cx="364" cy="893" r="3" fill="#9aa3af"/><text x="374" y="897" font-size="12" font-weight="500" fill="#28303d">Offline</text></g>
+      <g><rect x="442" y="880" width="92" height="26" rx="13" fill="#f8e7e4"/><circle cx="454" cy="893" r="3" fill="#c0392b"/><text x="464" y="897" font-size="12" font-weight="500" fill="#8f2b20">Overtime</text></g>
+    </g>
+
+    <g id="Form fields">
+      <text x="72" y="948" font-size="12" font-weight="500" fill="#28303d">Search people</text>
+      <rect x="72" y="956" width="320" height="40" rx="10" fill="#ffffff" stroke="#d7dce4"/>
+      <text x="88" y="981" font-size="14" fill="#5b6573">Search by name or email</text>
+      <text x="416" y="948" font-size="12" font-weight="500" fill="#28303d">Project — focused</text>
+      <rect x="416" y="956" width="320" height="40" rx="10" fill="#ffffff" stroke="#0e7490" stroke-width="1.5"/>
+      <text x="432" y="981" font-size="14" fill="#0f1729">Atlas migration</text>
+    </g>
+
+    <g id="Stat cards">
+      <g id="Stat - Active now">
+        <rect x="72" y="1030" width="300" height="170" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+        <text x="92" y="1062" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">ACTIVE NOW</text>
+        <text x="92" y="1102" font-size="28" font-weight="600" letter-spacing="-0.4" fill="#0f1729">142</text>
+        <rect x="286" y="1080" width="66" height="22" rx="11" fill="#e6f4ee"/><text x="319" y="1095" font-size="12" font-weight="500" fill="#106349" text-anchor="middle">+8.2%</text>
+        <polyline points="92,1173 118,1163 144,1168 170,1156 196,1161 222,1150 248,1154 274,1144 300,1147 326,1139 352,1134" fill="none" stroke="#0e7490" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Stat - Avg focus time">
+        <rect x="396" y="1030" width="300" height="170" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+        <text x="416" y="1062" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">AVG. FOCUS TIME</text>
+        <text x="416" y="1102" font-size="28" font-weight="600" letter-spacing="-0.4" fill="#0f1729">5h 12m</text>
+        <rect x="610" y="1080" width="66" height="22" rx="11" fill="#e6f4ee"/><text x="643" y="1095" font-size="12" font-weight="500" fill="#106349" text-anchor="middle">+3.4%</text>
+        <polyline points="416,1173 442,1163 468,1168 494,1156 520,1161 546,1150 572,1154 598,1144 624,1147 650,1139 676,1134" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Stat - Idle rate">
+        <rect x="720" y="1030" width="300" height="170" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+        <text x="740" y="1062" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">IDLE RATE</text>
+        <text x="740" y="1102" font-size="28" font-weight="600" letter-spacing="-0.4" fill="#0f1729">11.4%</text>
+        <rect x="934" y="1080" width="66" height="22" rx="11" fill="#f8e7e4"/><text x="967" y="1095" font-size="12" font-weight="500" fill="#8f2b20" text-anchor="middle">−1.9%</text>
+        <polyline points="740,1136 766,1141 792,1138 818,1147 844,1144 870,1152 896,1156 922,1163 948,1160 974,1170 1000,1175" fill="none" stroke="#b7791f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Stat - Overtime hrs">
+        <rect x="1044" y="1030" width="300" height="170" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+        <text x="1064" y="1062" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">OVERTIME HRS</text>
+        <text x="1064" y="1102" font-size="28" font-weight="600" letter-spacing="-0.4" fill="#0f1729">38</text>
+        <rect x="1258" y="1080" width="66" height="22" rx="11" fill="#f8e7e4"/><text x="1291" y="1095" font-size="12" font-weight="500" fill="#8f2b20" text-anchor="middle">+12.0%</text>
+        <polyline points="1064,1175 1090,1170 1116,1160 1142,1163 1168,1156 1194,1152 1220,1144 1246,1147 1272,1139 1298,1141 1324,1134" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- 03 · Dashboard — 1440×1024                                   -->
+  <!-- ============================================================ -->
+  <clipPath id="dashboard-clip"><rect x="40" y="1300" width="1440" height="1024" rx="14"/></clipPath>
+  <g id="03 - Dashboard 1440x1024" clip-path="url(#dashboard-clip)">
+    <rect x="40" y="1300" width="1440" height="1024" fill="#f7f8fa"/>
+
+    <g id="Sidebar">
+      <rect x="40" y="1300" width="248" height="1024" fill="#ffffff"/>
+      <rect x="287" y="1300" width="1" height="1024" fill="#e7eaef"/>
+
+      <rect x="56" y="1320" width="28" height="28" rx="8" fill="#0e7490"/>
+      <text x="94" y="1340" font-size="16" font-weight="600" fill="#0f1729">WorkPulse</text>
+
+      <text x="56" y="1390" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">WORKFORCE</text>
+      <g id="Nav - Dashboard (active)"><rect x="52" y="1402" width="224" height="38" rx="8" fill="#e2f0f4"/><rect x="64" y="1413" width="16" height="16" rx="4" fill="#0e7490"/><text x="90" y="1426" font-size="14" font-weight="500" fill="#0b5e74">Dashboard</text></g>
+      <g id="Nav - People"><rect x="64" y="1455" width="16" height="16" rx="4" fill="#9aa3af"/><text x="90" y="1468" font-size="14" fill="#28303d">People</text></g>
+      <g id="Nav - Attendance"><rect x="64" y="1497" width="16" height="16" rx="4" fill="#9aa3af"/><text x="90" y="1510" font-size="14" fill="#28303d">Attendance</text></g>
+      <g id="Nav - Timesheets"><rect x="64" y="1539" width="16" height="16" rx="4" fill="#9aa3af"/><text x="90" y="1552" font-size="14" fill="#28303d">Timesheets</text></g>
+      <g id="Nav - Projects"><rect x="64" y="1581" width="16" height="16" rx="4" fill="#9aa3af"/><text x="90" y="1594" font-size="14" fill="#28303d">Projects</text></g>
+
+      <text x="56" y="1648" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">INSIGHTS</text>
+      <g id="Nav - Productivity"><rect x="64" y="1671" width="16" height="16" rx="4" fill="#9aa3af"/><text x="90" y="1684" font-size="14" fill="#28303d">Productivity</text></g>
+      <g id="Nav - Device fleet"><rect x="64" y="1713" width="16" height="16" rx="4" fill="#9aa3af"/><text x="90" y="1726" font-size="14" fill="#28303d">Device fleet</text></g>
+      <g id="Nav - Reports"><rect x="64" y="1755" width="16" height="16" rx="4" fill="#9aa3af"/><text x="90" y="1768" font-size="14" fill="#28303d">Reports</text></g>
+    </g>
+
+    <g id="Top bar">
+      <rect x="288" y="1300" width="1192" height="64" fill="#ffffff"/>
+      <rect x="288" y="1363" width="1192" height="1" fill="#e3e7ed"/>
+      <rect x="316" y="1316" width="360" height="36" rx="10" fill="#f1f3f6"/>
+      <rect x="330" y="1327" width="14" height="14" rx="3" fill="#9aa3af"/>
+      <text x="354" y="1339" font-size="13" fill="#5b6573">Search people, projects…   ⌘K</text>
+      <rect x="1300" y="1316" width="32" height="32" rx="8" fill="#f1f3f6"/>
+      <text x="1410" y="1337" font-size="13" font-weight="500" fill="#0f1729" text-anchor="end">Kishore R.</text>
+      <circle cx="1436" cy="1332" r="16" fill="#e2f0f4"/>
+    </g>
+
+    <g id="Page header">
+      <text x="316" y="1418" font-size="24" font-weight="600" letter-spacing="-0.3" fill="#0f1729">Dashboard</text>
+      <text x="316" y="1440" font-size="13" fill="#5b6573">Thursday, 7 August · 168 people in scope</text>
+      <g id="Range picker"><rect x="1184" y="1392" width="118" height="38" rx="10" fill="#ffffff" stroke="#d7dce4"/><text x="1243" y="1416" font-size="13" font-weight="500" fill="#0f1729" text-anchor="middle">Last 7 days</text></g>
+      <g id="Export button"><rect x="1318" y="1392" width="134" height="38" rx="10" fill="#0e7490"/><text x="1385" y="1416" font-size="14" font-weight="500" fill="#ffffff" text-anchor="middle">Export report</text></g>
+    </g>
+
+    <g id="Stat row">
+      <g id="Card - Active now">
+        <rect x="316" y="1470" width="269" height="150" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+        <text x="336" y="1502" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">ACTIVE NOW</text>
+        <text x="336" y="1540" font-size="26" font-weight="600" letter-spacing="-0.4" fill="#0f1729">142</text>
+        <rect x="499" y="1518" width="66" height="22" rx="11" fill="#e6f4ee"/><text x="532" y="1533" font-size="12" font-weight="500" fill="#106349" text-anchor="middle">+8.2%</text>
+        <polyline points="336,1596 364,1588 392,1592 420,1582 448,1586 476,1576 504,1572 532,1566 560,1560" fill="none" stroke="#0e7490" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Card - Avg focus time">
+        <rect x="605" y="1470" width="269" height="150" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+        <text x="625" y="1502" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">AVG. FOCUS TIME</text>
+        <text x="625" y="1540" font-size="26" font-weight="600" letter-spacing="-0.4" fill="#0f1729">5h 12m</text>
+        <rect x="788" y="1518" width="66" height="22" rx="11" fill="#e6f4ee"/><text x="821" y="1533" font-size="12" font-weight="500" fill="#106349" text-anchor="middle">+3.4%</text>
+        <polyline points="625,1596 653,1588 681,1592 709,1582 737,1586 765,1576 793,1572 821,1566 849,1560" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Card - Idle rate">
+        <rect x="894" y="1470" width="269" height="150" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+        <text x="914" y="1502" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">IDLE RATE</text>
+        <text x="914" y="1540" font-size="26" font-weight="600" letter-spacing="-0.4" fill="#0f1729">11.4%</text>
+        <rect x="1077" y="1518" width="66" height="22" rx="11" fill="#f8e7e4"/><text x="1110" y="1533" font-size="12" font-weight="500" fill="#8f2b20" text-anchor="middle">−1.9%</text>
+        <polyline points="914,1562 942,1568 970,1565 998,1574 1026,1571 1054,1580 1082,1584 1110,1590 1138,1596" fill="none" stroke="#b7791f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Card - Overtime hrs">
+        <rect x="1183" y="1470" width="269" height="150" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+        <text x="1203" y="1502" font-size="11" font-weight="600" letter-spacing="0.6" fill="#5b6573">OVERTIME HRS</text>
+        <text x="1203" y="1540" font-size="26" font-weight="600" letter-spacing="-0.4" fill="#0f1729">38</text>
+        <rect x="1366" y="1518" width="66" height="22" rx="11" fill="#f8e7e4"/><text x="1399" y="1533" font-size="12" font-weight="500" fill="#8f2b20" text-anchor="middle">+12.0%</text>
+        <polyline points="1203,1596 1231,1590 1259,1584 1287,1586 1315,1576 1343,1578 1371,1570 1399,1566 1427,1560" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </g>
+
+    <g id="Activity chart">
+      <rect x="316" y="1640" width="776" height="280" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+      <text x="336" y="1684" font-size="16" font-weight="600" fill="#0f1729">Activity by hour</text>
+      <g id="Legend">
+        <rect x="936" y="1673" width="8" height="8" rx="2" fill="#0e7490"/><text x="950" y="1681" font-size="12" fill="#5b6573">Active</text>
+        <rect x="1006" y="1673" width="8" height="8" rx="2" fill="#b7791f"/><text x="1020" y="1681" font-size="12" fill="#5b6573">Idle</text>
+      </g>
+      <g id="Bars">
+        <g><rect x="338" y="1844" width="50" height="46" rx="4" fill="#0e7490"/><rect x="338" y="1830" width="50" height="10" rx="4" fill="#b7791f"/></g>
+        <g><rect x="400" y="1813" width="50" height="77" rx="4" fill="#0e7490"/><rect x="400" y="1792" width="50" height="17" rx="4" fill="#b7791f"/></g>
+        <g><rect x="462" y="1784" width="50" height="106" rx="4" fill="#0e7490"/><rect x="462" y="1757" width="50" height="23" rx="4" fill="#b7791f"/></g>
+        <g><rect x="524" y="1764" width="50" height="126" rx="4" fill="#0e7490"/><rect x="524" y="1732" width="50" height="28" rx="4" fill="#b7791f"/></g>
+        <g><rect x="586" y="1752" width="50" height="138" rx="4" fill="#0e7490"/><rect x="586" y="1718" width="50" height="30" rx="4" fill="#b7791f"/></g>
+        <g><rect x="648" y="1770" width="50" height="120" rx="4" fill="#0e7490"/><rect x="648" y="1740" width="50" height="26" rx="4" fill="#b7791f"/></g>
+        <g><rect x="710" y="1813" width="50" height="77" rx="4" fill="#0e7490"/><rect x="710" y="1792" width="50" height="17" rx="4" fill="#b7791f"/></g>
+        <g><rect x="772" y="1839" width="50" height="51" rx="4" fill="#0e7490"/><rect x="772" y="1824" width="50" height="11" rx="4" fill="#b7791f"/></g>
+        <g><rect x="834" y="1778" width="50" height="112" rx="4" fill="#0e7490"/><rect x="834" y="1749" width="50" height="25" rx="4" fill="#b7791f"/></g>
+        <g><rect x="896" y="1749" width="50" height="141" rx="4" fill="#0e7490"/><rect x="896" y="1714" width="50" height="31" rx="4" fill="#b7791f"/></g>
+        <g><rect x="958" y="1756" width="50" height="134" rx="4" fill="#0e7490"/><rect x="958" y="1723" width="50" height="29" rx="4" fill="#b7791f"/></g>
+        <g><rect x="1020" y="1788" width="50" height="102" rx="4" fill="#0e7490"/><rect x="1020" y="1762" width="50" height="22" rx="4" fill="#b7791f"/></g>
+      </g>
+      <rect x="336" y="1890" width="736" height="1" fill="#eef1f5"/>
+      <g id="Axis labels" font-size="11" fill="#5b6573" text-anchor="middle">
+        <text x="363" y="1906">09</text><text x="425" y="1906">10</text><text x="487" y="1906">11</text><text x="549" y="1906">12</text>
+        <text x="611" y="1906">13</text><text x="673" y="1906">14</text><text x="735" y="1906">15</text><text x="797" y="1906">16</text>
+        <text x="859" y="1906">17</text><text x="921" y="1906">18</text><text x="983" y="1906">19</text><text x="1045" y="1906">20</text>
+      </g>
+    </g>
+
+    <g id="AI insight">
+      <rect x="1112" y="1640" width="340" height="280" rx="10" fill="#efeafe" stroke="#ddd2fa"/>
+      <rect x="1132" y="1663" width="16" height="16" rx="4" fill="#6d4ce0"/>
+      <text x="1156" y="1676" font-size="13" font-weight="600" letter-spacing="0.2" fill="#4b2fa8">Insight</text>
+      <text x="1132" y="1714" font-size="15" font-weight="500" fill="#0f1729">Idle time on Atlas migration</text>
+      <text x="1132" y="1736" font-size="15" font-weight="500" fill="#0f1729">rose 19% after 3pm this week.</text>
+      <text x="1132" y="1774" font-size="13" fill="#5b6573">Three contributors logged</text>
+      <text x="1132" y="1793" font-size="13" fill="#5b6573">blocked-on-review status in the</text>
+      <text x="1132" y="1812" font-size="13" fill="#5b6573">same window. Consider moving</text>
+      <text x="1132" y="1831" font-size="13" fill="#5b6573">the review slot earlier.</text>
+      <text x="1132" y="1884" font-size="13" font-weight="500" fill="#6d4ce0">View breakdown →</text>
+    </g>
+
+    <g id="People table">
+      <rect x="316" y="1940" width="1136" height="312" rx="10" fill="#ffffff" stroke="#e3e7ed"/>
+      <text x="336" y="1976" font-size="16" font-weight="600" fill="#0f1729">People needing attention</text>
+      <text x="1432" y="1974" font-size="13" font-weight="500" fill="#0e7490" text-anchor="end">View all →</text>
+      <rect x="316" y="1996" width="1136" height="1" fill="#e3e7ed"/>
+
+      <g id="Row - Priya Raghavan">
+        <circle cx="356" cy="2028" r="16" fill="#e2f0f4"/>
+        <text x="384" y="2024" font-size="14" font-weight="500" fill="#0f1729">Priya Raghavan</text>
+        <text x="384" y="2042" font-size="12" fill="#5b6573">Atlas migration</text>
+        <rect x="700" y="2015" width="78" height="26" rx="13" fill="#e6f4ee"/><circle cx="712" cy="2028" r="3" fill="#157f5b"/><text x="722" y="2032" font-size="12" font-weight="500" fill="#106349">Active</text>
+        <text x="1300" y="2033" font-size="14" font-weight="500" fill="#0f1729" text-anchor="end">7h 41m</text>
+        <text x="1432" y="2033" font-size="13" fill="#5b6573" text-anchor="end">2 min ago</text>
+        <rect x="316" y="2060" width="1136" height="1" fill="#eef1f5"/>
+      </g>
+      <g id="Row - Daniel Okoye">
+        <circle cx="356" cy="2092" r="16" fill="#e2f0f4"/>
+        <text x="384" y="2088" font-size="14" font-weight="500" fill="#0f1729">Daniel Okoye</text>
+        <text x="384" y="2106" font-size="12" fill="#5b6573">Billing revamp</text>
+        <rect x="700" y="2079" width="92" height="26" rx="13" fill="#fbf1de"/><circle cx="712" cy="2092" r="3" fill="#b7791f"/><text x="722" y="2096" font-size="12" font-weight="500" fill="#8a5c14">On break</text>
+        <text x="1300" y="2097" font-size="14" font-weight="500" fill="#0f1729" text-anchor="end">5h 03m</text>
+        <text x="1432" y="2097" font-size="13" fill="#5b6573" text-anchor="end">14 min ago</text>
+        <rect x="316" y="2124" width="1136" height="1" fill="#eef1f5"/>
+      </g>
+      <g id="Row - Mei Tanaka">
+        <circle cx="356" cy="2156" r="16" fill="#e2f0f4"/>
+        <text x="384" y="2152" font-size="14" font-weight="500" fill="#0f1729">Mei Tanaka</text>
+        <text x="384" y="2170" font-size="12" fill="#5b6573">Fleet telemetry</text>
+        <rect x="700" y="2143" width="62" height="26" rx="13" fill="#f1f3f6"/><circle cx="712" cy="2156" r="3" fill="#5b6573"/><text x="722" y="2160" font-size="12" font-weight="500" fill="#5b6573">Idle</text>
+        <text x="1300" y="2161" font-size="14" font-weight="500" fill="#0f1729" text-anchor="end">6h 20m</text>
+        <text x="1432" y="2161" font-size="13" fill="#5b6573" text-anchor="end">38 min ago</text>
+        <rect x="316" y="2188" width="1136" height="1" fill="#eef1f5"/>
+      </g>
+      <g id="Row - Sam Whitfield">
+        <circle cx="356" cy="2220" r="16" fill="#e2f0f4"/>
+        <text x="384" y="2216" font-size="14" font-weight="500" fill="#0f1729">Sam Whitfield</text>
+        <text x="384" y="2234" font-size="12" fill="#5b6573">Payroll audit</text>
+        <rect x="700" y="2207" width="92" height="26" rx="13" fill="#f8e7e4"/><circle cx="712" cy="2220" r="3" fill="#c0392b"/><text x="722" y="2224" font-size="12" font-weight="500" fill="#8f2b20">Overtime</text>
+        <text x="1300" y="2225" font-size="14" font-weight="500" fill="#0f1729" text-anchor="end">9h 55m</text>
+        <text x="1432" y="2225" font-size="13" fill="#5b6573" text-anchor="end">Just now</text>
+      </g>
+    </g>
+  </g>
+</svg>

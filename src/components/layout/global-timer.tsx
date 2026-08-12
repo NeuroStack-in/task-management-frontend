@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Timer as TimerIcon } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useIsSurfaceOn } from "@/hooks/use-features";
+import { useIsSurfaceOn, useTrackingMode } from "@/hooks/use-features";
 import { useTimesheet } from "@/modules/time-tracking/use-timesheet";
 import { formatDuration } from "@/lib/format";
 
@@ -29,6 +29,7 @@ export function GlobalTimer() {
 
 function RunningIndicator() {
   const { rows } = useTimesheet();
+  const isMachine = useTrackingMode() === "machine";
   const running = rows.find((r) => r.running) ?? null;
 
   // Re-derive the elapsed once a second while a session is open (from its real start).
@@ -39,12 +40,15 @@ function RunningIndicator() {
     return () => clearInterval(id);
   }, [running]);
 
-  // Idle — no open session.
+  // Idle — no open session. In machine mode there is no personal timer, so the resting copy reflects
+  // "no device signed in" rather than "no timer".
   if (!running) {
     return (
       <div className="flex h-10 items-center gap-2 rounded-full bg-card px-3.5 text-sm text-muted-foreground shadow-soft">
         <TimerIcon className="size-4" />
-        <span className="hidden font-medium md:inline">No timer</span>
+        <span className="hidden font-medium md:inline">
+          {isMachine ? "Not tracking" : "No timer"}
+        </span>
       </div>
     );
   }
@@ -56,11 +60,15 @@ function RunningIndicator() {
   return (
     <div
       className="flex h-10 items-center gap-2.5 rounded-full bg-card px-3.5 shadow-soft"
-      title="Running in the WorkPulse desktop app"
+      title={
+        isMachine
+          ? "This device is being tracked (background service)"
+          : "Running in the WorkPulse desktop app"
+      }
     >
       <span className="size-2 shrink-0 animate-pulse rounded-full bg-success" />
       <span className="hidden max-w-[140px] truncate text-xs font-medium text-muted-foreground sm:inline">
-        {running.task}
+        {isMachine ? "Tracking" : running.task}
       </span>
       <span className="font-mono text-sm tabular-nums">{formatDuration(elapsedSec)}</span>
     </div>

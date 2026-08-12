@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
 import { Loader } from "@/components/shared/loader"
+import { CaptureGateCard } from "./capture-gate-card"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { ApiError } from "@/lib/api"
@@ -412,6 +413,12 @@ export function MonitoringTab() {
               </SettingRow>
             </CardContent>
           </Card>
+
+          {/* ── Legal capture gate (§9.2, D16) — its own version-locked save, so it sits outside the
+              tracking-policy form's SettingsSaveBar. ── */}
+          <div id="capture-gate" className="scroll-mt-24">
+            <CaptureGateCard canManage={canManage} />
+          </div>
 
           {canManage && (
             <SettingsSaveBar
