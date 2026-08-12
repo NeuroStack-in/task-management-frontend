@@ -31,6 +31,12 @@ export interface EmployeeRow {
   department: string;
   team: string;
   status: "active" | "inactive" | "invited" | "suspended";
+  /**
+   * This person has **no login** — a monitored employee (MANAGED-AGENT.md §6.4), recorded by a
+   * managed agent rather than by signing in. Distinct from "invited, hasn't accepted yet", which
+   * looks identical in the roster and means the opposite.
+   */
+  monitored: boolean;
   productivityScore: number | null;
 }
 
@@ -84,6 +90,8 @@ export function useEmployees(): EmployeesData {
             department: depts.get(e.department_id) ?? e.department_id,
             team: "",
             status: mapStatus(e.status),
+            // Absent on every row that predates the field, so this reads false for existing orgs.
+            monitored: e.login === "none",
             // Needs insights (activity monitoring), which needs the agent. Null, not a fake 0.
             productivityScore: null,
           })),

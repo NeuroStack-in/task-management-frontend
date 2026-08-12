@@ -18,6 +18,15 @@ export interface ApiEmployee {
   emp_id?: string;
   /** RBAC role id (e.g. `role-owner`) — enriched from the base user item so the list can show Role. */
   role_id?: string;
+  /**
+   * `"none"` for a **monitored** employee — a directory record that can never sign in
+   * (MANAGED-AGENT.md §6.4). **Absent** for everyone else, including every row that predates the
+   * field, which is what keeps the badge additive.
+   *
+   * The list needs it because "cannot sign in" and "invited, hasn't accepted yet" render
+   * identically today and mean opposite things.
+   */
+  login?: string;
   /** `active` | `deactivated`. */
   status: string;
   department_id: string;
@@ -249,6 +258,79 @@ export function createInvite(body: {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+/**
+ * One employee for `POST /v1/employees` — someone who will **never sign in**
+ * (MANAGED-AGENT.md §6.4). Mirrors `workforce::create_monitored_employee::MonitoredEmployeeInput`.
+ *
+ * Only `name` and `email` are required. `department_id`/`title` are optional here, unlike on an
+ * invite: a CSV exported from an HR system has no department ULIDs, and an unfiled employee still
+ * lists, still reports, and is still pickable at device assignment.
+ */
+export interface MonitoredEmployeeInput {
+  name: string;
+  email: string;
+  department_id?: string;
+  team_id?: string;
+  title?: string;
+  role_id?: string;
+}
+
+/** One row's outcome. `index` maps back to the submitted array — and so to a CSV line. */
+export interface MonitoredRowResult {
+  index: number;
+  email: string;
+  created: boolean;
+  user_id?: string;
+  emp_id?: string;
+  /**
+   * `invalid_name` · `invalid_email` · `duplicate_in_request` · `email_in_use` ·
+   * `unknown_department` · `unknown_team` · `unknown_role` · `write_failed`.
+   */
+  error?: string;
+}
+
+export interface MonitoredCreateResult {
+  created: number;
+  failed: number;
+  results: MonitoredRowResult[];
+}
+
+/**
+ * `POST /v1/employees` — create employees with **no login**. Needs `employees:manage`.
+ *
+ * **Partial success is the normal case, not an exception.** The route answers 200 with per-row
+ * results even when rows failed, because discarding 199 good rows over one bad address is not an
+ * import. Callers must read `results`, not just the absence of a thrown error.
+ *
+ * One request carries at most 200 rows (the server's cap); the dialog chunks anything larger.
+ */
+export function createMonitoredEmployees(
+  employees: MonitoredEmployeeInput[],
+): Promise<MonitoredCreateResult> {
+  return apiFetch<MonitoredCreateResult>("/v1/employees", {
+    method: "POST",
+    body: JSON.stringify({ employees }),
+  });
+}
+
+/** Human sentences for the server's row codes. Unknown codes fall through to the raw value rather
+ *  than a generic "failed" — an unmapped code is still more use than no code. */
+const ROW_ERRORS: Record<string, string> = {
+  invalid_name: "Name is blank",
+  invalid_email: "Email isn't valid",
+  duplicate_in_request: "Listed twice in this file",
+  email_in_use: "Already in your directory",
+  unknown_department: "That department doesn't exist",
+  unknown_team: "That team doesn't exist",
+  unknown_role: "That role doesn't exist",
+  write_failed: "Couldn't be saved — try again",
+};
+
+export function monitoredRowError(code: string | undefined): string {
+  if (!code) return "Failed";
+  return ROW_ERRORS[code] ?? code;
 }
 
 /** One row of `GET /v1/employees/invites`. Carries **no token/OTP** — those are emailed to the

@@ -44,7 +44,10 @@ import { Loader } from "@/components/shared/loader";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
+import { useTrackingMode } from "@/hooks/use-features";
+import { Badge } from "@/components/ui/badge";
 import { InviteDialog } from "./invite-dialog";
+import { AddEmployeeDialog } from "./add-employee-dialog";
 import { PendingInvites } from "./pending-invites";
 import { useEmployees, type EmployeeRow } from "../use-employees";
 
@@ -196,8 +199,16 @@ export function EmployeesView() {
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   // Bumped when an invite is created, so the Invited section refetches without a page reload.
   const [invitesVersion, setInvitesVersion] = useState(0);
+  /**
+   * Which action leads. In `machine` mode almost nobody needs a console login — the org's people are
+   * recorded by a managed agent (MANAGED-AGENT.md §6.4) — so "Add employee" is primary and Invite
+   * moves into the overflow. In `project` mode the reverse, which is today's behaviour unchanged.
+   */
+  const mode = useTrackingMode();
+  const addLeads = mode === "machine";
 
   const allEmployees = employees;
   // Every row is a real directory user with a profile page — none are session-only.
@@ -331,9 +342,32 @@ export function EmployeesView() {
             </DropdownMenuContent>
           </DropdownMenu>
           {can("employees:manage") ? (
-            <Button data-tour="emp:invite" onClick={() => setInviteOpen(true)}>
-              <UserPlus className="size-4" /> Add employee
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                data-tour="emp:invite"
+                onClick={() => (addLeads ? setAddOpen(true) : setInviteOpen(true))}
+              >
+                <UserPlus className="size-4" />
+                {addLeads ? "Add employee" : "Invite"}
+              </Button>
+              {/* The other action, always reachable — the mode decides which leads, never which
+                  exists. An org in machine mode still hires the manager who needs a console. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={<Button variant="outline" aria-label="More ways to add people" />}
+                >
+                  <ChevronDown className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => (addLeads ? setInviteOpen(true) : setAddOpen(true))}
+                  >
+                    <UserPlus className="size-4" />
+                    {addLeads ? "Invite with login…" : "Add without login…"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           ) : null}
         </div>
       </div>
@@ -378,7 +412,16 @@ export function EmployeesView() {
                             </AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                            <p className="truncate font-medium">{e.name}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="truncate font-medium">{e.name}</p>
+                              {/* "Cannot sign in" and "invited, hasn't accepted yet" look identical
+                                  in this roster and mean opposite things — this is the difference. */}
+                              {e.monitored && (
+                                <Badge variant="outline" className="shrink-0 text-[10px]">
+                                  Monitored
+                                </Badge>
+                              )}
+                            </div>
                             {/* Subtitle: the human employee id (e.g. EMP-0001) is the directory's
                                 stable identifier — lead with it. Fall back to job title, then email;
                                 the raw Cognito UUID is never shown. */}
@@ -452,6 +495,10 @@ export function EmployeesView() {
         onOpenChange={setInviteOpen}
         onCreated={() => setInvitesVersion((v) => v + 1)}
       />
+
+      {/* A monitored employee is a directory record, not an invite — it lands in the roster, so
+          this reloads the roster rather than bumping the Invited section. */}
+      <AddEmployeeDialog open={addOpen} onOpenChange={setAddOpen} onCreated={reload} />
     </div>
   );
 }
