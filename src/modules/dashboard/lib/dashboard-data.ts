@@ -89,6 +89,12 @@ export interface DashboardData {
    * reads "nobody attended" next to a live productivity score built from those same people.
    */
   attendanceResolvedDays: number;
+  /**
+   * How many of the trackable team actually produced a score, for the best-covered day in the
+   * window. The productivity score divides by `team`, so this is what makes a low number readable:
+   * "4% · 1 of 14 reporting" is thin coverage, not a collapsed workforce.
+   */
+  productivityCoverage: { scored: number; team: number };
   statusCounts: Record<UserStatus, number>;
   activeCount: number;
   inactiveCount: number;
