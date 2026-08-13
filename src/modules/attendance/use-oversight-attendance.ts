@@ -254,7 +254,7 @@ function rangeLabel(
   start: string,
   end: string,
 ): string {
-  if (range === "today") return "Today · live";
+  if (range === "today") return "Today";
   if (range === "day") return prettyDate(date);
   if (range === "week") return "This week";
   if (range === "month") return `${MONTH_NAMES[date.month]} ${date.year}`;

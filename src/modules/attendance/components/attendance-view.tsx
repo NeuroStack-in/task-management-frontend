@@ -75,7 +75,7 @@ function OversightAttendance() {
         title="Attendance"
         description={
           live.loading
-            ? "Today · live presence loading…"
+            ? "Today · presence loading…"
             : `Today · ${livePct}% of the team clocked in`
         }
       />
