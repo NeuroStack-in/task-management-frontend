@@ -36,8 +36,13 @@ interface WidgetDef {
 export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   "org_activity.trends": {
     span: 1,
+    // A one-day "today" range draws a rolling 7-day trend (a single point is not a trend), so label
+    // it accordingly; multi-day ranges show their own window.
     render: (d) => (
-      <ProductivityChart data={d.productivityTrend} rangeLabel={d.rangeLabel} />
+      <ProductivityChart
+        data={d.productivityTrend}
+        rangeLabel={d.range === "today" ? "last 7 days" : d.rangeLabel}
+      />
     ),
   },
   "org_activity.heatmap": {

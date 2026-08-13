@@ -296,8 +296,6 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         );
         if (!live) return;
 
-        const shortWindow = days.length <= 8;
-
         // ── Productivity + hours + trend, over the whole trackable team (dept-aware). ──
         //
         // **The denominator is who reported, and coverage travels beside the number**
@@ -318,27 +316,54 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const trackableIds = new Set(timerHolders.map((e) => e.user_id));
         // §3.3 — pooled person-days, not a mean of daily means: a Saturday with one reporter must
         // not weigh as much as a Tuesday with fourteen.
+        // KPI aggregates over the **selected range** (§3.3 pooled person-days).
         let scoreSum = 0;
         let scoredPersonDays = 0;
         let activeSecTotal = 0;
         let coverageScored = 0;
         let coverageTeam = 0;
-        const productivityTrend = bundles.map((b) => {
+        for (const b of bundles) {
           const people = (b.activity?.people ?? []).filter(
             (p) => inScopeDept(p.department_id) && trackableIds.has(p.user_id),
           );
           const scored = people.filter((p) => p.breakdown);
-          const dayTotal = scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0);
-          // A day nobody reported stays `null` (an unknown, excluded from the average) rather than
-          // becoming a 0 that would drag the window down with a day we simply have no data for.
-          const dayScore = scored.length ? dayTotal / scored.length : null;
-          scoreSum += dayTotal;
+          scoreSum += scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0);
           scoredPersonDays += scored.length;
           // Period headcounts are the **peak day** (§3.3): per-day rollups cannot be de-duplicated
           // into distinct people across a window.
           coverageScored = Math.max(coverageScored, scored.length);
           coverageTeam = Math.max(coverageTeam, people.length);
-          const daytotals = people.reduce(
+          activeSecTotal += people.reduce((s, p) => s + (p.totals?.active_sec ?? 0), 0);
+        }
+        const productivityValue = scoredPersonDays
+          ? Math.round(scoreSum / scoredPersonDays)
+          : 0;
+        const hoursTracked = Math.round(activeSecTotal / 3600);
+
+        // ── Productivity trend (the chart): a real multi-day line. A single "today" point is not a
+        // trend, so when the selected range is one day, draw a rolling 7-day window fetched just for
+        // the chart — the KPI numbers above stay scoped to the selected range. ──
+        let trendBundles: { iso: string; activity: OrgActivity | null }[] = bundles;
+        if (days.length < 2) {
+          const trendDays = resolveDays({ range: "7d", team, start, end });
+          trendBundles = await mapWithConcurrency(trendDays, DAY_FANOUT, async (iso) => ({
+            iso,
+            activity: await getOrgActivity(iso).catch(() => null),
+          }));
+          if (!live) return;
+        }
+        const trendShort = trendBundles.length <= 8;
+        const productivityTrend = trendBundles.map((b) => {
+          const people = (b.activity?.people ?? []).filter(
+            (p) => inScopeDept(p.department_id) && trackableIds.has(p.user_id),
+          );
+          const scored = people.filter((p) => p.breakdown);
+          // A day nobody reported stays `null` (an unknown), rendered as 0 on the line but never
+          // dragging an average — the chart just shows a low point for an unreported day.
+          const dayScore = scored.length
+            ? scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) / scored.length
+            : null;
+          const dt = people.reduce(
             (acc, p) => {
               acc.active += p.totals?.active_sec ?? 0;
               acc.productive += p.totals?.productive_sec ?? 0;
@@ -346,20 +371,13 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             },
             { active: 0, productive: 0 },
           );
-          activeSecTotal += daytotals.active;
           return {
-            label: dayLabel(b.iso, shortWindow),
+            label: dayLabel(b.iso, trendShort),
             active: Math.round(dayScore ?? 0),
-            productive: daytotals.active
-              ? Math.round((daytotals.productive / daytotals.active) * 100)
-              : 0,
+            productive: dt.active ? Math.round((dt.productive / dt.active) * 100) : 0,
           };
         });
-        const productivityValue = scoredPersonDays
-          ? Math.round(scoreSum / scoredPersonDays)
-          : 0;
         const productivityTrendSeries = productivityTrend.map((t) => t.active);
-        const hoursTracked = Math.round(activeSecTotal / 3600);
 
         // ── Attendance rate over the window (dept-aware) + the latest closed-day counts for the donut. ──
         let presentSum = 0;

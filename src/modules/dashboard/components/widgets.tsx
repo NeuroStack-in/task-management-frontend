@@ -33,6 +33,18 @@ function daysUntil(iso: string): number {
   return Math.round((due.getTime() - today.getTime()) / 86_400_000);
 }
 
+/** ISO date `n` days before today (local). */
+function daysAgoIso(n: number): string {
+  const d = new Date(`${todayIso()}T00:00:00`);
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+/** A score at/under this is "needs attention" even with no formal anomaly (mirrors the AI brief). */
+const LOW_SCORE = 55;
+
 /** Human "due in / overdue" label for a task deadline. */
 function dueLabel(iso: string): string {
   const d = daysUntil(iso);
@@ -215,14 +227,28 @@ export function AlertsDeadlinesWidget() {
 
   useEffect(() => {
     let live = true;
+    // Anomaly scoring runs at the nightly close, so today is usually incomplete — look back over the
+    // last few days and take the most recent that produced a ranked list (mirrors the AI summary's
+    // "last workday"). Overdue tasks are current, not day-scoped.
+    const recent = [0, 1, 2, 3].map(daysAgoIso);
     Promise.all([
-      getAttention(todayIso())
-        .then((l) => l.people)
-        .catch(() => [] as AttentionRow[]),
+      Promise.all(
+        recent.map((d) =>
+          getAttention(d)
+            .then((l) => l.people)
+            .catch(() => [] as AttentionRow[]),
+        ),
+      ),
       listMyTasks().catch(() => [] as ApiMyTask[]),
-    ]).then(([people, tasks]) => {
+    ]).then(([days, tasks]) => {
       if (!live) return;
-      const alerts = people.filter((p) => p.anomaly_count > 0).slice(0, 4);
+      // Most recent day that ranked anyone; keep only those who actually need attention — a firing
+      // anomaly, or a low score the brief would call out — never the whole team.
+      const people = days.find((p) => p.length > 0) ?? [];
+      const alerts = people
+        .filter((p) => p.anomaly_count > 0 || p.score <= LOW_SCORE)
+        .sort((a, b) => b.attention - a.attention)
+        .slice(0, 4);
       const overdue = tasks
         .filter((t) => t.due && t.status !== "done" && daysUntil(t.due) < 0)
         .sort((a, b) => (a.due! < b.due! ? -1 : 1))
@@ -248,31 +274,35 @@ export function AlertsDeadlinesWidget() {
           <WidgetEmpty
             icon={BellRing}
             title="Nothing needs attention"
-            body="No anomalies flagged today and no overdue tasks. Alerts appear here as the scorer flags them — nothing is fabricated."
+            body="No one flagged by the scorer and no overdue tasks. Alerts appear here as they arise — nothing is fabricated."
           />
         ) : (
           <>
-            {state.alerts.map((a) => (
-              <div key={a.user_id} className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <TriangleAlert className="size-4 shrink-0 text-warning" />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{a.name}</p>
-                    <p className="truncate text-xs text-muted-foreground capitalize">
-                      {a.reasons.join(", ").replace(/_/g, " ") || "anomaly"}
-                    </p>
+            {state.alerts.map((a) => {
+              const hasAnomaly = a.anomaly_count > 0;
+              const label = hasAnomaly
+                ? a.reasons.join(", ").replace(/_/g, " ") || "anomaly"
+                : "Low productivity";
+              return (
+                <div key={a.user_id} className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <TriangleAlert className="size-4 shrink-0 text-warning" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{a.name}</p>
+                      <p className="truncate text-xs text-muted-foreground capitalize">{label}</p>
+                    </div>
                   </div>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize",
+                      hasAnomaly ? severityTone(a.top_severity) : "bg-warning/10 text-warning",
+                    )}
+                  >
+                    {hasAnomaly ? a.top_severity || "flagged" : `${Math.round(a.score)}%`}
+                  </span>
                 </div>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize",
-                    severityTone(a.top_severity),
-                  )}
-                >
-                  {a.top_severity || "flagged"}
-                </span>
-              </div>
-            ))}
+              );
+            })}
             {state.overdue.map((t) => (
               <div key={t.id} className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">

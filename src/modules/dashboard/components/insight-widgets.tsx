@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 /** Heatmap axis labels (formerly from mock-metrics) — pure labels, no seeded data. */
 const HEATMAP_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const HEATMAP_HOURS = ["8a", "10a", "12p", "2p", "4p", "6p"];
+const HEATMAP_HOURS = ["8am", "10am", "12pm", "2pm", "4pm", "6pm"];
 
 /* ------------------------- Productivity Heatmap ------------------------- */
 

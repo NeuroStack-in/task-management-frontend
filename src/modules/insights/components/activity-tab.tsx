@@ -140,9 +140,9 @@ export function ActivityTab() {
   // which is the only place an hourly curve is shown.
   const hourly = useHourlyActivity(granularity === "daily" ? date : "");
 
-  /** `0` → "12a", `13` → "1p" — compact enough for 24 ticks. */
+  /** `0` → "12am", `13` → "1pm". */
   const hourLabel = (h: number) =>
-    h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`;
+    h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`;
 
   const hourlyData = useMemo(
     () => hourly.hours.map((b) => ({ ...b, label: hourLabel(b.hour) })),
