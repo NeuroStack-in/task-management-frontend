@@ -10,6 +10,8 @@ import {
   Trophy,
   BellRing,
   TriangleAlert,
+  FolderKanban,
+  CheckSquare,
 } from "lucide-react";
 import {
   Card,
@@ -24,7 +26,13 @@ import { initials, todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Performer } from "@/modules/dashboard/lib/dashboard-data";
 import { getAttention, type AttentionRow } from "@/modules/insights/services/insights.service";
-import { listMyTasks, type ApiMyTask } from "@/modules/projects/services/projects.service";
+import {
+  listMyTasks,
+  listProjects,
+  getProject,
+  type ApiMyTask,
+} from "@/modules/projects/services/projects.service";
+import { mapWithConcurrency } from "@/lib/concurrency";
 
 /** Whole days from today to an ISO date (`YYYY-MM-DD`). Negative ⇒ overdue. */
 function daysUntil(iso: string): number {
@@ -322,28 +330,67 @@ export function AlertsDeadlinesWidget() {
   );
 }
 
-/* --------------------------- Upcoming Tasks (real data) --------------------------- */
+/* --------------------------- Upcoming deadlines (real data) --------------------------- */
+
+/** One upcoming deadline — a personal task or a whole project. */
+interface UpcomingItem {
+  id: string;
+  title: string;
+  due: string;
+  kind: "task" | "project";
+  sub: string;
+}
 
 /**
- * The viewer's own tasks with an **upcoming** deadline (`GET /v1/me/tasks`), soonest first — real
- * deadlines from the project boards, not an invented schedule. Overdue items live in Alerts above; this
- * is what's coming.
+ * Upcoming **deadlines**, soonest first: the viewer's own tasks (`GET /v1/me/tasks`) **and** the org's
+ * projects with a near end-date (`GET /v1/projects` + `/v1/projects/{id}` for the date — bounded
+ * fan-out). Real dates from the boards, never an invented schedule; overdue items live in Alerts above.
  */
 export function UpcomingTasksWidget() {
-  const [tasks, setTasks] = useState<ApiMyTask[] | null>(null);
+  const [items, setItems] = useState<UpcomingItem[] | null>(null);
 
   useEffect(() => {
     let live = true;
-    listMyTasks()
-      .then((all) => {
-        if (!live) return;
-        const upcoming = all
-          .filter((t) => t.due && t.status !== "done" && daysUntil(t.due) >= 0)
-          .sort((a, b) => (a.due! < b.due! ? -1 : 1))
-          .slice(0, 5);
-        setTasks(upcoming);
-      })
-      .catch(() => live && setTasks([]));
+    (async () => {
+      const [tasks, projects] = await Promise.all([
+        listMyTasks().catch(() => [] as ApiMyTask[]),
+        listProjects().catch(() => []),
+      ]);
+      // Project end-dates live on the detail item — pull them with a bounded fan-out (never a burst).
+      const activeProjects = projects.filter((p) => p.status !== "completed").slice(0, 24);
+      const details = await mapWithConcurrency(activeProjects, 3, (p) =>
+        getProject(p.id).then(
+          (d) => d,
+          () => null,
+        ),
+      );
+      if (!live) return;
+
+      const taskItems: UpcomingItem[] = tasks
+        .filter((t) => t.due && t.status !== "done")
+        .map((t) => ({
+          id: `t-${t.id}`,
+          title: t.title,
+          due: t.due!,
+          kind: "task",
+          sub: t.status.replace(/_/g, " "),
+        }));
+      const projectItems: UpcomingItem[] = details
+        .filter((d): d is NonNullable<typeof d> => Boolean(d?.end_date))
+        .map((d) => ({
+          id: `p-${d.id}`,
+          title: d.name,
+          due: d.end_date!,
+          kind: "project",
+          sub: "Project",
+        }));
+
+      const upcoming = [...taskItems, ...projectItems]
+        .filter((i) => daysUntil(i.due) >= 0)
+        .sort((a, b) => (a.due < b.due ? -1 : 1))
+        .slice(0, 5);
+      setItems(upcoming);
+    })();
     return () => {
       live = false;
     };
@@ -352,27 +399,29 @@ export function UpcomingTasksWidget() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Upcoming tasks</CardTitle>
+        <CardTitle>Upcoming deadlines</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {tasks === null ? (
+        {items === null ? (
           <RowsSkeleton />
-        ) : tasks.length === 0 ? (
+        ) : items.length === 0 ? (
           <WidgetEmpty
             icon={CalendarClock}
             title="Nothing due soon"
-            body="Your assigned tasks with an upcoming deadline appear here. Open Projects to see every board."
+            body="Your tasks and the org's projects with an upcoming deadline appear here. Open Projects to see every board."
           />
         ) : (
-          tasks.map((t) => {
-            const d = daysUntil(t.due!);
+          items.map((i) => {
+            const d = daysUntil(i.due);
+            const Icon = i.kind === "project" ? FolderKanban : CheckSquare;
             return (
-              <div key={t.id} className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{t.title}</p>
-                  <p className="truncate text-xs text-muted-foreground capitalize">
-                    {t.status.replace(/_/g, " ")}
-                  </p>
+              <div key={i.id} className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Icon className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{i.title}</p>
+                    <p className="truncate text-xs text-muted-foreground capitalize">{i.sub}</p>
+                  </div>
                 </div>
                 <span
                   className={cn(
@@ -380,7 +429,7 @@ export function UpcomingTasksWidget() {
                     d <= 1 ? "bg-warning/10 text-warning" : "bg-feature-tint text-primary",
                   )}
                 >
-                  {dueLabel(t.due!)}
+                  {dueLabel(i.due)}
                 </span>
               </div>
             );

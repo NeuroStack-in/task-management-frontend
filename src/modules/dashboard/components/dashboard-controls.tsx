@@ -1,6 +1,6 @@
 "use client";
 
-import { Users2 } from "lucide-react";
+import { Users2, Loader2 } from "lucide-react";
 import {
   RANGE_OPTIONS,
   type DashboardRange,
@@ -24,6 +24,7 @@ export function DashboardControls({
   onTeamChange,
   teams,
   lastUpdated,
+  loading = false,
   start,
   end,
   onStartChange,
@@ -36,6 +37,8 @@ export function DashboardControls({
   onTeamChange: (t: string) => void;
   teams: TeamOption[];
   lastUpdated: string;
+  /** A refetch is in flight (e.g. the range just changed) — shown as "Updating…" so it isn't silent. */
+  loading?: boolean;
   start: string;
   end: string;
   onStartChange: (v: string) => void;
@@ -87,8 +90,15 @@ export function DashboardControls({
       </div>
 
       <div className="flex items-center gap-3">
-        <span className="hidden text-xs text-muted-foreground sm:inline">
-          Updated {lastUpdated || "just now"}
+        <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex">
+          {loading ? (
+            <>
+              <Loader2 className="size-3 animate-spin" />
+              Updating…
+            </>
+          ) : (
+            `Updated ${lastUpdated || "just now"}`
+          )}
         </span>
         {/* Departments, not teams. `team_id` is not in the Directory GSI projection, so the server
             cannot filter by team at all (workforce::directory_list::data) — this axis has always

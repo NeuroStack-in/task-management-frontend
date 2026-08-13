@@ -9,6 +9,7 @@ import {
   CalendarCheck,
   UserPlus,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
@@ -107,12 +108,23 @@ function OrgDashboard() {
         onTeamChange={setTeam}
         teams={teams}
         lastUpdated={lastUpdated}
+        loading={loading}
         start={start}
         end={end}
         onStartChange={setStart}
         onEndChange={setEnd}
       />
 
+      {/* While a range switch refetches, dim the stale numbers (with the "Updating…" flag in the
+          controls) so the change isn't silent — the old data lingering with no signal read as "did my
+          click do anything?". */}
+      <div
+        aria-busy={loading}
+        className={cn(
+          "space-y-6 transition-opacity",
+          loading && "pointer-events-none opacity-50",
+        )}
+      >
       {/* KPI strip — reactive to the active range/team. The "Today" range shows point-in-time counts;
           longer ranges show period aggregates. Deltas are omitted (no cheap real prior-window compare —
           a seeded % would be fabricated); sparklines render only where a real per-day series exists. */}
@@ -207,6 +219,7 @@ function OrgDashboard() {
       </div>
 
       <CustomizableDashboard data={data} />
+      </div>
     </div>
   );
 }
