@@ -383,27 +383,34 @@ export function OrgAiSummaryWidget({
   const fetchSummary = useCallback(
     async (force: boolean): Promise<{ narrative: string; generatedAt: number | null }> => {
       const date = isoLastWorkday(workdays);
+      // The always-available fallback: the attention narrative for the last workday (gated only on
+      // AiInsightsRead). Used when a period report has no entitlement OR hasn't been generated yet.
+      const attentionFallback = async () => {
+        const a = force ? await regenerateAttention(date) : await getAttention(date);
+        return { narrative: a.narrative, generatedAt: null };
+      };
       try {
+        let r: { narrative: string; generated_at?: number | null } | null = null;
         if (range === "7d") {
           const week = isoWeekOf(date);
-          const r = force
-            ? await regenerateAiWeeklyReport(week)
-            : await getAiWeeklyReport(week);
-          return { narrative: r.narrative, generatedAt: r.generated_at ?? null };
-        }
-        if (range === "30d") {
+          r = force ? await regenerateAiWeeklyReport(week) : await getAiWeeklyReport(week);
+        } else if (range === "30d") {
           const month = date.slice(0, 7);
-          const r = force
-            ? await regenerateAiMonthlyReport(month)
-            : await getAiMonthlyReport(month);
-          return { narrative: r.narrative, generatedAt: r.generated_at ?? null };
+          r = force ? await regenerateAiMonthlyReport(month) : await getAiMonthlyReport(month);
+        } else {
+          const rr = force ? await regenerateAiReport(date) : await getAiReport(date);
+          return { narrative: rr.narrative, generatedAt: rr.generated_at };
         }
-        const r = force ? await regenerateAiReport(date) : await getAiReport(date);
-        return { narrative: r.narrative, generatedAt: r.generated_at };
+        // A weekly/monthly report can come back with **no narrative** for an incomplete period that
+        // the scorer hasn't summarised yet (the current week is the common case) — treat that like a
+        // missing report and fall back rather than showing a blank card.
+        if (!r.narrative || !r.narrative.trim()) return attentionFallback();
+        return { narrative: r.narrative, generatedAt: r.generated_at ?? null };
       } catch (e) {
-        if (e instanceof ApiError && e.status === 403) {
-          const a = force ? await regenerateAttention(date) : await getAttention(date);
-          return { narrative: a.narrative, generatedAt: null };
+        // 403 = no report entitlement; 404 = no report cached for this period yet. Both mean "use the
+        // narrative we do have" rather than erroring the card.
+        if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
+          return attentionFallback();
         }
         throw e;
       }
