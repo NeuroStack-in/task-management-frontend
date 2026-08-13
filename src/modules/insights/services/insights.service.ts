@@ -121,6 +121,47 @@ export type DayScore = ScoreBreakdown & ActivityTotals & { date: string };
  */
 export const SCORE_WINDOW_DAYS = 30;
 
+/** One app the agents have reported that no classification rule matches. */
+export interface UnclassifiedApp {
+  app: string;
+  total_sec: number;
+  first_seen: number;
+  last_seen: number;
+  /**
+   * The model's proposal — `productive | neutral | distracting` — present only when suggestions
+   * were requested and the call succeeded. **A proposal, never applied:** it becomes real only when
+   * an admin approves it, which writes a normal rule through `PATCH /v1/org/rules`.
+   */
+  suggested_category?: RuleCategoryName;
+  suggested_reason?: string;
+}
+
+export type RuleCategoryName = "productive" | "neutral" | "distracting";
+
+export interface UnclassifiedAppsResponse {
+  apps: UnclassifiedApp[];
+  /** Everything in the catalogue, classified or not — the denominator for "12 of 63". */
+  total_seen: number;
+  /** The org has no rules at all, so "unclassified" means *everything* — a different problem. */
+  no_rules_configured: boolean;
+}
+
+/**
+ * `GET /v1/insights/apps/unclassified` — apps seen but not covered by any rule, worst offender
+ * first. Needs `monitoring:manage` (server `MonitoringManage`), the same permission as the rules
+ * editor, because acting on the list means writing a rule.
+ *
+ * `suggest` asks the model for a category per app. It is off by default because it is the only
+ * paid, slow part of the call, and the worklist is useful without it.
+ */
+export function getUnclassifiedApps(
+  suggest = false,
+): Promise<UnclassifiedAppsResponse> {
+  return apiFetch<UnclassifiedAppsResponse>(
+    `/v1/insights/apps/unclassified${suggest ? "?suggest=true" : ""}`,
+  );
+}
+
 export interface SelfActivity {
   from: string;
   to: string;

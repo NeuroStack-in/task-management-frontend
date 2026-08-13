@@ -10,6 +10,7 @@ vi.mock("@/lib/api", () => ({
 import { apiFetch } from "@/lib/api";
 import {
   getAiReport,
+  getUnclassifiedApps,
   getAttention,
   getDailySummary,
   getOrgActivity,
@@ -67,5 +68,20 @@ describe("insights.service route contract", () => {
     expect(mock).toHaveBeenCalledWith("/v1/insights/reports");
     await getAiReport("2026-07-17");
     expect(mock).toHaveBeenCalledWith("/v1/insights/reports/ai?date=2026-07-17");
+  });
+});
+
+describe("unclassified apps — the rules worklist", () => {
+  it("GETs the plain list without asking for suggestions", async () => {
+    mock.mockResolvedValueOnce({ apps: [], total_seen: 0, no_rules_configured: false });
+    await getUnclassifiedApps();
+    // Suggestions are the only paid, slow part of the call — they must be opt-in.
+    expect(mock).toHaveBeenCalledWith("/v1/insights/apps/unclassified");
+  });
+
+  it("asks for suggestions only when told to", async () => {
+    mock.mockResolvedValueOnce({ apps: [], total_seen: 0, no_rules_configured: false });
+    await getUnclassifiedApps(true);
+    expect(mock).toHaveBeenCalledWith("/v1/insights/apps/unclassified?suggest=true");
   });
 });

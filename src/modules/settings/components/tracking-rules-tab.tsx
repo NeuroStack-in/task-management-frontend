@@ -29,6 +29,7 @@ import { ApiError } from "@/lib/api";
 import { isDomain } from "@/lib/validation";
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils";
+import { UnclassifiedAppsPanel } from "./org/unclassified-apps-panel";
 import {
   useOrgRules,
   type RulesDoc,
@@ -224,6 +225,19 @@ function AppsPanel({
             className="pl-9"
           />
         </div>
+
+        {/* The gap the rules below are meant to close — apps the agents reported that no rule
+            matches, so their time counts as neutral in the score. Approving one appends a normal
+            rule to the same draft the table beneath manages. */}
+        <UnclassifiedAppsPanel
+          canManage={canManage}
+          onAdd={(app, category) =>
+            onApps([
+              ...apps,
+              { display_name: app, process_name: app, category, tracked: true },
+            ])
+          }
+        />
 
         {/* Apps */}
         <div className="space-y-2">
