@@ -336,15 +336,8 @@ function TrendBars({
     <div className="space-y-2">
       {/* One column per day: a faint full-height track (the 0–100 scale) with a bottom-anchored fill
           whose height is the day's attendance rate — so a low day reads as a short fill in a tall
-          track, not a floating pill. The dashed line marks the range average. */}
+          track, not a floating pill. */}
       <div className="relative flex h-28 items-stretch gap-[3px]">
-        {benchmarkRate !== null ? (
-          <div
-            className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-muted-foreground/50"
-            style={{ bottom: `${benchmarkRate}%` }}
-            title={`Average ${benchmarkRate}%`}
-          />
-        ) : null}
         {series.map((p) => (
           <div
             key={p.iso}
