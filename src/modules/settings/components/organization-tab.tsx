@@ -27,6 +27,7 @@ import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
 import { TrackingModeCard } from "./org/tracking-mode-card"
 import { WorkingDaysManager } from "./org/working-days-manager"
+import { WorkingHoursManager } from "./org/working-hours-manager"
 import { HolidaysManager } from "./org/holidays-manager"
 import { PoliciesManager } from "./org/policies-manager"
 import { Loader } from "@/components/shared/loader"
@@ -402,6 +403,7 @@ export function OrganizationTab() {
       <TeamsManager />
       <LocationsManager />
       <WorkingDaysManager />
+      <WorkingHoursManager />
       <HolidaysManager />
       <PoliciesManager />
 
