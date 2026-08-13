@@ -5,6 +5,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -146,6 +147,19 @@ export function ActivityTab() {
 
   const hourlyData = useMemo(
     () => hourly.hours.map((b) => ({ ...b, label: hourLabel(b.hour) })),
+    [hourly.hours],
+  );
+
+  /**
+   * Only the categories that actually occur today.
+   *
+   * **A stacked `Area` with no data still paints its stroke** — Recharts draws it along the top of
+   * its (zero-height) band, which is the top of the whole stack. So a day with zero distracting
+   * captures still got a full-width `--destructive` line tracing the total, and red across the top
+   * of a productivity chart reads as "distraction" to anyone glancing at it. It was the total.
+   */
+  const activeCategories = useMemo(
+    () => CATEGORIES.filter((c) => hourly.hours.some((b) => b[c.key] > 0)),
     [hourly.hours],
   );
 
@@ -390,7 +404,7 @@ export function ActivityTab() {
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={hourlyData} margin={{ left: -18, right: 8, top: 4 }}>
                       <defs>
-                        {CATEGORIES.map((c) => (
+                        {activeCategories.map((c) => (
                           <linearGradient
                             key={c.key}
                             id={`fillHour-${c.key}`}
@@ -429,7 +443,15 @@ export function ActivityTab() {
                           color: "var(--popover-foreground)",
                         }}
                       />
-                      {CATEGORIES.map((c) => (
+                      {/* Three stacked bands with no key was unreadable: the top line is the
+                          running total, not the category whose colour drew it. */}
+                      <Legend
+                        verticalAlign="top"
+                        height={28}
+                        iconType="plainline"
+                        wrapperStyle={{ fontSize: 12 }}
+                      />
+                      {activeCategories.map((c) => (
                         <Area
                           key={c.key}
                           type="monotone"

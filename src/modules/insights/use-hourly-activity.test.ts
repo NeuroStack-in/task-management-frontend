@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bucketByHour } from "./use-hourly-activity";
+import { bucketByHour, localDateOf, utcDatesFor } from "./use-hourly-activity";
 import type { ShotRow } from "./services/insights.service";
 
 /** A capture at a local hour on 2026-08-10. `captured_at` is epoch **ms**. */
@@ -79,5 +79,50 @@ describe("bucketByHour", () => {
     ]);
     const h = hours[16];
     expect(h.productive + h.neutral + h.distracting).toBe(h.total);
+  });
+
+  /**
+   * **The bug this filter exists for.** The endpoint partitions on the *UTC* date, so the reads for
+   * one local day span two partitions. Bucketing everything they return put the neighbouring day's
+   * captures on the chart — at UTC+5:30 the next morning's work appeared at the far left, reading
+   * as though someone had been at their desk at 4am on the day you selected.
+   */
+  it("keeps only the selected local day when the read spans two UTC partitions", () => {
+    const neighbour = shot("u1", 4, "productive");
+    neighbour.captured_at = new Date(2026, 7, 11, 4, 0).getTime(); // the *next* local day
+    const { hours, captures } = bucketByHour(
+      [shot("u1", 10, "productive"), neighbour],
+      "2026-08-10",
+    );
+    expect(captures).toBe(1);
+    expect(hours[10].total).toBe(1);
+    expect(hours[4].total).toBe(0);
+  });
+
+  it("buckets everything when no local day is given", () => {
+    const { captures } = bucketByHour([shot("u1", 10, "productive")]);
+    expect(captures).toBe(1);
+  });
+});
+
+describe("utcDatesFor", () => {
+  /** Whatever the runner's timezone, the partitions must cover the whole local day. */
+  it("covers local midnight and local end-of-day", () => {
+    const dates = utcDatesFor("2026-08-10");
+    const start = new Date("2026-08-10T00:00:00");
+    const end = new Date(start.getTime() + 86_400_000 - 1);
+    expect(dates).toContain(start.toISOString().slice(0, 10));
+    expect(dates).toContain(end.toISOString().slice(0, 10));
+    // One partition on UTC, two on every other offset — never more.
+    expect(dates.length).toBe(new Date().getTimezoneOffset() === 0 ? 1 : 2);
+  });
+
+  it("degrades to the given date rather than throwing on junk", () => {
+    expect(utcDatesFor("not-a-date")).toEqual(["not-a-date"]);
+  });
+
+  it("localDateOf agrees with the buckets' own notion of a local day", () => {
+    const ms = new Date(2026, 7, 10, 23, 30).getTime();
+    expect(localDateOf(ms)).toBe("2026-08-10");
   });
 });

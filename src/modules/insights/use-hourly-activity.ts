@@ -20,8 +20,14 @@ import { getScreenshots, type ShotRow } from "./services/insights.service";
  *    dual-monitor machine emits several rows for a single moment (see `screenshots-tab`, which
  *    groups on exactly this). Counting rows would inflate those users' hours, so moments are
  *    de-duplicated per `user_id + captured_at`.
- *  - **Local hours.** `captured_at` is epoch **milliseconds**; buckets are the viewer's local hour,
- *    matching every other date surface in the app.
+ *  - **Local hours over a UTC-keyed day.** `captured_at` is epoch **milliseconds** and buckets are
+ *    the viewer's local hour — but `GET /v1/insights/screenshots?date=` partitions on
+ *    `utc_date(captured_at)` (ingest writes `GSI4PK` from it). Those are not the same 24 hours. At
+ *    UTC+5:30 one UTC day is local 05:30 → 05:30 the next morning, so asking for one partition and
+ *    bucketing locally drew the *following* morning's captures on the left edge of the chart, as
+ *    though someone had been working at 4am on the day you selected. So the local day is assembled
+ *    from the **one or two UTC partitions that overlap it** and then filtered back to the selected
+ *    local date — the chart's axis and its title now mean the same day.
  */
 
 export interface HourBucket {
@@ -55,8 +61,41 @@ const EMPTY_HOURS: HourBucket[] = Array.from({ length: 24 }, (_, hour) => ({
   total: 0,
 }));
 
-/** Bucket de-duplicated capture moments into 24 local hours, split by server category. */
-export function bucketByHour(shots: ShotRow[]): {
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** `YYYY-MM-DD` for an epoch-ms instant, in the **viewer's** timezone. */
+export function localDateOf(epochMs: number): string {
+  const d = new Date(epochMs);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * The UTC-keyed partitions that can hold captures belonging to local day `date`.
+ *
+ * One when the viewer is on UTC, two otherwise — local midnight and local 23:59:59 fall in
+ * different UTC days for every other offset. Fetching only the same-named partition is what put the
+ * neighbouring day's captures on the chart.
+ */
+export function utcDatesFor(date: string): string[] {
+  // No `Z` ⇒ parsed as local time, which is the point.
+  const start = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return [date];
+  const end = new Date(start.getTime() + 86_400_000 - 1);
+  const first = start.toISOString().slice(0, 10);
+  const last = end.toISOString().slice(0, 10);
+  return first === last ? [first] : [first, last];
+}
+
+/**
+ * Bucket de-duplicated capture moments into 24 local hours, split by server category.
+ *
+ * `localDate` keeps only the moments that fall on that local day. Omit it to bucket everything —
+ * the reads span two UTC partitions, so without it the chart would show more than a day.
+ */
+export function bucketByHour(
+  shots: ShotRow[],
+  localDate?: string,
+): {
   hours: HourBucket[];
   captures: number;
 } {
@@ -64,6 +103,7 @@ export function bucketByHour(shots: ShotRow[]): {
   const seen = new Set<string>();
 
   for (const s of shots) {
+    if (localDate && localDateOf(s.captured_at) !== localDate) continue;
     // One moment per user, however many monitors it was photographed on.
     const moment = `${s.user_id}|${s.captured_at}`;
     if (seen.has(moment)) continue;
@@ -109,21 +149,27 @@ export function useHourlyActivity(date: string): HourlyActivityState {
     (async () => {
       try {
         const all: ShotRow[] = [];
-        let cursor: string | undefined;
-        let pages = 0;
-        do {
-          const grid = await getScreenshots(date, { cursor, limit: PAGE });
-          all.push(...grid.shots);
-          cursor = grid.cursor;
-          pages += 1;
-        } while (cursor && pages < MAX_PAGES);
+        let more = false;
+        // Sequential, not `Promise.all`: two days at `MAX_PAGES` each is already a burst, and
+        // parallel fan-outs against this endpoint are what trip the 503 throttle.
+        for (const utcDate of utcDatesFor(date)) {
+          let cursor: string | undefined;
+          let pages = 0;
+          do {
+            const grid = await getScreenshots(utcDate, { cursor, limit: PAGE });
+            all.push(...grid.shots);
+            cursor = grid.cursor;
+            pages += 1;
+          } while (cursor && pages < MAX_PAGES);
+          more = more || Boolean(cursor);
+        }
 
         if (!live) return;
-        const { hours, captures } = bucketByHour(all);
+        const { hours, captures } = bucketByHour(all, date);
         setState({
           hours,
           captures,
-          truncated: Boolean(cursor),
+          truncated: more,
           loading: false,
           error: null,
         });
