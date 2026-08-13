@@ -334,10 +334,13 @@ function TrendBars({
 
   return (
     <div className="space-y-2">
-      <div className="relative flex h-28 items-end gap-[3px]">
+      {/* One column per day: a faint full-height track (the 0–100 scale) with a bottom-anchored fill
+          whose height is the day's attendance rate — so a low day reads as a short fill in a tall
+          track, not a floating pill. The dashed line marks the range average. */}
+      <div className="relative flex h-28 items-stretch gap-[3px]">
         {benchmarkRate !== null ? (
           <div
-            className="pointer-events-none absolute inset-x-0 border-t border-dashed border-muted-foreground/40"
+            className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-muted-foreground/50"
             style={{ bottom: `${benchmarkRate}%` }}
             title={`Average ${benchmarkRate}%`}
           />
@@ -345,12 +348,19 @@ function TrendBars({
         {series.map((p) => (
           <div
             key={p.iso}
-            className={cn("flex-1 rounded-full transition-[filter] hover:brightness-75", band(p.rate))}
-            style={{ height: `${Math.max(4, p.rate)}%` }}
+            className="flex flex-1 items-end overflow-hidden rounded-t-md bg-muted/50"
             title={`${fmtDay(p.iso)} — ${p.rate}% present (${p.present}/${p.total}${
               p.leave ? `, ${p.leave} on leave` : ""
             })`}
-          />
+          >
+            <div
+              className={cn(
+                "w-full rounded-t-md transition-[filter] hover:brightness-90",
+                band(p.rate),
+              )}
+              style={{ height: `${Math.max(3, p.rate)}%` }}
+            />
+          </div>
         ))}
       </div>
       <div className="flex justify-between text-[11px] text-muted-foreground">
