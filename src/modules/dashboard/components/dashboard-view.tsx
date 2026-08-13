@@ -120,14 +120,21 @@ function OrgDashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
         {/* The score covers the whole trackable team, so state how much of it actually reported —
             otherwise a low number reads as "the org collapsed" when it means "one agent is on". */}
+        {/* PRODUCTIVITY.md §3.2: the score is the mean over **those who reported**, and its
+            coverage is always adjacent — a score without coverage is a misleading number.
+            When nobody reported, there is no score: render the absence, never a confident 0%. */}
         <StatCard
           label="Productivity Score"
-          value={`${kpis.productivity.value}%`}
+          value={
+            data.productivityCoverage.scored === 0
+              ? "—"
+              : `${kpis.productivity.value}%`
+          }
           icon={Gauge}
           hint={
-            data.productivityCoverage.team > 0
-              ? `${data.productivityCoverage.scored} of ${data.productivityCoverage.team} reporting · ${rangeLabel}`
-              : rangeLabel
+            data.productivityCoverage.scored === 0
+              ? `no agent reported · ${rangeLabel}`
+              : `${data.productivityCoverage.scored} of ${data.productivityCoverage.team} reporting · ${rangeLabel}`
           }
           trend={kpis.productivity.trend}
           href="/insights/reports"

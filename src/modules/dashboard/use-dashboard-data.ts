@@ -286,24 +286,26 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
 
         // ── Productivity + hours + trend, over the whole trackable team (dept-aware). ──
         //
-        // **The denominator is the team, not the people who happened to report.** It was
-        // `scored.length`, so one person scoring 58 while thirteen colleagues logged nothing made
-        // the organisation read "Productivity Score 58%". That is a true statement about that one
-        // person and a false one about the org, and it was published as the latter — a headline
-        // figure with no indication it covered a single employee.
+        // **The denominator is who reported, and coverage travels beside the number**
+        // (PRODUCTIVITY.md §3.2). This divided by the whole trackable team for a while, on the
+        // reasoning that org-wide "nobody logged productive time" is itself an outcome. That reads
+        // well until you see what it produced: with 5 of 14 agents reporting, the same day showed
+        // ~24% here and ~66% on Insights, both labelled a productivity score. A number that halves
+        // because two laptops were switched off is measuring *reporting*, not productivity — and
+        // the fix for "the score doesn't say how many it covers" is to show the coverage, which
+        // this already does, not to fold the gap into the score itself.
         //
-        // Unscored people contribute 0. At org level "nobody logged productive time" is itself a
-        // productivity outcome, so a score of 50% now genuinely requires about half the team to
-        // have worked productively, which is what the number claims to mean. The coverage travels
-        // with it (`productivityCoverage`) so a low score is readable as thin reporting rather
-        // than mysterious.
+        // A coverage-adjusted figure is a legitimate metric; if it comes back it carries its own
+        // name (§3.2), never the label "productivity score".
         //
         // Who counts is the same rule this file already applies to "working now": active employees
         // holding a contributor role. An Owner/Admin cannot run the agent by construction, so
         // including them would cap the achievable score below 100% forever.
         const trackableIds = new Set(timerHolders.map((e) => e.user_id));
+        // §3.3 — pooled person-days, not a mean of daily means: a Saturday with one reporter must
+        // not weigh as much as a Tuesday with fourteen.
         let scoreSum = 0;
-        let scoredDayCount = 0;
+        let scoredPersonDays = 0;
         let activeSecTotal = 0;
         let coverageScored = 0;
         let coverageTeam = 0;
@@ -312,13 +314,14 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             (p) => inScopeDept(p.department_id) && trackableIds.has(p.user_id),
           );
           const scored = people.filter((p) => p.breakdown);
+          const dayTotal = scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0);
           // A day nobody reported stays `null` (an unknown, excluded from the average) rather than
           // becoming a 0 that would drag the window down with a day we simply have no data for.
-          const dayScore =
-            scored.length && people.length
-              ? scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) /
-                people.length
-              : null;
+          const dayScore = scored.length ? dayTotal / scored.length : null;
+          scoreSum += dayTotal;
+          scoredPersonDays += scored.length;
+          // Period headcounts are the **peak day** (§3.3): per-day rollups cannot be de-duplicated
+          // into distinct people across a window.
           coverageScored = Math.max(coverageScored, scored.length);
           coverageTeam = Math.max(coverageTeam, people.length);
           const daytotals = people.reduce(
@@ -330,10 +333,6 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             { active: 0, productive: 0 },
           );
           activeSecTotal += daytotals.active;
-          if (dayScore !== null) {
-            scoreSum += dayScore;
-            scoredDayCount += 1;
-          }
           return {
             label: dayLabel(b.iso, shortWindow),
             active: Math.round(dayScore ?? 0),
@@ -342,8 +341,8 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               : 0,
           };
         });
-        const productivityValue = scoredDayCount
-          ? Math.round(scoreSum / scoredDayCount)
+        const productivityValue = scoredPersonDays
+          ? Math.round(scoreSum / scoredPersonDays)
           : 0;
         const productivityTrendSeries = productivityTrend.map((t) => t.active);
         const hoursTracked = Math.round(activeSecTotal / 3600);

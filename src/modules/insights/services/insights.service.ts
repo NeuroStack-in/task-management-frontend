@@ -108,6 +108,19 @@ export interface ActivityTotals {
 /** A single day: `ScoreBreakdown` + `ActivityTotals` are flattened onto the row by the server. */
 export type DayScore = ScoreBreakdown & ActivityTotals & { date: string };
 
+/**
+ * **The per-person scoring window — 30 days, everywhere** (`backend/docs/PRODUCTIVITY.md` §3.1).
+ *
+ * One window, one meaning. It lives here, exported, because the moment two surfaces pick their own
+ * the same person reads differently on each: the profile once averaged 12 months while the
+ * directory averaged 7 days, so the same employee showed two scores at the same instant — same
+ * method, different window, which is the most confusing possible combination.
+ *
+ * A person's score is the mean of their **scored** days in this window; days with no summary are
+ * excluded, never counted as zero (they may have been on leave, or their agent may have been off).
+ */
+export const SCORE_WINDOW_DAYS = 30;
+
 export interface SelfActivity {
   from: string;
   to: string;

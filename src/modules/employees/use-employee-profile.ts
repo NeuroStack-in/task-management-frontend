@@ -18,7 +18,10 @@ import {
   listUserProjects,
   getProject,
 } from "@/modules/projects/services/projects.service";
-import { getUserActivity } from "@/modules/insights/services/insights.service";
+import {
+  getUserActivity,
+  SCORE_WINDOW_DAYS,
+} from "@/modules/insights/services/insights.service";
 import {
   getEmployeeProfile,
   departmentMap,
@@ -204,15 +207,23 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           ? Math.round(projects.reduce((s, pr) => s + pr.progress, 0) / projects.length)
           : 0;
 
-        // **`null` means "not measured", and it must stay `null`.** The server already draws this
-        // distinction — `avg_score` is `Option<f64>` and is `None` when no day in the window carries
-        // a score. Collapsing it to `0` here published a fabricated verdict: the profile rendered a
-        // confident "0%" and the summary card called the person a "developing performer, averaging
-        // 0% productivity", which is a statement about a missing agent feed, not about them. The
-        // directory list already shows "—" for the same person (`use-employees.ts`), so the two
-        // pages disagreed about the same employee.
-        const productivityScore =
-          activity?.trend.avg_score != null ? Math.round(activity.trend.avg_score) : null;
+        // **The mean of this person's scored days over the last 30** (PRODUCTIVITY.md §3.1) —
+        // deliberately *not* `trend.avg_score`, which covers the whole 12-month fetch. That fetch
+        // stays because the KPI chart below genuinely needs a year of buckets; the headline number
+        // does not, and a year-long average beside someone's name is both stale and unlike every
+        // other surface. One window, one meaning — the directory column uses the same 30 days.
+        //
+        // **`null` means "not measured", and it must stay `null`.** Collapsing it to `0` published
+        // a fabricated verdict: a confident "0%", and a summary card calling the person a
+        // "developing performer, averaging 0% productivity" — a statement about a missing agent
+        // feed, not about them.
+        const scoreCutoff = ymd(
+          new Date(now.getFullYear(), now.getMonth(), now.getDate() - (SCORE_WINDOW_DAYS - 1)),
+        );
+        const recentScored = (activity?.days ?? []).filter((d) => d.date >= scoreCutoff);
+        const productivityScore = recentScored.length
+          ? Math.round(recentScored.reduce((s, d) => s + d.score, 0) / recentScored.length)
+          : null;
         const kpi = buildKpi(
           (activity?.days ?? []).map((d) => ({ date: d.date, productiveSec: d.productive_sec })),
           now,

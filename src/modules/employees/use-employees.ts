@@ -19,7 +19,10 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { useRolesStore } from "@/stores/roles.store";
-import { getOrgActivity } from "@/modules/insights/services/insights.service";
+import {
+  getOrgActivity,
+  SCORE_WINDOW_DAYS,
+} from "@/modules/insights/services/insights.service";
 import {
   listAllEmployees,
   departmentMap,
@@ -27,15 +30,6 @@ import {
   reactivateEmployee,
 } from "./services/employees.service";
 
-/**
- * How many days back to average a person's score over.
- *
- * A single day is too sparse to put in a directory column — only a handful of an org's agents
- * report on any given day, so "yesterday" would blank most of the roster and look broken again.
- * Averaging a person's *scored* days across a week gives a stable number and survives one quiet
- * day, while still being recent enough to mean something.
- */
-const SCORE_WINDOW_DAYS = 7;
 /** Small cap: a per-day fan-out is exactly the burst that trips the Lambda's 503 throttle. */
 const SCORE_FANOUT = 3;
 
@@ -135,31 +129,41 @@ export function useEmployees(): EmployeesData {
       try {
         // `listAllEmployees` pages every department; the bare directory call truncates at 50 with
         // no cursor to follow, which would silently cap this page (and its "Total employees").
-        const [roster, depts, scores] = await Promise.all([
+        const [roster, depts] = await Promise.all([
           listAllEmployees(),
           departmentMap().catch(() => new Map<string, string>()),
-          scoresByUser().catch(() => new Map<string, number>()),
         ]);
         if (!live) return;
         // role_id → display name (system + custom roles); blank if the id is unknown.
         const roleNames = new Map(getAllRoles().map((r) => [r.id, r.name]));
-        setEmployees(
-          roster.map((e) => ({
-            id: e.user_id,
-            empId: e.emp_id ?? null,
-            name: e.name,
-            email: "", // not on the directory list — lives on the full profile
-            roleName: e.role_id ? (roleNames.get(e.role_id) ?? "") : "",
-            jobTitle: e.title ?? "",
-            department: depts.get(e.department_id) ?? e.department_id,
-            team: "",
-            status: mapStatus(e.status),
-            // Absent on every row that predates the field, so this reads false for existing orgs.
-            monitored: e.login === "none",
-            // Mean of this person's scored days over the last week. `null` — rendered "—" — means
-            // no agent reported for them in that window, which is a real gap, not a zero.
-            productivityScore: scores.get(e.user_id) ?? null,
-          })),
+        const rows: EmployeeRow[] = roster.map((e) => ({
+          id: e.user_id,
+          empId: e.emp_id ?? null,
+          name: e.name,
+          email: "", // not on the directory list — lives on the full profile
+          roleName: e.role_id ? (roleNames.get(e.role_id) ?? "") : "",
+          jobTitle: e.title ?? "",
+          department: depts.get(e.department_id) ?? e.department_id,
+          team: "",
+          status: mapStatus(e.status),
+          // Absent on every row that predates the field, so this reads false for existing orgs.
+          monitored: e.login === "none",
+          // Filled by the score pass below; `null` — rendered "—" — means no agent reported for
+          // them in the window, which is a real gap, not a zero.
+          productivityScore: null,
+        }));
+
+        // **The roster renders before the scores arrive.** The window is 30 days (§3.1) and the
+        // activity endpoint is per-day, so this is 30 requests; blocking the directory on them
+        // would trade a working page for a spinner. The names, roles and departments are the point
+        // of this screen — the score is an enrichment, and it fills in a moment later.
+        setEmployees(rows);
+        setLoading(false);
+
+        const scores = await scoresByUser().catch(() => new Map<string, number>());
+        if (!live || scores.size === 0) return;
+        setEmployees((prev) =>
+          prev.map((r) => ({ ...r, productivityScore: scores.get(r.id) ?? null })),
         );
       } catch (e) {
         if (live) setError(messageOf(e));

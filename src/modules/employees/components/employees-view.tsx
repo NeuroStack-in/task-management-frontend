@@ -308,8 +308,8 @@ export function EmployeesView() {
           icon={GaugeIcon}
           hint={
             liveStats.avgProductivity === null
-              ? "no agent activity in the last 7 days"
-              : "7-day average of reporting employees"
+              ? "no agent activity in the last 30 days"
+              : "30-day average of reporting employees"
           }
         />
         <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />

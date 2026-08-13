@@ -247,6 +247,15 @@ export interface OrgWorkingHours {
   late_threshold: string;
   /** Below this, a worked day is `partial` rather than `present`. */
   min_present_minutes: number;
+  /**
+   * Unpaid break inside the declared span, in minutes (default 60).
+   *
+   * Feeds the productivity score's **expected working day**
+   * (`backend/docs/PRODUCTIVITY.md` §1.2): `expected = (work_end − work_start) − break_minutes`.
+   * The default 09:00–18:00 minus 60 is 8h — the constant the scorer used before it read this
+   * setting, so introducing it moved no existing score.
+   */
+  break_minutes: number;
 }
 
 /** A PATCH may carry any subset; the server rejects an empty body. */
