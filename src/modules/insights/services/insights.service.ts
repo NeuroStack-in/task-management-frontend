@@ -575,3 +575,106 @@ export function getLocationTrail(
     `/v1/insights/locations/${encodeURIComponent(userId)}?date=${encodeURIComponent(date)}`,
   );
 }
+
+/* ------------------- Per-employee AI recaps (profile page) ------------------- */
+
+/**
+ * Deterministic totals over a period — **Rust math over the stored daily summaries**, never the
+ * model's arithmetic. `avg_score` is `null` when no day in the period was scored: an honest gap,
+ * not a zero that would read as a bad month.
+ */
+export interface PeriodAggregate {
+  /** Days with a stored summary — the denominator for every average, not the length of the period. */
+  days_with_data: number;
+  avg_score: number | null;
+  best_day?: { date: string; score: number };
+  worst_day?: { date: string; score: number };
+  avg_u: number;
+  avg_q: number;
+  avg_f: number;
+  avg_r: number;
+  total_active_secs: number;
+  total_worked_minutes: number;
+  productive_secs: number;
+  neutral_secs: number;
+  distracting_secs: number;
+  days_present: number;
+  days_late: number;
+  days_absent: number;
+  days_on_leave: number;
+}
+
+/** A weekly / monthly / all-time recap. The period label differs; the rest is common. */
+export interface PeriodRecap {
+  aggregate: PeriodAggregate;
+  narrative: string;
+  /**
+   * Why the narrative is empty, when it is — the level below hasn't been generated yet. Shown
+   * instead of a blank card, because "nothing to summarise" and "nothing happened" are different.
+   */
+  reason?: string;
+  generated_at?: number;
+  /** The narrative's evidence base: how many children actually had a recap to reduce over. */
+  source_days?: number;
+  source_weeks?: number;
+  source_months?: number;
+  week?: string;
+  month?: string;
+  months?: string[];
+  dates?: string[];
+  weeks?: string[];
+}
+
+/** The four periods the employee profile can summarise. */
+export type RecapPeriod = "daily" | "weekly" | "monthly" | "overall";
+
+const userBase = (userId: string) => `/v1/insights/user/${encodeURIComponent(userId)}`;
+
+/**
+ * One employee's AI recap for a period.
+ *
+ * **Serves the same cached narrative the employee reads about themselves** — there is no
+ * manager-only variant, by design (`insights::shared::subject`). Needs `AiInsightsRead` **and**
+ * `ActivityReadOrg`; reading your own recap through this path needs only the former.
+ *
+ * `param` is the period label the route expects: `YYYY-MM-DD` for daily, `YYYY-Www` for weekly,
+ * `YYYY-MM` for monthly, and an optional `YYYY-MM` upper bound for overall (defaults to now).
+ */
+export function getUserRecap(
+  userId: string,
+  period: RecapPeriod,
+  param?: string,
+): Promise<DailySummary | PeriodRecap> {
+  const q =
+    period === "daily"
+      ? `?date=${encodeURIComponent(param ?? "")}`
+      : period === "weekly"
+        ? `?week=${encodeURIComponent(param ?? "")}`
+        : period === "monthly"
+          ? `?month=${encodeURIComponent(param ?? "")}`
+          : param
+            ? `?through=${encodeURIComponent(param)}`
+            : "";
+  const path = period === "daily" ? "summary" : period;
+  return apiFetch(`${userBase(userId)}/${path}${q}`);
+}
+
+/** The `POST …/regenerate` twin of {@link getUserRecap}. Overwrites the one cached narrative. */
+export function regenerateUserRecap(
+  userId: string,
+  period: RecapPeriod,
+  param?: string,
+): Promise<DailySummary | PeriodRecap> {
+  const q =
+    period === "daily"
+      ? `?date=${encodeURIComponent(param ?? "")}`
+      : period === "weekly"
+        ? `?week=${encodeURIComponent(param ?? "")}`
+        : period === "monthly"
+          ? `?month=${encodeURIComponent(param ?? "")}`
+          : param
+            ? `?through=${encodeURIComponent(param)}`
+            : "";
+  const path = period === "daily" ? "summary" : period;
+  return apiFetch(`${userBase(userId)}/${path}/regenerate${q}`, { method: "POST" });
+}

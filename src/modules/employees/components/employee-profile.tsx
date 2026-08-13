@@ -76,6 +76,7 @@ import {
   type ApiTeam,
   type UpdateEmployeeBody,
 } from "../services/employees.service";
+import { EmployeeRecapCard } from "./employee-recap-card";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
 import { EmployeeManageMenu } from "./employee-manage-menu";
 
@@ -784,6 +785,11 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
         <div className="flex flex-col gap-4">
           {/* AI summary first */}
           <EmployeeSummaryInsight data={data} />
+
+          {/* The narrative recaps, over a selectable period. Distinct from the card above: that one
+              is composed client-side from project/delivery facts, this one is the model's recap of
+              the same paragraphs the employee reads about themselves. */}
+          <EmployeeRecapCard userId={data.id} name={data.name} />
 
           {/* Stat cards row */}
           <div className="grid grid-cols-2 gap-4">
