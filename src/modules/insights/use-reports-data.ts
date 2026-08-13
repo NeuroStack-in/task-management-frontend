@@ -21,7 +21,7 @@
  * ends on it (weekly reports: timesheet, utilization, project, attendance).
  */
 import { useCallback, useEffect, useState } from "react";
-import { getAttention, getOrgActivity } from "./services/insights.service";
+import { getAttention, getOrgActivity, type OrgActivity } from "./services/insights.service";
 import { OMITTED, type ReportDef } from "./lib/report-def";
 import {
   getUserTimesheet,
@@ -181,28 +181,60 @@ export function useReportsData(): ReportsData {
         getProject(p.id).then((d) => void projectDetail.set(p.id, d), () => {}),
       );
 
+      // Per-day org activity across the week — the day-over-day series the productivity report's
+      // Trend column needs. Each person's trend is the report day's score vs their average on the
+      // preceding days (real, not fabricated; "—" when there's nothing to compare against).
+      const activityByDay = new Map<string, OrgActivity>();
+      await mapWithConcurrency(weekIsos, 3, (iso) =>
+        getOrgActivity(iso).then((r) => void activityByDay.set(iso, r), () => {}),
+      );
+      const priorScores = new Map<string, number[]>();
+      for (const [iso, act] of activityByDay) {
+        if (iso >= dayIso) continue; // only days before the report day count as "prior"
+        for (const p of act.people) {
+          if (p.breakdown) {
+            const arr = priorScores.get(p.user_id) ?? [];
+            arr.push(p.breakdown.score);
+            priorScores.set(p.user_id, arr);
+          }
+        }
+      }
+      /** Signed change vs the person's recent average (e.g. "+6", "−4", "0"); "—" with no history. */
+      const trendFor = (userId: string, todayScore: number | null): string => {
+        if (todayScore === null) return OMITTED;
+        const prior = priorScores.get(userId);
+        if (!prior || prior.length === 0) return OMITTED;
+        const avg = prior.reduce((s, v) => s + v, 0) / prior.length;
+        const delta = Math.round(todayScore - avg);
+        return delta > 0 ? `+${delta}` : delta < 0 ? `−${-delta}` : "0";
+      };
+
       if (!live) return;
 
       /* ------------------------------ compose ----------------------------- */
 
       const out: ReportDef[] = [];
 
-      // productivity — one workday's org activity. Trend has no cheap real source → OMITTED.
+      // productivity — one workday's org activity. Trend = the day's score vs the person's average
+      // over the preceding days of the week (real; "—" when there's no prior day to compare).
       out.push({
         id: "productivity",
         name: "Productivity Report",
         description:
-          "Per-employee productivity score and active hours for the day. Trend needs a day-over-day series the backend doesn't serve here.",
+          "Per-employee productivity score and active hours for the day. Trend is the change vs the person's average over the earlier days of the week.",
         category: "workforce",
         timeframe: dayLabel,
         columns: ["Employee", "Department", "Active hrs", "Productivity %", "Trend"],
-        rows: (org?.people ?? []).map((p) => [
-          p.name,
-          deptName(p.department_id),
-          p.totals ? round1(p.totals.active_sec / 3600) : OMITTED,
-          p.breakdown ? Math.round(p.breakdown.score) : OMITTED,
-          OMITTED,
-        ]),
+        rows: (org?.people ?? []).map((p) => {
+          const score = p.breakdown ? Math.round(p.breakdown.score) : null;
+          return [
+            p.name,
+            deptName(p.department_id),
+            p.totals ? round1(p.totals.active_sec / 3600) : OMITTED,
+            score ?? OMITTED,
+            trendFor(p.user_id, score),
+          ];
+        }),
       });
 
       // leaderboard — scored people only, ranked.
