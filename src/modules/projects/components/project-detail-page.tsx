@@ -186,12 +186,13 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const completed = counts.done;
   const pending = tasks.length - counts.done;
 
+  const dayWord = (n: number) => (n === 1 ? "day" : "days");
   const deadlineText =
     daysLeft === 0
       ? "Due today"
       : daysLeft < 0
-        ? `${-daysLeft} days overdue`
-        : `${daysLeft} days left`;
+        ? `${-daysLeft} ${dayWord(-daysLeft)} overdue`
+        : `${daysLeft} ${dayWord(daysLeft)} left`;
 
   const editInitial: Partial<ProjectFormValues> = {
     name: project.name,

@@ -2,17 +2,24 @@
  * Server-safe derivations & presentation helpers for Projects.
  *
  * No "use client" — pure functions + literal Tailwind class maps so both the
- * server page and the client views read from one place. Anything dependent on
- * "today" uses the fixed TODAY anchor (matches the seed) to stay deterministic
- * (no Date.now() in render paths — CLAUDE.md convention).
+ * server page and the client views read from one place.
  */
 import type { User } from "@/types/user";
 import type { ApiProjectMember } from "./services/projects.service";
 import type { Project, Task, TaskStatus } from "./types";
 
-/** Fixed reference date — same anchor the seed uses. */
-export const TODAY = new Date("2026-06-23T00:00:00Z").getTime();
 const DAY = 86_400_000;
+
+/**
+ * **Today at UTC midnight.** Deadlines are real data now (not the old mock seed), so "days left" must
+ * count from the actual current day — the previous fixed 2026-06-23 anchor made every deadline read
+ * ~52 days off. UTC to match `formatDate`, which renders due dates in UTC (`getUTCDate`); computed
+ * once at module load, not in a render path.
+ */
+export const TODAY = (() => {
+  const n = new Date();
+  return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
+})();
 
 export interface UserMini {
   id: string;
@@ -86,9 +93,12 @@ export function formatDate(iso: string): string {
   return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 
-/** Whole days from the fixed anchor to the given ISO date (negative = past). */
+/** Whole days from today to the given ISO date (negative = past). Both normalised to UTC midnight so
+ * a due date with a time component still counts exact calendar days. */
 export function daysUntil(iso: string): number {
-  return Math.round((new Date(iso).getTime() - TODAY) / DAY);
+  const d = new Date(iso);
+  const dueUtc = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return Math.round((dueUtc - TODAY) / DAY);
 }
 
 /** Human due-date label, e.g. "in 4d", "Today", "3d overdue". */
