@@ -138,6 +138,8 @@ interface DayBundle {
   shots: number;
   /** The day's grid was cut off at `SHOT_PAGE`, so `shots` is a floor, not a total. */
   shotsTruncated: boolean;
+  /** In-scope screenshot counts bucketed by local hour-of-day (0..23) — feeds the heatmap. */
+  hourly: number[];
 }
 
 export interface DashboardDataState {
@@ -246,14 +248,18 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             (contributorIds === null || contributorIds.has(e.role_id ?? "")),
         );
         const todayForTimers = todayIso();
-        const runningFlags = await mapWithConcurrency(timerHolders, 4, (e) =>
+        const todayStatus = await mapWithConcurrency(timerHolders, 4, (e) =>
           getUserDay(e.user_id, todayForTimers).then(
-            (d) => d.running === true,
-            () => false,
+            // `present` = has clocked in at all today (a live signal — the attendance *verdict* only
+            // exists after the nightly close), so the Attendance donut has something truthful to show
+            // for the Today range instead of a blank "resolved tomorrow".
+            (d) => ({ running: d.running === true, present: Boolean(d.clock_in) }),
+            () => ({ running: false, present: false }),
           ),
         );
-        const workingNow = runningFlags.filter(Boolean).length;
+        const workingNow = todayStatus.filter((s) => s.running).length;
         const notWorkingNow = timerHolders.length - workingNow;
+        const presentToday = todayStatus.filter((s) => s.present).length;
 
         // Per-day monitoring reads — bounded + skip-on-fail. A day with no agent data just contributes
         // nothing (nulls), never a seeded number.
@@ -271,13 +277,21 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             // exactly the fan-out that throttles the Lambda. So the count can be a floor — and when
             // it is, say so (`shotsTruncated`) rather than publish a precise-looking undercount.
             // Filtering by team makes this sharper: the scoped user's frames may sit past the cut.
-            const shots = grid
-              ? grid.shots.filter((s) => inScopeUser(s.user_id)).length
-              : 0;
+            const scopedShots = grid
+              ? grid.shots.filter((s) => inScopeUser(s.user_id))
+              : [];
+            const shots = scopedShots.length;
             const shotsTruncated = grid
               ? Boolean(grid.cursor) || grid.shots.length >= SHOT_PAGE
               : false;
-            return { iso, activity, oversight, shots, shotsTruncated };
+            // Bucket the day's frames by local hour — the raw material for the productivity heatmap
+            // (activity intensity by hour), derived from the capture cadence rather than a new endpoint.
+            const hourly = new Array(24).fill(0);
+            for (const s of scopedShots) {
+              const h = new Date(s.captured_at).getHours();
+              if (h >= 0 && h < 24) hourly[h] += 1;
+            }
+            return { iso, activity, oversight, shots, shotsTruncated, hourly };
           },
         );
         if (!live) return;
@@ -376,6 +390,40 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             };
           }
         }
+        // Live fallback: when no closed day in the window carries resolved statuses (the Today range
+        // always, plus any window whose close cron hasn't produced statuses), fall back to who has
+        // clocked in **today** from the live per-user reads — so the donut shows real presence instead
+        // of a blank "resolved tomorrow". `present` = clocked in; `absent` = active but not; partial /
+        // leave only exist after the close, so they stay 0 here.
+        const attendanceTotal =
+          latestCounts.present + latestCounts.partial + latestCounts.leave + latestCounts.absent;
+        if (attendanceTotal === 0 && timerHolders.length > 0) {
+          latestCounts = {
+            present: presentToday,
+            partial: 0,
+            leave: 0,
+            absent: timerHolders.length - presentToday,
+          };
+        }
+
+        // ── Productivity heatmap: weekday (Mon..Sun) × 2-hour workday buckets (8a..8p), 0..100 intensity,
+        // derived from screenshot capture density (no dedicated hourly endpoint). Empty only when there
+        // is genuinely no capture activity in the window. ──
+        const HEAT_COLS = 6; // matches HEATMAP_HOURS: 8a, 10a, 12p, 2p, 4p, 6p
+        const HEAT_START_HOUR = 8;
+        const heatCounts = Array.from({ length: 7 }, () => new Array(HEAT_COLS).fill(0));
+        for (const b of bundles) {
+          const weekday = (new Date(`${b.iso}T00:00:00`).getDay() + 6) % 7; // Mon = 0
+          for (let h = 0; h < 24; h++) {
+            const col = Math.floor((h - HEAT_START_HOUR) / 2);
+            if (col >= 0 && col < HEAT_COLS) heatCounts[weekday][col] += b.hourly[h];
+          }
+        }
+        const heatMax = Math.max(1, ...heatCounts.flat());
+        const heatmap = heatCounts.flat().some((v) => v > 0)
+          ? heatCounts.map((row) => row.map((v) => Math.round((v / heatMax) * 100)))
+          : [];
+
         const attendanceRate = countedSum
           ? Math.round((presentSum / countedSum) * 100)
           : 0;
@@ -500,7 +548,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           screenshotsTrend,
           topPerformers,
           billing: billingBlock,
-          heatmap: [], // no per-hour productivity endpoint — the widget shows an honest empty state.
+          heatmap, // weekday × 2-hour intensity from screenshot capture density (empty if none).
           attendanceCounts: latestCounts,
           attendanceResolvedDays,
           productivityCoverage: { scored: coverageScored, team: coverageTeam },
