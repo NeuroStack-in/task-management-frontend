@@ -83,7 +83,12 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
     span: 1,
     render: (d) => <TopEmployeesWidget people={d.topPerformers} />,
   },
-  "attention_list.ai_summary": { span: 1, render: () => <OrgAiSummaryWidget /> },
+  // Follows the dashboard's range control like every other widget — the narrative it fetches is the
+  // one covering the selected period (day / ISO week / calendar month).
+  "attention_list.ai_summary": {
+    span: 1,
+    render: (d) => <OrgAiSummaryWidget range={d.range} rangeLabel={d.rangeLabel} />,
+  },
   payroll_summary: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
   "attention_list.alerts": { span: 1, render: () => <AlertsDeadlinesWidget /> },
   "reports.upcoming_tasks": { span: 1, render: () => <UpcomingTasksWidget /> },

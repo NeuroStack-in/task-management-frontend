@@ -32,9 +32,15 @@ import { ApiError } from "@/lib/api";
 import {
   getAiReport,
   regenerateAiReport,
+  getAiWeeklyReport,
+  regenerateAiWeeklyReport,
+  getAiMonthlyReport,
+  regenerateAiMonthlyReport,
   getAttention,
   regenerateAttention,
 } from "@/modules/insights/services/insights.service";
+import { isoWeekOf } from "@/modules/insights/use-reports";
+import type { DashboardRange } from "../lib/dashboard-data";
 import {
   getDayOversight,
   type ApiDayResponse,
@@ -319,7 +325,39 @@ function AiSummaryPending({ label }: { label: string }) {
   );
 }
 
-export function OrgAiSummaryWidget() {
+/** What period each range's narrative actually covers — stated on the card, because the KPIs
+ *  beside it use slightly different windows (a rolling 7 days vs the ISO week). */
+const PERIOD_NOTE: Record<DashboardRange, string> = {
+  today: "last workday",
+  "7d": "this ISO week",
+  "30d": "this month",
+  range: "",
+};
+
+/**
+ * The org AI narrative, **following the dashboard's range control**.
+ *
+ * Narratives are pre-computed and cached per period, so the range maps onto whichever report
+ * already covers it rather than summarising an arbitrary window:
+ *
+ * | Range   | Endpoint                          | Period |
+ * |---------|-----------------------------------|--------|
+ * | Today   | `/v1/insights/reports/ai`          | the last workday |
+ * | Week    | `/v1/insights/reports/ai/weekly`   | the ISO week (Mon–Sun) |
+ * | Month   | `/v1/insights/reports/ai/monthly`  | the calendar month |
+ * | Custom  | — | no narrative exists for an arbitrary window |
+ *
+ * ⚠️ **Week is the ISO week, while the KPIs beside it cover a rolling 7 days.** Both are labelled
+ * "this week" by `rangeLabelFor`, but on a Wednesday the narrative covers Mon–today and the KPIs
+ * cover last Thursday–today. The card names its own period so the two aren't read as one window.
+ */
+export function OrgAiSummaryWidget({
+  range = "today",
+  rangeLabel,
+}: {
+  range?: DashboardRange;
+  rangeLabel?: string;
+}) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   const workdays = useWorkdays();
   const [narrative, setNarrative] = useState<string | null>(null);
@@ -328,8 +366,15 @@ export function OrgAiSummaryWidget() {
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // A custom range has no cached narrative and no endpoint that would build one. Rather than
+  // silently show yesterday's daily summary under a "Jun 3 – Jul 12" header — which would read as a
+  // summary of that window — the card says what it can and can't cover.
+  const unsupportedRange = range === "range";
+
   // Enterprise org report first (richer, carries generated_at); fall back to the attention narrative
-  // (gated only on AiInsightsRead) when the org lacks the report entitlement.
+  // (gated only on AiInsightsRead) when the org lacks the report entitlement. The attention
+  // narrative is per-day only, so on a week/month range the fallback covers the last workday and the
+  // period note below says so.
   //
   // `force` selects the POST `…/regenerate` twin of each read. The plain GETs serve the narrative
   // **cached server-side**, so re-reading them on Regenerate returned the identical prose instantly —
@@ -339,6 +384,20 @@ export function OrgAiSummaryWidget() {
     async (force: boolean): Promise<{ narrative: string; generatedAt: number | null }> => {
       const date = isoLastWorkday(workdays);
       try {
+        if (range === "7d") {
+          const week = isoWeekOf(date);
+          const r = force
+            ? await regenerateAiWeeklyReport(week)
+            : await getAiWeeklyReport(week);
+          return { narrative: r.narrative, generatedAt: r.generated_at ?? null };
+        }
+        if (range === "30d") {
+          const month = date.slice(0, 7);
+          const r = force
+            ? await regenerateAiMonthlyReport(month)
+            : await getAiMonthlyReport(month);
+          return { narrative: r.narrative, generatedAt: r.generated_at ?? null };
+        }
         const r = force ? await regenerateAiReport(date) : await getAiReport(date);
         return { narrative: r.narrative, generatedAt: r.generated_at };
       } catch (e) {
@@ -349,13 +408,20 @@ export function OrgAiSummaryWidget() {
         throw e;
       }
     },
-    [workdays],
+    [workdays, range],
   );
 
   useEffect(() => {
     let live = true;
     setLoading(true);
     setError(null);
+    // No cached narrative exists for an arbitrary window, and there is no endpoint that would
+    // build one — so don't fetch and don't show a different period's prose under this header.
+    if (unsupportedRange) {
+      setNarrative(null);
+      setLoading(false);
+      return;
+    }
     fetchSummary(false)
       .then((r) => {
         if (!live) return;
@@ -367,7 +433,7 @@ export function OrgAiSummaryWidget() {
     return () => {
       live = false;
     };
-  }, [fetchSummary]);
+  }, [fetchSummary, unsupportedRange]);
 
   async function regenerate() {
     if (regenerating || loading) return;
@@ -390,11 +456,16 @@ export function OrgAiSummaryWidget() {
       <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2">
           <Sparkles className="size-4" /> AI summary
+          {PERIOD_NOTE[range] ? (
+            <span className="text-[11px] font-normal text-feature-foreground/60">
+              · {PERIOD_NOTE[range]}
+            </span>
+          ) : null}
         </CardTitle>
         <button
           type="button"
           onClick={regenerate}
-          disabled={loading || regenerating}
+          disabled={loading || regenerating || unsupportedRange}
           title="Regenerate summary"
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-feature-foreground/80 transition-colors hover:bg-white/15 hover:text-feature-foreground disabled:pointer-events-none disabled:opacity-50"
         >
@@ -407,6 +478,11 @@ export function OrgAiSummaryWidget() {
           <AiSummaryPending
             label={regenerating ? "Regenerating the summary…" : "Generating the org summary…"}
           />
+        ) : unsupportedRange ? (
+          <p className="flex-1 text-feature-foreground/75">
+            Summaries are written per day, week and month, so there isn&apos;t one for a custom
+            range. Switch to Today, Week or Month to read the narrative for that period.
+          </p>
         ) : narrative ? (
           <>
             <p className="flex-1">{narrative}</p>
@@ -421,7 +497,9 @@ export function OrgAiSummaryWidget() {
         <button
           type="button"
           onClick={() =>
-            openAssistant("Summarise this week's productivity and flag any burnout risks.")
+            openAssistant(
+              `Summarise ${rangeLabel ?? "this week"}'s productivity and flag any burnout risks.`,
+            )
           }
           className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
         >
