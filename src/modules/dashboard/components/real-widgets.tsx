@@ -30,13 +30,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import {
-  getDailySummary,
-  regenerateDailySummary,
   getAiReport,
   regenerateAiReport,
   getAttention,
   regenerateAttention,
-  type DailySummary,
 } from "@/modules/insights/services/insights.service";
 import {
   getDayOversight,
@@ -45,7 +42,6 @@ import {
 import { useAssistantStore } from "@/stores/assistant.store";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
-import { Markdown } from "@/components/shared/markdown";
 import type { DashboardSummary } from "../use-dashboard-summary";
 
 /** Yesterday in the caller's local calendar as `YYYY-MM-DD` — a completed, fully-closed day. */
@@ -307,158 +303,6 @@ const ATTENDANCE_LABEL: Record<string, string> = {
   unknown: "Pending close",
 };
 
-function MetricTile({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-lg bg-muted/50 p-2.5 text-center">
-      <p className="font-display text-lg font-semibold leading-none tabular-nums">{value}</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
-/**
- * The caller's AI daily briefing — self-fetching. Pulls `GET /v1/me/insights/summary?date=` for
- * yesterday (a completed day) and renders the AI `narrative` prominently plus a few key metrics.
- * **Real, and works without the desktop agent:** the summary is derived from attendance + timesheet;
- * the deterministic productivity `score` is present only on days the agent reported activity.
- */
-/** "Generated 12 Jul, 14:30" — absolute local time; the narrative is cached, so this is when it was
- *  last (re)generated. Only ever rendered client-side (data arrives via useEffect), so no SSR skew. */
-function formatGeneratedAt(ms?: number): string | null {
-  if (!ms) return null;
-  const d = new Date(ms);
-  const day = d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  return `${day}, ${time}`;
-}
-
-export function AiDailySummaryCard() {
-  const [data, setData] = useState<DailySummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
-
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setError(null);
-    getDailySummary(isoYesterday())
-      .then((d) => live && setData(d))
-      .catch((e) => live && setError(errorMessage(e, "Couldn't load your daily summary.")))
-      .finally(() => live && setLoading(false));
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  async function handleRegenerate() {
-    if (regenerating) return;
-    setRegenerating(true);
-    setError(null);
-    try {
-      const fresh = await regenerateDailySummary(isoYesterday());
-      setData(fresh);
-    } catch (e) {
-      setError(errorMessage(e, "Couldn't regenerate the summary."));
-    } finally {
-      setRegenerating(false);
-    }
-  }
-
-  const m = data?.metrics;
-  const generatedAt = formatGeneratedAt(data?.generated_at);
-  return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
-            <Sparkles className="size-4" />
-          </span>
-          AI daily summary
-        </CardTitle>
-        {/* Regenerate: the narrative is cached server-side, so this is the only way to refresh it. */}
-        <button
-          type="button"
-          onClick={handleRegenerate}
-          disabled={loading || regenerating}
-          title="Regenerate summary"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-        >
-          <RefreshCw className={`size-3.5 ${regenerating ? "animate-spin" : ""}`} />
-          {regenerating ? "Regenerating…" : "Regenerate"}
-        </button>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {loading ? (
-          <Loader label="Generating your briefing…" />
-        ) : data && m ? (
-          <>
-            <div className="flex gap-2.5 rounded-lg bg-feature-tint/60 p-3 text-sm text-foreground">
-              <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-              {regenerating ? (
-                // Only the narrative is re-run; the metrics below are unchanged, so they stay put.
-                <span
-                  className="flex items-center gap-2 text-muted-foreground"
-                  aria-live="polite"
-                  aria-busy
-                >
-                  <Loader2 className="size-3.5 shrink-0 animate-spin" />
-                  Regenerating your briefing…
-                </span>
-              ) : (
-                <Markdown>{data.narrative}</Markdown>
-              )}
-            </div>
-            <ul className="grid grid-cols-2 gap-2">
-              <li>
-                {/* Live timer total from the day's TIME# entries — real the moment a session folds.
-                    (Not `worked_minutes`, which is the attendance-official figure and stays 0 until
-                    the 00:15 close cron stamps the AttendanceDay.) */}
-                <MetricTile label="Hours tracked" value={(m.tracked_secs / 3600).toFixed(1)} />
-              </li>
-              <li>
-                <MetricTile label="Tasks" value={m.task_count} />
-              </li>
-              <li>
-                <MetricTile
-                  label={m.late ? "Attendance (late)" : "Attendance"}
-                  value={ATTENDANCE_LABEL[m.attendance] ?? m.attendance}
-                />
-              </li>
-              <li>
-                <MetricTile
-                  label="Productivity"
-                  value={data.score ? `${Math.round(data.score.score)}/100` : "—"}
-                />
-              </li>
-            </ul>
-            <p className="text-[11px] text-muted-foreground">
-              Briefing for {data.date}
-              {generatedAt ? ` · generated ${generatedAt}` : ""}
-            </p>
-            {/* A failed re-run keeps the previous briefing on screen and reports itself here. */}
-            {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
-          </>
-        ) : error ? (
-          <p className="py-6 text-sm text-muted-foreground">{error}</p>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ------------------------------ Org AI summary (real) ------------------------------- */
-
-/**
- * The preview's teal "AI summary" card, on **real** data. Pulls the org day's AI narrative
- * (`GET /v1/insights/reports/ai`; falls back to the broadly-available attention narrative when the
- * org isn't on the Enterprise report), with a **Regenerate** button that re-runs the model and the
- * preview's "Ask the assistant" CTA. Reads yesterday — the last day the close cron has resolved.
- */
-/**
- * In-card progress for the teal AI card. The model call takes seconds, so the card says it is
- * working (and shows where the prose will land) instead of sitting on stale text.
- */
 function AiSummaryPending({ label }: { label: string }) {
   return (
     <div className="flex-1 space-y-2.5" aria-live="polite" aria-busy>

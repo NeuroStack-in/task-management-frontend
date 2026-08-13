@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { TimerStatCard } from "./timer-stat-card";
+import { DailySummaryCard } from "@/modules/insights/components/daily-summary-card";
 import { MeetingHoursCard } from "@/modules/integrations/components/meeting-hours-card";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -272,6 +273,11 @@ export function PersonalDashboard() {
         </Card>
       </div>
       )}
+
+      {/* "Your day" — the self-scoped AI recap of the caller's own metrics
+          (`GET /v1/me/insights/summary`). It belongs here rather than under Analytics: those tabs
+          are oversight surfaces about other people, and this one is only ever about you. */}
+      <DailySummaryCard />
     </>
   );
 }

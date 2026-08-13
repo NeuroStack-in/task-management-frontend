@@ -10,7 +10,8 @@
  * Two more real signals now have endpoints and are rendered by **self-fetching** widgets that ignore
  * this summary: the AI daily briefing (`/v1/me/insights/summary`) and org attendance for a day
  * (`/v1/attendance/day`) — both derived from attendance + timesheet, so they work without the agent.
- * See `AiDailySummaryCard` / `AttendanceTodayCard` in `real-widgets.tsx`.
+ * See `AttendanceTodayCard` in `real-widgets.tsx`; the self-scoped daily recap is
+ * `DailySummaryCard` (insights), mounted on the personal dashboard.
  *
  * What still needs the **desktop agent's activity data** — org-wide productivity scores, tracked
  * hours, screenshots, heatmaps, per-team productivity — has no data feed yet and is shown as an

@@ -62,12 +62,19 @@ function toSignals(s: DailySummary): AiSignal[] {
       tone: m.attendance === "present" ? "up" : m.attendance === "absent" ? "down" : "flat",
     },
   ];
-  // The U/Q/F/R breakdown behind the score, when present — the four levers a manager reads.
+  // The U/Q/F/R breakdown behind the score, when present — the four levers the number is made of.
   if (s.score) {
     const round = (n: number) => Math.round(n);
+    out.push({ label: "Utilization", value: `${round(s.score.u)}`, tone: "flat" });
+    // **Quality is omitted when it wasn't measured** (PRODUCTIVITY.md §1.4). On a day with no
+    // classified app time the server drops Q, renormalises the rest, and reports `q: 0` — which is
+    // indistinguishable on the wire from a day spent entirely on distracting apps. Rendering it
+    // would put "Quality 0" against someone's name for an instrumentation gap. Absent flag means
+    // measured, so older summaries are unaffected.
+    if (s.score.q_measured !== false) {
+      out.push({ label: "Quality", value: `${round(s.score.q)}`, tone: "flat" });
+    }
     out.push(
-      { label: "Utilization", value: `${round(s.score.u)}`, tone: "flat" },
-      { label: "Quality", value: `${round(s.score.q)}`, tone: "flat" },
       { label: "Focus", value: `${round(s.score.f)}`, tone: "flat" },
       { label: "Reliability", value: `${round(s.score.r)}`, tone: "flat" },
     );

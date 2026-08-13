@@ -18,12 +18,21 @@ export interface ScoreBreakdown {
   score: number;
   /** Utilization (active vs expected day). */
   u: number;
-  /** Quality (category-weighted: productive 1.0 / neutral 0.5 / distracting 0.0). */
+  /** Quality (category-weighted, using the org's weights). **Only meaningful if `q_measured`.** */
   q: number;
   /** Focus (input-gated engagement). */
   f: number;
   /** Reliability (punctuality + hours). */
   r: number;
+  /**
+   * `false` when nothing was classified that day, so Q was excluded and the remaining weights
+   * renormalised (`backend/docs/PRODUCTIVITY.md` §1.4).
+   *
+   * The server reports `q: 0` in that case, which on the wire is indistinguishable from a day spent
+   * entirely on distracting apps — so **rendering `q` without checking this shows "Quality 0" for
+   * what was really an instrumentation gap.** Absent (older payloads) means measured.
+   */
+  q_measured?: boolean;
 }
 
 // ── GET /v1/me/insights/summary?date= ──
