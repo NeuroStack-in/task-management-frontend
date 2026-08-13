@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import {
   Gauge,
   Users,
-  UserMinus,
-  Timer,
   Clock,
+  Camera,
   CalendarCheck,
   UserPlus,
 } from "lucide-react";
@@ -142,36 +141,35 @@ function OrgDashboard() {
         />
         {range === "today" ? (
           <>
-            {/* Straight to the attendance log rather than the employee directory. Both numbers are
-                about who is working *today*, and the roster answering that is below the fold on
-                /attendance — the hash lands the reader on it instead of at the top of a page whose
-                answer they then have to scroll for. */}
-            {/* "Working now", not "Active employees". These count **running timers** among people
-                who can run one, while the Active/Inactive ring further down counts **employment
-                status** — two different numbers that both used to be labelled "Active" on this one
-                screen. */}
+            {/* One "Working now" card folds in the old Working-now / Not-working / Running-timers
+                trio — they were the same running-timer fact (working = running-timers) plus its
+                complement. Value is working / team; the hint carries the idle count. Links straight
+                to the attendance-log roster where you see *who*. */}
             <StatCard
               label="Working now"
-              value={kpis.active.value}
+              value={`${kpis.active.value} / ${kpis.active.value + kpis.inactive.value}`}
               icon={Users}
-              hint="timer running"
+              hint={`${kpis.inactive.value} not tracking · today`}
               href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
             />
+            {/* Two genuinely distinct dimensions the trio never showed: total effort (active hours)
+                and monitoring volume (screenshots) — both real, today-scoped, and drilling to their
+                canonical pages. */}
             <StatCard
-              label="Not working"
-              value={kpis.inactive.value}
-              icon={UserMinus}
-              hint="no timer running"
-              href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
+              label="Hours Tracked"
+              value={`${kpis.hours.value.toLocaleString()}h`}
+              icon={Clock}
+              hint="active time today"
+              href="/time-tracking"
             />
             <StatCard
-              label="Running Timers"
-              value={kpis.timers.value}
-              icon={Timer}
-              // Was "online agents", which described the old fleet-presence source. It counts
-              // running timers now, and the roster below the link is where you see whose.
-              hint="tracking now"
-              href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
+              label="Screenshots"
+              value={`${data.screenshotCount.toLocaleString()}${
+                data.screenshotCountPartial && data.screenshotCount > 0 ? "+" : ""
+              }`}
+              icon={Camera}
+              hint="captured today"
+              href="/insights/screenshots"
             />
           </>
         ) : (
