@@ -393,6 +393,8 @@ export function useOversightAttendance({
         const m = new Map<string, DirEntry>();
         const names = new Set<string>();
         for (const e of roster) {
+          // Benched employees are excluded from Attendance entirely — not shown as absent/out.
+          if (e.benched) continue;
           // Skip anyone who cannot run a timer. §7 resolves "a scheduled workday with no timer
           // session and no approved leave" to **absent**, so an Owner/Admin — who hold no
           // `TimeTrackSelf` by construction — would be marked absent every working day and pull the

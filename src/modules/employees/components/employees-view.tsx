@@ -225,6 +225,10 @@ export function EmployeesView() {
   const liveStats = useMemo(() => {
     const total = allEmployees.length;
     const active = allEmployees.filter((e) => e.status === "active").length;
+    // Benched people are still employees but aren't actively working — so the "Active" tile counts
+    // active-and-not-benched, shown as "N / total" so the bench is visible at a glance.
+    const benched = allEmployees.filter((e) => e.benched).length;
+    const activeWorking = allEmployees.filter((e) => e.status === "active" && !e.benched).length;
     // Average only over rows that actually have a score. None do yet (productivity needs the agent),
     // so this is `null` → the stat card shows "—" instead of a fake 0%.
     const scored = allEmployees.filter((e) => e.productivityScore !== null);
@@ -234,7 +238,7 @@ export function EmployeesView() {
         )
       : null;
     const departmentCount = new Set(allEmployees.map((e) => e.department)).size;
-    return { total, active, avgProductivity, departments: departmentCount };
+    return { total, active, activeWorking, benched, avgProductivity, departments: departmentCount };
   }, [allEmployees]);
 
   const filtered = useMemo(() => {
@@ -257,6 +261,16 @@ export function EmployeesView() {
       return true;
     });
   }, [allEmployees, query, dept, status]);
+
+  // The dedicated bench roster — everyone flagged `benched`, name-sorted, independent of the
+  // table's filters. This is the "who is on the bench" answer at a glance.
+  const benchedEmployees = useMemo(
+    () =>
+      allEmployees
+        .filter((e) => e.benched)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [allEmployees],
+  );
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -315,9 +329,17 @@ export function EmployeesView() {
             Dropped rather than seeded, like every other delta on the dashboard. */}
         <StatCard
           label="Active"
-          value={liveStats.active}
+          value={
+            liveStats.benched > 0
+              ? `${liveStats.activeWorking} / ${liveStats.total}`
+              : liveStats.activeWorking
+          }
           icon={UserCheck}
-          hint="not deactivated"
+          hint={
+            liveStats.benched > 0
+              ? `${liveStats.benched} on the bench`
+              : "not deactivated"
+          }
         />
         {/* The hint used to read "pending activity monitoring" unconditionally — it was describing
             the hardcoded null, not the data. Scores are joined in now, so it states the window when
@@ -559,6 +581,58 @@ export function EmployeesView() {
           </Button>
         </div>
       </div>
+
+      {/* On the bench — a dedicated roster of benched employees. Renders nothing when the bench is
+          empty; benched people are excluded from Attendance + Time-Tracking (filtered in those
+          hooks). Managers get an inline "Remove from bench" here without hunting the main table. */}
+      {benchedEmployees.length > 0 && (
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-center gap-2">
+              <UserMinus className="size-4 text-warning" />
+              <h3 className="text-sm font-semibold">On the bench</h3>
+              <Badge className="bg-warning/15 text-warning">
+                {benchedEmployees.length}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Benched employees stay in the directory but are excluded from Attendance and
+              Time-Tracking.
+            </p>
+            <div className="divide-y">
+              {benchedEmployees.map((e) => (
+                <div key={e.id} className="flex items-center gap-3 py-2">
+                  <Avatar className="size-8">
+                    <AvatarImage src={e.avatarUrl} alt={e.name} />
+                    <AvatarFallback className="text-xs">
+                      {initials(e.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{e.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {e.empId ? (
+                        <span className="font-mono tabular-nums">{e.empId}</span>
+                      ) : null}
+                      {e.empId && e.department ? " · " : ""}
+                      {e.department}
+                    </p>
+                  </div>
+                  {canManage && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onToggleBench(e)}
+                    >
+                      <UserCheck className="size-4" /> Remove from bench
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Below the roster on purpose: invitees aren't employees yet, and the section renders
           nothing at all when the org has never invited anyone. */}
