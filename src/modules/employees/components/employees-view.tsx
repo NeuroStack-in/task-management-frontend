@@ -17,6 +17,8 @@ import {
   FileText,
   Sheet,
   UserPlus,
+  UserMinus,
+  MoreVertical,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
@@ -46,6 +48,7 @@ import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { useTrackingMode } from "@/hooks/use-features";
 import { Badge } from "@/components/ui/badge";
+import { ApiError } from "@/lib/api";
 import { InviteDialog } from "./invite-dialog";
 import { AddEmployeeDialog } from "./add-employee-dialog";
 import { PendingInvites } from "./pending-invites";
@@ -53,7 +56,7 @@ import { useEmployees, type EmployeeRow } from "../use-employees";
 
 export type { EmployeeRow };
 
-const STATUSES = ["all", "active", "inactive", "invited", "suspended"] as const;
+const STATUSES = ["all", "active", "benched", "inactive", "invited", "suspended"] as const;
 const PAGE_SIZE = 9;
 
 const REPORT_COLUMNS = [
@@ -193,7 +196,7 @@ export function EmployeesView() {
   const router = useRouter();
   // Real backend directory (server-scoped by `employees:read`). No client scope filter, no session
   // overlays — the server is the roster.
-  const { employees, loading, error, reload } = useEmployees();
+  const { employees, loading, error, reload, bench } = useEmployees();
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
@@ -222,6 +225,10 @@ export function EmployeesView() {
   const liveStats = useMemo(() => {
     const total = allEmployees.length;
     const active = allEmployees.filter((e) => e.status === "active").length;
+    // Benched people are still employees but aren't actively working — so the "Active" tile counts
+    // active-and-not-benched, shown as "N / total" so the bench is visible at a glance.
+    const benched = allEmployees.filter((e) => e.benched).length;
+    const activeWorking = allEmployees.filter((e) => e.status === "active" && !e.benched).length;
     // Average only over rows that actually have a score. None do yet (productivity needs the agent),
     // so this is `null` → the stat card shows "—" instead of a fake 0%.
     const scored = allEmployees.filter((e) => e.productivityScore !== null);
@@ -231,14 +238,19 @@ export function EmployeesView() {
         )
       : null;
     const departmentCount = new Set(allEmployees.map((e) => e.department)).size;
-    return { total, active, avgProductivity, departments: departmentCount };
+    return { total, active, activeWorking, benched, avgProductivity, departments: departmentCount };
   }, [allEmployees]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return allEmployees.filter((e) => {
       if (dept !== "all" && e.department !== dept) return false;
-      if (status !== "all" && e.status !== status) return false;
+      // "benched" is an orthogonal flag, not one of the lifecycle statuses — filter on it directly.
+      if (status === "benched") {
+        if (!e.benched) return false;
+      } else if (status !== "all" && e.status !== status) {
+        return false;
+      }
       if (
         q &&
         !`${e.name} ${e.email} ${e.jobTitle} ${e.empId ?? ""} ${e.id}`
@@ -250,9 +262,31 @@ export function EmployeesView() {
     });
   }, [allEmployees, query, dept, status]);
 
+  // The dedicated bench roster — everyone flagged `benched`, name-sorted, independent of the
+  // table's filters. This is the "who is on the bench" answer at a glance.
+  const benchedEmployees = useMemo(
+    () =>
+      allEmployees
+        .filter((e) => e.benched)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [allEmployees],
+  );
+
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const rows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  const canManage = can("employees:manage");
+  const onToggleBench = async (e: EmployeeRow) => {
+    try {
+      await bench(e.id, !e.benched);
+      toast.success(
+        e.benched ? `${e.name} removed from the bench` : `${e.name} added to the bench`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't update the bench. Try again.");
+    }
+  };
 
   const resetPage = <T,>(setter: (v: T) => void) => (v: T) => {
     setter(v);
@@ -295,9 +329,17 @@ export function EmployeesView() {
             Dropped rather than seeded, like every other delta on the dashboard. */}
         <StatCard
           label="Active"
-          value={liveStats.active}
+          value={
+            liveStats.benched > 0
+              ? `${liveStats.activeWorking} / ${liveStats.total}`
+              : liveStats.activeWorking
+          }
           icon={UserCheck}
-          hint="not deactivated"
+          hint={
+            liveStats.benched > 0
+              ? `${liveStats.benched} on the bench`
+              : "not deactivated"
+          }
         />
         {/* The hint used to read "pending activity monitoring" unconditionally — it was describing
             the hardcoded null, not the data. Scores are joined in now, so it states the window when
@@ -410,6 +452,7 @@ export function EmployeesView() {
                     <TableHead>Role</TableHead>
                     <TableHead>Department</TableHead>
                     <TableHead className="w-40">Productivity</TableHead>
+                    {canManage && <TableHead className="w-10" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -441,6 +484,11 @@ export function EmployeesView() {
                                   Monitored
                                 </Badge>
                               )}
+                              {e.benched && (
+                                <Badge className="bg-warning/15 text-warning shrink-0 text-[10px]">
+                                  Bench
+                                </Badge>
+                              )}
                             </div>
                             {/* Subtitle: the human employee id (e.g. EMP-0001) is the directory's
                                 stable identifier — lead with it. Fall back to job title, then email;
@@ -467,6 +515,34 @@ export function EmployeesView() {
                       <TableCell>
                         <ProductivityCell value={e.productivityScore} />
                       </TableCell>
+                      {canManage && (
+                        // Stop the row's navigate-to-profile click when using the menu.
+                        <TableCell
+                          className="text-right"
+                          onClick={(ev) => ev.stopPropagation()}
+                        >
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={<Button variant="ghost" size="icon" className="size-8" />}
+                            >
+                              <MoreVertical className="size-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-auto min-w-[11rem]">
+                              <DropdownMenuItem onClick={() => onToggleBench(e)}>
+                                {e.benched ? (
+                                  <>
+                                    <UserCheck className="size-4" /> Remove from bench
+                                  </>
+                                ) : (
+                                  <>
+                                    <UserMinus className="size-4" /> Add to bench
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -505,6 +581,58 @@ export function EmployeesView() {
           </Button>
         </div>
       </div>
+
+      {/* On the bench — a dedicated roster of benched employees. Renders nothing when the bench is
+          empty; benched people are excluded from Attendance + Time-Tracking (filtered in those
+          hooks). Managers get an inline "Remove from bench" here without hunting the main table. */}
+      {benchedEmployees.length > 0 && (
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-center gap-2">
+              <UserMinus className="size-4 text-warning" />
+              <h3 className="text-sm font-semibold">On the bench</h3>
+              <Badge className="bg-warning/15 text-warning">
+                {benchedEmployees.length}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Benched employees stay in the directory but are excluded from Attendance and
+              Time-Tracking.
+            </p>
+            <div className="divide-y">
+              {benchedEmployees.map((e) => (
+                <div key={e.id} className="flex items-center gap-3 py-2">
+                  <Avatar className="size-8">
+                    <AvatarImage src={e.avatarUrl} alt={e.name} />
+                    <AvatarFallback className="text-xs">
+                      {initials(e.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{e.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {e.empId ? (
+                        <span className="font-mono tabular-nums">{e.empId}</span>
+                      ) : null}
+                      {e.empId && e.department ? " · " : ""}
+                      {e.department}
+                    </p>
+                  </div>
+                  {canManage && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onToggleBench(e)}
+                    >
+                      <UserCheck className="size-4" /> Remove from bench
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Below the roster on purpose: invitees aren't employees yet, and the section renders
           nothing at all when the org has never invited anyone. */}

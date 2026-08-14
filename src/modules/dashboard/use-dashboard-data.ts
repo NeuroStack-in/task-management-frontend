@@ -152,6 +152,14 @@ interface DayBundle {
   shotsTruncated: boolean;
   /** In-scope screenshot counts bucketed by local hour-of-day (0..23) — feeds the heatmap. */
   hourly: number[];
+  /** Captures worth a review this day (`ShotRow.flagged`). */
+  flagged: number;
+  /** Server-classified category tallies for the day's in-scope captures. */
+  productive: number;
+  neutral: number;
+  distracting: number;
+  /** Distinct employees seen in this day's captures — unioned across the range for coverage. */
+  userIds: string[];
 }
 
 export interface DashboardDataState {
@@ -296,22 +304,47 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             const shotsTruncated = grid
               ? Boolean(grid.cursor) || grid.shots.length >= SHOT_PAGE
               : false;
-            // Bucket the day's frames by local hour — the raw material for the activity heatmap,
-            // derived from the capture cadence rather than a new endpoint.
+            // One pass over the day's in-scope frames: the activity-heatmap bucket, review flags,
+            // the productive/neutral/distracting split, and who was captured — all from data
+            // already fetched, no extra request.
             //
-            // **Filtered to the local day first.** The endpoint partitions on the UTC date, so at
-            // any non-zero offset this page's frames straddle two local days. Bucketing them all by
-            // local hour attributed the neighbouring day's captures to this weekday's row — and
-            // because the columns start at 8am, the ones that wrapped past local midnight fell
-            // outside every column and were **silently dropped**. Same mismatch as the hourly chart
-            // (`lib/local-day`), quieter because nothing appeared out of place.
+            // **Filtered to the local day first, and that filter covers every counter here.** The
+            // endpoint partitions on the UTC date, so at any non-zero offset this page's frames
+            // straddle two local days. Bucketing them all by local hour attributed the neighbouring
+            // day's captures to this weekday's row — and because the heatmap's columns start at
+            // 8am, the ones that wrapped past local midnight fell outside every column and were
+            // **silently dropped**. Same mismatch as the hourly chart (`lib/local-day`), quieter
+            // because nothing appeared out of place. The counts below are per-day figures reported
+            // against `iso`, so they need the same cut for the same reason.
             const hourly = new Array(24).fill(0);
+            let flagged = 0;
+            let productive = 0;
+            let neutral = 0;
+            let distracting = 0;
+            const seen = new Set<string>();
             for (const s of scopedShots) {
               if (localDateOf(s.captured_at) !== iso) continue;
               const h = new Date(s.captured_at).getHours();
               if (h >= 0 && h < 24) hourly[h] += 1;
+              if (s.flagged) flagged += 1;
+              if (s.category === "productive") productive += 1;
+              else if (s.category === "distracting") distracting += 1;
+              else neutral += 1;
+              seen.add(s.user_id);
             }
-            return { iso, activity, oversight, shots, shotsTruncated, hourly };
+            return {
+              iso,
+              activity,
+              oversight,
+              shots,
+              shotsTruncated,
+              hourly,
+              flagged,
+              productive,
+              neutral,
+              distracting,
+              userIds: [...seen],
+            };
           },
         );
         if (!live) return;
@@ -444,7 +477,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           };
         }
 
-        // ── Productivity heatmap: weekday (Mon..Sun) × 2-hour workday buckets (8a..8p), 0..100 intensity,
+        // ── Activity heatmap (capture density, not a score): weekday (Mon..Sun) × 2-hour workday buckets (8a..8p), 0..100 intensity,
         // derived from screenshot capture density (no dedicated hourly endpoint). Empty only when there
         // is genuinely no capture activity in the window. ──
         const HEAT_COLS = 6; // matches HEATMAP_HOURS: 8a, 10a, 12p, 2p, 4p, 6p
@@ -532,6 +565,15 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const screenshotsTrend = bundles.map((b) => b.shots);
         const screenshotCount = screenshotsTrend.reduce((a, b) => a + b, 0);
         const screenshotCountPartial = bundles.some((b) => b.shotsTruncated);
+        // Meaningful cuts of the same frames: how many need a look, how work-time split, and how many
+        // employees were actually reached — the three things a raw total can't tell an admin.
+        const screenshotsFlagged = bundles.reduce((a, b) => a + b.flagged, 0);
+        const screenshotsSplit = {
+          productive: bundles.reduce((a, b) => a + b.productive, 0),
+          neutral: bundles.reduce((a, b) => a + b.neutral, 0),
+          distracting: bundles.reduce((a, b) => a + b.distracting, 0),
+        };
+        const screenshotsCoverage = new Set(bundles.flatMap((b) => b.userIds)).size;
 
         // ── Billing seats. ──
         const seatsTotal =
@@ -584,6 +626,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           screenshotCount,
           screenshotCountPartial,
           screenshotsTrend,
+          screenshotsCoverage,
+          screenshotsFlagged,
+          screenshotsSplit,
           topPerformers,
           billing: billingBlock,
           heatmap, // weekday × 2-hour intensity from screenshot capture density (empty if none).

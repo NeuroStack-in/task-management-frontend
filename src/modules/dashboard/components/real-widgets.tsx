@@ -663,7 +663,7 @@ function AgentPendingCard({
 export function ProductivityHeatmapPendingCard() {
   return (
     <AgentPendingCard
-      title="Productivity heatmap"
+      title="Activity heatmap"
       icon={Grid3x3}
       detail="Hourly activity intensity across the week — showing when the team is most productive — appears here once the desktop agent starts reporting captured activity."
       metrics={["Hour-of-day intensity", "Day-of-week bands", "Peak focus windows", "Quiet periods"]}

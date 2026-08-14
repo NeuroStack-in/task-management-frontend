@@ -125,6 +125,18 @@ export interface DashboardData {
    */
   screenshotCountPartial: boolean;
   screenshotsTrend: number[];
+  /**
+   * Distinct employees with at least one capture over the range — "is monitoring actually reaching
+   * the team", the question a bare total can't answer. `0` when nothing was captured.
+   */
+  screenshotsCoverage: number;
+  /** Captures worth a review (a distracting-app frame, `ShotRow.flagged`) — the actionable queue. */
+  screenshotsFlagged: number;
+  /**
+   * Server-classified split of the range's captures, for the on-task bar. All zero when the agent's
+   * captures are unclassified (older frames), which the widget renders as an honest "unclassified".
+   */
+  screenshotsSplit: { productive: number; neutral: number; distracting: number };
   topPerformers: Performer[];
   billing: { plan: string; seatsUsed: number; seatsTotal: number };
   heatmap: number[][];

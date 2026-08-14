@@ -27,6 +27,11 @@ import { cn } from "@/lib/utils";
 import type { Performer } from "@/modules/dashboard/lib/dashboard-data";
 import { getAttention, type AttentionRow } from "@/modules/insights/services/insights.service";
 import {
+  getDayOversight,
+  type ApiDayUser,
+} from "@/modules/attendance/services/attendance.service";
+import { listAllEmployees } from "@/modules/employees/services/employees.service";
+import {
   listMyTasks,
   listProjects,
   getProject,
@@ -142,11 +147,24 @@ export function ScreenshotsWidget({
    * hardest when a department filter is active, since the scoped frames may sit past the cut).
    */
   partial = false,
+  /** Distinct employees captured over the range — the "is monitoring reaching the team" signal. */
+  coverage = 0,
+  /** Captures worth a review (distracting-app frames) — the actionable count. */
+  flagged = 0,
+  /** Server-classified split of the range's captures, for the on-task bar. */
+  split = { productive: 0, neutral: 0, distracting: 0 },
 }: {
   count: number;
   trend: number[];
   partial?: boolean;
+  coverage?: number;
+  flagged?: number;
+  split?: { productive: number; neutral: number; distracting: number };
 }) {
+  const classified = split.productive + split.neutral + split.distracting;
+  const pct = (n: number) => (classified > 0 ? (n / classified) * 100 : 0);
+  const onTaskPct = classified > 0 ? Math.round(pct(split.productive)) : 0;
+
   return (
     <Card className="justify-between">
       <CardHeader>
@@ -154,22 +172,65 @@ export function ScreenshotsWidget({
           <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <Camera className="size-4" />
           </span>
-          Screenshots captured
+          Screenshots
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
-        <p className="font-display text-3xl font-semibold tabular-nums">
-          {count.toLocaleString()}
-          {partial && count > 0 ? "+" : ""}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {count === 0
-            ? "none captured — the desktop agent isn't reporting yet"
-            : partial
-              ? "at least this many over the selected range — busy days are counted up to a page limit"
-              : "captured over the selected range"}
-        </p>
-        <Sparkline data={trend} area showDot={false} width={220} height={48} className="w-full" />
+      <CardContent className="space-y-3">
+        {/* Headline: the total, and — the thing a bare count can't tell you — how many people it
+            actually reached. A big number from one laptop is a very different story than from ten. */}
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-display text-3xl font-semibold tabular-nums">
+            {count.toLocaleString()}
+            {partial && count > 0 ? "+" : ""}
+          </p>
+          {count > 0 && coverage > 0 && (
+            <span className="text-xs text-muted-foreground">
+              across {coverage} {coverage === 1 ? "person" : "people"}
+            </span>
+          )}
+        </div>
+
+        {count === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            none captured — the desktop agent isn&apos;t reporting yet
+          </p>
+        ) : classified > 0 ? (
+          <>
+            {/* On-task split: productive / neutral / distracting, from the server's app classification.
+                This is the point of screenshots — not that they exist, but what they show. */}
+            <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div className="bg-success" style={{ width: `${pct(split.productive)}%` }} />
+              <div className="bg-muted-foreground/40" style={{ width: `${pct(split.neutral)}%` }} />
+              <div className="bg-destructive" style={{ width: `${pct(split.distracting)}%` }} />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{onTaskPct}% productive</span>
+              {flagged > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-medium text-destructive">
+                    {flagged.toLocaleString()} to review
+                  </span>
+                </>
+              )}
+            </p>
+          </>
+        ) : (
+          // Captured but not yet classified (older frames) — say so honestly, still surface the queue.
+          <p className="text-xs text-muted-foreground">
+            {flagged > 0 ? (
+              <>
+                <span className="font-medium text-destructive">
+                  {flagged.toLocaleString()} to review
+                </span>
+                {" · "}
+              </>
+            ) : null}
+            captured over the selected range
+          </p>
+        )}
+
+        <Sparkline data={trend} area showDot={false} width={220} height={40} className="w-full" />
         <ViewAllLink href="/insights/screenshots" label="Open Screenshot Center" />
       </CardContent>
     </Card>
@@ -219,27 +280,65 @@ function severityTone(severity: string): string {
   return "bg-muted text-muted-foreground";
 }
 
-/* --------------------- Alerts & Deadlines (real data) -------------------- */
+/* --------------------- Needs attention (real data) -------------------- */
+
+/** One person flagged for a manager's attention, reduced to the single most-important reason. */
+interface AttentionItem {
+  userId: string;
+  name: string;
+  reason: string;
+  badge: string;
+  tone: string;
+  /** Higher = more urgent — drives the sort, and which reason wins when a person trips several. */
+  rank: number;
+}
+
+/** De-jargoned label for the anomaly scorer's reason codes ("idle" → "Low activity"). */
+function humanizeReason(reasons: string[]): string {
+  const map: Record<string, string> = {
+    overtime: "Working long hours",
+    idle: "Low activity",
+    burnout: "Burnout risk",
+    late: "Starting late",
+    absence: "Frequent absences",
+  };
+  if (reasons.length === 0) return "Needs a look";
+  const first = map[reasons[0]!] ?? reasons[0]!.replace(/_/g, " ");
+  return reasons.length > 1 ? `${first} +${reasons.length - 1}` : first;
+}
+
+/** `high → 3`, `medium → 2`, else `1`, so a high-severity flag outranks a low one. */
+function severityRank(sev: string): number {
+  return sev === "high" ? 3 : sev === "medium" ? 2 : 1;
+}
+
+/** Short weekday for an ISO date (`2026-08-13` → `"Thu"`). */
+function shortDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y!, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { weekday: "short" });
+}
 
 /**
- * What needs attention **now**: the anomaly scorer's flagged people (overtime / idle / burnout risk,
- * `GET /v1/insights/attention`) plus **overdue** task deadlines (`GET /v1/me/tasks`). Self-fetches like
- * the AI-summary widget. Only shows an empty state when both sources are genuinely clear — never
- * fabricated.
+ * **Who needs a manager's attention right now** — individual employees, not deadlines. It used to also
+ * list overdue tasks, which duplicated the "Upcoming deadlines" widget beside it; those are gone and
+ * this is purely people. Three real signals, deduped to one row per person and ranked by urgency:
+ *  - **Not clocked in** — absent on the most recent *closed* workday (`GET /v1/attendance/day`), the
+ *    employee name resolved from the directory. Today isn't closed until the 00:15 cron, so the
+ *    freshest honest absence is the last closed day, and the row is labelled with it.
+ *  - **Anomaly-flagged** — the scorer's overtime / low-activity / burnout signals
+ *    (`GET /v1/insights/attention`), shown with a plain-language reason.
+ *  - **Low productivity** — a score the AI brief would call out, even with no formal anomaly.
+ * Empty only when all three are genuinely clear — never fabricated.
  */
 export function AlertsDeadlinesWidget() {
-  const [state, setState] = useState<{
-    alerts: AttentionRow[];
-    overdue: ApiMyTask[];
-  } | null>(null);
+  const [items, setItems] = useState<AttentionItem[] | null>(null);
 
   useEffect(() => {
     let live = true;
-    // Anomaly scoring runs at the nightly close, so today is usually incomplete — look back over the
-    // last few days and take the most recent that produced a ranked list (mirrors the AI summary's
-    // "last workday"). Overdue tasks are current, not day-scoped.
     const recent = [0, 1, 2, 3].map(daysAgoIso);
     Promise.all([
+      // Anomaly scoring runs at the nightly close, so today is usually empty — take the most recent
+      // day that ranked anyone (mirrors the AI summary's "last workday").
       Promise.all(
         recent.map((d) =>
           getAttention(d)
@@ -247,82 +346,94 @@ export function AlertsDeadlinesWidget() {
             .catch(() => [] as AttentionRow[]),
         ),
       ),
-      listMyTasks().catch(() => [] as ApiMyTask[]),
-    ]).then(([days, tasks]) => {
+      // Attendance is only closed for past days — skip today and take the most recent closed roster.
+      Promise.all(
+        recent.slice(1).map((d) =>
+          getDayOversight(d)
+            .then((r) => ({ date: d, users: r.users }))
+            .catch(() => ({ date: d, users: [] as ApiDayUser[] })),
+        ),
+      ),
+      listAllEmployees().catch(() => []),
+    ]).then(([attnDays, oversightDays, roster]) => {
       if (!live) return;
-      // Most recent day that ranked anyone; keep only those who actually need attention — a firing
-      // anomaly, or a low score the brief would call out — never the whole team.
-      const people = days.find((p) => p.length > 0) ?? [];
-      const alerts = people
+      const nameOf = new Map(roster.map((e) => [e.user_id, e.name] as const));
+
+      // Not clocked in on the most recent closed workday.
+      const closed = oversightDays.find((d) => d.users.length > 0);
+      const absent: AttentionItem[] = (closed?.users ?? [])
+        .filter((u) => u.status === "absent")
+        .map((u) => ({
+          userId: u.user_id,
+          name: nameOf.get(u.user_id) ?? "An employee",
+          reason: `Not clocked in · ${shortDay(closed!.date)}`,
+          badge: "absent",
+          tone: "bg-negative/10 text-negative",
+          rank: 4,
+        }));
+
+      // Anomaly-flagged + low-score people from the most recent ranked day.
+      const flagged: AttentionItem[] = (attnDays.find((p) => p.length > 0) ?? [])
         .filter((p) => p.anomaly_count > 0 || p.score <= LOW_SCORE)
-        .sort((a, b) => b.attention - a.attention)
-        .slice(0, 4);
-      const overdue = tasks
-        .filter((t) => t.due && t.status !== "done" && daysUntil(t.due) < 0)
-        .sort((a, b) => (a.due! < b.due! ? -1 : 1))
-        .slice(0, 3);
-      setState({ alerts, overdue });
+        .map((p) => {
+          const hasAnomaly = p.anomaly_count > 0;
+          return {
+            userId: p.user_id,
+            name: p.name,
+            reason: hasAnomaly ? humanizeReason(p.reasons) : "Low productivity",
+            badge: hasAnomaly ? p.top_severity || "flagged" : `${Math.round(p.score)}%`,
+            tone: hasAnomaly ? severityTone(p.top_severity) : "bg-warning/10 text-warning",
+            rank: hasAnomaly ? severityRank(p.top_severity) : 1,
+          };
+        });
+
+      // One row per person (the most urgent reason wins), then rank-sorted and capped.
+      const byUser = new Map<string, AttentionItem>();
+      for (const it of [...absent, ...flagged]) {
+        const prev = byUser.get(it.userId);
+        if (!prev || it.rank > prev.rank) byUser.set(it.userId, it);
+      }
+      setItems([...byUser.values()].sort((a, b) => b.rank - a.rank).slice(0, 5));
     });
     return () => {
       live = false;
     };
   }, []);
 
-  const nothing = state && state.alerts.length === 0 && state.overdue.length === 0;
-
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Alerts &amp; deadlines</CardTitle>
+        <CardTitle>Needs attention</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {state === null ? (
+        {items === null ? (
           <RowsSkeleton />
-        ) : nothing ? (
+        ) : items.length === 0 ? (
           <WidgetEmpty
             icon={BellRing}
-            title="Nothing needs attention"
-            body="No one flagged by the scorer and no overdue tasks. Alerts appear here as they arise — nothing is fabricated."
+            title="Everyone's on track"
+            body="No absences, no anomalies, no low scores. People appear here the moment one needs a look — nothing is fabricated."
           />
         ) : (
-          <>
-            {state.alerts.map((a) => {
-              const hasAnomaly = a.anomaly_count > 0;
-              const label = hasAnomaly
-                ? a.reasons.join(", ").replace(/_/g, " ") || "anomaly"
-                : "Low productivity";
-              return (
-                <div key={a.user_id} className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <TriangleAlert className="size-4 shrink-0 text-warning" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{a.name}</p>
-                      <p className="truncate text-xs text-muted-foreground capitalize">{label}</p>
-                    </div>
-                  </div>
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize",
-                      hasAnomaly ? severityTone(a.top_severity) : "bg-warning/10 text-warning",
-                    )}
-                  >
-                    {hasAnomaly ? a.top_severity || "flagged" : `${Math.round(a.score)}%`}
-                  </span>
+          items.map((it) => (
+            <div key={it.userId} className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <TriangleAlert className="size-4 shrink-0 text-warning" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{it.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{it.reason}</p>
                 </div>
-              );
-            })}
-            {state.overdue.map((t) => (
-              <div key={t.id} className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <CalendarClock className="size-4 shrink-0 text-negative" />
-                  <p className="truncate text-sm font-medium">{t.title}</p>
-                </div>
-                <span className="shrink-0 rounded-full bg-negative/10 px-2 py-0.5 text-xs font-medium text-negative">
-                  {dueLabel(t.due!)}
-                </span>
               </div>
-            ))}
-          </>
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize",
+                  it.tone,
+                )}
+              >
+                {it.badge}
+              </span>
+            </div>
+          ))
         )}
         <ViewAllLink href="/insights/anomalies" label="Open anomalies" />
       </CardContent>

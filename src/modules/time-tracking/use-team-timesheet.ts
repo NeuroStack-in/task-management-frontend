@@ -219,6 +219,8 @@ export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimeshee
       const active = employees.filter(
         (e) =>
           e.status === "active" &&
+          // Benched employees are excluded from Time-Tracking entirely.
+          !e.benched &&
           (contributors === null || (e.role_id ? contributors.has(e.role_id) : true)),
       );
 

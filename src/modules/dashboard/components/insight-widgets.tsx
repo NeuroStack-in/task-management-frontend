@@ -51,7 +51,7 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Productivity heatmap</CardTitle>
+        <CardTitle>Activity heatmap</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1.5">
         {data.map((row, d) => (

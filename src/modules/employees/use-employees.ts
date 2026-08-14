@@ -28,6 +28,7 @@ import {
   departmentMap,
   deactivateEmployee,
   reactivateEmployee,
+  setEmployeeBenched,
 } from "./services/employees.service";
 
 /** Small cap: a per-day fan-out is exactly the burst that trips the Lambda's 503 throttle. */
@@ -92,6 +93,8 @@ export interface EmployeeRow {
    * looks identical in the roster and means the opposite.
    */
   monitored: boolean;
+  /** On the **bench** — still an employee, but excluded from Attendance + Time-Tracking. */
+  benched: boolean;
   productivityScore: number | null;
 }
 
@@ -102,6 +105,8 @@ export interface EmployeesData {
   reload: () => void;
   deactivate: (id: string) => Promise<void>;
   reactivate: (id: string) => Promise<void>;
+  /** Put an employee on / take them off the bench. Optimistic — the row flips immediately. */
+  bench: (id: string, benched: boolean) => Promise<void>;
 }
 
 /** Backend status → the view's union. The directory only ever emits active/deactivated. */
@@ -148,6 +153,7 @@ export function useEmployees(): EmployeesData {
           status: mapStatus(e.status),
           // Absent on every row that predates the field, so this reads false for existing orgs.
           monitored: e.login === "none",
+          benched: e.benched ?? false,
           // Filled by the score pass below; `null` — rendered "—" — means no agent reported for
           // them in the window, which is a real gap, not a zero.
           productivityScore: null,
@@ -193,7 +199,19 @@ export function useEmployees(): EmployeesData {
     [reload],
   );
 
-  return { employees, loading, error, reload, deactivate, reactivate };
+  // Optimistic: flip the row's `benched` immediately (a full directory refetch for a toggle is
+  // overkill), and revert if the server rejects it.
+  const bench = useCallback(async (id: string, benched: boolean) => {
+    setEmployees((prev) => prev.map((r) => (r.id === id ? { ...r, benched } : r)));
+    try {
+      await setEmployeeBenched(id, benched);
+    } catch (e) {
+      setEmployees((prev) => prev.map((r) => (r.id === id ? { ...r, benched: !benched } : r)));
+      throw e;
+    }
+  }, []);
+
+  return { employees, loading, error, reload, deactivate, reactivate, bench };
 }
 
 function messageOf(e: unknown): string {

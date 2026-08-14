@@ -86,7 +86,7 @@ function CheckRow({
 }
 
 const WIDGETS = [
-  "Productivity heatmap",
+  "Activity heatmap",
   "Attendance",
   "Team comparison",
   "Top employees",
@@ -116,7 +116,7 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
 
   // Step 4 — dashboard (local only — no backend for widget prefs)
   const [widgets, setWidgets] = useState<Record<string, boolean>>({
-    "Productivity heatmap": true,
+    "Activity heatmap": true,
     Attendance: true,
     "Team comparison": true,
     "Top employees": false,
