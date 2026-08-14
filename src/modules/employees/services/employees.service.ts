@@ -28,6 +28,9 @@ export interface ApiEmployee {
    * identically today and mean opposite things.
    */
   login?: string;
+  /** On the **bench** — still an employee, but excluded from Attendance + Time-Tracking. Absent (not
+   * `true`) for everyone who isn't benched, which keeps it additive for existing orgs. */
+  benched?: boolean;
   /** `active` | `deactivated`. */
   status: string;
   department_id: string;
@@ -258,6 +261,14 @@ export interface UpdateEmployeeBody {
   team_id?: string;
   location?: string;
   phone?: string;
+  /** Put on / take off the **bench**: `true` benches (excludes from Attendance + Time-Tracking),
+   * `false` un-benches. Unlike the string fields, `false` is a real value here, not "clear". */
+  benched?: boolean;
+}
+
+/** `PATCH /v1/employees/{id}` with just the bench flag — put an employee on/off the bench. */
+export function setEmployeeBenched(userId: string, benched: boolean): Promise<ApiUpdatedEmployee> {
+  return updateEmployee(userId, { benched });
 }
 
 /** Mirrors `workforce::update_employee::dto::UpdatedEmployee` — the lean post-update echo. */

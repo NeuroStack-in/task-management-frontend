@@ -17,6 +17,8 @@ import {
   FileText,
   Sheet,
   UserPlus,
+  UserMinus,
+  MoreVertical,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
@@ -46,6 +48,7 @@ import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { useTrackingMode } from "@/hooks/use-features";
 import { Badge } from "@/components/ui/badge";
+import { ApiError } from "@/lib/api";
 import { InviteDialog } from "./invite-dialog";
 import { AddEmployeeDialog } from "./add-employee-dialog";
 import { PendingInvites } from "./pending-invites";
@@ -53,7 +56,7 @@ import { useEmployees, type EmployeeRow } from "../use-employees";
 
 export type { EmployeeRow };
 
-const STATUSES = ["all", "active", "inactive", "invited", "suspended"] as const;
+const STATUSES = ["all", "active", "benched", "inactive", "invited", "suspended"] as const;
 const PAGE_SIZE = 9;
 
 const REPORT_COLUMNS = [
@@ -193,7 +196,7 @@ export function EmployeesView() {
   const router = useRouter();
   // Real backend directory (server-scoped by `employees:read`). No client scope filter, no session
   // overlays — the server is the roster.
-  const { employees, loading, error, reload } = useEmployees();
+  const { employees, loading, error, reload, bench } = useEmployees();
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
@@ -238,7 +241,12 @@ export function EmployeesView() {
     const q = query.trim().toLowerCase();
     return allEmployees.filter((e) => {
       if (dept !== "all" && e.department !== dept) return false;
-      if (status !== "all" && e.status !== status) return false;
+      // "benched" is an orthogonal flag, not one of the lifecycle statuses — filter on it directly.
+      if (status === "benched") {
+        if (!e.benched) return false;
+      } else if (status !== "all" && e.status !== status) {
+        return false;
+      }
       if (
         q &&
         !`${e.name} ${e.email} ${e.jobTitle} ${e.empId ?? ""} ${e.id}`
@@ -253,6 +261,18 @@ export function EmployeesView() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const rows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  const canManage = can("employees:manage");
+  const onToggleBench = async (e: EmployeeRow) => {
+    try {
+      await bench(e.id, !e.benched);
+      toast.success(
+        e.benched ? `${e.name} removed from the bench` : `${e.name} added to the bench`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't update the bench. Try again.");
+    }
+  };
 
   const resetPage = <T,>(setter: (v: T) => void) => (v: T) => {
     setter(v);
@@ -410,6 +430,7 @@ export function EmployeesView() {
                     <TableHead>Role</TableHead>
                     <TableHead>Department</TableHead>
                     <TableHead className="w-40">Productivity</TableHead>
+                    {canManage && <TableHead className="w-10" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -441,6 +462,11 @@ export function EmployeesView() {
                                   Monitored
                                 </Badge>
                               )}
+                              {e.benched && (
+                                <Badge className="bg-warning/15 text-warning shrink-0 text-[10px]">
+                                  Bench
+                                </Badge>
+                              )}
                             </div>
                             {/* Subtitle: the human employee id (e.g. EMP-0001) is the directory's
                                 stable identifier — lead with it. Fall back to job title, then email;
@@ -467,6 +493,34 @@ export function EmployeesView() {
                       <TableCell>
                         <ProductivityCell value={e.productivityScore} />
                       </TableCell>
+                      {canManage && (
+                        // Stop the row's navigate-to-profile click when using the menu.
+                        <TableCell
+                          className="text-right"
+                          onClick={(ev) => ev.stopPropagation()}
+                        >
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={<Button variant="ghost" size="icon" className="size-8" />}
+                            >
+                              <MoreVertical className="size-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-auto min-w-[11rem]">
+                              <DropdownMenuItem onClick={() => onToggleBench(e)}>
+                                {e.benched ? (
+                                  <>
+                                    <UserCheck className="size-4" /> Remove from bench
+                                  </>
+                                ) : (
+                                  <>
+                                    <UserMinus className="size-4" /> Add to bench
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
