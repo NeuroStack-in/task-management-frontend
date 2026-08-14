@@ -18,7 +18,6 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { AiInsight } from "@/components/shared/ai-insight";
 import {
   Area,
   AreaChart,
@@ -783,12 +782,14 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
 
         {/* ── RIGHT COLUMN ── */}
         <div className="flex flex-col gap-4">
-          {/* AI summary first */}
-          <EmployeeSummaryInsight data={data} />
-
-          {/* The narrative recaps, over a selectable period. Distinct from the card above: that one
-              is composed client-side from project/delivery facts, this one is the model's recap of
-              the same paragraphs the employee reads about themselves. */}
+          {/* The AI summary leads the column, and it is the *only* summary here now.
+              A second card used to sit above it, styled as an AI insight but composed
+              client-side from a sentence template — "{first} is a {tier} performer" and
+              "Reliable output — small focus gains could lift them into the top tier". Those read
+              as a model's judgement of a named colleague and were nothing of the kind. Every
+              figure it recited (productivity, completion, tasks, active projects) is already in
+              the stat cards below, so removing it costs no fact — only a verdict nothing had
+              earned the right to make. */}
           <EmployeeRecapCard userId={data.id} name={data.name} />
 
           {/* Stat cards row */}
@@ -928,72 +929,6 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * The narrative summary on an employee's profile.
- *
- * ⚠️ **Every productivity claim here is gated on there being a productivity score.** This card used
- * to run unconditionally against a score that had already been collapsed from `null` to `0`, so an
- * employee whose agent had never reported was described, by name, as *"a developing performer,
- * averaging 0% productivity"* — and the tier thresholds meant **no data always produced the lowest
- * tier**. The same sentence went into the CSV and PDF exports.
- *
- * The delivery facts (projects, tasks, completion) come from real project data and stand on their
- * own, so the card still renders without a score — it just stops characterising the person.
- */
-function EmployeeSummaryInsight({ data }: { data: EmployeeProfileData }) {
-  const first = data.name.split(" ")[0];
-  const total = data.projects.length;
-  const activeCount = data.projects.filter((p) => p.active).length;
-  const score = data.productivityScore;
-  const tier =
-    score == null ? null : score >= 80 ? "high" : score >= 60 ? "steady" : "developing";
-  // Only meaningful with a score: the KPI series is built from productive seconds, so with no
-  // agent data both halves are zero and `current >= previous` reports a rising trend from nothing.
-  const trendUp =
-    data.kpi.current[data.kpi.current.length - 1] >=
-    data.kpi.previous[data.kpi.previous.length - 1];
-  const top = [...data.projects].sort((a, b) => b.progress - a.progress)[0];
-
-  const projectPhrase = `${total} ${total === 1 ? "project" : "projects"}${activeCount ? ` (${activeCount} active)` : ""}`;
-  const title =
-    tier != null
-      ? `${first} is a ${tier} performer, averaging ${score}% productivity across ${projectPhrase}.`
-      : `${first} is working across ${projectPhrase}.`;
-
-  const detail = `Delivery sits at ${data.avgCompletion}% average completion with ${data.totalTasks} tasks across all projects.`;
-
-  const points: string[] = [
-    ...(tier != null
-      ? [
-          trendUp
-            ? "Productivity is trending up over the last 6 months versus the prior period."
-            : "Productivity has softened recently — a check-in could surface blockers.",
-        ]
-      : []),
-    `Workload is ${data.totalTasks >= 40 ? "heavy" : data.totalTasks >= 20 ? "balanced" : "light"} at ${data.totalTasks} tasks across ${total} ${total === 1 ? "project" : "projects"}.`,
-    top
-      ? `Strongest contribution: ${top.name} at ${top.progress}% complete.`
-      : "Not currently assigned to a project.",
-    tier === "high"
-      ? "A consistent top performer — a candidate for stretch work or mentoring."
-      : tier === "steady"
-        ? "Reliable output — small focus gains could lift them into the top tier."
-        : tier === "developing"
-          ? "Ramping up — pairing and clearer scope would accelerate progress."
-          : "No productivity score yet — the desktop agent hasn't reported activity for this period, so nothing here rates their focus or output.",
-  ];
-
-  return (
-    <AiInsight
-      label="Employee summary"
-      title={title}
-      detail={detail}
-      points={points}
-      basis={`${data.totalTasks} tasks · ${total} projects · 6-month KPI trend`}
-    />
   );
 }
 
