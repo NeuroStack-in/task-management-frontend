@@ -1,13 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Sparkles,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Clock, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,36 +9,41 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
-import { useAttention } from "../use-attention";
-import type { AttentionRow } from "../services/insights.service";
+import {
+  getDayOversight,
+  type ApiDayUser,
+} from "@/modules/attendance/services/attendance.service";
+import { listAllEmployees } from "@/modules/employees/services/employees.service";
 
 /**
- * People who need attention — the AI reduce (`GET /v1/insights/attention`, LLD §12 ⑧). The server
- * ranks the org **deterministically** (low productivity + anomaly load) and the model narrates it;
- * this renders that ranking with the concrete anomaly reasons. **Real, monitoring-fed:** the list is
- * empty on a day no agent reported — an honest "all clear", never a fabricated flag.
+ * People to check in on — the two attendance facts a manager actually acts on, not a productivity
+ * ranking:
+ *  - **Absent without approved leave** — `AttendanceDay.status === "absent"`. Status is *computed* by
+ *    the 00:15 close from working hours **and approved leave** (attendance_close), so an approved-leave
+ *    day resolves to `leave`, never `absent`; `absent` therefore already means "didn't show, and didn't
+ *    apply for leave".
+ *  - **Worked a partial day** — `status === "partial"`, the close's "present-with-little-time" verdict:
+ *    they clocked in but for fewer hours than a full workday.
+ *
+ * Both come from one `GET /v1/attendance/day`, names resolved from the directory. Attendance is only
+ * closed for **past** days (today resolves after 00:15), so the card defaults to the most recent closed
+ * workday and says so rather than showing an empty "today". Real, monitoring-fed — empty is an honest
+ * "everyone was accounted for", never a fabricated flag.
  */
 
-type SeverityFilter = "all" | "high" | "medium" | "low";
-const SEVERITY_FILTERS: SeverityFilter[] = ["all", "high", "medium", "low"];
-
-const SEVERITY_META: Record<
-  string,
-  { label: string; dot: string; badge: string }
-> = {
-  high: { label: "High", dot: "bg-destructive", badge: "bg-destructive/12 text-destructive" },
-  medium: { label: "Medium", dot: "bg-warning", badge: "bg-warning/15 text-warning" },
-  low: { label: "Low", dot: "bg-muted-foreground", badge: "bg-muted text-muted-foreground" },
+type Kind = "all" | "absent" | "partial";
+const FILTERS: Kind[] = ["all", "absent", "partial"];
+const FILTER_LABEL: Record<Kind, string> = {
+  all: "All",
+  absent: "Absent",
+  partial: "Low hours",
 };
 
-/** Anomaly-type slugs (server) → human labels. */
-const REASON_LABEL: Record<string, string> = {
-  inactivity: "Productivity drop",
-  overtime: "Overtime / after-hours",
-  idle: "Idle (low engagement)",
-  burnout: "Burnout risk",
-  policy: "Policy concern",
-};
+interface CheckIn {
+  userId: string;
+  name: string;
+  kind: "absent" | "partial";
+}
 
 function isoOf(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -52,7 +51,28 @@ function isoOf(d: Date): string {
 }
 function shiftIso(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
-  return isoOf(new Date(y, m - 1, d + days));
+  return isoOf(new Date(y!, (m ?? 1) - 1, (d ?? 1) + days));
+}
+/** `2026-08-13` → `"Wed, Aug 13"`. */
+function longDay(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y!, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** A plain-language sentence for the header brief. */
+function summary(absent: number, partial: number): string {
+  const parts: string[] = [];
+  if (absent > 0)
+    parts.push(
+      `${absent} ${absent === 1 ? "person was" : "people were"} absent without approved leave`,
+    );
+  if (partial > 0)
+    parts.push(`${partial} worked a partial day`);
+  return parts.join(" and ");
 }
 
 export function PeopleAttentionCard({
@@ -60,21 +80,69 @@ export function PeopleAttentionCard({
 }: {
   title?: string;
 }) {
-  // Default to today; client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
-  const [severity, setSeverity] = useState<SeverityFilter>("all");
-  useEffect(() => setDate(isoOf(new Date())), []);
-
-  const { data, loading, error, regenerate, regenerating } = useAttention(date);
+  const [filter, setFilter] = useState<Kind>("all");
+  // `closed` distinguishes "loaded, nobody to flag" from "this day hasn't been closed yet".
+  const [state, setState] = useState<{ people: CheckIn[]; closed: boolean } | null>(null);
   const today = isoOf(new Date());
 
-  const people = useMemo(() => data?.people ?? [], [data]);
-  const high = people.filter((p) => p.top_severity === "high").length;
-  const withFlags = people.filter((p) => p.anomaly_count > 0).length;
-  const visible = useMemo(
-    () => people.filter((p) => severity === "all" || p.top_severity === severity),
-    [people, severity],
-  );
+  // Default to the most recent **closed** workday: today isn't resolved until the 00:15 cron, so
+  // showing it would be a permanently-empty "today". Walk back up to a week for the first day the
+  // oversight actually returns rows.
+  useEffect(() => {
+    let live = true;
+    const candidates = Array.from({ length: 7 }, (_, n) => shiftIso(today, -n));
+    Promise.all(
+      candidates.map((d) =>
+        getDayOversight(d)
+          .then((r) => ({ d, has: r.users.length > 0 }))
+          .catch(() => ({ d, has: false })),
+      ),
+    ).then((rs) => {
+      if (!live) return;
+      setDate(rs.find((r) => r.has)?.d ?? today);
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load the selected day's absentees + partial-day people, with names from the directory.
+  useEffect(() => {
+    if (!date) return;
+    let live = true;
+    setState(null);
+    Promise.all([
+      getDayOversight(date).catch(() => null),
+      listAllEmployees().catch(() => []),
+    ]).then(([day, roster]) => {
+      if (!live) return;
+      if (!day) {
+        setState({ people: [], closed: false });
+        return;
+      }
+      const nameOf = new Map(roster.map((e) => [e.user_id, e.name] as const));
+      const people: CheckIn[] = day.users
+        .filter((u: ApiDayUser) => u.status === "absent" || u.status === "partial")
+        .map((u: ApiDayUser) => ({
+          userId: u.user_id,
+          name: nameOf.get(u.user_id) ?? "An employee",
+          kind: u.status === "absent" ? ("absent" as const) : ("partial" as const),
+        }))
+        // Absent (didn't show at all) before partial (showed, but short).
+        .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "absent" ? -1 : 1));
+      setState({ people, closed: day.users.length > 0 });
+    });
+    return () => {
+      live = false;
+    };
+  }, [date]);
+
+  const people = state?.people ?? [];
+  const absentCount = people.filter((p) => p.kind === "absent").length;
+  const partialCount = people.filter((p) => p.kind === "partial").length;
+  const visible = people.filter((p) => filter === "all" || p.kind === filter);
 
   return (
     <Card>
@@ -84,7 +152,7 @@ export function PeopleAttentionCard({
             {title} ({people.length})
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            {high} high priority · {withFlags} with anomaly flags
+            {absentCount} absent · {partialCount} worked less
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -98,12 +166,7 @@ export function PeopleAttentionCard({
             >
               <ChevronLeft className="size-4" />
             </Button>
-            <DatePicker
-              value={date}
-              max={today}
-              onChange={setDate}
-              className="w-36"
-            />
+            <DatePicker value={date} max={today} onChange={setDate} className="w-36" />
             <Button
               variant="outline"
               size="icon-sm"
@@ -114,67 +177,61 @@ export function PeopleAttentionCard({
               <ChevronRight className="size-4" />
             </Button>
           </div>
-          {SEVERITY_FILTERS.map((s) => (
+          {FILTERS.map((f) => (
             <button
-              key={s}
+              key={f}
               type="button"
-              onClick={() => setSeverity(s)}
+              onClick={() => setFilter(f)}
               className={cn(
                 "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                severity === s
+                filter === f
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:text-foreground",
               )}
             >
-              {s === "all" ? "All" : SEVERITY_META[s].label}
+              {FILTER_LABEL[f]}
             </button>
           ))}
         </div>
       </CardHeader>
 
       <CardContent className="space-y-3 p-0">
-        {/* AI narrative over the ranking (or the factual fallback). Cached per input state
-            server-side; Regenerate is the deliberate re-spend (only shown when people are ranked —
-            an empty day's line is fixed text, nothing to re-run). */}
-        {data?.narrative ? (
+        {/* Factual brief over the day — the two things a manager should follow up on, in one line. */}
+        {state && state.closed && people.length > 0 ? (
           <div className="mx-4 flex items-start gap-2.5 rounded-lg bg-feature-tint/60 p-3 text-sm text-foreground">
-            <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-            <p className="flex-1 leading-relaxed">{data.narrative}</p>
-            {data.people.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 shrink-0 px-2 text-xs"
-                onClick={regenerate}
-                disabled={regenerating}
-              >
-                {regenerating ? "Regenerating…" : "Regenerate"}
-              </Button>
-            )}
+            <CalendarClock className="mt-0.5 size-4 shrink-0 text-primary" />
+            <p className="flex-1 leading-relaxed">
+              On {longDay(date)}, {summary(absentCount, partialCount)} — worth a check-in.
+            </p>
           </div>
         ) : null}
 
-        {loading && !data ? (
+        {state === null ? (
           <div className="flex min-h-[8rem] items-center justify-center">
-            <Loader label="Ranking the team…" />
+            <Loader label="Reading attendance…" />
           </div>
-        ) : error ? (
-          <p className="px-5 py-8 text-center text-sm text-muted-foreground">{error}</p>
+        ) : !state.closed ? (
+          <EmptyState
+            icon={CalendarClock}
+            title="This day isn't closed yet"
+            description="Attendance resolves after the 00:15 close. Use ‹ to review a past day — that's where absences and short days show up."
+            className="m-4 border-0"
+          />
         ) : visible.length === 0 ? (
           <EmptyState
             icon={Check}
-            title={people.length === 0 ? "All clear" : "Nothing at this level"}
+            title={people.length === 0 ? "Everyone's accounted for" : "None at this filter"}
             description={
               people.length === 0
-                ? "No one is flagged for this day — scores are in range and no anomalies fired."
-                : "No flagged people match this severity."
+                ? "No unapproved absences and no partial days — everyone was present for a full day."
+                : "No one matches this filter for the selected day."
             }
             className="m-4 border-0"
           />
         ) : (
           <div className="divide-y">
             {visible.map((p) => (
-              <AttentionItem key={p.user_id} row={p} />
+              <CheckInItem key={p.userId} row={p} />
             ))}
           </div>
         )}
@@ -183,25 +240,39 @@ export function PeopleAttentionCard({
   );
 }
 
-function AttentionItem({ row }: { row: AttentionRow }) {
-  const sev = SEVERITY_META[row.top_severity] ?? SEVERITY_META.low;
-  const reasons = row.reasons.map((r) => REASON_LABEL[r] ?? r);
+function CheckInItem({ row }: { row: CheckIn }) {
+  const absent = row.kind === "absent";
   return (
     <div className="flex items-start gap-3 px-5 py-3.5">
-      <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", sev.dot)} />
-      <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-feature-tint text-primary">
-        <AlertTriangle className="size-4" />
+      <span
+        className={cn(
+          "mt-1.5 size-2 shrink-0 rounded-full",
+          absent ? "bg-destructive" : "bg-warning",
+        )}
+      />
+      <span
+        className={cn(
+          "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full",
+          absent ? "bg-destructive/12 text-destructive" : "bg-warning/15 text-warning",
+        )}
+      >
+        {absent ? <UserX className="size-4" /> : <Clock className="size-4" />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">{row.name}</span>
-          <Badge className="bg-muted text-muted-foreground">score {row.score}</Badge>
-          {row.top_severity ? <Badge className={sev.badge}>{sev.label}</Badge> : null}
+          <Badge
+            className={
+              absent ? "bg-destructive/12 text-destructive" : "bg-warning/15 text-warning"
+            }
+          >
+            {absent ? "Absent" : "Low hours"}
+          </Badge>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          {reasons.length > 0
-            ? reasons.join(" · ")
-            : "Low productivity score — no specific anomaly, worth a check-in."}
+          {absent
+            ? "Absent — no leave applied for this day."
+            : "Worked a partial day — fewer hours than a full workday."}
         </p>
       </div>
     </div>

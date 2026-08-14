@@ -1,63 +1,65 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock the data hook so we test the component's render states (loading/empty/data) in isolation —
-// no network, no timers. This locks the honest "all clear" empty state and the flagged-row render.
-vi.mock("../use-attention", () => ({ useAttention: vi.fn() }));
+// Mock the data sources so we test the component's render states in isolation — no network, no timers.
+// The card reads attendance status (absent / partial) + the directory for names.
+vi.mock("@/modules/attendance/services/attendance.service", () => ({
+  getDayOversight: vi.fn(),
+}));
+vi.mock("@/modules/employees/services/employees.service", () => ({
+  listAllEmployees: vi.fn(),
+}));
 
-import { useAttention } from "../use-attention";
+import { getDayOversight } from "@/modules/attendance/services/attendance.service";
+import { listAllEmployees } from "@/modules/employees/services/employees.service";
 import { PeopleAttentionCard } from "./people-attention";
 
-const mockHook = vi.mocked(useAttention);
-const base = {
-  loading: false,
-  error: null,
-  reload: vi.fn(),
-  regenerate: vi.fn(),
-  regenerating: false,
-};
-beforeEach(() => mockHook.mockReset());
+const mockDay = vi.mocked(getDayOversight);
+const mockRoster = vi.mocked(listAllEmployees);
+
+/** A `GET /v1/attendance/day` response with the given per-user statuses. */
+const day = (users: { user_id: string; status: string }[]) =>
+  ({
+    date: "2026-07-17",
+    users,
+    summary: { present: 0, partial: 0, absent: 0, leave: 0, non_workday: 0, counted: 0 },
+  }) as never;
+
+beforeEach(() => {
+  mockDay.mockReset();
+  mockRoster.mockReset();
+  mockRoster.mockResolvedValue([
+    { user_id: "u1", name: "Ada Lovelace", status: "active", department_id: "d1" },
+    { user_id: "u2", name: "Alan Turing", status: "active", department_id: "d1" },
+  ] as never);
+});
 
 describe("PeopleAttentionCard", () => {
-  it("shows an honest 'All clear' when no one is flagged", () => {
-    mockHook.mockReturnValue({
-      ...base,
-      data: { date: "2026-07-17", people: [], narrative: "No one is flagged today." },
-    });
+  it("lists absent-without-leave and partial-day people, ignoring present ones", async () => {
+    mockDay.mockResolvedValue(
+      day([
+        { user_id: "u1", status: "absent" },
+        { user_id: "u2", status: "partial" },
+        { user_id: "u3", status: "present" },
+      ]),
+    );
     render(<PeopleAttentionCard />);
-    expect(screen.getByText(/All clear/i)).toBeInTheDocument();
-    expect(screen.getByText(/No one is flagged today\./i)).toBeInTheDocument();
+    // Query the reason lines (unique) rather than the badges, which collide with the filter chips.
+    expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+    expect(screen.getByText("Alan Turing")).toBeInTheDocument();
+    expect(screen.getByText(/no leave applied/i)).toBeInTheDocument();
+    expect(screen.getByText(/fewer hours than a full workday/i)).toBeInTheDocument();
   });
 
-  it("renders a flagged person with score, severity and reasons", () => {
-    mockHook.mockReturnValue({
-      ...base,
-      data: {
-        date: "2026-07-17",
-        people: [
-          {
-            user_id: "u1",
-            name: "Ada Lovelace",
-            score: 42,
-            anomaly_count: 2,
-            top_severity: "high",
-            reasons: ["overtime", "idle"],
-            attention: 120,
-          },
-        ],
-        narrative: "Check in with Ada.",
-      },
-    });
+  it("shows an honest 'Everyone's accounted for' when all present", async () => {
+    mockDay.mockResolvedValue(day([{ user_id: "u1", status: "present" }]));
     render(<PeopleAttentionCard />);
-    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
-    expect(screen.getByText(/score 42/i)).toBeInTheDocument();
-    // Anomaly slugs are mapped to human labels.
-    expect(screen.getByText(/Overtime/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Everyone's accounted for/i)).toBeInTheDocument();
   });
 
-  it("surfaces the error state", () => {
-    mockHook.mockReturnValue({ ...base, data: null, error: "Couldn't load the attention list." });
+  it("says the day isn't closed yet when there is no attendance", async () => {
+    mockDay.mockResolvedValue(day([]));
     render(<PeopleAttentionCard />);
-    expect(screen.getByText(/Couldn't load the attention list\./i)).toBeInTheDocument();
+    expect(await screen.findByText(/isn't closed yet/i)).toBeInTheDocument();
   });
 });
