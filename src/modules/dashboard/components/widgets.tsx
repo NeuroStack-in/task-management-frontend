@@ -142,11 +142,24 @@ export function ScreenshotsWidget({
    * hardest when a department filter is active, since the scoped frames may sit past the cut).
    */
   partial = false,
+  /** Distinct employees captured over the range — the "is monitoring reaching the team" signal. */
+  coverage = 0,
+  /** Captures worth a review (distracting-app frames) — the actionable count. */
+  flagged = 0,
+  /** Server-classified split of the range's captures, for the on-task bar. */
+  split = { productive: 0, neutral: 0, distracting: 0 },
 }: {
   count: number;
   trend: number[];
   partial?: boolean;
+  coverage?: number;
+  flagged?: number;
+  split?: { productive: number; neutral: number; distracting: number };
 }) {
+  const classified = split.productive + split.neutral + split.distracting;
+  const pct = (n: number) => (classified > 0 ? (n / classified) * 100 : 0);
+  const onTaskPct = classified > 0 ? Math.round(pct(split.productive)) : 0;
+
   return (
     <Card className="justify-between">
       <CardHeader>
@@ -154,22 +167,65 @@ export function ScreenshotsWidget({
           <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
             <Camera className="size-4" />
           </span>
-          Screenshots captured
+          Screenshots
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
-        <p className="font-display text-3xl font-semibold tabular-nums">
-          {count.toLocaleString()}
-          {partial && count > 0 ? "+" : ""}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {count === 0
-            ? "none captured — the desktop agent isn't reporting yet"
-            : partial
-              ? "at least this many over the selected range — busy days are counted up to a page limit"
-              : "captured over the selected range"}
-        </p>
-        <Sparkline data={trend} area showDot={false} width={220} height={48} className="w-full" />
+      <CardContent className="space-y-3">
+        {/* Headline: the total, and — the thing a bare count can't tell you — how many people it
+            actually reached. A big number from one laptop is a very different story than from ten. */}
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-display text-3xl font-semibold tabular-nums">
+            {count.toLocaleString()}
+            {partial && count > 0 ? "+" : ""}
+          </p>
+          {count > 0 && coverage > 0 && (
+            <span className="text-xs text-muted-foreground">
+              across {coverage} {coverage === 1 ? "person" : "people"}
+            </span>
+          )}
+        </div>
+
+        {count === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            none captured — the desktop agent isn&apos;t reporting yet
+          </p>
+        ) : classified > 0 ? (
+          <>
+            {/* On-task split: productive / neutral / distracting, from the server's app classification.
+                This is the point of screenshots — not that they exist, but what they show. */}
+            <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div className="bg-success" style={{ width: `${pct(split.productive)}%` }} />
+              <div className="bg-muted-foreground/40" style={{ width: `${pct(split.neutral)}%` }} />
+              <div className="bg-destructive" style={{ width: `${pct(split.distracting)}%` }} />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{onTaskPct}% productive</span>
+              {flagged > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-medium text-destructive">
+                    {flagged.toLocaleString()} to review
+                  </span>
+                </>
+              )}
+            </p>
+          </>
+        ) : (
+          // Captured but not yet classified (older frames) — say so honestly, still surface the queue.
+          <p className="text-xs text-muted-foreground">
+            {flagged > 0 ? (
+              <>
+                <span className="font-medium text-destructive">
+                  {flagged.toLocaleString()} to review
+                </span>
+                {" · "}
+              </>
+            ) : null}
+            captured over the selected range
+          </p>
+        )}
+
+        <Sparkline data={trend} area showDot={false} width={220} height={40} className="w-full" />
         <ViewAllLink href="/insights/screenshots" label="Open Screenshot Center" />
       </CardContent>
     </Card>

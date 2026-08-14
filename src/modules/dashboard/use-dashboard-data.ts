@@ -140,6 +140,14 @@ interface DayBundle {
   shotsTruncated: boolean;
   /** In-scope screenshot counts bucketed by local hour-of-day (0..23) — feeds the heatmap. */
   hourly: number[];
+  /** Captures worth a review this day (`ShotRow.flagged`). */
+  flagged: number;
+  /** Server-classified category tallies for the day's in-scope captures. */
+  productive: number;
+  neutral: number;
+  distracting: number;
+  /** Distinct employees seen in this day's captures — unioned across the range for coverage. */
+  userIds: string[];
 }
 
 export interface DashboardDataState {
@@ -286,12 +294,37 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               : false;
             // Bucket the day's frames by local hour — the raw material for the productivity heatmap
             // (activity intensity by hour), derived from the capture cadence rather than a new endpoint.
+            // One pass over the day's in-scope frames: heatmap bucket, review flags, the
+            // productive/neutral/distracting split, and who was captured — all from data already
+            // fetched, no extra request.
             const hourly = new Array(24).fill(0);
+            let flagged = 0;
+            let productive = 0;
+            let neutral = 0;
+            let distracting = 0;
+            const seen = new Set<string>();
             for (const s of scopedShots) {
               const h = new Date(s.captured_at).getHours();
               if (h >= 0 && h < 24) hourly[h] += 1;
+              if (s.flagged) flagged += 1;
+              if (s.category === "productive") productive += 1;
+              else if (s.category === "distracting") distracting += 1;
+              else neutral += 1;
+              seen.add(s.user_id);
             }
-            return { iso, activity, oversight, shots, shotsTruncated, hourly };
+            return {
+              iso,
+              activity,
+              oversight,
+              shots,
+              shotsTruncated,
+              hourly,
+              flagged,
+              productive,
+              neutral,
+              distracting,
+              userIds: [...seen],
+            };
           },
         );
         if (!live) return;
@@ -512,6 +545,15 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const screenshotsTrend = bundles.map((b) => b.shots);
         const screenshotCount = screenshotsTrend.reduce((a, b) => a + b, 0);
         const screenshotCountPartial = bundles.some((b) => b.shotsTruncated);
+        // Meaningful cuts of the same frames: how many need a look, how work-time split, and how many
+        // employees were actually reached — the three things a raw total can't tell an admin.
+        const screenshotsFlagged = bundles.reduce((a, b) => a + b.flagged, 0);
+        const screenshotsSplit = {
+          productive: bundles.reduce((a, b) => a + b.productive, 0),
+          neutral: bundles.reduce((a, b) => a + b.neutral, 0),
+          distracting: bundles.reduce((a, b) => a + b.distracting, 0),
+        };
+        const screenshotsCoverage = new Set(bundles.flatMap((b) => b.userIds)).size;
 
         // ── Billing seats. ──
         const seatsTotal =
@@ -564,6 +606,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           screenshotCount,
           screenshotCountPartial,
           screenshotsTrend,
+          screenshotsCoverage,
+          screenshotsFlagged,
+          screenshotsSplit,
           topPerformers,
           billing: billingBlock,
           heatmap, // weekday × 2-hour intensity from screenshot capture density (empty if none).

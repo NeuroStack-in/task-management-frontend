@@ -81,6 +81,9 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
         count={d.screenshotCount}
         trend={d.screenshotsTrend}
         partial={d.screenshotCountPartial}
+        coverage={d.screenshotsCoverage}
+        flagged={d.screenshotsFlagged}
+        split={d.screenshotsSplit}
       />
     ),
   },
