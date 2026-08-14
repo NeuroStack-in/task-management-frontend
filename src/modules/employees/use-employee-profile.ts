@@ -9,7 +9,7 @@
  * The output feeds the preview `EmployeeProfileData` shape verbatim. Fields the backend genuinely
  * doesn't carry (`dob`, `address`, `postcode`, `country`, `avatarUrl`) are left `""` and the UI
  * renders them as an em dash. The KPI series is **avg productive hours / day** per month, derived
- * from the agent's `productive_sec` (a month with no scored day folds to `0`).
+ * from the agent's `productive_sec` (a month with no scored day is `null`, never `0`).
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -62,7 +62,8 @@ export interface EmployeeProfileData {
   address: string;
   postcode: string;
   projects: ProjectItem[];
-  kpi: { months: string[]; current: number[]; previous: number[] };
+  /** `null` in a month = nothing was measured that month — **not** a measured zero. */
+  kpi: { months: string[]; current: (number | null)[]; previous: (number | null)[] };
   totalTasks: number;
   avgCompletion: number;
 }
@@ -119,12 +120,18 @@ async function mapLimit<T, R>(
 /**
  * Twelve monthly buckets ending on the current month, each holding the **avg productive hours / day**
  * for that month (mean of the returned days' `productive_sec / 3600`). The last 6 buckets are
- * "current", the first 6 "previous". A bucket with no scored day folds to `0`.
+ * "current", the first 6 "previous".
+ *
+ * **A month with no scored day is `null`, not `0`.** It used to fold to zero, which drew a flat line
+ * along the axis that was indistinguishable from a real, measured zero — the chart said "this person
+ * produced nothing for six months" when the truth was "nothing was ever measured". That is the same
+ * null-collapsed-to-zero mistake the productivity stat card already guards against, and it is worse
+ * on a chart, because a line implies a series of observations.
  */
 function buildKpi(
   days: { date: string; productiveSec: number }[],
   now: Date,
-): { months: string[]; current: number[]; previous: number[] } {
+): { months: string[]; current: (number | null)[]; previous: (number | null)[] } {
   const keys: string[] = [];
   const labels: string[] = [];
   for (let k = 11; k >= 0; k--) {
@@ -140,9 +147,9 @@ function buildKpi(
     acc.n += 1;
     sum.set(key, acc);
   }
-  const avgFor = (key: string): number => {
+  const avgFor = (key: string): number | null => {
     const acc = sum.get(key);
-    return acc && acc.n > 0 ? round1(acc.hours / acc.n) : 0;
+    return acc && acc.n > 0 ? round1(acc.hours / acc.n) : null;
   };
   const previous = keys.slice(0, 6).map(avgFor);
   const current = keys.slice(6).map(avgFor);

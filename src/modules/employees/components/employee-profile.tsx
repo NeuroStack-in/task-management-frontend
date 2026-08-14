@@ -575,6 +575,10 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
     current: data.kpi.current[i],
     previous: data.kpi.previous[i],
   }));
+  // Whether anything in either window was actually measured. A chart of all-nulls has no series to
+  // draw and no axis domain to draw it against; before nulls existed it drew a flat line on 0h,
+  // which claimed six months of measured idleness from an agent that had never reported.
+  const kpiMeasured = [...data.kpi.current, ...data.kpi.previous].some((v) => v != null);
 
   // Projects list paginates so a heavily-staffed employee doesn't run a wall of
   // bars down the card.
@@ -859,6 +863,18 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                 <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
               </div>
             </div>
+            {!kpiMeasured ? (
+              // The honest empty state. Says which of the two possible zeros this is, and names the
+              // cause, so nobody reads a blank chart as a verdict on the person.
+              <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-1 text-center">
+                <p className="text-sm font-medium">No productive time recorded yet</p>
+                <p className="max-w-xs text-xs text-muted-foreground">
+                  This chart is built from activity the desktop agent classifies. Nothing has
+                  been classified for this employee in the last 12 months — which is not the
+                  same as a productive time of zero.
+                </p>
+              </div>
+            ) : (
             <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
               <AreaChart
                 data={chartData}
@@ -899,7 +915,8 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                     fontSize: 12,
                   }}
                   labelStyle={{ color: "var(--muted-foreground)" }}
-                  formatter={(v: number) => `${v}h`}
+                  // A gap in the series is "not measured", and must not read as "0h".
+                  formatter={(v) => (typeof v === "number" ? `${v}h` : "not measured")}
                 />
                 <Area
                   type="monotone"
@@ -925,6 +942,7 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                 />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>
