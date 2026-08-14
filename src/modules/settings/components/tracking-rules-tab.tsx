@@ -231,12 +231,23 @@ function AppsPanel({
             rule to the same draft the table beneath manages. */}
         <UnclassifiedAppsPanel
           canManage={canManage}
-          onAdd={(app, category) =>
-            onApps([
-              ...apps,
-              { display_name: app, process_name: app, category, tracked: true },
-            ])
-          }
+          onAdd={(app, category) => {
+            // **Upsert, never append.** The panel offers apps that no rule matched, but its list is
+            // a snapshot: a rule can exist by the time it is clicked (or the panel's own view of the
+            // rules can differ from the editor's). Appending blind produced a second `msedge`
+            // alongside the seeded one — a duplicate React key, and a rule the agent can never reach
+            // because matching is first-match-wins.
+            //
+            // Process names are lowercased to match `addApp`, and because the agent compares
+            // case-insensitively — `MsEdge` and `msedge` are one rule, not two.
+            const proc = app.trim().toLowerCase();
+            const at = apps.findIndex((a) => a.process_name.trim().toLowerCase() === proc);
+            onApps(
+              at >= 0
+                ? apps.map((a, i) => (i === at ? { ...a, category } : a))
+                : [...apps, { display_name: app, process_name: proc, category, tracked: true }],
+            );
+          }}
         />
 
         {/* Apps */}
@@ -337,8 +348,13 @@ function RuleTable({
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((r) => (
-              <TableRow key={r.key} className={cn(!r.tracked && "opacity-60")}>
+            // The React key carries the index as well as the logical id. `r.key` is a process name
+            // or domain, and a stored document *can* hold two rules for the same one — so keying on
+            // it alone threw "two children with the same key, `msedge`" and let React drop a row.
+            // `r.key` stays the id the handlers match on: acting on both duplicates is right, since
+            // first-match-wins means only one of them was ever reachable anyway.
+            rows.map((r, i) => (
+              <TableRow key={`${r.key}#${i}`} className={cn(!r.tracked && "opacity-60")}>
                 <TableCell>
                   <p className="font-medium">{r.label}</p>
                   {r.sub ? <p className="font-mono text-xs text-muted-foreground">{r.sub}</p> : null}
