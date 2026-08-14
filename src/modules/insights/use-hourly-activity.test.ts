@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { bucketByHour, localDateOf, utcDatesFor } from "./use-hourly-activity";
+import { bucketByHour } from "./use-hourly-activity";
+import { localDateOf, utcDatesFor } from "@/lib/local-day";
 import type { ShotRow } from "./services/insights.service";
 
 /** A capture at a local hour on 2026-08-10. `captured_at` is epoch **ms**. */

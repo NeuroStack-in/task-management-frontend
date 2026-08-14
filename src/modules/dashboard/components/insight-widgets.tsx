@@ -16,24 +16,31 @@ const HEATMAP_HOURS = ["8am", "10am", "12pm", "2pm", "4pm", "6pm"];
 /* ------------------------- Productivity Heatmap ------------------------- */
 
 export function ProductivityHeatmap({ data }: { data: number[][] }) {
-  // There is no per-hour productivity endpoint — hourly intensity needs the desktop agent's capture
-  // data, which no backend read exposes yet. With no rows, show an honest empty state rather than a
-  // seeded grid. The `number[][]` signature is kept so a future real feed drops in unchanged.
+  // **This measures when work happened, not how productive it was**, which is why it is titled
+  // "Activity heatmap". `use-dashboard-data` builds it from **screenshot capture density** — the
+  // agent captures periodically, so a busy cell means frames were taken then, and nothing about
+  // their category. There is no per-hour *score* to plot: the scorer stores daily totals.
+  //
+  // Cells are **relative intensity**, normalised against the busiest cell in the window — so the
+  // scale is "compared with this org's own peak", never a percentage of anything. Calling it a
+  // productivity percentage was two claims the data does not support.
+  //
+  // Empty is honest, not a placeholder: no captures in the window means nothing to draw.
   if (data.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Productivity heatmap</CardTitle>
+          <CardTitle>Activity heatmap</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
             <span className="bg-muted flex size-10 items-center justify-center rounded-md">
               <Grid3x3 className="text-muted-foreground size-5" />
             </span>
-            <p className="text-sm font-medium">Hourly activity pending</p>
+            <p className="text-sm font-medium">No captures in this window</p>
             <p className="text-muted-foreground max-w-xs text-xs">
-              When the team is most productive across the week appears here once the
-              desktop agent reports the hourly activity it captures.
+              When work happens across the week appears here, built from the frames the
+              desktop agent captures. Nothing was captured in the selected range.
             </p>
           </div>
         </CardContent>
@@ -56,7 +63,9 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
               {row.map((v, h) => (
                 <div
                   key={h}
-                  title={`${HEATMAP_DAYS[d]} · ${v}%`}
+                  // Relative to the busiest cell in the window — not a percentage of a total, and
+                  // not a score. Saying "%" invited both readings.
+                  title={`${HEATMAP_DAYS[d]} · ${v}/100 of peak capture activity`}
                   className="h-4 flex-1 rounded-[4px]"
                   style={{
                     backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,

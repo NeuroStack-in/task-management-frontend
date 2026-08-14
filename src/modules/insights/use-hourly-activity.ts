@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { getScreenshots, type ShotRow } from "./services/insights.service";
+// Shared with the dashboard heatmap, which had the same UTC-partition/local-hour mismatch.
+import { localDateOf, utcDatesFor } from "@/lib/local-day";
 
 /**
  * Hour-by-hour activity for one day, derived from the day's **screenshot captures**.
@@ -60,31 +62,6 @@ const EMPTY_HOURS: HourBucket[] = Array.from({ length: 24 }, (_, hour) => ({
   distracting: 0,
   total: 0,
 }));
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-/** `YYYY-MM-DD` for an epoch-ms instant, in the **viewer's** timezone. */
-export function localDateOf(epochMs: number): string {
-  const d = new Date(epochMs);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-/**
- * The UTC-keyed partitions that can hold captures belonging to local day `date`.
- *
- * One when the viewer is on UTC, two otherwise — local midnight and local 23:59:59 fall in
- * different UTC days for every other offset. Fetching only the same-named partition is what put the
- * neighbouring day's captures on the chart.
- */
-export function utcDatesFor(date: string): string[] {
-  // No `Z` ⇒ parsed as local time, which is the point.
-  const start = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(start.getTime())) return [date];
-  const end = new Date(start.getTime() + 86_400_000 - 1);
-  const first = start.toISOString().slice(0, 10);
-  const last = end.toISOString().slice(0, 10);
-  return first === last ? [first] : [first, last];
-}
 
 /**
  * Bucket de-duplicated capture moments into 24 local hours, split by server category.

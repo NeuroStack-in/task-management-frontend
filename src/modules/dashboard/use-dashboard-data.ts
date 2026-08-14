@@ -15,9 +15,19 @@
  *   - billing seats                                         ← `getBillingOverview()`
  *
  * Everything the desktop agent must feed (scores, hours, screenshots, heatmap) is **0 / empty until an
- * agent reports** — a gap, never a fabricated number. There is no per-hour productivity endpoint, so
- * the heatmap is always empty (its widget shows an honest "needs the agent" state), and no cheap
- * prior-window comparison exists, so KPI `deltaPct` stays 0 rather than seeded.
+ * agent reports** — a gap, never a fabricated number.
+ *
+ * Two notes that were wrong here and misled a later reader into thinking the heatmap was unwired:
+ *
+ *  - **The heatmap is real.** It is built below from screenshot capture density (weekday × 2-hour
+ *    buckets, normalised to the window's busiest cell), not from a per-hour score endpoint — there
+ *    is none, because the scorer stores daily totals. It is empty only when the window genuinely
+ *    holds no captures. Its widget is titled "Activity heatmap" for that reason: capture density is
+ *    *when work happened*, never how productive it was.
+ *  - **`deltaPct` is 0 because nothing renders it.** No StatCard on the dashboard passes `delta`, so
+ *    the field is unused rather than a 0% that reads as "no change". If a card ever wants one, the
+ *    prior window has to be fetched and the type widened to `number | null` — a computed 0 and an
+ *    uncomputed one must not look alike.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -31,6 +41,8 @@ import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import { getUserDay } from "@/modules/attendance/services/attendance.service";
 import { todayIso } from "@/lib/format";
 import { getBillingOverview } from "@/modules/billing/services/billing.service";
+// The local-day filter the heatmap needs: screenshots are partitioned by UTC date.
+import { localDateOf } from "@/lib/local-day";
 import {
   getOrgActivity,
   getScreenshots,
@@ -284,10 +296,18 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             const shotsTruncated = grid
               ? Boolean(grid.cursor) || grid.shots.length >= SHOT_PAGE
               : false;
-            // Bucket the day's frames by local hour — the raw material for the productivity heatmap
-            // (activity intensity by hour), derived from the capture cadence rather than a new endpoint.
+            // Bucket the day's frames by local hour — the raw material for the activity heatmap,
+            // derived from the capture cadence rather than a new endpoint.
+            //
+            // **Filtered to the local day first.** The endpoint partitions on the UTC date, so at
+            // any non-zero offset this page's frames straddle two local days. Bucketing them all by
+            // local hour attributed the neighbouring day's captures to this weekday's row — and
+            // because the columns start at 8am, the ones that wrapped past local midnight fell
+            // outside every column and were **silently dropped**. Same mismatch as the hourly chart
+            // (`lib/local-day`), quieter because nothing appeared out of place.
             const hourly = new Array(24).fill(0);
             for (const s of scopedShots) {
+              if (localDateOf(s.captured_at) !== iso) continue;
               const h = new Date(s.captured_at).getHours();
               if (h >= 0 && h < 24) hourly[h] += 1;
             }
