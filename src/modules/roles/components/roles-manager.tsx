@@ -28,6 +28,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -202,7 +203,10 @@ export function RolesManager() {
                       >
                         <MoreVertical className="size-4" />
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      {/* `w-auto` overrides the primitive's default `w-(--anchor-width)`, which pins the
+                          menu to the 32px icon trigger and made "Restore to default" wrap onto two
+                          lines. Let it size to its widest item instead, with a sane floor. */}
+                      <DropdownMenuContent align="end" className="w-auto min-w-[10rem]">
                         <DropdownMenuItem onClick={() => handleClone(role)}>
                           <Copy className="size-4" /> Clone
                         </DropdownMenuItem>
@@ -219,6 +223,8 @@ export function RolesManager() {
                             <RotateCcw className="size-4" /> Restore to default
                           </DropdownMenuItem>
                         ) : null}
+                        {/* Set the destructive action apart from the routine ones. */}
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
                           variant="destructive"
                           disabled={role.system}
