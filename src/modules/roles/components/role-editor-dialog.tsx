@@ -90,6 +90,20 @@ export function RoleEditorDialog({
       return next;
     });
 
+  // The single master "Select all" that spans every section — distinct from each group's own
+  // Select-all. Flattened once from the catalog; `allSelected` drives the label (Select ↔ Clear).
+  const allPermissionIds = catalog?.groups.flatMap((g) => g.permissions.map((p) => p.id)) ?? [];
+  const allSelected =
+    allPermissionIds.length > 0 && allPermissionIds.every((id) => selected.has(id));
+  const toggleAll = () =>
+    setSelected((prev) => {
+      // Mirror `toggleGroup`: add/remove exactly the catalog's ids, leaving anything else untouched.
+      const on = allPermissionIds.length > 0 && allPermissionIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      allPermissionIds.forEach((id) => (on ? next.delete(id) : next.add(id)));
+      return next;
+    });
+
   async function handleSave() {
     const trimmedName = name.trim();
     if (!trimmedName) {
@@ -205,7 +219,20 @@ export function RoleEditorDialog({
 
           <div className="flex items-center justify-between">
             <Label>Permissions</Label>
-            <Badge variant="secondary">{selected.size} selected</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{selected.size} selected</Badge>
+              {allPermissionIds.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={toggleAll}
+                >
+                  {allSelected ? "Clear all" : "Select all"}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
