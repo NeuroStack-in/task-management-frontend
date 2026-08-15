@@ -31,7 +31,7 @@ import {
   regenerateAttention,
 } from "@/modules/insights/services/insights.service";
 import { isoWeekOf } from "@/modules/insights/use-reports";
-import type { DashboardRange } from "../lib/dashboard-data";
+import { singleDayOf, type DashboardRange } from "../lib/dashboard-data";
 import {
   getDayOversight,
   type ApiDayResponse,
@@ -333,8 +333,7 @@ export function OrgAiSummaryWidget({
   // Wider custom windows genuinely have no cached narrative and no endpoint that would build one.
   // Rather than silently show one day's summary under a "Jun 3 – Jul 12" header — which would read
   // as a summary of that window — the card still says what it can and can't cover.
-  const singleCustomDay =
-    range === "range" && days?.length === 1 ? days[0] : null;
+  const singleCustomDay = singleDayOf(range, days);
   const unsupportedRange = range === "range" && !singleCustomDay;
 
   // Enterprise org report first (richer, carries generated_at); fall back to the attention narrative

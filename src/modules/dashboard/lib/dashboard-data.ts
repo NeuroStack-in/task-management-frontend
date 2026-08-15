@@ -13,6 +13,24 @@ import type { User } from "@/types/user";
 
 export type DashboardRange = "today" | "7d" | "30d" | "range";
 
+/**
+ * The single day a range covers, or `null` when it covers more than one.
+ *
+ * **A one-day custom range is a day.** Picking "Aug 15 – Aug 15" and being told narratives only
+ * exist per day/week/month was a property of the picker's mode, not of the data — a daily narrative
+ * for that date exists, and refusing it is why a Saturday chosen by hand looked like it had no
+ * dashboard at all.
+ *
+ * Extracted from the summary widget so the rule is testable: it was previously an inline expression
+ * that could only be checked by reading it, and reading it is what let the original bug ship.
+ */
+export function singleDayOf(
+  range: DashboardRange,
+  days: string[] | undefined,
+): string | null {
+  return range === "range" && days?.length === 1 ? days[0] : null;
+}
+
 export const RANGE_OPTIONS: { value: DashboardRange; label: string }[] = [
   { value: "today", label: "Today" },
   { value: "7d", label: "Week" },
