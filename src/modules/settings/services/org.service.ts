@@ -62,9 +62,70 @@ export function getOrg(): Promise<OrgView> {
   return apiFetch<OrgView>("/v1/org");
 }
 
+/* ------------------------------- org owners ------------------------------- */
+
+/**
+ * One owner, mirroring `identity::features::org_owners::dto::Owner`.
+ *
+ * **An org can have several owners** (LLD §16). Ownership is `role-owner` on the user row, which the
+ * pre-token trigger turns into the `is_owner` claim that bypasses every privilege bit — so these
+ * routes are gated on `is_owner` itself rather than a permission, and a non-owner gets a 403.
+ */
+export interface OrgOwner {
+  user_id: string;
+  name: string;
+  email: string;
+  /** True for the signed-in caller — used to label "you" and to warn before self-demotion. */
+  is_you: boolean;
+}
+
+export interface OrgOwnersResponse {
+  owners: OrgOwner[];
+  /**
+   * `owners.length`, sent explicitly so the UI can disable "remove" at one owner **before** the
+   * request rather than surfacing the server's `last_owner` conflict as a failure. An org that
+   * reaches zero owners cannot appoint one — only an owner may — so it is unrecoverable from inside
+   * the product, which is why the guard exists on both sides.
+   */
+  count: number;
+}
+
+/** `GET /v1/org/owners` (owner-only). */
+export function listOwners(): Promise<OrgOwnersResponse> {
+  return apiFetch<OrgOwnersResponse>("/v1/org/owners");
+}
+
+/** `POST /v1/org/owners` (owner-only) — idempotent; re-granting an existing owner is a no-op. */
+export function grantOwner(userId: string): Promise<OrgOwnersResponse> {
+  return apiFetch<OrgOwnersResponse>("/v1/org/owners", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+/**
+ * `DELETE /v1/org/owners/{id}` (owner-only) — hands the person an ordinary role and leaves them in
+ * the org. `take_role` is **required**: dropping someone to no role leaves a member with a valid
+ * login whose bitset cannot be resolved, and no screen explains why they can do nothing.
+ *
+ * Rejects the last owner with a `last_owner` conflict.
+ */
+export function revokeOwner(
+  userId: string,
+  takeRole: string,
+): Promise<OrgOwnersResponse> {
+  return apiFetch<OrgOwnersResponse>(`/v1/org/owners/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ take_role: takeRole }),
+  });
+}
+
 /**
  * Body for `POST /v1/org/transfer-ownership` (owner-only). `confirm` is the typed workspace slug;
  * `take_role` is the role the departing owner keeps (null/omit ⇒ server default, typically Admin).
+ *
+ * Distinct from [`grantOwner`]: transfer is **hand over and step back** — the transferor gives up
+ * ownership either way. Granting adds an owner and leaves everyone else in place.
  */
 export interface TransferOwnershipRequest {
   new_owner_id: string;

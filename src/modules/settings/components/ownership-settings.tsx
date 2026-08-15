@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
+import { OrgOwnersCard } from "./org-owners-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -322,6 +323,9 @@ export function OwnershipSettings() {
           can transfer ownership or close the organization.
         </div>
       )}
+
+      {/* ── Owners ── */}
+      <OrgOwnersCard />
 
       {/* ── Transfer ownership ── */}
       <Card className="gap-0 p-0">
