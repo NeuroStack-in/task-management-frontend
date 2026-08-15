@@ -4,9 +4,6 @@
  * The org dashboard's **real** widget cards — every figure here comes from a live endpoint
  * (employees, projects, billing). Kept in their own file (no imports from the registry or the
  * customizable shell) so the registry can import them without a cycle.
- *
- * The one honest exception is {@link MonitoringPendingCard}: the activity metrics it lists need the
- * desktop agent, which isn't reporting, so it states what's missing instead of seeding fake charts.
  */
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -14,17 +11,11 @@ import {
   FolderKanban,
   CreditCard,
   Building2,
-  Activity,
   ArrowUpRight,
   Sparkles,
   CalendarCheck,
-  Grid3x3,
-  Users,
-  Trophy,
-  BellRing,
   RefreshCw,
   Loader2,
-  type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
@@ -261,41 +252,6 @@ export function BillingCard({ billing }: { billing: DashboardSummary["billing"] 
 }
 
 /* --------------------- Activity monitoring pending (honest) -------------------- */
-
-export function MonitoringPendingCard() {
-  return (
-    <Card className="border-dashed">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Activity className="size-4" />
-          </span>
-          Activity monitoring
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="gap-3 text-sm text-muted-foreground">
-        <p className="flex-1 leading-relaxed">
-          Productivity scores, tracked hours, attendance rates, screenshots and per-team trends come
-          from the desktop agent&apos;s activity data. The agent isn&apos;t reporting yet, so these
-          are intentionally blank rather than estimated — they&apos;ll populate here once monitoring
-          is live.
-        </p>
-        <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-          {["Productivity", "Hours tracked", "Attendance rate", "Screenshots", "Heatmap", "Team comparison"].map(
-            (m) => (
-              <li key={m} className="flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-muted-foreground/40" />
-                {m}
-              </li>
-            ),
-          )}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ------------------------------ AI daily summary (real) ----------------------------- */
 
 /** Attendance status slug → human label (shared by the AI summary + attendance cards). */
 const ATTENDANCE_LABEL: Record<string, string> = {
@@ -614,92 +570,5 @@ export function AttendanceTodayCard() {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-/* --------------------- Agent-pending widgets (honest placeholders) -------------------- */
-
-/**
- * Shared honest-placeholder shell for widgets whose figures come from the **desktop agent** — which
- * isn't reporting yet. Mirrors {@link MonitoringPendingCard}'s treatment: state what's missing and
- * what will appear, never a seeded number.
- */
-function AgentPendingCard({
-  title,
-  icon: Icon,
-  detail,
-  metrics,
-}: {
-  title: string;
-  icon: LucideIcon;
-  detail: string;
-  metrics: string[];
-}) {
-  return (
-    <Card className="border-dashed">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <Icon className="size-4" />
-          </span>
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="gap-3 text-sm text-muted-foreground">
-        <p className="flex-1 leading-relaxed">{detail}</p>
-        <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-          {metrics.map((mtc) => (
-            <li key={mtc} className="flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-muted-foreground/40" />
-              {mtc}
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-export function ProductivityHeatmapPendingCard() {
-  return (
-    <AgentPendingCard
-      title="Activity heatmap"
-      icon={Grid3x3}
-      detail="Hourly activity intensity across the week — showing when the team is most productive — appears here once the desktop agent starts reporting captured activity."
-      metrics={["Hour-of-day intensity", "Day-of-week bands", "Peak focus windows", "Quiet periods"]}
-    />
-  );
-}
-
-export function TeamComparisonPendingCard() {
-  return (
-    <AgentPendingCard
-      title="Team comparison"
-      icon={Users}
-      detail="Per-team productivity, tracked hours and attendance side by side — so you can compare teams at a glance — populates once the desktop agent reports activity data."
-      metrics={["Productivity by team", "Tracked hours", "Attendance rate", "Team trends"]}
-    />
-  );
-}
-
-export function TopPerformersPendingCard() {
-  return (
-    <AgentPendingCard
-      title="Top performers"
-      icon={Trophy}
-      detail="The highest-scoring people for the day, ranked by the deterministic productivity score, will list here once the desktop agent's activity data feeds the scorer."
-      metrics={["Score leaders", "Most focused", "Consistency streaks", "Rising this week"]}
-    />
-  );
-}
-
-export function RecentAlertsPendingCard() {
-  return (
-    <AgentPendingCard
-      title="Recent alerts"
-      icon={BellRing}
-      detail="Anomaly alerts — overtime, idle stretches, burnout risk and policy concerns — surface here once the desktop agent reports and the scorer flags them. No alerts are fabricated."
-      metrics={["Overtime / after-hours", "Idle stretches", "Burnout risk", "Policy concerns"]}
-    />
   );
 }
