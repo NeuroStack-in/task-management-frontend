@@ -40,6 +40,7 @@ import {
   listProjects,
   type ApiProjectDetail,
 } from "@/modules/projects/services/projects.service";
+import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 
 /* ------------------------------- concurrency ------------------------------ */
 
@@ -127,12 +128,13 @@ export function useReportsData(): ReportsData {
       const dayLabel = prettyShort(dayIso);
 
       // ── base reads (independent; each degrades to empty, not a total failure) ──
-      const [empRes, deptRes, projRes, orgRes, attnRes] = await Promise.allSettled([
+      const [empRes, deptRes, projRes, orgRes, attnRes, contribRes] = await Promise.allSettled([
         listEmployees(),
         departmentMap(),
         listProjects(),
         getOrgActivity(dayIso),
         getAttention(dayIso),
+        contributorRoleIds(),
       ]);
       if (!live) return;
 
@@ -155,6 +157,34 @@ export function useReportsData(): ReportsData {
 
       const deptName = (id?: string) => (id && deptNames.get(id)) || id || OMITTED;
       const activeEmployees = employees.filter((e) => e.status === "active");
+
+      /**
+       * Productivity reporting covers the people who are **measured** — those whose role grants
+       * `time-tracking:self`, the bit the desktop agent's timer rides on.
+       *
+       * Admins and managers were listed alongside everyone else, permanently at "—" because they
+       * run no agent and produce no activity. A roster of blanks is not a neutral omission: it
+       * drags any average taken over the rows, it makes "12 rows" mean nothing, and it invites the
+       * reading that an admin scored zero rather than that they were never in scope.
+       *
+       * `contributorRoleIds` is the same definition the dashboard's "Working now" uses, so the two
+       * cannot disagree about who counts. A failed read leaves it `null`, which keeps every row
+       * rather than silently emptying the report — a degraded read must not look like an empty org.
+       */
+      const contributorIds = contribRes.status === "fulfilled" ? contribRes.value : null;
+      const roleOf = new Map(employees.map((e) => [e.user_id, e.role_id ?? ""]));
+      const isMeasured = (userId: string) =>
+        contributorIds === null || contributorIds.has(roleOf.get(userId) ?? "");
+      const measuredPeople = (org?.people ?? []).filter((p) => isMeasured(p.user_id));
+      /**
+       * The same rule for the roster-driven reports.
+       *
+       * Timesheet and Utilization measure timer output, which a role without `time-tracking:self`
+       * cannot produce. Attendance goes the same way for a sharper reason: it is derived from agent
+       * sessions, so a manager who runs no agent does not read as "not applicable" — they read as
+       * **absent**, every single day.
+       */
+      const measuredEmployees = activeEmployees.filter((e) => isMeasured(e.user_id));
 
       // ── fan-outs (bounded concurrency 3, skip-on-fail) ──
       // Per-employee timesheets for the week — reused by three reports.
@@ -221,11 +251,11 @@ export function useReportsData(): ReportsData {
         id: "productivity",
         name: "Productivity Report",
         description:
-          "Per-employee productivity score and active hours for the day. Trend is the change vs the person's average over the earlier days of the week.",
+          "Productivity score and active hours for the day, for people whose role tracks time. Trend is the change vs the person's average over the earlier days of the week.",
         category: "workforce",
         timeframe: dayLabel,
         columns: ["Employee", "Department", "Active hrs", "Productivity %", "Trend"],
-        rows: (org?.people ?? []).map((p) => {
+        rows: measuredPeople.map((p) => {
           const score = p.breakdown ? Math.round(p.breakdown.score) : null;
           return [
             p.name,
@@ -245,7 +275,7 @@ export function useReportsData(): ReportsData {
         category: "workforce",
         timeframe: dayLabel,
         columns: ["Rank", "Employee", "Department", "Productivity %"],
-        rows: (org?.people ?? [])
+        rows: measuredPeople
           .filter((p) => p.breakdown)
           .sort((a, b) => b.breakdown!.score - a.breakdown!.score)
           .slice(0, 10)
@@ -261,7 +291,7 @@ export function useReportsData(): ReportsData {
         category: "time",
         timeframe: weekLabel,
         columns: ["Employee", "Tracked hrs", "Idle hrs", "Billable %"],
-        rows: activeEmployees.map((e) => {
+        rows: measuredEmployees.map((e) => {
           const g = timesheets.get(e.user_id);
           return [
             e.name,
@@ -281,7 +311,7 @@ export function useReportsData(): ReportsData {
         category: "time",
         timeframe: weekLabel,
         columns: ["Employee", "Capacity hrs", "Billable hrs", "Utilization %"],
-        rows: activeEmployees.map((e) => {
+        rows: measuredEmployees.map((e) => {
           const g = timesheets.get(e.user_id);
           const billableHrs = g ? g.billable_secs / 3600 : null;
           return [
@@ -330,11 +360,11 @@ export function useReportsData(): ReportsData {
         id: "attendance",
         name: "Attendance Summary",
         description:
-          "Per-employee present / leave / absent days and attendance rate. Late needs a per-day detail the oversight index doesn't project.",
+          "Present / leave / absent days and attendance rate, for people whose role tracks time. Late needs a per-day detail the oversight index doesn't project.",
         category: "attendance",
         timeframe: weekLabel,
         columns: ["Employee", "Department", "Present", "Late", "On leave", "Absent", "Rate %"],
-        rows: activeEmployees.map((e) => {
+        rows: measuredEmployees.map((e) => {
           let present = 0;
           let leave = 0;
           let absent = 0;
