@@ -428,7 +428,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             label: dayLabel(b.iso, trendShort),
             // NOTE: this is the productivity score, not an "active %". The series is named
             // accordingly in the chart; the key stays `active` so stored widget layouts keep working.
-            active: Math.round(dayScore ?? 0),
+            active: dayScore === null ? null : Math.round(dayScore),
             // Clamped, because the two totals come from different measurements and can disagree:
             // `active_sec` is the agent's per-minute activity figure, while `productive_sec` is the
             // sum of its `top_apps` spans, and nothing constrains the spans to fit inside the
@@ -441,10 +441,15 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             // its active seconds genuinely disagree, and the same skew is inflating Q up to its cap.
             productive: dt.active
               ? Math.min(100, Math.round((dt.productive / dt.active) * 100))
-              : 0,
+              // No active seconds means nothing was measured, which is not the same as 0% of the
+              // day being productive. Leave the gap.
+              : null,
           };
         });
-        const productivityTrendSeries = productivityTrend.map((t) => t.active);
+        // Sparkline takes numbers only; drop the unreported days rather than plotting them as 0.
+        const productivityTrendSeries = productivityTrend
+          .map((t) => t.active)
+          .filter((v): v is number => v !== null);
 
         // ── Attendance rate over the window (dept-aware) + the latest closed-day counts for the donut. ──
         let presentSum = 0;

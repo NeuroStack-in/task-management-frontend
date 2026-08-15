@@ -95,6 +95,14 @@ export function ProductivityChart({
                 tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
               />
               <Tooltip
+                // Recharts types the value loosely (string | number | array), so narrow here rather
+                // than asserting: a gap arrives as null/undefined and must read as "not reported",
+                // not as a blank row that looks like a rendering failure.
+                formatter={(v, name) => {
+                  const n = typeof v === "number" ? v : null;
+                  const unit = name === "Productive share" ? "%" : " / 100";
+                  return [n === null ? "not reported" : `${n}${unit}`, String(name)];
+                }}
                 contentStyle={{
                   background: "var(--popover)",
                   border: "1px solid var(--border)",
@@ -117,6 +125,10 @@ export function ProductivityChart({
                 stroke="var(--chart-1)"
                 fill="url(#fillActive)"
                 strokeWidth={2}
+                // Break the line on an unreported day instead of bridging it. `connectNulls` would
+                // draw a straight run between the days either side, inventing a trend across a gap
+                // where nothing was measured.
+                connectNulls={false}
                 name="Productivity score"
               />
               <Area
@@ -125,6 +137,7 @@ export function ProductivityChart({
                 stroke="var(--chart-2)"
                 fill="url(#fillProductive)"
                 strokeWidth={2}
+                connectNulls={false}
                 name="Productive share"
               />
             </AreaChart>

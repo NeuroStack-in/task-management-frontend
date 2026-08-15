@@ -79,8 +79,16 @@ export interface KpiSeries {
 
 export interface TrendPoint {
   label: string;
-  active: number;
-  productive: number;
+  /**
+   * The day's productivity score, or `null` when nobody reported.
+   *
+   * `null`, not `0`: a day with no agent data used to be plotted as a point at zero, which is
+   * indistinguishable from a day the whole team genuinely scored zero. Recharts leaves a gap for a
+   * null, so an unreported day now looks like what it is — absent, not bad.
+   */
+  active: number | null;
+  /** Productive share of active time, or `null` when nothing was measured. Same reasoning. */
+  productive: number | null;
 }
 
 /**
