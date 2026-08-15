@@ -171,6 +171,46 @@ export function getUnclassifiedApps(
   );
 }
 
+/** One app or website, with the time it accounted for across the requested range. */
+export interface UsageRow {
+  /** The app as the agent reported it (`Code.exe`), or the site's host (`youtube.com`). */
+  name: string;
+  seconds: number;
+  category: RuleCategoryName;
+}
+
+export interface AppUsageResponse {
+  from: string;
+  to: string;
+  /** Ranked longest-first. */
+  apps: UsageRow[];
+  /**
+   * Ranked longest-first. Empty when no agent reported a browser URL in the range — a genuine
+   * data gap (`AppSpan.url` is optional on the wire), not a missing wire.
+   */
+  sites: UsageRow[];
+  /** The read hit its ceiling, so these are the top of a longer list. Say so rather than imply completeness. */
+  truncated: boolean;
+}
+
+/**
+ * `GET /v1/insights/apps/usage` — what the org actually used between two dates, ranked by time.
+ * Needs `activity:read:org` (server `ActivityReadOrg`), matching the page's other org-wide reads.
+ *
+ * **Not the same as {@link getUnclassifiedApps}.** That reads the all-time app catalogue, which has
+ * no date dimension and therefore cannot answer "in the period I selected" — which is why the
+ * Analytics page's Top applications / Top websites panels sat hardcoded to an empty list behind an
+ * empty state blaming the desktop agent. The agent was reporting all of it; the fold discarded the
+ * names. This reads the per-day rows that fold now writes.
+ *
+ * `from`/`to` are inclusive and may be the same day. Ranges wider than ~2 months are refused
+ * server-side, since cost scales with days × distinct apps.
+ */
+export function getAppUsage(from: string, to: string): Promise<AppUsageResponse> {
+  const q = new URLSearchParams({ from, to });
+  return apiFetch<AppUsageResponse>(`/v1/insights/apps/usage?${q.toString()}`);
+}
+
 export interface SelfActivity {
   from: string;
   to: string;

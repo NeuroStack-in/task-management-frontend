@@ -30,6 +30,7 @@ import { useOrgActivity } from "../use-activity";
 import { useAiReport } from "../use-reports";
 import { useOrgActivityRange } from "../use-activity-range";
 import { useHourlyActivity } from "../use-hourly-activity";
+import { getAppUsage, type UsageRow } from "../services/insights.service";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 
@@ -190,6 +191,18 @@ export function ActivityTab() {
   }, [granularity, date, anchor, workdays]);
 
   const range = useOrgActivityRange(rangeDates);
+
+  // The period the usage panels cover: the single day for Daily, else the span of the workdays the
+  // trend is already built from — so the panels and the chart above them describe the same window.
+  const usageRange = useMemo(() => {
+    if (!date) return null;
+    if (granularity === "daily") return { from: date, to: date };
+    if (rangeDates.length === 0) return null;
+    const sorted = [...rangeDates].sort();
+    return { from: sorted[0], to: sorted[sorted.length - 1] };
+  }, [granularity, date, rangeDates]);
+
+  const usage = useAppUsage(usageRange);
 
   // Trend points: one per workday (weekly) or one per week-average (monthly).
   const trendData = useMemo(() => {
@@ -665,13 +678,79 @@ export function ActivityTab() {
         </button>
         {showUsage ? (
           <div className="grid gap-4 lg:grid-cols-2">
-            <UsageList title="Top applications" items={[]} />
-            <UsageList title="Top websites" items={[]} />
+            <UsageList
+              title="Top applications"
+              items={usage.apps}
+              loading={usage.loading}
+              truncated={usage.truncated}
+            />
+            <UsageList
+              title="Top websites"
+              items={usage.sites}
+              loading={usage.loading}
+              // Sites are the one half that can be legitimately empty while apps are not: the
+              // agent only reports a URL for browser spans, and `AppSpan.url` is optional.
+              emptyHint="Websites appear here once an agent reports browser activity with a URL. App time is still counted above."
+            />
           </div>
         ) : null}
       </div>
     </div>
   );
+}
+
+/**
+ * The org's app/website usage for a date range.
+ *
+ * Both panels this feeds were previously `items={[]}` — hardcoded empty behind an empty state that
+ * blamed the desktop agent. The agent had been reporting `top_apps` (and browser `url`s) all along;
+ * the activity fold summed them into three category buckets and threw the names away, so the server
+ * had nothing per-app to serve. It does now.
+ */
+function useAppUsage(range: { from: string; to: string } | null) {
+  const [state, setState] = useState<{
+    apps: UsageItem[];
+    sites: UsageItem[];
+    loading: boolean;
+    truncated: boolean;
+  }>({ apps: [], sites: [], loading: false, truncated: false });
+
+  useEffect(() => {
+    if (!range) {
+      setState({ apps: [], sites: [], loading: false, truncated: false });
+      return;
+    }
+    let alive = true;
+    setState((s) => ({ ...s, loading: true }));
+    const toItems = (rows: UsageRow[]): UsageItem[] =>
+      rows.map((r) => ({
+        name: r.name,
+        category: r.category,
+        // The panel renders minutes; the server counts seconds. Rounding here rather than
+        // server-side keeps the API in the unit it actually stores.
+        minutes: Math.round(r.seconds / 60),
+      }));
+    getAppUsage(range.from, range.to)
+      .then((res) => {
+        if (!alive) return;
+        setState({
+          apps: toItems(res.apps),
+          sites: toItems(res.sites),
+          loading: false,
+          truncated: res.truncated,
+        });
+      })
+      .catch(() => {
+        // A refused or failed read must not blank the rest of the page. The panel falls back to its
+        // empty state, which is honest: we have nothing to show.
+        if (alive) setState({ apps: [], sites: [], loading: false, truncated: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [range?.from, range?.to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return state;
 }
 
 interface UsageItem {
@@ -686,7 +765,21 @@ const CATEGORY_COLOR: Record<UsageItem["category"], string> = {
   distracting: "var(--destructive)",
 };
 
-function UsageList({ title, items }: { title: string; items: UsageItem[] }) {
+function UsageList({
+  title,
+  items,
+  loading = false,
+  truncated = false,
+  emptyHint,
+}: {
+  title: string;
+  items: UsageItem[];
+  loading?: boolean;
+  /** The server capped the read, so this is the top of a longer list — say so, never imply totality. */
+  truncated?: boolean;
+  /** Overrides the empty-state wording where "no data" has a more specific cause than "no agent". */
+  emptyHint?: string;
+}) {
   const max = items.length ? Math.max(...items.map((i) => i.minutes)) : 1;
   return (
     <Card>
@@ -694,11 +787,24 @@ function UsageList({ title, items }: { title: string; items: UsageItem[] }) {
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {items.length === 0 ? (
+        {truncated && items.length > 0 ? (
+          <p className="text-muted-foreground text-xs">
+            Top {items.length} of a longer list — the period exceeded the read limit.
+          </p>
+        ) : null}
+        {loading && items.length === 0 ? (
+          <p className="text-muted-foreground py-6 text-center text-sm">Loading…</p>
+        ) : items.length === 0 ? (
           <EmptyState
             icon={Activity}
-            title="Waiting on the desktop agent"
-            description="App & website capture appears here once the desktop agent reports minute-level activity. The server stores daily category totals only today."
+            title="Nothing reported for this period"
+            // The old copy said the server "stores daily category totals only", which stopped being
+            // true when the fold started recording per-app seconds — and it blamed the agent for a
+            // panel that was hardcoded empty and would have stayed empty however much it reported.
+            description={
+              emptyHint ??
+              "No app activity was reported in the selected period. Usage appears here once a desktop agent reports for these days."
+            }
             className="border-0"
           />
         ) : (
