@@ -40,6 +40,15 @@ import {
   updateWorkingHours,
   type OrgWorkingHours,
 } from "@/modules/settings/services/org.service";
+import { recomputeAttendance } from "@/modules/attendance/services/attendance.service";
+
+/** Local `YYYY-MM-DD` for a date `n` days before today — the recompute window is client-local. */
+function isoDaysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const p = (x: number) => String(x).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
 /** The editable subset — `workdays` belongs to the card next to this one. */
 interface HoursDraft {
@@ -100,12 +109,15 @@ function messageOf(e: unknown, fallback: string): string {
 export function WorkingHoursManager() {
   const { can } = usePermissions();
   const canManage = can("settings:manage");
+  // The recompute is an attendance write (re-resolves everyone's past days), gated on its own perm.
+  const canRecompute = can("attendance:manage");
 
   const [saved, setSaved] = useState<OrgWorkingHours | null>(null);
   const [draft, setDraft] = useState<HoursDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [recomputing, setRecomputing] = useState(false);
 
   const load = useCallback(() => {
     let live = true;
@@ -167,6 +179,31 @@ export function WorkingHoursManager() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * Re-resolve recent already-closed days under the current schedule. Needed because changing the
+   * working days/thresholds does not retroactively re-close past days — a Saturday closed while the
+   * org was Mon–Fri keeps its "day off" status until this runs. Window is a fixed ~6 weeks, which
+   * covers the calendar's browsable range and the recent-days list.
+   */
+  async function recompute() {
+    if (recomputing) return;
+    setRecomputing(true);
+    try {
+      const res = await recomputeAttendance(isoDaysAgo(45), isoDaysAgo(1));
+      toast.success("Recent attendance recomputed", {
+        description: `Re-resolved ${res.recomputed} day record${res.recomputed === 1 ? "" : "s"} under the current schedule.`,
+      });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        toast.error("You don't have permission to recompute attendance.");
+      } else {
+        toast.error(messageOf(e, "Couldn't recompute attendance."));
+      }
+    } finally {
+      setRecomputing(false);
     }
   }
 
@@ -297,6 +334,28 @@ export function WorkingHoursManager() {
                   disabled={saving}
                 >
                   Cancel
+                </Button>
+              </div>
+            ) : null}
+
+            {/* Applying a schedule change to *past* days: the nightly close only ever resolves
+                yesterday, so already-closed days keep the status they were closed with until this
+                re-runs the close over a recent window. */}
+            {canRecompute ? (
+              <div className="border-border flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-muted-foreground text-xs">
+                  Changed the schedule? Recompute recent attendance so past days reflect the new
+                  working days and thresholds (e.g. a now-working Saturday stops showing as a day
+                  off).
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={recompute}
+                  disabled={recomputing}
+                >
+                  {recomputing ? "Recomputing…" : "Recompute recent attendance"}
                 </Button>
               </div>
             ) : null}

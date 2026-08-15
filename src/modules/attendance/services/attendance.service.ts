@@ -104,6 +104,30 @@ export function getDayOversight(date: string): Promise<ApiDayResponse> {
   return apiFetch<ApiDayResponse>(`/v1/attendance/day?${q}`);
 }
 
+/** Mirrors `time-attendance::attendance_recompute::dto::RecomputeResponse`. */
+export interface RecomputeResult {
+  from: string;
+  to: string;
+  /** How many user-day statuses were re-stamped across the window. */
+  recomputed: number;
+}
+
+/**
+ * `POST /v1/attendance/recompute?from&to` — re-resolve already-closed days under the org's **current**
+ * working-hours (needs `AttendanceManage`). Run after changing the schedule so past days pick up the
+ * new working-days/thresholds instead of keeping the status they were closed with. `from`/`to` are
+ * the client's local `YYYY-MM-DD`, at most 92 days apart.
+ */
+export function recomputeAttendance(
+  from: string,
+  to: string,
+): Promise<RecomputeResult> {
+  const q = new URLSearchParams({ from, to });
+  return apiFetch<RecomputeResult>(`/v1/attendance/recompute?${q}`, {
+    method: "POST",
+  });
+}
+
 /** Mirrors `time-attendance::user_day::UserDayDetail` — one employee's day of clock-in/out + hours. */
 export interface ApiUserDayDetail {
   user_id: string;
