@@ -20,6 +20,7 @@ import {
 } from "../lib/calendar";
 import { LogDatePicker } from "./attendance-log";
 import { useWorkdays, useWorkingHours } from "@/hooks/use-working-hours";
+import { isWorkday } from "@/lib/workdays";
 import {
   useMyAttendance,
   ymd,
@@ -49,6 +50,39 @@ const statusMeta = (s: string) =>
 
 /** `late` qualifies `present` — styled as a marker on the tile, not a status of its own. */
 const LATE_DOT = "bg-warning";
+
+/**
+ * The label shown for a resolved day. `late` is a qualifier on `present` (not its own status), so a
+ * present-but-late day reads **"Late"** rather than "Present"; `non_workday` reads the shorter
+ * "Day off". Shared by the calendar cells and the Recent-days status column so the two never drift.
+ */
+function dayStatusLabel(status: string, late: boolean): string {
+  if (status === "present") return late ? "Late" : "Present";
+  if (status === "non_workday") return "Day off";
+  return statusMeta(status).label; // Partial / On leave / Absent (+ any unknown)
+}
+
+/** Text colour for that label — warning for a late present day, else the status's own colour. */
+function dayStatusTextColor(status: string, late: boolean): string {
+  if (status === "present" && late) return "text-warning";
+  switch (status) {
+    case "present":
+      return "text-success";
+    case "partial":
+      return "text-warning";
+    case "leave":
+      return "text-primary";
+    case "absent":
+      return "text-destructive";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+/** Dot colour, late-aware — warning for a late present day, else the status dot. */
+function dayStatusDot(status: string, late: boolean): string {
+  return status === "present" && late ? LATE_DOT : statusMeta(status).dot;
+}
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -145,13 +179,15 @@ export function PersonalAttendanceView() {
   // back across the fetched window and takes up to 10 resolved workdays; an unclosed day is skipped
   // rather than shown blank, and the walk is bounded so it can't run past the fetched range.
   const recent = useMemo(() => {
-    const out: { key: string; label: string; status: DayStatus; clockIn: string; clockOut: string; hours: number }[] = [];
+    const out: { key: string; label: string; status: DayStatus; late: boolean; clockIn: string; clockOut: string; hours: number }[] = [];
     const cursor = new Date(TODAY.year, TODAY.month, TODAY.day);
     let guard = 0;
     while (out.length < 10 && guard < 40) {
       guard += 1;
       const wd = cursor.getDay();
-      if (wd !== 0 && wd !== 6) {
+      // Include exactly the org's scheduled days — never a hardcoded Mon–Fri. A 7-day org shows Sat
+      // and Sun here; a Sun–Thu org shows those. (This used to skip weekends unconditionally.)
+      if (isWorkday(cursor, workdays)) {
         const rec = recentData.recordFor(
           cursor.getFullYear(),
           cursor.getMonth(),
@@ -162,6 +198,7 @@ export function PersonalAttendanceView() {
             key: `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`,
             label: `${SHORT_DAY[wd]} ${MONTH_NAMES[cursor.getMonth()].slice(0, 3)} ${cursor.getDate()}`,
             status: rec.status,
+            late: rec.late,
             clockIn: rec.clockIn,
             clockOut: rec.clockOut,
             hours: rec.hours,
@@ -171,7 +208,7 @@ export function PersonalAttendanceView() {
       cursor.setDate(cursor.getDate() - 1);
     }
     return out;
-  }, [recentData]);
+  }, [recentData, workdays]);
 
   // Prev/next move the selection by one month, clamping the day to the new
   // month's length; the grid follows because the view derives from the selection.
@@ -357,10 +394,15 @@ export function PersonalAttendanceView() {
                     <td className="whitespace-nowrap px-5 py-3 font-medium">
                       {r.label}
                     </td>
+                    {/* Status reflects the *resolved* verdict, including the late qualifier: a
+                        present-but-late day reads "Late", a short day "Partial", etc. — never a flat
+                        "Present" for everything. */}
                     <td className="whitespace-nowrap px-5 py-3">
                       <span className="flex items-center gap-1.5">
-                        <span className={cn("size-2 rounded-full", meta.dot)} />
-                        <span className="text-muted-foreground">{meta.label}</span>
+                        <span className={cn("size-2 rounded-full", dayStatusDot(r.status, r.late))} />
+                        <span className={cn("font-medium", dayStatusTextColor(r.status, r.late))}>
+                          {dayStatusLabel(r.status, r.late)}
+                        </span>
                       </span>
                     </td>
                     {/* Day-completion bar: fills from the left toward the org's expected day, so a
@@ -462,20 +504,26 @@ function PersonalDayCell({
         >
           {cell.day}
         </span>
-        {/* `late` qualifies `present` — a marker on the tile, not a tile colour of its
-            own. A late day is still a present day (LLD §7). */}
-        {rec?.late ? (
-          <span
-            className={cn("mt-0.5 size-1.5 shrink-0 rounded-full", LATE_DOT)}
-            aria-label="Late arrival"
-            title="Late arrival"
-          />
-        ) : null}
       </div>
+      {/* Mention the resolved attendance on every cell: the status word (Present / Late / Partial /
+          Absent / Day off — `late` qualifies present per LLD §7) plus the hours when any were worked.
+          Before this a present/partial day showed only its hours, indistinguishable from each other. */}
       {rec ? (
-        <span className="text-right text-[11px] font-medium tabular-nums text-foreground/70">
-          {rec.hours > 0 ? `${rec.hours.toFixed(1)}h` : meta!.label}
-        </span>
+        <div className="flex items-end justify-between gap-1">
+          <span
+            className={cn(
+              "text-[10px] font-medium leading-tight",
+              dayStatusTextColor(rec.status, rec.late),
+            )}
+          >
+            {dayStatusLabel(rec.status, rec.late)}
+          </span>
+          {rec.hours > 0 ? (
+            <span className="shrink-0 text-[11px] font-medium tabular-nums text-foreground/70">
+              {rec.hours.toFixed(1)}h
+            </span>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
