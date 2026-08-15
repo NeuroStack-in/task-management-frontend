@@ -104,6 +104,25 @@ export interface TrendPoint {
 }
 
 /**
+ * One day on the **Productivity trends** line widget — the trend restored with *actual* values, made
+ * honest. Both series are `null` (a gap, `connectNulls={false}`) on any day the value couldn't be
+ * genuinely measured, so the line breaks rather than inventing a point:
+ *
+ * - `score` — the 0–100 composite, averaged **only over people whose quality was actually measured**
+ *   (`breakdown.q_measured`). A partial score (quality dropped, the ~50 the old card showed) is never
+ *   plotted; a day with no fully-measured person is a gap.
+ * - `share` — productive % of active time, only when apps were classified at all (else `null`, not a
+ *   misleading 0%).
+ */
+export interface ScoreTrendPoint {
+  label: string;
+  score: number | null;
+  share: number | null;
+  /** People contributing a genuinely-measured score that day — shown in the tooltip as coverage. */
+  measured: number;
+}
+
+/**
  * Attendance buckets for the donut. These are the real `time-attendance` statuses the oversight
  * endpoint serves (`present` / `partial` / `absent` / `leave`); `non_workday` is excluded from the
  * tally and there is no per-person `late` on that index, so it isn't invented here.
@@ -135,6 +154,7 @@ export interface DashboardData {
     newHires: KpiSeries;
   };
   productivityTrend: TrendPoint[];
+  productivityScoreTrend: ScoreTrendPoint[];
   teamData: { team: string; score: number }[];
   screenshotCount: number;
   /**

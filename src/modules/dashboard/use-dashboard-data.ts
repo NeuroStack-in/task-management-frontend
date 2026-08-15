@@ -56,6 +56,7 @@ import type {
   DashboardData,
   DashboardFilters,
   Performer,
+  ScoreTrendPoint,
   TeamOption,
   TrendPoint,
 } from "./lib/dashboard-data";
@@ -411,6 +412,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         // The KPI stat card's sparkline still tracks the composite score; collected here (unreported
         // days dropped) so the *card* below can move to concrete hours without disturbing the KPI.
         const dayScores: number[] = [];
+        // The honest line-trend widget: real score (only where quality was measured) + productive
+        // share (only where apps were classified), each day, gaps where unmeasured.
+        const productivityScoreTrend: ScoreTrendPoint[] = [];
         const productivityTrend: TrendPoint[] = trendBundles.map((b) => {
           const people = (b.activity?.people ?? []).filter(
             (p) => inScopeDept(p.department_id) && trackableIds.has(p.user_id),
@@ -447,8 +451,28 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           const unclSec = Math.max(0, t.active - (prodSec + neutSec + distSec));
 
           const h = (sec: number) => Math.round((sec / SEC_PER_H) * 10) / 10; // one decimal
+
+          // Honest score/share for the trend line, same day. Score averages ONLY people whose quality
+          // was genuinely measured (`q_measured`) — a partial ~50 score is never plotted; a day with
+          // none is a gap. Share is null unless something was classified (never a misleading 0%).
+          const qScored = people.filter((p) => p.breakdown?.q_measured);
+          const label = dayLabel(b.iso, trendShort);
+          productivityScoreTrend.push({
+            label,
+            score: qScored.length
+              ? Math.round(
+                  qScored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) / qScored.length,
+                )
+              : null,
+            share:
+              classified > 0 && t.active > 0
+                ? Math.min(100, Math.round((t.prod / t.active) * 100))
+                : null,
+            measured: qScored.length,
+          });
+
           return {
-            label: dayLabel(b.iso, trendShort),
+            label,
             productiveH: h(prodSec),
             neutralH: h(neutSec),
             distractingH: h(distSec),
@@ -648,6 +672,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             newHires: flat(0), // directory list carries no join date → honest 0 (see hint).
           },
           productivityTrend,
+          productivityScoreTrend,
           teamData,
           screenshotCount,
           screenshotCountPartial,

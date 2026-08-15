@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { WidgetType } from "@/stores/dashboard.store";
 import { ProductivityChart } from "./components/productivity-chart";
+import { ProductivityTrendChart } from "./components/productivity-trend-chart";
 import { TeamComparisonChart } from "./components/team-comparison-chart";
 import {
   ProductivityHeatmap,
@@ -41,6 +42,15 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
     render: (d) => (
       <ProductivityChart
         data={d.productivityTrend}
+        rangeLabel={d.range === "today" ? "last 7 days" : d.rangeLabel}
+      />
+    ),
+  },
+  "org_activity.score_trend": {
+    span: 1,
+    render: (d) => (
+      <ProductivityTrendChart
+        data={d.productivityScoreTrend}
         rangeLabel={d.range === "today" ? "last 7 days" : d.rangeLabel}
       />
     ),

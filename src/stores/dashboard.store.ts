@@ -19,6 +19,7 @@ import { persist } from "zustand/middleware";
  */
 export type WidgetType =
   | "org_activity.trends"
+  | "org_activity.score_trend"
   | "org_activity.heatmap"
   | "team_activity"
   | "org_attendance"
@@ -86,10 +87,11 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "attention_list.alerts", title: "Needs attention", type: "attention_list.alerts", position: 5, visible: true },
   { id: "org_activity.active_ring", title: "Active vs inactive", type: "org_activity.active_ring", position: 6, visible: false },
   { id: "org_activity.trends", title: "Where time went", type: "org_activity.trends", position: 7, visible: false },
-  { id: "reports.upcoming_tasks", title: "Upcoming tasks", type: "reports.upcoming_tasks", position: 8, visible: false },
-  { id: "org_activity.heatmap", title: "Activity heatmap", type: "org_activity.heatmap", position: 9, visible: false },
-  { id: "reports.headcount", title: "Headcount by status", type: "reports.headcount", position: 10, visible: false },
-  { id: "payroll_summary", title: "Billing overview", type: "payroll_summary", position: 11, visible: false },
+  { id: "org_activity.score_trend", title: "Productivity trends", type: "org_activity.score_trend", position: 8, visible: false },
+  { id: "reports.upcoming_tasks", title: "Upcoming tasks", type: "reports.upcoming_tasks", position: 9, visible: false },
+  { id: "org_activity.heatmap", title: "Activity heatmap", type: "org_activity.heatmap", position: 10, visible: false },
+  { id: "reports.headcount", title: "Headcount by status", type: "reports.headcount", position: 11, visible: false },
+  { id: "payroll_summary", title: "Billing overview", type: "payroll_summary", position: 12, visible: false },
 ];
 
 const KNOWN_TYPES = new Set<string>(DEFAULT_WIDGETS.map((w) => w.type));
