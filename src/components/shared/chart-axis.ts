@@ -62,15 +62,30 @@ export function yAxisLabel(value: string) {
  *
  * Charts here often used a negative left margin to pull the plot area tight against the card. That
  * clips a rotated y-axis label entirely — the label renders, off-canvas, and the chart looks
- * unlabelled while the code says otherwise. Bottom room is for the x-axis label sitting under the
- * ticks.
+ * unlabelled while the code says otherwise.
+ *
+ * **The bottom number has to cover three things, stacked.** `xAxisLabel` positions the text
+ * `insideBottom` with `offset: -4`, which places it *below* the tick row rather than over the plot.
+ * So the margin has to fit the tick text, the offset gap, and the label's own line — roughly
+ * 12 + 4 + 12, plus a couple of pixels so descenders ("y" in "your local time") are not sliced.
+ *
+ * It was 18, which covers the ticks and almost nothing else: the label rendered half outside the
+ * SVG and collided with the caption below the chart. If a label ever looks cut in half again, this
+ * number is why — raise it rather than moving the label.
  */
-export const CHART_MARGIN = { top: 8, right: 12, bottom: 18, left: 4 } as const;
+const AXIS_LABEL_ROOM = 32;
+
+export const CHART_MARGIN = {
+  top: 8,
+  right: 12,
+  bottom: AXIS_LABEL_ROOM,
+  left: 4,
+} as const;
 
 /** As {@link CHART_MARGIN}, with room for a legend rendered above the plot. */
 export const CHART_MARGIN_WITH_LEGEND = {
   top: 4,
   right: 12,
-  bottom: 18,
+  bottom: AXIS_LABEL_ROOM,
   left: 4,
 } as const;
