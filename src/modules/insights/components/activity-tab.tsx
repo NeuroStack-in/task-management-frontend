@@ -31,7 +31,12 @@ import { useAiReport } from "../use-reports";
 import { useOrgActivityRange } from "../use-activity-range";
 import { useHourlyActivity } from "../use-hourly-activity";
 import { getAppUsage, type UsageRow } from "../services/insights.service";
-import { xAxisLabel, yAxisLabel } from "@/components/shared/chart-axis";
+import {
+  CHART_MARGIN,
+  CHART_MARGIN_WITH_LEGEND,
+  xAxisLabel,
+  yAxisLabel,
+} from "@/components/shared/chart-axis";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
@@ -469,7 +474,7 @@ export function ActivityTab() {
               <>
                 <div className="h-[260px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={hourlyData} margin={{ left: -18, right: 8, top: 4 }}>
+                    <AreaChart data={hourlyData} margin={CHART_MARGIN_WITH_LEGEND}>
                       <defs>
                         {activeCategories.map((c) => (
                           <linearGradient
@@ -567,7 +572,7 @@ export function ActivityTab() {
           ) : (
             <div className="h-[260px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ left: -18, right: 8, top: 4 }}>
+                <AreaChart data={trendData} margin={CHART_MARGIN}>
                   <defs>
                     <linearGradient id="fillActiveHr" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.4} />
