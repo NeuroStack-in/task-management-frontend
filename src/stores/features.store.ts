@@ -55,7 +55,8 @@ const DEFAULTS: Record<FeatureKey, boolean> = {
  *  - `billing` — never plan-gated. Gating billing would deadlock an org out of fixing
  *    the very plan that gates it.
  *  - `approvals`, `desktop-agents` — not plan-gated; they're core.
- *  - `communication` — Inbox is DEFERRED; no key exists yet.
+ *  - `communication` — no key exists. The Inbox route was REMOVED (never built); the module
+ *    survives only as the assistant service the chat panel calls.
  *  - `integrations`, `remote-support` — removed from the backend catalog. `remote_support`
  *    is CUT entirely; `integrations` is DEFERRED with no OAuth behind it.
  */

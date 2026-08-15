@@ -152,11 +152,6 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [p("anomalies", "view", "View alerts")],
   },
   {
-    module: "communication",
-    label: "Communication",
-    permissions: [p("communication", "view", "View Inbox")],
-  },
-  {
     module: "notifications",
     label: "Notifications",
     permissions: [p("notifications", "view", "View Notifications")],

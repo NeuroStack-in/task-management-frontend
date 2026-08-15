@@ -55,7 +55,7 @@ interface FeatureDef {
  *  - **Billing** — never plan-gated. Gating it would deadlock an org out of fixing the
  *    very plan that gates it.
  *  - **Approvals**, **Device agents** — core, not plan-gated.
- *  - **Communication** (Inbox) — DEFERRED; no backend key exists.
+ *  - **Communication** — no backend key exists. The Inbox route was REMOVED (never built).
  *  - **Remote support** — CUT entirely.
  */
 const FEATURE_LIST: FeatureDef[] = [

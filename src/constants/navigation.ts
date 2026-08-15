@@ -10,7 +10,6 @@ import {
   CheckCheck,
   WandSparkles,
   LineChart,
-  Mail,
   Bell,
   BellRing,
   ShieldCheck,
@@ -143,13 +142,6 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Communication",
     items: [
-      {
-        label: "Inbox",
-        href: "/inbox",
-        icon: Mail,
-        permission: "communication:view",
-        keywords: "messages chat conversations mail team talk",
-      },
       {
         label: "Notifications",
         href: "/notifications",

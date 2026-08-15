@@ -71,7 +71,10 @@ const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {
   80: ["agents:view", "agents:manage"], // AgentsManage
   90: ["help:view"], // HelpView
   91: ["help:view"], // SupportCreate
-  100: ["notifications:view", "communication:view"], // NotificationsRead
+  // `communication:view` was mapped here too, for the Inbox nav entry. The Inbox route is gone
+  // (never built — it rendered ComingSoon), so the id no longer exists in the catalog. The server
+  // bit is untouched: this file mirrors bits onto frontend ids, it does not define them.
+  100: ["notifications:view"], // NotificationsRead
   101: ["notifications:view"], // NotificationsManage
   // ── contributor-only · 110–119 ──
   110: ["time-tracking:view", "time-tracking:self"], // TimeTrackSelf
