@@ -142,7 +142,8 @@ export function ProductivityChart({
                 <XAxis
                   dataKey="label"
                   {...xAxisLabel(
-                    rangeLabel.includes("by week") ? "Week starting" : rangeLabel,
+                    // The tick now carries the span itself, so the axis only has to name the unit.
+                    rangeLabel.includes("by week") ? "Week" : rangeLabel,
                   )}
                   tickLine={false}
                   axisLine={false}

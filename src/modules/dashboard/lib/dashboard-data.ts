@@ -34,6 +34,25 @@ function weekStart(iso: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * A week's span as a tick label — `"Aug 3–9"`, or `"Jul 27–Aug 2"` when it crosses a month.
+ *
+ * En dash, not a hyphen: these sit next to date text, and a hyphen reads as part of a date.
+ */
+export function weekRangeLabel(startIso: string): string {
+  const s = new Date(`${startIso}T00:00:00`);
+  const e = new Date(s);
+  e.setDate(e.getDate() + 6);
+  const from = `${MONTHS[s.getMonth()]} ${s.getDate()}`;
+  // Repeating the month on both sides of every label would cost width on the common case for no
+  // information — within one month the second date can only be the same month.
+  const to =
+    s.getMonth() === e.getMonth()
+      ? `${e.getDate()}`
+      : `${MONTHS[e.getMonth()]} ${e.getDate()}`;
+  return `${from}–${to}`;
+}
+
 const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
 
 /**
@@ -65,13 +84,14 @@ export function foldToWeeks(points: TrendPoint[]): TrendPoint[] {
       // `org_period::org_totals` makes server-side (`peak_people_with_data`).
       acc.reported = Math.max(acc.reported, p.reported);
     } else {
-      const d = new Date(`${start}T00:00:00`);
       byWeek.set(start, {
         ...p,
         iso: start,
-        // The week's Monday — "Aug 3" reads as a week when the axis says so, and stays short enough
-        // not to collide at five or six bars.
-        label: `${MONTHS[d.getMonth()]} ${d.getDate()}`,
+        // The week's full span, not just its Monday. A lone "Aug 3" still has to be *decoded* into
+        // a week from the axis title; "Aug 3–9" says it on the tick, which is where the reader is
+        // already looking. The month is repeated only when the week crosses one ("Jul 27–Aug 2"),
+        // so the common case stays short enough for five or six bars.
+        label: weekRangeLabel(start),
       });
     }
   }

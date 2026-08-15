@@ -34,7 +34,7 @@ describe("singleDayOf", () => {
   });
 });
 
-import { foldToWeeks, type TrendPoint } from "./dashboard-data";
+import { foldToWeeks, weekRangeLabel, type TrendPoint } from "./dashboard-data";
 
 const day = (iso: string, p: number, n: number): TrendPoint => ({
   label: iso,
@@ -103,5 +103,39 @@ describe("foldToWeeks coverage", () => {
     const c: TrendPoint = { ...day("2026-08-05", 1, 0), reported: 3 };
     const [week] = foldToWeeks([a, b, c]);
     expect(week.reported).toBe(5);
+  });
+});
+
+describe("weekRangeLabel", () => {
+  /** The tick should say the span, so the reader doesn't have to decode a Monday from the axis. */
+  it("shows the week's range", () => {
+    expect(weekRangeLabel("2026-08-03")).toBe("Aug 3–9");
+    expect(weekRangeLabel("2026-08-10")).toBe("Aug 10–16");
+  });
+
+  /** The month is repeated only when the week crosses one — otherwise it costs width for nothing. */
+  it("names the second month only when the week crosses one", () => {
+    expect(weekRangeLabel("2026-07-27")).toBe("Jul 27–Aug 2");
+    expect(weekRangeLabel("2026-12-28")).toBe("Dec 28–Jan 3");
+  });
+
+  /** A leap February must not slip a day. */
+  it("handles a leap year boundary", () => {
+    expect(weekRangeLabel("2028-02-28")).toBe("Feb 28–Mar 5");
+  });
+
+  /** The fold's labels come from here, so a month view's bars carry spans end to end. */
+  it("is what the fold puts on each bar", () => {
+    const pt = (iso: string): TrendPoint => ({
+      label: iso,
+      iso,
+      productiveH: 1,
+      neutralH: 0,
+      distractingH: 0,
+      unclassifiedH: 0,
+      reported: 1,
+    });
+    const [w] = foldToWeeks([pt("2026-07-30")]);
+    expect(w.label).toBe("Jul 27–Aug 2");
   });
 });
