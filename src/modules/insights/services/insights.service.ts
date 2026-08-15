@@ -253,8 +253,22 @@ export interface ShotRow {
   redacted?: boolean;
   /** Server-classified category of the captured app: `productive | neutral | distracting`. */
   category: string;
-  /** `true` when the capture is worth reviewing (a distracting-app capture) — drives flag/filter. */
+  /**
+   * `true` when the capture is worth reviewing.
+   *
+   * **Check {@link ShotRow.reviewed} before calling this a verdict.** When the vision model has
+   * analysed the frame this is its judgement; when it hasn't — the common case, since analysis is
+   * on-demand — it falls back to "the app was classified distracting", which is a guess about the
+   * app and not about what is on screen.
+   */
   flagged: boolean;
+  /**
+   * `true` when the vision model has actually analysed this frame.
+   *
+   * Rendering `flagged` without this is what made a capture badged "Needs review" open to the model
+   * saying it was clear: the badge was the app-name fallback, and the frame had never been analysed.
+   */
+  reviewed?: boolean;
   /**
    * Which physical monitor this frame came from — **0-based, primary = 0**. A multi-monitor machine
    * emits one row per display in the same batch, all sharing `captured_at`; that is what lets the

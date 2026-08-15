@@ -199,7 +199,8 @@ export function ScreenshotsTab() {
     [scopedShots],
   );
   const total = scopedShots.length;
-  // Real, from the server's app classification: a distracting-app capture is flagged for review.
+  // Real: the model's verdicts plus the server's distracting-app fallback. Deliberately the union —
+  // both warrant a human look; only the badge claims which one judged the frame.
   const needsReview = useMemo(
     () => scopedShots.filter((s) => s.flagged).length,
     [scopedShots],
@@ -220,7 +221,8 @@ export function ScreenshotsTab() {
   const q = query.trim().toLowerCase();
   const filteredShots = useMemo(() => {
     return scopedShots.filter((s) => {
-      // "Needs review" → the real distracting-app captures (server-classified).
+      // "Flagged" → every capture worth a look: the vision model's verdicts *and* the captures the
+      // server surfaced from the app name alone. The tile badge is what tells the two apart.
       if (flag === "flagged" && !s.flagged) return false;
       const emp = dirById.get(s.user_id);
       if (dept !== ALL_DEPTS && emp?.department_id !== dept) return false;
@@ -267,7 +269,7 @@ export function ScreenshotsTab() {
 
   if (openUser) {
     // Deliberately built from `scopedShots`, **not** the gallery's `filteredShots`: the detail view
-    // has its own review/time filters, so inheriting the gallery's "Needs review" toggle would show
+    // has its own review/time filters, so inheriting the gallery's "Flagged" toggle would show
     // a filtered day while claiming to be the employee's full day. Scope (who you may see) still
     // applies — that is a permission boundary, not a filter.
     const mine = scopedShots.filter((s) => s.user_id === openUser);
@@ -300,7 +302,7 @@ export function ScreenshotsTab() {
             value: total.toLocaleString(),
             hint: hasMore ? "so far" : undefined,
           },
-          { label: "Needs review", value: needsReview },
+          { label: "Flagged", value: needsReview },
           { label: "Avg activity", value: `${onTaskPct}%`, hint: "on-task rate" },
         ]}
       />
@@ -385,7 +387,7 @@ export function ScreenshotsTab() {
                   checked={flag === opt}
                   onChange={() => setFlag(opt)}
                 />
-                {opt === "all" ? "All" : "Needs review"}
+                {opt === "all" ? "All" : "Flagged"}
               </label>
             ))}
           </div>
@@ -938,6 +940,12 @@ interface Capture {
   /** Ordered by `display`, so index 0 is always the primary monitor. */
   monitors: ShotRow[];
   flagged: boolean;
+  /**
+   * `true` when the vision model has actually judged this capture — i.e. `flagged` is a verdict
+   * rather than the server's app-name fallback. See the tile badge for why the distinction is
+   * load-bearing.
+   */
+  reviewed: boolean;
   /** The frame the tile shows: the flagged monitor if any, else the primary. */
   cover: ShotRow;
 }
@@ -963,6 +971,10 @@ function groupCaptures(shots: ShotRow[]): Capture[] {
         capturedAt,
         monitors,
         flagged: monitors.some((s) => s.flagged),
+        // Reviewed only when *every* frame of the moment has been analysed — a capture with one
+        // judged monitor and one un-judged one has not been fully reviewed, and claiming otherwise
+        // is the same over-statement this field exists to stop.
+        reviewed: monitors.every((s) => s.reviewed === true),
         // Lead with the frame that earned the flag — a reviewer should see *why* it is flagged
         // without first clicking past whichever monitor happens to be primary.
         cover: monitors.find((s) => s.flagged) ?? monitors[0],
@@ -1082,7 +1094,7 @@ function EmployeeCaptures({
           <Summary label="Captures" value={allCaptures.length} />
           <Summary label="Monitors" value={monitorCount} />
           <Summary
-            label="Needs review"
+            label="Flagged"
             value={flaggedCount}
             tone={flaggedCount > 0 ? "text-destructive" : undefined}
           />
@@ -1121,7 +1133,7 @@ function EmployeeCaptures({
                 onChange={() => setFlag("flagged")}
                 style={{ accentColor: "var(--primary)" }}
               />
-              Needs review
+              Flagged
             </label>
           </div>
         </Field>
@@ -1240,7 +1252,8 @@ function CaptureCard({
       onClick={onOpen}
       className={cn(
         "group overflow-hidden rounded-2xl bg-card text-left shadow-soft transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-        capture.flagged && "ring-1 ring-destructive/40",
+        capture.flagged && capture.reviewed && "ring-1 ring-destructive/40",
+        capture.flagged && !capture.reviewed && "ring-1 ring-warning/40",
       )}
     >
       <div className="relative aspect-video w-full overflow-hidden bg-muted">
@@ -1260,8 +1273,25 @@ function CaptureCard({
         <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
           {shot.app || "—"}
         </span>
-        {capture.flagged ? (
+        {/*
+          Two different things surface a capture, and they must not wear the same badge.
+
+          `flagged && reviewed` is the vision model's verdict — it looked at the frame and judged it.
+          `flagged && !reviewed` is the server's app-name fallback: the app was classified
+          distracting, nothing has looked at the pixels. That second case is the overwhelming
+          majority (219 of 223 captures on one live day had no analysis at all), and it used to
+          render the *identical* red "Needs review" chip. Open one and the detail panel says the
+          frame has not been analysed — the grid appeared to contradict its own analyser.
+
+          So "Needs review" now means what it says: **nobody has reviewed this yet.** A capture the
+          model actually judged reads "AI flagged", in destructive red, because that one is a finding.
+        */}
+        {capture.flagged && capture.reviewed ? (
           <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-medium text-white">
+            <Flag className="size-3" /> AI flagged
+          </span>
+        ) : capture.flagged ? (
+          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-warning px-1.5 py-0.5 text-[11px] font-medium text-white">
             <Flag className="size-3" /> Needs review
           </span>
         ) : monitorCount > 1 ? (
