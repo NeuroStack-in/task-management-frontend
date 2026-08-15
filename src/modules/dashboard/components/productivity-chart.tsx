@@ -15,7 +15,6 @@ import {
 import { CHART_MARGIN, xAxisLabel, yAxisLabel } from "@/components/shared/chart-axis";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -61,18 +60,6 @@ export function ProductivityChart({
         <CardDescription>
           Score vs. productive share · {rangeLabel}
         </CardDescription>
-        {/* The card was a dead end: two unexplained curves with nowhere to go for the detail
-            behind them. The link is visible rather than a bare clickable card, because an
-            undiscoverable click target is its own usability problem. */}
-        <CardAction>
-          <Link
-            href="/insights/activity"
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs font-medium transition-colors"
-          >
-            Activity details
-            <ArrowUpRight className="size-3.5" />
-          </Link>
-        </CardAction>
       </CardHeader>
       <CardContent>
         <div className="h-full min-h-[150px] w-full">
@@ -142,6 +129,21 @@ export function ProductivityChart({
               />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+        {/* Below the chart, NOT in the header.
+            On the dashboard this card is a draggable widget, and the grid overlays its own drag
+            handle and remove button at `absolute right-3 top-3` on hover — the same corner
+            `CardAction` occupies. The link sat underneath them and got shredded into
+            "Activity ⠿ l ✕". Anything this card puts in its top-right will collide with the widget
+            chrome, so the affordance belongs where the widget owns no space. */}
+        <div className="mt-2 flex justify-end">
+          <Link
+            href="/insights/activity"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs font-medium transition-colors"
+          >
+            Activity details
+            <ArrowUpRight className="size-3.5" />
+          </Link>
         </div>
       </CardContent>
     </Card>
