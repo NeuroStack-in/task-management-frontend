@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CHART_MARGIN, xAxisLabel, yAxisLabel } from "@/components/shared/chart-axis";
 import {
   Card,
   CardContent,
@@ -39,7 +40,7 @@ export function ProductivityChart({
       <CardContent>
         <div className="h-full min-h-[150px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ left: -16, right: 8, top: 4 }}>
+            <AreaChart data={data} margin={CHART_MARGIN}>
               <defs>
                 <linearGradient id="fillActive" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.4} />
@@ -53,6 +54,7 @@ export function ProductivityChart({
               <CartesianGrid vertical={false} stroke="var(--border)" />
               <XAxis
                 dataKey="label"
+                {...xAxisLabel(rangeLabel)}
                 tickLine={false}
                 axisLine={false}
                 tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
@@ -61,6 +63,9 @@ export function ProductivityChart({
                 // Both series are 0-100. Fixed so the axis reads the same every day, and so a bad
                 // point stands out instead of quietly rescaling the whole chart around itself.
                 domain={[0, 100]}
+                // Two different 0–100 quantities share this axis (a score and a percentage), so the
+                // label names the scale rather than either series — the legend names the series.
+                {...yAxisLabel("Score / % of active time")}
                 tickLine={false}
                 axisLine={false}
                 tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}

@@ -2,7 +2,13 @@
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Grid3x3 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import type {
   AttendanceStatus,
   HeadcountCounts,
@@ -52,6 +58,13 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
     <Card>
       <CardHeader>
         <CardTitle>Activity heatmap</CardTitle>
+        {/* A grid of coloured squares tells a first-time reader nothing on its own: not what a cell
+            counts, not what "darker" means, and not what it is relative to. All three have to be
+            said, because none of them can be inferred from the picture. */}
+        <CardDescription>
+          Weekday (rows) × hour of day (columns) · darker = more screenshot captures, relative to
+          this org&apos;s own busiest hour
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-1.5">
         {data.map((row, d) => (
@@ -85,8 +98,11 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
             </span>
           ))}
         </div>
+        <p className="text-muted-foreground pt-0.5 pl-10 text-center text-[10px]">
+          Hour of day
+        </p>
         <div className="text-muted-foreground flex items-center justify-end gap-1.5 pt-1 text-[10px]">
-          <span>Less</span>
+          <span>Fewer captures</span>
           {[18, 40, 62, 84, 100].map((v) => (
             <span
               key={v}
@@ -233,6 +249,12 @@ export function AttendanceDonut({
     <Card>
       <CardHeader>
         <CardTitle>Attendance</CardTitle>
+        {/* The centre reads a bare percentage. Of what, out of how many, and for when are all
+            invisible without saying so — and "for when" matters here, because a day only gets a
+            status from the nightly close. */}
+        <CardDescription>
+          Share of the team present or partially present, out of {total} people with a resolved day
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Donut
@@ -269,6 +291,7 @@ export function ActiveInactiveRing({
   inactiveLabel,
   title,
   caption,
+  description,
   layout,
   note,
 }: {
@@ -279,6 +302,8 @@ export function ActiveInactiveRing({
   title: string;
   /** Word under the centre percentage — what the percentage is *of*. */
   caption: string;
+  /** One line naming the measure and its period. The ring is generic; only the caller knows. */
+  description?: string;
   layout?: "column" | "row";
   /** Optional qualifier under the donut — e.g. that a multi-day figure is the period's peak day. */
   note?: string;
@@ -288,6 +313,7 @@ export function ActiveInactiveRing({
     <Card>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
+        {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
       <CardContent className="flex-1">
         <Donut
@@ -328,6 +354,9 @@ export function HeadcountStatus({ counts }: { counts: HeadcountCounts }) {
     <Card>
       <CardHeader>
         <CardTitle>Headcount by status</CardTitle>
+        <CardDescription>
+          Everyone in the directory, split by account status &mdash; not attendance
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="font-display text-3xl font-semibold tabular-nums">{total}</p>

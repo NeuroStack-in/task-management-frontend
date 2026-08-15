@@ -64,6 +64,7 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
         active={d.activeCount}
         inactive={d.inactiveCount}
         title="Employment status"
+        description="Share of directory accounts that are active rather than deactivated"
         caption="active"
         activeLabel="Active"
         inactiveLabel="Deactivated"

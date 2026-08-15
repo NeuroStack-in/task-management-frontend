@@ -28,6 +28,11 @@ import {
   YAxis,
 } from "recharts";
 import {
+  CHART_MARGIN_WITH_LEGEND,
+  xAxisLabel,
+  yAxisLabel,
+} from "@/components/shared/chart-axis";
+import {
   Avatar,
   AvatarFallback,
   AvatarImage,
@@ -878,7 +883,7 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
             <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
               <AreaChart
                 data={chartData}
-                margin={{ top: 6, right: 8, bottom: 0, left: -16 }}
+                margin={CHART_MARGIN_WITH_LEGEND}
               >
                 <defs>
                   <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
@@ -893,15 +898,17 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                 />
                 <XAxis
                   dataKey="month"
+                  {...xAxisLabel("Month")}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
                   dy={6}
                 />
                 <YAxis
+                  {...yAxisLabel("Hours worked")}
                   tickLine={false}
                   axisLine={false}
-                  width={42}
+                  width={50}
                   tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
                   tickFormatter={(v) => `${v}h`}
                 />

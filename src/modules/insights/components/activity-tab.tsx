@@ -31,6 +31,7 @@ import { useAiReport } from "../use-reports";
 import { useOrgActivityRange } from "../use-activity-range";
 import { useHourlyActivity } from "../use-hourly-activity";
 import { getAppUsage, type UsageRow } from "../services/insights.service";
+import { xAxisLabel, yAxisLabel } from "@/components/shared/chart-axis";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 
@@ -465,6 +466,7 @@ export function ActivityTab() {
                       <XAxis
                         dataKey="label"
                         interval={1}
+                        {...xAxisLabel("Hour of day (your local time)")}
                         tickLine={false}
                         axisLine={false}
                         tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
@@ -552,12 +554,14 @@ export function ActivityTab() {
                   <CartesianGrid vertical={false} stroke="var(--border)" />
                   <XAxis
                     dataKey="label"
+                    {...xAxisLabel(granularity === "weekly" ? "Day of week" : "Week of month")}
                     tickLine={false}
                     axisLine={false}
                     tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                   />
                   <YAxis
                     domain={[0, 100]}
+                    {...yAxisLabel("Productivity score (0–100)")}
                     tickLine={false}
                     axisLine={false}
                     tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
@@ -593,6 +597,13 @@ export function ActivityTab() {
         <Card data-tour="insights:categories">
           <CardHeader>
             <CardTitle>Time by category</CardTitle>
+            {/* Three bars with percentages and no statement of the denominator. The percentages are
+                of *classified* time, not of the working day — a distinction that changes what the
+                numbers mean and cannot be seen from the bars. */}
+            <CardDescription>
+              Share of classified activity time in the selected period · unclassified apps are
+              excluded, not counted as neutral
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-3">
             {catTotal > 0 ? (
@@ -650,6 +661,7 @@ export function ActivityTab() {
           // Not employment status: this is who produced agent data. "Inactive" read as
           // "deactivated employee" — it means the agent reported nothing for them.
           title="Reporting coverage"
+          description="Share of employees whose desktop agent sent activity in this period — a coverage measure, not an employment one"
           caption="reporting"
           activeLabel="Reported"
           inactiveLabel="Not reporting"
@@ -680,12 +692,14 @@ export function ActivityTab() {
           <div className="grid gap-4 lg:grid-cols-2">
             <UsageList
               title="Top applications"
+              description={`Time spent per application across the team${usageRange ? `, ${usageRange.from === usageRange.to ? `on ${usageRange.from}` : `${usageRange.from} to ${usageRange.to}`}` : ""}`}
               items={usage.apps}
               loading={usage.loading}
               truncated={usage.truncated}
             />
             <UsageList
               title="Top websites"
+              description={`Time spent per website across the team${usageRange ? `, ${usageRange.from === usageRange.to ? `on ${usageRange.from}` : `${usageRange.from} to ${usageRange.to}`}` : ""}`}
               items={usage.sites}
               loading={usage.loading}
               // Sites are the one half that can be legitimately empty while apps are not: the
@@ -767,12 +781,15 @@ const CATEGORY_COLOR: Record<UsageItem["category"], string> = {
 
 function UsageList({
   title,
+  description,
   items,
   loading = false,
   truncated = false,
   emptyHint,
 }: {
   title: string;
+  /** What is being ranked and over what period — a bare "Top applications" says neither. */
+  description: string;
   items: UsageItem[];
   loading?: boolean;
   /** The server capped the read, so this is the top of a longer list — say so, never imply totality. */
@@ -785,6 +802,7 @@ function UsageList({
     <Card>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {truncated && items.length > 0 ? (

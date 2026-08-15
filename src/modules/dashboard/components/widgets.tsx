@@ -16,6 +16,7 @@ import {
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -90,6 +91,11 @@ export function TopEmployeesWidget({ people }: { people: Performer[] }) {
     <Card>
       <CardHeader>
         <CardTitle>Top performers</CardTitle>
+        {/* A ranked list of names and numbers, where the number is a composite score most readers
+            have never met. Name the measure and its range; the metric explainer covers the rest. */}
+        <CardDescription>
+          Highest average productivity score (0&ndash;100) in the selected range
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {people.length === 0 ? (

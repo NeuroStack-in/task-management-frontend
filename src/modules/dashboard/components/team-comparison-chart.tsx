@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CHART_MARGIN, xAxisLabel, yAxisLabel } from "@/components/shared/chart-axis";
 import {
   Card,
   CardContent,
@@ -67,10 +68,11 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
       <CardContent>
         <div className="h-full min-h-[150px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ left: -18, right: 8, top: 4 }}>
+            <BarChart data={data} margin={CHART_MARGIN}>
               <CartesianGrid vertical={false} stroke="var(--border)" />
               <XAxis
                 dataKey="team"
+                {...xAxisLabel("Department")}
                 tickLine={false}
                 axisLine={false}
                 interval={0}
@@ -78,6 +80,9 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
               />
               <YAxis
                 domain={[0, 100]}
+                // The number is a score, not a percentage of anything — naming the range is what
+                // tells a first-time reader whether 68 is good.
+                {...yAxisLabel("Avg score (0–100)")}
                 tickLine={false}
                 axisLine={false}
                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}

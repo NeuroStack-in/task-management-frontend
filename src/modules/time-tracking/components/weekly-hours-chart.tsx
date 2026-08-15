@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CHART_MARGIN, xAxisLabel, yAxisLabel } from "@/components/shared/chart-axis";
 import {
   Card,
   CardAction,
@@ -128,19 +129,23 @@ export function WeeklyHoursChart() {
             <Skeleton className="h-full w-full rounded-xl" />
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ left: -20, right: 8, top: 4 }}>
+              <BarChart data={chartData} margin={CHART_MARGIN}>
                 <CartesianGrid vertical={false} stroke="var(--border)" />
                 <XAxis
                   dataKey="day"
+                  {...xAxisLabel("Day of week")}
                   tickLine={false}
                   axisLine={false}
                   interval={0}
                   tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 />
                 <YAxis
+                  // Ticks already carry "h", but the bars are stacked billable + other, so the
+                  // axis names what the stack height means rather than leaving it to the legend.
+                  {...yAxisLabel("Hours logged")}
                   tickLine={false}
                   axisLine={false}
-                  width={36}
+                  width={44}
                   tickFormatter={(v) => `${v}h`}
                   tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 />
