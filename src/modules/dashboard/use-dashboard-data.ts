@@ -426,8 +426,22 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           );
           return {
             label: dayLabel(b.iso, trendShort),
+            // NOTE: this is the productivity score, not an "active %". The series is named
+            // accordingly in the chart; the key stays `active` so stored widget layouts keep working.
             active: Math.round(dayScore ?? 0),
-            productive: dt.active ? Math.round((dt.productive / dt.active) * 100) : 0,
+            // Clamped, because the two totals come from different measurements and can disagree:
+            // `active_sec` is the agent's per-minute activity figure, while `productive_sec` is the
+            // sum of its `top_apps` spans, and nothing constrains the spans to fit inside the
+            // active time (overlapping windows or monitors will exceed it). Unclamped, that showed
+            // as "Productive % : 108". The score's Q term already clamps the same ratio
+            // (`score.rs`: `.min(100.0)`), so this makes the chart agree with the score instead of
+            // being the one surface that renders the skew raw.
+            //
+            // This hides the symptom, not the cause — a day over 100 means the agent's spans and
+            // its active seconds genuinely disagree, and the same skew is inflating Q up to its cap.
+            productive: dt.active
+              ? Math.min(100, Math.round((dt.productive / dt.active) * 100))
+              : 0,
           };
         });
         const productivityTrendSeries = productivityTrend.map((t) => t.active);

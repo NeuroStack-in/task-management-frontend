@@ -29,8 +29,11 @@ export function ProductivityChart({
     <Card>
       <CardHeader>
         <CardTitle>Productivity trends</CardTitle>
+        {/* Neither series is time. `active` is the four-term productivity score and `productive`
+            is a share of active time — the old "Active vs. productive time" described neither, so
+            a reader had no way to know the blue line was a score. */}
         <CardDescription>
-          Active vs. productive time · {rangeLabel}
+          Score vs. productive share · {rangeLabel}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -55,6 +58,9 @@ export function ProductivityChart({
                 tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
               />
               <YAxis
+                // Both series are 0-100. Fixed so the axis reads the same every day, and so a bad
+                // point stands out instead of quietly rescaling the whole chart around itself.
+                domain={[0, 100]}
                 tickLine={false}
                 axisLine={false}
                 tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
@@ -74,7 +80,7 @@ export function ProductivityChart({
                 stroke="var(--chart-1)"
                 fill="url(#fillActive)"
                 strokeWidth={2}
-                name="Active %"
+                name="Productivity score"
               />
               <Area
                 type="monotone"
@@ -82,7 +88,7 @@ export function ProductivityChart({
                 stroke="var(--chart-2)"
                 fill="url(#fillProductive)"
                 strokeWidth={2}
-                name="Productive %"
+                name="Productive share"
               />
             </AreaChart>
           </ResponsiveContainer>
