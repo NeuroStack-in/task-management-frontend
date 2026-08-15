@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { MONTH_NAMES, WEEKDAY_LABELS, monthMatrix, type DayCell } from "../lib/calendar";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import type { ApiDayResponse, ApiDaySummary } from "../services/attendance.service";
+import { attendanceRate } from "../lib/attended";
 
 interface AttendanceDate {
   year: number;
@@ -32,7 +33,9 @@ const isoOf = (y: number, m: number, d: number) => `${y}-${pad2(m + 1)}-${pad2(d
 
 /** Present-rate over counted days. Guarded: no counted days → 0, never NaN. */
 function rateOf(s: ApiDaySummary): number {
-  return s.counted ? Math.round((s.present / s.counted) * 100) : 0;
+  // The shared definition — partial counts as attended. This used to be `present / counted`, which
+  // made a day read 31% here and 38% on the overview card above it.
+  return attendanceRate(s, s.counted);
 }
 
 function exportMonthCsv(
@@ -131,7 +134,8 @@ export function AttendanceCalendar({
             {[
               { label: "Present", dot: "bg-success" },
               { label: "On leave", dot: "bg-primary" },
-              { label: "Absent / partial", dot: "bg-destructive" },
+              { label: "Partial", dot: "bg-warning" },
+              { label: "Absent", dot: "bg-destructive" },
             ].map((m) => (
               <span key={m.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span className={cn("size-2.5 rounded-full", m.dot)} />
@@ -208,8 +212,12 @@ function DayCellView({
   const rate = rateOf(s);
   const denom = s.counted || 1;
   const presentPct = (s.present / denom) * 100;
+  // Its own band, in the amber the roster badge already uses. Folded into the red "absent" bar
+  // before, so a day where someone clocked in briefly looked identical to one where they never
+  // appeared — which is exactly what forced a manual roster check.
+  const partialPct = (s.partial / denom) * 100;
   const leavePct = (s.leave / denom) * 100;
-  const offPct = Math.max(0, 100 - presentPct - leavePct); // absent + partial
+  const offPct = Math.max(0, 100 - presentPct - partialPct - leavePct); // absent only
 
   return (
     <button
@@ -229,10 +237,14 @@ function DayCellView({
 
       <div className="mt-auto space-y-1">
         <p className="text-[11px] leading-none text-muted-foreground">
-          <span className="font-semibold text-foreground tabular-nums">{s.present}</span> present
+          <span className="font-semibold text-foreground tabular-nums">
+            {s.present + s.partial}
+          </span>{" "}
+          attended
         </p>
         <div className="flex h-1.5 overflow-hidden rounded-full bg-muted">
           <span className="bg-success" style={{ width: `${presentPct}%` }} />
+          <span className="bg-warning" style={{ width: `${partialPct}%` }} />
           <span className="bg-primary" style={{ width: `${leavePct}%` }} />
           <span className="bg-destructive" style={{ width: `${offPct}%` }} />
         </div>

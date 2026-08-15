@@ -31,6 +31,7 @@ import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import { monthMatrix, MONTH_NAMES } from "./lib/calendar";
 import { useWorkdays, useWorkingHours } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
+import { attendanceRate } from "./lib/attended";
 
 export type AttendanceRange = "today" | "week" | "month" | "custom" | "day";
 
@@ -78,7 +79,16 @@ export interface OversightRow {
 }
 
 export interface OversightCounts {
+  /** Fully present only. **Not** the attendance figure — see `lib/attended`. */
   present: number;
+  /**
+   * Partially present, kept separate rather than folded into `present`.
+   *
+   * It used to be folded here, which made the overview count it as attendance while the calendar
+   * counted it as absence — the same day reading 38% and 31%. Surfaces now share one definition
+   * (`attended()`) and can still show this band on its own.
+   */
+  partial: number;
   /** Always 0 — the oversight index has no per-person late flag. Never fabricated. */
   late: number;
   leave: number;
@@ -88,11 +98,14 @@ export interface OversightCounts {
 /** One closed workday's attendance distribution — the unit of the trend series. */
 export interface DayPoint {
   iso: string;
+  /** Fully present only. */
   present: number;
+  /** Partially present — attended, but shown as its own band. */
+  partial: number;
   leave: number;
   absent: number;
   total: number;
-  /** `present / total` as a 0–100 percentage, rounded. */
+  /** Attendance (present + partial) over `total`, as a 0–100 percentage. */
   rate: number;
 }
 
@@ -117,7 +130,13 @@ export interface OversightAttendance {
   note: string | null;
 }
 
-const EMPTY_COUNTS: OversightCounts = { present: 0, late: 0, leave: 0, total: 0 };
+const EMPTY_COUNTS: OversightCounts = {
+  present: 0,
+  partial: 0,
+  late: 0,
+  leave: 0,
+  total: 0,
+};
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const isoOf = (y: number, m: number, d: number) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
@@ -309,6 +328,7 @@ function dayPoint(
   dept: string,
 ): DayPoint {
   let present = 0;
+  let partial = 0;
   let leave = 0;
   let absent = 0;
   let total = 0;
@@ -317,17 +337,20 @@ function dayPoint(
     if (dept !== "all" && uDept !== dept) continue;
     if (u.status === "non_workday") continue;
     total += 1;
-    if (u.status === "present" || u.status === "partial") present += 1;
+    if (u.status === "present") present += 1;
+    else if (u.status === "partial") partial += 1;
     else if (u.status === "leave") leave += 1;
     else absent += 1;
   }
   return {
     iso,
     present,
+    partial,
     leave,
     absent,
     total,
-    rate: total ? Math.round((present / total) * 100) : 0,
+    // The one definition — partial counts as attended (lib/attended).
+    rate: attendanceRate({ present, partial }, total),
   };
 }
 
@@ -556,7 +579,9 @@ export function useOversightAttendance({
             }
           }
           setState({
-            counts: { present, late: 0, leave: 0, total: emp.length },
+            // `partial: 0` — this is the LIVE today branch, derived from in/out presence. Partial is a
+            // verdict the nightly close assigns; it does not exist before then.
+            counts: { present, partial: 0, late: 0, leave: 0, total: emp.length },
             rows,
             mode: "today",
             series: [],
@@ -581,6 +606,7 @@ export function useOversightAttendance({
         if (!live) return;
 
         let present = 0;
+        let partial = 0;
         let leave = 0;
         let total = 0;
         const perUser = new Map<string, { present: number; counted: number }>();
@@ -598,7 +624,10 @@ export function useOversightAttendance({
             const pu = perUser.get(u.user_id) ?? { present: 0, counted: 0 };
             pu.counted += 1;
             if (u.status === "present" || u.status === "partial") {
-              present += 1;
+              // `pu.present` drives the per-person rate, where partial still counts as attended
+              // (lib/attended) — only the headline bands are split.
+              if (u.status === "present") present += 1;
+              else partial += 1;
               pu.present += 1;
             } else if (u.status === "leave") {
               leave += 1;
@@ -654,7 +683,7 @@ export function useOversightAttendance({
           : null;
 
         setState({
-          counts: { present, late: 0, leave, total },
+          counts: { present, partial, late: 0, leave, total },
           rows,
           mode,
           series,

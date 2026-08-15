@@ -49,6 +49,19 @@ function OversightAttendance() {
     setRange("day");
   };
 
+  /**
+   * Range and date are two halves of one selection, so every transition must move both.
+   *
+   * `selectDay` already did. The range buttons were wired straight to `setRange`, so pressing
+   * **Today** refetched the data — the hook reads `range` — while `date` stayed on whatever day was
+   * last picked. The chart showed today; the date picker, the heading and the calendar highlight
+   * (all driven by `date`) still showed the old day, with nothing to say which was current.
+   */
+  const changeRange = (r: AttendanceRange) => {
+    if (r === "today") setDate({ ...TODAY });
+    setRange(r);
+  };
+
   // The active filter's data (counts + roster).
   const data = useOversightAttendance({ range, dept, date, start, end });
 
@@ -101,7 +114,7 @@ function OversightAttendance() {
       <div data-tour="att:summary">
         <AttendanceOverview
           range={range}
-          onRangeChange={setRange}
+          onRangeChange={changeRange}
           date={date}
           onDateChange={selectDay}
           start={start}
