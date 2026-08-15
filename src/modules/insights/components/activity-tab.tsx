@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import {
   Area,
   AreaChart,
@@ -338,6 +339,18 @@ export function ActivityTab() {
           },
     ];
   }, [stats]);
+
+  // Publish the day and the hero row to the assistant. `metrics` is already `{label, value}` — the
+  // same shape the panel sends — so the figures the user is reading are exactly the ones the model
+  // is told about, rather than a second, drifting description of them.
+  useAssistantPageContext({
+    date: date || null,
+    facts: [
+      { label: "Tab", value: "Activity" },
+      { label: "Granularity", value: granularity },
+      ...metrics.map((m) => ({ label: m.label, value: String(m.value) })),
+    ],
+  });
 
   return (
     <div className="space-y-4">

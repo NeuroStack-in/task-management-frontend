@@ -27,6 +27,22 @@ export interface AssistantPage {
   path: string;
   title?: string;
   description?: string;
+  /**
+   * `YYYY-MM-DD` the page is showing, when it is date-scoped.
+   *
+   * Every date-keyed tool on the server defaults to **today (UTC)**. Without this, a user on
+   * Analytics with Aug 14 selected got answered about Aug 15 — "no screenshots were captured
+   * today" — which is correct about a day they were not looking at.
+   */
+  date?: string;
+  /**
+   * What the page currently displays: its filters, and figures the user can already see.
+   *
+   * Sent so the assistant can *reconcile* a question like "why does it say 1 needs review" against
+   * the claim being asked about. The server treats these as an unverified hint, never as evidence
+   * — a figure here must be confirmed by a real lookup before the reply asserts it.
+   */
+  facts?: { label: string; value: string }[];
 }
 
 /** One earlier turn of the open conversation. Mirrors `assistant::…::dto::HistoryTurn`. */

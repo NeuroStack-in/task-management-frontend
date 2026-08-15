@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import {
   Camera,
   ChevronLeft,
@@ -265,6 +266,32 @@ export function ScreenshotsTab() {
             ? `${needsReview} ${needsReview === 1 ? "capture" : "captures"} in a distracting app — review those first.`
             : "No distracting-app captures flagged."
         } On-task rate sits at ${onTaskPct}%.`;
+
+  // Tell the assistant what this page is actually showing.
+  //
+  // **This is what stops it answering about the wrong day.** Every date-keyed tool on the server
+  // defaults to today (UTC); asked "which screenshot needs review" while this page sat on Aug 14,
+  // it answered for Aug 15 — "no screenshots were captured today" — which is true and useless. The
+  // hero figures travel too, because `needsReview` is computed right here from rows already
+  // fetched: it exists in this tab and nowhere else, so a question about it was previously
+  // unanswerable and simply got denied.
+  useAssistantPageContext({
+    date: date || null,
+    facts: [
+      { label: "Tab", value: "Screenshots" },
+      { label: "Employees captured", value: String(monitored) },
+      { label: "Screenshots", value: `${total}${hasMore ? "+" : ""}` },
+      { label: "Needs review", value: String(needsReview) },
+      { label: "On-task rate", value: `${onTaskPct}%` },
+      ...(dept !== ALL_DEPTS
+        ? [{ label: "Department filter", value: deptNames.get(dept) ?? dept }]
+        : []),
+      ...(flag === "flagged"
+        ? [{ label: "Filter", value: "showing only captures needing review" }]
+        : []),
+      ...(query.trim() ? [{ label: "Search", value: query.trim() }] : []),
+    ],
+  });
 
   const nameOf = (id: string) => dirById.get(id)?.name ?? shortUser(id);
 

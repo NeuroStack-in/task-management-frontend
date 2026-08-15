@@ -10,6 +10,7 @@ import { useIsFeatureOn } from "@/hooks/use-features";
 import { ApiError } from "@/lib/api";
 import { sendAssistantMessage } from "@/modules/communication/services/assistant.service";
 import { navItemForPath } from "@/constants/navigation";
+import { usePublishedPageContext } from "@/stores/page-context.store";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 
@@ -53,11 +54,22 @@ export function ChatBot() {
   // What the user is looking at, resolved from the same navigation entries that render the menus.
   // The greeting promises answers about "the current screen"; this is what makes that true.
   const pathname = usePathname();
+  // …and what that page is *showing* — the selected day and the figures already on screen, when
+  // the page publishes them. Identity alone was not enough: the tools all default to today, so a
+  // page sitting on another date got answered about the wrong one, and an on-screen figure the
+  // assistant had no way to see got flatly denied instead of explained.
+  const published = usePublishedPageContext();
   const page = useMemo(() => {
     if (!pathname) return undefined;
     const item = navItemForPath(pathname);
-    return { path: pathname, title: item?.label, description: item?.description };
-  }, [pathname]);
+    return {
+      path: pathname,
+      title: item?.label,
+      description: item?.description,
+      date: published.date ?? undefined,
+      facts: published.facts.length > 0 ? published.facts : undefined,
+    };
+  }, [pathname, published]);
 
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);

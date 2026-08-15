@@ -12,6 +12,7 @@
  *    (`GET /v1/attendance/day`). See `use-oversight-attendance` for how each range maps to a call.
  */
 import { useState } from "react";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
@@ -68,6 +69,20 @@ function OversightAttendance() {
 
   // The calendar shows the selected date's month, fed by the real month fan-out.
   const month = useMonthAttendance(date.year, date.month);
+
+  // Publish the active filter + the counts on screen. Attendance is date-scoped, so without the
+  // selected day the assistant answers about today no matter what the user is looking at.
+  const iso = `${date.year}-${String(date.month + 1).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+  useAssistantPageContext({
+    date: range === "day" || range === "today" ? iso : null,
+    facts: [
+      { label: "Range", value: range === "custom" ? `${start} to ${end}` : range },
+      ...(dept !== "all" ? [{ label: "Department filter", value: dept }] : []),
+      { label: "Present", value: String(data.counts.present) },
+      { label: "On leave", value: String(data.counts.leave) },
+      { label: "Team size", value: String(data.counts.total) },
+    ],
+  });
 
   return (
     <div className="space-y-5 pt-1">
