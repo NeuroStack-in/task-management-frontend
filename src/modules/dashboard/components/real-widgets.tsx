@@ -310,9 +310,12 @@ const PERIOD_NOTE: Record<DashboardRange, string> = {
 export function OrgAiSummaryWidget({
   range = "today",
   rangeLabel,
+  days,
 }: {
   range?: DashboardRange;
   rangeLabel?: string;
+  /** The days the KPIs cover, resolved — see below for why a one-day custom range is not "custom". */
+  days?: string[];
 }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   const workdays = useWorkdays();
@@ -322,10 +325,17 @@ export function OrgAiSummaryWidget({
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A custom range has no cached narrative and no endpoint that would build one. Rather than
-  // silently show yesterday's daily summary under a "Jun 3 – Jul 12" header — which would read as a
-  // summary of that window — the card says what it can and can't cover.
-  const unsupportedRange = range === "range";
+  // **A one-day custom range IS a day.** Picking "Aug 15 – Aug 15" and being told summaries only
+  // exist per day/week/month is a limitation of the picker's mode, not of the data: there is a
+  // daily narrative for that date, and refusing it is why a Saturday selected by hand looked like
+  // it had no dashboard at all.
+  //
+  // Wider custom windows genuinely have no cached narrative and no endpoint that would build one.
+  // Rather than silently show one day's summary under a "Jun 3 – Jul 12" header — which would read
+  // as a summary of that window — the card still says what it can and can't cover.
+  const singleCustomDay =
+    range === "range" && days?.length === 1 ? days[0] : null;
+  const unsupportedRange = range === "range" && !singleCustomDay;
 
   // Enterprise org report first (richer, carries generated_at); fall back to the attention narrative
   // (gated only on AiInsightsRead) when the org lacks the report entitlement. The attention
@@ -338,7 +348,10 @@ export function OrgAiSummaryWidget({
   // 403 fallback applies.
   const fetchSummary = useCallback(
     async (force: boolean): Promise<{ narrative: string; generatedAt: number | null }> => {
-      const date = isoLastWorkday(workdays);
+      // The day the user actually chose, when they chose one. Falling back to the last *workday*
+      // was why a hand-picked Saturday could never be read: with a Mon–Fri workweek it silently
+      // resolved to Friday and the card described a different day than the one on screen.
+      const date = singleCustomDay ?? isoLastWorkday(workdays);
       // The always-available fallback: the attention narrative for the last workday (gated only on
       // AiInsightsRead). Used when a period report has no entitlement OR hasn't been generated yet.
       const attentionFallback = async () => {
@@ -371,7 +384,10 @@ export function OrgAiSummaryWidget({
         throw e;
       }
     },
-    [workdays, range],
+    // `singleCustomDay` is in here deliberately: without it, moving the custom picker from one day
+    // to another kept serving the first day's narrative — the callback never rebuilt, so the card
+    // silently described the previous selection.
+    [workdays, range, singleCustomDay],
   );
 
   useEffect(() => {

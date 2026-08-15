@@ -452,10 +452,12 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
 
           const h = (sec: number) => Math.round((sec / SEC_PER_H) * 10) / 10; // one decimal
 
-          // Honest score/share for the trend line, same day. Score averages ONLY people whose quality
-          // was genuinely measured (`q_measured`) — a partial ~50 score is never plotted; a day with
-          // none is a gap. Share is null unless something was classified (never a misleading 0%).
-          const qScored = people.filter((p) => p.breakdown?.q_measured);
+          // Honest score/share for the trend line, same day. Score averages people whose quality was
+          // measured, so a partial ~50 score (quality dropped) is never plotted. `q_measured` is
+          // optional: `false` = explicitly dropped; **absent OR `true` = measured** (rollup/older
+          // payloads omit the flag — see ScoreBreakdown). So exclude only explicit `false`; treating
+          // absent as unmeasured wrongly showed "not measured" beside a live productive share.
+          const qScored = people.filter((p) => p.breakdown && p.breakdown.q_measured !== false);
           const label = dayLabel(b.iso, trendShort);
           productivityScoreTrend.push({
             label,
@@ -656,6 +658,13 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           range,
           team,
           rangeLabel: rangeLabelFor({ range, team, start, end }, days),
+          days,
+          // The chart's own window. When a one-day selection widened to a rolling week above, say
+          // so — the card used to carry the KPI range and quietly misdescribe itself.
+          trendLabel:
+            trendBundles.length > days.length && trendBundles.length > 1
+              ? `last ${trendBundles.length} days`
+              : rangeLabelFor({ range, team, start, end }, days),
           kpis: {
             productivity: {
               value: productivityValue,

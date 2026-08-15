@@ -42,7 +42,7 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
     render: (d) => (
       <ProductivityChart
         data={d.productivityTrend}
-        rangeLabel={d.range === "today" ? "last 7 days" : d.rangeLabel}
+        rangeLabel={d.trendLabel}
       />
     ),
   },
@@ -51,7 +51,7 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
     render: (d) => (
       <ProductivityTrendChart
         data={d.productivityScoreTrend}
-        rangeLabel={d.range === "today" ? "last 7 days" : d.rangeLabel}
+        rangeLabel={d.trendLabel}
       />
     ),
   },
@@ -106,7 +106,9 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   // one covering the selected period (day / ISO week / calendar month).
   "attention_list.ai_summary": {
     span: 1,
-    render: (d) => <OrgAiSummaryWidget range={d.range} rangeLabel={d.rangeLabel} />,
+    render: (d) => (
+      <OrgAiSummaryWidget range={d.range} rangeLabel={d.rangeLabel} days={d.days} />
+    ),
   },
   payroll_summary: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
   "attention_list.alerts": { span: 1, render: () => <AlertsDeadlinesWidget /> },

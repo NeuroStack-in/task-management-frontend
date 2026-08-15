@@ -142,6 +142,18 @@ export interface DashboardData {
   range: DashboardRange;
   team: string;
   rangeLabel: string;
+  /**
+   * The days the KPIs actually cover, resolved. Carried so widgets can tell a **one-day** custom
+   * range from a three-month one: "Aug 15 – Aug 15" is a day, and refusing it a daily narrative
+   * because the picker mode happens to be "Custom" is a limitation of the picker, not of the data.
+   */
+  days: string[];
+  /**
+   * The window the trend chart actually draws, which is **not** always `days`: a single-day
+   * selection widens to a rolling week, because one point is not a trend. Labelling that chart with
+   * the KPI range made it claim to show one day while showing seven.
+   */
+  trendLabel: string;
   kpis: {
     productivity: KpiSeries;
     // Point-in-time (shown for the "Today" range)
