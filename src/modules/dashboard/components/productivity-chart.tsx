@@ -22,6 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { TrendPoint } from "@/modules/dashboard/lib/dashboard-data";
+import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
 export function ProductivityChart({
   data,
@@ -33,7 +34,27 @@ export function ProductivityChart({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Productivity trends</CardTitle>
+        <CardTitle className="flex items-center gap-1.5">
+          Productivity trends
+          <ChartLegendInfo
+            label="What Productivity score and Productive share mean"
+            terms={[
+              {
+                term: "Productivity score",
+                definition: "0–100 composite of utilisation, quality, focus and reliability.",
+              },
+              {
+                term: "Productive share",
+                definition: (
+                  <>
+                    Of <em>active</em> time (minutes with keyboard or mouse input), the percentage
+                    spent in apps your rules classify as productive.
+                  </>
+                ),
+              },
+            ]}
+          />
+        </CardTitle>
         {/* Neither series is time. `active` is the four-term productivity score and `productive`
             is a share of active time — the old "Active vs. productive time" described neither, so
             a reader had no way to know the blue line was a score. */}
@@ -122,25 +143,6 @@ export function ProductivityChart({
             </AreaChart>
           </ResponsiveContainer>
         </div>
-        {/* Both series are 0-100 and neither is time, which is exactly the confusion to head off:
-            one is a composite index, the other a percentage. Defining them here — rather than
-            leaving it to the metric explainer or the assistant — is the difference between a chart
-            someone can read on first sight and one they have to go and ask about. */}
-        <dl className="text-muted-foreground mt-3 space-y-1 text-[11px] leading-relaxed">
-          <div className="flex gap-1.5">
-            <dt className="text-foreground shrink-0 font-medium">Productivity score</dt>
-            <dd>
-              — 0&ndash;100 composite of utilisation, quality, focus and reliability.
-            </dd>
-          </div>
-          <div className="flex gap-1.5">
-            <dt className="text-foreground shrink-0 font-medium">Productive share</dt>
-            <dd>
-              — of <em>active</em> time (minutes with keyboard or mouse input), the percentage spent
-              in apps your rules classify as productive.
-            </dd>
-          </div>
-        </dl>
       </CardContent>
     </Card>
   );

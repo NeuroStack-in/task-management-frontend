@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatHours } from "@/lib/mock-time";
 import { MAX_WEEKS_BACK, useWeeklyHours } from "../use-weekly-hours";
+import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
 /** Monday–Sunday date range for a week `offset` weeks from `base`. */
 function weekRangeLabel(base: Date, offset: number): string {
@@ -71,6 +72,21 @@ export function WeeklyHoursChart() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2.5">
           {relLabel}
+          <ChartLegendInfo
+            label="What billable and other hours mean"
+            terms={[
+              {
+                term: "Billable",
+                definition:
+                  "Hours logged against a project marked billable. Set per project, not per session.",
+              },
+              {
+                term: "Other",
+                definition:
+                  "Everything else the timer recorded — non-billable projects, meetings and ad-hoc work.",
+              },
+            ]}
+          />
           {!loading && !error ? (
             <span className="font-mono text-sm font-normal text-muted-foreground">
               {formatHours(totalHours)}

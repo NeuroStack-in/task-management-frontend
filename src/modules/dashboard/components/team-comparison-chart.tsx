@@ -18,6 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
 interface TeamDatum {
   team: string;
@@ -60,7 +61,19 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Team comparison</CardTitle>
+        <CardTitle className="flex items-center gap-1.5">
+          Team comparison
+          <ChartLegendInfo
+            label="How the department average is calculated"
+            terms={[
+              {
+                term: "Avg productivity score",
+                definition:
+                  "The mean 0–100 score across everyone in the department who was scored that day. People with no agent data are not counted, so a department is never dragged down by a day nobody reported.",
+              },
+            ]}
+          />
+        </CardTitle>
         <CardDescription>
             Average productivity by department — always org-wide
           </CardDescription>

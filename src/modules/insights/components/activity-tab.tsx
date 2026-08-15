@@ -34,6 +34,7 @@ import { getAppUsage, type UsageRow } from "../services/insights.service";
 import { xAxisLabel, yAxisLabel } from "@/components/shared/chart-axis";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
+import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
 /**
  * Activity — the preview's Analytics layout (granularity toggle · AI report card · activity area
@@ -426,7 +427,29 @@ export function ActivityTab() {
 
       <Card data-tour="insights:trend">
         <CardHeader>
-          <CardTitle>{CHART_TITLE[granularity]}</CardTitle>
+          <CardTitle className="flex items-center gap-1.5">
+            {CHART_TITLE[granularity]}
+            <ChartLegendInfo
+              label="What this chart measures"
+              terms={
+                granularity === "daily"
+                  ? [
+                      {
+                        term: "Captures",
+                        definition:
+                          "How many screenshots the agent took in that hour, split by the category your rules give the app that was in front.",
+                      },
+                    ]
+                  : [
+                      {
+                        term: "Productivity score",
+                        definition:
+                          "0–100 composite of utilisation, quality, focus and reliability. A day with no agent data is not scored at all rather than scored zero, so the line breaks instead of dropping to 0.",
+                      },
+                    ]
+              }
+            />
+          </CardTitle>
           <CardDescription>{CHART_SUBTITLE[granularity]}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -596,7 +619,19 @@ export function ActivityTab() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card data-tour="insights:categories">
           <CardHeader>
-            <CardTitle>Time by category</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">
+              Time by category
+              <ChartLegendInfo
+                label="How time is categorised"
+                terms={[
+                  {
+                    term: "Productive / Neutral / Distracting",
+                    definition:
+                      "Your organisation's own app and URL rules decide which is which — the same app can be classified differently by another organisation. Unrecognised apps land in the rules editor's worklist rather than being guessed at.",
+                  },
+                ]}
+              />
+            </CardTitle>
             {/* Three bars with percentages and no statement of the denominator. The percentages are
                 of *classified* time, not of the working day — a distinction that changes what the
                 numbers mean and cannot be seen from the bars. */}
