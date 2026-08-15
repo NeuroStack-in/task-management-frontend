@@ -24,6 +24,7 @@ import { DeltaPill } from "@/components/shared/delta-pill";
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/format";
 import { LogDatePicker } from "./attendance-log";
+import { attended, attendanceRate1dp } from "../lib/attended";
 import type {
   AttendanceDate,
   AttendanceRange,
@@ -80,18 +81,22 @@ export function AttendanceOverview({
   // the real today rather than the day the page was loaded.
   const today = todayIso();
 
-  // "Present" counts everyone who showed up (present + partial already fold into counts.present;
-  // late is 0 from oversight and adds nothing).
-  const present = counts.present + counts.late;
+  // Attendance = present + partial, from the shared definition (lib/attended) rather than a local
+  // reading of it. This used to fold partial into `present` here while the calendar folded it into
+  // absent, so the same day read 38% on this card and 31% there. `late` is always 0 from oversight.
   const total = counts.total || 1;
+  const attendedCount = attended(counts) + counts.late;
   const leave = counts.leave;
-  const absent = Math.max(0, total - present - leave);
+  const absent = Math.max(0, total - attendedCount - leave);
 
-  const rate = Math.round((present / total) * 1000) / 10;
+  const rate = attendanceRate1dp(counts, total);
 
-  const presentPct = Math.round((present / total) * 100);
+  // Partial gets its own band: counting it as attendance is not the same as hiding it, and a
+  // reviewer needs to see that four of five "attended" were only partly there.
+  const presentPct = Math.round((counts.present / total) * 100);
+  const partialPct = Math.round((counts.partial / total) * 100);
   const leavePct = Math.round((leave / total) * 100);
-  const absentPct = Math.max(0, 100 - presentPct - leavePct);
+  const absentPct = Math.max(0, 100 - presentPct - partialPct - leavePct);
 
   const context = `${label} · ${dept === "all" ? "All departments" : dept}`;
 
@@ -201,11 +206,13 @@ export function AttendanceOverview({
             <TrendBars series={series} benchmarkRate={benchmarkRate} />
           ) : (
             <StackedDistribution
-              present={present}
+              present={counts.present}
+              partial={counts.partial}
               leave={leave}
               absent={absent}
               total={total}
               presentPct={presentPct}
+              partialPct={partialPct}
               leavePct={leavePct}
               absentPct={absentPct}
               rate={rate}
@@ -217,8 +224,17 @@ export function AttendanceOverview({
         </div>
 
         {/* Legend */}
-        <div className="grid grid-cols-3 gap-2 border-t pt-3">
-          <LegendItem dot="bg-success" label="Present" value={loading ? "—" : `${present}`} />
+        <div className="grid grid-cols-2 gap-2 border-t pt-3 sm:grid-cols-4">
+          <LegendItem
+            dot="bg-success"
+            label="Present"
+            value={loading ? "—" : `${counts.present}`}
+          />
+          <LegendItem
+            dot="bg-warning"
+            label="Partial"
+            value={loading ? "—" : `${counts.partial}`}
+          />
           <LegendItem dot="bg-primary" label="On leave" value={loading ? "—" : `${leave}`} />
           <LegendItem dot="bg-destructive" label="Absent" value={loading ? "—" : `${absent}`} />
         </div>
@@ -264,27 +280,34 @@ function fmtDay(iso: string): string {
  */
 function StackedDistribution({
   present,
+  partial,
   leave,
   absent,
   total,
   presentPct,
+  partialPct,
   leavePct,
   absentPct,
   rate,
   benchmarkRate,
 }: {
   present: number;
+  partial: number;
   leave: number;
   absent: number;
   total: number;
   presentPct: number;
+  partialPct: number;
   leavePct: number;
   absentPct: number;
   rate: number;
   benchmarkRate: number | null;
 }) {
+  // Amber for partial, matching the badge the roster already uses — the same status should not be
+  // a different colour depending on which card you are looking at.
   const segs = [
     { key: "present", w: presentPct, className: "bg-success", label: "Present", count: present },
+    { key: "partial", w: partialPct, className: "bg-warning", label: "Partial", count: partial },
     { key: "leave", w: leavePct, className: "bg-primary", label: "On leave", count: leave },
     { key: "absent", w: absentPct, className: "bg-destructive/70", label: "Absent", count: absent },
   ].filter((s) => s.w > 0);
@@ -302,7 +325,7 @@ function StackedDistribution({
       <div
         className="flex h-8 w-full overflow-hidden rounded-full bg-muted"
         role="img"
-        aria-label={`Present ${present}, on leave ${leave}, absent ${absent} of ${total}`}
+        aria-label={`Present ${present}, partial ${partial}, on leave ${leave}, absent ${absent} of ${total}`}
       >
         {segs.map((s) => (
           <div
