@@ -221,8 +221,9 @@ export function ScreenshotsTab() {
   const q = query.trim().toLowerCase();
   const filteredShots = useMemo(() => {
     return scopedShots.filter((s) => {
-      // "Flagged" → every capture worth a look: the vision model's verdicts *and* the captures the
-      // server surfaced from the app name alone. The tile badge is what tells the two apart.
+      // "Needs review" → every capture worth a look, and *only* those: the vision model's verdicts
+      // plus the captures the server surfaced from the app name alone. It never selects the whole
+      // day. The tile badge is what tells the two kinds apart.
       if (flag === "flagged" && !s.flagged) return false;
       const emp = dirById.get(s.user_id);
       if (dept !== ALL_DEPTS && emp?.department_id !== dept) return false;
@@ -269,7 +270,7 @@ export function ScreenshotsTab() {
 
   if (openUser) {
     // Deliberately built from `scopedShots`, **not** the gallery's `filteredShots`: the detail view
-    // has its own review/time filters, so inheriting the gallery's "Flagged" toggle would show
+    // has its own review/time filters, so inheriting the gallery's "Needs review" toggle would show
     // a filtered day while claiming to be the employee's full day. Scope (who you may see) still
     // applies — that is a permission boundary, not a filter.
     const mine = scopedShots.filter((s) => s.user_id === openUser);
@@ -302,7 +303,7 @@ export function ScreenshotsTab() {
             value: total.toLocaleString(),
             hint: hasMore ? "so far" : undefined,
           },
-          { label: "Flagged", value: needsReview },
+          { label: "Needs review", value: needsReview },
           { label: "Avg activity", value: `${onTaskPct}%`, hint: "on-task rate" },
         ]}
       />
@@ -387,7 +388,7 @@ export function ScreenshotsTab() {
                   checked={flag === opt}
                   onChange={() => setFlag(opt)}
                 />
-                {opt === "all" ? "All" : "Flagged"}
+                {opt === "all" ? "All" : "Needs review"}
               </label>
             ))}
           </div>
@@ -1094,7 +1095,7 @@ function EmployeeCaptures({
           <Summary label="Captures" value={allCaptures.length} />
           <Summary label="Monitors" value={monitorCount} />
           <Summary
-            label="Flagged"
+            label="Needs review"
             value={flaggedCount}
             tone={flaggedCount > 0 ? "text-destructive" : undefined}
           />
@@ -1133,7 +1134,7 @@ function EmployeeCaptures({
                 onChange={() => setFlag("flagged")}
                 style={{ accentColor: "var(--primary)" }}
               />
-              Flagged
+              Needs review
             </label>
           </div>
         </Field>
@@ -1283,8 +1284,15 @@ function CaptureCard({
           render the *identical* red "Needs review" chip. Open one and the detail panel says the
           frame has not been analysed — the grid appeared to contradict its own analyser.
 
-          So "Needs review" now means what it says: **nobody has reviewed this yet.** A capture the
-          model actually judged reads "AI flagged", in destructive red, because that one is a finding.
+          A badge therefore names **why this frame was singled out**, and never asserts a review
+          state. "Needs review" would have been the wrong word even here: unreviewed is true of
+          nearly every capture on the day, including all the ones carrying no badge at all, so it
+          describes a set far larger than the one it appears on. What actually singled this frame out
+          is the app classification — so it says that, in warning amber. Only the model's own verdict
+          earns destructive red, because only that one is a finding.
+
+          "Needs review" survives on the metric and the filter, where it *does* select exactly the
+          flagged captures and nothing else.
         */}
         {capture.flagged && capture.reviewed ? (
           <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-medium text-white">
@@ -1292,7 +1300,7 @@ function CaptureCard({
           </span>
         ) : capture.flagged ? (
           <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-warning px-1.5 py-0.5 text-[11px] font-medium text-white">
-            <Flag className="size-3" /> Needs review
+            <Flag className="size-3" /> Distracting app
           </span>
         ) : monitorCount > 1 ? (
           <span className="absolute right-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
