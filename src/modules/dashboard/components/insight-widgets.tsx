@@ -1,6 +1,6 @@
 "use client";
 
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Grid3x3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type {
@@ -139,6 +139,10 @@ function Donut({
             <Pie
               data={slices}
               dataKey="value"
+              // `nameKey` so a hovered slice says "Present", not the data key "value". These are
+              // counts of people, and the tooltip says so — a bare "4" beside a ring reads just as
+              // easily as a percentage of the ring.
+              nameKey="label"
               innerRadius="60%"
               outerRadius="82%"
               paddingAngle={2}
@@ -148,6 +152,19 @@ function Donut({
                 <Cell key={s.label} fill={s.color} />
               ))}
             </Pie>
+            <Tooltip
+              formatter={(v: number, name) => [
+                `${v} ${v === 1 ? "person" : "people"}`,
+                String(name),
+              ]}
+              contentStyle={{
+                background: "var(--popover)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                fontSize: 12,
+                color: "var(--popover-foreground)",
+              }}
+            />
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">

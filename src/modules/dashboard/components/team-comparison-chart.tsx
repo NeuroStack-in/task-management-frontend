@@ -39,7 +39,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
         <CardHeader>
           <CardTitle>Team comparison</CardTitle>
           <CardDescription>
-            Average productivity by department — always org-wide
+            Average productivity score (0-100) by department — always org-wide
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -84,6 +84,9 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
               />
               <Tooltip
                 cursor={{ fill: "var(--muted)" }}
+                // Without this the tooltip read "score : 68" — the raw data key, and a bare number
+                // with no unit on a 0-100 axis that could equally be a percentage or hours.
+                formatter={(v: number) => [`${v} / 100`, "Avg productivity score"]}
                 contentStyle={{
                   background: "var(--popover)",
                   border: "1px solid var(--border)",
@@ -92,7 +95,12 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
                   color: "var(--popover-foreground)",
                 }}
               />
-              <Bar dataKey="score" radius={[8, 8, 0, 0]} maxBarSize={44}>
+              <Bar
+                dataKey="score"
+                name="Avg productivity score"
+                radius={[8, 8, 0, 0]}
+                maxBarSize={44}
+              >
                 {data.map((d) => (
                   <Cell
                     key={d.team}

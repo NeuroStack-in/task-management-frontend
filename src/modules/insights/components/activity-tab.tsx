@@ -14,7 +14,13 @@ import {
 } from "recharts";
 import { Activity, ChevronDown } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ActiveInactiveRing } from "@/modules/dashboard/components/insight-widgets";
@@ -57,8 +63,18 @@ const GRANULARITIES: { key: Granularity; label: string }[] = [
 
 const CHART_TITLE: Record<Granularity, string> = {
   daily: "Activity by hour",
-  weekly: "Activity by day",
-  monthly: "Activity by week",
+  // Weekly/monthly plot the productivity SCORE, not activity. They were both titled "Activity by
+  // …" over a series labelled "Active %", so a 70 read as "70% active" when it is 70 points of a
+  // four-term score. Two different quantities cannot share one label.
+  weekly: "Productivity score by day",
+  monthly: "Productivity score by week",
+};
+
+/** Sub-title per granularity — names the unit the axis is in. */
+const CHART_SUBTITLE: Record<Granularity, string> = {
+  daily: "Captures per hour, by category",
+  weekly: "Score out of 100 · one point per day",
+  monthly: "Score out of 100 · one point per week",
 };
 
 const CATEGORIES = [
@@ -397,6 +413,7 @@ export function ActivityTab() {
       <Card data-tour="insights:trend">
         <CardHeader>
           <CardTitle>{CHART_TITLE[granularity]}</CardTitle>
+          <CardDescription>{CHART_SUBTITLE[granularity]}</CardDescription>
         </CardHeader>
         <CardContent>
           {granularity === "daily" ? (
@@ -440,9 +457,16 @@ export function ActivityTab() {
                         tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                       />
                       {/* Counts, not a percentage — this axis must scale to the data, unlike the
-                          0–100 score axis the weekly/monthly trend uses. */}
+                          0–100 score axis the weekly/monthly trend uses. Labelled, because a bare
+                          "6" on a monitoring chart reads as hours or percent just as easily. */}
                       <YAxis
                         allowDecimals={false}
+                        label={{
+                          value: "captures",
+                          angle: -90,
+                          position: "insideLeft",
+                          style: { fontSize: 11, fill: "var(--muted-foreground)" },
+                        }}
                         tickLine={false}
                         axisLine={false}
                         tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
@@ -526,6 +550,7 @@ export function ActivityTab() {
                     tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                   />
                   <Tooltip
+                    formatter={(v: number) => [`${v} / 100`, "Productivity score"]}
                     contentStyle={{
                       background: "var(--popover)",
                       border: "1px solid var(--border)",
@@ -540,7 +565,7 @@ export function ActivityTab() {
                     stroke="var(--chart-1)"
                     fill="url(#fillActiveHr)"
                     strokeWidth={2}
-                    name="Active %"
+                    name="Productivity score"
                     connectNulls
                   />
                 </AreaChart>
