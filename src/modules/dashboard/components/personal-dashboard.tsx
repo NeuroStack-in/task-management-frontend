@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { TimerStatCard } from "./timer-stat-card";
-import { DailySummaryCard } from "@/modules/insights/components/daily-summary-card";
 import { MeetingHoursCard } from "@/modules/integrations/components/meeting-hours-card";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -150,31 +149,54 @@ export function PersonalDashboard() {
             </div>
           ) : (
             <div className="flex flex-1 flex-col">
-              <ul className="divide-y divide-border">
-                {openTasks.slice(0, 6).map((t) => {
-                  const meta = TASK_STATUS_META[t.status as TaskStatus];
-                  return (
-                    <li key={t.id} className="flex items-center gap-3 px-5 py-3 text-sm">
-                      {t.projectKey ? (
-                        <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
-                          {t.projectKey}
-                        </span>
-                      ) : null}
-                      <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
-                      <span className="hidden w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:inline">
-                        {formatDue(t.due)}
-                      </span>
-                      <span className="flex w-28 shrink-0 justify-end">
-                        {meta ? (
-                          <Badge className={cn("font-medium", TONE[meta.tone])}>{meta.label}</Badge>
-                        ) : (
-                          <Badge className="font-medium">{t.status}</Badge>
-                        )}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
+              {/* Table view: Task · Project · Deadline · Status. Deadline and Status collapse on
+                  narrow screens so the two identifying columns (task + project) always stay. */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <th scope="col" className="px-5 py-2.5 font-medium">Task</th>
+                      <th scope="col" className="px-3 py-2.5 font-medium">Project</th>
+                      <th scope="col" className="hidden px-3 py-2.5 text-right font-medium sm:table-cell">
+                        Deadline
+                      </th>
+                      <th scope="col" className="px-5 py-2.5 text-right font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {openTasks.slice(0, 6).map((t) => {
+                      const meta = TASK_STATUS_META[t.status as TaskStatus];
+                      return (
+                        <tr key={t.id} className="transition-colors hover:bg-muted/40">
+                          <td className="max-w-0 px-5 py-3">
+                            <span className="block truncate font-medium">{t.title}</span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-3">
+                            <span className="flex items-center gap-1.5 text-muted-foreground">
+                              {t.projectKey ? (
+                                <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.65rem]">
+                                  {t.projectKey}
+                                </span>
+                              ) : null}
+                              <span className="truncate">{t.projectName ?? "—"}</span>
+                            </span>
+                          </td>
+                          <td className="hidden whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-muted-foreground sm:table-cell">
+                            {formatDue(t.due)}
+                          </td>
+                          <td className="whitespace-nowrap px-5 py-3 text-right">
+                            {meta ? (
+                              <Badge className={cn("font-medium", TONE[meta.tone])}>{meta.label}</Badge>
+                            ) : (
+                              <Badge className="font-medium">{t.status}</Badge>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
               <div className="flex flex-1 items-center justify-center gap-2 px-5 py-4 text-center text-sm text-muted-foreground">
                 {openTasks.length > 6 ? (
                   <>
@@ -273,11 +295,6 @@ export function PersonalDashboard() {
         </Card>
       </div>
       )}
-
-      {/* "Your day" — the self-scoped AI recap of the caller's own metrics
-          (`GET /v1/me/insights/summary`). It belongs here rather than under Analytics: those tabs
-          are oversight surfaces about other people, and this one is only ever about you. */}
-      <DailySummaryCard />
     </>
   );
 }

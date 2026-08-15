@@ -5,13 +5,13 @@
  * **computed by the 00:15 close cron**, never tracked: nobody can set "present", which is the point
  * for a record that feeds payroll.
  *
- * ## What the server does NOT serve, and how the view copes
+ * ## The working window (clock-in / clock-out)
  *
- * The mock calendar showed clock-in/clock-out times per day. The attendance read has no such thing —
- * `AttendanceDay` carries a *status* and total worked minutes, not a first/last punch. So this maps
- * `worked_minutes → hours` and leaves the clock columns empty rather than inventing punches. The
- * timesheet (`/v1/me/timesheet/today`) is where per-session start/stop lives; attendance is the
- * daily verdict, not the log.
+ * `AttendanceDay` itself carries only a *status* and total worked minutes — no first/last punch. The
+ * clock times live on the day's `TIME#` timer sessions, so the server now **enriches** each day's
+ * `AttendanceDayRow` with `clock_in`/`clock_out` (epoch ms) read from those sessions. A running
+ * session moves `clock_in` but leaves `clock_out` absent (still open), matching the timesheet. The
+ * daily *verdict* (status) is still the cron's; the window is just the sessions' span, surfaced.
  *
  * Only days the cron has actually **closed** come back — today and the future are simply absent,
  * never pre-stamped "absent" (that would slander a day still in progress).
@@ -32,6 +32,10 @@ export interface ApiAttendanceDay {
   status: AttendanceStatus;
   late: boolean;
   worked_minutes: number;
+  /** The day's working window, enriched from the caller's timer sessions. Epoch **ms**; absent when
+   *  the day had no session (didn't clock in) or a session is still running (`clock_out` only). */
+  clock_in?: number;
+  clock_out?: number;
 }
 
 /** Mirrors the `Summary`. `non_workday` is excluded from every tally, per §7. */
@@ -107,6 +111,9 @@ export interface ApiUserDayDetail {
   /** Resolved status once the 00:15 close ran; absent while the day is still open (today). */
   status?: AttendanceStatus;
   late: boolean;
+  /** An approved leave request covers this date — true even before the close cron runs, so the live
+   *  "today" roster can show "On leave" on a day with no resolved status yet. */
+  on_leave: boolean;
   /** Epoch **ms** of the first timer start. Absent = didn't clock in. */
   clock_in?: number;
   /** Epoch **ms** of the last session's stop. Absent while a session is still running. */

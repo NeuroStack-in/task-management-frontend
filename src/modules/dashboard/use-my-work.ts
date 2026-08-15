@@ -27,6 +27,7 @@ export interface MyTask {
   id: string;
   title: string;
   projectKey: string | null;
+  projectName: string | null;
   status: string;
   due: string | null;
 }
@@ -89,6 +90,7 @@ export function useMyWork(): MyWork {
               id: t.id,
               title: titleById.get(t.id) ?? "Untitled task",
               projectKey: projById.get(t.project_id)?.key ?? null,
+              projectName: projById.get(t.project_id)?.name ?? null,
               status: t.status,
               due: t.due ?? null,
             }))

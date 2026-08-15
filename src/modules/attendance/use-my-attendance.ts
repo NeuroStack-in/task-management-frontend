@@ -18,13 +18,26 @@ import {
   type ApiAttendanceDay,
 } from "./services/attendance.service";
 
-/** One day as the view reads it. `clockIn`/`clockOut` are empty — attendance has no punches. */
+/**
+ * One day as the view reads it. `clockIn`/`clockOut` are local `HH:MM` (the working window), or
+ * empty when the day had no session / a session is still running.
+ */
 export interface DayRecord {
   status: AttendanceStatus;
   late: boolean;
   hours: number;
   clockIn: string;
   clockOut: string;
+}
+
+/** Epoch ms → local `HH:MM` (24h), or `""` when absent. Client-only, so it uses the viewer's tz. */
+function hhmm(ms?: number): string {
+  if (!ms) return "";
+  return new Date(ms).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 export interface MyAttendanceRange {
@@ -72,9 +85,10 @@ export function useMyAttendance(from: string, to: string): MyAttendanceRange {
         status: hit.status,
         late: hit.late,
         hours: Math.round((hit.worked_minutes / 60) * 10) / 10,
-        // Attendance is a daily verdict, not a punch log — no clock times to show.
-        clockIn: "",
-        clockOut: "",
+        // The working window — first timer start / last stop that day, enriched server-side onto the
+        // attendance row. Rendered in the viewer's local time; empty when there were no sessions.
+        clockIn: hhmm(hit.clock_in),
+        clockOut: hhmm(hit.clock_out),
       };
     },
     [byDate],

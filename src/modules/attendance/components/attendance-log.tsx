@@ -82,6 +82,21 @@ const statusMeta = (s: string) =>
   STATUS_META[s] ?? { label: s, badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" };
 
 /**
+ * The live "today" attendance classification (a column of its own, distinct from the In/Out status).
+ * Today has no closed verdict, so this is derived in `useOversightAttendance` from approved leave +
+ * clock-in vs the org's "Late after" time — see `OversightRow.todayStatus`.
+ */
+const TODAY_STATUS_META: Record<
+  NonNullable<OversightRow["todayStatus"]>,
+  { label: string; badge: string; dot: string }
+> = {
+  leave: { label: "On leave", badge: "bg-primary/12 text-primary", dot: "bg-primary" },
+  absent: { label: "Absent", badge: "bg-destructive/12 text-destructive", dot: "bg-destructive" },
+  late: { label: "Late", badge: "bg-warning/15 text-warning", dot: "bg-warning" },
+  present: { label: "On time", badge: "bg-success/12 text-success", dot: "bg-success" },
+};
+
+/**
  * Sort weight per status — who a manager needs to see first, not alphabetical order.
  *
  * Explicit because the previous comparator sorted on the *label*, so the useful ordering was an
@@ -136,6 +151,8 @@ export function AttendanceLog({
 }) {
   const router = useRouter();
   const isRange = mode === "range";
+  // Today has no closed verdict, so it gets the extra live-classification column (leave/absent/late).
+  const isToday = mode === "today";
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
@@ -224,19 +241,23 @@ export function AttendanceLog({
   const exportCsv = () => {
     const fields = isRange
       ? ["Employee", "Department", "Days present", "Days counted", "Rate %"]
-      : ["Employee", "Department", "Status", "Clock in", "Clock out", "Hours"];
-    const data = filtered.map((r) =>
-      isRange
-        ? [r.name, r.dept, r.daysPresent ?? 0, r.daysCounted ?? 0, r.rate ?? 0]
-        : [
-            r.name,
-            r.dept,
-            statusMeta(r.status ?? "").label,
-            fmtTime(r.clockIn),
-            r.running ? "running" : fmtTime(r.clockOut),
-            fmtHours(r.workedMinutes),
-          ],
-    );
+      : isToday
+        ? ["Employee", "Department", "Status", "Attendance", "Clock in", "Clock out", "Hours"]
+        : ["Employee", "Department", "Status", "Clock in", "Clock out", "Hours"];
+    const data = filtered.map((r) => {
+      if (isRange) {
+        return [r.name, r.dept, r.daysPresent ?? 0, r.daysCounted ?? 0, r.rate ?? 0];
+      }
+      const base = [r.name, r.dept, statusMeta(r.status ?? "").label];
+      const tail = [
+        fmtTime(r.clockIn),
+        r.running ? "running" : fmtTime(r.clockOut),
+        fmtHours(r.workedMinutes),
+      ];
+      return isToday
+        ? [...base, r.todayStatus ? TODAY_STATUS_META[r.todayStatus].label : "—", ...tail]
+        : [...base, ...tail];
+    });
     const csv = Papa.unparse({ fields, data });
     const slug = label.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     downloadBlob(
@@ -355,6 +376,7 @@ export function AttendanceLog({
                           dir={sort.dir}
                           onClick={() => toggleSort("status")}
                         />
+                        {isToday && <TableHead>Attendance</TableHead>}
                         <TableHead>Clock in</TableHead>
                         <TableHead>Clock out</TableHead>
                         <TableHead>Hours</TableHead>
@@ -415,6 +437,28 @@ export function AttendanceLog({
                                 <span className="text-muted-foreground">—</span>
                               )}
                             </TableCell>
+                            {isToday && (
+                              <TableCell>
+                                {r.todayStatus ? (
+                                  <Badge
+                                    className={cn(
+                                      "font-medium",
+                                      TODAY_STATUS_META[r.todayStatus].badge,
+                                    )}
+                                  >
+                                    <span
+                                      className={cn(
+                                        "mr-1.5 size-1.5 rounded-full",
+                                        TODAY_STATUS_META[r.todayStatus].dot,
+                                      )}
+                                    />
+                                    {TODAY_STATUS_META[r.todayStatus].label}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                            )}
                             <TableCell className="tabular-nums">{fmtTime(r.clockIn)}</TableCell>
                             <TableCell className="tabular-nums">
                               {r.running ? (

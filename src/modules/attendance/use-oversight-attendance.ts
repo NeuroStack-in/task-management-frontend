@@ -29,7 +29,7 @@ import { listFleet } from "@/modules/agents/services/fleet.service";
 import { effectiveUserId, isPresent } from "@/modules/agents/lib/presence";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import { monthMatrix, MONTH_NAMES } from "./lib/calendar";
-import { useWorkdays } from "@/hooks/use-working-hours";
+import { useWorkdays, useWorkingHours } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 
 export type AttendanceRange = "today" | "week" | "month" | "custom" | "day";
@@ -65,6 +65,16 @@ export interface OversightRow {
   workedMinutes?: number;
   /** A timer is on right now (clocked in, no clock-out). */
   running?: boolean;
+  /** An approved leave request covers this date (`day`/`today` mode). */
+  onLeave?: boolean;
+  /**
+   * `today` mode only — a live attendance read derived here, since today has no closed verdict:
+   *  - `leave`   — an approved leave covers today
+   *  - `absent`  — no approved leave and no timer session (didn't clock in)
+   *  - `late`    — clocked in after the org's "Late after" time
+   *  - `present` — clocked in on time
+   */
+  todayStatus?: "leave" | "absent" | "late" | "present";
 }
 
 export interface OversightCounts {
@@ -186,9 +196,30 @@ async function enrichClock(
       clockOut: d.clock_out,
       workedMinutes: d.worked_minutes,
       running: d.running,
+      onLeave: d.on_leave,
       ...(deriveStatus ? { status: d.running ? "in" : "out" } : {}),
     };
   });
+}
+
+/** Epoch ms → local `HH:MM` (24h, zero-padded), so it compares lexically against a `late_threshold`. */
+function localHHMM(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * Classify a person's **today** attendance from live signals (today has no closed verdict yet):
+ * leave first, then absent (no session at all), then late vs on-time by the org's "Late after" time.
+ */
+function classifyToday(r: OversightRow, lateThreshold: string): OversightRow["todayStatus"] {
+  if (r.onLeave) return "leave";
+  // No timer session at all today (never clocked in, nothing running) and no leave ⇒ absent.
+  if (r.clockIn == null && !r.running) return "absent";
+  // Clocked in (or currently running). Late if the first start is after the org's threshold.
+  if (r.clockIn != null && localHHMM(r.clockIn) > lateThreshold) return "late";
+  return "present";
 }
 
 /**
@@ -432,6 +463,9 @@ export function useOversightAttendance({
     [],
   );
   const workdays = useWorkdays();
+  // "Late after" for the live today classification. Defaults to the same 09:30 the server assumes for
+  // an unconfigured org, so a slow/failed settings read still classifies sensibly.
+  const lateThreshold = useWorkingHours()?.late_threshold ?? "09:30";
   const dayList = useMemo(
     () => rangeDays(range, date, start, end, todayIso, workdays),
     [range, date.year, date.month, date.day, start, end, todayIso, workdays],
@@ -493,8 +527,14 @@ export function useOversightAttendance({
           // Clock-in/out for today comes from each person's live TIME# sessions — and so does the
           // in/out status now (`deriveStatus`). The fleet-derived status above survives only as the
           // fallback for a row whose timesheet call failed.
-          const rows = await enrichClock(baseRows, todayIso, true);
+          const enriched = await enrichClock(baseRows, todayIso, true);
           if (!live) return;
+          // Live attendance classification (leave / absent / late / present) for the new column —
+          // today has no closed verdict, so it is derived from leave + clock-in vs "Late after".
+          const rows = enriched.map((r) => ({
+            ...r,
+            todayStatus: classifyToday(r, lateThreshold),
+          }));
           // Counted after enrichment, so the headline figure agrees with the roster beneath it.
           const present = rows.filter((r) => r.status === "in").length;
           // "vs recent" baseline: the mean attendance rate over the trailing closed workdays, honouring
@@ -641,7 +681,7 @@ export function useOversightAttendance({
     return () => {
       live = false;
     };
-  }, [dir, range, dept, dayList, benchmark, todayIso, workdays]);
+  }, [dir, range, dept, dayList, benchmark, todayIso, workdays, lateThreshold]);
 
   return {
     counts: state.counts,
