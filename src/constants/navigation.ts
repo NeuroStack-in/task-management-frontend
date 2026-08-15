@@ -414,3 +414,43 @@ export const ADMIN_SECTIONS: NavGroup[] = [
     ],
   },
 ];
+
+/**
+ * Every navigable destination in one flat list — sidebar, Insights tabs, account, settings and the
+ * admin hub.
+ *
+ * Exists so a **path** can be resolved back to what that page is, which is what the assistant needs
+ * to answer "what is this page for". It is deliberately built from the same entries that render the
+ * navigation: a renamed route and its wording change in one place, so the answer cannot drift from
+ * the product the way a second, hand-kept description table would.
+ */
+export const ALL_NAV_ITEMS: NavItem[] = [
+  ...NAV_GROUPS.flatMap((g) => g.items),
+  ...INSIGHTS_TABS,
+  ...ACCOUNT_SECTIONS,
+  ...SETTINGS_SUBSECTIONS,
+  ...ADMIN_SECTIONS.flatMap((g) => g.items),
+];
+
+/**
+ * The navigation entry a pathname belongs to, or `null`.
+ *
+ * **Longest matching `href` wins**, so `/settings/roles` resolves to Roles & Permissions rather
+ * than to `/settings`, and a detail route like `/employees/abc` still resolves to Employees — a
+ * detail page is about the same thing as its list. Any `#fragment` on an entry is ignored: it is a
+ * scroll target, not a different page.
+ */
+export function navItemForPath(pathname: string): NavItem | null {
+  const path = pathname.split("?")[0].replace(/\/+$/, "") || "/";
+  let best: NavItem | null = null;
+  for (const item of ALL_NAV_ITEMS) {
+    const href = item.href.split("#")[0].replace(/\/+$/, "");
+    if (!href) continue;
+    if (path === href || path.startsWith(`${href}/`)) {
+      if (!best || href.length > best.href.split("#")[0].replace(/\/+$/, "").length) {
+        best = item;
+      }
+    }
+  }
+  return best;
+}

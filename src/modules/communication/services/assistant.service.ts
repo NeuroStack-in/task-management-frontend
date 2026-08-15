@@ -11,6 +11,24 @@ interface MessageReply {
   reply: string;
 }
 
+/**
+ * Where the user is when they ask. Mirrors `assistant::…::dto::PageContext`.
+ *
+ * The panel offers to explain "the current screen", and until this existed the request carried no
+ * page at all — so the model guessed. Asked on Roles & Permissions it described Attendance.
+ *
+ * The **description travels from the client** because the client owns routing: it comes from the
+ * same navigation entries that render the menus, so a renamed route and its wording change
+ * together. A table on the server would go stale silently and answer confidently about a page that
+ * no longer exists.
+ */
+export interface AssistantPage {
+  /** Route path, e.g. `/settings/roles`. */
+  path: string;
+  title?: string;
+  description?: string;
+}
+
 /** One earlier turn of the open conversation. Mirrors `assistant::…::dto::HistoryTurn`. */
 export interface AssistantTurn {
   role: "user" | "assistant";
@@ -28,10 +46,13 @@ export interface AssistantTurn {
 export async function sendAssistantMessage(
   message: string,
   history: AssistantTurn[] = [],
+  page?: AssistantPage,
 ): Promise<string> {
   const res = await apiFetch<MessageReply>("/v1/assistant/messages", {
     method: "POST",
-    body: JSON.stringify({ message, history }),
+    // `page` is omitted rather than sent null when unknown — the server treats an absent page as
+    // "don't claim to know where they are", which is the honest default.
+    body: JSON.stringify(page ? { message, history, page } : { message, history }),
   });
   return res.reply;
 }

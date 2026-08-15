@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Sparkles, X, ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,7 @@ import { useAssistantStore } from "@/stores/assistant.store";
 import { useIsFeatureOn } from "@/hooks/use-features";
 import { ApiError } from "@/lib/api";
 import { sendAssistantMessage } from "@/modules/communication/services/assistant.service";
+import { navItemForPath } from "@/constants/navigation";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 
@@ -48,6 +50,15 @@ export function ChatBot() {
   const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
   const consumePrompt = useAssistantStore((s) => s.consumePrompt);
 
+  // What the user is looking at, resolved from the same navigation entries that render the menus.
+  // The greeting promises answers about "the current screen"; this is what makes that true.
+  const pathname = usePathname();
+  const page = useMemo(() => {
+    if (!pathname) return undefined;
+    const item = navItemForPath(pathname);
+    return { path: pathname, title: item?.label, description: item?.description };
+  }, [pathname]);
+
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -78,6 +89,7 @@ export function ChatBot() {
       const reply = await sendAssistantMessage(
         trimmed,
         messages.map((m) => ({ role: m.role, content: m.text })),
+        page,
       );
       setMessages((m) => [...m, { id: idRef.current++, role: "assistant", text: reply }]);
     } catch (e) {
