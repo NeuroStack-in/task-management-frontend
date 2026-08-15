@@ -55,6 +55,15 @@ function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
   return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
 }
 
+/**
+ * **Must be inside a `DropdownMenuGroup`.** This wraps Base UI's `Menu.GroupLabel`, which reads
+ * context from a `Menu.Group` and **throws when rendered without one** — taking down the page that
+ * opened the menu, not just the menu. It has done so twice: the Employees page (pending-invites)
+ * and the Roles page (role-members).
+ *
+ * For a plain heading inside a menu, use a `<div className="px-2 py-1.5 text-xs
+ * text-muted-foreground">` instead. Reach for this only when the items really are a labelled group.
+ */
 function DropdownMenuLabel({
   className,
   inset,

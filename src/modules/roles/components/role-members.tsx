@@ -39,7 +39,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -148,9 +147,14 @@ export function RoleMembers({
                   Change role
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuLabel className="text-xs font-normal">
+                  {/* A plain element, not `DropdownMenuLabel`. That component wraps Base UI's
+                      `Menu.GroupLabel`, which reads context from a `Menu.Group` and **throws when
+                      rendered without one** — it crashed the Employees page once already
+                      (see pending-invites.tsx). The trigger's aria-label already names the person,
+                      so this heading is decorative. */}
+                  <div className="text-muted-foreground px-2 py-1.5 text-xs">
                     Move {m.name} to
-                  </DropdownMenuLabel>
+                  </div>
                   <DropdownMenuSeparator />
                   {targets.map((r) => (
                     <DropdownMenuItem key={r.id} onClick={() => move(m, r)}>
