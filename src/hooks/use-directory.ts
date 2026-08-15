@@ -41,11 +41,24 @@ export interface DirectoryData {
 }
 
 /**
+ * @param version bump to force a re-read after invalidating the cache (see `invalidateDirectory`).
  * @param enabled pass `false` to skip the fetch for callers that don't need the roster (e.g. a
  * self-scoped user resolving their own scope) — avoids a guaranteed 403 for anyone without
  * `employees:view`. Defaults to `true`.
  */
-export function useDirectory(enabled = true): DirectoryData {
+/**
+ * Drop the cached roster so the next `useDirectory()` mount refetches.
+ *
+ * The cache is module-level and lives for the tab's lifetime, which is right for a list that rarely
+ * changes — but a role assignment changes it. Callers that write to the directory (assigning a role,
+ * benching someone) invalidate here so the next reader does not serve a roster contradicting the
+ * change the user just made.
+ */
+export function invalidateDirectory(): void {
+  cache = null;
+}
+
+export function useDirectory(enabled = true, version = 0): DirectoryData {
   const [employees, setEmployees] = useState<ApiEmployee[]>(cache ?? []);
   const [loading, setLoading] = useState(enabled && cache === null);
   const [error, setError] = useState(false);
@@ -73,7 +86,10 @@ export function useDirectory(enabled = true): DirectoryData {
     return () => {
       live = false;
     };
-  }, [enabled]);
+    // `version` is in the deps so a caller that invalidated the cache can force this to re-run.
+    // Without it, `invalidateDirectory()` only takes effect on the next mount — a role change would
+    // leave the list on screen contradicting the change the user just made.
+  }, [enabled, version]);
 
   return { employees, loading, error };
 }

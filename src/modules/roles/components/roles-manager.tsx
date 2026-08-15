@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   Copy,
   KeyRound,
   Lock,
+  ChevronDown,
   MoreVertical,
   Pencil,
   Plus,
@@ -13,6 +14,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermissions } from "@/hooks/use-permissions";
+import { invalidateDirectory, useDirectory } from "@/hooks/use-directory";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,8 +43,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RoleEditorDialog } from "./role-editor-dialog";
+import { RoleMembers } from "./role-members";
 import { useRoles } from "../use-roles";
 import type { ApiRole } from "../services/roles.service";
+import type { ApiEmployee } from "@/modules/employees/services/employees.service";
 
 /** Owner grants everything via `is_owner`, not a counted bitset — show "All", not a number. */
 function permissionLabel(role: ApiRole): string {
@@ -59,6 +64,36 @@ export function RolesManager() {
   const [editing, setEditing] = useState<ApiRole | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ApiRole | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Which role's member list is expanded — one at a time; this is a table, not an accordion set. */
+  const [openRole, setOpenRole] = useState<string | null>(null);
+
+  /**
+   * Membership comes from the directory, not a new endpoint: `GET /v1/employees` already returns
+   * `role_id` per person and `useDirectory` caches it, so the count costs nothing extra.
+   *
+   * Bumping `dirVersion` after an assignment re-mounts the hook against the invalidated cache —
+   * the roster has to be re-read, or the counts would contradict the move just made.
+   */
+  const [dirVersion, setDirVersion] = useState(0);
+  const { employees } = useDirectory(canManage || can("employees:view"), dirVersion);
+  const membersByRole = useMemo(() => {
+    const m = new Map<string, ApiEmployee[]>();
+    for (const e of employees) {
+      // Only people who can actually hold a role; a row with no `role_id` is not "unassigned",
+      // it is a record the directory could not resolve, and guessing would inflate a count.
+      if (!e.role_id) continue;
+      const list = m.get(e.role_id);
+      if (list) list.push(e);
+      else m.set(e.role_id, [e]);
+    }
+    for (const list of m.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+    return m;
+  }, [employees]);
+
+  const refreshMembers = () => {
+    invalidateDirectory();
+    setDirVersion((v) => v + 1);
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -149,13 +184,18 @@ export function RolesManager() {
               <TableHead className="py-3 pl-6">Role</TableHead>
               <TableHead className="hidden py-3 md:table-cell">Description</TableHead>
               <TableHead className="py-3">Scope</TableHead>
+              <TableHead className="py-3">Members</TableHead>
               <TableHead className="py-3 pr-6 md:pr-2">Permissions</TableHead>
               {canManage && <TableHead className="w-12 py-3 pr-4" />}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {roles.map((role) => (
-              <TableRow key={role.id}>
+            {roles.map((role) => {
+              const members = membersByRole.get(role.id) ?? [];
+              const expanded = openRole === role.id;
+              return (
+              <Fragment key={role.id}>
+              <TableRow>
                 <TableCell className="py-3 pl-6">
                   <div className="flex items-center gap-3">
                     <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -189,6 +229,27 @@ export function RolesManager() {
                   <Badge variant="outline" className="font-normal capitalize">
                     {role.scope}
                   </Badge>
+                </TableCell>
+
+                <TableCell className="py-3">
+                  {/* A count that opens the list. Knowing a role is held by four people is useful;
+                      knowing *which* four is what saves the trip to Employees — and it is what tells
+                      you whether a role can be deleted before the delete fails. */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-2 h-7 gap-1.5 px-2 font-medium tabular-nums"
+                    aria-expanded={expanded}
+                    onClick={() => setOpenRole(expanded ? null : role.id)}
+                  >
+                    {members.length}
+                    <ChevronDown
+                      className={cn(
+                        "size-3.5 transition-transform",
+                        expanded && "rotate-180",
+                      )}
+                    />
+                  </Button>
                 </TableCell>
 
                 <TableCell className="py-3 pr-6 font-medium tabular-nums md:pr-2">
@@ -237,7 +298,23 @@ export function RolesManager() {
                   </TableCell>
                 )}
               </TableRow>
-            ))}
+
+              {expanded ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={canManage ? 6 : 5} className="p-0">
+                    <RoleMembers
+                      role={role}
+                      members={members}
+                      roles={roles}
+                      canManage={canManage}
+                      onChanged={refreshMembers}
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : null}
+              </Fragment>
+              );
+            })}
           </TableBody>
         </table>
       </div>
