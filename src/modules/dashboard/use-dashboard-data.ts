@@ -57,6 +57,7 @@ import type {
   DashboardFilters,
   Performer,
   TeamOption,
+  TrendPoint,
 } from "./lib/dashboard-data";
 
 /** Bounded per-day fan-out — a small cap so a month window doesn't burst the Lambda. */
@@ -406,50 +407,56 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           if (!live) return;
         }
         const trendShort = trendBundles.length <= 8;
-        const productivityTrend = trendBundles.map((b) => {
+        const SEC_PER_H = 3600;
+        // The KPI stat card's sparkline still tracks the composite score; collected here (unreported
+        // days dropped) so the *card* below can move to concrete hours without disturbing the KPI.
+        const dayScores: number[] = [];
+        const productivityTrend: TrendPoint[] = trendBundles.map((b) => {
           const people = (b.activity?.people ?? []).filter(
             (p) => inScopeDept(p.department_id) && trackableIds.has(p.user_id),
           );
           const scored = people.filter((p) => p.breakdown);
-          // A day nobody reported stays `null` (an unknown), rendered as 0 on the line but never
-          // dragging an average — the chart just shows a low point for an unreported day.
-          const dayScore = scored.length
-            ? scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) / scored.length
-            : null;
-          const dt = people.reduce(
+          if (scored.length) {
+            dayScores.push(
+              Math.round(
+                scored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) / scored.length,
+              ),
+            );
+          }
+
+          const t = people.reduce(
             (acc, p) => {
               acc.active += p.totals?.active_sec ?? 0;
-              acc.productive += p.totals?.productive_sec ?? 0;
+              acc.prod += p.totals?.productive_sec ?? 0;
+              acc.neut += p.totals?.neutral_sec ?? 0;
+              acc.dist += p.totals?.distracting_sec ?? 0;
               return acc;
             },
-            { active: 0, productive: 0 },
+            { active: 0, prod: 0, neut: 0, dist: 0 },
           );
+
+          // The agent's classified spans (`top_apps`) can exceed active time — overlapping windows or
+          // multiple monitors — so the three classified categories are scaled to fit inside active
+          // time. This keeps every bar's height equal to hours *tracked* (never overstating), and the
+          // remainder is the honest "unclassified" band. When classification fits, `scale` is 1.
+          const classified = t.prod + t.neut + t.dist;
+          const scale = classified > t.active && classified > 0 ? t.active / classified : 1;
+          const prodSec = t.prod * scale;
+          const neutSec = t.neut * scale;
+          const distSec = t.dist * scale;
+          const unclSec = Math.max(0, t.active - (prodSec + neutSec + distSec));
+
+          const h = (sec: number) => Math.round((sec / SEC_PER_H) * 10) / 10; // one decimal
           return {
             label: dayLabel(b.iso, trendShort),
-            // NOTE: this is the productivity score, not an "active %". The series is named
-            // accordingly in the chart; the key stays `active` so stored widget layouts keep working.
-            active: dayScore === null ? null : Math.round(dayScore),
-            // Clamped, because the two totals come from different measurements and can disagree:
-            // `active_sec` is the agent's per-minute activity figure, while `productive_sec` is the
-            // sum of its `top_apps` spans, and nothing constrains the spans to fit inside the
-            // active time (overlapping windows or monitors will exceed it). Unclamped, that showed
-            // as "Productive % : 108". The score's Q term already clamps the same ratio
-            // (`score.rs`: `.min(100.0)`), so this makes the chart agree with the score instead of
-            // being the one surface that renders the skew raw.
-            //
-            // This hides the symptom, not the cause — a day over 100 means the agent's spans and
-            // its active seconds genuinely disagree, and the same skew is inflating Q up to its cap.
-            productive: dt.active
-              ? Math.min(100, Math.round((dt.productive / dt.active) * 100))
-              // No active seconds means nothing was measured, which is not the same as 0% of the
-              // day being productive. Leave the gap.
-              : null,
+            productiveH: h(prodSec),
+            neutralH: h(neutSec),
+            distractingH: h(distSec),
+            unclassifiedH: h(unclSec),
+            reported: people.length,
           };
         });
-        // Sparkline takes numbers only; drop the unreported days rather than plotting them as 0.
-        const productivityTrendSeries = productivityTrend
-          .map((t) => t.active)
-          .filter((v): v is number => v !== null);
+        const productivityTrendSeries = dayScores;
 
         // ── Attendance rate over the window (dept-aware) + the latest closed-day counts for the donut. ──
         let presentSum = 0;

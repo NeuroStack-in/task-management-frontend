@@ -80,15 +80,27 @@ export interface KpiSeries {
 export interface TrendPoint {
   label: string;
   /**
-   * The day's productivity score, or `null` when nobody reported.
+   * Active hours split by how the agent classified the apps in use. `productive`/`neutral`/
+   * `distracting` come from the agent's classified spans; `unclassified` is active time no span
+   * covered — the honest "we tracked time but couldn't say what it was" band. Together the four sum
+   * to the day's active hours, so the stacked bar's height *is* hours tracked.
    *
-   * `null`, not `0`: a day with no agent data used to be plotted as a point at zero, which is
-   * indistinguishable from a day the whole team genuinely scored zero. Recharts leaves a gap for a
-   * null, so an unreported day now looks like what it is — absent, not bad.
+   * This replaced a dual-axis line (a black-box 0–100 "score" beside a percentage). The score sat at
+   * ~50 on any day the agent hadn't classified apps — a partial score (quality term dropped,
+   * `q_measured:false`) rendered as if it were real. Concrete hours can't lie that way: a day with no
+   * classification simply shows as the faded `unclassified` band, and a day with nothing at all is
+   * an empty column, not a confident 50.
    */
-  active: number | null;
-  /** Productive share of active time, or `null` when nothing was measured. Same reasoning. */
-  productive: number | null;
+  productiveH: number;
+  neutralH: number;
+  distractingH: number;
+  unclassifiedH: number;
+  /**
+   * How many in-scope people reported activity that day (coverage). `0` means nobody's agent
+   * reported — the column is genuinely empty, not "0 hours worked". Surfaced in the tooltip so a low
+   * bar reads as "few reported", not "little work".
+   */
+  reported: number;
 }
 
 /**
