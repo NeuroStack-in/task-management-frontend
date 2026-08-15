@@ -137,9 +137,13 @@ export function ProductivityChart({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={CHART_MARGIN} barCategoryGap="28%">
                 <CartesianGrid vertical={false} stroke="var(--border)" />
+                {/* Each bar is a week once the month view folds, so the axis has to say what a
+                    tick *is* — "8/3" under an axis labelled "this month" reads as a day. */}
                 <XAxis
                   dataKey="label"
-                  {...xAxisLabel(rangeLabel)}
+                  {...xAxisLabel(
+                    rangeLabel.includes("by week") ? "Week starting" : rangeLabel,
+                  )}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}

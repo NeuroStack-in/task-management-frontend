@@ -52,6 +52,7 @@ import {
   getDayOversight,
   type ApiDayResponse,
 } from "@/modules/attendance/services/attendance.service";
+import { foldToWeeks } from "./lib/dashboard-data";
 import type {
   DashboardData,
   DashboardFilters,
@@ -475,6 +476,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
 
           return {
             label,
+            iso: b.iso,
             productiveH: h(prodSec),
             neutralH: h(neutSec),
             distractingH: h(distSec),
@@ -482,6 +484,12 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             reported: people.length,
           };
         });
+        // A month per-day is ~22 slivers with colliding labels; weeks are the unit the monthly AI
+        // report already narrates in, so the chart matches it instead of inventing a third
+        // granularity. Day-level ranges are untouched.
+        const trendPoints =
+          range === "30d" ? foldToWeeks(productivityTrend) : productivityTrend;
+
         const productivityTrendSeries = dayScores;
 
         // ── Attendance rate over the window (dept-aware) + the latest closed-day counts for the donut. ──
@@ -662,9 +670,11 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           // The chart's own window. When a one-day selection widened to a rolling week above, say
           // so — the card used to carry the KPI range and quietly misdescribe itself.
           trendLabel:
-            trendBundles.length > days.length && trendBundles.length > 1
-              ? `last ${trendBundles.length} days`
-              : rangeLabelFor({ range, team, start, end }, days),
+            range === "30d"
+              ? "this month, by week"
+              : trendBundles.length > days.length && trendBundles.length > 1
+                ? `last ${trendBundles.length} days`
+                : rangeLabelFor({ range, team, start, end }, days),
           kpis: {
             productivity: {
               value: productivityValue,
@@ -680,7 +690,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             attendance: flat(attendanceRate),
             newHires: flat(0), // directory list carries no join date → honest 0 (see hint).
           },
-          productivityTrend,
+          productivityTrend: trendPoints,
           productivityScoreTrend,
           teamData,
           screenshotCount,

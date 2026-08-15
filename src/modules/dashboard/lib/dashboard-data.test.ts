@@ -33,3 +33,75 @@ describe("singleDayOf", () => {
     expect(singleDayOf("range", [])).toBeNull();
   });
 });
+
+import { foldToWeeks, type TrendPoint } from "./dashboard-data";
+
+const day = (iso: string, p: number, n: number): TrendPoint => ({
+  label: iso,
+  iso,
+  productiveH: p,
+  neutralH: n,
+  distractingH: 0,
+  unclassifiedH: 0,
+  reported: 1,
+});
+
+describe("foldToWeeks", () => {
+  /**
+   * A month per-day is ~22 slivers with colliding labels — the shape of the month, which is the only
+   * thing a month view is read for, disappears into noise.
+   */
+  it("collapses a month of days into one bar per ISO week", () => {
+    // Mon 2026-08-03 … Sun 2026-08-16: exactly two ISO weeks.
+    const days = [
+      "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07",
+      "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14",
+    ].map((d) => day(d, 2, 1));
+    const weeks = foldToWeeks(days);
+    expect(weeks).toHaveLength(2);
+    expect(weeks[0].iso).toBe("2026-08-03");
+    expect(weeks[1].iso).toBe("2026-08-10");
+  });
+
+  /** Hours are SUMMED, so the bar height still means "hours tracked" — averaging would silently
+   *  change what the y-axis measures halfway through the range picker. */
+  it("sums hours rather than averaging them", () => {
+    const weeks = foldToWeeks([day("2026-08-03", 2, 1), day("2026-08-04", 3, 1.5)]);
+    expect(weeks).toHaveLength(1);
+    expect(weeks[0].productiveH).toBe(5);
+    expect(weeks[0].neutralH).toBe(2.5);
+  });
+
+  /** Weeks start Monday, matching the weekly AI report and the attendance week. A Sunday belongs to
+   *  the week that began the previous Monday, not to the one starting the next day. */
+  it("puts Sunday in the week that started on Monday", () => {
+    const weeks = foldToWeeks([day("2026-08-09", 1, 0), day("2026-08-03", 1, 0)]);
+    expect(weeks).toHaveLength(1);
+    expect(weeks[0].iso).toBe("2026-08-03");
+  });
+
+  /** Output is chronological regardless of input order — bars must not jump around. */
+  it("returns weeks in order", () => {
+    const weeks = foldToWeeks([day("2026-08-12", 1, 0), day("2026-08-04", 1, 0)]);
+    expect(weeks.map((w) => w.iso)).toEqual(["2026-08-03", "2026-08-10"]);
+  });
+
+  it("handles an empty range", () => {
+    expect(foldToWeeks([])).toEqual([]);
+  });
+});
+
+describe("foldToWeeks coverage", () => {
+  /**
+   * `reported` is a count of PEOPLE, so it cannot be summed the way hours are — the same person
+   * reporting Monday and Tuesday is one person, and adding would claim ten reporters in a team of
+   * five. It also cannot be the first day's value, which is what a naive spread produces.
+   */
+  it("takes the week's peak coverage, never the sum or the first day", () => {
+    const a: TrendPoint = { ...day("2026-08-03", 1, 0), reported: 2 };
+    const b: TrendPoint = { ...day("2026-08-04", 1, 0), reported: 5 };
+    const c: TrendPoint = { ...day("2026-08-05", 1, 0), reported: 3 };
+    const [week] = foldToWeeks([a, b, c]);
+    expect(week.reported).toBe(5);
+  });
+});

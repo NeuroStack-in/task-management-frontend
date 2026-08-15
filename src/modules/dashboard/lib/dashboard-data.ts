@@ -24,6 +24,68 @@ export type DashboardRange = "today" | "7d" | "30d" | "range";
  * Extracted from the summary widget so the rule is testable: it was previously an inline expression
  * that could only be checked by reading it, and reading it is what let the original bug ship.
  */
+/** Monday of the ISO week containing `iso`, as `YYYY-MM-DD`. */
+function weekStart(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  // getDay(): 0 = Sunday. Shift so Monday is the first day, matching the ISO week the rest of the
+  // product reports on (the weekly AI report, the attendance week).
+  const back = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - back);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+
+/**
+ * Fold daily trend points into one bar per ISO week.
+ *
+ * A month drawn per-day is ~22 bars in a card a few hundred pixels wide: the labels collide, every
+ * bar is a sliver, and the shape of the month — which is the only thing anyone reads a month view
+ * for — is lost in the noise. Weeks are the unit the rest of the product already reports a month in
+ * (the monthly AI report narrates the month's *weeklies*), so this matches it rather than inventing
+ * a third granularity.
+ *
+ * Hours are **summed**, not averaged: the bar's height stays "hours tracked", exactly as it means on
+ * a daily bar. Averaging would silently change what the y-axis measures halfway through the range
+ * picker.
+ */
+export function foldToWeeks(points: TrendPoint[]): TrendPoint[] {
+  const byWeek = new Map<string, TrendPoint>();
+  for (const p of points) {
+    const start = weekStart(p.iso);
+    const acc = byWeek.get(start);
+    if (acc) {
+      acc.productiveH += p.productiveH;
+      acc.neutralH += p.neutralH;
+      acc.distractingH += p.distractingH;
+      acc.unclassifiedH += p.unclassifiedH;
+      // Coverage is people, not hours, so it cannot be summed — the same person reporting Monday
+      // and Tuesday is one person, and adding would claim ten reporters in a team of five. The peak
+      // day is the best available answer from daily counts, and it is the same choice
+      // `org_period::org_totals` makes server-side (`peak_people_with_data`).
+      acc.reported = Math.max(acc.reported, p.reported);
+    } else {
+      const d = new Date(`${start}T00:00:00`);
+      byWeek.set(start, {
+        ...p,
+        iso: start,
+        // The week's Monday — "Aug 3" reads as a week when the axis says so, and stays short enough
+        // not to collide at five or six bars.
+        label: `${MONTHS[d.getMonth()]} ${d.getDate()}`,
+      });
+    }
+  }
+  return [...byWeek.values()]
+    .sort((a, b) => a.iso.localeCompare(b.iso))
+    .map((p) => ({
+      ...p,
+      productiveH: Math.round(p.productiveH * 10) / 10,
+      neutralH: Math.round(p.neutralH * 10) / 10,
+      distractingH: Math.round(p.distractingH * 10) / 10,
+      unclassifiedH: Math.round(p.unclassifiedH * 10) / 10,
+    }));
+}
+
 export function singleDayOf(
   range: DashboardRange,
   days: string[] | undefined,
@@ -97,6 +159,8 @@ export interface KpiSeries {
 
 export interface TrendPoint {
   label: string;
+  /** `YYYY-MM-DD` this point covers — the key the weekly fold buckets on. */
+  iso: string;
   /**
    * Active hours split by how the agent classified the apps in use. `productive`/`neutral`/
    * `distracting` come from the agent's classified spans; `unclassified` is active time no span
