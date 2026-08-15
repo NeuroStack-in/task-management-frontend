@@ -19,7 +19,7 @@ import {
   type DayCell,
 } from "../lib/calendar";
 import { LogDatePicker } from "./attendance-log";
-import { useWorkdays } from "@/hooks/use-working-hours";
+import { useWorkdays, useWorkingHours } from "@/hooks/use-working-hours";
 import {
   useMyAttendance,
   ymd,
@@ -52,16 +52,22 @@ const LATE_DOT = "bg-warning";
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// Fixed axis for the "working window" timeline: 06:00 → 20:00 (in minutes).
-const DAY_START = 6 * 60;
-const DAY_END = 20 * 60;
-const DAY_SPAN = DAY_END - DAY_START;
-
-/** "HH:MM" → position (0–100%) along the day axis, clamped. */
-function axisPct(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
-  const mins = h * 60 + m;
-  return Math.max(0, Math.min(100, ((mins - DAY_START) / DAY_SPAN) * 100));
+/**
+ * The org's expected working day, in minutes (declared span − unpaid break) — the denominator the
+ * day-completion bar fills toward. Mirrors the score's expected day (PRODUCTIVITY.md §1.2). Falls
+ * back to 8h when the settings read hasn't resolved, which is exactly what the server assumes for an
+ * unconfigured org, so the bar reads sensibly before working-hours load.
+ */
+function expectedDayMinutes(
+  h: { work_start: string; work_end: string; break_minutes: number } | null,
+): number {
+  if (!h) return 480;
+  const toMin = (hhmm: string) => {
+    const [hh, mm] = hhmm.split(":").map(Number);
+    return (hh || 0) * 60 + (mm || 0);
+  };
+  const span = toMin(h.work_end) - toMin(h.work_start) - Math.max(0, h.break_minutes || 0);
+  return span > 0 ? Math.max(60, span) : 480;
 }
 
 /** The 24-day window back from today that feeds the "recent days" list, as YYYY-MM-DD. */
@@ -81,6 +87,8 @@ export function PersonalAttendanceView() {
   const view = { year: selected.year, month: selected.month };
 
   const workdays = useWorkdays();
+  // The expected working day the day-completion bar fills toward (the org's declared hours).
+  const expectedMin = expectedDayMinutes(useWorkingHours());
   const weeks = useMemo(
     () => monthMatrix(view.year, view.month, workdays),
     [view.year, view.month, workdays],
@@ -323,7 +331,7 @@ export function PersonalAttendanceView() {
                   Status
                 </th>
                 <th scope="col" className="w-full px-3 py-2.5 font-medium">
-                  Working window
+                  Hours worked
                 </th>
                 <th scope="col" className="whitespace-nowrap px-5 py-2.5 text-right font-medium">
                   Clock in
@@ -339,9 +347,11 @@ export function PersonalAttendanceView() {
             <tbody className="divide-y divide-border">
               {recent.map((r) => {
                 const meta = statusMeta(r.status);
+                // Clock columns still show times only when both punches exist.
                 const logged = r.hours > 0 && r.clockIn && r.clockOut;
-                const left = logged ? axisPct(r.clockIn) : 0;
-                const right = logged ? axisPct(r.clockOut) : 0;
+                // Day-completion: hours worked as a share of the expected day, capped at 100%.
+                const fillPct =
+                  r.hours > 0 ? Math.min(100, ((r.hours * 60) / expectedMin) * 100) : 0;
                 return (
                   <tr key={r.key} className="transition-colors hover:bg-muted/40">
                     <td className="whitespace-nowrap px-5 py-3 font-medium">
@@ -353,20 +363,29 @@ export function PersonalAttendanceView() {
                         <span className="text-muted-foreground">{meta.label}</span>
                       </span>
                     </td>
+                    {/* Day-completion bar: fills from the left toward the org's expected day, so a
+                        short day reads as a short bar. Coloured by status (green present / amber
+                        partial), matching the same threshold that decides present vs partial. */}
                     <td className="px-3 py-3">
-                      <div className="relative h-1.5 w-full min-w-[7rem] overflow-hidden rounded-full bg-muted">
-                        {logged ? (
-                          <div
-                            className={cn(
-                              "absolute inset-y-0 rounded-full",
-                              meta.dot,
-                            )}
-                            style={{
-                              left: `${left}%`,
-                              width: `${Math.max(right - left, 2)}%`,
-                            }}
-                          />
-                        ) : null}
+                      <div
+                        className="flex items-center gap-2"
+                        title={
+                          r.hours > 0
+                            ? `${r.hours.toFixed(1)}h of a ${(expectedMin / 60).toFixed(1)}h day`
+                            : undefined
+                        }
+                      >
+                        <div className="relative h-1.5 w-full min-w-[7rem] overflow-hidden rounded-full bg-muted">
+                          {r.hours > 0 ? (
+                            <div
+                              className={cn("absolute inset-y-0 left-0 rounded-full", meta.dot)}
+                              style={{ width: `${Math.max(fillPct, 2)}%` }}
+                            />
+                          ) : null}
+                        </div>
+                        <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                          {r.hours > 0 ? `${Math.round(fillPct)}%` : "—"}
+                        </span>
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums text-muted-foreground">
