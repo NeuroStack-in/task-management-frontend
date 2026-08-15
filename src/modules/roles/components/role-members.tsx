@@ -31,7 +31,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Loader2, UserCog } from "lucide-react";
+import { ArrowUpRight, Loader2, ShieldCheck, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,8 @@ import {
 import { initials } from "@/lib/format";
 import { friendlyError } from "@/lib/errors";
 import { assignRole, type ApiRole } from "../services/roles.service";
+import { grantOwner } from "@/modules/settings/services/org.service";
+import { useAuthStore } from "@/stores/auth.store";
 import type { ApiEmployee } from "@/modules/employees/services/employees.service";
 
 /** The system role id ownership rides on — assignable only through Settings → Ownership. */
@@ -66,17 +68,47 @@ export function RoleMembers({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * Ownership is `is_owner` on the caller's own token, not a permission bit — deliberately, so it
+   * cannot be granted to a custom role. `roles:manage` is therefore not enough to appoint an owner.
+   */
+  const callerIsOwner = useAuthStore((st) => st.user?.isOwner === true);
 
+  /**
+   * Two destinations, two endpoints.
+   *
+   * Ownership is not a role assignment: `assign_role` refuses `role-owner` outright, because
+   * granting it hands over the whole org. It goes through `POST /v1/org/owners`, which is gated on
+   * `is_owner` rather than a permission bit — so an Admin with `roles:manage` can move people
+   * between every other role and still cannot create an owner.
+   *
+   * Both are a *move* from the member's point of view: `grant` sets `role_id = role-owner` as well
+   * as adding them to the org's owner set, so the person stops being an Admin either way.
+   */
   async function move(person: ApiEmployee, to: ApiRole) {
+    const promoting = to.id === ROLE_OWNER;
     setBusy(person.user_id);
     try {
-      await assignRole(person.user_id, to.id);
-      toast.success(`${person.name} moved to ${to.name}`, {
-        description: "Their own view updates the next time they sign in.",
-      });
+      if (promoting) await grantOwner(person.user_id);
+      else await assignRole(person.user_id, to.id);
+      toast.success(
+        promoting ? `${person.name} is now an owner` : `${person.name} moved to ${to.name}`,
+        {
+          description: promoting
+            ? "Owners have full, unrestricted access. Their own view updates at their next sign-in."
+            : "Their own view updates the next time they sign in.",
+        },
+      );
       onChanged();
     } catch (e) {
-      toast.error(friendlyError(e, "Couldn't change that person's role."));
+      toast.error(
+        friendlyError(
+          e,
+          promoting
+            ? "Couldn't make that person an owner."
+            : "Couldn't change that person's role.",
+        ),
+      );
     } finally {
       setBusy(null);
     }
@@ -92,9 +124,14 @@ export function RoleMembers({
   }
 
   const isOwnerRole = role.id === ROLE_OWNER;
-  // You can move someone *out* of a role into any other — except Owner, which is not a role
-  // assignment. Filtered here rather than letting the server 403 after the click.
-  const targets = roles.filter((r) => r.id !== role.id && r.id !== ROLE_OWNER);
+  /**
+   * Owner is offered only to a caller who is one — the server gates `POST /v1/org/owners` on
+   * `is_owner`, so showing it to an Admin would be a control that always 403s. Filtered here rather
+   * than letting the click fail.
+   */
+  const targets = roles.filter(
+    (r) => r.id !== role.id && (r.id !== ROLE_OWNER || callerIsOwner),
+  );
 
   return (
     <div className="bg-muted/30 px-6 py-4">
@@ -156,11 +193,20 @@ export function RoleMembers({
                     Move {m.name} to
                   </div>
                   <DropdownMenuSeparator />
-                  {targets.map((r) => (
-                    <DropdownMenuItem key={r.id} onClick={() => move(m, r)}>
-                      {r.name}
-                    </DropdownMenuItem>
-                  ))}
+                  {targets.map((r) =>
+                    r.id === ROLE_OWNER ? (
+                      // Set apart, because it is not the same kind of action as the others: it
+                      // grants unrestricted access to the whole organisation.
+                      <DropdownMenuItem key={r.id} onClick={() => move(m, r)}>
+                        <ShieldCheck className="size-4" />
+                        Make an owner
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem key={r.id} onClick={() => move(m, r)}>
+                        {r.name}
+                      </DropdownMenuItem>
+                    ),
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
