@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
 import {
   Area,
   AreaChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,6 +15,7 @@ import {
 import { CHART_MARGIN, xAxisLabel, yAxisLabel } from "@/components/shared/chart-axis";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -36,6 +40,18 @@ export function ProductivityChart({
         <CardDescription>
           Score vs. productive share · {rangeLabel}
         </CardDescription>
+        {/* The card was a dead end: two unexplained curves with nowhere to go for the detail
+            behind them. The link is visible rather than a bare clickable card, because an
+            undiscoverable click target is its own usability problem. */}
+        <CardAction>
+          <Link
+            href="/insights/activity"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs font-medium transition-colors"
+          >
+            Activity details
+            <ArrowUpRight className="size-3.5" />
+          </Link>
+        </CardAction>
       </CardHeader>
       <CardContent>
         <div className="h-full min-h-[150px] w-full">
@@ -79,6 +95,14 @@ export function ProductivityChart({
                   color: "var(--popover-foreground)",
                 }}
               />
+              {/* Two curves in two colours and no key at all — a reader could not tell which was
+                  which, let alone what either measured. */}
+              <Legend
+                verticalAlign="top"
+                height={26}
+                iconType="plainline"
+                wrapperStyle={{ fontSize: 11 }}
+              />
               <Area
                 type="monotone"
                 dataKey="active"
@@ -98,6 +122,25 @@ export function ProductivityChart({
             </AreaChart>
           </ResponsiveContainer>
         </div>
+        {/* Both series are 0-100 and neither is time, which is exactly the confusion to head off:
+            one is a composite index, the other a percentage. Defining them here — rather than
+            leaving it to the metric explainer or the assistant — is the difference between a chart
+            someone can read on first sight and one they have to go and ask about. */}
+        <dl className="text-muted-foreground mt-3 space-y-1 text-[11px] leading-relaxed">
+          <div className="flex gap-1.5">
+            <dt className="text-foreground shrink-0 font-medium">Productivity score</dt>
+            <dd>
+              — 0&ndash;100 composite of utilisation, quality, focus and reliability.
+            </dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-foreground shrink-0 font-medium">Productive share</dt>
+            <dd>
+              — of <em>active</em> time (minutes with keyboard or mouse input), the percentage spent
+              in apps your rules classify as productive.
+            </dd>
+          </div>
+        </dl>
       </CardContent>
     </Card>
   );
