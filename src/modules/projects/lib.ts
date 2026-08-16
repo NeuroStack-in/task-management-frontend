@@ -162,6 +162,7 @@ export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
     in_progress: 0,
     in_review: 0,
     done: 0,
+    closed: 0,
     blocked: 0,
   };
   for (const t of tasks) counts[t.status] += 1;
@@ -187,6 +188,28 @@ export function canDeleteTask(
 ): boolean {
   if (authority === "manager" || authority === "lead") return true;
   return Boolean(currentUserId && task.createdBy === currentUserId);
+}
+
+/**
+ * May this person sign off this task?
+ *
+ * Mirrors the server's `can_review_task()` — Manager|Lead, which org admins and owners resolve
+ * into — plus the two row-level rules the role cannot express:
+ *
+ * - only a task that is **done** is awaiting review; anything else has nothing to approve;
+ * - **never your own task**, even as a Lead. Reviewing your own work is the thing review exists to
+ *   prevent, so unlike deletion there is no "your own" fallback.
+ *
+ * The server enforces all three. This exists so the button is absent rather than present-and-403.
+ */
+export function canReviewTask(
+  task: Pick<Task, "status" | "assigneeId">,
+  authority: string,
+  currentUserId: string | null | undefined,
+): boolean {
+  if (task.status !== "done") return false;
+  if (authority !== "manager" && authority !== "lead") return false;
+  return !(currentUserId && task.assigneeId === currentUserId);
 }
 
 /* --------------------- tone → literal class maps ---------------------- */

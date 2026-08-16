@@ -42,6 +42,9 @@ import type { TaskFormValues } from "@/stores/tasks.store";
 
 const schema = z.object({
   title: z.string().trim().min(2, "Give the task a title"),
+  // Mirrors TASK_STATUS_SETTABLE, which deliberately omits `closed`: that state is reached by
+  // reviewing the task, not by editing it. A form that offered it would let the assignee mark their
+  // own work approved — and the server would refuse the write anyway.
   status: z.enum(["todo", "in_progress", "in_review", "done", "blocked"]),
   assigneeId: z.string(),
   priority: z.enum(["low", "medium", "high"]),

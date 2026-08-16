@@ -136,6 +136,7 @@ export function ProjectsView() {
       in_progress: 0,
       in_review: 0,
       done: 0,
+      closed: 0,
       blocked: 0,
       overdue: 0,
     };

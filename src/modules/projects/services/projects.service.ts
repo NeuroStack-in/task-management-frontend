@@ -11,6 +11,7 @@
  * this module models what is actually served and lets callers handle the rest.
  */
 import { apiFetch } from "@/lib/api";
+import type { TaskReview } from "../types";
 
 /** Mirrors `projects::features::list_projects::dto::ProjectRow`. */
 export interface ApiProject {
@@ -135,6 +136,8 @@ export interface ApiBoardTask {
    * the server answers too (`delete_task` fails the `created_by = :me` condition).
    */
   created_by?: string;
+  /** Sign-off, present only on a `closed` task — served inline so the badge needs no second call. */
+  review?: TaskReview;
 }
 
 export interface ApiBoardColumn {
@@ -260,4 +263,22 @@ export async function removeMember(projectId: string, userId: string): Promise<v
 export async function projectNameMap(): Promise<Map<string, string>> {
   const projects = await listProjects();
   return new Map(projects.map((p) => [p.id, p.name]));
+}
+
+/**
+ * `POST /v1/projects/{id}/tasks/{taskId}/review` — rate a finished task and close it.
+ *
+ * Only a Manager or Lead on the project may call it (org admins and owners resolve to Manager), and
+ * never for their own task. `closed` is reachable **only** this way: PATCHing the status will not
+ * set it, because a state meaning "approved" must not be settable by the person seeking approval.
+ */
+export function reviewTask(
+  projectId: string,
+  taskId: string,
+  body: { rating: number; note?: string },
+): Promise<{ task_id: string; status: string; review: TaskReview }> {
+  return apiFetch(
+    `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/review`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
 }

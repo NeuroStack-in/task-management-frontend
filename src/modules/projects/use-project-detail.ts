@@ -84,6 +84,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
               dueDate: t.due ?? null,
               estimateHours: t.estimate_hours ?? 0,
               createdBy: t.created_by ?? null,
+              review: t.review ?? null,
             })),
           ),
         );

@@ -13,6 +13,7 @@ import {
   ListChecks,
   Pencil,
   Plus,
+  Star,
   Trash2,
   Users,
   AlertTriangle,
@@ -54,11 +55,14 @@ import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
   TASK_STATUS_ORDER,
+  TASK_STATUS_SETTABLE,
+  type SettableTaskStatus,
   type Task,
   type TaskStatus,
 } from "../types";
 import {
   canDeleteTask,
+  canReviewTask,
   daysUntil,
   dueLabel,
   formatDate,
@@ -71,6 +75,7 @@ import {
 import { useAuthStore } from "@/stores/auth.store";
 import { MemberStack, Segmented, StatusBadge } from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
+import { TaskReviewDialog } from "./task-review-dialog";
 import { TaskFormDialog } from "./task-form-dialog";
 import { generateProjectReportPdf } from "../report";
 
@@ -119,6 +124,9 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
    * flag, because for a Member the answer genuinely differs card by card.
    */
   const canDelete = (t: Task) => canDeleteTask(t, authority, currentUserId);
+  /** Mirrors the server: Manager|Lead, only on a `done` task, never your own. */
+  const canReview = (t: Task) => canReviewTask(t, authority, currentUserId);
+  const [reviewTarget, setReviewTarget] = useState<Task | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -126,7 +134,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [createStatus, setCreateStatus] = useState<TaskStatus>("todo");
+  const [createStatus, setCreateStatus] = useState<SettableTaskStatus>("todo");
   const [taskView, setTaskView] = useState<"board" | "list">("board");
   const [teamOpen, setTeamOpen] = useState(false);
   const sensors = useSensors(
@@ -229,7 +237,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     toast.info("Project deletion isn't available yet.");
   };
 
-  const openCreateTask = (s: TaskStatus) => {
+  const openCreateTask = (s: SettableTaskStatus) => {
     setEditingTask(null);
     setCreateStatus(s);
     setTaskOpen(true);
@@ -284,7 +292,10 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const taskInitial = editingTask
     ? {
         title: editingTask.title,
-        status: editingTask.status,
+        // A closed task has no editable "closed" option — the form only offers the settable
+        // statuses. Showing `done` is the honest neighbour: it is the state the review moved it
+        // out of, and reopening by saving is a deliberate act rather than an accident of the form.
+        status: editingTask.status === "closed" ? ("done" as const) : editingTask.status,
         assigneeId: editingTask.assigneeId ?? "",
         priority: editingTask.priority,
         dueDate: editingTask.dueDate?.slice(0, 10) ?? "",
@@ -305,7 +316,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     if (!over) return;
     const target = over.id as TaskStatus;
     const moved = tasks.find((t) => t.id === active.id);
-    if (moved && moved.status !== target && TASK_STATUS_ORDER.includes(target)) {
+    if (moved && moved.status !== target && TASK_STATUS_SETTABLE.includes(target)) {
       moveTask(moved.id, target);
     }
   };
@@ -548,10 +559,16 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   col={col}
                   tasks={tasks.filter((t) => t.status === col)}
                   userMap={userMap}
-                  onAdd={() => openCreateTask(col)}
+                  // No "add" on Closed: a task cannot be created already signed off, and the
+                  // column exists to show what has been reviewed, not to collect new work.
+                  onAdd={
+                    col === "closed" ? undefined : () => openCreateTask(col)
+                  }
                   onEdit={openEditTask}
                   onDelete={setTaskToDelete}
                   canDelete={canDelete}
+                  canReview={canReview}
+                  onReview={setReviewTarget}
                 />
               ))}
             </div>
@@ -587,6 +604,20 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         initial={taskInitial}
         onSubmit={handleTaskSubmit}
       />
+
+      {reviewTarget ? (
+        <TaskReviewDialog
+          open
+          onOpenChange={(o) => !o && setReviewTarget(null)}
+          projectId={project.id}
+          taskId={reviewTarget.id}
+          taskTitle={reviewTarget.title}
+          onReviewed={() => {
+            setReviewTarget(null);
+            void reload();
+          }}
+        />
+      ) : null}
 
       {/* Delete confirm */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -816,14 +847,19 @@ function KanbanColumn({
   onEdit,
   onDelete,
   canDelete,
+  canReview,
+  onReview,
 }: {
   col: TaskStatus;
   tasks: Task[];
   userMap: Record<string, UserMini>;
-  onAdd: () => void;
+  /** Absent on a column that cannot accept new work (Closed). */
+  onAdd?: () => void;
   onEdit: (t: Task) => void;
   onDelete: (t: Task) => void;
   canDelete: (t: Task) => boolean;
+  canReview: (t: Task) => boolean;
+  onReview: (t: Task) => void;
 }) {
   const meta = TASK_STATUS_META[col];
   const { setNodeRef, isOver } = useDroppable({ id: col });
@@ -847,6 +883,7 @@ function KanbanColumn({
         <button
           type="button"
           onClick={onAdd}
+          hidden={!onAdd}
           className="text-muted-foreground hover:border-primary/40 hover:text-foreground rounded-xl border border-dashed py-6 text-center text-xs transition-colors"
         >
           Add a task
@@ -860,6 +897,7 @@ function KanbanColumn({
               userMap={userMap}
               onEdit={onEdit}
               onDelete={canDelete(t) ? onDelete : undefined}
+              onReview={canReview(t) ? onReview : undefined}
             />
           ))}
         </ul>
@@ -870,6 +908,7 @@ function KanbanColumn({
 
 function TaskCard({
   task,
+  onReview,
   userMap,
   onEdit,
   onDelete,
@@ -879,6 +918,8 @@ function TaskCard({
   onEdit: (t: Task) => void;
   /** Absent when the caller may not delete this task — see `canDeleteTask`. */
   onDelete?: (t: Task) => void;
+  /** Present only when this person may sign this task off — absent hides the action entirely. */
+  onReview?: (t: Task) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
@@ -913,6 +954,21 @@ function TaskCard({
         >
           <Pencil className="size-3.5" />
         </button>
+        {/* Sign-off, shown only on a `done` task this person may review — the assignee never sees
+            it on their own work. Absent rather than disabled: a greyed-out approve button on your
+            own task reads as "ask someone", which is not what it means. */}
+        {onReview ? (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onReview(task)}
+            aria-label="Review and close task"
+            title="Review and close"
+            className="text-muted-foreground hover:bg-warning/10 hover:text-warning flex size-6 items-center justify-center rounded-md"
+          >
+            <Star className="size-3.5" />
+          </button>
+        ) : null}
         {onDelete ? (
           <button
             type="button"
@@ -949,9 +1005,11 @@ function TaskListView({
     return (
       <div className="bg-card rounded-2xl border p-10 text-center">
         <p className="text-muted-foreground text-sm">No tasks yet.</p>
-        <Button size="sm" variant="outline" className="mt-3 gap-1.5" onClick={onAdd}>
-          <Plus className="size-4" /> Add task
-        </Button>
+        {onAdd ? (
+          <Button size="sm" variant="outline" className="mt-3 gap-1.5" onClick={onAdd}>
+            <Plus className="size-4" /> Add task
+          </Button>
+        ) : null}
       </div>
     );
   }
@@ -961,7 +1019,8 @@ function TaskListView({
     in_progress: 1,
     in_review: 2,
     done: 3,
-    blocked: 4,
+    closed: 4,
+    blocked: 5,
   };
   const sorted = [...tasks].sort((a, b) => {
     if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
@@ -1105,6 +1164,20 @@ function TaskCardContent({
   return (
     <>
       <p className="pr-6 text-sm leading-snug font-medium">{task.title}</p>
+
+      {/* Who signed this off, on the card itself — the question the review step exists to answer,
+          so it should not need a click. `reviewer_name` was resolved server-side at review time, so
+          it still reads correctly after the reviewer leaves the org. */}
+      {task.review ? (
+        <p className="text-muted-foreground mt-1.5 flex items-center gap-1 text-[0.7rem]">
+          <Star className="fill-warning text-warning size-3" />
+          <span className="font-medium tabular-nums">{task.review.rating}/5</span>
+          <span className="truncate">
+            · reviewed by {task.review.reviewer_name || "a project lead"}
+          </span>
+        </p>
+      ) : null}
+
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <span
           className={cn(

@@ -41,7 +41,40 @@ export interface Project {
 
 // `blocked` matches the backend's TaskStatus (LLD §5) — an exception state reachable from any
 // column, not a stage. It was missing here while the board was mock; the real board serves it.
-export type TaskStatus = "todo" | "in_progress" | "in_review" | "done" | "blocked";
+export type TaskStatus =
+  | "todo"
+  | "in_progress"
+  | "in_review"
+  | "done"
+  /**
+   * Reviewed and signed off — the terminal state.
+   *
+   * `done` is the assignee's claim that the work is finished; `closed` is someone with authority
+   * over the project agreeing, with a rating. Only the review endpoint can set it, so nothing here
+   * should offer it as a drag target or a status option.
+   */
+  | "closed"
+  | "blocked";
+
+/**
+ * A status a person may actually set — everything except `closed`.
+ *
+ * Used by the create/edit form and the drag handler, so the "you cannot set this by hand" rule is
+ * enforced by the compiler rather than remembered.
+ */
+export type SettableTaskStatus = Exclude<TaskStatus, "closed">;
+
+/** A task's sign-off, present only on a `closed` task. */
+export interface TaskReview {
+  reviewed_by: string;
+  /** Resolved and stored server-side at review time, so it survives the reviewer leaving. */
+  reviewer_name: string;
+  /** Epoch millis. */
+  reviewed_at: number;
+  /** 1-5. */
+  rating: number;
+  note?: string;
+}
 export type TaskPriority = "low" | "medium" | "high";
 
 export interface Task {
@@ -61,6 +94,8 @@ export interface Task {
    * Absent means "not mine" — never assume ownership from a missing value.
    */
   createdBy?: string | null;
+  /** Sign-off, present only on a `closed` task — who approved it, when, and their rating. */
+  review?: TaskReview | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -92,6 +127,7 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
   in_progress: { label: "In progress", tone: "primary" },
   in_review: { label: "In review", tone: "warning" },
   done: { label: "Done", tone: "success" },
+  closed: { label: "Closed", tone: "success" },
   blocked: { label: "Blocked", tone: "warning" },
 };
 
@@ -101,8 +137,20 @@ export const TASK_STATUS_ORDER: TaskStatus[] = [
   "in_progress",
   "in_review",
   "done",
+  "closed",
   "blocked",
 ];
+
+/**
+ * Statuses a person may drag a card into, or pick in a form.
+ *
+ * `closed` is deliberately absent: it is set by reviewing the task, never by moving it. Offering it
+ * as a drop target would let the assignee mark their own work approved, which is the thing the
+ * review step exists to prevent — and the server would refuse it anyway.
+ */
+export const TASK_STATUS_SETTABLE: TaskStatus[] = TASK_STATUS_ORDER.filter(
+  (s) => s !== "closed",
+);
 
 export const TASK_PRIORITY_META: Record<
   TaskPriority,
