@@ -50,6 +50,23 @@ function formatDue(iso: string | null): string {
   return `${SHORT_MONTH[m - 1]} ${d}`;
 }
 
+/**
+ * Deadline urgency for the task list, from calendar days between today and the due date:
+ * `"overdue"` when it's already past, `"soon"` when it's within the next 3 days (below 3 days
+ * remaining), else `null`. Local-midnight comparison so "today" reads as due, not overdue.
+ */
+function dueUrgency(iso: string | null): "overdue" | "soon" | null {
+  if (!iso) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const [y, m, d] = iso.split("-").map(Number);
+  const due = new Date(y, m - 1, d);
+  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) return "overdue";
+  if (days < 3) return "soon";
+  return null;
+}
+
 export function PersonalDashboard() {
   const { openTasks, doneCount, myProjects, loading } = useMyWork();
   const isSurfaceOn = useIsSurfaceOn();
@@ -166,6 +183,7 @@ export function PersonalDashboard() {
                   <tbody className="divide-y divide-border">
                     {openTasks.slice(0, 6).map((t) => {
                       const meta = TASK_STATUS_META[t.status as TaskStatus];
+                      const urgency = dueUrgency(t.due);
                       return (
                         <tr key={t.id} className="transition-colors hover:bg-muted/40">
                           <td className="max-w-0 px-5 py-3">
@@ -181,7 +199,17 @@ export function PersonalDashboard() {
                               <span className="truncate">{t.projectName ?? "—"}</span>
                             </span>
                           </td>
-                          <td className="hidden whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums text-muted-foreground sm:table-cell">
+                          {/* Overdue → red, within 3 days → amber, otherwise the usual muted date. */}
+                          <td
+                            className={cn(
+                              "hidden whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums sm:table-cell",
+                              urgency === "overdue"
+                                ? "font-semibold text-destructive"
+                                : urgency === "soon"
+                                  ? "font-medium text-warning"
+                                  : "text-muted-foreground",
+                            )}
+                          >
                             {formatDue(t.due)}
                           </td>
                           <td className="whitespace-nowrap px-5 py-3 text-right">
