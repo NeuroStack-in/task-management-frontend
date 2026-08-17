@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Download, Eye, Loader2, Paperclip, Star } from "lucide-react";
 import {
   Dialog,
@@ -37,14 +39,15 @@ function extOf(name: string): string {
 }
 
 /** What the in-app viewer can render. `null` = download only (e.g. .docx). */
-type ViewKind = "image" | "pdf" | "text";
+type ViewKind = "image" | "pdf" | "markdown" | "text";
 function viewKindOf(a: Attachment): ViewKind | null {
   const ct = a.contentType;
   const ext = extOf(a.filename);
   if (ct.startsWith("image/") || [".png", ".jpg", ".jpeg"].includes(ext)) return "image";
   if (ct === "application/pdf" || ext === ".pdf") return "pdf";
-  if (ct === "text/plain" || ct === "text/markdown" || ext === ".txt" || ext === ".md")
-    return "text";
+  // Markdown renders formatted (GitHub-style); plain text stays monospace as-is.
+  if (ct === "text/markdown" || ext === ".md") return "markdown";
+  if (ct === "text/plain" || ext === ".txt") return "text";
   return null; // .docx and anything else — no in-app preview
 }
 
@@ -118,7 +121,7 @@ export function ViewTaskDialog({
       const url = await getAttachmentDownloadUrl(projectId, task.id, a.id);
       const res = await fetch(url);
       if (!res.ok) throw new Error(`view failed (${res.status})`);
-      if (kind === "text") {
+      if (kind === "text" || kind === "markdown") {
         setViewer({ attachment: a, kind, loading: false, text: await res.text() });
       } else {
         const blobUrl = URL.createObjectURL(await res.blob());
@@ -281,6 +284,10 @@ export function ViewTaskDialog({
                 title={viewer.attachment.filename}
                 className="h-[78vh] w-full rounded border bg-white"
               />
+            ) : viewer?.kind === "markdown" && viewer.text !== undefined ? (
+              <div className="bg-card max-h-[78vh] overflow-auto rounded border p-5 sm:p-6">
+                <MarkdownDoc>{viewer.text}</MarkdownDoc>
+              </div>
             ) : viewer?.kind === "text" && viewer.text !== undefined ? (
               <pre className="bg-card max-h-[78vh] overflow-auto rounded border p-3 font-mono text-xs whitespace-pre-wrap">
                 {viewer.text}
@@ -353,6 +360,103 @@ function AttachmentRow({
         )}
       </button>
     </li>
+  );
+}
+
+/**
+ * Document-scale Markdown for the attachment preview — GitHub-README styling (real heading sizes,
+ * ruled top-level headings, GFM tables + fenced code). Deliberately distinct from
+ * `@/components/shared/markdown`, which is compressed for chat bubbles. No raw HTML (react-markdown's
+ * default) — this renders an uploaded file, so injected markup stays inert text.
+ */
+function MarkdownDoc({ children }: { children: string }) {
+  return (
+    <div className="text-foreground text-sm leading-relaxed break-words">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => (
+            <h1 className="mt-6 mb-3 border-b pb-1.5 text-2xl font-semibold first:mt-0">
+              {children}
+            </h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="mt-6 mb-3 border-b pb-1.5 text-xl font-semibold first:mt-0">
+              {children}
+            </h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="mt-5 mb-2 text-lg font-semibold first:mt-0">{children}</h3>
+          ),
+          h4: ({ children }) => (
+            <h4 className="mt-4 mb-2 text-base font-semibold first:mt-0">{children}</h4>
+          ),
+          h5: ({ children }) => (
+            <h5 className="mt-4 mb-1 text-sm font-semibold first:mt-0">{children}</h5>
+          ),
+          h6: ({ children }) => (
+            <h6 className="text-muted-foreground mt-4 mb-1 text-sm font-semibold first:mt-0">
+              {children}
+            </h6>
+          ),
+          p: ({ children }) => <p className="my-3 first:mt-0">{children}</p>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          ul: ({ children }) => (
+            <ul className="marker:text-muted-foreground my-3 ml-6 list-disc space-y-1">
+              {children}
+            </ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="marker:text-muted-foreground my-3 ml-6 list-decimal space-y-1">
+              {children}
+            </ol>
+          ),
+          li: ({ children }) => <li className="pl-1">{children}</li>,
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline underline-offset-2"
+            >
+              {children}
+            </a>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="text-muted-foreground my-3 border-l-4 pl-3">
+              {children}
+            </blockquote>
+          ),
+          hr: () => <hr className="my-5" />,
+          code: ({ className: cls, children }) => {
+            const fenced = /language-/.test(cls ?? "");
+            return fenced ? (
+              <code className="bg-muted block overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed">
+                {children}
+              </code>
+            ) : (
+              <code className="bg-muted rounded px-1.5 py-0.5 font-mono text-[0.85em]">
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => <pre className="my-3">{children}</pre>,
+          table: ({ children }) => (
+            <div className="my-3 max-w-full overflow-x-auto rounded-lg border">
+              <table className="w-full border-collapse text-left text-[13px]">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-muted/50">{children}</thead>,
+          th: ({ children }) => (
+            <th className="border-b px-3 py-1.5 font-medium whitespace-nowrap">{children}</th>
+          ),
+          td: ({ children }) => <td className="border-b px-3 py-1.5 align-top">{children}</td>,
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
   );
 }
 
