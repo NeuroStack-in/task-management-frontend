@@ -27,12 +27,15 @@ import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
  * The stack, bottom → top. Order is fixed and meaningful (good → neutral → bad → absent), which is
  * itself the secondary encoding that keeps Productive (green) and Distracting (red) readable under
  * colour-vision deficiency — Neutral (blue) sits between them, so the two never touch, and every
- * segment is also legend- and tooltip-labelled. Palette validated (light: all checks pass; dark:
- * CVD/contrast/chroma pass) via the dataviz validator against the card surface.
+ * segment is also legend- and tooltip-labelled.
+ *
+ * Neutral uses `--info` (a reliably blue token in every theme), NOT `--chart-3`: the teal-branded
+ * themes remap `--chart-3` to a teal (#0f766e) that sits right next to the success green, which made
+ * Productive and Neutral read as the same colour. `--info` keeps the intended green/blue/red triad.
  */
 const CATEGORIES = [
   { key: "productiveH", name: "Productive", color: "var(--success)" },
-  { key: "neutralH", name: "Neutral", color: "var(--chart-3)" },
+  { key: "neutralH", name: "Neutral", color: "var(--info)" },
   { key: "distractingH", name: "Distracting", color: "var(--negative)" },
   // Faded on purpose: tracked time the agent couldn't classify. Recessive so it never competes with
   // the real categories, but present so an unclassified day reads as "unknown", not "zero".
