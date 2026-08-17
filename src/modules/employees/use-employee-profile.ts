@@ -62,9 +62,9 @@ export interface EmployeeProfileData {
   address: string;
   postcode: string;
   projects: ProjectItem[];
-  /** Actual daily work over the last 30 days — productive vs other tracked hours, per worked day.
-   *  Only days with data appear; an unreported day is absent, never a measured zero. */
-  kpi: { days: { date: string; label: string; productive: number; other: number }[] };
+  /** Hours worked per day over the last 30 days, tagged with the day's attendance status. Only days
+   *  with data appear; an unreported day is absent, never a measured zero. */
+  kpi: { days: { date: string; label: string; hours: number; status: string }[] };
   totalTasks: number;
   avgCompletion: number;
 }
@@ -128,39 +128,35 @@ function dayLabel(date: string): string {
 }
 
 /**
- * The employee's **actual daily work** over the last {@link DAILY_CHART_DAYS} days: one entry per day
- * that has a recorded summary, oldest→newest, split into productive vs other tracked hours.
+ * The employee's **hours worked per day** over the last {@link DAILY_CHART_DAYS} days, one entry per
+ * day that has a recorded summary (oldest→newest), each tagged with the day's attendance status.
  *
  * Replaces the old 12-month "avg productive hours/day" buckets, which were meaningless for anyone
  * with only a few weeks of history: with one month of data the monthly series drew a single point
- * connected to zero — a diagonal ramp that implied a trend where there was none. Daily bars show what
- * actually happened, and a person with three worked days shows three bars, not a fabricated slope.
+ * connected to zero — a diagonal ramp implying a trend where there was none. Simple daily bars, one
+ * per worked day, show what actually happened; the bar colour is the attendance verdict.
  *
- * **Only days with data appear.** A day the agent never reported is absent (no bar), never a measured
- * zero — same discipline the productivity card keeps.
+ * Height is the attendance-recorded work time (`worked_minutes`) when the day has closed, falling
+ * back to tracked active time for a day the close cron hasn't resolved yet — so a bar always reflects
+ * real time on the clock. **Only days with data appear** — an unreported day is absent, never a
+ * measured zero.
  */
 function buildDailyHours(
-  days: { date: string; activeSec: number; productiveSec: number }[],
+  days: { date: string; activeSec: number; workedMinutes: number; attendance: string }[],
   now: Date,
-): { date: string; label: string; productive: number; other: number }[] {
+): { date: string; label: string; hours: number; status: string }[] {
   const cutoff = ymd(
     new Date(now.getFullYear(), now.getMonth(), now.getDate() - (DAILY_CHART_DAYS - 1)),
   );
   return days
     .filter((d) => d.date >= cutoff)
     .sort((a, b) => a.date.localeCompare(b.date))
-    .map((d) => {
-      const productiveH = d.productiveSec / 3600;
-      const trackedH = d.activeSec / 3600;
-      return {
-        date: d.date,
-        label: dayLabel(d.date),
-        productive: round1(productiveH),
-        // The rest of the tracked time (neutral/distracting/unclassified). Never negative if a
-        // rounding edge makes productive momentarily exceed active.
-        other: round1(Math.max(0, trackedH - productiveH)),
-      };
-    });
+    .map((d) => ({
+      date: d.date,
+      label: dayLabel(d.date),
+      hours: round1(d.workedMinutes > 0 ? d.workedMinutes / 60 : d.activeSec / 3600),
+      status: d.attendance || "unknown",
+    }));
 }
 
 export function useEmployeeProfile(id: string): EmployeeProfileState {
@@ -242,7 +238,8 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
             (activity?.days ?? []).map((d) => ({
               date: d.date,
               activeSec: d.active_sec,
-              productiveSec: d.productive_sec,
+              workedMinutes: d.worked_minutes,
+              attendance: d.attendance,
             })),
             now,
           ),

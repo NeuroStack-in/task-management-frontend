@@ -22,6 +22,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -69,7 +70,6 @@ import { initials, isUuid } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
 import { usePermissions } from "@/hooks/use-permissions";
-import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { listRoles, assignRole, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
@@ -561,6 +561,40 @@ export function EmployeeProfile({ id }: { id: string }) {
 
 /* ============================ presentational view (verbatim preview) ============================ */
 
+/** Attendance status → the colour and label the hours-worked bars use. Unknown/absent/non-workday
+ *  (and any future status) fall through to the neutral "not yet closed" bucket. */
+const ATTENDANCE_META: Record<string, { label: string; color: string }> = {
+  present: { label: "Present", color: "var(--success)" },
+  late: { label: "Late", color: "var(--warning)" },
+  partial: { label: "Partial", color: "var(--chart-4)" },
+  leave: { label: "On leave", color: "var(--primary)" },
+};
+const ATTENDANCE_FALLBACK = { label: "Not yet closed", color: "var(--muted-foreground)" };
+const attendanceMeta = (status: string) => ATTENDANCE_META[status] ?? ATTENDANCE_FALLBACK;
+
+/** Tooltip for the hours-worked chart: the day, hours on the clock, and the attendance verdict. */
+function HoursTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload?: { label: string; hours: number; status: string } }>;
+}) {
+  const row = payload?.[0]?.payload;
+  if (!active || !row) return null;
+  const meta = attendanceMeta(row.status);
+  return (
+    <div className="bg-popover text-popover-foreground border-border rounded-xl border px-3 py-2 text-xs shadow-md">
+      <div className="text-muted-foreground mb-1 font-medium">{row.label}</div>
+      <div className="flex items-center gap-2">
+        <span className="size-2 shrink-0 rounded-full" style={{ background: meta.color }} aria-hidden />
+        <span className="tabular-nums">{row.hours}h worked</span>
+        <span className="text-muted-foreground">· {meta.label}</span>
+      </div>
+    </div>
+  );
+}
+
 function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () => void }) {
   const router = useRouter();
   const { can } = usePermissions();
@@ -579,6 +613,12 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
   // A day only appears here if the agent recorded it, so any bars at all means real work to show;
   // no days means nothing measured (an honest empty state, never a flat line of measured zeros).
   const kpiMeasured = chartData.length > 0;
+  // The attendance statuses actually present in the window, in a stable order — the chart legend.
+  const seenStatuses = new Set(chartData.map((d) => d.status));
+  const legendStatuses = [
+    ...["present", "late", "partial", "leave"].filter((s) => seenStatuses.has(s)),
+    ...([...seenStatuses].some((s) => !ATTENDANCE_META[s]) ? ["_other"] : []),
+  ];
 
   // Projects list paginates so a heavily-staffed employee doesn't run a wall of
   // bars down the card.
@@ -854,13 +894,25 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                     Hours worked
                   </p>
                   <p className="text-xs text-muted-foreground/80">
-                    Productive vs other tracked · last 30 days
+                    Total hours on the clock · last 30 days
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <Legend className="bg-success" label="Productive" />
-                <Legend className="bg-muted-foreground/40" label="Other tracked" />
+              {/* Legend reflects the attendance verdicts actually present in the window. */}
+              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                {legendStatuses.map((s) => {
+                  const meta = s === "_other" ? ATTENDANCE_FALLBACK : attendanceMeta(s);
+                  return (
+                    <span key={s} className="flex items-center gap-1.5">
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{ background: meta.color }}
+                        aria-hidden
+                      />
+                      {meta.label}
+                    </span>
+                  );
+                })}
               </div>
             </div>
             {!kpiMeasured ? (
@@ -901,30 +953,14 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                   tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
                   tickFormatter={(v) => `${v}h`}
                 />
-                <Tooltip
-                  cursor={{ fill: "var(--muted)", opacity: 0.4 }}
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    background: "var(--popover)",
-                    color: "var(--popover-foreground)",
-                    fontSize: 12,
-                  }}
-                  labelStyle={{ color: "var(--muted-foreground)" }}
-                  formatter={(v, name) => [`${v}h`, name]}
-                />
-                {/* Stacked: productive (green) on the bottom, the rest of the tracked time on top —
-                    so each bar's full height is that day's tracked hours, and the green share is how
-                    much of it was productive. */}
-                <Bar dataKey="productive" name="Productive" stackId="h" fill="var(--success)" />
-                <Bar
-                  dataKey="other"
-                  name="Other tracked"
-                  stackId="h"
-                  fill="var(--muted-foreground)"
-                  fillOpacity={0.35}
-                  radius={[3, 3, 0, 0]}
-                />
+                <Tooltip cursor={{ fill: "var(--muted)", opacity: 0.4 }} content={<HoursTooltip />} />
+                {/* One bar per worked day: height is hours on the clock, colour is that day's
+                    attendance verdict (present / late / partial / leave). */}
+                <Bar dataKey="hours" name="Hours worked" radius={[3, 3, 0, 0]} maxBarSize={40}>
+                  {chartData.map((d) => (
+                    <Cell key={d.date} fill={attendanceMeta(d.status).color} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
             )}
@@ -950,28 +986,3 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Legend({
-  className,
-  label,
-  dashed,
-}: {
-  className: string;
-  label: string;
-  dashed?: boolean;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      {dashed ? (
-        // Dashed swatch — mirrors the chart's dashed "previous period" stroke.
-        <span className="inline-flex w-4 items-center justify-between">
-          <span className={cn("h-0.5 w-1 rounded-full", className)} />
-          <span className={cn("h-0.5 w-1 rounded-full", className)} />
-          <span className={cn("h-0.5 w-1 rounded-full", className)} />
-        </span>
-      ) : (
-        <span className={cn("h-0.5 w-4 rounded-full", className)} />
-      )}
-      {label}
-    </span>
-  );
-}
