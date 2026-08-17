@@ -25,6 +25,7 @@ import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { DepartmentsManager } from "./departments-manager"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
+import { OfficePerimeterCard } from "./org/office-perimeter-card"
 import { TrackingModeCard } from "./org/tracking-mode-card"
 import { WorkingDaysManager } from "./org/working-days-manager"
 import { WorkingHoursManager } from "./org/working-hours-manager"
@@ -402,6 +403,7 @@ export function OrganizationTab() {
       <DepartmentsManager />
       <TeamsManager />
       <LocationsManager />
+      <OfficePerimeterCard />
       <WorkingDaysManager />
       <WorkingHoursManager />
       <HolidaysManager />

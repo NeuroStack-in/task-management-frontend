@@ -107,6 +107,13 @@ export interface ReportsData {
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/** Prettify an enum/code value for display: `on_hold` → `On hold`, `idle_faking` → `Idle faking`.
+ *  Leaves already-readable text alone (only swaps underscores and capitalises the first letter). */
+const humanize = (s: string): string => {
+  const t = s.replace(/_/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : s;
+};
+
 export function useReportsData(): ReportsData {
   const [reports, setReports] = useState<ReportDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -350,7 +357,7 @@ export function useReportsData(): ReportsData {
             p.name,
             round1((hoursByProject.get(p.id) ?? 0) / 3600),
             members,
-            p.status === "active" ? "Yes" : p.status,
+            p.status === "active" ? "Yes" : humanize(p.status),
           ];
         }),
       });
@@ -402,8 +409,8 @@ export function useReportsData(): ReportsData {
           .map((p) => [
             p.name,
             p.anomaly_count,
-            p.top_severity || OMITTED,
-            p.reasons.length ? p.reasons.join(", ") : OMITTED,
+            p.top_severity ? humanize(p.top_severity) : OMITTED,
+            p.reasons.length ? p.reasons.map(humanize).join(", ") : OMITTED,
             Math.round(p.score),
           ]),
       });
