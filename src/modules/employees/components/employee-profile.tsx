@@ -19,8 +19,8 @@ import {
   Users,
 } from "lucide-react";
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -575,15 +575,10 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
   // Surface the employee's name + role in the top navbar for this detail route.
   usePageTitle(data.name, `${data.jobTitle} · ${department}`);
 
-  const chartData = data.kpi.months.map((m, i) => ({
-    month: m,
-    current: data.kpi.current[i],
-    previous: data.kpi.previous[i],
-  }));
-  // Whether anything in either window was actually measured. A chart of all-nulls has no series to
-  // draw and no axis domain to draw it against; before nulls existed it drew a flat line on 0h,
-  // which claimed six months of measured idleness from an agent that had never reported.
-  const kpiMeasured = [...data.kpi.current, ...data.kpi.previous].some((v) => v != null);
+  const chartData = data.kpi.days;
+  // A day only appears here if the agent recorded it, so any bars at all means real work to show;
+  // no days means nothing measured (an honest empty state, never a flat line of measured zeros).
+  const kpiMeasured = chartData.length > 0;
 
   // Projects list paginates so a heavily-staffed employee doesn't run a wall of
   // bars down the card.
@@ -856,56 +851,50 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                 </span>
                 <div>
                   <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                    Productivity
+                    Hours worked
                   </p>
                   <p className="text-xs text-muted-foreground/80">
-                    Avg. productive hours / day
+                    Productive vs other tracked · last 30 days
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <Legend className="bg-primary" label="Last 6 months" />
-                <Legend className="bg-muted-foreground/50" label="Previous 6 months" dashed />
+                <Legend className="bg-success" label="Productive" />
+                <Legend className="bg-muted-foreground/40" label="Other tracked" />
               </div>
             </div>
             {!kpiMeasured ? (
               // The honest empty state. Says which of the two possible zeros this is, and names the
               // cause, so nobody reads a blank chart as a verdict on the person.
               <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-1 text-center">
-                <p className="text-sm font-medium">No productive time recorded yet</p>
+                <p className="text-sm font-medium">No work recorded in the last 30 days</p>
                 <p className="max-w-xs text-xs text-muted-foreground">
-                  This chart is built from activity the desktop agent classifies. Nothing has
-                  been classified for this employee in the last 12 months — which is not the
-                  same as a productive time of zero.
+                  This chart is built from activity the desktop agent tracks. Nothing has been
+                  recorded for this employee in the last 30 days — which is not the same as a
+                  measured zero.
                 </p>
               </div>
             ) : (
             <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
-              <AreaChart
-                data={chartData}
-                margin={CHART_MARGIN_WITH_LEGEND}
-              >
-                <defs>
-                  <linearGradient id="kpi-current" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.2} />
-                    <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
+              <BarChart data={chartData} margin={CHART_MARGIN_WITH_LEGEND}>
                 <CartesianGrid
                   strokeDasharray="3 3"
                   stroke="var(--border)"
                   vertical={false}
                 />
                 <XAxis
-                  dataKey="month"
-                  {...xAxisLabel("Month")}
+                  dataKey="label"
+                  {...xAxisLabel("Day")}
                   tickLine={false}
                   axisLine={false}
-                  tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                  // 30 daily ticks would overlap — thin them but always keep the first and last.
+                  interval="preserveStartEnd"
+                  minTickGap={16}
                   dy={6}
                 />
                 <YAxis
-                  {...yAxisLabel("Hours worked")}
+                  {...yAxisLabel("Hours")}
                   tickLine={false}
                   axisLine={false}
                   width={50}
@@ -913,7 +902,7 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                   tickFormatter={(v) => `${v}h`}
                 />
                 <Tooltip
-                  cursor={{ stroke: "var(--border)" }}
+                  cursor={{ fill: "var(--muted)", opacity: 0.4 }}
                   contentStyle={{
                     borderRadius: 12,
                     border: "1px solid var(--border)",
@@ -922,32 +911,21 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                     fontSize: 12,
                   }}
                   labelStyle={{ color: "var(--muted-foreground)" }}
-                  // A gap in the series is "not measured", and must not read as "0h".
-                  formatter={(v) => (typeof v === "number" ? `${v}h` : "not measured")}
+                  formatter={(v, name) => [`${v}h`, name]}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="previous"
-                  name="Previous 6 months"
-                  stroke="var(--muted-foreground)"
-                  strokeDasharray="5 5"
-                  strokeOpacity={0.55}
-                  strokeWidth={2}
-                  fill="transparent"
-                  dot={false}
-                  activeDot={false}
+                {/* Stacked: productive (green) on the bottom, the rest of the tracked time on top —
+                    so each bar's full height is that day's tracked hours, and the green share is how
+                    much of it was productive. */}
+                <Bar dataKey="productive" name="Productive" stackId="h" fill="var(--success)" />
+                <Bar
+                  dataKey="other"
+                  name="Other tracked"
+                  stackId="h"
+                  fill="var(--muted-foreground)"
+                  fillOpacity={0.35}
+                  radius={[3, 3, 0, 0]}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="current"
-                  name="Last 6 months"
-                  stroke="var(--primary)"
-                  strokeWidth={2.5}
-                  fill="url(#kpi-current)"
-                  dot={false}
-                  activeDot={{ r: 4, fill: "var(--primary)", stroke: "var(--card)", strokeWidth: 2 }}
-                />
-              </AreaChart>
+              </BarChart>
             </ResponsiveContainer>
             )}
           </div>

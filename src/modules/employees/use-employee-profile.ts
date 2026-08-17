@@ -62,8 +62,9 @@ export interface EmployeeProfileData {
   address: string;
   postcode: string;
   projects: ProjectItem[];
-  /** `null` in a month = nothing was measured that month — **not** a measured zero. */
-  kpi: { months: string[]; current: (number | null)[]; previous: (number | null)[] };
+  /** Actual daily work over the last 30 days — productive vs other tracked hours, per worked day.
+   *  Only days with data appear; an unreported day is absent, never a measured zero. */
+  kpi: { days: { date: string; label: string; productive: number; other: number }[] };
   totalTasks: number;
   avgCompletion: number;
 }
@@ -117,44 +118,49 @@ async function mapLimit<T, R>(
   return out;
 }
 
+/** How many days back the daily hours chart spans. */
+const DAILY_CHART_DAYS = 30;
+
+/** `2026-08-05` → `Aug 5` for a compact daily axis label. */
+function dayLabel(date: string): string {
+  const [, m, d] = date.split("-").map(Number);
+  return `${MONTH_SHORT[m - 1]} ${d}`;
+}
+
 /**
- * Twelve monthly buckets ending on the current month, each holding the **avg productive hours / day**
- * for that month (mean of the returned days' `productive_sec / 3600`). The last 6 buckets are
- * "current", the first 6 "previous".
+ * The employee's **actual daily work** over the last {@link DAILY_CHART_DAYS} days: one entry per day
+ * that has a recorded summary, oldest→newest, split into productive vs other tracked hours.
  *
- * **A month with no scored day is `null`, not `0`.** It used to fold to zero, which drew a flat line
- * along the axis that was indistinguishable from a real, measured zero — the chart said "this person
- * produced nothing for six months" when the truth was "nothing was ever measured". That is the same
- * null-collapsed-to-zero mistake the productivity stat card already guards against, and it is worse
- * on a chart, because a line implies a series of observations.
+ * Replaces the old 12-month "avg productive hours/day" buckets, which were meaningless for anyone
+ * with only a few weeks of history: with one month of data the monthly series drew a single point
+ * connected to zero — a diagonal ramp that implied a trend where there was none. Daily bars show what
+ * actually happened, and a person with three worked days shows three bars, not a fabricated slope.
+ *
+ * **Only days with data appear.** A day the agent never reported is absent (no bar), never a measured
+ * zero — same discipline the productivity card keeps.
  */
-function buildKpi(
-  days: { date: string; productiveSec: number }[],
+function buildDailyHours(
+  days: { date: string; activeSec: number; productiveSec: number }[],
   now: Date,
-): { months: string[]; current: (number | null)[]; previous: (number | null)[] } {
-  const keys: string[] = [];
-  const labels: string[] = [];
-  for (let k = 11; k >= 0; k--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - k, 1);
-    keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    labels.push(MONTH_SHORT[d.getMonth()]);
-  }
-  const sum = new Map<string, { hours: number; n: number }>();
-  for (const day of days) {
-    const key = day.date.slice(0, 7);
-    const acc = sum.get(key) ?? { hours: 0, n: 0 };
-    acc.hours += day.productiveSec / 3600;
-    acc.n += 1;
-    sum.set(key, acc);
-  }
-  const avgFor = (key: string): number | null => {
-    const acc = sum.get(key);
-    return acc && acc.n > 0 ? round1(acc.hours / acc.n) : null;
-  };
-  const previous = keys.slice(0, 6).map(avgFor);
-  const current = keys.slice(6).map(avgFor);
-  const months = labels.slice(6); // label the axis by the last-6-month window
-  return { months, current, previous };
+): { date: string; label: string; productive: number; other: number }[] {
+  const cutoff = ymd(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - (DAILY_CHART_DAYS - 1)),
+  );
+  return days
+    .filter((d) => d.date >= cutoff)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => {
+      const productiveH = d.productiveSec / 3600;
+      const trackedH = d.activeSec / 3600;
+      return {
+        date: d.date,
+        label: dayLabel(d.date),
+        productive: round1(productiveH),
+        // The rest of the tracked time (neutral/distracting/unclassified). Never negative if a
+        // rounding edge makes productive momentarily exceed active.
+        other: round1(Math.max(0, trackedH - productiveH)),
+      };
+    });
 }
 
 export function useEmployeeProfile(id: string): EmployeeProfileState {
@@ -231,10 +237,16 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
         const productivityScore = recentScored.length
           ? Math.round(recentScored.reduce((s, d) => s + d.score, 0) / recentScored.length)
           : null;
-        const kpi = buildKpi(
-          (activity?.days ?? []).map((d) => ({ date: d.date, productiveSec: d.productive_sec })),
-          now,
-        );
+        const kpi = {
+          days: buildDailyHours(
+            (activity?.days ?? []).map((d) => ({
+              date: d.date,
+              activeSec: d.active_sec,
+              productiveSec: d.productive_sec,
+            })),
+            now,
+          ),
+        };
 
         const roleName = roles.find((r) => r.id === p.role_id)?.name ?? p.role_id ?? "";
 
