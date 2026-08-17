@@ -107,7 +107,13 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   "attention_list.ai_summary": {
     span: 1,
     render: (d) => (
-      <OrgAiSummaryWidget range={d.range} rangeLabel={d.rangeLabel} days={d.days} />
+      <OrgAiSummaryWidget
+        range={d.range}
+        rangeLabel={d.rangeLabel}
+        days={d.days}
+        department={d.team}
+        departmentLabel={d.teamLabel}
+      />
     ),
   },
   payroll_summary: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },

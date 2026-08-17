@@ -665,6 +665,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const built: DashboardData = {
           range,
           team,
+          // Display label for the selected department, so the AI summary can name it ("the
+          // Engineering team"). Undefined for "all" → the summary says "the organization".
+          teamLabel: team === "all" ? undefined : deptLabel(team),
           rangeLabel: rangeLabelFor({ range, team, start, end }, days),
           days,
           // The chart's own window. When a one-day selection widened to a rolling week above, say

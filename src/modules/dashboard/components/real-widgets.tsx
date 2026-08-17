@@ -6,7 +6,7 @@
  * customizable shell) so the registry can import them without a cycle.
  */
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FolderKanban,
   CreditCard,
@@ -21,17 +21,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import {
-  getAiReport,
-  regenerateAiReport,
-  getAiWeeklyReport,
-  regenerateAiWeeklyReport,
-  getAiMonthlyReport,
-  regenerateAiMonthlyReport,
-  getAttention,
-  regenerateAttention,
+  getDeptSummary,
+  regenerateDeptSummary,
+  type DeptSummaryArgs,
 } from "@/modules/insights/services/insights.service";
-import { isoWeekOf } from "@/modules/insights/use-reports";
-import { singleDayOf, type DashboardRange } from "../lib/dashboard-data";
+import { type DashboardRange } from "../lib/dashboard-data";
 import {
   getDayOversight,
   type ApiDayResponse,
@@ -311,11 +305,17 @@ export function OrgAiSummaryWidget({
   range = "today",
   rangeLabel,
   days,
+  department = "all",
+  departmentLabel,
 }: {
   range?: DashboardRange;
   rangeLabel?: string;
-  /** The days the KPIs cover, resolved — see below for why a one-day custom range is not "custom". */
+  /** The days the KPIs cover, resolved — the summary window is drawn from these. */
   days?: string[];
+  /** Selected department id, or `"all"` for the whole org. Makes the summary respect the dropdown. */
+  department?: string;
+  /** Display label for that department (undefined for `"all"`). */
+  departmentLabel?: string;
 }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   const workdays = useWorkdays();
@@ -325,81 +325,40 @@ export function OrgAiSummaryWidget({
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // **A one-day custom range IS a day.** Picking "Aug 15 – Aug 15" and being told summaries only
-  // exist per day/week/month is a limitation of the picker's mode, not of the data: there is a
-  // daily narrative for that date, and refusing it is why a Saturday selected by hand looked like
-  // it had no dashboard at all.
-  //
-  // Wider custom windows genuinely have no cached narrative and no endpoint that would build one.
-  // Rather than silently show one day's summary under a "Jun 3 – Jul 12" header — which would read
-  // as a summary of that window — the card still says what it can and can't cover.
-  const singleCustomDay = singleDayOf(range, days);
-  const unsupportedRange = range === "range" && !singleCustomDay;
+  // The window the summary covers. "Today" describes the last completed workday (today isn't scored
+  // until the 00:15 close), matching the KPIs' daily narrative; every other range uses the KPI
+  // window's own bounds — so ANY range is now summarisable, not just a single day.
+  const bounds = useMemo(() => {
+    if (range === "today" || !days || days.length === 0) {
+      const d = isoLastWorkday(workdays);
+      return { from: d, to: d };
+    }
+    return { from: days[0], to: days[days.length - 1] };
+  }, [range, days, workdays]);
 
-  // Enterprise org report first (richer, carries generated_at); fall back to the attention narrative
-  // (gated only on AiInsightsRead) when the org lacks the report entitlement. The attention
-  // narrative is per-day only, so on a week/month range the fallback covers the last workday and the
-  // period note below says so.
-  //
-  // `force` selects the POST `…/regenerate` twin of each read. The plain GETs serve the narrative
-  // **cached server-side**, so re-reading them on Regenerate returned the identical prose instantly —
-  // the button looked inert. The regenerate routes carry the same gates as their reads, so the same
-  // 403 fallback applies.
+  // One department-scoped endpoint for every range (`force` picks its regenerate twin). Gated on
+  // `ai.insights` — the same gate the old attention fallback used — so respecting the department
+  // dropdown never changes which orgs can read a summary. The plain GET serves the server-cached
+  // narrative; Regenerate forces a fresh model run.
   const fetchSummary = useCallback(
     async (force: boolean): Promise<{ narrative: string; generatedAt: number | null }> => {
-      // The day the user actually chose, when they chose one. Falling back to the last *workday*
-      // was why a hand-picked Saturday could never be read: with a Mon–Fri workweek it silently
-      // resolved to Friday and the card described a different day than the one on screen.
-      const date = singleCustomDay ?? isoLastWorkday(workdays);
-      // The always-available fallback: the attention narrative for the last workday (gated only on
-      // AiInsightsRead). Used when a period report has no entitlement OR hasn't been generated yet.
-      const attentionFallback = async () => {
-        const a = force ? await regenerateAttention(date) : await getAttention(date);
-        return { narrative: a.narrative, generatedAt: null };
+      const args: DeptSummaryArgs = {
+        department,
+        label: departmentLabel,
+        from: bounds.from,
+        to: bounds.to,
+        period: rangeLabel,
       };
-      try {
-        let r: { narrative: string; generated_at?: number | null } | null = null;
-        if (range === "7d") {
-          const week = isoWeekOf(date);
-          r = force ? await regenerateAiWeeklyReport(week) : await getAiWeeklyReport(week);
-        } else if (range === "30d") {
-          const month = date.slice(0, 7);
-          r = force ? await regenerateAiMonthlyReport(month) : await getAiMonthlyReport(month);
-        } else {
-          const rr = force ? await regenerateAiReport(date) : await getAiReport(date);
-          return { narrative: rr.narrative, generatedAt: rr.generated_at };
-        }
-        // A weekly/monthly report can come back with **no narrative** for an incomplete period that
-        // the scorer hasn't summarised yet (the current week is the common case) — treat that like a
-        // missing report and fall back rather than showing a blank card.
-        if (!r.narrative || !r.narrative.trim()) return attentionFallback();
-        return { narrative: r.narrative, generatedAt: r.generated_at ?? null };
-      } catch (e) {
-        // 403 = no report entitlement; 404 = no report cached for this period yet. Both mean "use the
-        // narrative we do have" rather than erroring the card.
-        if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
-          return attentionFallback();
-        }
-        throw e;
-      }
+      const r = force ? await regenerateDeptSummary(args) : await getDeptSummary(args);
+      return { narrative: r.narrative, generatedAt: r.generated_at };
     },
-    // `singleCustomDay` is in here deliberately: without it, moving the custom picker from one day
-    // to another kept serving the first day's narrative — the callback never rebuilt, so the card
-    // silently described the previous selection.
-    [workdays, range, singleCustomDay],
+    [department, departmentLabel, bounds.from, bounds.to, rangeLabel],
   );
 
   useEffect(() => {
     let live = true;
     setLoading(true);
     setError(null);
-    // No cached narrative exists for an arbitrary window, and there is no endpoint that would
-    // build one — so don't fetch and don't show a different period's prose under this header.
-    if (unsupportedRange) {
-      setNarrative(null);
-      setLoading(false);
-      return;
-    }
     fetchSummary(false)
       .then((r) => {
         if (!live) return;
@@ -411,7 +370,7 @@ export function OrgAiSummaryWidget({
     return () => {
       live = false;
     };
-  }, [fetchSummary, unsupportedRange]);
+  }, [fetchSummary]);
 
   async function regenerate() {
     if (regenerating || loading) return;
@@ -443,7 +402,7 @@ export function OrgAiSummaryWidget({
         <button
           type="button"
           onClick={regenerate}
-          disabled={loading || regenerating || unsupportedRange}
+          disabled={loading || regenerating}
           title="Regenerate summary"
           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-feature-foreground/80 transition-colors hover:bg-white/15 hover:text-feature-foreground disabled:pointer-events-none disabled:opacity-50"
         >
@@ -454,13 +413,8 @@ export function OrgAiSummaryWidget({
       <CardContent className="flex flex-col gap-3 text-sm leading-relaxed text-feature-foreground/90">
         {loading || regenerating ? (
           <AiSummaryPending
-            label={regenerating ? "Regenerating the summary…" : "Generating the org summary…"}
+            label={regenerating ? "Regenerating the summary…" : "Generating the summary…"}
           />
-        ) : unsupportedRange ? (
-          <p className="flex-1 text-feature-foreground/75">
-            Summaries are written per day, week and month, so there isn&apos;t one for a custom
-            range. Switch to Today, Week or Month to read the narrative for that period.
-          </p>
         ) : narrative ? (
           <>
             <p className="flex-1">{narrative}</p>

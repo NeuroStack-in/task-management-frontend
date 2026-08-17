@@ -100,7 +100,10 @@ export function EmployeeRecapCard({
   userId: string;
   name: string;
 }) {
-  const [period, setPeriod] = useState<RecapPeriod>("weekly");
+  // Daily by default: the daily recap is the rich one (session shape, breaks, "2 of 3 tasks",
+  // yesterday comparison, focus areas). Weekly/monthly are thin reduces that can't carry that
+  // detail, so opening on Weekly hid the useful recap behind a tab switch.
+  const [period, setPeriod] = useState<RecapPeriod>("daily");
   const [recap, setRecap] = useState<Recap | null>(null);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);

@@ -533,6 +533,66 @@ export function regenerateAiMonthlyReport(month: string): Promise<AiPeriodReport
   );
 }
 
+/** One ranked person in a department summary — name, tracked hours, mean score. */
+export interface DeptPersonStat {
+  name: string;
+  hours: number;
+  score: number;
+}
+
+/**
+ * The dashboard's **department-scoped** AI summary over a date range (`dept_summary` slice). Gated
+ * on `ai.insights` (not the enterprise `ai_pdf`), so it's available wherever the old attention
+ * fallback was. `department` is a department id, or `"all"` for the whole org.
+ */
+export interface DeptSummary {
+  department: string;
+  from: string;
+  to: string;
+  metrics: {
+    total_people: number;
+    scored_people: number;
+    tracked_hours_total: number;
+    avg_score: number | null;
+    top_performer: DeptPersonStat | null;
+    needs_improvement: DeptPersonStat | null;
+  };
+  narrative: string;
+  generated_at: number;
+}
+
+export interface DeptSummaryArgs {
+  /** Department id, or `"all"` for the whole organization. */
+  department: string;
+  /** Display label the narrative should use (the dropdown text). Omitted for `"all"`. */
+  label?: string;
+  /** Inclusive window, `YYYY-MM-DD`. `from === to` for a single day. */
+  from: string;
+  to: string;
+  /** Natural phrase for the window ("today", "this week") so the prose reads well. */
+  period?: string;
+}
+
+function deptSummaryQuery(a: DeptSummaryArgs): string {
+  const p = new URLSearchParams({ department: a.department, from: a.from, to: a.to });
+  if (a.label && a.department !== "all") p.set("label", a.label);
+  if (a.period) p.set("period", a.period);
+  return p.toString();
+}
+
+/** `GET /v1/insights/reports/dept-summary?department=&from=&to=[&label=&period=]`. */
+export function getDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> {
+  return apiFetch<DeptSummary>(`/v1/insights/reports/dept-summary?${deptSummaryQuery(a)}`);
+}
+
+/** `POST /v1/insights/reports/dept-summary/regenerate?…` — re-run the model, re-cache. */
+export function regenerateDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> {
+  return apiFetch<DeptSummary>(
+    `/v1/insights/reports/dept-summary/regenerate?${deptSummaryQuery(a)}`,
+    { method: "POST" },
+  );
+}
+
 // ── GET /v1/insights/locations?date=  (org-wide oversight — the admin Locations board) ──
 
 /**

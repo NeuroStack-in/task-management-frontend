@@ -243,6 +243,8 @@ export interface Performer {
 export interface DashboardData {
   range: DashboardRange;
   team: string;
+  /** Display label for the selected department; `undefined` when `team === "all"`. */
+  teamLabel?: string;
   rangeLabel: string;
   /**
    * The days the KPIs actually cover, resolved. Carried so widgets can tell a **one-day** custom
