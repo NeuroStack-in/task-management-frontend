@@ -332,11 +332,13 @@ function generateTasks(projects: Project[]): Task[] {
         id: `task-${(++counter).toString().padStart(5, "0")}`,
         projectId: project.id,
         title: `${faker.helpers.arrayElement(TASK_VERB)} ${faker.hacker.noun()} ${faker.hacker.noun()}`,
+        description: "",
         status,
         assigneeId,
         priority,
         dueDate,
         estimateHours: faker.number.int({ min: 1, max: 16 }),
+        attachments: [],
       });
     }
   }

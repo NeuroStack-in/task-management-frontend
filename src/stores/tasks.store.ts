@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { tasks as seedTasks } from "@/lib/data";
 import type { Task, TaskPriority, TaskStatus } from "@/modules/projects/types";
+import type { ApiAttachment } from "@/modules/projects/services/projects.service";
 
 /**
  * Session working copy of tasks, seeded from the static mock data. Lets the
@@ -10,11 +11,14 @@ import type { Task, TaskPriority, TaskStatus } from "@/modules/projects/types";
 
 export interface TaskFormValues {
   title: string;
+  description: string;
   status: TaskStatus;
   assigneeId: string | null;
   priority: TaskPriority;
   dueDate: string | null;
   estimateHours: number;
+  /** Attachments in wire shape — sent straight into the create/update request body. */
+  attachments: ApiAttachment[];
 }
 
 interface TasksState {
@@ -36,11 +40,18 @@ export const useTasksStore = create<TasksState>((set) => ({
       id: `task-local-${seq}`,
       projectId,
       title: v.title,
+      description: v.description,
       status: v.status,
       assigneeId: v.assigneeId,
       priority: v.priority,
       dueDate: v.dueDate,
       estimateHours: v.estimateHours,
+      attachments: v.attachments.map((a) => ({
+        id: a.id,
+        filename: a.filename,
+        contentType: a.content_type,
+        size: a.size,
+      })),
     };
     set((s) => ({ tasks: [task, ...s.tasks] }));
     return task;

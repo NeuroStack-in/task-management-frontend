@@ -78,6 +78,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
               id: t.id,
               projectId: detail.id,
               title: t.title,
+              description: t.description ?? "",
               status: col.status as TaskStatus,
               assigneeId: t.assignee_id ?? null,
               priority: (t.priority as TaskPriority) ?? "medium",
@@ -85,6 +86,12 @@ export function useProjectDetail(id: string): ProjectDetailData {
               estimateHours: t.estimate_hours ?? 0,
               createdBy: t.created_by ?? null,
               review: t.review ?? null,
+              attachments: (t.attachments ?? []).map((a) => ({
+                id: a.id,
+                filename: a.filename,
+                contentType: a.content_type,
+                size: a.size,
+              })),
             })),
           ),
         );
@@ -135,11 +142,13 @@ export function useProjectDetail(id: string): ProjectDetailData {
     async (v: TaskFormValues) => {
       await apiCreateTask(id, {
         title: v.title,
+        description: v.description,
         status: v.status,
         assignee_id: v.assigneeId || undefined,
         due: v.dueDate || undefined,
         priority: v.priority,
         estimate_hours: v.estimateHours,
+        attachments: v.attachments,
       });
       reload();
     },
@@ -150,12 +159,15 @@ export function useProjectDetail(id: string): ProjectDetailData {
     async (taskId: string, v: TaskFormValues) => {
       await apiUpdateTask(id, taskId, {
         title: v.title,
+        description: v.description,
         status: v.status,
         // Empty string in the form = clear it (the double-null the PATCH understands).
         assignee_id: v.assigneeId ? v.assigneeId : null,
         due: v.dueDate ? v.dueDate : null,
         priority: v.priority,
         estimate_hours: v.estimateHours,
+        // A present array replaces the whole set — the form always sends the current list.
+        attachments: v.attachments,
       });
       reload();
     },

@@ -132,12 +132,19 @@ export function useProjectsData(): ProjectsData {
                 id: t.id,
                 projectId: detail.id,
                 title: t.title,
+                description: t.description ?? "",
                 status: col.status as TaskStatus,
                 assigneeId: t.assignee_id ?? null,
                 priority: (t.priority as TaskPriority) ?? "medium",
                 dueDate: t.due ?? null,
                 estimateHours: t.estimate_hours ?? 0,
                 createdBy: t.created_by ?? null,
+                attachments: (t.attachments ?? []).map((a) => ({
+                  id: a.id,
+                  filename: a.filename,
+                  contentType: a.content_type,
+                  size: a.size,
+                })),
               });
             }
           }

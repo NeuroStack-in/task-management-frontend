@@ -77,15 +77,27 @@ export interface TaskReview {
 }
 export type TaskPriority = "low" | "medium" | "high";
 
+/** A file attached to a task. Client shape is camelCase (`contentType`); the wire uses `content_type`. */
+export interface Attachment {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+}
+
 export interface Task {
   id: string;
   projectId: string;
   title: string;
+  /** Free-text detail; empty string when the task has none. */
+  description: string;
   status: TaskStatus;
   assigneeId: string | null;
   priority: TaskPriority;
   dueDate: string | null;
   estimateHours: number;
+  /** Files attached to the task; empty array when none. */
+  attachments: Attachment[];
   /**
    * Who created the task (the server's `created_by`). Delete authority depends on it — a project
    * Member may remove only their own tasks (`canDeleteTask` in `./lib`).

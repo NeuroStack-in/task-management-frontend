@@ -8,6 +8,7 @@ import {
   CalendarRange,
   ChevronRight,
   Crown,
+  Eye,
   FileDown,
   FolderKanban,
   ListChecks,
@@ -77,6 +78,7 @@ import { MemberStack, Segmented, StatusBadge } from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { TaskReviewDialog } from "./task-review-dialog";
 import { TaskFormDialog } from "./task-form-dialog";
+import { ViewTaskDialog } from "./view-task-dialog";
 import { generateProjectReportPdf } from "../report";
 
 interface ProjectDetailPageProps {
@@ -127,6 +129,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   /** Mirrors the server: Manager|Lead, only on a `done` task, never your own. */
   const canReview = (t: Task) => canReviewTask(t, authority, currentUserId);
   const [reviewTarget, setReviewTarget] = useState<Task | null>(null);
+  const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -292,6 +295,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const taskInitial = editingTask
     ? {
         title: editingTask.title,
+        description: editingTask.description,
         // A closed task has no editable "closed" option — the form only offers the settable
         // statuses. Showing `done` is the honest neighbour: it is the state the review moved it
         // out of, and reopening by saving is a deliberate act rather than an accident of the form.
@@ -300,6 +304,13 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         priority: editingTask.priority,
         dueDate: editingTask.dueDate?.slice(0, 10) ?? "",
         estimateHours: editingTask.estimateHours,
+        // Back to wire shape (`content_type`) — the dialog sends this straight into the request.
+        attachments: editingTask.attachments.map((a) => ({
+          id: a.id,
+          filename: a.filename,
+          content_type: a.contentType,
+          size: a.size,
+        })),
       }
     : { status: createStatus };
 
@@ -564,6 +575,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   onAdd={
                     col === "closed" ? undefined : () => openCreateTask(col)
                   }
+                  onView={setViewingTask}
                   onEdit={openEditTask}
                   onDelete={setTaskToDelete}
                   canDelete={canDelete}
@@ -600,9 +612,19 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         mode={editingTask ? "edit" : "create"}
         open={taskOpen}
         onOpenChange={setTaskOpen}
+        projectId={project.id}
         members={members}
         initial={taskInitial}
         onSubmit={handleTaskSubmit}
+      />
+
+      {/* Read-only task view */}
+      <ViewTaskDialog
+        task={viewingTask}
+        projectId={project.id}
+        open={!!viewingTask}
+        onOpenChange={(o) => !o && setViewingTask(null)}
+        userMap={userMap}
       />
 
       {reviewTarget ? (
@@ -844,6 +866,7 @@ function KanbanColumn({
   tasks,
   userMap,
   onAdd,
+  onView,
   onEdit,
   onDelete,
   canDelete,
@@ -855,6 +878,7 @@ function KanbanColumn({
   userMap: Record<string, UserMini>;
   /** Absent on a column that cannot accept new work (Closed). */
   onAdd?: () => void;
+  onView: (t: Task) => void;
   onEdit: (t: Task) => void;
   onDelete: (t: Task) => void;
   canDelete: (t: Task) => boolean;
@@ -895,6 +919,7 @@ function KanbanColumn({
               key={t.id}
               task={t}
               userMap={userMap}
+              onView={onView}
               onEdit={onEdit}
               onDelete={canDelete(t) ? onDelete : undefined}
               onReview={canReview(t) ? onReview : undefined}
@@ -910,11 +935,14 @@ function TaskCard({
   task,
   onReview,
   userMap,
+  onView,
   onEdit,
   onDelete,
 }: {
   task: Task;
   userMap: Record<string, UserMini>;
+  /** Open the read-only view of this task. */
+  onView: (t: Task) => void;
   onEdit: (t: Task) => void;
   /** Absent when the caller may not delete this task — see `canDeleteTask`. */
   onDelete?: (t: Task) => void;
@@ -950,6 +978,16 @@ function TaskCard({
           overlapped the title text. The opaque pill floats over the top-right corner cleanly on
           hover instead, and the title stays full-width when the card isn't hovered. */}
       <div className="bg-card absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-lg border p-0.5 opacity-0 shadow-sm transition-opacity group-hover/task:opacity-100 focus-within:opacity-100">
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => onView(task)}
+          aria-label="View task"
+          title="View task"
+          className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6 items-center justify-center rounded-md"
+        >
+          <Eye className="size-3.5" />
+        </button>
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}

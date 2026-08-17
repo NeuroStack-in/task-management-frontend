@@ -119,10 +119,20 @@ export function getProject(id: string): Promise<ApiProjectDetail> {
 
 // ── Task board (GET /v1/projects/{id}/tasks) ───────────────────────────────────────────────────
 
+/** A file attached to a task. Wire shape is snake_case (`content_type`), served inline on the board. */
+export interface ApiAttachment {
+  id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+}
+
 export interface ApiBoardTask {
   id: string;
   title: string;
   description?: string;
+  /** Files attached to the task; empty/absent when it has none. */
+  attachments?: ApiAttachment[];
   assignee_id?: string;
   due?: string;
   /** `low` | `medium` | `high`. */
@@ -187,6 +197,7 @@ export interface NewTask {
   due?: string;
   priority?: string;
   estimate_hours?: number;
+  attachments?: ApiAttachment[];
 }
 
 export function createTask(projectId: string, body: NewTask): Promise<ApiBoardTask> {
@@ -205,6 +216,8 @@ export interface TaskPatch {
   assignee_id?: string | null;
   priority?: string;
   estimate_hours?: number | null;
+  /** A present array REPLACES the whole attachment set; omit to leave it unchanged. */
+  attachments?: ApiAttachment[];
 }
 
 export function updateTask(
@@ -281,4 +294,58 @@ export function reviewTask(
     `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/review`,
     { method: "POST", body: JSON.stringify(body) },
   );
+}
+
+// ── Task attachments ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * `POST /v1/projects/{id}/task-attachments/presign` — mint a presigned S3 PUT URL for one file.
+ *
+ * Returns the `attachment_id` the task must record and the `upload_url` to PUT the raw bytes to.
+ * Uploading is a *separate* step ({@link uploadFileToPresignedUrl}) against S3, not this API.
+ */
+export function presignTaskAttachment(
+  projectId: string,
+  filename: string,
+  contentType: string,
+): Promise<{ attachment_id: string; upload_url: string }> {
+  return apiFetch(
+    `/v1/projects/${encodeURIComponent(projectId)}/task-attachments/presign`,
+    {
+      method: "POST",
+      body: JSON.stringify({ filename, content_type: contentType }),
+    },
+  );
+}
+
+/**
+ * `GET /v1/projects/{id}/tasks/{taskId}/attachments/{attachmentId}/download` — a short-lived
+ * presigned GET URL for one attachment. Returns just the URL; the caller opens or fetches it.
+ */
+export function getAttachmentDownloadUrl(
+  projectId: string,
+  taskId: string,
+  attachmentId: string,
+): Promise<string> {
+  return apiFetch<{ url: string }>(
+    `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}/download`,
+  ).then((r) => r.url);
+}
+
+/**
+ * PUT the raw file bytes to a presigned S3 URL. **Not** through `apiFetch`: this is an external S3
+ * host and must carry no auth headers — the signature is in the URL. Throws on any non-2xx.
+ */
+export async function uploadFileToPresignedUrl(
+  uploadUrl: string,
+  file: File,
+): Promise<void> {
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type },
+  });
+  if (!res.ok) {
+    throw new Error(`Upload failed (${res.status})`);
+  }
 }
