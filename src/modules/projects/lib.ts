@@ -145,7 +145,9 @@ export function projectStats(projects: Project[]): ProjectStats {
     active: active.length,
     atRisk: projects.filter(isAtRisk).length,
     avgProgress,
-    pulse: pulse.some((v) => v > 0) ? pulse : [10, 14, 12, 18, 16, 22, 24],
+    // Real aggregate velocity, or `[]` when there's none — the Sparkline no-ops on an empty
+    // series, so an org with no velocity shows no line rather than a fabricated rising one.
+    pulse: pulse.some((v) => v > 0) ? pulse : [],
   };
 }
 

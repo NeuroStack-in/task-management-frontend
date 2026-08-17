@@ -103,7 +103,7 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
                 </p>
                 <p className="text-xs text-muted-foreground">{s.sub}</p>
               </div>
-              {s.spark ? (
+              {s.spark && s.spark.length > 1 ? (
                 <Sparkline
                   data={s.spark}
                   width={84}

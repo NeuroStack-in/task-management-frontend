@@ -98,6 +98,15 @@ export function ReportsExperimental() {
             onChange={setDate}
             className="w-40"
           />
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Next day"
+            disabled={!date || date >= today}
+            onClick={() => setDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
+          >
+            <ChevronRight className="size-4" />
+          </Button>
           {/* The day's narrative is generate-once-cached; each press is a fresh billed model run. */}
           {aiReport.data?.narrative ? (
             <Button
@@ -110,15 +119,6 @@ export function ReportsExperimental() {
               {aiReport.regenerating ? "Regenerating…" : "Regenerate"}
             </Button>
           ) : null}
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Next day"
-            disabled={!date || date >= today}
-            onClick={() => setDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
-          >
-            <ChevronRight className="size-4" />
-          </Button>
         </div>
       </div>
 

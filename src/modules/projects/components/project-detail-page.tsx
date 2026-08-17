@@ -476,7 +476,14 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           <p className="text-muted-foreground self-start text-xs font-medium tracking-wide uppercase">
             Progress
           </p>
-          <Gauge value={project.progress} label="of work done" size={172} />
+          {/* Gauge and caption share ONE source — the live board (done / total tasks) — so the
+              percentage and the "N of M" can never disagree. (The aggregator's cached
+              `project.progress` can lag the board, which made the gauge look wrong.) */}
+          <Gauge
+            value={tasks.length ? Math.round((completed / tasks.length) * 100) : 0}
+            label="of work done"
+            size={172}
+          />
           <p className="text-muted-foreground mt-1 text-xs">
             {completed} of {tasks.length} tasks done
           </p>

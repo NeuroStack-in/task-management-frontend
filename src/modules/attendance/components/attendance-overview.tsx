@@ -117,7 +117,11 @@ export function AttendanceOverview({
               >
                 {loading ? "—" : `${rate}%`}
               </span>
-              <span className="text-xs text-muted-foreground">Attendance rate</span>
+              <span className="text-xs text-muted-foreground">
+                {/* Today's figure is a live "who's clocked in right now" snapshot, not a full-day
+                    attendance rate (that only exists once the nightly close stamps verdicts). */}
+                {range === "today" ? "Clocked in now" : "Attendance rate"}
+              </span>
             </div>
           </div>
 
@@ -216,9 +220,10 @@ export function AttendanceOverview({
               leavePct={leavePct}
               absentPct={absentPct}
               rate={rate}
-              // A real baseline exists only for Today (trailing-workday average); a single picked day
-              // has nothing to compare itself against, so no delta there.
-              benchmarkRate={range === "today" ? benchmarkRate : null}
+              // No "vs recent" delta on the single-day / Today split: Today is a live clocked-in-now
+              // snapshot (not comparable to a full-day average), and a single picked day has no
+              // baseline. The like-for-like average lives on the multi-day TrendBars instead.
+              benchmarkRate={null}
             />
           )}
         </div>

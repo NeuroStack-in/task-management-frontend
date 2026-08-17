@@ -207,11 +207,13 @@ function OrgDashboard() {
               }
               href="/attendance"
             />
+            {/* No join-date field exists in the directory yet, so this is unmeasurable — show the
+                absence (—), never a confident "0" that reads as "nobody was hired". */}
             <StatCard
               label="New Hires"
-              value={kpis.newHires.value}
+              value="—"
               icon={UserPlus}
-              hint="join date pending directory"
+              hint="join date not tracked yet"
               href="/employees"
             />
           </>

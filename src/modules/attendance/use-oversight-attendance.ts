@@ -109,9 +109,6 @@ export interface DayPoint {
   rate: number;
 }
 
-/** Trailing closed workdays averaged for the "Today vs recent" benchmark. */
-export const BENCHMARK_DAYS = 10;
-
 export interface OversightAttendance {
   counts: OversightCounts;
   label: string;
@@ -354,52 +351,6 @@ function dayPoint(
   };
 }
 
-/**
- * The last `count` **closed** workdays before `todayIso`, chronological. Days the org does not
- * schedule are skipped — they resolve `non_workday` server-side and would drag the benchmark down
- * with days nobody was expected to work.
- */
-function trailingWorkdays(
-  todayIso: string,
-  count: number,
-  workdays: readonly IsoWeekday[],
-): string[] {
-  const [y, m, d] = todayIso.split("-").map(Number);
-  const cur = new Date(y, m - 1, d);
-  const out: string[] = [];
-  let guard = 0;
-  // The guard bounds the walk-back; a 1-day week needs ~7 calendar days per workday found.
-  const limit = count * 7 + 14;
-  while (out.length < count && guard < limit) {
-    cur.setDate(cur.getDate() - 1);
-    if (isWorkday(cur, workdays)) {
-      out.push(isoOf(cur.getFullYear(), cur.getMonth(), cur.getDate()));
-    }
-    guard += 1;
-  }
-  return out.reverse();
-}
-
-/** Fetch a set of closed workdays and reduce each to a `DayPoint`. Best-effort: a failed day is simply
- *  omitted (used for the trailing benchmark, which must never fail the page). */
-async function fetchDayPoints(
-  isos: string[],
-  dir: Map<string, DirEntry>,
-  dept: string,
-): Promise<DayPoint[]> {
-  const entries = await mapWithConcurrency(isos, 3, (iso) =>
-    getDayOversight(iso).then(
-      (r) => [iso, r] as const,
-      () => [iso, null] as const,
-    ),
-  );
-  const out: DayPoint[] = [];
-  for (const [iso, resp] of entries) {
-    if (resp) out.push(dayPoint(iso, resp.users, dir, dept));
-  }
-  return out.sort((a, b) => a.iso.localeCompare(b.iso));
-}
-
 interface ComputedState {
   counts: OversightCounts;
   rows: OversightRow[];
@@ -417,16 +368,12 @@ export function useOversightAttendance({
   date,
   start,
   end,
-  benchmark = true,
 }: {
   range: AttendanceRange;
   dept: string;
   date: AttendanceDate;
   start: string;
   end: string;
-  /** Fetch the trailing-workday average for the "Today vs recent" delta. Off for the header's
-   *  always-today read, which only needs the live count and must stay fast. */
-  benchmark?: boolean;
 }): OversightAttendance {
   // Directory (names + departments + active flag) — loaded once, reused by every range.
   const [dir, setDir] = useState<Map<string, DirEntry> | null>(null);
@@ -560,32 +507,25 @@ export function useOversightAttendance({
           }));
           // Counted after enrichment, so the headline figure agrees with the roster beneath it.
           const present = rows.filter((r) => r.status === "in").length;
-          // "vs recent" baseline: the mean attendance rate over the trailing closed workdays, honouring
-          // the department filter. Best-effort — a failure just hides the delta, never the page.
-          let benchmarkRate: number | null = null;
-          if (benchmark) {
-            const pts = (
-              await fetchDayPoints(
-                trailingWorkdays(todayIso, BENCHMARK_DAYS, workdays),
-                dir,
-                dept,
-              )
-            ).filter((p) => p.total > 0);
-            if (!live) return;
-            if (pts.length) {
-              benchmarkRate = Math.round(
-                pts.reduce((s, p) => s + p.rate, 0) / pts.length,
-              );
-            }
-          }
           setState({
             // `partial: 0` — this is the LIVE today branch, derived from in/out presence. Partial is a
-            // verdict the nightly close assigns; it does not exist before then.
-            counts: { present, partial: 0, late: 0, leave: 0, total: emp.length },
+            // verdict the nightly close assigns; it does not exist before then. `leave`, though, IS
+            // known today (approved leave), so count it — otherwise on-leave people are silently
+            // rolled into "Absent". No live baseline for Today, so `benchmarkRate: null` (see below).
+            counts: {
+              present,
+              partial: 0,
+              late: 0,
+              leave: rows.filter((r) => r.todayStatus === "leave").length,
+              total: emp.length,
+            },
             rows,
             mode: "today",
             series: [],
-            benchmarkRate,
+            // No honest "vs recent" delta for Today: the live clocked-in-now snapshot isn't the same
+            // metric as a trailing full-day average, so comparing them read as "attendance down" on a
+            // normal morning. The multi-day view keeps its own (like-for-like) average line.
+            benchmarkRate: null,
             loading: false,
             error: null,
             note,
@@ -710,7 +650,7 @@ export function useOversightAttendance({
     return () => {
       live = false;
     };
-  }, [dir, range, dept, dayList, benchmark, todayIso, workdays, lateThreshold]);
+  }, [dir, range, dept, dayList, todayIso, workdays, lateThreshold]);
 
   return {
     counts: state.counts,

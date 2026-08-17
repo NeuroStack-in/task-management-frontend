@@ -93,20 +93,31 @@ export function ProductivityTrendChart({
                 term: "Productivity score",
                 definition: (
                   <>
-                    0–100 composite of utilisation, quality, focus and reliability — plotted{" "}
-                    <em>only</em> on days quality was actually measured, so a partial score is never
-                    shown as a real one.
+                    A 0–100 score for the day, blended from four parts:
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                      <li>
+                        <strong>Utilisation (25%)</strong> — how much of the day was active
+                      </li>
+                      <li>
+                        <strong>Quality (40%)</strong> — active time spent in productive apps
+                      </li>
+                      <li>
+                        <strong>Focus (15%)</strong> — steady work vs. constant switching
+                      </li>
+                      <li>
+                        <strong>Reliability (20%)</strong> — showing up consistently
+                      </li>
+                    </ul>
+                    <span className="mt-1 block opacity-80">
+                      Shown only on days the agent actually measured activity.
+                    </span>
                   </>
                 ),
               },
               {
                 term: "Productive share",
-                definition: (
-                  <>
-                    Of <em>active</em> time (keyboard/mouse input), the percentage in apps your rules
-                    classify as productive. Blank on days nothing was classified.
-                  </>
-                ),
+                definition:
+                  "Of your active time (keyboard/mouse), the share spent in apps your rules mark productive. Blank when nothing was classified.",
               },
             ]}
           />

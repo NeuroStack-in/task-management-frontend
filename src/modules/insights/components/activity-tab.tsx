@@ -448,8 +448,29 @@ export function ActivityTab() {
                   : [
                       {
                         term: "Productivity score",
-                        definition:
-                          "0–100 composite of utilisation, quality, focus and reliability. A day with no agent data is not scored at all rather than scored zero, so the line breaks instead of dropping to 0.",
+                        definition: (
+                          <>
+                            A 0–100 score for the day, blended from four parts:
+                            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                              <li>
+                                <strong>Utilisation (25%)</strong> — how much of the day was active
+                              </li>
+                              <li>
+                                <strong>Quality (40%)</strong> — active time spent in productive apps
+                              </li>
+                              <li>
+                                <strong>Focus (15%)</strong> — steady work vs. constant switching
+                              </li>
+                              <li>
+                                <strong>Reliability (20%)</strong> — showing up consistently
+                              </li>
+                            </ul>
+                            <span className="mt-1 block opacity-80">
+                              A day with no agent data isn&rsquo;t scored at all — the line breaks
+                              instead of dropping to 0.
+                            </span>
+                          </>
+                        ),
                       },
                     ]
               }

@@ -107,16 +107,12 @@ export function ProductivityChart({
               {
                 term: "Productive / Neutral / Distracting",
                 definition:
-                  "Active hours split by how your rules classify the apps and sites in use.",
+                  "Your active hours, split by how your rules rate each app or site in use.",
               },
               {
                 term: "Unclassified",
-                definition: (
-                  <>
-                    Active time (keyboard/mouse input) the agent recorded but could <em>not</em>{" "}
-                    attribute to any app category yet — tracked, but not judged.
-                  </>
-                ),
+                definition:
+                  "Active time the agent recorded but hasn't matched to an app category yet — tracked, not yet judged.",
               },
             ]}
           />

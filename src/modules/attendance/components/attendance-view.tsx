@@ -73,8 +73,6 @@ function OversightAttendance() {
     date,
     start: "",
     end: "",
-    // The header only needs the live count — skip the trailing-average fetch the body's delta uses.
-    benchmark: false,
   });
   const livePct = live.counts.total
     ? Math.round((live.counts.present / live.counts.total) * 100)

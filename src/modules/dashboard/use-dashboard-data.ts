@@ -688,7 +688,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             timers: flat(workingNow),
             hours: flat(hoursTracked),
             attendance: flat(attendanceRate),
-            newHires: flat(0), // directory list carries no join date → honest 0 (see hint).
+            newHires: flat(0), // no join date in the directory → the view renders "—", not this 0.
           },
           productivityTrend: trendPoints,
           productivityScoreTrend,
