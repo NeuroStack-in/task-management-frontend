@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Download, Loader2, Paperclip, Star } from "lucide-react";
+import { Download, Eye, Loader2, Paperclip, Star } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,53 @@ function humanSize(bytes: number): string {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 
+function extOf(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i).toLowerCase() : "";
+}
+
+/** What the in-app viewer can render. `null` = download only (e.g. .docx). */
+type ViewKind = "image" | "pdf" | "text";
+function viewKindOf(a: Attachment): ViewKind | null {
+  const ct = a.contentType;
+  const ext = extOf(a.filename);
+  if (ct.startsWith("image/") || [".png", ".jpg", ".jpeg"].includes(ext)) return "image";
+  if (ct === "application/pdf" || ext === ".pdf") return "pdf";
+  if (ct === "text/plain" || ct === "text/markdown" || ext === ".txt" || ext === ".md")
+    return "text";
+  return null; // .docx and anything else — no in-app preview
+}
+
+/**
+ * Save the presigned object to the device without navigating: fetch the bytes (the bucket allows
+ * CORS GET), wrap in a blob, and click a synthetic `<a download>`. A plain `window.open` opened the
+ * file in a new tab instead of downloading it, which is what this replaces.
+ */
+async function saveToDevice(url: string, filename: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`download failed (${res.status})`);
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+}
+
+interface ViewerState {
+  attachment: Attachment;
+  kind: ViewKind;
+  loading: boolean;
+  /** For image/pdf: an object URL of the fetched blob. */
+  blobUrl?: string;
+  /** For text/markdown: the fetched contents. */
+  text?: string;
+  error?: boolean;
+}
+
 interface ViewTaskDialogProps {
   /** The task to show. `null` renders nothing (the dialog stays closed). */
   task: Task | null;
@@ -47,130 +94,202 @@ export function ViewTaskDialog({
   onOpenChange,
   userMap,
 }: ViewTaskDialogProps) {
+  // Hook before the early return — rules of hooks. The viewer is a nested dialog over this one.
+  const [viewer, setViewer] = useState<ViewerState | null>(null);
+
   if (!task) return null;
 
   const status = TASK_STATUS_META[task.status];
   const prio = TASK_PRIORITY_META[task.priority];
   const assignee = task.assigneeId ? userMap[task.assigneeId] : null;
 
+  const closeViewer = () => {
+    setViewer((v) => {
+      if (v?.blobUrl) URL.revokeObjectURL(v.blobUrl);
+      return null;
+    });
+  };
+
+  const openViewer = async (a: Attachment) => {
+    const kind = viewKindOf(a);
+    if (!kind) return;
+    setViewer({ attachment: a, kind, loading: true });
+    try {
+      const url = await getAttachmentDownloadUrl(projectId, task.id, a.id);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`view failed (${res.status})`);
+      if (kind === "text") {
+        setViewer({ attachment: a, kind, loading: false, text: await res.text() });
+      } else {
+        const blobUrl = URL.createObjectURL(await res.blob());
+        setViewer({ attachment: a, kind, loading: false, blobUrl });
+      }
+    } catch {
+      setViewer({ attachment: a, kind, loading: false, error: true });
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-lg">
-        <DialogHeader className="pr-8">
-          <DialogTitle className="text-base leading-snug">{task.title}</DialogTitle>
-          <DialogDescription className="flex flex-wrap items-center gap-2 pt-1">
-            <StatusBadge tone={status.tone} label={status.label} />
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                toneSoft[prio.tone],
-              )}
-            >
-              {prio.label} priority
-            </span>
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1">
-          {/* Meta */}
-          <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                Assignee
-              </dt>
-              <dd>
-                {assignee ? (
-                  <span className="flex items-center gap-2">
-                    <Avatar className="size-6">
-                      {assignee.avatarUrl ? (
-                        <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
-                      ) : null}
-                      <AvatarFallback className="text-[0.6rem]">
-                        {initials(assignee.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="truncate">{assignee.name}</span>
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">Unassigned</span>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-lg">
+          <DialogHeader className="pr-8">
+            <DialogTitle className="text-base leading-snug">{task.title}</DialogTitle>
+            <DialogDescription className="flex flex-wrap items-center gap-2 pt-1">
+              <StatusBadge tone={status.tone} label={status.label} />
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                  toneSoft[prio.tone],
                 )}
-              </dd>
-            </div>
-            <div className="flex flex-col gap-1">
-              <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                Due date
-              </dt>
-              <dd className="tabular-nums">
-                {task.dueDate ? (
-                  formatFullDate(task.dueDate)
-                ) : (
-                  <span className="text-muted-foreground">No due date</span>
-                )}
-              </dd>
-            </div>
-            <div className="flex flex-col gap-1">
-              <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                Estimate
-              </dt>
-              <dd className="tabular-nums">{task.estimateHours} hrs</dd>
-            </div>
-          </dl>
+              >
+                {prio.label} priority
+              </span>
+            </DialogDescription>
+          </DialogHeader>
 
-          {/* Description */}
-          <section className="space-y-1.5">
-            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              Description
-            </p>
-            {task.description.trim() ? (
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                {task.description}
-              </p>
-            ) : (
-              <p className="text-muted-foreground text-sm">No description</p>
-            )}
-          </section>
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1">
+            {/* Meta */}
+            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                  Assignee
+                </dt>
+                <dd>
+                  {assignee ? (
+                    <span className="flex items-center gap-2">
+                      <Avatar className="size-6">
+                        {assignee.avatarUrl ? (
+                          <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
+                        ) : null}
+                        <AvatarFallback className="text-[0.6rem]">
+                          {initials(assignee.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="truncate">{assignee.name}</span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Unassigned</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex flex-col gap-1">
+                <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                  Due date
+                </dt>
+                <dd className="tabular-nums">
+                  {task.dueDate ? (
+                    formatFullDate(task.dueDate)
+                  ) : (
+                    <span className="text-muted-foreground">No due date</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex flex-col gap-1">
+                <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                  Estimate
+                </dt>
+                <dd className="tabular-nums">{task.estimateHours} hrs</dd>
+              </div>
+            </dl>
 
-          {/* Review sign-off */}
-          {task.review ? (
-            <section className="bg-muted/40 space-y-1 rounded-xl border p-3">
-              <p className="flex items-center gap-1.5 text-sm font-medium">
-                <Star className="fill-warning text-warning size-4" />
-                <span className="tabular-nums">{task.review.rating}/5</span>
-                <span className="text-muted-foreground font-normal">
-                  · reviewed by {task.review.reviewer_name || "a project lead"}
-                </span>
+            {/* Description */}
+            <section className="space-y-1.5">
+              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                Description
               </p>
-              {task.review.note ? (
-                <p className="text-muted-foreground text-sm leading-relaxed">
-                  {task.review.note}
+              {task.description.trim() ? (
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {task.description}
                 </p>
-              ) : null}
+              ) : (
+                <p className="text-muted-foreground text-sm">No description</p>
+              )}
             </section>
-          ) : null}
 
-          {/* Attachments */}
-          <section className="space-y-1.5">
-            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              Attachments · {task.attachments.length}
-            </p>
-            {task.attachments.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No attachments</p>
-            ) : (
-              <ul className="space-y-1.5">
-                {task.attachments.map((a) => (
-                  <AttachmentRow
-                    key={a.id}
-                    attachment={a}
-                    projectId={projectId}
-                    taskId={task.id}
-                  />
-                ))}
-              </ul>
-            )}
-          </section>
-        </div>
-      </DialogContent>
-    </Dialog>
+            {/* Review sign-off */}
+            {task.review ? (
+              <section className="bg-muted/40 space-y-1 rounded-xl border p-3">
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <Star className="fill-warning text-warning size-4" />
+                  <span className="tabular-nums">{task.review.rating}/5</span>
+                  <span className="text-muted-foreground font-normal">
+                    · reviewed by {task.review.reviewer_name || "a project lead"}
+                  </span>
+                </p>
+                {task.review.note ? (
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    {task.review.note}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+
+            {/* Attachments */}
+            <section className="space-y-1.5">
+              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                Attachments · {task.attachments.length}
+              </p>
+              {task.attachments.length === 0 ? (
+                <p className="text-muted-foreground text-sm">No attachments</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {task.attachments.map((a) => (
+                    <AttachmentRow
+                      key={a.id}
+                      attachment={a}
+                      projectId={projectId}
+                      taskId={task.id}
+                      onView={viewKindOf(a) ? () => openViewer(a) : undefined}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* In-app viewer — a nested dialog over the task view. */}
+      <Dialog open={!!viewer} onOpenChange={(o) => !o && closeViewer()}>
+        <DialogContent className="flex max-h-[92vh] w-[92vw] flex-col p-0 sm:max-w-3xl">
+          <DialogHeader className="border-b px-4 py-3 pr-10">
+            <DialogTitle className="truncate text-sm leading-snug">
+              {viewer?.attachment.filename}
+            </DialogTitle>
+            <DialogDescription className="sr-only">Attachment preview</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-auto bg-muted/30 p-3">
+            {viewer?.loading ? (
+              <div className="flex min-h-[40vh] items-center justify-center">
+                <Loader2 className="text-muted-foreground size-6 animate-spin" />
+              </div>
+            ) : viewer?.error ? (
+              <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 text-center">
+                <p className="text-muted-foreground text-sm">Couldn’t load the preview.</p>
+              </div>
+            ) : viewer?.kind === "image" && viewer.blobUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={viewer.blobUrl}
+                alt={viewer.attachment.filename}
+                className="mx-auto max-h-[78vh] rounded object-contain"
+              />
+            ) : viewer?.kind === "pdf" && viewer.blobUrl ? (
+              <iframe
+                src={viewer.blobUrl}
+                title={viewer.attachment.filename}
+                className="h-[78vh] w-full rounded border bg-white"
+              />
+            ) : viewer?.kind === "text" && viewer.text !== undefined ? (
+              <pre className="bg-card max-h-[78vh] overflow-auto rounded border p-3 font-mono text-xs whitespace-pre-wrap">
+                {viewer.text}
+              </pre>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -178,23 +297,26 @@ function AttachmentRow({
   attachment,
   projectId,
   taskId,
+  onView,
 }: {
   attachment: Attachment;
   projectId: string;
   taskId: string;
+  /** Present only when the type can be previewed in-app (image / pdf / txt / md). */
+  onView?: () => void;
 }) {
-  const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const download = async () => {
-    if (loading) return;
-    setLoading(true);
+    if (downloading) return;
+    setDownloading(true);
     try {
       const url = await getAttachmentDownloadUrl(projectId, taskId, attachment.id);
-      window.open(url, "_blank", "noopener,noreferrer");
+      await saveToDevice(url, attachment.filename);
     } catch {
-      toast.error(`Couldn’t open “${attachment.filename}”. Try again.`);
+      toast.error(`Couldn’t download “${attachment.filename}”. Try again.`);
     } finally {
-      setLoading(false);
+      setDownloading(false);
     }
   };
 
@@ -205,14 +327,26 @@ function AttachmentRow({
       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
         {humanSize(attachment.size)}
       </span>
+      {onView ? (
+        <button
+          type="button"
+          onClick={onView}
+          aria-label={`View ${attachment.filename}`}
+          title="View"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-md"
+        >
+          <Eye className="size-3.5" />
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={download}
-        disabled={loading}
+        disabled={downloading}
         aria-label={`Download ${attachment.filename}`}
+        title="Download"
         className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-md disabled:opacity-50"
       >
-        {loading ? (
+        {downloading ? (
           <Loader2 className="size-3.5 animate-spin" />
         ) : (
           <Download className="size-3.5" />
