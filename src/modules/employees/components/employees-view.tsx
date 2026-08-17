@@ -56,7 +56,15 @@ import { useEmployees, type EmployeeRow } from "../use-employees";
 
 export type { EmployeeRow };
 
-const STATUSES = ["all", "active", "benched", "inactive", "invited", "suspended"] as const;
+// Lifecycle filters shown in the Status dropdown. `benched` (the backend flag) surfaces as
+// "Inactive" — the app has no separate deactivated/suspended filter in this UI.
+const STATUSES = ["all", "active", "benched", "invited"] as const;
+const STATUS_LABELS: Record<(typeof STATUSES)[number], string> = {
+  all: "All statuses",
+  active: "Active",
+  benched: "Inactive",
+  invited: "Invited",
+};
 const PAGE_SIZE = 9;
 
 const REPORT_COLUMNS = [
@@ -245,9 +253,12 @@ export function EmployeesView() {
     const q = query.trim().toLowerCase();
     return allEmployees.filter((e) => {
       if (dept !== "all" && e.department !== dept) return false;
-      // "benched" is an orthogonal flag, not one of the lifecycle statuses — filter on it directly.
+      // "benched" (surfaced as "Inactive") is an orthogonal flag, not a lifecycle status. Filter on
+      // it directly, and keep it out of "Active" so the two filters stay mutually exclusive.
       if (status === "benched") {
         if (!e.benched) return false;
+      } else if (status === "active") {
+        if (e.status !== "active" || e.benched) return false;
       } else if (status !== "all" && e.status !== status) {
         return false;
       }
@@ -281,10 +292,10 @@ export function EmployeesView() {
     try {
       await bench(e.id, !e.benched);
       toast.success(
-        e.benched ? `${e.name} removed from the bench` : `${e.name} added to the bench`,
+        e.benched ? `${e.name} marked active` : `${e.name} marked inactive`,
       );
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Couldn't update the bench. Try again.");
+      toast.error(err instanceof ApiError ? err.message : "Couldn't update status. Try again.");
     }
   };
 
@@ -337,7 +348,7 @@ export function EmployeesView() {
           icon={UserCheck}
           hint={
             liveStats.benched > 0
-              ? `${liveStats.benched} on the bench`
+              ? `${liveStats.benched} inactive`
               : "not deactivated"
           }
         />
@@ -383,7 +394,7 @@ export function EmployeesView() {
           onChange={resetPage(setStatus)}
           options={STATUSES.map((s) => ({
             value: s,
-            label: s === "all" ? "All statuses" : s[0].toUpperCase() + s.slice(1),
+            label: STATUS_LABELS[s],
           }))}
         />
 
@@ -486,7 +497,7 @@ export function EmployeesView() {
                               )}
                               {e.benched && (
                                 <Badge className="bg-warning/15 text-warning shrink-0 text-[10px]">
-                                  Bench
+                                  Inactive
                                 </Badge>
                               )}
                             </div>
@@ -531,11 +542,11 @@ export function EmployeesView() {
                               <DropdownMenuItem onClick={() => onToggleBench(e)}>
                                 {e.benched ? (
                                   <>
-                                    <UserCheck className="size-4" /> Remove from bench
+                                    <UserCheck className="size-4" /> Mark active
                                   </>
                                 ) : (
                                   <>
-                                    <UserMinus className="size-4" /> Add to bench
+                                    <UserMinus className="size-4" /> Mark inactive
                                   </>
                                 )}
                               </DropdownMenuItem>
@@ -582,21 +593,21 @@ export function EmployeesView() {
         </div>
       </div>
 
-      {/* On the bench — a dedicated roster of benched employees. Renders nothing when the bench is
-          empty; benched people are excluded from Attendance + Time-Tracking (filtered in those
-          hooks). Managers get an inline "Remove from bench" here without hunting the main table. */}
+      {/* Inactive — a dedicated roster of inactive (benched) employees. Renders nothing when the
+          list is empty; inactive people are excluded from Attendance + Time-Tracking (filtered in
+          those hooks). Managers get an inline "Mark active" here without hunting the main table. */}
       {benchedEmployees.length > 0 && (
         <Card>
           <CardContent className="space-y-3 p-4">
             <div className="flex items-center gap-2">
               <UserMinus className="size-4 text-warning" />
-              <h3 className="text-sm font-semibold">On the bench</h3>
+              <h3 className="text-sm font-semibold">Inactive</h3>
               <Badge className="bg-warning/15 text-warning">
                 {benchedEmployees.length}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Benched employees stay in the directory but are excluded from Attendance and
+              Inactive employees stay in the directory but are excluded from Attendance and
               Time-Tracking.
             </p>
             <div className="divide-y">
@@ -624,7 +635,7 @@ export function EmployeesView() {
                       size="sm"
                       onClick={() => onToggleBench(e)}
                     >
-                      <UserCheck className="size-4" /> Remove from bench
+                      <UserCheck className="size-4" /> Mark active
                     </Button>
                   )}
                 </div>
