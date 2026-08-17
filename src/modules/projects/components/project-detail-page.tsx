@@ -943,8 +943,13 @@ function TaskCard({
       )}
     >
       {/* Both actions stop the pointer from reaching the drag sensor — otherwise a click on the
-          icon starts a drag and the button never fires. */}
-      <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/task:opacity-100 focus-within:opacity-100">
+          icon starts a drag and the button never fires.
+
+          A solid, bordered pill (not a bare icon row): a `done` task carries up to three actions
+          (edit · review · delete), which is wider than the title's right padding, so a bare row
+          overlapped the title text. The opaque pill floats over the top-right corner cleanly on
+          hover instead, and the title stays full-width when the card isn't hovered. */}
+      <div className="bg-card absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-lg border p-0.5 opacity-0 shadow-sm transition-opacity group-hover/task:opacity-100 focus-within:opacity-100">
         <button
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
