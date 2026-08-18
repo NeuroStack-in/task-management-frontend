@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
+import { DatePicker } from "@/components/ui/date-picker";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
@@ -46,6 +47,25 @@ const PERIODS: { key: RecapPeriod; label: string }[] = [
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
+const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/** Yesterday — the last *completed* day. Today is in progress and has no settled recap. */
+function yesterdayIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return ymd(d);
+}
+
+/** "Mon, Aug 17" — the day a daily recap actually covers, so it can't be mistaken for today. */
+function dayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /** The ISO-8601 week (`YYYY-Www`) containing `d` — what `?week=` expects. */
 function isoWeek(d: Date): string {
   const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -63,13 +83,11 @@ function isoWeek(d: Date): string {
  * A recap of today would be written from a part-finished day, and the attendance close hasn't run —
  * so the daily deliberately reads the last completed day rather than an in-progress one.
  */
-function paramFor(period: RecapPeriod): string | undefined {
+function paramFor(period: RecapPeriod, dailyDate: string): string | undefined {
   const now = new Date();
-  if (period === "daily") {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 1);
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  }
+  // The Daily recap is for whichever date the user has selected (defaulting to yesterday). The
+  // other periods keep their own anchor — a week/month picker is a different affordance.
+  if (period === "daily") return dailyDate;
   if (period === "weekly") return isoWeek(now);
   if (period === "monthly") return `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
   return undefined; // overall defaults to "through now" server-side
@@ -104,6 +122,11 @@ export function EmployeeRecapCard({
   // yesterday comparison, focus areas). Weekly/monthly are thin reduces that can't carry that
   // detail, so opening on Weekly hid the useful recap behind a tab switch.
   const [period, setPeriod] = useState<RecapPeriod>("daily");
+  // The date the Daily recap covers. Defaults to yesterday (the last completed day) and can be moved
+  // to any past date — which is the whole point: "why does it show a report when the timer is off
+  // today?" is answered by making the covered day explicit and selectable, instead of a fixed
+  // "yesterday" that reads like today.
+  const [dailyDate, setDailyDate] = useState<string>(yesterdayIso());
   const [recap, setRecap] = useState<Recap | null>(null);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
@@ -115,7 +138,7 @@ export function EmployeeRecapCard({
     let live = true;
     setLoading(true);
     setError(null);
-    getUserRecap(userId, period, paramFor(period))
+    getUserRecap(userId, period, paramFor(period, dailyDate))
       .then((r) => live && setRecap(r))
       .catch((e) => {
         if (!live) return;
@@ -126,7 +149,7 @@ export function EmployeeRecapCard({
     return () => {
       live = false;
     };
-  }, [userId, period]);
+  }, [userId, period, dailyDate]);
   useEffect(() => load(), [load]);
 
   async function regenerate() {
@@ -134,7 +157,7 @@ export function EmployeeRecapCard({
     setRegenerating(true);
     setError(null);
     try {
-      setRecap(await regenerateUserRecap(userId, period, paramFor(period)));
+      setRecap(await regenerateUserRecap(userId, period, paramFor(period, dailyDate)));
     } catch {
       // Keep the previous narrative on screen — a failed re-run shouldn't blank a good summary.
       setError("Couldn't regenerate the summary.");
@@ -160,7 +183,9 @@ export function EmployeeRecapCard({
               <Sparkles className="size-4 text-primary" /> AI summary
             </CardTitle>
             <CardDescription>
-              {PERIOD_HINT[period]} · the same recap {first} sees about themselves
+              {period === "daily"
+                ? `${dayLabel(dailyDate)} · the same recap ${first} sees about themselves`
+                : `${PERIOD_HINT[period]} · the same recap ${first} sees about themselves`}
             </CardDescription>
           </div>
           <Button
@@ -177,11 +202,12 @@ export function EmployeeRecapCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div
-          className="inline-flex items-center gap-0.5 rounded-full border bg-card p-0.5"
-          role="group"
-          aria-label="Summary period"
-        >
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            className="inline-flex items-center gap-0.5 rounded-full border bg-card p-0.5"
+            role="group"
+            aria-label="Summary period"
+          >
           {PERIODS.map((p) => (
             <button
               key={p.key}
@@ -198,6 +224,18 @@ export function EmployeeRecapCard({
               {p.label}
             </button>
           ))}
+          </div>
+          {/* Only on Daily: weekly/monthly/overall have their own fixed anchor, and a day picker
+              beside them would imply it changes those, which it doesn't. Capped at yesterday —
+              today is in progress and has no settled recap yet. */}
+          {period === "daily" ? (
+            <DatePicker
+              value={dailyDate}
+              onChange={setDailyDate}
+              max={yesterdayIso()}
+              className="w-[9.5rem]"
+            />
+          ) : null}
         </div>
 
         {loading || regenerating ? (
@@ -213,7 +251,7 @@ export function EmployeeRecapCard({
               {base ? `Based on ${base}` : null}
               {base && generatedAt ? " · " : null}
               {generatedAt
-                ? `generated ${new Date(generatedAt).toLocaleString()}`
+                ? `text written ${new Date(generatedAt).toLocaleString()}`
                 : null}
             </p>
           </>
