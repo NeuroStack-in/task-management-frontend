@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Check, X, Users } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Users, UserCog } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,10 @@ function messageOf(e: unknown, fallback: string): string {
 
 const byName = (a: ApiTeam, b: ApiTeam) => a.name.localeCompare(b.name);
 
+import { TeamMembersDialog } from "./team-members-dialog";
+
+const NO_DEPT = "__none__";
+
 export function TeamsManager() {
   const { can } = usePermissions();
   const canManage = can("settings:manage");
@@ -61,6 +65,7 @@ export function TeamsManager() {
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDept, setNewDept] = useState<string>("");
+  const [membersOf, setMembersOf] = useState<ApiTeam | null>(null);
   const [adding, setAdding] = useState(false);
 
   // Inline rename.
@@ -99,10 +104,15 @@ export function TeamsManager() {
 
   async function add() {
     const name = newName.trim();
-    if (!name || !newDept) return;
+    if (!name) return;
     setAdding(true);
     try {
-      const created = await createTeam({ name, department_id: newDept });
+      // NONE sentinel = cross-department. Base UI Select treats "" as "unselected", so a real
+      // sentinel is needed to distinguish "chose cross-department" from "picked nothing yet".
+      const created = await createTeam({
+        name,
+        department_id: newDept && newDept !== NO_DEPT ? newDept : undefined,
+      });
       setTeams((cur) => [...cur, created].sort(byName));
       setNewName("");
       setNewDept("");
@@ -252,9 +262,23 @@ export function TeamsManager() {
                 ) : (
                   <>
                     <span className="flex-1 truncate text-sm font-medium">{t.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{deptName(t.department_id)}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {t.department_id ? deptName(t.department_id) : "Cross-department"}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                      {t.member_count ?? 0} {(t.member_count ?? 0) === 1 ? "member" : "members"}
+                    </span>
                     {canManage ? (
                       <>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          onClick={() => setMembersOf(t)}
+                          aria-label={`Manage members of ${t.name}`}
+                          title="Manage members"
+                        >
+                          <UserCog className="size-3.5" />
+                        </Button>
                         <Button size="icon-sm" variant="ghost" onClick={() => beginEdit(t)} aria-label={`Rename ${t.name}`}>
                           <Pencil className="size-3.5" />
                         </Button>
@@ -282,7 +306,10 @@ export function TeamsManager() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Add a team</DialogTitle>
-            <DialogDescription>Name the team and pick the department it belongs to.</DialogDescription>
+            <DialogDescription>
+              Name the team. A team can span departments &mdash; leave the department blank for one
+              like &ldquo;Workpulse&rdquo; with people from several.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -296,7 +323,7 @@ export function TeamsManager() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Department</Label>
+              <Label>Department (optional)</Label>
               <Select
                 value={newDept}
                 onValueChange={(v) => setNewDept(v as string)}
@@ -307,6 +334,7 @@ export function TeamsManager() {
                   <SelectValue placeholder="Select a department…" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={NO_DEPT}>No department (cross-department)</SelectItem>
                   {depts.map((d) => (
                     <SelectItem key={d.id} value={d.id}>
                       {d.name}
@@ -320,12 +348,27 @@ export function TeamsManager() {
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={adding}>
               Cancel
             </Button>
-            <Button onClick={add} disabled={adding || !newName.trim() || !newDept}>
+            <Button onClick={add} disabled={adding || !newName.trim()}>
               {adding ? "Adding…" : "Add team"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Members editor */}
+      {membersOf ? (
+        <TeamMembersDialog
+          teamId={membersOf.id}
+          teamName={membersOf.name}
+          open={!!membersOf}
+          onOpenChange={(o) => !o && setMembersOf(null)}
+          onCountChange={(count) =>
+            setTeams((cur) =>
+              cur.map((t) => (t.id === membersOf.id ? { ...t, member_count: count } : t)),
+            )
+          }
+        />
+      ) : null}
 
       {/* Delete confirm */}
       <Dialog open={!!pendingDelete} onOpenChange={(o) => !o && setPendingDelete(null)}>

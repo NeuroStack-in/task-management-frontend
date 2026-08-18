@@ -198,9 +198,20 @@ export function getEmployeeProfile(userId: string): Promise<ApiEmployeeProfile> 
 export interface ApiTeam {
   id: string;
   name: string;
+  /** Absent for a cross-department team. */
   department_id?: string;
   /** `user_id` of the team's lead, if one is assigned. */
   lead_id?: string;
+  /** How many people are in the team (server-computed, so the list needs no per-row fetch). */
+  member_count?: number;
+}
+
+/** One member of a team, resolved to their name and OWN department. */
+export interface ApiTeamMember {
+  user_id: string;
+  name: string;
+  /** The member's own department — need not match the team's (that is the point of cross-dept teams). */
+  department_id?: string;
 }
 
 /** Tolerate both a bare array and a `{ teams }` envelope in `data`. */
@@ -223,7 +234,8 @@ export async function teamMap(): Promise<Map<string, string>> {
 /** `POST /v1/teams` — create a team. Needs `settings:manage` (backend `OrgSettingsManage`). */
 export function createTeam(body: {
   name: string;
-  department_id: string;
+  /** Optional — omit for a team that spans departments. */
+  department_id?: string;
   lead_id?: string;
 }): Promise<ApiTeam> {
   return apiFetch<ApiTeam>("/v1/teams", {
@@ -246,6 +258,45 @@ export function updateTeam(
 /** `DELETE /v1/teams/{id}`. Needs `settings:manage`. */
 export async function deleteTeam(id: string): Promise<void> {
   await apiFetch(`/v1/teams/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Tolerate `{ members }` envelope or bare array. */
+function unwrapMembers(d: ApiTeamMember[] | { members: ApiTeamMember[] }): ApiTeamMember[] {
+  return Array.isArray(d) ? d : (d?.members ?? []);
+}
+
+/**
+ * `GET /v1/teams/{id}/members` — who is in a team, name-resolved. Needs `employees:view`.
+ * This is what the project "add whole team" snapshot reads.
+ */
+export async function listTeamMembers(teamId: string): Promise<ApiTeamMember[]> {
+  const d = await apiFetch<ApiTeamMember[] | { members: ApiTeamMember[] }>(
+    `/v1/teams/${encodeURIComponent(teamId)}/members`,
+  );
+  return unwrapMembers(d);
+}
+
+/**
+ * `POST /v1/teams/{id}/members` — add people to a team (idempotent). Needs `settings:manage`.
+ * Returns the team's full member list after the add.
+ */
+export async function addTeamMembers(
+  teamId: string,
+  userIds: string[],
+): Promise<ApiTeamMember[]> {
+  const d = await apiFetch<ApiTeamMember[] | { members: ApiTeamMember[] }>(
+    `/v1/teams/${encodeURIComponent(teamId)}/members`,
+    { method: "POST", body: JSON.stringify({ user_ids: userIds }) },
+  );
+  return unwrapMembers(d);
+}
+
+/** `DELETE /v1/teams/{id}/members/{userId}` — remove one person (idempotent). Needs `settings:manage`. */
+export async function removeTeamMember(teamId: string, userId: string): Promise<void> {
+  await apiFetch(
+    `/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
 }
 
 /**

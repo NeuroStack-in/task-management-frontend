@@ -97,6 +97,8 @@ const EMPTY: Omit<FormShape, "billable"> = {
   dueDate: "",
 };
 
+import { AddFromTeam } from "./add-from-team";
+
 interface ProjectFormDialogProps {
   mode: "create" | "edit";
   open: boolean;
@@ -313,6 +315,19 @@ export function ProjectFormDialog({
             label={`Team members${memberIds.length ? ` (${memberIds.length})` : ""}`}
             error={errors.memberIds?.message}
           >
+            {/* Snapshot a whole team in: adds its current members to the list below (union — nobody
+                already picked is duplicated or removed). A one-time add, not a live link, so later
+                team changes don't touch this project. */}
+            <AddFromTeam
+              knownUserIds={new Set(leads.map((l) => l.id))}
+              onAdd={(ids) =>
+                setValue(
+                  "memberIds",
+                  Array.from(new Set([...memberIds, ...ids])),
+                  { shouldValidate: true },
+                )
+              }
+            />
             <MemberMultiSelect
               users={leads}
               value={memberIds}
