@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight, Lock } from "lucide-react";
+import { ArrowUpRight, Building2, Lock } from "lucide-react";
 import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { isNavItemVisible } from "@/lib/rbac";
@@ -110,11 +110,23 @@ export default function SettingsLayout({
       })),
   })).filter((group) => group.items.length > 0);
 
+  // The read-only company reference — details, hours, holidays, policies — shown to EVERY member.
+  // The admin "Organization" editor is gated on settings:view, which employees lack, so this is the
+  // only settings surface where an employee can read the policies an admin publishes. A dedicated
+  // one-item group rather than folding it into "Account", because it is org-level, not personal.
+  const companyGroup: RailGroup = {
+    // Labelled "Company", not "Organization": ADMIN_SECTIONS already contributes an "Organization"
+    // group (the editor), and two identical rail headers would collide for an admin — who sees both.
+    label: "Company",
+    items: [{ label: "Overview", href: "/settings/company", icon: Building2 }],
+  };
+
   const groups: RailGroup[] = [
     accountGroup({
       canBilling: can("billing:view"),
       canSecurity: can("security:view"),
     }),
+    companyGroup,
     ...adminGroups,
   ];
 

@@ -255,6 +255,16 @@ export const ACCOUNT_SECTIONS: NavItem[] = [
  */
 export const SETTINGS_SUBSECTIONS: NavItem[] = [
   {
+    // Read-only company reference for EVERY member — the audience the admin Organization editor
+    // (settings:view) never had. `permission: null` so employees, who lack settings:view, see it.
+    label: "Company",
+    href: "/settings/company",
+    icon: Building2,
+    permission: null,
+    description: "Organization details, working hours, holidays, and policies.",
+    keywords: "company organization policies holidays working hours schedule handbook rules reference",
+  },
+  {
     label: "Login & security",
     href: "/settings/login-security",
     icon: KeyRound,
