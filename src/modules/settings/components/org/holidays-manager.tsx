@@ -25,6 +25,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
+import { invalidateOrgHolidays } from "@/hooks/use-org-holidays";
 import { ApiError } from "@/lib/api";
 import {
   listHolidays,
@@ -116,6 +117,8 @@ export function HolidaysManager() {
         setRows((cur) => [...cur, created].sort(byDate));
         toast.success(`“${created.name}” added`);
       }
+      // Drop the shared holiday cache so attendance / time-tracking surfaces pick the change up.
+      invalidateOrgHolidays();
       setEditorOpen(false);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
@@ -134,6 +137,7 @@ export function HolidaysManager() {
     try {
       await deleteHoliday(pendingDelete.id);
       setRows((cur) => cur.filter((r) => r.id !== pendingDelete.id));
+      invalidateOrgHolidays();
       toast.success(`“${pendingDelete.name}” deleted`);
       setPendingDelete(null);
     } catch (e) {

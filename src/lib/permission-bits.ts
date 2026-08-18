@@ -27,7 +27,7 @@ const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {
   1: ["activity:view"], // ActivityReadTeam
   2: ["activity:view", "locations:view"], // ActivityReadOrg (locations board is org oversight)
   3: ["screenshots:view"], // ScreenshotsRead
-  4: ["settings:view"], // MonitoringManage — monitoring settings live under Settings
+  4: ["settings:view", "monitoring:manage"], // MonitoringManage — monitoring settings live under Settings; the office-perimeter (geofence) editor gates on `monitoring:manage`
   5: ["reports:export"], // ActivityExport
   // ── employees / org structure · 10–19 ──
   10: ["employees:view"], // EmployeesRead

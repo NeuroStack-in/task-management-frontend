@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { AlertCircle, Lock } from "lucide-react"
 import { toast } from "sonner"
@@ -23,6 +23,7 @@ import {
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { DepartmentsManager } from "./departments-manager"
+import { BrandingManager } from "./org/branding-manager"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
 import { OfficePerimeterCard } from "./org/office-perimeter-card"
@@ -34,8 +35,8 @@ import { PoliciesManager } from "./org/policies-manager"
 import { Loader } from "@/components/shared/loader"
 import { usePermissions } from "@/hooks/use-permissions"
 import { ApiError } from "@/lib/api"
+import { useOrgMetaStore } from "@/stores/org-meta.store"
 import {
-  getOrg,
   updateOrg,
   type OrgView,
   type UpdateOrgRequest,
@@ -135,47 +136,35 @@ export function OrganizationTab() {
   const { can } = usePermissions()
   const canManage = can("settings:manage")
 
-  // `saved` is the last server-confirmed state; seeded from GET /v1/org on mount.
+  // The org meta + optimistic-lock `version` live in ONE shared store, read by both this profile
+  // card and the tracking-mode card below. A single fetch, a single version: after either card
+  // saves, the version here updates too, so the other card never sends a stale version and gets a
+  // spurious 409. See stores/org-meta.store.ts.
+  const { view, version, status, error: loadError, load, applyPatchResult } = useOrgMetaStore()
+  const loading = status === "idle" || status === "loading"
+
+  // `saved` is the last server-confirmed profile state; seeded from the shared meta below.
   const [saved, setSaved] = useState<OrgProfileForm>(EMPTY_FORM)
   const [draft, setDraft] = useState<OrgProfileForm>(EMPTY_FORM)
-  const [version, setVersion] = useState<number | undefined>(undefined)
   const [saving, setSaving] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Seed the form from the org's current server-side meta. A 404 = org not provisioned yet;
-  // that's not an error — just start from an empty, editable form.
+  // One shared fetch (deduped inside the store).
   useEffect(() => {
-    let alive = true
-    setLoading(true)
-    getOrg()
-      .then((view) => {
-        if (!alive) return
-        const next = formFromView(view)
-        setSaved(next)
-        setDraft(next)
-        setVersion(view.version)
-        setLoadError(null)
-      })
-      .catch((e) => {
-        if (!alive) return
-        if (e instanceof ApiError && e.status === 404) {
-          setLoadError(null)
-        } else {
-          setLoadError(
-            e instanceof ApiError
-              ? e.message
-              : "Couldn't load organization settings.",
-          )
-        }
-      })
-      .finally(() => {
-        if (alive) setLoading(false)
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
+    void load()
+  }, [load])
+
+  // Seed the profile form from the shared meta **once**. Deliberately not on every `view` change:
+  // the tracking-mode card also writes `view` (a mode save bumps the shared version), and reseeding
+  // then would wipe any unsaved profile edits sitting in `draft`. A 404 leaves `view` null ⇒ the
+  // empty editable form, which is not an error.
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (seeded.current || status !== "ready") return
+    const next = view ? formFromView(view) : EMPTY_FORM
+    setSaved(next)
+    setDraft(next)
+    seeded.current = true
+  }, [status, view])
 
   const dirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(saved),
@@ -218,14 +207,16 @@ export function OrganizationTab() {
 
     setSaving(true)
     try {
-      const view = await updateOrg(body)
-      const next = formFromView(view)
+      const updated = await updateOrg(body)
+      // Thread the fresh version back into the shared store so the tracking-mode card's next save
+      // uses it (and vice-versa) — no false 409 for a single user editing both cards.
+      applyPatchResult(updated)
+      const next = formFromView(updated)
       setSaved(next)
       setDraft(next)
-      setVersion(view.version)
       toast.success("Organization saved", {
         description: `Changes are live${
-          view.slug ? ` for ${view.slug}` : ""
+          updated.slug ? ` for ${updated.slug}` : ""
         }.`,
       })
     } catch (e) {
@@ -399,6 +390,7 @@ export function OrganizationTab() {
       </Card>
 
       {/* Each of these is its own live-backend CRUD, independent of the org-profile save bar. */}
+      <BrandingManager />
       <TrackingModeCard />
       <DepartmentsManager />
       <TeamsManager />

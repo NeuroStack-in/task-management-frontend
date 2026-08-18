@@ -12,10 +12,12 @@
  *    (`GET /v1/attendance/day`). See `use-oversight-attendance` for how each range maps to a call.
  */
 import { useState } from "react";
+import { PartyPopper } from "lucide-react";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
+import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import { TODAY } from "../lib/calendar";
 import { useMonthAttendance } from "../use-month-attendance";
 import {
@@ -80,6 +82,9 @@ function OversightAttendance() {
 
   // The calendar shows the selected date's month, fed by the real month fan-out.
   const month = useMonthAttendance(date.year, date.month);
+
+  // Org holidays, to flag when the day being inspected is a non-working holiday.
+  const holidays = useOrgHolidays();
 
   // Publish the active filter + the counts on screen. Attendance is date-scoped, so without the
   // selected day the assistant answers about today no matter what the user is looking at.
@@ -146,6 +151,18 @@ function OversightAttendance() {
         days={month.days}
         loading={month.loading}
       />
+
+      {/* When the inspected day is an org holiday, say so above the roster — the backend marks the
+          day non-working, and this labels *why* attendance reads the way it does that day. */}
+      {(range === "day" || range === "today") && holidays.isHoliday(iso) ? (
+        <div className="flex items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
+          <PartyPopper className="size-4 shrink-0 text-primary" />
+          <span className="text-muted-foreground">
+            <span className="font-medium text-foreground">Holiday:</span>{" "}
+            {holidays.nameFor(iso)} — a non-working day for the organization.
+          </span>
+        </div>
+      ) : null}
 
       <AttendanceLog
         rows={data.rows}

@@ -19,6 +19,8 @@ import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { MONTH_NAMES, WEEKDAY_LABELS, monthMatrix, type DayCell } from "../lib/calendar";
 import { useWorkdays } from "@/hooks/use-working-hours";
+import { useOrgHolidays, type HolidayIndex } from "@/hooks/use-org-holidays";
+import { HolidayBadge } from "@/components/shared/holiday-badge";
 import type { ApiDayResponse, ApiDaySummary } from "../services/attendance.service";
 import { attendanceRate } from "../lib/attended";
 
@@ -81,6 +83,7 @@ export function AttendanceCalendar({
 }) {
   const view = { year: selected.year, month: selected.month };
   const workdays = useWorkdays();
+  const holidays = useOrgHolidays();
   const weeks = useMemo(
     () => monthMatrix(view.year, view.month, workdays),
     [view.year, view.month, workdays],
@@ -125,7 +128,7 @@ export function AttendanceCalendar({
 
         <div className="grid grid-cols-7 gap-1.5">
           {weeks.flat().map((cell, i) => (
-            <DayCellView key={i} cell={cell} selected={selected} onSelect={onSelect} days={days} loading={loading} />
+            <DayCellView key={i} cell={cell} selected={selected} onSelect={onSelect} days={days} loading={loading} holidays={holidays} />
           ))}
         </div>
 
@@ -146,6 +149,10 @@ export function AttendanceCalendar({
               <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
               Weekend / off
             </span>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="size-2.5 rounded-full bg-primary/30 ring-1 ring-primary/40" />
+              Holiday
+            </span>
           </div>
           <span className="text-xs text-muted-foreground">Select a day to view its roster below ↓</span>
         </div>
@@ -160,25 +167,33 @@ function DayCellView({
   onSelect,
   days,
   loading,
+  holidays,
 }: {
   cell: DayCell;
   selected: AttendanceDate;
   onSelect: (d: AttendanceDate) => void;
   days: Map<string, ApiDayResponse>;
   loading: boolean;
+  holidays: HolidayIndex;
 }) {
-  // Weekends and off-days: hatched, no data by design.
+  const iso = isoOf(cell.year, cell.month, cell.day);
+  const holidayName = cell.inMonth ? holidays.nameFor(iso) : undefined;
+
+  // Weekends and off-days: hatched, no data by design. A holiday landing on one is still labelled.
   if (!cell.isWorkday) {
     return (
-      <div className={cn("wp-hatch flex min-h-[4.25rem] flex-col rounded-xl p-2", !cell.inMonth && "opacity-50")}>
+      <div
+        className={cn("wp-hatch flex min-h-[4.25rem] flex-col gap-1 rounded-xl p-2", !cell.inMonth && "opacity-50")}
+        title={holidayName ? `Holiday: ${holidayName}` : undefined}
+      >
         <span className={cn("text-xs font-semibold leading-none tabular-nums", cell.inMonth ? "text-muted-foreground" : "text-muted-foreground/50")}>
           {cell.day}
         </span>
+        {holidayName ? <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" /> : null}
       </div>
     );
   }
 
-  const iso = isoOf(cell.year, cell.month, cell.day);
   const s = days.get(iso)?.summary; // guarded — undefined for future / today-open / failed fetch
   const isSelected =
     cell.inMonth && selected.year === cell.year && selected.month === cell.month && selected.day === cell.day;
@@ -197,14 +212,18 @@ function DayCellView({
         type="button"
         onClick={() => onSelect({ year: cell.year, month: cell.month, day: cell.day })}
         className={cn(base, "hover:ring-primary/50")}
-        title={`${cell.day}: ${cell.isToday ? "today — closes after midnight" : loading ? "loading" : "no record"}`}
+        title={`${cell.day}: ${cell.isToday ? "today — closes after midnight" : loading ? "loading" : "no record"}${holidayName ? ` · Holiday: ${holidayName}` : ""}`}
       >
         <span className={cn("text-sm font-semibold leading-none tabular-nums", cell.isToday ? "text-primary" : "text-foreground")}>
           {cell.day}
         </span>
-        <span className="mt-auto text-[11px] leading-none text-muted-foreground">
-          {cell.isToday ? "open" : loading ? "…" : "—"}
-        </span>
+        {holidayName ? (
+          <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" />
+        ) : (
+          <span className="mt-auto text-[11px] leading-none text-muted-foreground">
+            {cell.isToday ? "open" : loading ? "…" : "—"}
+          </span>
+        )}
       </button>
     );
   }
@@ -223,7 +242,7 @@ function DayCellView({
     <button
       type="button"
       onClick={() => onSelect({ year: cell.year, month: cell.month, day: cell.day })}
-      title={`${cell.day}: ${s.present} present · ${s.leave} on leave · ${s.absent} absent · ${s.partial} partial`}
+      title={`${cell.day}: ${s.present} present · ${s.leave} on leave · ${s.absent} absent · ${s.partial} partial${holidayName ? ` · Holiday: ${holidayName}` : ""}`}
       className={cn(base, "hover:shadow-sm hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary")}
     >
       <div className="flex items-center justify-between gap-1">
@@ -234,6 +253,8 @@ function DayCellView({
           {rate}%
         </span>
       </div>
+
+      {holidayName ? <HolidayBadge name={holidayName} showIcon={false} className="self-start px-1" /> : null}
 
       <div className="mt-auto space-y-1">
         <p className="text-[11px] leading-none text-muted-foreground">

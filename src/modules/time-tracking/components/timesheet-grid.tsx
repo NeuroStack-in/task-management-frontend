@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { initials } from "@/lib/format";
+import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import type {
   ProjectTimesheet,
   TeamMemberTime,
@@ -115,6 +116,7 @@ export function TimesheetGrid({
   const [group, setGroup] = useState<GroupBy>("person");
   const [query, setQuery] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
+  const holidays = useOrgHolidays();
   const [selection, setSelection] = useState<
     | { rowId: string; kind: "day"; dayIndex: number }
     | { rowId: string; kind: "week" }
@@ -370,20 +372,29 @@ export function TimesheetGrid({
               <th className="bg-muted/30 text-muted-foreground sticky left-0 z-10 px-4 py-2.5 text-left align-middle text-xs font-semibold tracking-wide uppercase">
                 {group === "person" ? "Employee" : "Project"}
               </th>
-              {DAY_LABELS.map((d, i) => (
-                <th
-                  key={d}
-                  className={cn(
-                    "text-muted-foreground px-2 py-2.5 text-center align-middle text-xs font-semibold tracking-wide",
-                    i >= 5 && "bg-muted/50",
-                  )}
-                >
-                  <span className="block">{d}</span>
-                  <span className="text-muted-foreground/70 block text-[0.7rem] font-normal tabular-nums">
-                    {parseIso(dates[i]).d}
-                  </span>
-                </th>
-              ))}
+              {DAY_LABELS.map((d, i) => {
+                const holidayName = dates[i] ? holidays.nameFor(dates[i]) : undefined;
+                return (
+                  <th
+                    key={d}
+                    className={cn(
+                      "text-muted-foreground px-2 py-2.5 text-center align-middle text-xs font-semibold tracking-wide",
+                      i >= 5 && "bg-muted/50",
+                    )}
+                    title={holidayName ? `Holiday: ${holidayName}` : undefined}
+                  >
+                    <span className="block">{d}</span>
+                    <span className="text-muted-foreground/70 block text-[0.7rem] font-normal tabular-nums">
+                      {parseIso(dates[i]).d}
+                    </span>
+                    {holidayName ? (
+                      <span className="text-primary mt-0.5 block text-[0.6rem] font-medium normal-case">
+                        Holiday
+                      </span>
+                    ) : null}
+                  </th>
+                );
+              })}
               <th className="text-muted-foreground px-3 py-2.5 text-center align-middle text-xs font-semibold tracking-wide uppercase">
                 Total
               </th>
