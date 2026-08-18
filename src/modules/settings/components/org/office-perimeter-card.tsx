@@ -29,7 +29,10 @@ import { useGeofenceStore } from "@/stores/geofence.store";
 
 export function OfficePerimeterCard() {
   const { can } = usePermissions();
-  const canManage = can("settings:manage");
+  // The write route is `PUT /v1/org/geofence`, which the server gates on `monitoring:manage`
+  // (not `settings:manage`) — mirror that here so the controls only enable for users the
+  // backend will actually accept. See `geofence.store.ts` and the help text below.
+  const canManage = can("monitoring:manage");
 
   const {
     center,

@@ -37,6 +37,8 @@ import { formatDuration } from "@/lib/format";
 import { formatHours } from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
 import { useTrackingMode } from "@/hooks/use-features";
+import { useOrgHolidays } from "@/hooks/use-org-holidays";
+import { HolidayBadge } from "@/components/shared/holiday-badge";
 import { useTimesheet } from "../use-timesheet";
 import { TimesheetHistory } from "./timesheet-history";
 import { TimerHero } from "./timer-hero";
@@ -76,18 +78,26 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   // The web only *shows* it (LLD §4); the desktop agent owns start/stop.
   const runningRow = rows.find((r) => r.running) ?? null;
 
+  const holidays = useOrgHolidays();
+
   // Resolve the date on the client to avoid an SSR/hydration mismatch.
   const [today, setToday] = useState("");
+  // `YYYY-MM-DD` for today (local), resolved client-side too — used to flag a holiday.
+  const [todayIso, setTodayIso] = useState("");
   useEffect(() => {
+    const now = new Date();
     setToday(
-      new Date().toLocaleDateString(undefined, {
+      now.toLocaleDateString(undefined, {
         weekday: "long",
         day: "numeric",
         month: "long",
         year: "numeric",
       }),
     );
+    const p = (n: number) => String(n).padStart(2, "0");
+    setTodayIso(`${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`);
   }, []);
+  const todayHoliday = todayIso ? holidays.nameFor(todayIso) : undefined;
 
   const exportCsv = () => {
     // Machine mode drops Project/Task/Billable (they don't exist for a device) — one union header.
@@ -163,6 +173,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                 Session running
               </Badge>
             ) : null}
+            {todayHoliday ? <HolidayBadge name={todayHoliday} /> : null}
           </CardDescription>
           <CardAction>
             <Button

@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Loader } from "@/components/shared/loader";
+import { HolidayBadge } from "@/components/shared/holiday-badge";
 import { formatDuration } from "@/lib/format";
+import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import { useTimesheet } from "../use-timesheet";
 import { todayLocal } from "../services/timesheet.service";
 
@@ -38,6 +40,10 @@ export function TimesheetHistory() {
 
   const max = useMemo(() => todayLocal(), []);
 
+  // The date picker's value is already a `YYYY-MM-DD` string, so a holiday lookup is direct.
+  const holidays = useOrgHolidays();
+  const holidayName = date ? holidays.nameFor(date) : undefined;
+
   // Client-side, for the same hydration reason the default date is: `new Date()` in a render path
   // would differ between server and client.
   const [shortcuts, setShortcuts] = useState({ yesterday: "" });
@@ -54,6 +60,7 @@ export function TimesheetHistory() {
         <CardTitle className="flex items-center gap-2 text-base">
           <CalendarDays className="text-muted-foreground size-4" />
           Previous days
+          {holidayName ? <HolidayBadge name={holidayName} /> : null}
         </CardTitle>
         <div className="flex items-center gap-1.5">
           {/* One shortcut, for the day people ask for most. The second chip used to be the day

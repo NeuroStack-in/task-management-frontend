@@ -20,6 +20,7 @@ import {
 import { claimsOf, clearCognitoCache, cognitoSignOut, userPool } from "@/lib/cognito";
 import { completeSsoExchange } from "@/lib/oauth";
 import { friendlyError } from "@/lib/errors";
+import { resetOrgMeta } from "@/stores/org-meta.store";
 import type { AuthSession, User } from "@/types/user";
 
 /** A quick-login shortcut shown on the sign-in screen (email prefill only — a real password is required). */
@@ -289,6 +290,9 @@ export function clearWorkPulseState(): void {
 export function logout(): void {
   cognitoSignOut();
   clearWorkPulseState();
+  // The shared org-meta store lives in memory (not localStorage), so it survives clearWorkPulseState;
+  // reset it explicitly so the next sign-in re-fetches rather than showing the previous org's meta.
+  resetOrgMeta();
 }
 
 /* ------------------------------ Password reset ------------------------------ */

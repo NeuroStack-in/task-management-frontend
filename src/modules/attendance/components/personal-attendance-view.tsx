@@ -20,6 +20,8 @@ import {
 } from "../lib/calendar";
 import { LogDatePicker } from "./attendance-log";
 import { useWorkdays, useWorkingHours } from "@/hooks/use-working-hours";
+import { useOrgHolidays } from "@/hooks/use-org-holidays";
+import { HolidayBadge } from "@/components/shared/holiday-badge";
 import { isWorkday } from "@/lib/workdays";
 import {
   useMyAttendance,
@@ -121,6 +123,7 @@ export function PersonalAttendanceView() {
   const view = { year: selected.year, month: selected.month };
 
   const workdays = useWorkdays();
+  const holidays = useOrgHolidays();
   // The expected working day the day-completion bar fills toward (the org's declared hours).
   const expectedMin = expectedDayMinutes(useWorkingHours());
   const weeks = useMemo(
@@ -179,7 +182,7 @@ export function PersonalAttendanceView() {
   // back across the fetched window and takes up to 10 resolved workdays; an unclosed day is skipped
   // rather than shown blank, and the walk is bounded so it can't run past the fetched range.
   const recent = useMemo(() => {
-    const out: { key: string; label: string; status: DayStatus; late: boolean; clockIn: string; clockOut: string; hours: number }[] = [];
+    const out: { key: string; label: string; status: DayStatus; late: boolean; clockIn: string; clockOut: string; hours: number; holiday: string | undefined }[] = [];
     const cursor = new Date(TODAY.year, TODAY.month, TODAY.day);
     let guard = 0;
     while (out.length < 10 && guard < 40) {
@@ -202,13 +205,16 @@ export function PersonalAttendanceView() {
             clockIn: rec.clockIn,
             clockOut: rec.clockOut,
             hours: rec.hours,
+            holiday: holidays.nameFor(
+              ymd(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()),
+            ),
           });
         }
       }
       cursor.setDate(cursor.getDate() - 1);
     }
     return out;
-  }, [recentData, workdays]);
+  }, [recentData, workdays, holidays]);
 
   // Prev/next move the selection by one month, clamping the day to the new
   // month's length; the grid follows because the view derives from the selection.
@@ -327,7 +333,14 @@ export function PersonalAttendanceView() {
 
           <div className="grid grid-cols-7 gap-1.5">
             {weeks.flat().map((cell, i) => (
-              <PersonalDayCell key={i} cell={cell} recordFor={monthData.recordFor} />
+              <PersonalDayCell
+                key={i}
+                cell={cell}
+                recordFor={monthData.recordFor}
+                holidayName={
+                  cell.inMonth ? holidays.nameFor(ymd(cell.year, cell.month, cell.day)) : undefined
+                }
+              />
             ))}
           </div>
 
@@ -344,6 +357,10 @@ export function PersonalAttendanceView() {
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
               Weekend / off
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="size-2.5 rounded-full bg-primary/30 ring-1 ring-primary/40" />
+              Holiday
             </span>
           </div>
         </CardContent>
@@ -392,7 +409,10 @@ export function PersonalAttendanceView() {
                 return (
                   <tr key={r.key} className="transition-colors hover:bg-muted/40">
                     <td className="whitespace-nowrap px-5 py-3 font-medium">
-                      {r.label}
+                      <span className="flex items-center gap-2">
+                        {r.label}
+                        {r.holiday ? <HolidayBadge name={r.holiday} /> : null}
+                      </span>
                     </td>
                     {/* Status reflects the *resolved* verdict, including the late qualifier: a
                         present-but-late day reads "Late", a short day "Partial", etc. — never a flat
@@ -459,21 +479,27 @@ export function PersonalAttendanceView() {
 function PersonalDayCell({
   cell,
   recordFor,
+  holidayName,
 }: {
   cell: DayCell;
   recordFor: MyAttendanceRange["recordFor"];
+  holidayName?: string;
 }) {
   if (!cell.isWorkday) {
     return (
       <div
         className={cn(
-          "wp-hatch flex min-h-[3.5rem] flex-col rounded-xl p-2",
+          "wp-hatch flex min-h-[3.5rem] flex-col gap-1 rounded-xl p-2",
           !cell.inMonth && "opacity-50",
         )}
+        title={holidayName ? `Holiday: ${holidayName}` : undefined}
       >
         <span className="text-xs font-semibold leading-none tabular-nums text-muted-foreground/70">
           {cell.day}
         </span>
+        {holidayName ? (
+          <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" />
+        ) : null}
       </div>
     );
   }
@@ -491,8 +517,10 @@ function PersonalDayCell({
       )}
       title={
         rec
-          ? `${cell.day}: ${meta!.label}${rec.late ? " (late)" : ""} · ${rec.hours.toFixed(1)}h`
-          : `${cell.day}`
+          ? `${cell.day}: ${meta!.label}${rec.late ? " (late)" : ""} · ${rec.hours.toFixed(1)}h${holidayName ? ` · Holiday: ${holidayName}` : ""}`
+          : holidayName
+            ? `${cell.day} · Holiday: ${holidayName}`
+            : `${cell.day}`
       }
     >
       <div className="flex items-start justify-between gap-1">
@@ -504,6 +532,7 @@ function PersonalDayCell({
         >
           {cell.day}
         </span>
+        {holidayName ? <HolidayBadge name={holidayName} showIcon={false} className="px-1" /> : null}
       </div>
       {/* Mention the resolved attendance on every cell: the status word (Present / Late / Partial /
           Absent / Day off — `late` qualifies present per LLD §7) plus the hours when any were worked.

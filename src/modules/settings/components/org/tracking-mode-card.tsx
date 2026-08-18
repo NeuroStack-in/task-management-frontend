@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -22,47 +22,47 @@ import {
   type TrackingMode,
 } from "@/lib/tracking-mode";
 import { MODE_HIDDEN_ROUTES } from "@/constants/features";
-import { getOrg, updateOrg } from "../../services/org.service";
+import { useOrgMetaStore } from "@/stores/org-meta.store";
+import { updateOrg } from "../../services/org.service";
 import { TrackingModeDialog } from "./tracking-mode-dialog";
 
 /**
  * Settings → Organization → **how this org tracks work** (MANAGED-AGENT.md §4.3).
  *
- * A self-contained sub-manager (its own `getOrg`/`updateOrg` round-trip, like `DepartmentsManager`)
- * so it never joins the profile save bar — the mode change is a distinct, owner-only, confirmed
- * action, not a field on the profile form. Non-owners see it read-only.
+ * The org meta + optimistic-lock `version` come from the SHARED store (`useOrgMetaStore`), the same
+ * one the profile card reads — so a profile save and a mode change never hold divergent versions and
+ * a single user editing both never hits a spurious 409. The mode change is still a distinct,
+ * owner-only, confirmed action, not a field on the profile form. Non-owners see it read-only.
  */
 export function TrackingModeCard() {
   const isOwner = useAuthStore(isOwnerOf);
+  const { view, version, status, load, applyPatchResult } = useOrgMetaStore();
+  const loading = status === "idle" || status === "loading";
   const [mode, setMode] = useState<TrackingMode>("project");
-  const [version, setVersion] = useState<number | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // One shared fetch (deduped in the store).
   useEffect(() => {
-    let live = true;
-    getOrg()
-      .then((o) => {
-        if (!live) return;
-        setMode(trackingModeOf(o.tracking_mode));
-        setVersion(o.version);
-      })
-      .catch(() => {
-        /* leave the default; the profile card surfaces a load error already */
-      })
-      .finally(() => live && setLoading(false));
-    return () => {
-      live = false;
-    };
-  }, []);
+    void load();
+  }, [load]);
+
+  // Seed the local mode from the shared meta **once** — later `view` writes (e.g. a profile save
+  // bumping the version) must not clobber a mode the owner is midway through changing.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || status !== "ready") return;
+    setMode(trackingModeOf(view?.tracking_mode));
+    seeded.current = true;
+  }, [status, view]);
 
   async function apply(next: TrackingMode) {
     setSaving(true);
     try {
-      const view = await updateOrg({ tracking_mode: next, version });
-      setMode(trackingModeOf(view.tracking_mode));
-      setVersion(view.version);
+      const updated = await updateOrg({ tracking_mode: next, version });
+      // Thread the fresh version back into the shared store so the profile card's next save uses it.
+      applyPatchResult(updated);
+      setMode(trackingModeOf(updated.tracking_mode));
       setDialogOpen(false);
       toast.success("Tracking mode updated", {
         description: `This organization now uses ${TRACKING_MODE_META[next].label}.`,
