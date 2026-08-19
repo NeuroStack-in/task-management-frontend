@@ -229,6 +229,29 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
                 roster.filter((e) => e.department_id === team).map((e) => e.user_id),
               );
         const inScopeUser = (id: string) => scopeUserIds === null || scopeUserIds.has(id);
+
+        /**
+         * Who the **attendance** figures are about — people who can actually clock in.
+         *
+         * An Owner/Admin holds no `TimeTrackSelf`, never starts a timer, and so §7 resolves them to
+         * `absent` on every scheduled workday. Counting them put a permanent, unreachable ceiling on
+         * the org attendance rate and inflated the donut's Absent slice — the same reason the
+         * "working now" roster below already excludes them, and the same rule
+         * `useOversightAttendance` applies on the Attendance page.
+         *
+         * This is a deliberate reversal of the note in `insights::shared::contributors`, which said
+         * the contributor filter must not be used for attendance because "admins are real employees:
+         * they attend, they take leave". True of the *concept*, false of the *measurement*: nothing
+         * records an admin attending, so the only value the system can compute for them is `absent`.
+         * Decision taken 2026-08-19 — the dashboard now agrees with the Attendance page.
+         *
+         * Fails OPEN: with no roles read we cannot tell, and filtering everyone out would report an
+         * empty org rather than an unfiltered one.
+         */
+        const trackedUserIds = new Set(
+          roster.filter((e) => e.role_id && contributorIds?.has(e.role_id)).map((e) => e.user_id),
+        );
+        const isTracked = (id: string) => contributorIds === null || trackedUserIds.has(id);
         const inScopeDept = (id: string) => team === "all" || id === team;
 
         // Directory-derived headcount (dept-filtered) — **employment status**, not "working now".
@@ -505,7 +528,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const today = todayIso();
         const closedBundles = bundles.filter((b) => b.iso < today);
         for (const b of closedBundles) {
-          const users = (b.oversight?.users ?? []).filter((u) => inScopeUser(u.user_id));
+          const users = (b.oversight?.users ?? []).filter(
+            (u) => inScopeUser(u.user_id) && isTracked(u.user_id),
+          );
           const counted = users.filter((u) => u.status !== "non_workday");
           const present = users.filter(
             (u) => u.status === "present" || u.status === "partial",
@@ -563,7 +588,12 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const attendanceResolvedDays = closedBundles.filter(
           (b) =>
             (b.oversight?.users ?? []).filter(
-              (u) => inScopeUser(u.user_id) && u.status !== "non_workday",
+              (u) =>
+                inScopeUser(u.user_id) &&
+                // Same population as the rate this gates — a day where only untracked admins have a
+                // status was not measured for anyone the figure is about.
+                isTracked(u.user_id) &&
+                u.status !== "non_workday",
             ).length > 0,
         ).length;
 
