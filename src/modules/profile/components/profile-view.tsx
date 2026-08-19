@@ -127,7 +127,7 @@ function dayLocal(daysAgo: number): string {
 function useMyStats() {
   const [attendance, setAttendance] = useState<{
     present: number;
-    late: number;
+    partial: number;
     absent: number;
     rate: number | null;
   } | null>(null);
@@ -143,13 +143,23 @@ function useMyStats() {
       .then((r) => {
         if (!alive) return;
         const s = r.summary;
-        // `late` qualifies `present` days; the rate counts every worked/on-leave day against the
-        // days that could have been worked (`counted` excludes non-workdays).
+        // The rate counts every worked/on-leave day against the days that could have been worked
+        // (`counted` excludes non-workdays).
+        //
+        // The breakdown below reports **statuses**, so it takes `partial` — not `late`. `late` is a
+        // *qualifier on a present day* (LLD §7: five statuses, and late is not one of them), so
+        // showing it beside Present double-counted the same day in two tiles and left genuinely
+        // partial days — worked, but under `min_present_minutes` — invisible.
         const rate =
           s.counted > 0
             ? Math.round(((s.present + s.partial + s.leave) / s.counted) * 100)
             : null;
-        setAttendance({ present: s.present, late: s.late, absent: s.absent, rate });
+        setAttendance({
+          present: s.present,
+          partial: s.partial,
+          absent: s.absent,
+          rate,
+        });
       })
       .catch(() => {
         /* card shows its empty state */
@@ -556,11 +566,29 @@ function RichProfile({
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center">
                   {[
-                    { label: "Present", value: stats.attendance.present, tone: "bg-success", text: "text-success" },
-                    { label: "Late", value: stats.attendance.late, tone: "bg-warning", text: "text-warning" },
-                    { label: "Absent", value: stats.attendance.absent, tone: "bg-destructive", text: "text-destructive" },
+                    {
+                      label: "Present",
+                      value: stats.attendance.present,
+                      tone: "bg-success",
+                      text: "text-success",
+                      hint: "Worked a full day.",
+                    },
+                    {
+                      label: "Partial",
+                      value: stats.attendance.partial,
+                      tone: "bg-warning",
+                      text: "text-warning",
+                      hint: "Present, but worked less than the expected hours for the day.",
+                    },
+                    {
+                      label: "Absent",
+                      value: stats.attendance.absent,
+                      tone: "bg-destructive",
+                      text: "text-destructive",
+                      hint: "No working time recorded on a scheduled day.",
+                    },
                   ].map((s) => (
-                    <div key={s.label}>
+                    <div key={s.label} title={s.hint}>
                       <p className={cn("text-lg font-semibold tabular-nums", s.text)}>{s.value}</p>
                       <span className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                         <span className={cn("size-1.5 rounded-full", s.tone)} />
