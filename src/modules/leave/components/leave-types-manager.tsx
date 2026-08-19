@@ -9,21 +9,15 @@
  * surfaces as `409 version_conflict` (handled by refetching). Archiving is the soft delete — there
  * is no per-type DELETE; `active: false` hides a type from the request picker and from balance
  * seeding while keeping its history labelled. "Restore defaults" resets the whole catalog to the
- * platform set; "Seed balances" materializes the year's per-employee balances (idempotent).
+ * platform set. Per-employee balances are materialized automatically by the backend (on join and at
+ * year rollover), so there is no manual seed control here.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import {
-  Archive,
-  ArchiveRestore,
-  History,
-  Pencil,
-  Plus,
-  Sprout,
-} from "lucide-react";
+import { Archive, ArchiveRestore, History, Pencil, Plus } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -57,7 +51,6 @@ import { ApiError } from "@/lib/api";
 import {
   getTypeCatalog,
   restoreDefaultTypes,
-  seedBalances,
   setTypes,
   type ApiLeaveType,
   type ApiTypeCatalog,
@@ -99,7 +92,6 @@ export function LeaveTypesManager({ onCatalogChanged }: { onCatalogChanged?: () 
   const [editing, setEditing] = useState<ApiLeaveType | "new" | null>(null);
   // Confirm dialogs.
   const [confirmRestore, setConfirmRestore] = useState(false);
-  const [confirmSeed, setConfirmSeed] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -196,9 +188,6 @@ export function LeaveTypesManager({ onCatalogChanged }: { onCatalogChanged?: () 
           </CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => setConfirmSeed(true)} disabled={busy}>
-            <Sprout className="size-4" /> Seed balances
-          </Button>
           <Button variant="outline" size="sm" onClick={() => setConfirmRestore(true)} disabled={busy}>
             <History className="size-4" /> Restore defaults
           </Button>
@@ -311,8 +300,6 @@ export function LeaveTypesManager({ onCatalogChanged }: { onCatalogChanged?: () 
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <SeedBalancesDialog open={confirmSeed} onOpenChange={setConfirmSeed} />
     </Card>
   );
 }
@@ -406,78 +393,6 @@ function TypeEditDialog({
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/**
- * Seed balances confirm — described from the backend slice (`seed_balances`): one balance row per
- * active employee per active type, at the type's annual allowance, for the chosen year. Idempotent:
- * existing balances (and days already used) are left untouched. Normally this happens automatically
- * on join / at year rollover; this is the manual admin trigger.
- */
-function SeedBalancesDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [seeding, setSeeding] = useState(false);
-  const yearOk = /^\d{4}$/.test(year);
-
-  async function seed() {
-    if (!yearOk) return;
-    setSeeding(true);
-    try {
-      const res = await seedBalances(year);
-      toast.success(
-        `Balances seeded for ${res.year}`,
-        {
-          description: `${res.seeded_users} active employee${res.seeded_users === 1 ? "" : "s"} processed — existing balances were left untouched.`,
-        },
-      );
-      onOpenChange(false);
-    } catch (e) {
-      toast.error(messageOf(e, "Couldn't seed the balances."));
-    } finally {
-      setSeeding(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onOpenChange(false)}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Seed leave balances?</DialogTitle>
-          <DialogDescription>
-            Creates the year&apos;s leave balances for every active employee — one per active leave
-            type, at its annual allowance. Safe to re-run: employees who already have a balance keep
-            it, including any days used. Run this after changing types or at the start of a year.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-1.5">
-          <Label className="text-sm">Year</Label>
-          <Input
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-            inputMode="numeric"
-            maxLength={4}
-            className="w-28 tabular-nums"
-            aria-label="Year to seed"
-          />
-          {!yearOk ? <p className="text-xs text-destructive">Enter a 4-digit year.</p> : null}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={seeding}>
-            Cancel
-          </Button>
-          <Button onClick={seed} disabled={seeding || !yearOk}>
-            {seeding ? "Seeding…" : "Seed balances"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
