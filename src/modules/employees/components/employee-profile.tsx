@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useWorkdays } from "@/hooks/use-working-hours";
+import { isWorkday } from "@/lib/workdays";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
@@ -116,27 +118,26 @@ const ATTENDANCE_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 /**
- * What the header badge says about this person right now.
+ * What the header badge says about this person **today**.
  *
  * For anyone **not active** it is the employment state, full stop — an inactive employee has no
- * meaningful attendance and saying "Absent" about someone who has left would be wrong.
+ * meaningful attendance, and saying "Absent" about someone who has left would be wrong.
  *
- * For an **active** employee it is their attendance, because "Active" restated the employment field
- * shown two lines above it and told a manager nothing they did not already know.
+ * For an **active** employee it is today's attendance, because "Active" restated the employment
+ * field shown two lines below and told a manager nothing.
  *
- * It reports the **latest closed day**, not today: attendance is resolved by the 00:15 close, so for
- * most of a working day today has no verdict at all. Reading the last entry of `kpi.days` also keeps
- * this free of a `new Date()` during render, which would risk an SSR/client hydration mismatch.
+ * **Today, not the last closed day.** An earlier version read the last entry of `kpi.days`, which
+ * comes from the activity rollup and *includes today* — and today's stored attendance is `absent`
+ * until the 00:15 close resolves it. So it confidently labelled someone "Absent" on a day they were
+ * sitting at their desk. `todayAttendance` is derived from live timer sessions and approved leave
+ * instead, the same way the Attendance page derives its live Today column.
  *
- * The day is **in the badge**, not just its tooltip. A bare "Absent" reads as a statement about
- * right now, and a reader has no reason to hover something that already looks like a complete
- * answer — so the one fact that makes it accurate has to be visible.
+ * A non-workday is named as such rather than reported as an absence — nobody is absent on a Sunday.
  */
-function headerBadge(data: EmployeeProfileData): {
-  label: string;
-  className: string;
-  title: string;
-} {
+function headerBadge(
+  data: EmployeeProfileData,
+  todayIsWorkday: boolean,
+): { label: string; className: string; title: string } {
   if (data.status !== "active") {
     return {
       label: EMPLOYMENT_LABEL[data.status],
@@ -144,22 +145,30 @@ function headerBadge(data: EmployeeProfileData): {
       title: `This employee is ${EMPLOYMENT_LABEL[data.status].toLowerCase()}`,
     };
   }
-  const latest = data.kpi.days.at(-1);
-  if (!latest) {
+  if (!todayIsWorkday) {
     return {
-      label: "No attendance yet",
+      label: "Today · Non-working day",
       className: "bg-muted text-muted-foreground",
-      title: "No day has been closed for this employee yet",
+      title: "Today is not a scheduled working day for this organisation",
     };
   }
-  const meta = ATTENDANCE_BADGE[latest.status] ?? {
-    label: latest.status,
+  if (data.todayAttendance === null) {
+    // Reading attendance needs `AttendanceReadTeam`. Fall back to the employment state rather than
+    // guessing at a status we were not allowed to see.
+    return {
+      label: EMPLOYMENT_LABEL.active,
+      className: STATUS_META.active,
+      title: "Today's attendance isn't visible to you",
+    };
+  }
+  const meta = ATTENDANCE_BADGE[data.todayAttendance] ?? {
+    label: data.todayAttendance,
     className: "bg-muted text-muted-foreground",
   };
   return {
-    label: `${meta.label} · ${latest.label}`,
+    label: `Today · ${meta.label}`,
     className: meta.className,
-    title: `Attendance on ${latest.label} — the last day closed for this employee`,
+    title: `Attendance today, from live timer sessions and approved leave`,
   };
 }
 
@@ -673,6 +682,18 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
   const canManage = can("employees:manage");
   const canViewLocations = can("locations:view");
 
+  // Whether *today* is a scheduled working day, so a Sunday isn't reported as an absence.
+  //
+  // Resolved after mount rather than during render: `new Date()` in a render path can disagree
+  // between the server and client pass (the repo hits this elsewhere and guards it the same way).
+  // Until it resolves, assume a workday — the common case, and it only ever downgrades to the
+  // quieter "Non-working day" label.
+  const workdays = useWorkdays();
+  const [todayIsWorkday, setTodayIsWorkday] = useState(true);
+  useEffect(() => {
+    setTodayIsWorkday(isWorkday(new Date(), workdays));
+  }, [workdays]);
+
   const department = data.department;
   const team = data.team;
   const [reassignOpen, setReassignOpen] = useState(false);
@@ -806,7 +827,7 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                     {data.roleName}
                   </Badge>
                   {(() => {
-                    const b = headerBadge(data);
+                    const b = headerBadge(data, todayIsWorkday);
                     return (
                       <Badge className={b.className} title={b.title}>
                         {b.label}

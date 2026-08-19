@@ -22,6 +22,7 @@ import {
   getUserActivity,
   SCORE_WINDOW_DAYS,
 } from "@/modules/insights/services/insights.service";
+import { getUserDay } from "@/modules/attendance/services/attendance.service";
 import {
   getEmployeeProfile,
   departmentMap,
@@ -67,6 +68,18 @@ export interface EmployeeProfileData {
   kpi: { days: { date: string; label: string; hours: number; status: string }[] };
   totalTasks: number;
   avgCompletion: number;
+  /**
+   * **Today's** attendance, live — not a closed verdict.
+   *
+   * The nightly 00:15 close is what resolves a day, so today's stored status reads `absent` all day
+   * long and must never be shown as one. This is derived the way the Attendance page derives its
+   * live "today" column (`classifyToday`): approved leave first, then whether a timer session exists
+   * at all. Late-vs-on-time is deliberately not split here — that nuance belongs to the Attendance
+   * page; a profile badge answers "are they in today".
+   *
+   * `null` when it could not be read (the caller lacks `AttendanceReadTeam`, or the request failed).
+   */
+  todayAttendance: "present" | "absent" | "leave" | null;
 }
 
 export interface EmployeeProfileState {
@@ -178,13 +191,17 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
         const from = ymd(new Date(now.getFullYear(), now.getMonth() - 11, 1));
         const to = ymd(now);
 
-        const [p, depts, teams, roles, allProjects, activity] = await Promise.all([
+        const [p, depts, teams, roles, allProjects, activity, today] = await Promise.all([
           getEmployeeProfile(id),
           departmentMap().catch(() => new Map<string, string>()),
           teamMap().catch(() => new Map<string, string>()),
           listRoles().catch(() => []),
           listUserProjects(id).catch(() => []),
           getUserActivity(id, from, to).catch(() => null),
+          // Reads their `TIME#` sessions directly, so unlike the activity rollup it is meaningful
+          // for a day that has not closed yet. Best-effort: a reader without `AttendanceReadTeam`
+          // simply gets no attendance on the badge.
+          getUserDay(id, ymd(now)).catch(() => null),
         ]);
         if (!live) return;
 
@@ -270,6 +287,14 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           postcode: "", // not carried by the backend
           projects,
           kpi,
+          todayAttendance: today
+            ? today.on_leave
+              ? "leave"
+              : // No session at all today and no leave ⇒ absent. Mirrors `classifyToday`.
+                today.clock_in == null && !today.running
+                ? "absent"
+                : "present"
+            : null,
           totalTasks,
           avgCompletion,
         });
