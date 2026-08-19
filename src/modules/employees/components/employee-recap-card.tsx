@@ -40,7 +40,9 @@ import {
 } from "@/modules/insights/services/insights.service";
 
 const PERIODS: { key: RecapPeriod; label: string }[] = [
-  { key: "daily", label: "Daily" },
+  // "Last day", not "Daily": a day is recapped only once it has closed, so this tab can never be
+  // today — and "Daily" read as if it were. The date picker beside it says which day.
+  { key: "daily", label: "Last day" },
   { key: "weekly", label: "Weekly" },
   { key: "monthly", label: "Monthly" },
   { key: "overall", label: "Overall" },
@@ -185,7 +187,7 @@ export function EmployeeRecapCard({
             </CardTitle>
             <CardDescription>
               {period === "daily"
-                ? `${dayLabel(dailyDate)} · the same recap ${first} sees about themselves`
+                ? `${dayLabel(dailyDate)} · recapped after the day closed · the same recap ${first} sees about themselves`
                 : `${PERIOD_HINT[period]} · the same recap ${first} sees about themselves`}
             </CardDescription>
           </div>

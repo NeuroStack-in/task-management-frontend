@@ -126,8 +126,11 @@ const ATTENDANCE_BADGE: Record<string, { label: string; className: string }> = {
  *
  * It reports the **latest closed day**, not today: attendance is resolved by the 00:15 close, so for
  * most of a working day today has no verdict at all. Reading the last entry of `kpi.days` also keeps
- * this free of a `new Date()` during render, which would risk an SSR/client hydration mismatch. The
- * day it refers to is named in the tooltip so the badge is never quietly stale.
+ * this free of a `new Date()` during render, which would risk an SSR/client hydration mismatch.
+ *
+ * The day is **in the badge**, not just its tooltip. A bare "Absent" reads as a statement about
+ * right now, and a reader has no reason to hover something that already looks like a complete
+ * answer — so the one fact that makes it accurate has to be visible.
  */
 function headerBadge(data: EmployeeProfileData): {
   label: string;
@@ -153,7 +156,11 @@ function headerBadge(data: EmployeeProfileData): {
     label: latest.status,
     className: "bg-muted text-muted-foreground",
   };
-  return { ...meta, title: `Attendance on ${latest.label}` };
+  return {
+    label: `${meta.label} · ${latest.label}`,
+    className: meta.className,
+    title: `Attendance on ${latest.label} — the last day closed for this employee`,
+  };
 }
 
 /** Empty backend fields render as an em dash, never as a blank or a fabricated value. */
