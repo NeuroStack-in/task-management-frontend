@@ -164,6 +164,27 @@ export const TASK_STATUS_SETTABLE: TaskStatus[] = TASK_STATUS_ORDER.filter(
   (s) => s !== "closed",
 );
 
+/**
+ * The statuses that mean the work is finished — mirrors `TaskStatus::is_open` in
+ * `backend/crates/projects/src/shared/task.rs`.
+ *
+ * `closed` belongs here as much as `done`. It is the terminal state a task reaches once a
+ * Manager/Lead signs it off through `POST /v1/projects/{id}/tasks/{task_id}/review`, and the
+ * dashboard used to test `status !== "done"` in two places — so every reviewed task counted as open
+ * work forever, inflating the Open Tasks tile and re-appearing under upcoming deadlines.
+ */
+export const FINISHED_TASK_STATUSES: readonly TaskStatus[] = ["done", "closed"];
+
+/**
+ * Does this status still need someone's attention? The inverse of {@link FINISHED_TASK_STATUSES}.
+ *
+ * Takes a `string` rather than a `TaskStatus` on purpose: callers hold raw server values, and an
+ * unrecognised status must read as *open* (visible, chaseable) rather than silently vanishing.
+ */
+export function isOpenTaskStatus(status: string): boolean {
+  return !FINISHED_TASK_STATUSES.includes(status as TaskStatus);
+}
+
 export const TASK_PRIORITY_META: Record<
   TaskPriority,
   { label: string; tone: "muted" | "warning" | "negative" }

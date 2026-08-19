@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { useAuthStore } from "@/stores/auth.store";
+import { isOpenTaskStatus } from "@/modules/projects/types";
 import {
   listMyTasks,
   listProjects,
@@ -68,7 +69,8 @@ export function useMyWork(): MyWork {
         if (!live) return;
 
         const projById = new Map<string, ApiProject>(projects.map((p) => [p.id, p]));
-        const open = tasks.filter((t) => t.status !== "done");
+        // `closed` counts as finished too, not just `done` — see `isOpenTaskStatus`.
+        const open = tasks.filter((t) => isOpenTaskStatus(t.status));
         const done = tasks.length - open.length;
 
         // Enrich open-task titles from the boards of just the projects that hold them (bounded).

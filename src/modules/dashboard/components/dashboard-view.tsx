@@ -18,7 +18,9 @@ import { GreetingHeader } from "./greeting-header";
 import { DashboardControls } from "./dashboard-controls";
 import { CustomizableDashboard } from "./customizable-dashboard";
 import { PersonalDashboard } from "./personal-dashboard";
+import { MyTasksCardSelf } from "./my-tasks-card";
 import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
+import { useIsSurfaceOn } from "@/hooks/use-features";
 import { ATTENDANCE_LOG_ANCHOR } from "@/modules/attendance/components/attendance-log";
 import { useDashboardData } from "../use-dashboard-data";
 import type { DashboardRange } from "../lib/dashboard-data";
@@ -46,6 +48,11 @@ export function DashboardView() {
 
 /** The org (admin/owner/lead) view — the exact preview UI, on real backend data. */
 function OrgDashboard() {
+  // Projects is an org-gated surface (entitlement / tracking mode) — the same rule the personal
+  // dashboard applies, so "My tasks" disappears along with the rest of Projects rather than
+  // sitting there empty.
+  const isSurfaceOn = useIsSurfaceOn();
+  const showProjects = isSurfaceOn("projects");
   // "Today" by default: the dashboard answers "what is happening right now", and a 7-day default
   // buried today's numbers in a week's average. The LLD does not fix a page-level default (§3 is
   // layout persistence; `date-range` there is per-widget config), so this is a product choice.
@@ -221,6 +228,11 @@ function OrgDashboard() {
       </div>
 
       <CustomizableDashboard data={data} />
+
+      {/* An org-scoped role (Admin/Owner/Manager/HR) never renders `PersonalDashboard`, and the
+          widget catalog has no my-tasks entry — so before this, a task assigned to an admin
+          appeared nowhere on their dashboard. Same card the personal view uses. */}
+      {showProjects && <MyTasksCardSelf />}
       </div>
     </div>
   );

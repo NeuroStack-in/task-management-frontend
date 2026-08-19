@@ -38,6 +38,7 @@ import {
   getProject,
   type ApiMyTask,
 } from "@/modules/projects/services/projects.service";
+import { isOpenTaskStatus } from "@/modules/projects/types";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
 /** Whole days from today to an ISO date (`YYYY-MM-DD`). Negative ⇒ overdue. */
@@ -484,7 +485,9 @@ export function UpcomingTasksWidget() {
       if (!live) return;
 
       const taskItems: UpcomingItem[] = tasks
-        .filter((t) => t.due && t.status !== "done")
+        // `closed` is as finished as `done` (the terminal post-review state) — without it, a
+        // signed-off task with a future due date kept showing up as an upcoming deadline.
+        .filter((t) => t.due && isOpenTaskStatus(t.status))
         .map((t) => ({
           id: `t-${t.id}`,
           title: t.title,

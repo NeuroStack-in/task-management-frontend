@@ -7,7 +7,6 @@ import {
   ListChecks,
   FolderKanban,
   ArrowRight,
-  CheckCircle2,
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { TimerStatCard } from "./timer-stat-card";
@@ -15,19 +14,11 @@ import { MeetingHoursCard } from "@/modules/integrations/components/meeting-hour
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader } from "@/components/shared/loader";
-import { TASK_STATUS_META, type TaskStatus } from "@/modules/projects/types";
+import { MyTasksCard } from "./my-tasks-card";
 import { useMyWork } from "../use-my-work";
 import { useMyAttendance, ymd } from "@/modules/attendance/use-my-attendance";
 import { useIsSurfaceOn } from "@/hooks/use-features";
 import { cn } from "@/lib/utils";
-
-const TONE: Record<string, string> = {
-  muted: "bg-muted text-muted-foreground",
-  primary: "bg-primary/12 text-primary",
-  warning: "bg-warning/15 text-warning",
-  success: "bg-success/12 text-success",
-  negative: "bg-destructive/12 text-destructive",
-};
 
 const ATTENDANCE: Record<string, { dot: string; label: string }> = {
   present: { dot: "bg-success", label: "Present" },
@@ -39,34 +30,6 @@ const ATTENDANCE: Record<string, { dot: string; label: string }> = {
 const attMeta = (s: string) => ATTENDANCE[s] ?? { dot: "bg-muted-foreground/40", label: s };
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const SHORT_MONTH = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-function formatDue(iso: string | null): string {
-  if (!iso) return "No due date";
-  const [, m, d] = iso.split("-").map(Number);
-  return `${SHORT_MONTH[m - 1]} ${d}`;
-}
-
-/**
- * Deadline urgency for the task list, from calendar days between today and the due date:
- * `"overdue"` when it's already past, `"soon"` when it's within the next 3 days (below 3 days
- * remaining), else `null`. Local-midnight comparison so "today" reads as due, not overdue.
- */
-function dueUrgency(iso: string | null): "overdue" | "soon" | null {
-  if (!iso) return null;
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const [y, m, d] = iso.split("-").map(Number);
-  const due = new Date(y, m - 1, d);
-  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-  if (days < 0) return "overdue";
-  if (days < 3) return "soon";
-  return null;
-}
-
 export function PersonalDashboard() {
   const { openTasks, doneCount, myProjects, loading } = useMyWork();
   const isSurfaceOn = useIsSurfaceOn();
@@ -144,106 +107,8 @@ export function PersonalDashboard() {
 
       {showProjects && (
       <div className="grid gap-4 xl:grid-cols-3">
-        {/* My tasks */}
-        <Card
-          data-tour="dash:tasks"
-          className="gap-0 p-0 [--card-spacing:0px] xl:col-span-2"
-        >
-          <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <h2 className="font-display text-base font-semibold tracking-tight">My tasks</h2>
-            <Link
-              href="/projects"
-              className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
-            >
-              View all <ArrowRight className="size-3.5" />
-            </Link>
-          </div>
-          {openTasks.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center">
-              <CheckCircle2 className="size-6 text-success/70" />
-              <p className="text-sm font-medium">You&apos;re all caught up</p>
-              <p className="text-xs text-muted-foreground">No open tasks assigned to you right now.</p>
-            </div>
-          ) : (
-            <div className="flex flex-1 flex-col">
-              {/* Table view: Task · Project · Deadline · Status. Deadline and Status collapse on
-                  narrow screens so the two identifying columns (task + project) always stay. */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      <th scope="col" className="px-5 py-2.5 font-medium">Task</th>
-                      <th scope="col" className="px-3 py-2.5 font-medium">Project</th>
-                      <th scope="col" className="hidden px-3 py-2.5 text-right font-medium sm:table-cell">
-                        Deadline
-                      </th>
-                      <th scope="col" className="px-5 py-2.5 text-right font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {openTasks.slice(0, 6).map((t) => {
-                      const meta = TASK_STATUS_META[t.status as TaskStatus];
-                      const urgency = dueUrgency(t.due);
-                      return (
-                        <tr key={t.id} className="transition-colors hover:bg-muted/40">
-                          <td className="max-w-0 px-5 py-3">
-                            <span className="block truncate font-medium">{t.title}</span>
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-3">
-                            <span className="flex items-center gap-1.5 text-muted-foreground">
-                              {t.projectKey ? (
-                                <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.65rem]">
-                                  {t.projectKey}
-                                </span>
-                              ) : null}
-                              <span className="truncate">{t.projectName ?? "—"}</span>
-                            </span>
-                          </td>
-                          {/* Overdue → red, within 3 days → amber, otherwise the usual muted date. */}
-                          <td
-                            className={cn(
-                              "hidden whitespace-nowrap px-3 py-3 text-right text-xs tabular-nums sm:table-cell",
-                              urgency === "overdue"
-                                ? "font-semibold text-destructive"
-                                : urgency === "soon"
-                                  ? "font-medium text-warning"
-                                  : "text-muted-foreground",
-                            )}
-                          >
-                            {formatDue(t.due)}
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-3 text-right">
-                            {meta ? (
-                              <Badge className={cn("font-medium", TONE[meta.tone])}>{meta.label}</Badge>
-                            ) : (
-                              <Badge className="font-medium">{t.status}</Badge>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex flex-1 items-center justify-center gap-2 px-5 py-4 text-center text-sm text-muted-foreground">
-                {openTasks.length > 6 ? (
-                  <>
-                    <ListChecks className="size-4 shrink-0" />
-                    <span>
-                      {openTasks.length - 6} more open{" "}
-                      {openTasks.length - 6 === 1 ? "task" : "tasks"}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="size-4 shrink-0 text-success/70" />
-                    <span>That&apos;s all your open tasks right now.</span>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </Card>
+        {/* My tasks. Shared with the org dashboard — see `my-tasks-card.tsx`. */}
+        <MyTasksCard tasks={openTasks} className="xl:col-span-2" />
 
         {/* This week's attendance */}
         <Card data-tour="dash:week" className="gap-0 p-0 [--card-spacing:0px]">
