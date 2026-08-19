@@ -436,8 +436,8 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         // The KPI stat card's sparkline still tracks the composite score; collected here (unreported
         // days dropped) so the *card* below can move to concrete hours without disturbing the KPI.
         const dayScores: number[] = [];
-        // The honest line-trend widget: real score (only where quality was measured) + productive
-        // share (only where apps were classified), each day, gaps where unmeasured.
+        // The honest line-trend widget: real score only where quality was measured, each day, with
+        // gaps where it wasn't.
         const productivityScoreTrend: ScoreTrendPoint[] = [];
         const productivityTrend: TrendPoint[] = trendBundles.map((b) => {
           const people = (b.activity?.people ?? []).filter(
@@ -476,11 +476,11 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
 
           const h = (sec: number) => Math.round((sec / SEC_PER_H) * 10) / 10; // one decimal
 
-          // Honest score/share for the trend line, same day. Score averages people whose quality was
+          // Honest score for the trend line, same day. Score averages people whose quality was
           // measured, so a partial ~50 score (quality dropped) is never plotted. `q_measured` is
           // optional: `false` = explicitly dropped; **absent OR `true` = measured** (rollup/older
           // payloads omit the flag — see ScoreBreakdown). So exclude only explicit `false`; treating
-          // absent as unmeasured wrongly showed "not measured" beside a live productive share.
+          // absent as unmeasured wrongly showed "not measured" on a day that was in fact scored.
           const qScored = people.filter((p) => p.breakdown && p.breakdown.q_measured !== false);
           const label = dayLabel(b.iso, trendShort);
           productivityScoreTrend.push({
@@ -490,10 +490,6 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
                   qScored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) / qScored.length,
                 )
               : null,
-            share:
-              classified > 0 && t.active > 0
-                ? Math.min(100, Math.round((t.prod / t.active) * 100))
-                : null,
             measured: qScored.length,
           });
 

@@ -207,19 +207,20 @@ export interface TrendPoint {
 
 /**
  * One day on the **Productivity trends** line widget — the trend restored with *actual* values, made
- * honest. Both series are `null` (a gap, `connectNulls={false}`) on any day the value couldn't be
+ * honest. `score` is `null` (a gap, `connectNulls={false}`) on any day the value couldn't be
  * genuinely measured, so the line breaks rather than inventing a point:
  *
  * - `score` — the 0–100 composite, averaged **only over people whose quality was actually measured**
  *   (`breakdown.q_measured`). A partial score (quality dropped, the ~50 the old card showed) is never
  *   plotted; a day with no fully-measured person is a gap.
- * - `share` — productive % of active time, only when apps were classified at all (else `null`, not a
- *   misleading 0%).
+ *
+ * A companion `share` field (productive % of active time) was dropped with the second line on that
+ * widget — the share is already the Quality term inside `score`, so charting both plotted one input
+ * twice. Productive vs. neutral vs. distracting hours live on the **Productivity** stacked chart.
  */
 export interface ScoreTrendPoint {
   label: string;
   score: number | null;
-  share: number | null;
   /** People contributing a genuinely-measured score that day — shown in the tooltip as coverage. */
   measured: number;
 }

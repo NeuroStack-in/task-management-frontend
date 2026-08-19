@@ -6,7 +6,6 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -24,14 +23,16 @@ import type { ScoreTrendPoint } from "@/modules/dashboard/lib/dashboard-data";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
 /**
- * The trend widget, restored with actual values — made honest. Two 0–100 series on ONE scale
- * (a score and a percentage; validated palette, indigo vs green): the composite score and the
- * productive share. Both break (`connectNulls={false}`) on days they couldn't be measured, so an
+ * The trend widget, restored with actual values — made honest. One 0–100 series: the composite
+ * productivity score. It breaks (`connectNulls={false}`) on days it couldn't be measured, so an
  * unmeasured day is a gap, never the misleading ~50 the old card filled in.
+ *
+ * A second "Productive share" line used to sit on this axis. It was removed deliberately — the
+ * share is already the Quality term inside the score, so plotting both drew one input twice and
+ * invited the reading that a diverging green line meant something the score didn't already carry.
  */
 const SERIES = [
   { key: "score", name: "Productivity score", color: "var(--chart-1)", unit: " / 100" },
-  { key: "share", name: "Productive share", color: "var(--success)", unit: "%" },
 ] as const;
 
 function TrendTooltip({
@@ -79,7 +80,7 @@ export function ProductivityTrendChart({
   data: ScoreTrendPoint[];
   rangeLabel: string;
 }) {
-  const anyMeasured = data.some((d) => d.score !== null || d.share !== null);
+  const anyMeasured = data.some((d) => d.score !== null);
 
   return (
     <Card>
@@ -87,7 +88,7 @@ export function ProductivityTrendChart({
         <CardTitle className="flex items-center gap-1.5">
           Productivity trends
           <ChartLegendInfo
-            label="What Productivity score and Productive share mean"
+            label="What Productivity score means"
             terms={[
               {
                 term: "Productivity score",
@@ -114,15 +115,10 @@ export function ProductivityTrendChart({
                   </>
                 ),
               },
-              {
-                term: "Productive share",
-                definition:
-                  "Of your active time (keyboard/mouse), the share spent in apps your rules mark productive. Blank when nothing was classified.",
-              },
             ]}
           />
         </CardTitle>
-        <CardDescription>Score &amp; productive share · {rangeLabel}</CardDescription>
+        <CardDescription>Productivity score · {rangeLabel}</CardDescription>
       </CardHeader>
       <CardContent>
         {!anyMeasured ? (
@@ -141,10 +137,6 @@ export function ProductivityTrendChart({
                     <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
                     <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="fillShare" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--success)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="var(--success)" stopOpacity={0} />
-                  </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} stroke="var(--border)" />
                 <XAxis
@@ -155,21 +147,15 @@ export function ProductivityTrendChart({
                   tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
                 />
                 <YAxis
-                  // Both series are 0–100 (a score and a percentage) — one scale, so one axis. The
-                  // label names the scale; the legend names each line.
+                  // A single 0–100 series, so the axis label states the scale outright — with one
+                  // line there is no legend to name it.
                   domain={[0, 100]}
-                  {...yAxisLabel("Score / % of active time")}
+                  {...yAxisLabel("Productivity score (0–100)")}
                   tickLine={false}
                   axisLine={false}
                   tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
                 />
                 <Tooltip content={<TrendTooltip />} />
-                <Legend
-                  verticalAlign="top"
-                  height={26}
-                  iconType="plainline"
-                  wrapperStyle={{ fontSize: 11 }}
-                />
                 <Area
                   type="monotone"
                   dataKey="score"
@@ -179,16 +165,6 @@ export function ProductivityTrendChart({
                   // Break the line on an unmeasured day — never bridge a gap with an invented value.
                   connectNulls={false}
                   name="Productivity score"
-                  dot={{ r: 2.5 }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="share"
-                  stroke="var(--success)"
-                  fill="url(#fillShare)"
-                  strokeWidth={2}
-                  connectNulls={false}
-                  name="Productive share"
                   dot={{ r: 2.5 }}
                 />
               </AreaChart>
