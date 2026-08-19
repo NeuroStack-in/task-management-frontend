@@ -91,6 +91,71 @@ const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   suspended: "bg-destructive/12 text-destructive",
 };
 
+/** Employment states are shown capitalised; the raw lowercase server value is not a label. */
+const EMPLOYMENT_LABEL: Record<EmployeeProfileData["status"], string> = {
+  active: "Active",
+  inactive: "Inactive",
+  invited: "Invited",
+  suspended: "Suspended",
+};
+
+/**
+ * Attendance badge tones for the identity header.
+ *
+ * Deliberately separate from `ATTENDANCE_META` further down, which colours the hours-worked chart
+ * and maps `absent` into its neutral "not yet closed" bucket **on purpose** — an absent day has no
+ * bar to colour. A badge has the opposite job: absence is exactly what it must be able to say.
+ */
+const ATTENDANCE_BADGE: Record<string, { label: string; className: string }> = {
+  present: { label: "Present", className: "bg-success/12 text-success" },
+  partial: { label: "Partial", className: "bg-warning/15 text-warning" },
+  late: { label: "Late", className: "bg-warning/15 text-warning" },
+  leave: { label: "On leave", className: "bg-primary/12 text-primary" },
+  absent: { label: "Absent", className: "bg-destructive/12 text-destructive" },
+  non_workday: { label: "Non-working day", className: "bg-muted text-muted-foreground" },
+};
+
+/**
+ * What the header badge says about this person right now.
+ *
+ * For anyone **not active** it is the employment state, full stop — an inactive employee has no
+ * meaningful attendance and saying "Absent" about someone who has left would be wrong.
+ *
+ * For an **active** employee it is their attendance, because "Active" restated the employment field
+ * shown two lines above it and told a manager nothing they did not already know.
+ *
+ * It reports the **latest closed day**, not today: attendance is resolved by the 00:15 close, so for
+ * most of a working day today has no verdict at all. Reading the last entry of `kpi.days` also keeps
+ * this free of a `new Date()` during render, which would risk an SSR/client hydration mismatch. The
+ * day it refers to is named in the tooltip so the badge is never quietly stale.
+ */
+function headerBadge(data: EmployeeProfileData): {
+  label: string;
+  className: string;
+  title: string;
+} {
+  if (data.status !== "active") {
+    return {
+      label: EMPLOYMENT_LABEL[data.status],
+      className: STATUS_META[data.status],
+      title: `This employee is ${EMPLOYMENT_LABEL[data.status].toLowerCase()}`,
+    };
+  }
+  const latest = data.kpi.days.at(-1);
+  if (!latest) {
+    return {
+      label: "No attendance yet",
+      className: "bg-muted text-muted-foreground",
+      title: "No day has been closed for this employee yet",
+    };
+  }
+  const meta = ATTENDANCE_BADGE[latest.status] ?? {
+    label: latest.status,
+    className: "bg-muted text-muted-foreground",
+  };
+  return { ...meta, title: `Attendance on ${latest.label}` };
+}
+
 /** Empty backend fields render as an em dash, never as a blank or a fabricated value. */
 const dash = (s: string) => (s.trim() === "" ? "—" : s);
 
@@ -733,7 +798,14 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                   <Badge className="bg-feature-tint text-primary">
                     {data.roleName}
                   </Badge>
-                  <Badge className={STATUS_META[data.status]}>{data.status}</Badge>
+                  {(() => {
+                    const b = headerBadge(data);
+                    return (
+                      <Badge className={b.className} title={b.title}>
+                        {b.label}
+                      </Badge>
+                    );
+                  })()}
                 </div>
               </div>
               {canManage ? (
