@@ -30,6 +30,7 @@ import {
   getDayOversight,
   type ApiDayResponse,
 } from "@/modules/attendance/services/attendance.service";
+import { Markdown } from "@/components/shared/markdown";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
@@ -417,7 +418,9 @@ export function OrgAiSummaryWidget({
           />
         ) : narrative ? (
           <>
-            <p className="flex-1">{narrative}</p>
+            {/* The prompt returns a markdown bullet list; a bare <p> printed the "- " literally
+                and ran every bullet into one line. */}
+            <Markdown className="flex-1">{narrative}</Markdown>
             {generatedAt ? (
               <p className="text-[11px] text-feature-foreground/60">
                 Generated {new Date(generatedAt).toLocaleString()}

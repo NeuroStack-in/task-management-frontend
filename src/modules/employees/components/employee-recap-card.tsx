@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
+import { Markdown } from "@/components/shared/markdown";
 import { DatePicker } from "@/components/ui/date-picker";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -246,7 +247,8 @@ export function EmployeeRecapCard({
           </div>
         ) : narrative ? (
           <>
-            <p className="text-sm leading-relaxed">{narrative}</p>
+            {/* Bullet list from the recap prompt — rendered as markdown, not raw text. */}
+            <Markdown className="text-sm leading-relaxed">{narrative}</Markdown>
             <p className="text-muted-foreground text-xs">
               {base ? `Based on ${base}` : null}
               {base && generatedAt ? " · " : null}
