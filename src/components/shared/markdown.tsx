@@ -54,11 +54,17 @@ export function Markdown({
             <p className="mt-2 text-[13px] font-semibold text-foreground first:mt-0">{children}</p>
           ),
 
+          // Markers follow the text colour (`text-current`) rather than a fixed
+          // `text-muted-foreground`. That constant was a light-background assumption, and this
+          // component renders on the teal feature card in three places — the dashboard AI summary,
+          // the Analytics executive summary and the experimental reports — where a muted grey
+          // marker all but disappears against the fill. Inheriting means a bullet is legible on
+          // every surface, including any card added later.
           ul: ({ children }) => (
-            <ul className="ml-4 list-disc space-y-1 marker:text-muted-foreground">{children}</ul>
+            <ul className="ml-4 list-disc space-y-1 marker:text-current">{children}</ul>
           ),
           ol: ({ children }) => (
-            <ol className="ml-4 list-decimal space-y-1 marker:text-muted-foreground">{children}</ol>
+            <ol className="ml-4 list-decimal space-y-1 marker:text-current">{children}</ol>
           ),
           li: ({ children }) => <li className="pl-0.5">{children}</li>,
 
