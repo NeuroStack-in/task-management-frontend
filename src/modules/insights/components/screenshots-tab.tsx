@@ -41,7 +41,7 @@ import { useDataScope } from "@/hooks/use-data-scope";
 import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
-import { initials } from "@/lib/format";
+import { initials, personName } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { useScreenshots } from "../use-screenshots";
@@ -94,10 +94,14 @@ function formatDateTime(ms: number): string {
     minute: "2-digit",
   });
 }
-/** A short, stable label for a raw user id (fallback when the directory has no name). */
-function shortUser(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 12)}…` : id;
-}
+/**
+ * What to show when the directory has no name for a capture's owner.
+ *
+ * This directory is **scope-limited** (`useDataScope`), so a miss usually means the person is
+ * outside the reader's reach rather than deleted — the same distinction `fleet-view` draws. It used
+ * to render a truncated Cognito `sub`, which is still a raw id and tells the reader nothing.
+ */
+const OUT_OF_SCOPE = "Outside your directory";
 /**
  * Ceiling on the gallery's automatic paging — a backstop against a pathological day, not a target.
  * At the hook's page size this is several thousand captures; beyond it the roster stops filling and
@@ -293,7 +297,7 @@ export function ScreenshotsTab() {
     ],
   });
 
-  const nameOf = (id: string) => dirById.get(id)?.name ?? shortUser(id);
+  const nameOf = (id: string) => personName(dirById.get(id)?.name, OUT_OF_SCOPE);
 
   if (openUser) {
     // Deliberately built from `scopedShots`, **not** the gallery's `filteredShots`: the detail view
@@ -467,7 +471,7 @@ export function ScreenshotsTab() {
               return (
                 <EmployeeCard
                   key={g.userId}
-                  name={emp?.name ?? shortUser(g.userId)}
+                  name={personName(emp?.name, OUT_OF_SCOPE)}
                   dept={deptId ? deptLabel(deptId) : "—"}
                   cover={cover}
                   count={g.shots.length}

@@ -34,6 +34,7 @@ import { friendlyError } from "@/lib/errors";
 import { useDirectory } from "@/hooks/use-directory";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useTrackingMode } from "@/hooks/use-features";
+import { personName } from "@/lib/format";
 import {
   listEnrollmentCodes,
   mintEnrollmentCode,
@@ -99,7 +100,9 @@ export function EnrollmentView() {
   );
 
   const nameOf = useCallback(
-    (id: string) => employees.find((e) => e.user_id === id)?.name ?? id,
+    // Never the raw sub: this page lists the whole directory, so a miss means the employee was
+    // deleted while their enrolment code survived.
+    (id: string) => personName(employees.find((e) => e.user_id === id)?.name),
     [employees],
   );
 

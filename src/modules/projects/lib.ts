@@ -5,6 +5,7 @@
  * server page and the client views read from one place.
  */
 import type { User } from "@/types/user";
+import { personName } from "@/lib/format";
 import type { ApiProjectMember } from "./services/projects.service";
 import type { Project, Task, TaskStatus } from "./types";
 
@@ -26,6 +27,27 @@ export interface UserMini {
   name: string;
   avatarUrl?: string;
   jobTitle: string;
+  /**
+   * The membership survives but the person's `User` item is gone — a deleted employee.
+   *
+   * Set only by {@link membersToUserMap}, which is the one place that can tell: the server resolved
+   * the name, looked, and found nothing. Real directory entries never carry it.
+   */
+  removed?: boolean;
+}
+
+/**
+ * What a person-picker may offer: everyone in the map except deleted employees, name-sorted.
+ *
+ * Deleted people still appear in *historical* surfaces (a member list, an old assignee chip) because
+ * their membership is a fact — but they must never be selectable. Assigning a project lead whose
+ * identity has been purged writes a reference nothing can resolve, and the server would reject it
+ * anyway once the membership is cleaned up.
+ */
+export function selectablePeople(map: Record<string, UserMini>): UserMini[] {
+  return Object.values(map)
+    .filter((u) => !u.removed)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Slim, prop-friendly user lookup (avoids shipping the full user array). */
@@ -62,10 +84,15 @@ export function membersToUserMap(members: ApiProjectMember[]): Record<string, Us
   const map: Record<string, UserMini> = {};
   for (const m of members) {
     if (m.name === undefined) continue;
+    const name = m.name.trim();
     map[m.user_id] = {
       id: m.user_id,
-      name: m.name.trim() || m.user_id,
-      jobTitle: m.title ?? "",
+      // Never the raw id. An empty name means the `User` item is gone, and a bare Cognito sub in the
+      // UI tells the reader nothing while looking like a bug — which is exactly how it read in the
+      // project-lead picker. Say what it is instead.
+      name: personName(name),
+      jobTitle: name ? (m.title ?? "") : "",
+      ...(name ? {} : { removed: true as const }),
     };
   }
   return map;

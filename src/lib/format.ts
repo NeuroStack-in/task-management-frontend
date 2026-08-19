@@ -11,6 +11,32 @@ export function isUuid(s: string | null | undefined): boolean {
   return typeof s === "string" && UUID_RE.test(s.trim());
 }
 
+/**
+ * Shown where a person's name belongs but the directory has no record — almost always an employee
+ * who was deleted while a reference to them (a project membership, an enrolment code, a comp row)
+ * survived.
+ */
+export const REMOVED_PERSON = "Removed employee";
+
+/**
+ * A person's display name, guaranteed never to be a raw id.
+ *
+ * This is the enforcement of the `isUuid` policy above, which says a UUID must never reach the UI.
+ * Several call sites wrote `directory.find(...)?.name ?? id` and so rendered a bare Cognito `sub`
+ * the moment the person was gone — most visibly in the project-lead picker, which offered two raw
+ * UUIDs as if they were people you could assign.
+ *
+ * The `isUuid` guard is deliberate belt-and-braces: even if a server ever hands back an id *as* a
+ * name, it still will not render as one.
+ */
+export function personName(
+  name: string | null | undefined,
+  fallback: string = REMOVED_PERSON,
+): string {
+  const n = name?.trim();
+  return n && !isUuid(n) ? n : fallback;
+}
+
 /** Two-letter uppercase initials from a full name. */
 export function initials(name: string): string {
   return name

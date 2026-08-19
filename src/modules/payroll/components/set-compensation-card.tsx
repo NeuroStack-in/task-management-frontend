@@ -29,6 +29,7 @@ import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/currency";
 import { listEmployees, type ApiEmployee } from "@/modules/employees/services/employees.service";
 import type { ApiCompensation, CompensationInput } from "../services/payroll.service";
+import { personName } from "@/lib/format";
 
 type PayType = CompensationInput["pay_type"];
 
@@ -65,7 +66,9 @@ export function SetCompensationCard({
     };
   }, []);
 
-  const nameOf = (id: string) => employees?.find((e) => e.user_id === id)?.name ?? id;
+  // Never the raw sub — a miss here means the employee was deleted while their comp row survived.
+  const nameOf = (id: string) =>
+    personName(employees?.find((e) => e.user_id === id)?.name);
 
   async function save() {
     const id = userId.trim();

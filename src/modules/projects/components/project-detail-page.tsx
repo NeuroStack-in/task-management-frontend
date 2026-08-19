@@ -69,6 +69,7 @@ import {
   dueLabel,
   formatDate,
   isAtRisk,
+  selectablePeople,
   taskCounts,
   toneDot,
   toneSoft,
@@ -151,7 +152,8 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   );
 
   const members = useMemo(
-    () => Object.values(userMap).sort((a, b) => a.name.localeCompare(b.name)),
+    // Deleted employees are excluded: a purged identity must not be assignable as lead/manager.
+    () => selectablePeople(userMap),
     [userMap],
   );
 

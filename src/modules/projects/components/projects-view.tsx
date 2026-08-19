@@ -31,7 +31,13 @@ import {
   type Task,
   type TaskStatus,
 } from "../types";
-import { isTaskOverdue, projectStats, toneDot, type UserMini } from "../lib";
+import {
+  isTaskOverdue,
+  projectStats,
+  selectablePeople,
+  toneDot,
+  type UserMini,
+} from "../lib";
 import { useProjectsData } from "../use-projects-data";
 import { ProjectCard } from "./project-card";
 import { ProjectsList } from "./projects-list";
@@ -169,7 +175,8 @@ export function ProjectsView() {
   }, [projects, statusFilter, query, tasksByProject, overdueProjectIds]);
 
   const leads = useMemo(
-    () => Object.values(userMap).sort((a, b) => a.name.localeCompare(b.name)),
+    // Deleted employees are excluded: a purged identity must not be assignable as lead/manager.
+    () => selectablePeople(userMap),
     [userMap],
   );
 
