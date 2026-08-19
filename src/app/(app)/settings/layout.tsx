@@ -7,6 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowUpRight, Building2, Lock } from "lucide-react";
 import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useOrgName } from "@/hooks/use-org";
 import { isNavItemVisible } from "@/lib/rbac";
 import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
 import { isPathModeHidden } from "@/constants/features";
@@ -85,6 +86,8 @@ export default function SettingsLayout({
   // filtered on permission alone).
   const isFeatureOn = useIsFeatureOn();
   const mode = useTrackingMode();
+  // Names the Company rail item after the org itself; null until `GET /v1/org` lands.
+  const orgName = useOrgName();
 
   // The navbar stays pinned to "Settings" across every sub-section; each
   // sub-page renders its own title/subtitle in-pane (via InPaneHeaderContext).
@@ -118,7 +121,20 @@ export default function SettingsLayout({
     // Labelled "Company", not "Organization": ADMIN_SECTIONS already contributes an "Organization"
     // group (the editor), and two identical rail headers would collide for an admin — who sees both.
     label: "Company",
-    items: [{ label: "Overview", href: "/settings/company", icon: Building2 }],
+    items: [
+      {
+        // The org's own name, not a generic "Overview" — this is the page about *your* company, and
+        // naming it says so. `useOrgName` is the same per-tenant-cached read the sidebar header
+        // uses, so it costs no extra request.
+        //
+        // Falls back to "Overview" rather than a blank or a skeleton: the name arrives a beat after
+        // first paint, and a rail item that renders empty (or changes width mid-read) is worse than
+        // one that starts generic and settles on the real name.
+        label: orgName ?? "Overview",
+        href: "/settings/company",
+        icon: Building2,
+      },
+    ],
   };
 
   const groups: RailGroup[] = [
