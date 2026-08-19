@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Check, X, Building2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Building2, SlidersHorizontal } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ import {
   deleteDepartment,
   type ApiDepartment,
 } from "@/modules/employees/services/employees.service";
+import { DeptProductivitySheet } from "./org/dept-productivity-sheet";
 
 /**
  * The standard starter set. Kept in step with the backend `create_org` seed (identity crate), so an
@@ -73,6 +74,9 @@ export function DepartmentsManager() {
   // Delete confirm: the department pending deletion.
   const [pendingDelete, setPendingDelete] = useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Per-department productivity config (weights + rules) — one department at a time.
+  const [productivityDept, setProductivityDept] = useState<ApiDepartment | null>(null);
 
   const load = useCallback(() => {
     let live = true;
@@ -272,6 +276,16 @@ export function DepartmentsManager() {
                     ) : (
                       <>
                         <span className="flex-1 truncate text-sm font-medium">{d.name}</span>
+                        {/* Productivity config is readable by any member; saving is gated inside. */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="shrink-0 text-muted-foreground"
+                          onClick={() => setProductivityDept(d)}
+                          aria-label={`Configure productivity for ${d.name}`}
+                        >
+                          <SlidersHorizontal className="size-3.5" /> Productivity
+                        </Button>
                         {canManage ? (
                           <>
                             <Button size="icon-sm" variant="ghost" onClick={() => beginEdit(d)} aria-label={`Rename ${d.name}`}>
@@ -318,6 +332,17 @@ export function DepartmentsManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Per-department productivity (weights + classification rules). Keyed so switching
+          departments remounts the load cycle. Unmounts on close. */}
+      {productivityDept ? (
+        <DeptProductivitySheet
+          key={productivityDept.id}
+          department={productivityDept}
+          open={true}
+          onOpenChange={(o) => !o && setProductivityDept(null)}
+        />
+      ) : null}
     </Card>
   );
 }

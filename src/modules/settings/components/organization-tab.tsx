@@ -23,6 +23,7 @@ import {
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { DepartmentsManager } from "./departments-manager"
+import { OrgProductivityWeightsCard } from "./org/org-productivity-weights-card"
 import { BrandingManager } from "./org/branding-manager"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
@@ -393,6 +394,7 @@ export function OrganizationTab() {
       <BrandingManager />
       <TrackingModeCard />
       <DepartmentsManager />
+      <OrgProductivityWeightsCard />
       <TeamsManager />
       <LocationsManager />
       <OfficePerimeterCard />

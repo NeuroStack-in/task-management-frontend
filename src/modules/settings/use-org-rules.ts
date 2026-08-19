@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * App/URL tracking rules — the real backend (`identity`, LLD §14). `GET/PATCH /v1/org/rules`.
+ * App/URL tracking rules — the real backend (`identity`, LLD §14). `GET/PUT /v1/org/rules`, and its
+ * per-department twin `GET/PUT /v1/org/departments/{id}/rules`.
  *
  * The rules are the config the **desktop agent** pulls on its next heartbeat: how apps/urls are
  * classified, what's blocked, what's exempt, and the productivity-score weights. The write is
@@ -11,9 +12,17 @@
  * The document is opaque server-side, but the agent expects specific keys, so we normalize to them:
  * `apps[]` (classification), `urls[]`, `blocked/exceptions {apps,urls}`, and `category_weights`.
  * (Effects are agent-gated — the agent isn't running yet — but the config is real and persisted.)
+ *
+ * `useRulesDoc(path)` is the generic hook (org **or** department); `useOrgRules()` is the org-scoped
+ * shorthand. Both go through the `org.service` rules helpers rather than `apiFetch` directly.
  */
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch, ApiError } from "@/lib/api";
+import { ApiError } from "@/lib/api";
+import {
+  ORG_RULES_PATH,
+  getRulesEnvelope,
+  putRulesEnvelope,
+} from "./services/org.service";
 
 export type RuleCategory = "productive" | "neutral" | "distracting";
 
@@ -36,11 +45,6 @@ export interface RulesDoc {
   blocked: { apps: string[]; urls: string[] };
   exceptions: { apps: string[]; urls: string[] };
   category_weights: Record<RuleCategory, number>;
-}
-
-interface RulesEnvelope {
-  rules: unknown;
-  version: number;
 }
 
 const DEFAULT_DOC: RulesDoc = {
@@ -106,7 +110,12 @@ export interface OrgRulesState {
   save: (next: RulesDoc) => Promise<void>;
 }
 
-export function useOrgRules(): OrgRulesState {
+/**
+ * Load + save a rules document at `path` (org or per-department). `path` is a primitive so the load
+ * effect's dependency stays stable across renders — callers pass a constant string (org) or a
+ * `deptRulesPath(id)` string (department).
+ */
+export function useRulesDoc(path: string): OrgRulesState {
   const [doc, setDoc] = useState<RulesDoc | null>(null);
   const [version, setVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -117,7 +126,7 @@ export function useOrgRules(): OrgRulesState {
     let live = true;
     setLoading(true);
     setError(null);
-    apiFetch<RulesEnvelope>("/v1/org/rules")
+    getRulesEnvelope(path)
       .then((env) => {
         if (!live) return;
         setDoc(normalize(env.rules));
@@ -132,23 +141,25 @@ export function useOrgRules(): OrgRulesState {
     return () => {
       live = false;
     };
-  }, [nonce]);
+  }, [path, nonce]);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   const save = useCallback(
     async (next: RulesDoc) => {
-      const env = await apiFetch<RulesEnvelope>("/v1/org/rules", {
-        method: "PUT",
-        body: JSON.stringify({ rules: next, version }),
-      });
+      const env = await putRulesEnvelope(path, next, version);
       setDoc(normalize(env.rules));
       setVersion(env.version);
     },
-    [version],
+    [path, version],
   );
 
   return { doc, version, loading, error, reload, save };
+}
+
+/** Org-scoped shorthand for {@link useRulesDoc}. */
+export function useOrgRules(): OrgRulesState {
+  return useRulesDoc(ORG_RULES_PATH);
 }
 
 function messageOf(e: unknown): string {

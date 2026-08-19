@@ -423,3 +423,59 @@ export async function deletePolicy(id: string): Promise<void> {
     method: "DELETE",
   });
 }
+
+// ── App/URL classification rules (org + per-department) ────────────────────────────────────────────
+// The rules document is opaque server-side and version-conditioned (optimistic lock). Both the org
+// editor and the per-department override editor read/write the same envelope shape through these
+// helpers — the `use-org-rules` hook (`useRulesDoc`) consumes them, keeping the editor off `apiFetch`.
+//
+// A department's rules **override** the org rules for its members; where a department has no rule,
+// the org rules (`/v1/org/rules`) apply as the fallback.
+
+/** `{ rules, version }` — `rules` is the opaque doc, `version` drives the optimistic lock on PUT. */
+export interface RulesEnvelope {
+  rules: unknown;
+  version: number;
+}
+
+/** Org-level rules path. */
+export const ORG_RULES_PATH = "/v1/org/rules";
+
+/** Per-department rules path (the dept-scoped twin of {@link ORG_RULES_PATH}). */
+export function deptRulesPath(deptId: string): string {
+  return `/v1/org/departments/${encodeURIComponent(deptId)}/rules`;
+}
+
+/** `GET <path>` for a rules document (org or department). Any member may read. */
+export function getRulesEnvelope(path: string): Promise<RulesEnvelope> {
+  return apiFetch<RulesEnvelope>(path);
+}
+
+/**
+ * `PUT <path>` for a rules document (org or department). Version-conditioned: a stale `version`
+ * 409s. Needs `settings:manage`.
+ */
+export function putRulesEnvelope(
+  path: string,
+  rules: unknown,
+  version: number,
+): Promise<RulesEnvelope> {
+  return apiFetch<RulesEnvelope>(path, {
+    method: "PUT",
+    body: JSON.stringify({ rules, version }),
+  });
+}
+
+/** `GET /v1/org/departments/{id}/rules`. */
+export function getDeptRules(deptId: string): Promise<RulesEnvelope> {
+  return getRulesEnvelope(deptRulesPath(deptId));
+}
+
+/** `PUT /v1/org/departments/{id}/rules`. Needs `settings:manage`. */
+export function updateDeptRules(
+  deptId: string,
+  rules: unknown,
+  version: number,
+): Promise<RulesEnvelope> {
+  return putRulesEnvelope(deptRulesPath(deptId), rules, version);
+}
