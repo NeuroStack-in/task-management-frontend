@@ -22,6 +22,7 @@ import { useAssistantStore } from "@/stores/assistant.store";
 import { PeopleAttentionCard } from "./people-attention";
 import { ReportsLibrary } from "./reports-library";
 import { useAiReport } from "../use-reports";
+import { useWeekPerformers } from "../use-week-performers";
 import type { AiReport, NamedScore } from "../services/insights.service";
 
 /**
@@ -123,7 +124,7 @@ export function ReportsExperimental() {
       </div>
 
       {/* ========================= EXECUTIVE OVERVIEW ======================== */}
-      <ExecutiveOverview state={aiReport} />
+      <ExecutiveOverview state={aiReport} date={date} />
 
       {/* ====================== PEOPLE TO CHECK IN ON ====================== */}
       <PeopleAttentionCard title="People to check in on" />
@@ -136,7 +137,18 @@ export function ReportsExperimental() {
 
 /* --------------------------- executive overview --------------------------- */
 
-function ExecutiveOverview({ state }: { state: ReturnType<typeof useAiReport> }) {
+function ExecutiveOverview({
+  state,
+  date,
+}: {
+  state: ReturnType<typeof useAiReport>;
+  date: string;
+}) {
+  // Ranked over the week, not the day — a single day's roster is too small for "top" and "needs
+  // attention" to be different people. Called before the early returns below, because hooks must run
+  // in the same order on every render.
+  const week = useWeekPerformers(date);
+
   if (state.locked) {
     return (
       <EmptyState
@@ -181,18 +193,30 @@ function ExecutiveOverview({ state }: { state: ReturnType<typeof useAiReport> })
 
       <div className="grid gap-4 md:grid-cols-2">
         <NamedScoreList
-          title="Top performers"
+          title="Top performers · this week"
           icon={TrendingUp}
           tone="up"
-          people={report.metrics.top_performers}
-          emptyText="No scored people for this day yet."
+          people={week.topPerformers}
+          emptyText={
+            week.loading
+              ? "Ranking the week…"
+              : week.scoredPeople === 0
+                ? "Nobody has been scored this week yet."
+                : "Nobody scored above the attention threshold this week."
+          }
         />
         <NamedScoreList
-          title="Needs attention"
+          title="Needs attention · this week"
           icon={TrendingDown}
           tone="down"
-          people={report.metrics.needs_attention}
-          emptyText="No one flagged for this day."
+          people={week.needsAttention}
+          emptyText={
+            week.loading
+              ? "Ranking the week…"
+              : week.scoredPeople === 0
+                ? "Nobody has been scored this week yet."
+                : "Nobody is below the attention threshold this week."
+          }
         />
       </div>
     </div>
