@@ -32,6 +32,7 @@ import {
   type ApiDayUser,
 } from "@/modules/attendance/services/attendance.service";
 import { listAllEmployees } from "@/modules/employees/services/employees.service";
+import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import {
   listMyTasks,
   listProjects,
@@ -362,14 +363,40 @@ export function AlertsDeadlinesWidget() {
         ),
       ),
       listAllEmployees().catch(() => []),
-    ]).then(([attnDays, oversightDays, roster]) => {
+      // A failed roles read must not empty the widget — fall back to including everyone, which is
+      // the pre-existing behaviour rather than a silent blank.
+      contributorRoleIds().catch(() => null),
+    ]).then(([attnDays, oversightDays, roster, contributors]) => {
       if (!live) return;
       const nameOf = new Map(roster.map((e) => [e.user_id, e.name] as const));
+
+      /**
+       * Only people who can actually be absent.
+       *
+       * An Owner or Admin holds no `TimeTrackSelf` by construction, so they never clock in and the
+       * nightly close resolves them to `absent` every single working day — which put "NeuroStack
+       * Admin · Not clocked in" at the top of a manager's attention list, permanently, as though it
+       * were a finding. It is not: they are not tracked, so there is nothing to attend to.
+       *
+       * Keyed on the **permission, not `is_owner`** — an owner who is also a contributor holds a
+       * role granting `TimeTrackSelf` and should still appear. `useOversightAttendance` builds its
+       * roster the same way; this widget was simply never given the same rule.
+       */
+      const tracked = new Set(
+        roster
+          .filter((e) => e.role_id && contributors?.has(e.role_id))
+          .map((e) => e.user_id),
+      );
+      // Fail OPEN, never blank. A failed roles read (`contributors === null`) or an unreadable
+      // roster leaves us unable to tell who is tracked — and dropping everyone would empty the
+      // widget silently, which reads as "all clear" rather than "couldn't check".
+      const canTell = contributors !== null && roster.length > 0;
+      const isTracked = (userId: string) => !canTell || tracked.has(userId);
 
       // Not clocked in on the most recent closed workday.
       const closed = oversightDays.find((d) => d.users.length > 0);
       const absent: AttentionItem[] = (closed?.users ?? [])
-        .filter((u) => u.status === "absent")
+        .filter((u) => u.status === "absent" && isTracked(u.user_id))
         .map((u) => ({
           userId: u.user_id,
           name: nameOf.get(u.user_id) ?? "An employee",
@@ -381,7 +408,9 @@ export function AlertsDeadlinesWidget() {
 
       // Anomaly-flagged + low-score people from the most recent ranked day.
       const flagged: AttentionItem[] = (attnDays.find((p) => p.length > 0) ?? [])
-        .filter((p) => p.anomaly_count > 0 || p.score <= LOW_SCORE)
+        .filter(
+          (p) => (p.anomaly_count > 0 || p.score <= LOW_SCORE) && isTracked(p.user_id),
+        )
         .map((p) => {
           const hasAnomaly = p.anomaly_count > 0;
           return {

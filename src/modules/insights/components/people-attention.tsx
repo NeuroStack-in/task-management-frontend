@@ -14,6 +14,7 @@ import {
   type ApiDayUser,
 } from "@/modules/attendance/services/attendance.service";
 import { listAllEmployees } from "@/modules/employees/services/employees.service";
+import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 
 /**
  * People to check in on — the two attendance facts a manager actually acts on, not a productivity
@@ -116,15 +117,31 @@ export function PeopleAttentionCard({
     Promise.all([
       getDayOversight(date).catch(() => null),
       listAllEmployees().catch(() => []),
-    ]).then(([day, roster]) => {
+      contributorRoleIds().catch(() => null),
+    ]).then(([day, roster, contributors]) => {
       if (!live) return;
       if (!day) {
         setState({ people: [], closed: false });
         return;
       }
       const nameOf = new Map(roster.map((e) => [e.user_id, e.name] as const));
+      // Only people who can actually attend in the tracked sense. An Owner/Admin holds no
+      // `TimeTrackSelf`, never clocks in, and so is resolved `absent` on every working day — a
+      // permanent, meaningless entry at the top of an attention list. Keyed on the permission, not
+      // `is_owner`, so an owner who really is a contributor still appears.
+      //
+      // Fails OPEN: if the roles read failed or the roster is empty we cannot tell, and silently
+      // emptying this list would read as "nobody needs attention" rather than "couldn't check".
+      const canTell = contributors !== null && roster.length > 0;
+      const tracked = new Set(
+        roster.filter((e) => e.role_id && contributors?.has(e.role_id)).map((e) => e.user_id),
+      );
+      const isTracked = (userId: string) => !canTell || tracked.has(userId);
       const people: CheckIn[] = day.users
-        .filter((u: ApiDayUser) => u.status === "absent" || u.status === "partial")
+        .filter(
+          (u: ApiDayUser) =>
+            (u.status === "absent" || u.status === "partial") && isTracked(u.user_id),
+        )
         .map((u: ApiDayUser) => ({
           userId: u.user_id,
           name: nameOf.get(u.user_id) ?? "An employee",
