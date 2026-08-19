@@ -549,6 +549,8 @@ export function HelpPage() {
   const startTour = useTourStore((s) => s.startTour)
   const askAi = () => openAssistant(search.trim() || undefined)
   const { can } = usePermissions()
+  /** Mirrors ChatBot's own gate — if the panel would not render, don't offer a way to open it. */
+  const canAskAi = can("ai:view")
   const isSurfaceOn = useIsSurfaceOn()
 
   // Show the page title in the top navbar (this page has no PageHeader).
@@ -733,13 +735,18 @@ export function HelpPage() {
               className="h-12 rounded-xl border-transparent bg-white pl-10 text-slate-900 shadow-sm placeholder:text-slate-500 dark:bg-white"
             />
           </div>
-          <Button
-            type="button"
-            onClick={askAi}
-            className="h-12 gap-2 rounded-xl bg-white text-slate-900 hover:bg-white/90"
-          >
-            <Sparkles className="size-4 text-primary" /> Ask the assistant
-          </Button>
+          {/* The assistant is Owner/Admin-only, and ChatBot renders nothing without `ai:view` —
+              so for anyone else this button would set store state and open no panel. Hide it
+              rather than ship a control that silently does nothing. */}
+          {canAskAi ? (
+            <Button
+              type="button"
+              onClick={askAi}
+              className="h-12 gap-2 rounded-xl bg-white text-slate-900 hover:bg-white/90"
+            >
+              <Sparkles className="size-4 text-primary" /> Ask the assistant
+            </Button>
+          ) : null}
         </div>
 
         <div className="mx-auto mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -907,16 +914,18 @@ export function HelpPage() {
                   {submitting ? "Submitting…" : "Submit ticket"}
                 </Button>
 
-                <p className="text-center text-xs text-muted-foreground">
-                  Need an answer now?{" "}
-                  <button
-                    type="button"
-                    onClick={askAi}
-                    className="font-medium text-primary hover:underline"
-                  >
-                    Ask the AI assistant
-                  </button>
-                </p>
+                {canAskAi ? (
+                  <p className="text-center text-xs text-muted-foreground">
+                    Need an answer now?{" "}
+                    <button
+                      type="button"
+                      onClick={askAi}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      Ask the AI assistant
+                    </button>
+                  </p>
+                ) : null}
               </form>
             </CardContent>
           </Card>

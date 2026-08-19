@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Sparkles, X, ArrowUp } from "lucide-react";
+import { Sparkles, X, ArrowUp, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { useIsFeatureOn } from "@/hooks/use-features";
+import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import { sendAssistantMessage } from "@/modules/communication/services/assistant.service";
 import { navItemForPath } from "@/constants/navigation";
@@ -46,6 +47,11 @@ export function ChatBot() {
   // The assistant is a plan feature: when the org switches it off, the launcher goes with it
   // rather than sitting there offering a surface every request would be refused for.
   const isFeatureOn = useIsFeatureOn();
+  // …and it is an *oversight* tool, so it is gated on `ai:view` as well. The two gates answer
+  // different questions — "did the org buy it" vs "may this role use it" — and both must pass.
+  // Without the second, every signed-in user got the launcher and employees reached a surface
+  // whose every collective answer the server refuses.
+  const { can } = usePermissions();
   const open = useAssistantStore((s) => s.open);
   const setOpen = useAssistantStore((s) => s.setOpen);
   const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
@@ -233,8 +239,16 @@ export function ChatBot() {
       })()
     : undefined;
 
-  // After every hook, so hook order is identical whether or not the feature is on.
-  if (!isFeatureOn("ai.assistant")) return null;
+  /** Drop the transcript back to the greeting. Session-only state, so there is nothing to delete
+   *  server-side — the panel simply forgets, and the next turn starts with no history to replay. */
+  const clearChat = () => {
+    if (pending) return;
+    setMessages([{ id: idRef.current++, role: "assistant", text: GREETING }]);
+    setInput("");
+  };
+
+  // After every hook, so hook order is identical whether or not the gates pass.
+  if (!isFeatureOn("ai.assistant") || !can("ai:view")) return null;
 
   return (
     <>
@@ -259,6 +273,20 @@ export function ChatBot() {
                 AI productivity assistant
               </p>
             </div>
+            {/* Enabled only when there is a transcript to lose — a greeting-only panel has
+                nothing to clear, so the control would do nothing but look available. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={clearChat}
+              disabled={messages.length <= 1 || pending}
+              title="Clear chat"
+              aria-label="Clear chat"
+              className="text-muted-foreground hover:text-foreground size-8 shrink-0"
+            >
+              <Trash2 className="size-4" />
+            </Button>
           </header>
 
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
