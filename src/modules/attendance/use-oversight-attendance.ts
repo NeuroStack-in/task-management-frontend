@@ -330,8 +330,11 @@ function dayPoint(
   let absent = 0;
   let total = 0;
   for (const u of users) {
-    const uDept = dir.get(u.user_id)?.dept ?? "—";
-    if (dept !== "all" && uDept !== dept) continue;
+    const entry = dir.get(u.user_id);
+    // Same population rule as the main tally below: someone absent from the directory is not
+    // attendance-tracked, so they must not land in this series as an absent day either.
+    if (!entry) continue;
+    if (dept !== "all" && entry.dept !== dept) continue;
     if (u.status === "non_workday") continue;
     total += 1;
     if (u.status === "present") present += 1;
@@ -549,19 +552,40 @@ export function useOversightAttendance({
         let partial = 0;
         let leave = 0;
         let total = 0;
-        const perUser = new Map<string, { present: number; counted: number }>();
-        const singleDay: { userId: string; status: string }[] = [];
+        const perUser = new Map<
+          string,
+          { present: number; counted: number; name: string; dept: string }
+        >();
+        const singleDay: OversightRow[] = [];
 
         for (const [, resp] of entries) {
           if (!resp) continue;
           for (const u of resp.users) {
             const entry = dir.get(u.user_id);
-            const uDept = entry?.dept ?? "—";
+            // **Not in the directory ⇒ not part of the attendance population.** The directory build
+            // above deliberately drops anyone who cannot run a timer — an Owner/Admin holds no
+            // `TimeTrackSelf` — precisely so §7 does not mark them absent every workday. But that
+            // exclusion only removed them from `dir`; the backend still returns a row per person
+            // per day, so they arrived here nameless and were counted as absent *and* rendered as
+            // "Unknown user". The population is decided here, so decide it here.
+            if (!entry) continue;
+            const uDept = entry.dept;
             if (dept !== "all" && uDept !== dept) continue;
-            if (range === "day") singleDay.push({ userId: u.user_id, status: u.status });
+            if (range === "day")
+              singleDay.push({
+                userId: u.user_id,
+                name: entry.name,
+                dept: uDept,
+                status: u.status,
+              });
             if (u.status === "non_workday") continue; // excluded from every tally (§7)
             total += 1;
-            const pu = perUser.get(u.user_id) ?? { present: 0, counted: 0 };
+            const pu = perUser.get(u.user_id) ?? {
+              present: 0,
+              counted: 0,
+              name: entry.name,
+              dept: uDept,
+            };
             pu.counted += 1;
             if (u.status === "present" || u.status === "partial") {
               // `pu.present` drives the per-person rate, where partial still counts as attended
@@ -580,34 +604,21 @@ export function useOversightAttendance({
         let mode: OversightMode;
         if (range === "day") {
           mode = "day";
-          const dayRows = singleDay
-            .map(({ userId, status }) => {
-              const entry = dir.get(userId);
-              return {
-                userId,
-                name: entry?.name ?? "Unknown user",
-                dept: entry?.dept ?? "—",
-                status,
-              };
-            })
-            .sort((a, b) => a.name.localeCompare(b.name));
+          const dayRows = [...singleDay].sort((a, b) => a.name.localeCompare(b.name));
           // Clock-in/out + hours for the picked day, per employee.
           rows = await enrichClock(dayRows, isoOf(date.year, date.month, date.day));
           if (!live) return;
         } else {
           mode = "range";
           rows = [...perUser.entries()]
-            .map(([userId, pu]) => {
-              const entry = dir.get(userId);
-              return {
-                userId,
-                name: entry?.name ?? "Unknown user",
-                dept: entry?.dept ?? "—",
-                daysPresent: pu.present,
-                daysCounted: pu.counted,
-                rate: pu.counted ? Math.round((pu.present / pu.counted) * 100) : 0,
-              };
-            })
+            .map(([userId, pu]) => ({
+              userId,
+              name: pu.name,
+              dept: pu.dept,
+              daysPresent: pu.present,
+              daysCounted: pu.counted,
+              rate: pu.counted ? Math.round((pu.present / pu.counted) * 100) : 0,
+            }))
             .sort((a, b) => a.name.localeCompare(b.name));
         }
 

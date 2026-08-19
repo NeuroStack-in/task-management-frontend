@@ -222,9 +222,11 @@ function DeviceRow({
       </TableCell>
       <TableCell>
         {/* Every agent runs under a signed-in account and the heartbeat stamps that user onto the
-            device row, so this is the device's owner — not a guess. The fallbacks are deliberately
-            distinct: a raw id means the person is outside your directory scope (or deactivated),
-            while "not reported yet" means the agent hasn't heartbeated since being installed. */}
+            device row, so this is the device's owner — not a guess. The two fallbacks are
+            deliberately distinct, and both say what is actually true: "outside your directory"
+            means the device HAS an owner whose record your scope cannot see (or who was
+            deactivated), while "not reported yet" means the agent has never heartbeated, so no
+            owner has been stamped at all. */}
         {ownerName ? (
           <div className="flex items-center gap-2">
             <Avatar className="size-7">
@@ -233,8 +235,10 @@ function DeviceRow({
             <span className="truncate">{ownerName}</span>
           </div>
         ) : effectiveUserId(d) ? (
-          // The name hasn't resolved yet — show that, never the raw Cognito sub (a UUID).
-          <span className="text-xs text-muted-foreground">Unknown user</span>
+          // We know exactly who owns this device — the id is right there — so "Unknown user" was a
+          // lie about the system rather than a fact about the reader's scope. Name the real reason,
+          // and still never print the raw Cognito sub (a UUID tells nobody anything).
+          <span className="text-xs text-muted-foreground">Outside your directory</span>
         ) : (
           <span className="text-xs text-muted-foreground">Not reported yet</span>
         )}
