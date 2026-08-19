@@ -279,7 +279,7 @@ function AiSummaryPending({ label }: { label: string }) {
 /** What period each range's narrative actually covers — stated on the card, because the KPIs
  *  beside it use slightly different windows (a rolling 7 days vs the ISO week). */
 const PERIOD_NOTE: Record<DashboardRange, string> = {
-  today: "last workday",
+  today: "today, in progress",
   "7d": "this ISO week",
   "30d": "this month",
   range: "",
@@ -330,7 +330,16 @@ export function OrgAiSummaryWidget({
   // until the 00:15 close), matching the KPIs' daily narrative; every other range uses the KPI
   // window's own bounds — so ANY range is now summarisable, not just a single day.
   const bounds = useMemo(() => {
-    if (range === "today" || !days || days.length === 0) {
+    // "Today" now summarises TODAY — not the last completed workday. Today's numbers are still
+    // accruing (attendance verdicts land at the 00:15 close, scores rise as agents report), so the
+    // card labels this window "today, in progress" rather than presenting a moving figure as final.
+    if (range === "today") {
+      const t = new Date();
+      const iso = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+      return { from: iso, to: iso };
+    }
+    // Other ranges with no resolved days (shouldn't happen, but don't fetch a blank window).
+    if (!days || days.length === 0) {
       const d = isoLastWorkday(workdays);
       return { from: d, to: d };
     }
