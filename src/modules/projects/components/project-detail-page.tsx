@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Building2,
@@ -97,6 +98,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     notFound,
     reload,
     updateProject,
+    deleteProject,
     createTask,
     updateTaskFull,
     moveTask,
@@ -117,6 +119,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
    * re-deriving the matrix (LLD §5). Task actions need no gate at all now — any member of a project
    * may add and assign tasks, which is why "Add task" is always offered.
    */
+  const router = useRouter();
   const canManageProject = authority === "manager";
 
   /**
@@ -136,6 +139,9 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Separate from `deleting` above, which belongs to the task-delete dialog — one shared flag would
+  // let an in-flight task delete disable the project dialog's buttons.
+  const [deletingProject, setDeletingProject] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [createStatus, setCreateStatus] = useState<SettableTaskStatus>("todo");
   const [taskView, setTaskView] = useState<"board" | "list">("board");
@@ -233,11 +239,27 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     }
   };
 
-  const handleDelete = () => {
-    // No delete-project endpoint exists yet (LLD lists delete_project; it isn't built). Rather than
-    // fake a client-only delete that reappears on reload, say so plainly.
-    setConfirmOpen(false);
-    toast.info("Project deletion isn't available yet.");
+  const handleDelete = async () => {
+    setDeletingProject(true);
+    try {
+      await deleteProject();
+      setConfirmOpen(false);
+      toast.success("Project deleted", { description: project?.name });
+      // The project is gone, so this route would 404 on any re-render. Leave for the list, and
+      // `refresh()` so the list re-fetches instead of serving a cached page that still shows it.
+      router.push("/projects");
+      router.refresh();
+    } catch (e) {
+      // Stay on the dialog: the project still exists, and the delete is safe to retry — the server
+      // pass is idempotent and finishes whatever a partial run left behind.
+      toast.error(
+        e instanceof Error && e.message
+          ? e.message
+          : "Couldn't delete the project. Try again.",
+      );
+    } finally {
+      setDeletingProject(false);
+    }
   };
 
   const openCreateTask = (s: SettableTaskStatus) => {
@@ -654,18 +676,25 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           <DialogHeader>
             <DialogTitle>Delete project?</DialogTitle>
             <DialogDescription>
-              “{project.name}” will be removed for this session. This can’t be undone.
+              “{project.name}” and everything in it — every task, its team list and its
+              progress — will be permanently deleted. Logged hours are kept, but they will no
+              longer name this project. This can’t be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+            <Button
+              variant="outline"
+              disabled={deletingProject}
+              onClick={() => setConfirmOpen(false)}
+            >
               Cancel
             </Button>
             <Button
               className="bg-destructive hover:bg-destructive/90 text-white"
+              disabled={deletingProject}
               onClick={handleDelete}
             >
-              Delete project
+              {deletingProject ? "Deleting…" : "Delete project"}
             </Button>
           </DialogFooter>
         </DialogContent>

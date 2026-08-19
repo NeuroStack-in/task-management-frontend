@@ -38,6 +38,8 @@ export interface ProjectDetailData {
   notFound: boolean;
   reload: () => void;
   updateProject: (values: ProjectFormValues) => Promise<void>;
+  /** Delete the project and every task, member and KPI under it. Irreversible. */
+  deleteProject: () => Promise<void>;
   createTask: (values: TaskFormValues) => Promise<void>;
   updateTaskFull: (taskId: string, values: TaskFormValues) => Promise<void>;
   moveTask: (taskId: string, status: TaskStatus) => Promise<void>;
@@ -114,6 +116,16 @@ export function useProjectDetail(id: string): ProjectDetailData {
       live = false;
     };
   }, [id, nonce]);
+
+  /**
+   * `DELETE /v1/projects/{id}` — the project and all its children, server-side.
+   *
+   * No `reload()` afterwards: the project no longer exists, so re-fetching it would only 404 and
+   * flip the page into its not-found state. The caller navigates away instead.
+   */
+  const deleteProject = useCallback(async () => {
+    await apiFetch(`/v1/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }, [id]);
 
   const updateProject = useCallback(
     async (v: ProjectFormValues) => {
@@ -206,6 +218,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
     notFound,
     reload,
     updateProject,
+    deleteProject,
     createTask,
     updateTaskFull,
     moveTask,
