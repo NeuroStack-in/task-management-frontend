@@ -415,9 +415,15 @@ export function EmployeesView() {
             </DropdownMenuContent>
           </DropdownMenu>
           {can("employees:manage") ? (
-            <div className="flex items-center gap-2">
+            /* One split button, not two. The chevron shares the primary's fill and sits flush
+               against it behind a hairline divider — an outline button gapped away from a filled
+               one reads as an unrelated secondary action, which is what this looked like. */
+            <div className="flex items-center">
               <Button
                 data-tour="emp:invite"
+                // Flush right edge, and no active nudge: the pair must not shear apart on press,
+                // since only this half carries the base `active:translate-y-px`.
+                className="rounded-r-none active:translate-y-0"
                 onClick={() => (addLeads ? setAddOpen(true) : setInviteOpen(true))}
               >
                 <UserPlus className="size-4" />
@@ -427,12 +433,21 @@ export function EmployeesView() {
                   exists. An org in machine mode still hires the manager who needs a console. */}
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  render={<Button variant="outline" aria-label="More ways to add people" />}
+                  render={
+                    <Button
+                      size="icon"
+                      aria-label="More ways to add people"
+                      className="rounded-l-none border-l border-primary-foreground/25"
+                    />
+                  }
                 >
-                  <ChevronDown className="size-4" />
+                  <ChevronDown className="size-4 transition-transform duration-150 group-aria-expanded/button:rotate-180" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                {/* `w-auto` because the popup defaults to `w-(--anchor-width)`, and this anchor is
+                    a 32px chevron — which is what folded "Add without login…" onto two lines. */}
+                <DropdownMenuContent align="end" className="w-auto min-w-52">
                   <DropdownMenuItem
+                    className="gap-2 px-2 py-1.5 whitespace-nowrap"
                     onClick={() => (addLeads ? setInviteOpen(true) : setAddOpen(true))}
                   >
                     <UserPlus className="size-4" />
