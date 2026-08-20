@@ -22,6 +22,9 @@ import { useLeave } from "../use-leave";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
+import { DocumentList } from "@/components/shared/document-list";
+import { useAuthStore } from "@/stores/auth.store";
+import { getLeaveDocumentUrl } from "../services/leave.service";
 import { OrgBalancesTable } from "./org-balances-table";
 
 /** The server's request states (LLD §8): pending → approved, or pending/approved → cancelled. */
@@ -91,6 +94,8 @@ function AdminLeaveView() {
 
 function EmployeeLeaveView() {
   const { can } = usePermissions();
+  // The download route is keyed by owner, and on this page the owner is always the viewer.
+  const myUserId = useAuthStore((st) => st.user?.id ?? "");
   const leave = useLeave();
   const { balances, requests, types, typeName, loading, error, submit, cancel } = leave;
   const [open, setOpen] = useState(false);
@@ -200,6 +205,7 @@ function EmployeeLeaveView() {
                 <TableHead>Dates</TableHead>
                 <TableHead>Days</TableHead>
                 <TableHead>Reason</TableHead>
+                <TableHead>Documents</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Submitted</TableHead>
                 <TableHead className="pr-5">Action</TableHead>
@@ -220,6 +226,18 @@ function EmployeeLeaveView() {
                     <TableCell className="tabular-nums">{r.days}</TableCell>
                     <TableCell className="max-w-[16rem] truncate text-muted-foreground">
                       {r.reason ?? "—"}
+                    </TableCell>
+                    <TableCell className="min-w-[13rem]">
+                      {r.attachments?.length ? (
+                        <DocumentList
+                          documents={r.attachments}
+                          resolveUrl={(id) =>
+                            getLeaveDocumentUrl(myUserId, r.request_id, id).then((x) => x.url)
+                          }
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge className={cn("font-medium", meta.cls)}>{meta.label}</Badge>

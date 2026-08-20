@@ -7,14 +7,10 @@ import {
   ClipboardCheck,
   X,
   TriangleAlert,
-  Paperclip,
-  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  getLeaveDocumentUrl,
-  type ApiLeaveAttachment,
-} from "@/modules/leave/services/leave.service";
+import { getLeaveDocumentUrl } from "@/modules/leave/services/leave.service";
+import { DocumentList } from "@/components/shared/document-list";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -327,17 +323,12 @@ function ApprovalDialog({
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Documents
                 </p>
-                <ul className="space-y-1">
-                  {req.attachments.map((a) => (
-                    <li key={a.id}>
-                      <LeaveDocumentLink
-                        userId={req.userId}
-                        requestId={req.requestId}
-                        attachment={a}
-                      />
-                    </li>
-                  ))}
-                </ul>
+                <DocumentList
+                  documents={req.attachments}
+                  resolveUrl={(id) =>
+                    getLeaveDocumentUrl(req.userId, req.requestId, id).then((r) => r.url)
+                  }
+                />
               </div>
             ) : null}
 
@@ -374,52 +365,3 @@ function ApprovalDialog({
   );
 }
 
-/**
- * One attachment, opened through a freshly-minted short-lived URL.
- *
- * The URL is fetched **on click**, never rendered into the page: a presigned GET is a bearer
- * credential for that object, so putting one in an `href` at render time would leak a working link
- * into the DOM of every row an approver merely scrolled past, and it would be stale by the time
- * anyone used it.
- */
-function LeaveDocumentLink({
-  userId,
-  requestId,
-  attachment,
-}: {
-  userId: string;
-  requestId: string;
-  attachment: ApiLeaveAttachment;
-}) {
-  const [opening, setOpening] = useState(false);
-
-  const open = async () => {
-    setOpening(true);
-    try {
-      const { url } = await getLeaveDocumentUrl(userId, requestId, attachment.id);
-      // `noopener` so the S3 tab cannot reach back into this one via `window.opener`.
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      toast.error(`Couldn't open “${attachment.filename}”. Try again.`);
-    } finally {
-      setOpening(false);
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={open}
-      disabled={opening}
-      className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted disabled:opacity-60"
-    >
-      <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
-      {opening ? (
-        <span className="text-xs text-muted-foreground">Opening…</span>
-      ) : (
-        <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
-      )}
-    </button>
-  );
-}

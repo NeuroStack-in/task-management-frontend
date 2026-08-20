@@ -64,6 +64,8 @@ export interface ApiLeaveRequest {
   reason?: string;
   /** Epoch ms. */
   created_at?: number;
+  /** Documents attached at request time, so the requester can confirm what went with it. */
+  attachments?: ApiLeaveAttachment[];
 }
 
 export function getTypes(): Promise<ApiLeaveType[]> {
