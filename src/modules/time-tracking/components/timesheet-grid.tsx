@@ -234,32 +234,24 @@ export function TimesheetGrid({
           {/* Week stepper. The per-user endpoints take an arbitrary from/to, so any week is
               readable; stepping re-runs the fan-out for that range. Forward is capped at the
               current week — a future week has no records and would only ever render dashes. */}
+          {/* The week label sits BETWEEN the arrows, so the control reads as one stepper rather
+              than two buttons with a caption beside them. */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-8"
-                aria-label="Previous week"
-                onClick={() =>
-                  onWeekOffsetChange(Math.max(-MAX_WEEKS_BACK, weekOffset - 1))
-                }
-                disabled={weekOffset <= -MAX_WEEKS_BACK}
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-8"
-                aria-label="Next week"
-                onClick={() => onWeekOffsetChange(Math.min(0, weekOffset + 1))}
-                disabled={weekOffset === 0}
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
-            <div className="leading-tight">
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8 shrink-0"
+              aria-label="Previous week"
+              onClick={() =>
+                onWeekOffsetChange(Math.max(-MAX_WEEKS_BACK, weekOffset - 1))
+              }
+              disabled={weekOffset <= -MAX_WEEKS_BACK}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            {/* Fixed minimum width: the label changes between "This Week" and "3 weeks ago", and
+                without it the right arrow would shift sideways every time you page. */}
+            <div className="min-w-[10.5rem] text-center leading-tight">
               <p className="font-heading text-base font-semibold">
                 {weekOffset === 0
                   ? "This Week"
@@ -269,6 +261,16 @@ export function TimesheetGrid({
               </p>
               <p className="text-muted-foreground text-xs">{weekRange}</p>
             </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8 shrink-0"
+              aria-label="Next week"
+              onClick={() => onWeekOffsetChange(Math.min(0, weekOffset + 1))}
+              disabled={weekOffset === 0}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
             {weekOffset !== 0 ? (
               <Button
                 variant="ghost"
