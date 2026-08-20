@@ -73,15 +73,18 @@ export interface DashboardWidget {
 }
 
 /**
- * Default layout (left→right): Attendance, Team comparison, AI summary — then the exec snapshot. The
+ * Default layout (left→right): Attendance, Department comparison, AI summary — then the exec snapshot. The
  * first six are single-width tiles (two clean rows of three); the rest ship hidden and are opt-in via
  * Customize. The grid picks its own column count to stay gap-free, so the exact span total isn't
  * load-bearing.
  */
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
-  { id: "org_attendance", title: "Attendance", type: "org_attendance", position: 0, visible: true },
-  { id: "team_activity", title: "Team comparison", type: "team_activity", position: 1, visible: true },
-  { id: "attention_list.ai_summary", title: "AI summary", type: "attention_list.ai_summary", position: 2, visible: true },
+  // AI summary leads the default layout — the at-a-glance narrative reads first, before the
+  // supporting tiles. Users can still drag it elsewhere (or hide it) via Customize; this only sets
+  // the starting order for a fresh/reset layout.
+  { id: "attention_list.ai_summary", title: "AI summary", type: "attention_list.ai_summary", position: 0, visible: true },
+  { id: "org_attendance", title: "Attendance", type: "org_attendance", position: 1, visible: true },
+  { id: "team_activity", title: "Department comparison", type: "team_activity", position: 2, visible: true },
   { id: "org_activity.top_performers", title: "Top performers", type: "org_activity.top_performers", position: 3, visible: true },
   { id: "org_activity.screenshots", title: "Screenshots", type: "org_activity.screenshots", position: 4, visible: true },
   { id: "attention_list.alerts", title: "Needs attention", type: "attention_list.alerts", position: 5, visible: true },
