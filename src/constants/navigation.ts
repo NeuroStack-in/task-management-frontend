@@ -107,7 +107,15 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Leave",
         href: "/leave-requests",
         icon: DoorOpen,
-        permission: "leave:view",
+        // `leave:view` is contributor-only, so the "*" wildcard does NOT grant it — which is why the
+        // Owner has never seen this page at all. `anyPermissions` admits the oversight side
+        // (`leave:manage`, a normal permission the wildcard does grant), and `permission: null`
+        // keeps the route itself reachable — the same pairing Analytics uses, because
+        // `permissionForPath` reads only `permission` and would otherwise block what the nav offers.
+        // Nothing leaks: the page renders the self-scoped employee view by default, and every
+        // oversight section inside it is gated on `leave:manage` again.
+        permission: null,
+        anyPermissions: ["leave:view", "leave:manage"],
         keywords: "vacation holiday pto sick time off request balance allowance wfh",
       },
       {

@@ -22,6 +22,7 @@ import { useLeave } from "../use-leave";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
+import { OrgBalancesTable } from "./org-balances-table";
 
 /** The server's request states (LLD §8): pending → approved, or pending/approved → cancelled. */
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -51,7 +52,44 @@ const fmtSubmitted = (ms?: number) => {
   return `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`;
 };
 
+/**
+ * The Leave page, which is two different pages behind one route.
+ *
+ * **`leave:manage` (Owner/Admin) → the oversight view**: the leave-type catalog, every employee's
+ * balance, and the per-person allowance editor. They do not see a "my leave" section — an
+ * Owner/Admin holds no `leave:request` (it is contributor-only, like `TimeTrackSelf`), so there is
+ * no request for them to make and a personal balance card would read as a bug.
+ *
+ * **Everyone else → the employee view** they already had: balances, their requests, and the request
+ * dialog. Unchanged.
+ *
+ * The route is reachable by both because the nav entry pairs `anyPermissions` with
+ * `permission: null` (see `constants/navigation.ts`); this is where the two audiences actually part.
+ */
 export function LeaveRequestsView() {
+  const { can } = usePermissions();
+  if (can("leave:manage")) return <AdminLeaveView />;
+  return <EmployeeLeaveView />;
+}
+
+/** Sections 1–3: the type catalog, the org ledger, and per-person adjustments. */
+function AdminLeaveView() {
+  return (
+    <div className="flex min-h-full flex-col gap-5">
+      <PageHeader
+        title="Leave"
+        description="Leave types and allowances, and every employee's balance."
+      />
+      {/* 1 — the catalog: types and how many days a year each carries. Editing an allowance here
+          applies to everyone's current-year balance, except figures an admin has hand-set. */}
+      <LeaveTypesManager />
+      {/* 2 + 3 — who has used what, and the editor for one person's allowance. */}
+      <OrgBalancesTable />
+    </div>
+  );
+}
+
+function EmployeeLeaveView() {
   const { can } = usePermissions();
   const leave = useLeave();
   const { balances, requests, types, typeName, loading, error, submit, cancel } = leave;
@@ -210,8 +248,7 @@ export function LeaveRequestsView() {
         )}
       </Card>
 
-      {/* Leave-type administration — `leave:manage` (backend `Permission::LeaveManage`) only. */}
-      {can("leave:manage") ? <LeaveTypesManager onCatalogChanged={leave.reload} /> : null}
+
 
       <RequestLeaveDialog
         open={open}
