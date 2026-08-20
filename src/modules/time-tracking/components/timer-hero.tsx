@@ -71,6 +71,18 @@ export function TimerHero({
       ? Math.max(0, Math.floor((Date.now() - running.startMs) / 1000))
       : 0;
 
+  /**
+   * Today's total **including the session still running**, advancing every second.
+   *
+   * `todayTotalSec` is the server's settled figure and an open session contributes **0** to it — the
+   * timesheet row for a running entry carries no duration until the agent closes it. So the two are
+   * disjoint and adding them is correct rather than double-counting; showing only the settled figure
+   * is what made the card look frozen at "03:16:48" while the clock above it moved.
+   *
+   * An asleep managed device has `elapsedSec === 0`, so its total correctly stops advancing too.
+   */
+  const todayLiveSec = todayTotalSec + elapsedSec;
+
   return (
     <div
       className={cn(
@@ -147,12 +159,14 @@ export function TimerHero({
                 : `Since ${running.start} · runs as a background service — nothing to start or stop`}
             </p>
 
-            {todayTotalSec > 0 ? (
+            {todayLiveSec > 0 ? (
               <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  {formatDuration(todayTotalSec)}
+                <span className="font-medium tabular-nums text-foreground">
+                  {formatDuration(todayLiveSec)}
                 </span>{" "}
-                logged today
+                {/* "so far" while it is still moving: the running session is counted here but is
+                    not yet logged anywhere the server would agree with. */}
+                {asleep ? "logged today" : "today so far"}
               </p>
             ) : null}
           </div>
