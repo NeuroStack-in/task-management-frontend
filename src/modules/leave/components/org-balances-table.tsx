@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
+import { initials } from "@/lib/format";
 import {
   adjustBalance,
   getOrgBalances,
@@ -173,12 +175,25 @@ export function OrgBalancesTable() {
                   {rows.map((emp) => (
                     <TableRow key={emp.user_id}>
                       <TableCell className="max-w-0">
-                        <span className="block truncate font-medium">{emp.name}</span>
-                        {emp.emp_id ? (
-                          <span className="block truncate font-mono text-[0.7rem] text-muted-foreground">
-                            {emp.emp_id}
-                          </span>
-                        ) : null}
+                        <div className="flex items-center gap-3">
+                          {/* Initials only, deliberately: no route serves another user's avatar
+                              image (`GET /v1/me/avatar` is self-scoped), so every employee list in
+                              the app renders the same fallback. Adding `AvatarImage` here would be
+                              a `src={undefined}` that never resolves. */}
+                          <Avatar className="size-8 shrink-0">
+                            <AvatarFallback className="text-xs">
+                              {initials(emp.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <span className="block truncate font-medium">{emp.name}</span>
+                            {emp.emp_id ? (
+                              <span className="block truncate font-mono text-[0.7rem] text-muted-foreground">
+                                {emp.emp_id}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
                       </TableCell>
                       {types.map((t) => {
                         const b =
