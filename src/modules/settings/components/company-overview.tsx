@@ -31,6 +31,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
@@ -48,6 +49,9 @@ import {
   type OrgPolicy,
 } from "@/modules/settings/services/org.service";
 import type { IsoWeekday } from "@/lib/workdays";
+
+/** Mon→Sun in ISO order, so the pill row always renders a full week in a familiar order. */
+const ISO_WEEK: IsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
 
 const WEEKDAY: Record<IsoWeekday, string> = {
   1: "Mon",
@@ -76,6 +80,40 @@ function byUpcoming(a: OrgHoliday, b: OrgHoliday): number {
   const bFuture = b.date >= today;
   if (aFuture !== bFuture) return aFuture ? -1 : 1;
   return aFuture ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date);
+}
+
+/** Whole days from today to an ISO date. Negative = past. Local midnight both sides. */
+function daysUntil(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return 0;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((new Date(y, m - 1, d).getTime() - today.getTime()) / 86_400_000);
+}
+
+/** "in 3 days" / "today" / "tomorrow" — the thing a person actually wants from a holiday date. */
+function whenLabel(iso: string): string | null {
+  const n = daysUntil(iso);
+  if (n < 0) return null;
+  if (n === 0) return "today";
+  if (n === 1) return "tomorrow";
+  if (n <= 60) return `in ${n} days`;
+  return null;
+}
+
+/**
+ * The working span in hours, from `HH:MM` bounds. `null` when the times don't parse or the end is
+ * not after the start — an overnight or misconfigured schedule shows nothing rather than a negative.
+ */
+function spanHours(start: string, end: string): number | null {
+  const mins = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+  };
+  const a = mins(start);
+  const b = mins(end);
+  if (a === null || b === null || b <= a) return null;
+  return Math.round(((b - a) / 60) * 10) / 10;
 }
 
 function Field({ label, value }: { label: string; value?: string | null }) {
@@ -157,17 +195,41 @@ export function CompanyOverview() {
         description="Your organization's details, schedule, holidays and policies."
       />
 
-      {/* ── Org details ─────────────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="size-4 text-primary" /> {org?.name ?? "Organization"}
-            </CardTitle>
-            <CardDescription>Company profile</CardDescription>
+      {/* ── Identity ────────────────────────────────────────────────────────────────
+          The org's own name and plan lead the page rather than sitting as a card title
+          above a grid of labels. This is the one page whose subject *is* the company. */}
+      <Card className="overflow-hidden p-0">
+        <div className="flex flex-wrap items-start gap-4 border-b bg-gradient-to-br from-feature-tint/60 via-card to-card p-5 sm:p-6">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Building2 className="size-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-heading truncate text-xl font-semibold">
+              {org?.name ?? "Organization"}
+            </h2>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              {org?.plan ? (
+                <Badge className="bg-primary/12 font-medium capitalize text-primary">
+                  {org.plan}
+                </Badge>
+              ) : null}
+              {org?.industry ? <span>{org.industry}</span> : null}
+              {org?.size ? <span>· {org.size} people</span> : null}
+              {org?.website ? (
+                <a
+                  href={org.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                >
+                  {org.website.replace(/^https?:\/\//, "")}
+                  <ExternalLink className="size-3" />
+                </a>
+              ) : null}
+            </div>
           </div>
-          {/* Managers reach the editor from here rather than being sent to hunt for it. Everyone
-              else never sees a control they cannot use. */}
+          {/* Managers reach the editor from here rather than hunting for it. Everyone else never
+              sees a control they cannot use. */}
           {canManage ? (
             <Button
               size="sm"
@@ -178,14 +240,12 @@ export function CompanyOverview() {
               <Pencil className="size-3.5" /> Manage
             </Button>
           ) : null}
-        </CardHeader>
-        <CardContent>
+        </div>
+        <CardContent className="p-5 sm:p-6">
           <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Field label="Industry" value={org?.industry} />
             <Field label="Company size" value={org?.size} />
             <Field label="Time zone" value={org?.timezone} />
-            <Field label="Website" value={org?.website} />
-            <Field label="Plan" value={org?.plan} />
           </dl>
         </CardContent>
       </Card>
@@ -199,19 +259,50 @@ export function CompanyOverview() {
             </CardTitle>
             <CardDescription>The schedule attendance is measured against.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-5">
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <Field label="Hours" value={`${hours.work_start} – ${hours.work_end}`} />
-              <Field label="Late after" value={hours.late_threshold} />
               <Field
-                label="Working days"
-                value={
-                  hours.workdays.length
-                    ? hours.workdays.map((d) => WEEKDAY[d]).join(", ")
-                    : "—"
-                }
+                label="Hours"
+                value={`${hours.work_start} – ${hours.work_end}`}
+              />
+              <Field label="Late after" value={hours.late_threshold} />
+              {/* Derived, not stored: the figure people actually quote is the length of the day,
+                  and making a reader subtract two clock times is work the page can do. */}
+              <Field
+                label="Day length"
+                value={(() => {
+                  const h = spanHours(hours.work_start, hours.work_end);
+                  return h === null ? null : `${h} hours`;
+                })()}
               />
             </dl>
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Working days
+              </p>
+              {/* Every weekday is shown, with the non-working ones dimmed and struck through.
+                  A comma list of seven names can't be read at a glance, and — worse — it gives no
+                  way to see which days are *missing*, which is the actual question. */}
+              <div className="flex flex-wrap gap-1.5">
+                {ISO_WEEK.map((d) => {
+                  const on = hours.workdays.includes(d);
+                  return (
+                    <span
+                      key={d}
+                      className={cn(
+                        "rounded-md border px-2 py-1 text-xs font-medium",
+                        on
+                          ? "border-primary/25 bg-primary/10 text-primary"
+                          : "border-border bg-muted/40 text-muted-foreground line-through",
+                      )}
+                    >
+                      {WEEKDAY[d]}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -237,12 +328,30 @@ export function CompanyOverview() {
                   <li
                     key={h.id}
                     className={cn(
-                      "flex items-center justify-between py-2.5 text-sm",
+                      "flex items-center justify-between gap-3 py-2.5 text-sm",
                       past && "text-muted-foreground",
                     )}
                   >
-                    <span className="font-medium">{h.name}</span>
-                    <span className="tabular-nums">{longDate(h.date)}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-1.5 shrink-0 rounded-full",
+                          past ? "bg-muted-foreground/40" : "bg-primary",
+                        )}
+                      />
+                      <span className="truncate font-medium">{h.name}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {/* "in 3 days" is the part a person is looking for; the date alone makes
+                          them count. Only for dates close enough for it to mean something. */}
+                      {whenLabel(h.date) ? (
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[0.7rem] font-medium text-primary">
+                          {whenLabel(h.date)}
+                        </span>
+                      ) : null}
+                      <span className="tabular-nums">{longDate(h.date)}</span>
+                    </span>
                   </li>
                 );
               })}

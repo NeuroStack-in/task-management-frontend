@@ -113,13 +113,20 @@ export default function SettingsLayout({
       })),
   })).filter((group) => group.items.length > 0);
 
-  // The read-only company reference — details, hours, holidays, policies — shown to EVERY member.
-  // The admin "Organization" editor is gated on settings:view, which employees lack, so this is the
-  // only settings surface where an employee can read the policies an admin publishes. A dedicated
-  // one-item group rather than folding it into "Account", because it is org-level, not personal.
+  // The read-only company reference — details, hours, holidays, policies.
+  //
+  // **Shown only to people who cannot edit the org.** Anyone with `settings:view` already has the
+  // "Organization" group below, which is the same information with the controls attached; offering
+  // both put two near-identical entries in one rail and made an admin choose between a page and its
+  // read-only twin. The route stays reachable, it is just no longer advertised to them.
+  //
+  // For an employee this is the *only* settings surface carrying the policies and schedule an admin
+  // publishes, which is why it is a group of its own rather than folded into "Account" — it is
+  // org-level, not personal.
+  const showCompany = !can("settings:view");
   const companyGroup: RailGroup = {
-    // Labelled "Company", not "Organization": ADMIN_SECTIONS already contributes an "Organization"
-    // group (the editor), and two identical rail headers would collide for an admin — who sees both.
+    // Labelled "Company" rather than "Organization" so the two never collide in the rail, and
+    // because the item beneath carries the org's actual name.
     label: "Company",
     items: [
       {
@@ -142,7 +149,7 @@ export default function SettingsLayout({
       canBilling: can("billing:view"),
       canSecurity: can("security:view"),
     }),
-    companyGroup,
+    ...(showCompany ? [companyGroup] : []),
     ...adminGroups,
   ];
 
