@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { UNKNOWN_PROJECT } from "@/lib/format";
 import { usePoll } from "@/hooks/use-poll";
 import {
   listMyTasks,
@@ -179,12 +180,13 @@ function toRow(
  * A project's display name, tolerating a miss.
  *
  * A project can be deleted (or be invisible to this caller) while an old entry still references it.
- * The entry is still true — the time really was worked — so the row must render. Falling back to the
- * id keeps it honest instead of showing a blank cell that reads as "no project".
+ * The entry is still true — the time really was worked — so the row must render. Falling back to a
+ * neutral label (never the raw id) keeps it honest instead of showing a blank cell that reads as
+ * "no project".
  */
 function projectOf(id: string, names: Map<string, string>): string {
   if (!id) return "—";
-  return names.get(id) ?? id;
+  return names.get(id) ?? UNKNOWN_PROJECT;
 }
 
 function messageOf(e: unknown): string {

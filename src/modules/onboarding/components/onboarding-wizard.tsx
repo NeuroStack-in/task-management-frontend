@@ -88,7 +88,7 @@ function CheckRow({
 const WIDGETS = [
   "Activity heatmap",
   "Attendance",
-  "Team comparison",
+  "Department comparison",
   "Top employees",
   "Recent alerts",
   "Billing overview",
@@ -118,7 +118,7 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
   const [widgets, setWidgets] = useState<Record<string, boolean>>({
     "Activity heatmap": true,
     Attendance: true,
-    "Team comparison": true,
+    "Department comparison": true,
     "Top employees": false,
     "Recent alerts": true,
     "Billing overview": false,

@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { UNKNOWN_DEPARTMENT, UNKNOWN_ROLE, UNKNOWN_TEAM } from "@/lib/format";
 import { listRoles } from "@/modules/roles/services/roles.service";
 import {
   listUserProjects,
@@ -262,7 +263,9 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           ),
         };
 
-        const roleName = roles.find((r) => r.id === p.role_id)?.name ?? p.role_id ?? "";
+        const roleName =
+          roles.find((r) => r.id === p.role_id)?.name ??
+          (p.role_id ? UNKNOWN_ROLE : "");
 
         setData({
           id: p.user_id,
@@ -270,8 +273,8 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           email: p.email,
           avatarUrl: undefined, // no avatar field on the backend profile
           jobTitle: p.title ?? "",
-          department: p.department_id ? (depts.get(p.department_id) ?? p.department_id) : "",
-          team: p.team_id ? (teams.get(p.team_id) ?? p.team_id) : "",
+          department: p.department_id ? (depts.get(p.department_id) ?? UNKNOWN_DEPARTMENT) : "",
+          team: p.team_id ? (teams.get(p.team_id) ?? UNKNOWN_TEAM) : "",
           departmentId: p.department_id ?? "",
           teamId: p.team_id ?? "",
           roleName,

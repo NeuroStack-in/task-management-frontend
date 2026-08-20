@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAttention, getOrgActivity, type OrgActivity } from "./services/insights.service";
 import { OMITTED, type ReportDef } from "./lib/report-def";
+import { UNKNOWN_DEPARTMENT } from "@/lib/format";
 import {
   getUserTimesheet,
   type ApiGridResponse,
@@ -162,7 +163,8 @@ export function useReportsData(): ReportsData {
       const org = orgRes.status === "fulfilled" ? orgRes.value : null;
       const attention = attnRes.status === "fulfilled" ? attnRes.value : null;
 
-      const deptName = (id?: string) => (id && deptNames.get(id)) || id || OMITTED;
+      const deptName = (id?: string) =>
+        (id && deptNames.get(id)) || (id ? UNKNOWN_DEPARTMENT : OMITTED);
       const activeEmployees = employees.filter((e) => e.status === "active");
 
       /**

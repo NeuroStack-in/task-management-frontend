@@ -66,9 +66,6 @@ export function ProjectCard({
             <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
               {project.key}
             </span>
-            <span className="font-mono text-[0.65rem] text-muted-foreground/70">
-              {project.id}
-            </span>
             <span className="truncate text-xs text-muted-foreground">
               · {project.department}
             </span>

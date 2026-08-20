@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { UNKNOWN_TYPE } from "@/lib/format";
 import * as api from "./services/leave.service";
 import type {
   ApiBalance,
@@ -74,13 +75,14 @@ export function useLeave(): LeaveData {
   }, [nonce]);
 
   // Prefer the type catalog for names, but fall back to a balance's name (balances carry it too), so
-  // a request's type still labels even if the catalog read failed. Last resort: the raw id.
+  // a request's type still labels even if the catalog read failed. Last resort: a neutral label —
+  // never the raw id.
   const typeName = useCallback(
     (typeId: string): string => {
       return (
         types.find((t) => t.type_id === typeId)?.name ??
         balances.find((b) => b.type_id === typeId)?.name ??
-        typeId
+        (typeId ? UNKNOWN_TYPE : "")
       );
     },
     [types, balances],

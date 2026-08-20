@@ -19,6 +19,17 @@ export function isUuid(s: string | null | undefined): boolean {
 export const REMOVED_PERSON = "Removed employee";
 
 /**
+ * Neutral labels shown where an entity's name belongs but the id → name lookup couldn't resolve it
+ * (the name map was empty — e.g. a viewer without `employees:view` — or the entity was deleted). A
+ * raw opaque id (a `dept-…` / `01…` ULID) must never reach the UI; fall back to one of these instead.
+ */
+export const UNKNOWN_DEPARTMENT = "Unknown department";
+export const UNKNOWN_TEAM = "Unknown team";
+export const UNKNOWN_PROJECT = "Unknown project";
+export const UNKNOWN_ROLE = "Unknown role";
+export const UNKNOWN_TYPE = "Unknown type";
+
+/**
  * A person's display name, guaranteed never to be a raw id.
  *
  * This is the enforcement of the `isUuid` policy above, which says a UUID must never reach the UI.

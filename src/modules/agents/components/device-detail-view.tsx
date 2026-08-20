@@ -174,8 +174,10 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                   </div>
                 </div>
               ) : (
-                <p className="font-mono text-xs text-muted-foreground">
-                  {device.user_id || "No signed-in user reported."}
+                <p className="text-xs text-muted-foreground">
+                  {device.user_id
+                    ? "Outside your directory"
+                    : "No signed-in user reported."}
                 </p>
               )}
             </CardContent>

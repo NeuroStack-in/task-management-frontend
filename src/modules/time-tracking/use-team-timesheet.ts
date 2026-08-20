@@ -30,6 +30,7 @@ import {
   departmentMap,
   type ApiEmployee,
 } from "@/modules/employees/services/employees.service";
+import { UNKNOWN_DEPARTMENT, UNKNOWN_PROJECT } from "@/lib/format";
 import { listProjects } from "@/modules/projects/services/projects.service";
 import { getUserActivity } from "@/modules/insights/services/insights.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
@@ -287,7 +288,7 @@ export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimeshee
     const projectName = (pid: string | undefined) => {
       const id = pid?.trim();
       if (!id) return "No project";
-      return projects.get(id)?.name ?? id;
+      return projects.get(id)?.name ?? UNKNOWN_PROJECT;
     };
 
     // ── teamRows ──────────────────────────────────────────────────────────
@@ -339,7 +340,7 @@ export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimeshee
         return {
           id: emp.user_id,
           name: emp.name,
-          department: depts.get(emp.department_id) ?? emp.department_id ?? "—",
+          department: depts.get(emp.department_id) ?? (emp.department_id ? UNKNOWN_DEPARTMENT : "—"),
           trackedHrs,
           days,
           dayEntries,
@@ -389,7 +390,7 @@ export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimeshee
     });
     const byProject = new Map<string, Agg>();
     for (const { emp, grid } of fetched) {
-      const dept = depts.get(emp.department_id) ?? emp.department_id ?? "—";
+      const dept = depts.get(emp.department_id) ?? (emp.department_id ? UNKNOWN_DEPARTMENT : "—");
       for (const day of grid.days) {
         const di = dateIndex.get(day.date);
         for (const entry of day.entries) {
@@ -426,7 +427,7 @@ export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimeshee
       const trackedHrs = round1(agg.secs / 3600);
       return {
         id: pid,
-        name: meta?.name ?? pid,
+        name: meta?.name ?? UNKNOWN_PROJECT,
         key: meta?.key ?? "",
         department: dept,
         members: agg.users.size,

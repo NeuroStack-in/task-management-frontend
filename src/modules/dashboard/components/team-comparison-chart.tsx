@@ -39,14 +39,14 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Team comparison</CardTitle>
+          <CardTitle>Department comparison</CardTitle>
           <CardDescription>
             Average productivity score (0-100) by department — always org-wide
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-1 flex-col items-center justify-center gap-1.5 py-10 text-center">
-            <p className="text-sm font-medium">No team scores yet</p>
+            <p className="text-sm font-medium">No department scores yet</p>
             <p className="max-w-xs text-xs text-muted-foreground">
               Per-department productivity appears here once the desktop agent reports activity data.
             </p>
@@ -62,7 +62,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5">
-          Team comparison
+          Department comparison
           <ChartLegendInfo
             label="How the department average is calculated"
             terms={[
@@ -74,9 +74,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
             ]}
           />
         </CardTitle>
-        <CardDescription>
-            Average productivity by department — always org-wide
-          </CardDescription>
+        <CardDescription>Average productivity by department — always org-wide</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-full min-h-[150px] w-full">

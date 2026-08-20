@@ -68,7 +68,7 @@ import {
 import { TablePagination } from "@/components/shared/table-pagination";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { initials, isUuid } from "@/lib/format";
+import { initials, isUuid, UNKNOWN_ROLE } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -334,7 +334,7 @@ function ReassignDialog({
     setSaving(true);
     try {
       await assignRole(employeeId, roleId);
-      const roleName = roles.find((r) => r.id === roleId)?.name ?? roleId;
+      const roleName = roles.find((r) => r.id === roleId)?.name ?? UNKNOWN_ROLE;
       toast.success("Role updated", { description: `${name} → ${roleName}` });
       onOpenChange(false);
       onSaved();

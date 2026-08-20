@@ -41,6 +41,7 @@ import {
 import { getMyAttendance } from "@/modules/attendance/services/attendance.service";
 import { getRange, todayLocal } from "@/modules/time-tracking/services/timesheet.service";
 import { listMyTasks } from "@/modules/projects/services/projects.service";
+import { departmentMap, teamMap } from "@/modules/employees/services/employees.service";
 import { PageHeader } from "@/components/shared/page-header";
 import { BannerBackground } from "@/components/shared/banner-pattern";
 import { Gauge } from "@/components/shared/gauge";
@@ -230,6 +231,12 @@ function RichProfile({
   const updateUser = useAuthStore((s) => s.updateUser);
   const [uploadOpen, setUploadOpen] = useState(false);
 
+  // The profile carries `department_id`/`team_id` (raw `dept-…`/`team-…` ULIDs) — never show those.
+  // Resolve them to names the same way the Employees pages do; leave blank on miss so the "—"
+  // placeholder shows rather than an id.
+  const [deptName, setDeptName] = useState("");
+  const [teamName, setTeamName] = useState("");
+
   // Real avatar (`GET /v1/me/avatar`) — presigned view URLs expire, so never trust a stored one:
   // re-fetch on mount and push the fresh URL into the auth store (the navbar reads it from there).
   useEffect(() => {
@@ -267,6 +274,26 @@ function RichProfile({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch once per mount
   }, []);
+
+  // Resolve the profile's department/team ids → names (best-effort; blank on miss, never the id).
+  useEffect(() => {
+    let alive = true;
+    const deptId = profile?.department_id;
+    const teamId = profile?.team_id;
+    if (deptId) {
+      departmentMap()
+        .then((m) => alive && setDeptName(m.get(deptId) ?? ""))
+        .catch(() => {});
+    } else setDeptName("");
+    if (teamId) {
+      teamMap()
+        .then((m) => alive && setTeamName(m.get(teamId) ?? ""))
+        .catch(() => {});
+    } else setTeamName("");
+    return () => {
+      alive = false;
+    };
+  }, [profile?.department_id, profile?.team_id]);
 
   const stats = useMyStats();
 
@@ -418,8 +445,9 @@ function RichProfile({
   const dash = (v: string | undefined | null) => v?.trim() || "—";
   const empId = dash(profile?.emp_id);
   const jobTitle = profile?.title ?? user.jobTitle;
-  const department = profile?.department_id ?? user.department;
-  const team = profile?.team_id ?? user.team;
+  // Names, never the raw `department_id`/`team_id`. `user.*` (from the token) is already a name.
+  const department = deptName || user.department;
+  const team = teamName || user.team;
 
   const contact: DetailRow[] = [
     { icon: Mail, label: "Email", value: user.email },

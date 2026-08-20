@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/table";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
+import { UNKNOWN_DEPARTMENT, UNKNOWN_ROLE } from "@/lib/format";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
   listInvites,
@@ -151,8 +152,10 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
   // Nothing to show, or not allowed to see it — render nothing at all.
   if (!canRead || !rows.length) return null;
 
-  const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? id;
-  const deptName = (id: string) => departments.find((d) => d.id === id)?.name ?? id;
+  const roleName = (id: string) =>
+    roles.find((r) => r.id === id)?.name ?? (id ? UNKNOWN_ROLE : "");
+  const deptName = (id: string) =>
+    departments.find((d) => d.id === id)?.name ?? (id ? UNKNOWN_DEPARTMENT : "");
   const outstanding = rows.filter((r) => r.state === "pending" || r.state === "expired").length;
 
   return (

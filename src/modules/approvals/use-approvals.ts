@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, apiFetch } from "@/lib/api";
+import { UNKNOWN_TYPE } from "@/lib/format";
 import { getTypes } from "@/modules/leave/services/leave.service";
 import * as api from "./services/approvals.service";
 import type { ApiApprovalRow, DecideInput } from "./services/approvals.service";
@@ -94,7 +95,7 @@ export function useApprovals(): ApprovalsData {
           userId: r.user_id,
           requestId: r.request_id,
           requesterName: userName.get(r.user_id) ?? shortId(r.user_id),
-          typeName: typeName.get(r.type_id) ?? r.type_id,
+          typeName: typeName.get(r.type_id) ?? UNKNOWN_TYPE,
           from: r.from,
           to: r.to,
           days: r.days,

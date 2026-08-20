@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   listEmployees,
@@ -111,7 +112,9 @@ export function useDashboardSummary(): DashboardSummaryState {
         const active = roster.filter((e) => e.status === "active").length;
         const byDeptMap = new Map<string, number>();
         for (const e of roster) {
-          const label = depts.get(e.department_id) ?? e.department_id;
+          const label =
+            depts.get(e.department_id) ??
+            (e.department_id ? UNKNOWN_DEPARTMENT : "Unassigned");
           byDeptMap.set(label, (byDeptMap.get(label) ?? 0) + 1);
         }
         const byDepartment = [...byDeptMap.entries()]

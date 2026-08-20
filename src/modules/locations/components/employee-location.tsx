@@ -25,6 +25,7 @@ import {
   type OversightPersonLocation,
 } from "@/modules/insights/services/insights.service";
 import { getUserTimesheet } from "@/modules/time-tracking/services/timesheet.service";
+import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useGeofenceStore } from "@/stores/geofence.store";
 import {
   deriveMode,
@@ -151,6 +152,25 @@ export function EmployeeLocationView({
    * not the timesheet. In that case the page must not claim anything about the timer.
    */
   const [timerAccess, setTimerAccess] = useState(true);
+  // Resolve the person's department id → name. `person` only carries `department_id` (a ULID), which
+  // must never be shown to a user; the board resolves names in its own list but doesn't thread them
+  // into this detail view, so resolve here (best-effort, same `departmentMap` the rest of the app uses).
+  const [departmentName, setDepartmentName] = useState("");
+  useEffect(() => {
+    let live = true;
+    if (!person.department_id) {
+      setDepartmentName("");
+      return;
+    }
+    departmentMap()
+      .then((m) => live && setDepartmentName(m.get(person.department_id) ?? ""))
+      .catch(() => {
+        /* best-effort: leave blank rather than show a raw id */
+      });
+    return () => {
+      live = false;
+    };
+  }, [person.department_id]);
 
   const { center: fenceCenter, radiusM, enabled: fenceOn } = useGeofenceStore();
   const fence = useMemo(
@@ -372,7 +392,7 @@ export function EmployeeLocationView({
             </div>
             <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <Users className="size-3.5" /> {person.department_id}
+                <Users className="size-3.5" /> {departmentName || "Unassigned"}
               </span>
               {last ? (
                 <span className="flex items-center gap-1.5">

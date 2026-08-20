@@ -286,7 +286,7 @@ export function EnrollmentView() {
                   <div className="min-w-0">
                     <p className="truncate font-medium">{nameOf(c.user_id)}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      Issued by {c.created_by} · expires{" "}
+                      Issued by {nameOf(c.created_by)} · expires{" "}
                       {new Date(c.expires_at * 1000).toLocaleString()}
                       {c.assign_upn ? ` · ${c.assign_upn}` : ""}
                     </p>

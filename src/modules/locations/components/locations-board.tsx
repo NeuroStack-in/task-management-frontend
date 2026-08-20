@@ -35,7 +35,7 @@ import {
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useDataScope } from "@/hooks/use-data-scope";
 import { useGeofenceStore } from "@/stores/geofence.store";
-import { initials } from "@/lib/format";
+import { initials, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import {
   deriveMode,
   deriveStatus,
@@ -216,7 +216,8 @@ function LocationsBoard({
     () => Array.from(new Set(scoped.map((p) => p.department_id))).sort(),
     [scoped],
   );
-  const deptLabel = (id: string) => deptNames.get(id) ?? id;
+  const deptLabel = (id: string) =>
+    deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : "");
 
   const fence = { center: fenceCenter, radiusM };
   const isOutside = (p: OversightPersonLocation) =>

@@ -190,7 +190,8 @@ function groupByLabel(entries: TimesheetDayEntry[]): [string, TimesheetDayEntry[
  */
 function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
   const s = entry.session!;
-  const label = s.description || s.taskId || "Untitled session";
+  // Never fall back to the raw `taskId` — a task id is opaque; an empty description reads as untitled.
+  const label = s.description || "Untitled session";
   return (
     <li className="flex items-start justify-between gap-3 text-sm">
       <span className="min-w-0 flex-1">

@@ -73,8 +73,8 @@ export interface DashboardWidget {
 }
 
 /**
- * Default layout (left→right): Attendance, Department comparison, AI summary — then the exec snapshot. The
- * first six are single-width tiles (two clean rows of three); the rest ship hidden and are opt-in via
+ * Default layout (left→right): AI summary, Attendance, Department comparison — then the exec snapshot.
+ * The first six are single-width tiles (two clean rows of three); the rest ship hidden and are opt-in via
  * Customize. The grid picks its own column count to stay gap-free, so the exact span total isn't
  * load-bearing.
  */

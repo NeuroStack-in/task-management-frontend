@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { useRolesStore } from "@/stores/roles.store";
 import {
@@ -148,7 +149,7 @@ export function useEmployees(): EmployeesData {
           email: "", // not on the directory list — lives on the full profile
           roleName: e.role_id ? (roleNames.get(e.role_id) ?? "") : "",
           jobTitle: e.title ?? "",
-          department: depts.get(e.department_id) ?? e.department_id,
+          department: depts.get(e.department_id) ?? (e.department_id ? UNKNOWN_DEPARTMENT : ""),
           team: "",
           status: mapStatus(e.status),
           // Absent on every row that predates the field, so this reads false for existing orgs.

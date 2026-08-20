@@ -41,7 +41,7 @@ import { useDataScope } from "@/hooks/use-data-scope";
 import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
-import { initials, personName } from "@/lib/format";
+import { initials, personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { useScreenshots } from "../use-screenshots";
@@ -190,7 +190,8 @@ export function ScreenshotsTab() {
     () => new Map(directory.map((e) => [e.user_id, e])),
     [directory],
   );
-  const deptLabel = (id: string) => deptNames.get(id) ?? id;
+  const deptLabel = (id: string) =>
+    deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : "");
 
   // Team leads only see their own team's shots; org roles see all.
   const scopedShots = useMemo(
@@ -288,7 +289,7 @@ export function ScreenshotsTab() {
       { label: "Needs review", value: String(needsReview) },
       { label: "On-task rate", value: `${onTaskPct}%` },
       ...(dept !== ALL_DEPTS
-        ? [{ label: "Department filter", value: deptNames.get(dept) ?? dept }]
+        ? [{ label: "Department filter", value: deptNames.get(dept) ?? UNKNOWN_DEPARTMENT }]
         : []),
       ...(flag === "flagged"
         ? [{ label: "Filter", value: "showing only captures needing review" }]

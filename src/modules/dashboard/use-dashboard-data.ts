@@ -39,7 +39,7 @@ import {
 } from "@/modules/employees/services/employees.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
 import { getUserDay } from "@/modules/attendance/services/attendance.service";
-import { todayIso } from "@/lib/format";
+import { todayIso, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { getBillingOverview } from "@/modules/billing/services/billing.service";
 // The local-day filter the heatmap needs: screenshots are partitioned by UTC date.
 import { localDateOf } from "@/lib/local-day";
@@ -211,7 +211,8 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         if (!live) return;
 
         // The filter matches on `department_id`; the label is display-only (see DashboardFilters).
-        const deptLabel = (id: string) => deptNames.get(id) ?? id;
+        const deptLabel = (id: string) =>
+          deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : "");
         const teamList: TeamOption[] = Array.from(
           new Set(roster.map((e) => e.department_id).filter(Boolean)),
         )
@@ -610,8 +611,8 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             )
             .find((people) => people.length > 0) ?? [];
 
-        // Team comparison is deliberately the **cross-team** view and stays org-wide even when a
-        // team is selected — otherwise "compare teams" would render a single bar. It reads off the
+        // Department comparison is deliberately the **cross-department** view and stays org-wide
+        // even when one is selected — otherwise the comparison renders a single bar. It reads off the
         // newest day with any scored person, independent of the filter. The widget says so in its
         // description, because a chart ignoring the active filter is otherwise indistinguishable
         // from a bug.
