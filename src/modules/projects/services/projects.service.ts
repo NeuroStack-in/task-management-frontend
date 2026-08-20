@@ -333,19 +333,7 @@ export function getAttachmentDownloadUrl(
 }
 
 /**
- * PUT the raw file bytes to a presigned S3 URL. **Not** through `apiFetch`: this is an external S3
- * host and must carry no auth headers — the signature is in the URL. Throws on any non-2xx.
+ * Re-exported from `@/lib/upload`, where it moved when leave documents needed the same presigned
+ * PUT. Kept here so existing importers are unaffected; new callers should take it from `lib`.
  */
-export async function uploadFileToPresignedUrl(
-  uploadUrl: string,
-  file: File,
-): Promise<void> {
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    body: file,
-    headers: { "Content-Type": file.type },
-  });
-  if (!res.ok) {
-    throw new Error(`Upload failed (${res.status})`);
-  }
-}
+export { uploadFileToPresignedUrl } from "@/lib/upload";

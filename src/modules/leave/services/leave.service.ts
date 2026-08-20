@@ -134,18 +134,134 @@ export function getRequests(): Promise<ApiLeaveRequest[]> {
   return apiFetch<ApiLeaveRequest[]>("/v1/me/leave/requests");
 }
 
+/**
+ * A document attached to a leave request. The client never sees or sends an S3 key — the server
+ * derives it from the verified identity plus the id it minted, so a download can only ever resolve
+ * inside the requester's own namespace.
+ */
+export interface ApiLeaveAttachment {
+  id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+}
+
+/** What the server will accept. The dialog filters by these before uploading; the server re-checks. */
+export const LEAVE_DOC_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "text/plain",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+export const LEAVE_DOC_MAX_BYTES = 15 * 1024 * 1024;
+export const LEAVE_DOC_MAX_COUNT = 5;
+
+/**
+ * `POST /v1/me/leave/attachments/presign` — mint an upload slot for one file.
+ *
+ * Two steps by design: presign, then PUT the bytes straight to S3. The file never passes through
+ * the API, which is what keeps a 15 MB upload off the Lambda's request budget.
+ */
+export function presignLeaveDocument(
+  filename: string,
+  contentType: string,
+): Promise<{ attachment_id: string; upload_url: string }> {
+  return apiFetch("/v1/me/leave/attachments/presign", {
+    method: "POST",
+    body: JSON.stringify({ filename, content_type: contentType }),
+  });
+}
+
+/** A short-lived view URL for one document. Requester or approver only, enforced server-side. */
+export function getLeaveDocumentUrl(
+  userId: string,
+  requestId: string,
+  attachmentId: string,
+): Promise<{ url: string }> {
+  return apiFetch(
+    `/v1/leave/requests/${encodeURIComponent(userId)}/${encodeURIComponent(
+      requestId,
+    )}/attachments/${encodeURIComponent(attachmentId)}/download`,
+  );
+}
+
 export interface NewLeaveRequest {
   type_id: string;
   /** Inclusive `YYYY-MM-DD`. */
   from: string;
   to: string;
   reason?: string;
+  /** Uploaded documents, by the ids the presign route minted. Always optional. */
+  attachments?: ApiLeaveAttachment[];
 }
 
 export function createRequest(req: NewLeaveRequest): Promise<ApiLeaveRequest> {
   return apiFetch<ApiLeaveRequest>("/v1/me/leave/requests", {
     method: "POST",
     body: JSON.stringify(req),
+  });
+}
+
+// ── Admin oversight (`leave:manage`) ───────────────────────────────────────────────────────────
+
+/** One leave type's standing for one employee, for a year. */
+export interface ApiTypeBalance {
+  type_id: string;
+  name: string;
+  paid: boolean;
+  allowance: number;
+  used: number;
+  remaining: number;
+  /** An admin hand-set this figure; a catalog-wide allowance change deliberately skips it. */
+  adjusted: boolean;
+  /** A balance row exists. `false` = predates this leave type, shown as 0 but never granted. */
+  seeded: boolean;
+}
+
+export interface ApiEmployeeBalances {
+  user_id: string;
+  name: string;
+  emp_id: string;
+  department_id: string;
+  balances: ApiTypeBalance[];
+}
+
+export interface ApiOrgBalances {
+  year: string;
+  /** The active catalog — one column per type, so a type nobody holds still shows. */
+  types: ApiLeaveType[];
+  employees: ApiEmployeeBalances[];
+}
+
+/** `GET /v1/leave/balances?year=` — every employee's ledger. Needs `leave:manage`. */
+export function getOrgBalances(year?: string): Promise<ApiOrgBalances> {
+  const q = year ? `?year=${encodeURIComponent(year)}` : "";
+  return apiFetch<ApiOrgBalances>(`/v1/leave/balances${q}`);
+}
+
+/**
+ * `PATCH /v1/leave/balances/{user_id}` — set one person's allowance for a type/year.
+ *
+ * An absolute figure, not a delta: a double-clicked "+5" would grant ten. The server refuses a
+ * value below what the person has already used and says how many that is.
+ */
+export function adjustBalance(
+  userId: string,
+  body: { type_id: string; allowance: number; year?: string; note?: string },
+): Promise<{
+  user_id: string;
+  year: string;
+  type_id: string;
+  allowance: number;
+  used: number;
+  remaining: number;
+}> {
+  return apiFetch(`/v1/leave/balances/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
   });
 }
 

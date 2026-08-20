@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { CalendarPlus } from "lucide-react";
+import { CalendarPlus, Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,14 @@ import {
 } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { ApiError } from "@/lib/api";
+import { uploadFileToPresignedUrl } from "@/lib/upload";
+import {
+  presignLeaveDocument,
+  LEAVE_DOC_TYPES,
+  LEAVE_DOC_MAX_BYTES,
+  LEAVE_DOC_MAX_COUNT,
+  type ApiLeaveAttachment,
+} from "../services/leave.service";
 import type {
   ApiLeaveType,
   NewLeaveRequest,
@@ -104,9 +112,72 @@ export function RequestLeaveDialog({
   // Earliest selectable day — leave can't start in the past (computed once, client-local).
   const today = useMemo(() => isoToday(), []);
 
+  // Documents are uploaded as they are picked, not on submit: the bytes go straight to S3 against
+  // a presigned URL, so by the time the form posts there is nothing left to wait for. The cost is
+  // an orphaned S3 object if the dialog is abandoned — the bucket lifecycle sweeps those.
+  const [docs, setDocs] = useState<ApiLeaveAttachment[]>([]);
+  const [uploading, setUploading] = useState<string[]>([]);
+
   function close() {
     reset();
+    setDocs([]);
+    setUploading([]);
     onOpenChange(false);
+  }
+
+  /** Why this file can't be attached, or null. The server re-checks — this is just a faster no. */
+  function rejectReason(file: File): string | null {
+    if (!(LEAVE_DOC_TYPES as readonly string[]).includes(file.type)) {
+      return `“${file.name}” isn't a supported type — use PDF, Word, text or an image.`;
+    }
+    if (file.size > LEAVE_DOC_MAX_BYTES) {
+      return `“${file.name}” is over ${LEAVE_DOC_MAX_BYTES / (1024 * 1024)} MB.`;
+    }
+    return null;
+  }
+
+  async function addFiles(files: File[]) {
+    const slots = LEAVE_DOC_MAX_COUNT - docs.length - uploading.length;
+    if (slots <= 0) {
+      toast.error(`You can attach at most ${LEAVE_DOC_MAX_COUNT} documents.`);
+      return;
+    }
+    if (files.length > slots) {
+      toast.error(`Only ${LEAVE_DOC_MAX_COUNT} documents per request — some were skipped.`);
+    }
+    for (const file of files.slice(0, slots)) {
+      const reason = rejectReason(file);
+      if (reason) {
+        toast.error(reason);
+        continue;
+      }
+      setUploading((u) => [...u, file.name]);
+      try {
+        const { attachment_id, upload_url } = await presignLeaveDocument(
+          file.name,
+          file.type,
+        );
+        await uploadFileToPresignedUrl(upload_url, file);
+        setDocs((d) => [
+          ...d,
+          {
+            id: attachment_id,
+            filename: file.name,
+            content_type: file.type,
+            size: file.size,
+          },
+        ]);
+      } catch {
+        toast.error(`Couldn't upload “${file.name}”. Try again.`);
+      } finally {
+        // Remove by first match rather than by name equality across the whole list, so two files
+        // with the same name don't clear each other's spinner.
+        setUploading((u) => {
+          const i = u.indexOf(file.name);
+          return i < 0 ? u : [...u.slice(0, i), ...u.slice(i + 1)];
+        });
+      }
+    }
   }
 
   const onSubmit = handleSubmit(async (data) => {
@@ -117,6 +188,7 @@ export function RequestLeaveDialog({
         from: data.startDate,
         to: data.endDate,
         reason: data.reason,
+        ...(docs.length ? { attachments: docs } : {}),
       });
       const d = workingDays(data.startDate, data.endDate);
       toast.success("Leave request submitted", {
@@ -208,11 +280,68 @@ export function RequestLeaveDialog({
             <Input placeholder="e.g. Family vacation" {...register("reason")} />
           </Field>
 
+          <div className="space-y-2">
+            <Label>
+              Documents <span className="text-muted-foreground">optional</span>
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              A certificate or booking, if it helps your approver. PDF, Word, text or image —
+              up to {LEAVE_DOC_MAX_COUNT} files, {LEAVE_DOC_MAX_BYTES / (1024 * 1024)} MB each.
+            </p>
+
+            {docs.length || uploading.length ? (
+              <ul className="space-y-1">
+                {docs.map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-sm"
+                  >
+                    <Paperclip className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{d.filename}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${d.filename}`}
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => setDocs((list) => list.filter((x) => x.id !== d.id))}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+                {uploading.map((name, i) => (
+                  <li
+                    key={`${name}-${i}`}
+                    className="flex items-center gap-2 rounded-md border border-dashed border-border px-2 py-1.5 text-sm text-muted-foreground"
+                  >
+                    <Paperclip className="size-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{name}</span>
+                    <span className="text-xs">Uploading…</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <Input
+              type="file"
+              multiple
+              accept={LEAVE_DOC_TYPES.join(",")}
+              className="cursor-pointer text-sm file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
+              onChange={(e) => {
+                const picked = e.target.files ? Array.from(e.target.files) : [];
+                // Reset so picking the same file again still fires change.
+                e.target.value = "";
+                void addFiles(picked);
+              }}
+            />
+          </div>
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            {/* Submitting mid-upload would post a request missing the document the person just
+                chose, with no sign anything was lost. */}
+            <Button type="submit" disabled={isSubmitting || uploading.length > 0}>
               <CalendarPlus className="size-4" /> Submit request
             </Button>
           </DialogFooter>

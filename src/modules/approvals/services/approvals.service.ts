@@ -14,6 +14,7 @@
  * so the id alone doesn't locate it.
  */
 import { apiFetch } from "@/lib/api";
+import type { ApiLeaveAttachment } from "@/modules/leave/services/leave.service";
 
 /** One queued request (`approvals::dto::ApprovalRow`). */
 export interface ApiApprovalRow {
@@ -28,6 +29,11 @@ export interface ApiApprovalRow {
   reason?: string;
   /** Epoch ms. */
   created_at?: number;
+  /**
+   * Documents the requester attached. Metadata only — the approver fetches a short-lived URL per
+   * file via `getLeaveDocumentUrl`, so nothing here is a live link that could be shared on.
+   */
+  attachments?: ApiLeaveAttachment[];
 }
 
 interface QueueResponse {

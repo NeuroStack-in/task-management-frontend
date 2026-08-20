@@ -14,7 +14,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, apiFetch } from "@/lib/api";
 import { UNKNOWN_TYPE } from "@/lib/format";
-import { getTypes } from "@/modules/leave/services/leave.service";
+import {
+  getTypes,
+  type ApiLeaveAttachment,
+} from "@/modules/leave/services/leave.service";
 import * as api from "./services/approvals.service";
 import type { ApiApprovalRow, DecideInput } from "./services/approvals.service";
 
@@ -30,6 +33,8 @@ export interface ApprovalItem {
   reason?: string;
   status: string;
   createdAt?: number;
+  /** Documents the requester attached. Metadata only; the URL is fetched per file on demand. */
+  attachments: ApiLeaveAttachment[];
 }
 
 const STATUSES = ["pending", "approved", "rejected"] as const;
@@ -98,6 +103,7 @@ export function useApprovals(): ApprovalsData {
           typeName: typeName.get(r.type_id) ?? UNKNOWN_TYPE,
           from: r.from,
           to: r.to,
+          attachments: r.attachments ?? [],
           days: r.days,
           reason: r.reason,
           status: r.status,
