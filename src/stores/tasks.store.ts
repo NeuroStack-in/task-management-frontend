@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { tasks as seedTasks } from "@/lib/data";
-import type { Task, TaskPriority, TaskStatus } from "@/modules/projects/types";
+import type { Task, TaskAssignee, TaskPriority, TaskStatus } from "@/modules/projects/types";
 import type { ApiAttachment } from "@/modules/projects/services/projects.service";
 
 /**
@@ -13,7 +13,8 @@ export interface TaskFormValues {
   title: string;
   description: string;
   status: TaskStatus;
-  assigneeId: string | null;
+  /** Everyone to put on the task; empty means unassigned, which is a choice the form can make. */
+  assigneeIds: string[];
   priority: TaskPriority;
   dueDate: string | null;
   estimateHours: number;
@@ -31,6 +32,15 @@ interface TasksState {
 
 let seq = 0;
 
+/**
+ * Form ids → the shape a `Task` holds. `assignedBy` is left empty because this store is the
+ * offline mock: nobody assigned these, and stamping the current user would put a fabricated name
+ * on the "Assigned by" line the moment the seed data is rendered.
+ */
+function toAssignees(ids: string[]): TaskAssignee[] {
+  return ids.map((userId) => ({ userId, assignedBy: "", assignedAt: 0 }));
+}
+
 export const useTasksStore = create<TasksState>((set) => ({
   tasks: seedTasks,
 
@@ -42,7 +52,7 @@ export const useTasksStore = create<TasksState>((set) => ({
       title: v.title,
       description: v.description,
       status: v.status,
-      assigneeId: v.assigneeId,
+      assignees: toAssignees(v.assigneeIds),
       priority: v.priority,
       dueDate: v.dueDate,
       estimateHours: v.estimateHours,
@@ -65,7 +75,7 @@ export const useTasksStore = create<TasksState>((set) => ({
               ...t,
               title: v.title,
               status: v.status,
-              assigneeId: v.assigneeId,
+              assignees: toAssignees(v.assigneeIds),
               priority: v.priority,
               dueDate: v.dueDate,
               estimateHours: v.estimateHours,

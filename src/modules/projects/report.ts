@@ -126,8 +126,10 @@ export async function generateProjectReportPdf(
     }
     const title =
       t.title.length > 46 ? `${t.title.slice(0, 45)}…` : t.title;
-    const assignee = t.assigneeId
-      ? (userMap[t.assigneeId]?.name ?? "—")
+    // Every name, comma-joined, then truncated by the same rule as a single one. Printing only
+    // the first would make a shared task look like one person's on paper.
+    const assignee = t.assignees.length
+      ? t.assignees.map((a) => userMap[a.userId]?.name ?? "—").join(", ")
       : "Unassigned";
     doc.text(title, left, y);
     doc.text(TASK_STATUS_META[t.status].label, left + 250, y);

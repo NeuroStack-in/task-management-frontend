@@ -48,7 +48,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
+import { initials, personName } from "@/lib/format";
 import type { ProjectFormValues } from "@/stores/projects.store";
 import type { TaskFormValues } from "@/stores/tasks.store";
 import { useProjectDetail } from "../use-project-detail";
@@ -75,6 +75,7 @@ import {
   toneSoft,
   type UserMini,
 } from "../lib";
+import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
 import { MemberStack, Segmented, StatusBadge } from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
@@ -324,7 +325,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         // statuses. Showing `done` is the honest neighbour: it is the state the review moved it
         // out of, and reopening by saving is a deliberate act rather than an accident of the form.
         status: editingTask.status === "closed" ? ("done" as const) : editingTask.status,
-        assigneeId: editingTask.assigneeId ?? "",
+        assigneeIds: editingTask.assignees.map((a) => a.userId),
         priority: editingTask.priority,
         dueDate: editingTask.dueDate?.slice(0, 10) ?? "",
         estimateHours: editingTask.estimateHours,
@@ -1118,7 +1119,7 @@ function TaskListView({
         <span className="w-24 shrink-0">Due</span>
         <span className="hidden w-24 shrink-0 md:block">Priority</span>
         <span className="w-24 shrink-0">Status</span>
-        <span className="w-44 shrink-0">Assignee</span>
+        <span className="w-44 shrink-0">Assignees</span>
         {/* Spacer keeping the header aligned with the row's trailing action cell. */}
         <span className="w-8 shrink-0" aria-hidden />
       </div>
@@ -1127,7 +1128,6 @@ function TaskListView({
         {sorted.map((t) => {
           const prio = TASK_PRIORITY_META[t.priority];
           const status = TASK_STATUS_META[t.status];
-          const assignee = t.assigneeId ? userMap[t.assigneeId] : null;
           const due = dueLabel(t.dueDate);
           const deletable = canDelete(t);
           return (
@@ -1189,24 +1189,25 @@ function TaskListView({
                   <StatusBadge tone={status.tone} label={status.label} />
                 </span>
 
-                {/* Assignee — avatar from sm, name added at lg */}
+                {/* Assignees — a stack from sm, the first name added at lg. Only one name is
+                    spelled out even when several people are on it: the row has 11rem, and two
+                    truncated half-names say less than one whole one plus a "+2" you can hover. */}
                 <span className="hidden w-44 shrink-0 items-center gap-2 sm:flex">
-                  {assignee ? (
+                  {t.assignees.length === 0 ? (
+                    <span className="text-muted-foreground/50 text-xs">Unassigned</span>
+                  ) : (
                     <>
-                      <Avatar size="sm" className="size-6 shrink-0">
-                        {assignee.avatarUrl ? (
-                          <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
-                        ) : null}
-                        <AvatarFallback className="text-[0.55rem]">
-                          {initials(assignee.name)}
-                        </AvatarFallback>
-                      </Avatar>
+                      <AssigneeStack
+                        assignees={t.assignees}
+                        userMap={userMap}
+                        size="sm"
+                        ringClass="ring-background"
+                      />
                       <span className="text-muted-foreground hidden truncate text-xs lg:inline">
-                        {assignee.name}
+                        {personName(userMap[t.assignees[0].userId]?.name)}
+                        {t.assignees.length > 1 ? ` +${t.assignees.length - 1}` : ""}
                       </span>
                     </>
-                  ) : (
-                    <span className="text-muted-foreground/50 text-xs">Unassigned</span>
                   )}
                 </span>
               </button>
@@ -1240,7 +1241,6 @@ function TaskCardContent({
   userMap: Record<string, UserMini>;
 }) {
   const prio = TASK_PRIORITY_META[task.priority];
-  const assignee = task.assigneeId ? userMap[task.assigneeId] : null;
   const due = dueLabel(task.dueDate);
   return (
     <>
@@ -1279,17 +1279,10 @@ function TaskCardContent({
               {due.text}
             </span>
           ) : null}
-          {assignee ? (
-            <Avatar size="sm" className="size-6">
-              {assignee.avatarUrl ? (
-                <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
-              ) : null}
-              <AvatarFallback className="text-[0.55rem]">
-                {initials(assignee.name)}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
+          {task.assignees.length === 0 ? (
             <span className="text-muted-foreground/60 text-[0.7rem]">Unassigned</span>
+          ) : (
+            <AssigneeStack assignees={task.assignees} userMap={userMap} size="sm" />
           )}
         </div>
       </div>

@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
+import { initials, personName } from "@/lib/format";
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -22,6 +22,7 @@ import {
   type Task,
 } from "../types";
 import { toneSoft, type UserMini } from "../lib";
+import { AssignedByLine } from "./assignees";
 import { StatusBadge } from "./parts";
 import { getAttachmentDownloadUrl } from "../services/projects.service";
 
@@ -104,7 +105,7 @@ export function ViewTaskDialog({
 
   const status = TASK_STATUS_META[task.status];
   const prio = TASK_PRIORITY_META[task.priority];
-  const assignee = task.assigneeId ? userMap[task.assigneeId] : null;
+
 
   const closeViewer = () => {
     setViewer((v) => {
@@ -154,25 +155,36 @@ export function ViewTaskDialog({
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1">
             {/* Meta */}
             <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-              <div className="flex flex-col gap-1">
+              {/* Spans both columns: a task can have several people and each carries a line
+                  saying who put them there, so this stopped being a one-line field. */}
+              <div className="flex flex-col gap-1 sm:col-span-2">
                 <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                  Assignee
+                  {task.assignees.length > 1 ? "Assignees" : "Assignee"}
                 </dt>
                 <dd>
-                  {assignee ? (
-                    <span className="flex items-center gap-2">
-                      <Avatar className="size-6">
-                        {assignee.avatarUrl ? (
-                          <AvatarImage src={assignee.avatarUrl} alt={assignee.name} />
-                        ) : null}
-                        <AvatarFallback className="text-[0.6rem]">
-                          {initials(assignee.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="truncate">{assignee.name}</span>
+                  {task.assignees.length === 0 ? (
+                    <span className="text-muted-foreground">
+                      Unassigned — anyone on this project can pick it up
                     </span>
                   ) : (
-                    <span className="text-muted-foreground">Unassigned</span>
+                    <ul className="space-y-1.5">
+                      {task.assignees.map((a) => {
+                        const u = userMap[a.userId];
+                        const name = personName(u?.name);
+                        return (
+                          <li key={a.userId} className="flex items-center gap-2">
+                            <Avatar className="size-6">
+                              {u?.avatarUrl ? <AvatarImage src={u.avatarUrl} alt={name} /> : null}
+                              <AvatarFallback className="text-[0.6rem]">
+                                {initials(name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="min-w-0 flex-1 truncate">{name}</span>
+                            <AssignedByLine assignee={a} userMap={userMap} />
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
                 </dd>
               </div>

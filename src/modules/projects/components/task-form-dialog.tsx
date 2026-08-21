@@ -21,18 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { initials, todayIso } from "@/lib/format";
+import { todayIso } from "@/lib/format";
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -41,6 +36,7 @@ import {
   type TaskStatus,
 } from "../types";
 import { toneDot, type UserMini } from "../lib";
+import { AssigneePicker } from "./assignees";
 import {
   presignTaskAttachment,
   uploadFileToPresignedUrl,
@@ -55,7 +51,7 @@ const schema = z.object({
   // reviewing the task, not by editing it. A form that offered it would let the assignee mark their
   // own work approved — and the server would refuse the write anyway.
   status: z.enum(["todo", "in_progress", "in_review", "done", "blocked"]),
-  assigneeId: z.string(),
+  assigneeIds: z.array(z.string()),
   priority: z.enum(["low", "medium", "high"]),
   dueDate: z.string(),
   estimateHours: z.coerce.number().min(0, "Must be ≥ 0").max(400),
@@ -81,7 +77,7 @@ const EMPTY: FormShape = {
   title: "",
   description: "",
   status: "todo",
-  assigneeId: "",
+  assigneeIds: [],
   priority: "medium",
   dueDate: "",
   estimateHours: 4,
@@ -277,7 +273,7 @@ export function TaskFormDialog({
       title: data.title,
       description: data.description,
       status: data.status,
-      assigneeId: data.assigneeId || null,
+      assigneeIds: data.assigneeIds,
       priority: data.priority,
       dueDate: data.dueDate || null,
       estimateHours: data.estimateHours,
@@ -299,7 +295,7 @@ export function TaskFormDialog({
           <DialogTitle>{isEdit ? "Edit task" : "Add task"}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? "Update the task’s details, status, or assignee."
+              ? "Update the task’s details, status, or assignees."
               : "Add a task to this project."}
           </DialogDescription>
         </DialogHeader>
@@ -396,72 +392,24 @@ export function TaskFormDialog({
               </Field>
             </div>
 
-            <Field label="Assignee">
+            <Field label="Assignees">
               <Controller
                 control={control}
-                name="assigneeId"
+                name="assigneeIds"
                 render={({ field }) => (
-                  <Select
-                    value={field.value || "none"}
-                    onValueChange={(v) =>
-                      field.onChange(v === "none" ? "" : (v as string))
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue>
-                        {(v) => {
-                          const u =
-                            v && v !== "none"
-                              ? members.find((m) => m.id === v)
-                              : null;
-                          if (!u)
-                            return (
-                              <span className="text-muted-foreground">
-                                Unassigned
-                              </span>
-                            );
-                          return (
-                            <span className="flex min-w-0 items-center gap-2">
-                              <Avatar className="size-5">
-                                {u.avatarUrl ? (
-                                  <AvatarImage src={u.avatarUrl} alt={u.name} />
-                                ) : null}
-                                <AvatarFallback className="text-[0.55rem]">
-                                  {initials(u.name)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="truncate">{u.name}</span>
-                            </span>
-                          );
-                        }}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Unassigned</SelectItem>
-                      {members.map((u) => (
-                        <SelectItem key={u.id} value={u.id}>
-                          <span className="flex items-center gap-2">
-                            <Avatar className="size-6">
-                              {u.avatarUrl ? (
-                                <AvatarImage src={u.avatarUrl} alt={u.name} />
-                              ) : null}
-                              <AvatarFallback className="text-[0.6rem]">
-                                {initials(u.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="flex min-w-0 flex-col leading-tight">
-                              <span className="truncate text-sm">{u.name}</span>
-                              <span className="truncate text-xs text-muted-foreground">
-                                {u.jobTitle}
-                              </span>
-                            </span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AssigneePicker
+                    members={members}
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
                 )}
               />
+              {/* Said out loud because it is no longer merely "nobody chose": leaving this empty
+                  publishes the task to the project, and someone would otherwise discover that by
+                  seeing their card in a colleague's desktop picker. */}
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Leave empty to offer this task to everyone on the project.
+              </p>
             </Field>
 
             <div className="grid grid-cols-2 gap-3">

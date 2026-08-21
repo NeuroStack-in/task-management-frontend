@@ -18,7 +18,28 @@ export const organization = organizationJson as Organization;
 export const projects: Project[] = (projectsJson as Project[]).map((p) =>
   (p.status as string) === "archived" ? { ...p, status: "completed" } : p,
 );
-export const tasks = tasksJson as Task[];
+/**
+ * The seed rows predate several `Task` fields and store a single `assigneeId`, so they are
+ * normalised on load rather than cast.
+ *
+ * This used to be a bare `as Task[]`, which type-checked while quietly claiming the JSON had a
+ * `description` and an `attachments` array it never had. Widening `Task` to a list of assignees is
+ * what surfaced it; filling the gaps here is cheaper and more honest than regenerating the fixture.
+ */
+type SeedTask = Omit<Task, "description" | "assignees" | "attachments"> & {
+  description?: string;
+  assigneeId?: string | null;
+  attachments?: Task["attachments"];
+};
+
+export const tasks: Task[] = (tasksJson as SeedTask[]).map((t) => ({
+  ...t,
+  description: t.description ?? "",
+  assignees: t.assigneeId
+    ? [{ userId: t.assigneeId, assignedBy: "", assignedAt: 0 }]
+    : [],
+  attachments: t.attachments ?? [],
+}));
 
 /** Simulates network latency for mock services. */
 export function delay<T>(value: T, ms = 250): Promise<T> {

@@ -85,6 +85,19 @@ export interface Attachment {
   size: number;
 }
 
+/** One person on a task, and the record of who put them there. */
+export interface TaskAssignee {
+  userId: string;
+  /**
+   * Who assigned them. **Empty string** for assignments made before the server recorded it — read
+   * that as "unknown", never as the task's creator: this is an audit field, and a plausible guess
+   * is worse than a gap.
+   */
+  assignedBy: string;
+  /** Epoch ms, or 0 when unrecorded (same pre-migration rows as `assignedBy`). */
+  assignedAt: number;
+}
+
 export interface Task {
   id: string;
   projectId: string;
@@ -92,7 +105,14 @@ export interface Task {
   /** Free-text detail; empty string when the task has none. */
   description: string;
   status: TaskStatus;
-  assigneeId: string | null;
+  /**
+   * Everyone on the task, in the order they were assigned.
+   *
+   * **Empty is a real, useful state**, not a missing value: an unassigned task is offered to every
+   * member of its project in the desktop app's task picker, so "nobody yet" is how work gets put up
+   * for grabs. Surfaces should say "Unassigned" rather than leaving a blank.
+   */
+  assignees: TaskAssignee[];
   priority: TaskPriority;
   dueDate: string | null;
   estimateHours: number;

@@ -7,7 +7,7 @@
 import type { User } from "@/types/user";
 import { personName } from "@/lib/format";
 import type { ApiProjectMember } from "./services/projects.service";
-import type { Project, Task, TaskStatus } from "./types";
+import type { Project, Task, TaskAssignee, TaskStatus } from "./types";
 
 const DAY = 86_400_000;
 
@@ -48,6 +48,30 @@ export function selectablePeople(map: Record<string, UserMini>): UserMini[] {
   return Object.values(map)
     .filter((u) => !u.removed)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The assignee list off a board task, falling back to the single `assignee_id` a task written
+ * before assignments became their own rows still carries.
+ *
+ * Without the fallback every such task renders as unassigned for the length of the backfill — and,
+ * worse, is then *offered to the whole project* as unclaimed work in the desktop picker. Shared by
+ * both board readers so the two can't disagree about what an old task means.
+ */
+export function toAssignees(t: {
+  assignees?: { user_id: string; assigned_by: string; assigned_at: number }[];
+  assignee_id?: string;
+}): TaskAssignee[] {
+  if (t.assignees?.length) {
+    return t.assignees.map((a) => ({
+      userId: a.user_id,
+      assignedBy: a.assigned_by,
+      assignedAt: a.assigned_at,
+    }));
+  }
+  return t.assignee_id
+    ? [{ userId: t.assignee_id, assignedBy: "", assignedAt: 0 }]
+    : [];
 }
 
 /** Slim, prop-friendly user lookup (avoids shipping the full user array). */
@@ -232,13 +256,17 @@ export function canDeleteTask(
  * The server enforces all three. This exists so the button is absent rather than present-and-403.
  */
 export function canReviewTask(
-  task: Pick<Task, "status" | "assigneeId">,
+  task: Pick<Task, "status" | "assignees">,
   authority: string,
   currentUserId: string | null | undefined,
 ): boolean {
   if (task.status !== "done") return false;
   if (authority !== "manager" && authority !== "lead") return false;
-  return !(currentUserId && task.assigneeId === currentUserId);
+  // *Any* assignee, not just the first: with several people on a task, checking only the one the
+  // card happens to show would let the second one approve work they did.
+  return !(
+    currentUserId && task.assignees.some((a) => a.userId === currentUserId)
+  );
 }
 
 /* --------------------- tone → literal class maps ---------------------- */

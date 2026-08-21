@@ -127,12 +127,27 @@ export interface ApiAttachment {
   size: number;
 }
 
+/** One person on a task, as the server stores the assignment. */
+export interface ApiTaskAssignee {
+  user_id: string;
+  /** Cognito `sub` of whoever put them on it. Empty for assignments made before this was recorded. */
+  assigned_by: string;
+  /** Epoch ms, 0 when unrecorded. */
+  assigned_at: number;
+}
+
 export interface ApiBoardTask {
   id: string;
   title: string;
   description?: string;
   /** Files attached to the task; empty/absent when it has none. */
   attachments?: ApiAttachment[];
+  /** Everyone on the task. Absent (not `[]`) when nobody is — the server skips empty vectors. */
+  assignees?: ApiTaskAssignee[];
+  /**
+   * The first assignee, still served for clients that only understand one. Prefer `assignees`;
+   * this is a copy kept on the task item and it cannot express a second person.
+   */
   assignee_id?: string;
   due?: string;
   /** `low` | `medium` | `high`. */
@@ -181,6 +196,13 @@ export interface ApiMyTask {
   project_id: string;
   status: string;
   due?: string;
+  /**
+   * True for a task nobody has taken. Only ever set when the caller asked for unclaimed work, which
+   * the web app never does — the dashboard card and the timesheet picker both mean *assigned to me*,
+   * and folding a project's whole backlog into them would bury the two things someone owns.
+   * The desktop panel's picker is the one caller that opts in.
+   */
+  unassigned?: boolean;
 }
 
 export function listMyTasks(): Promise<ApiMyTask[]> {
@@ -192,7 +214,8 @@ export function listMyTasks(): Promise<ApiMyTask[]> {
 export interface NewTask {
   title: string;
   description?: string;
-  assignee_id?: string;
+  /** Everyone to put on it. Omit or send `[]` for unassigned, which offers it to the whole project. */
+  assignee_ids?: string[];
   status?: string;
   due?: string;
   priority?: string;
@@ -207,13 +230,17 @@ export function createTask(projectId: string, body: NewTask): Promise<ApiBoardTa
   });
 }
 
-/** PATCH — omitted fields are left as-is; `null` on `due`/`assignee_id`/`estimate_hours` clears. */
+/** PATCH — omitted fields are left as-is; `null` on `due`/`assignee_ids`/`estimate_hours` clears. */
 export interface TaskPatch {
   title?: string;
   description?: string;
   status?: string;
   due?: string | null;
-  assignee_id?: string | null;
+  /**
+   * **Replaces** the whole set, like `attachments` — a present array is exactly who ends up on the
+   * task. Omit to leave the assignees alone; `[]` or `null` unassigns everyone.
+   */
+  assignee_ids?: string[] | null;
   priority?: string;
   estimate_hours?: number | null;
   /** A present array REPLACES the whole attachment set; omit to leave it unchanged. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canDeleteTask } from "./lib";
+import { canDeleteTask, canReviewTask, toAssignees } from "./lib";
 
 /**
  * The delete rule, as an executable statement. It mirrors `projects::delete_task` on the server —
@@ -47,5 +47,61 @@ describe("canDeleteTask", () => {
   it("never matches an unknown caller against an unknown author", () => {
     expect(canDeleteTask({ createdBy: null }, "member", null)).toBe(false);
     expect(canDeleteTask(mine, "member", null)).toBe(false);
+  });
+});
+
+/**
+ * Two people share a task; both did the work; neither may sign it off. The server enforces the same
+ * rule against the full assignment set, so a UI that offered the button to the second assignee
+ * would only produce a `cannot_review_own_task` conflict.
+ */
+describe("canReviewTask with several assignees", () => {
+  const shared = {
+    status: "done" as const,
+    assignees: [
+      { userId: "u-a", assignedBy: "u-lead", assignedAt: 1 },
+      { userId: "u-b", assignedBy: "u-lead", assignedAt: 2 },
+    ],
+  };
+
+  it("refuses every assignee, not just the first", () => {
+    expect(canReviewTask(shared, "lead", "u-a")).toBe(false);
+    expect(canReviewTask(shared, "lead", "u-b")).toBe(false);
+  });
+
+  it("still lets an uninvolved lead sign it off", () => {
+    expect(canReviewTask(shared, "lead", "u-lead")).toBe(true);
+  });
+
+  it("lets anyone review an unassigned task", () => {
+    expect(canReviewTask({ status: "done", assignees: [] }, "lead", "u-a")).toBe(true);
+  });
+});
+
+/**
+ * The backfill window: tasks written before assignments became their own rows arrive with only
+ * `assignee_id`. Dropping that would render them unassigned — and an unassigned task is now
+ * *offered to the whole project*, so the fallback is what stops someone else's work appearing in
+ * every teammate's desktop picker.
+ */
+describe("toAssignees", () => {
+  it("prefers the assignment rows when present", () => {
+    expect(
+      toAssignees({
+        assignees: [{ user_id: "u-a", assigned_by: "u-lead", assigned_at: 42 }],
+        assignee_id: "u-stale",
+      }),
+    ).toEqual([{ userId: "u-a", assignedBy: "u-lead", assignedAt: 42 }]);
+  });
+
+  it("falls back to the legacy single assignee, with no invented assigner", () => {
+    expect(toAssignees({ assignee_id: "u-a" })).toEqual([
+      { userId: "u-a", assignedBy: "", assignedAt: 0 },
+    ]);
+  });
+
+  it("reads a genuinely unassigned task as empty", () => {
+    expect(toAssignees({})).toEqual([]);
+    expect(toAssignees({ assignees: [] })).toEqual([]);
   });
 });

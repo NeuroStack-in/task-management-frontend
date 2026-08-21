@@ -334,7 +334,9 @@ function generateTasks(projects: Project[]): Task[] {
         title: `${faker.helpers.arrayElement(TASK_VERB)} ${faker.hacker.noun()} ${faker.hacker.noun()}`,
         description: "",
         status,
-        assigneeId,
+        // Generated data has no assignment history — nobody handed this over, so `assignedBy` is
+        // left empty rather than naming someone who never did it.
+        assignees: assigneeId ? [{ userId: assigneeId, assignedBy: "", assignedAt: 0 }] : [],
         priority,
         dueDate,
         estimateHours: faker.number.int({ min: 1, max: 16 }),
@@ -367,7 +369,7 @@ function assignDemoEmployee(projects: Project[], tasks: Task[]) {
   for (const p of targetProjects) {
     const projectTasks = tasks.filter((t) => t.projectId === p.id).slice(0, 4);
     for (const t of projectTasks) {
-      t.assigneeId = DEMO_EMPLOYEE.id;
+      t.assignees = [{ userId: DEMO_EMPLOYEE.id, assignedBy: "", assignedAt: 0 }];
       t.status = statusCycle[assigned % statusCycle.length];
       if (t.status !== "done" && !t.dueDate) {
         t.dueDate = isoFromOffsetDays(3 + (assigned % 10));

@@ -22,7 +22,7 @@ import {
 } from "./services/projects.service";
 import type { Project, Task, TaskPriority, TaskStatus } from "./types";
 import { mapProjectStatus } from "./use-projects-data";
-import { membersToUserMap, type UserMini } from "./lib";
+import { membersToUserMap, toAssignees, type UserMini } from "./lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 import type { TaskFormValues } from "@/stores/tasks.store";
 
@@ -82,7 +82,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
               title: t.title,
               description: t.description ?? "",
               status: col.status as TaskStatus,
-              assigneeId: t.assignee_id ?? null,
+              assignees: toAssignees(t),
               priority: (t.priority as TaskPriority) ?? "medium",
               dueDate: t.due ?? null,
               estimateHours: t.estimate_hours ?? 0,
@@ -156,7 +156,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
         title: v.title,
         description: v.description,
         status: v.status,
-        assignee_id: v.assigneeId || undefined,
+        assignee_ids: v.assigneeIds,
         due: v.dueDate || undefined,
         priority: v.priority,
         estimate_hours: v.estimateHours,
@@ -173,8 +173,9 @@ export function useProjectDetail(id: string): ProjectDetailData {
         title: v.title,
         description: v.description,
         status: v.status,
-        // Empty string in the form = clear it (the double-null the PATCH understands).
-        assignee_id: v.assigneeId ? v.assigneeId : null,
+        // A present array replaces the set; an empty one unassigns everyone. The form always sends
+        // the full list, so this needs no null-vs-omitted dance.
+        assignee_ids: v.assigneeIds,
         due: v.dueDate ? v.dueDate : null,
         priority: v.priority,
         estimate_hours: v.estimateHours,

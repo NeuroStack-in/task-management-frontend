@@ -27,7 +27,7 @@ import {
 } from "./services/projects.service";
 import type { NewTask, TaskPatch } from "./services/projects.service";
 import type { Project, ProjectStatus, Task, TaskPriority, TaskStatus } from "./types";
-import { membersToUserMap, type UserMini } from "./lib";
+import { membersToUserMap, toAssignees, type UserMini } from "./lib";
 import type { ProjectFormValues } from "@/stores/projects.store";
 
 /**
@@ -134,7 +134,7 @@ export function useProjectsData(): ProjectsData {
                 title: t.title,
                 description: t.description ?? "",
                 status: col.status as TaskStatus,
-                assigneeId: t.assignee_id ?? null,
+                assignees: toAssignees(t),
                 priority: (t.priority as TaskPriority) ?? "medium",
                 dueDate: t.due ?? null,
                 estimateHours: t.estimate_hours ?? 0,
