@@ -16,7 +16,6 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -184,18 +183,24 @@ export function AssigneePicker({
         align="start"
         className="max-h-72 overflow-y-auto"
       >
-        <DropdownMenuLabel className="flex items-center justify-between gap-2">
+        {/* A plain element, not `DropdownMenuLabel` — the third place to need this note.
+            That component wraps Base UI's `Menu.GroupLabel`, which reads context from a
+            `Menu.Group` and **throws when rendered without one**, taking the whole page down
+            through the error boundary. It has now crashed the Employees page (pending-invites.tsx),
+            the Roles page (role-members.tsx) and this one. Doubly wrong here anyway: a group label
+            is not a container for the interactive Clear button. */}
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs font-medium">
           <span>Assignees</span>
           {value.length > 0 ? (
             <button
               type="button"
               onClick={() => onChange([])}
-              className="text-xs font-normal text-muted-foreground hover:text-foreground"
+              className="font-normal text-muted-foreground hover:text-foreground"
             >
               Clear
             </button>
           ) : null}
-        </DropdownMenuLabel>
+        </div>
 
         {searchable ? (
           <div className="px-1.5 pb-1.5">
