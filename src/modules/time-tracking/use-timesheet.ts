@@ -113,7 +113,11 @@ export function useTimesheet(day?: string): TimesheetState {
         const [today, names, titles] = await Promise.all([
           getToday(date),
           projectNameMap().catch(() => new Map<string, string>()),
-          listMyTasks()
+          // `includeUnassigned` because this is a **name lookup**, not a to-do list. An unassigned
+          // task is offered in the desktop picker, so time really does get tracked against one —
+          // and without its title here the row fell back to "No description" and named nothing at
+          // all. Nothing about this list is rendered as "your tasks"; only `id → title` is used.
+          listMyTasks({ includeUnassigned: true })
             .then((ts) => new Map(ts.map((t) => [t.id, t.title])))
             .catch(() => new Map<string, string>()),
         ]);

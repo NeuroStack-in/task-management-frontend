@@ -205,8 +205,20 @@ export interface ApiMyTask {
   unassigned?: boolean;
 }
 
-export function listMyTasks(): Promise<ApiMyTask[]> {
-  return apiFetch<{ tasks: ApiMyTask[] }>("/v1/me/tasks").then((r) => r.tasks);
+/**
+ * The caller's tasks. `includeUnassigned` adds the unclaimed work in their projects.
+ *
+ * Two callers want two different things from the same endpoint, and the flag is what keeps them
+ * apart. A list the person *reads* as "my work" must stay assigned-only. A **name lookup** — "what
+ * is task `k-01M0HYQ…` called?" — has to cover anything they could have tracked time against, and
+ * an unassigned task is exactly that: the desktop picker offers it, so it turns up in timesheets.
+ * Resolving its name is not the same as claiming it is theirs.
+ */
+export function listMyTasks(
+  opts: { includeUnassigned?: boolean } = {},
+): Promise<ApiMyTask[]> {
+  const qs = opts.includeUnassigned ? "?include_unassigned=true" : "";
+  return apiFetch<{ tasks: ApiMyTask[] }>(`/v1/me/tasks${qs}`).then((r) => r.tasks);
 }
 
 // ── Task mutations ─────────────────────────────────────────────────────────────────────────────
