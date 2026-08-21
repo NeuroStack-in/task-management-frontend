@@ -400,7 +400,13 @@ export function OrgAiSummaryWidget({
 
   return (
     <Card className="bg-feature text-feature-foreground shadow-none">
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+      {/* No control in the top-right. The dashboard shell floats this widget's drag and remove
+          buttons there on hover (`customizable-dashboard`, `absolute right-3 top-3`), so anything
+          the header right-aligns collides with them — and it collides precisely when someone is
+          hovering the widget, which is when they'd reach for either. Reserving ~72px of permanent
+          dead space to dodge it would be worse in a tile this narrow, so Regenerate sits with the
+          other action at the foot of the card instead. */}
+      <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Sparkles className="size-4" /> AI summary
           {PERIOD_NOTE[range] ? (
@@ -409,16 +415,6 @@ export function OrgAiSummaryWidget({
             </span>
           ) : null}
         </CardTitle>
-        <button
-          type="button"
-          onClick={regenerate}
-          disabled={loading || regenerating}
-          title="Regenerate summary"
-          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-feature-foreground/80 transition-colors hover:bg-white/15 hover:text-feature-foreground disabled:pointer-events-none disabled:opacity-50"
-        >
-          <RefreshCw className={`size-3.5 ${regenerating ? "animate-spin" : ""}`} />
-          {regenerating ? "Regenerating…" : "Regenerate"}
-        </button>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 text-sm leading-relaxed text-feature-foreground/90">
         {loading || regenerating ? (
@@ -438,17 +434,31 @@ export function OrgAiSummaryWidget({
           </>
         ) : null}
         {error ? <p className="text-feature-foreground/70">{error}</p> : null}
-        <button
-          type="button"
-          onClick={() =>
-            openAssistant(
-              `Summarise ${rangeLabel ?? "this week"}'s productivity and flag any burnout risks.`,
-            )
-          }
-          className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
-        >
-          Ask the assistant <ArrowUpRight className="size-3.5" />
-        </button>
+        {/* Both of the widget's actions, together and out of the shell's way. `flex-wrap` so the
+            pair stacks rather than overflowing when the tile is narrow. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              openAssistant(
+                `Summarise ${rangeLabel ?? "this week"}'s productivity and flag any burnout risks.`,
+              )
+            }
+            className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
+          >
+            Ask the assistant <ArrowUpRight className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={regenerate}
+            disabled={loading || regenerating}
+            title="Regenerate summary"
+            className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-feature-foreground/80 transition-colors hover:bg-white/15 hover:text-feature-foreground disabled:pointer-events-none disabled:opacity-50"
+          >
+            <RefreshCw className={`size-3.5 ${regenerating ? "animate-spin" : ""}`} />
+            {regenerating ? "Regenerating…" : "Regenerate"}
+          </button>
+        </div>
       </CardContent>
     </Card>
   );

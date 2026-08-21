@@ -100,6 +100,11 @@ function SortableWidget({
       )}
     >
       {!isDragging ? (
+        // The shell owns a widget's top-right corner: ~72px of it, floated over whatever the card
+        // renders and revealed on hover. A widget that right-aligns something in its own
+        // `CardHeader` will therefore collide with these — and collide exactly when the person is
+        // hovering, which is when both are wanted. Widget headers are title-only for that reason;
+        // put a widget's own actions in its footer (see the AI summary card).
         <div className="absolute right-3 top-3 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/widget:opacity-100">
           <button
             type="button"
