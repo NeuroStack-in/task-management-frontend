@@ -152,11 +152,20 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  const members = useMemo(
-    // Deleted employees are excluded: a purged identity must not be assignable as lead/manager.
-    () => selectablePeople(userMap),
-    [userMap],
-  );
+  // Who a task may be assigned to: **this project's members**, nobody else.
+  //
+  // `userMap` is the project's roster merged with the whole org directory (`use-project-detail`
+  // needs the directory to resolve names), so offering `selectablePeople(userMap)` here listed
+  // every employee in the company. Picking one produced a server rejection — the assignee-must-be-
+  // a-member invariant — after the form had already been filled in. The picker now cannot offer
+  // anyone the server would refuse.
+  //
+  // Deleted employees are still excluded: a purged identity must not be assignable, even if their
+  // membership row survives.
+  const members = useMemo(() => {
+    const ids = new Set(project?.memberIds ?? []);
+    return selectablePeople(userMap).filter((u) => ids.has(u.id));
+  }, [userMap, project?.memberIds]);
 
   const counts = useMemo(() => taskCounts(tasks), [tasks]);
 
