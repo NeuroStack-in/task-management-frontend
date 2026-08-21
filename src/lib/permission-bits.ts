@@ -57,10 +57,14 @@ const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {
   // ── insights / reports · 60–69 ──
   60: ["reports:view"], // ReportsRead
   61: ["reports:view", "reports:export"], // ReportsExport
-  62: ["ai:view"], // AiInsightsRead (the frontend has a single `ai` id)
+  62: ["ai:view"], // AiInsightsRead — AI summaries, the attention list
   63: ["anomalies:view"], // AnomaliesRead
   64: ["reports:export"], // AiPdfExport
-  65: ["ai:view"], // AiAssistantUse
+  // AiAssistantUse. **Its own id, not `ai:view`.** The two bits mean different things on the
+  // server — "may read AI-generated insights" vs "may talk to the assistant" — and collapsing them
+  // here meant granting an Employee the chat assistant would also have opened every AI-summary
+  // surface to them. Admins hold both bits and so still get both ids; nothing they see changes.
+  65: ["ai:use"],
   // ── administration · 70–79 ──
   70: ["roles:view", "roles:manage"], // RolesManage
   71: ["security:view"], // SecurityRead

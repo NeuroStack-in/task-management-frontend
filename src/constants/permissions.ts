@@ -143,8 +143,14 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   },
   {
     module: "ai",
-    label: "Assistant",
-    permissions: [p("ai", "view", "Use the assistant")],
+    label: "AI",
+    permissions: [
+      // Two bits on the server (62 and 65), so two ids here. Kept apart because "read the AI
+      // summaries" and "use the chat assistant" are genuinely different grants: Employees now hold
+      // the second without the first.
+      p("ai", "view", "View AI insights & summaries"),
+      p("ai", "use", "Use the AI assistant"),
+    ],
   },
   {
     module: "anomalies",

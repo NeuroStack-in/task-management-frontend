@@ -51,6 +51,7 @@ export const SYSTEM_ROLES: Role[] = [
       "leave:approve",
       "leave:manage",
       "ai:view",
+      "ai:use",
       "anomalies:view",
       "notifications:view",
       "integrations:view",
@@ -87,6 +88,11 @@ export const SYSTEM_ROLES: Role[] = [
       "attendance:view",
       "notifications:view",
       "help:view",
+      // The chat assistant, but NOT `ai:view` — an Employee may talk to it (general product
+      // questions read no data at all, and questions about their own hours are self-scoped),
+      // while the AI insight surfaces stay closed. Mirrors bit 65 without bit 62 in
+      // `wp-contracts::roles::employee`.
+      "ai:use",
       "leave:view",
       "leave:request",
     ],

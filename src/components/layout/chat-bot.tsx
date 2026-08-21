@@ -43,14 +43,24 @@ const SUGGESTIONS = [
   "Explain the five attendance statuses",
 ];
 
+/**
+ * The Help Center, where an Employee is allowed the assistant.
+ *
+ * Prefix-matched rather than compared exactly so a future `/help/<topic>` keeps it. Exported so the
+ * page's own "Ask AI" button and this launcher can never disagree about where it is offered — a
+ * button that opens a panel which then refuses to render is the specific failure to avoid.
+ */
+export function isHelpRoute(pathname: string | null | undefined): boolean {
+  return !!pathname && (pathname === "/help" || pathname.startsWith("/help/"));
+}
+
 export function ChatBot() {
   // The assistant is a plan feature: when the org switches it off, the launcher goes with it
   // rather than sitting there offering a surface every request would be refused for.
   const isFeatureOn = useIsFeatureOn();
-  // …and it is an *oversight* tool, so it is gated on `ai:view` as well. The two gates answer
-  // different questions — "did the org buy it" vs "may this role use it" — and both must pass.
-  // Without the second, every signed-in user got the launcher and employees reached a surface
-  // whose every collective answer the server refuses.
+  // …and on the caller holding the assistant bit. The two gates answer different questions —
+  // "did the org buy it" vs "may this role use it" — and both must pass. Without the second, every
+  // signed-in user got the launcher and reached a surface the server refuses outright.
   const { can } = usePermissions();
   const open = useAssistantStore((s) => s.open);
   const setOpen = useAssistantStore((s) => s.setOpen);
@@ -248,7 +258,18 @@ export function ChatBot() {
   };
 
   // After every hook, so hook order is identical whether or not the gates pass.
-  if (!isFeatureOn("ai.assistant") || !can("ai:view")) return null;
+  //
+  // **Where** the launcher appears depends on what the caller may see. Someone with `ai:view` holds
+  // the oversight half too — they can ask about people, teams and the org — so it follows them
+  // everywhere, as it always has. Someone with only `ai:assistant` (an Employee) gets it on the
+  // Help Center, which is where "how does WorkPulse work" gets asked; the assistant answers those
+  // with no data reads at all, and self-scoped questions about their own hours still work.
+  //
+  // Deliberately not org-wide for them: their collective questions are refused server-side by
+  // `scope::authorize`, and a launcher on every page would mostly be offering answers they can't
+  // have. Widening it later is one line here — the backend grant is what actually gates it.
+  if (!isFeatureOn("ai.assistant") || !can("ai:use")) return null;
+  if (!can("ai:view") && !isHelpRoute(pathname)) return null;
 
   return (
     <>

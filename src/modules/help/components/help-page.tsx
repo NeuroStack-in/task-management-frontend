@@ -549,8 +549,12 @@ export function HelpPage() {
   const startTour = useTourStore((s) => s.startTour)
   const askAi = () => openAssistant(search.trim() || undefined)
   const { can } = usePermissions()
-  /** Mirrors ChatBot's own gate — if the panel would not render, don't offer a way to open it. */
-  const canAskAi = can("ai:view")
+  /**
+   * Mirrors ChatBot's own gate — if the panel would not render, don't offer a way to open it.
+   * On this page that is the assistant bit alone: an Employee holds it without `ai:view`, and the
+   * Help Center is exactly where they are meant to use it.
+   */
+  const canAskAi = can("ai:use")
   const isSurfaceOn = useIsSurfaceOn()
 
   // Show the page title in the top navbar (this page has no PageHeader).

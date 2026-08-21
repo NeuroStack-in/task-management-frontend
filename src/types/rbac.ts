@@ -23,7 +23,13 @@ export type PermissionAction =
    * Distinct from `edit`: it answers *do I do this myself?*, never *may I change
    * someone else's?*. See CONTRIBUTOR_ONLY_PERMISSIONS.
    */
-  | "self";
+  | "self"
+  /**
+   * "I may operate this tool" — using a capability, as distinct from `view`, which is reading
+   * what it produces. `ai:use` (the chat assistant) and `ai:view` (its generated insights) are
+   * two separate bits on the server, and an Employee holds only the first.
+   */
+  | "use";
 
 export type PermissionId = string; // `${module}:${action}` or "*"
 
