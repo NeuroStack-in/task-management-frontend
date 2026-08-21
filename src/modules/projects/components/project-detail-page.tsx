@@ -152,20 +152,20 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  // Who a task may be assigned to: **this project's members**, nobody else.
+  // Two different questions, and conflating them broke both in turn.
   //
-  // `userMap` is the project's roster merged with the whole org directory (`use-project-detail`
-  // needs the directory to resolve names), so offering `selectablePeople(userMap)` here listed
-  // every employee in the company. Picking one produced a server rejection — the assignee-must-be-
-  // a-member invariant — after the form had already been filled in. The picker now cannot offer
-  // anyone the server would refuse.
-  //
-  // Deleted employees are still excluded: a purged identity must not be assignable, even if their
-  // membership row survives.
-  const members = useMemo(() => {
+  // `orgPeople` — **everyone selectable in the org.** What the Edit Project dialog needs: you add
+  // members to a project by picking people who are not on it yet, and its manager/lead pickers span
+  // the company too. Deleted employees are excluded; a purged identity must never be assignable.
+  const orgPeople = useMemo(() => selectablePeople(userMap), [userMap]);
+
+  // `projectTeam` — **only this project's members.** What a task assignee must be: the server
+  // enforces assignee-must-be-a-member, so offering the whole directory here meant filling in the
+  // form and then being rejected on save.
+  const projectTeam = useMemo(() => {
     const ids = new Set(project?.memberIds ?? []);
-    return selectablePeople(userMap).filter((u) => ids.has(u.id));
-  }, [userMap, project?.memberIds]);
+    return orgPeople.filter((u) => ids.has(u.id));
+  }, [orgPeople, project?.memberIds]);
 
   const counts = useMemo(() => taskCounts(tasks), [tasks]);
 
@@ -643,7 +643,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         mode="edit"
         open={editOpen}
         onOpenChange={setEditOpen}
-        leads={members}
+        leads={orgPeople}
         initial={editInitial}
         onSubmit={handleEdit}
       />
@@ -654,7 +654,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         open={taskOpen}
         onOpenChange={setTaskOpen}
         projectId={project.id}
-        members={members}
+        members={projectTeam}
         initial={taskInitial}
         onSubmit={handleTaskSubmit}
       />

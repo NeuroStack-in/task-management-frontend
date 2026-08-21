@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Check, Search, X } from "lucide-react";
+import { Check, Search, Users, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -98,6 +98,11 @@ const EMPTY: Omit<FormShape, "billable"> = {
 };
 
 import { AddFromTeam } from "./add-from-team";
+import {
+  listTeamMembers,
+  listTeams,
+  type ApiTeam,
+} from "@/modules/employees/services/employees.service";
 
 interface ProjectFormDialogProps {
   mode: "create" | "edit";
@@ -359,6 +364,21 @@ export function ProjectFormDialog({
 
 /* ----------------------- member multi-select ------------------------- */
 
+/**
+ * The whole directory, narrowable by team.
+ *
+ * The team filter fetches membership on demand rather than reading it off each person:
+ * `GET /v1/employees` deliberately omits team (it lives on the full profile), so there is nothing
+ * to filter on client-side. One request per team, cached for the life of the dialog, which is the
+ * same shape `AddFromTeam` beside it already uses.
+ *
+ * Filtering **narrows what is listed, never what is selected** — switching teams doesn't drop
+ * people already picked, and the chips above stay put. A filter that silently deselected people
+ * would be a data-loss control disguised as a view control.
+ */
+/** Sentinel for "don't filter" — `<select>` values are strings, so this can't be `null`. */
+const ALL_TEAMS = "__all__";
+
 function MemberMultiSelect({
   users,
   value,
@@ -369,16 +389,55 @@ function MemberMultiSelect({
   onChange: (ids: string[]) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [teams, setTeams] = useState<ApiTeam[]>([]);
+  const [teamId, setTeamId] = useState<string>(ALL_TEAMS);
+  /** `team_id → member ids`. Cached so re-picking a team is instant and costs nothing. */
+  const [teamMembers, setTeamMembers] = useState<Record<string, Set<string>>>({});
+  const [loadingTeam, setLoadingTeam] = useState(false);
   const selected = new Set(value);
 
+  // Best-effort: a role without team visibility gets a 403, and the picker simply shows no filter
+  // rather than an error — the directory list below is the feature, the filter is an aid.
+  useEffect(() => {
+    let live = true;
+    listTeams()
+      .then((t) => live && setTeams(t))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (teamId === ALL_TEAMS || teamMembers[teamId]) return;
+    let live = true;
+    setLoadingTeam(true);
+    listTeamMembers(teamId)
+      .then((ms) => {
+        if (!live) return;
+        setTeamMembers((prev) => ({
+          ...prev,
+          [teamId]: new Set(ms.map((m) => m.user_id)),
+        }));
+      })
+      // An unreadable team falls back to an empty set, which shows "nobody in this team" rather
+      // than silently reverting to the full list and implying the filter did nothing.
+      .catch(() => live && setTeamMembers((prev) => ({ ...prev, [teamId]: new Set() })))
+      .finally(() => live && setLoadingTeam(false));
+    return () => {
+      live = false;
+    };
+  }, [teamId, teamMembers]);
+
   const q = query.trim().toLowerCase();
-  const filtered = q
-    ? users.filter(
-        (u) =>
-          u.name.toLowerCase().includes(q) ||
-          u.jobTitle.toLowerCase().includes(q),
-      )
-    : users;
+  const inTeam = teamId === ALL_TEAMS ? null : teamMembers[teamId];
+  const filtered = users.filter((u) => {
+    if (inTeam && !inTeam.has(u.id)) return false;
+    if (!q) return true;
+    return (
+      u.name.toLowerCase().includes(q) || u.jobTitle.toLowerCase().includes(q)
+    );
+  });
 
   const toggle = (id: string) => {
     const next = new Set(value);
@@ -415,22 +474,55 @@ function MemberMultiSelect({
         </div>
       ) : null}
 
-      {/* Search */}
-      <div className="relative border-b border-input">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search people…"
-          className="h-9 w-full bg-transparent pr-2.5 pl-8 text-sm outline-none"
-        />
+      {/* Search + team filter */}
+      <div className="flex items-center border-b border-input">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search people…"
+            className="h-9 w-full bg-transparent pr-2.5 pl-8 text-sm outline-none"
+          />
+        </div>
+        {/* Hidden entirely when the org has no teams, or the caller can't read them — an empty
+            filter is a control that can only disappoint. */}
+        {teams.length > 0 ? (
+          <div className="flex shrink-0 items-center gap-1.5 border-l border-input pr-2 pl-2.5">
+            <Users className="size-3.5 shrink-0 text-muted-foreground" />
+            <select
+              value={teamId}
+              onChange={(e) => setTeamId(e.target.value)}
+              aria-label="Filter people by team"
+              className="h-9 max-w-[9rem] cursor-pointer truncate bg-transparent text-xs outline-none"
+            >
+              <option value={ALL_TEAMS}>All teams</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                  {t.member_count !== undefined ? ` (${t.member_count})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
       </div>
 
       {/* Directory list */}
       <ul className="max-h-44 overflow-y-auto p-1">
-        {filtered.length === 0 ? (
+        {loadingTeam ? (
           <li className="px-2 py-4 text-center text-xs text-muted-foreground">
-            No people match “{query}”.
+            Loading team…
+          </li>
+        ) : filtered.length === 0 ? (
+          // Naming the active constraint matters: "no people match" over an empty list is
+          // indistinguishable from a broken directory when a team filter is the real cause.
+          <li className="px-2 py-4 text-center text-xs text-muted-foreground">
+            {query && inTeam
+              ? `No one in this team matches “${query}”.`
+              : inTeam
+                ? "Nobody in this team is available to add."
+                : `No people match “${query}”.`}
           </li>
         ) : (
           filtered.map((u) => {
