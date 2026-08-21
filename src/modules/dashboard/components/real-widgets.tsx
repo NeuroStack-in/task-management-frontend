@@ -400,7 +400,7 @@ export function OrgAiSummaryWidget({
 
   return (
     <Card className="bg-feature text-feature-foreground shadow-none">
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center gap-2">
           <Sparkles className="size-4" /> AI summary
           {PERIOD_NOTE[range] ? (

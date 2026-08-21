@@ -125,7 +125,7 @@ export function DeductionsCard({
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between">
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Deduction rules</CardTitle>
         {showEditor && !editing ? (
           <Button variant="outline" size="sm" onClick={startEdit}>

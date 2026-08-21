@@ -160,7 +160,7 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
         <div className="space-y-0.5">
           <CardTitle className="flex items-center gap-2 text-base">
             <MailCheck className="size-4 text-muted-foreground" />

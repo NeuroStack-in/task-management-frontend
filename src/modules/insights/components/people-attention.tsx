@@ -163,7 +163,7 @@ export function PeopleAttentionCard({
 
   return (
     <Card>
-      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
         <div className="space-y-1">
           <CardTitle>
             {title} ({people.length})

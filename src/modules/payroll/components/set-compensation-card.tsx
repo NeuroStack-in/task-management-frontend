@@ -123,7 +123,7 @@ export function SetCompensationCard({
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center gap-2">
+      <CardHeader className="flex flex-row items-center gap-2">
         <BadgeDollarSign className="size-4 text-muted-foreground" />
         <CardTitle>Set compensation</CardTitle>
       </CardHeader>

@@ -20,6 +20,15 @@ function Card({
   )
 }
 
+/**
+ * **This is a `grid`, not a flex row.** Passing `flex-row` alone does nothing — that utility sets
+ * `flex-direction` and never `display` — so the header stays one grid column, children stack, and
+ * `justify-between` silently has no effect. Five call sites had done exactly that; the visible
+ * symptom was a full-width child, e.g. a header button whose hover background spanned the card.
+ *
+ * Either pass `flex` alongside `flex-row`, or use `CardAction` for a right-hand control, which
+ * switches this to `grid-cols-[1fr_auto]` on its own.
+ */
 function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
