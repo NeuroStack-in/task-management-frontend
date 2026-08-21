@@ -91,6 +91,43 @@ interface ViewTaskDialogProps {
   userMap: Record<string, UserMini>;
 }
 
+/**
+ * One labelled block. Every section of this dialog is the same shape — a small caps label over its
+ * content — and hand-spacing each one is how the padding drifted and the whole thing read as a form
+ * dump. The dividers come from the parent's `divide-y`, so sections need no margins of their own.
+ */
+function Section({
+  label,
+  count,
+  className,
+  children,
+}: {
+  label: string;
+  /** Rendered as a separate pill so the number stays legible instead of hiding inside the label. */
+  count?: number;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className={cn("space-y-2 px-1 py-4 first:pt-2 last:pb-1", className)}>
+      <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+        {label}
+        {count !== undefined ? (
+          <span className="bg-muted rounded-full px-1.5 py-0.5 text-[0.65rem] leading-none font-semibold tabular-nums">
+            {count}
+          </span>
+        ) : null}
+      </p>
+      {children}
+    </section>
+  );
+}
+
+/** A field with nothing in it. One component so "no description" and "no due date" match. */
+function Empty({ children }: { children: React.ReactNode }) {
+  return <p className="text-muted-foreground text-sm">{children}</p>;
+}
+
 export function ViewTaskDialog({
   task,
   projectId,
@@ -105,7 +142,6 @@ export function ViewTaskDialog({
 
   const status = TASK_STATUS_META[task.status];
   const prio = TASK_PRIORITY_META[task.priority];
-
 
   const closeViewer = () => {
     setViewer((v) => {
@@ -138,7 +174,9 @@ export function ViewTaskDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-lg">
           <DialogHeader className="pr-8">
-            <DialogTitle className="text-base leading-snug">{task.title}</DialogTitle>
+            <DialogTitle className="text-[0.95rem] leading-snug font-semibold">
+              {task.title}
+            </DialogTitle>
             <DialogDescription className="flex flex-wrap items-center gap-2 pt-1">
               <StatusBadge tone={status.tone} label={status.label} />
               <span
@@ -152,101 +190,88 @@ export function ViewTaskDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1">
-            {/* Meta */}
-            <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-              {/* Spans both columns: a task can have several people and each carries a line
-                  saying who put them there, so this stopped being a one-line field. */}
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                  {task.assignees.length > 1 ? "Assignees" : "Assignee"}
-                </dt>
-                <dd>
-                  {task.assignees.length === 0 ? (
-                    <span className="text-muted-foreground">
-                      Unassigned — anyone on this project can pick it up
-                    </span>
-                  ) : (
-                    <ul className="space-y-1.5">
-                      {task.assignees.map((a) => {
-                        const u = userMap[a.userId];
-                        const name = personName(u?.name);
-                        return (
-                          <li key={a.userId} className="flex items-center gap-2">
-                            <Avatar className="size-6">
-                              {u?.avatarUrl ? <AvatarImage src={u.avatarUrl} alt={name} /> : null}
-                              <AvatarFallback className="text-[0.6rem]">
-                                {initials(name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="min-w-0 flex-1 truncate">{name}</span>
-                            <AssignedByLine assignee={a} userMap={userMap} />
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </dd>
-              </div>
-              <div className="flex flex-col gap-1">
-                <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                  Due date
-                </dt>
-                <dd className="tabular-nums">
-                  {task.dueDate ? (
-                    formatFullDate(task.dueDate)
-                  ) : (
-                    <span className="text-muted-foreground">No due date</span>
-                  )}
-                </dd>
-              </div>
-              <div className="flex flex-col gap-1">
-                <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                  Estimate
-                </dt>
-                <dd className="tabular-nums">{task.estimateHours} hrs</dd>
-              </div>
-            </dl>
+          <div className="min-h-0 flex-1 divide-y overflow-y-auto">
+            <Section label={task.assignees.length > 1 ? "Assignees" : "Assignee"}>
+              {task.assignees.length === 0 ? (
+                <Empty>Unassigned — anyone on this project can pick it up</Empty>
+              ) : (
+                <ul className="space-y-2.5">
+                  {task.assignees.map((a) => {
+                    const u = userMap[a.userId];
+                    const name = personName(u?.name);
+                    return (
+                      // The "assigned by" line sits **under** the name, not opposite it. Pushed to
+                      // the far edge it opened a gap the width of the dialog and read as an
+                      // unrelated column; stacked, it is plainly a footnote about this person.
+                      <li key={a.userId} className="flex items-center gap-2.5">
+                        <Avatar className="size-8 shrink-0">
+                          {u?.avatarUrl ? <AvatarImage src={u.avatarUrl} alt={name} /> : null}
+                          <AvatarFallback className="text-xs">{initials(name)}</AvatarFallback>
+                        </Avatar>
+                        <span className="flex min-w-0 flex-col leading-tight">
+                          <span className="truncate text-sm font-medium">{name}</span>
+                          <AssignedByLine assignee={a} userMap={userMap} />
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Section>
 
-            {/* Description */}
-            <section className="space-y-1.5">
-              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                Description
-              </p>
+            {/* Two facts of the same kind, so they share one row and one baseline rather than
+                being two more stacked label/value sections. */}
+            <div className="grid grid-cols-2 divide-x">
+              <Section label="Due date">
+                {task.dueDate ? (
+                  <p className="text-sm tabular-nums">{formatFullDate(task.dueDate)}</p>
+                ) : (
+                  <Empty>No due date</Empty>
+                )}
+              </Section>
+              <Section label="Estimate" className="pl-4">
+                <p className="text-sm tabular-nums">{task.estimateHours} hrs</p>
+              </Section>
+            </div>
+
+            <Section label="Description">
               {task.description.trim() ? (
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">
                   {task.description}
                 </p>
               ) : (
-                <p className="text-muted-foreground text-sm">No description</p>
+                <Empty>No description</Empty>
               )}
-            </section>
+            </Section>
 
             {/* Review sign-off */}
             {task.review ? (
-              <section className="bg-muted/40 space-y-1 rounded-xl border p-3">
-                <p className="flex items-center gap-1.5 text-sm font-medium">
-                  <Star className="fill-warning text-warning size-4" />
-                  <span className="tabular-nums">{task.review.rating}/5</span>
-                  <span className="text-muted-foreground font-normal">
-                    · reviewed by {task.review.reviewer_name || "a project lead"}
-                  </span>
-                </p>
-                {task.review.note ? (
-                  <p className="text-muted-foreground text-sm leading-relaxed">
-                    {task.review.note}
+              <Section label="Review">
+                <div className="bg-muted/40 space-y-1 rounded-xl border p-3">
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <Star className="fill-warning text-warning size-4" />
+                    <span className="tabular-nums">{task.review.rating}/5</span>
+                    <span className="text-muted-foreground font-normal">
+                      · reviewed by {task.review.reviewer_name || "a project lead"}
+                    </span>
                   </p>
-                ) : null}
-              </section>
+                  {task.review.note ? (
+                    <p className="text-muted-foreground text-sm leading-relaxed">
+                      {task.review.note}
+                    </p>
+                  ) : null}
+                </div>
+              </Section>
             ) : null}
 
-            {/* Attachments */}
-            <section className="space-y-1.5">
-              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                Attachments · {task.attachments.length}
-              </p>
+            <Section
+              label="Attachments"
+              // The count belongs beside the label, not inside it: "ATTACHMENTS · 0" reads as a
+              // heading that happens to contain a number, and disappears at a glance.
+              count={task.attachments.length}
+            >
               {task.attachments.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No attachments</p>
+                <Empty>No attachments</Empty>
               ) : (
                 <ul className="space-y-1.5">
                   {task.attachments.map((a) => (
@@ -260,7 +285,7 @@ export function ViewTaskDialog({
                   ))}
                 </ul>
               )}
-            </section>
+            </Section>
           </div>
         </DialogContent>
       </Dialog>

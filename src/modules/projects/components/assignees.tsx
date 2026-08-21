@@ -265,7 +265,7 @@ export function AssignedByLine({
   if (!assignee.assignedBy) return null;
   const by = personName(userMap[assignee.assignedBy]?.name);
   return (
-    <span className="text-xs text-muted-foreground">
+    <span className="truncate text-xs text-muted-foreground">
       Assigned by {by}
       {assignee.assignedAt > 0 ? (
         <>
