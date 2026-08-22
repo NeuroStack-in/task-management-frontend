@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Lock,
+  RefreshCw,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -127,23 +128,16 @@ export function ReportsExperimental() {
           >
             <ChevronRight className="size-4" />
           </Button>
-          {/* The day's narrative is generate-once-cached; each press is a fresh billed model run. */}
-          {aiReport.data?.narrative ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={aiReport.regenerate}
-              disabled={aiReport.regenerating}
-            >
-              {aiReport.regenerating ? "Regenerating…" : "Regenerate"}
-            </Button>
-          ) : null}
         </div>
       </div>
 
       {/* ========================= EXECUTIVE OVERVIEW ======================== */}
-      <ExecutiveOverview state={aiReport} date={date} />
+      <ExecutiveOverview
+        state={aiReport}
+        date={date}
+        onRegenerate={aiReport.regenerate}
+        regenerating={aiReport.regenerating}
+      />
 
       {/* ====================== PEOPLE TO CHECK IN ON ====================== */}
       {/* Shares the page's date rather than keeping its own — two pagers meant the executive
@@ -166,9 +160,13 @@ export function ReportsExperimental() {
 function ExecutiveOverview({
   state,
   date,
+  onRegenerate,
+  regenerating,
 }: {
   state: ReturnType<typeof useAiReport>;
   date: string;
+  onRegenerate: () => void;
+  regenerating: boolean;
 }) {
   // Ranked over the week, not the day — a single day's roster is too small for "top" and "needs
   // attention" to be different people. Called before the early returns below, because hooks must run
@@ -213,7 +211,11 @@ function ExecutiveOverview({
   return (
     <div className="space-y-4">
       <section className="grid gap-4 xl:grid-cols-12" data-tour="insights:ai">
-        <AiBriefing report={report} />
+        <AiBriefing
+          report={report}
+          onRegenerate={onRegenerate}
+          regenerating={regenerating}
+        />
         <HealthScoreCard report={report} band={band} />
       </section>
 
@@ -251,7 +253,15 @@ function ExecutiveOverview({
 
 /* ------------------------------- AI briefing ------------------------------ */
 
-function AiBriefing({ report }: { report: AiReport }) {
+function AiBriefing({
+  report,
+  onRegenerate,
+  regenerating,
+}: {
+  report: AiReport;
+  onRegenerate: () => void;
+  regenerating: boolean;
+}) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
   const attention = report.metrics.needs_attention.slice(0, 3);
 
@@ -295,9 +305,28 @@ function AiBriefing({ report }: { report: AiReport }) {
 
         <div className="mt-5 flex-1" />
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button variant="secondary" size="sm" onClick={() => openAssistant()}>
-            Ask the assistant <ArrowUpRight className="size-4" />
-          </Button>
+          {/* Both actions belong to *this summary*, so they sit on it — the same arrangement the
+              dashboard's AI summary card uses. Regenerate was in the page header beside the date
+              pager, which read as a page-level control and put it a long way from the text it
+              rewrites.
+
+              The day's narrative is generate-once-cached, so each press is a fresh billed model
+              run against the org's daily token budget. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => openAssistant()}>
+              Ask the assistant <ArrowUpRight className="size-4" />
+            </Button>
+            <Button
+              size="sm"
+              onClick={onRegenerate}
+              disabled={regenerating}
+              title="Regenerate summary"
+              className="border-transparent bg-white/15 text-feature-foreground ring-1 ring-white/15 ring-inset hover:bg-white/25 disabled:opacity-70"
+            >
+              <RefreshCw className={cn("size-3.5", regenerating && "animate-spin")} />
+              {regenerating ? "Regenerating…" : "Regenerate"}
+            </Button>
+          </div>
           {formatGenerated(report.generated_at) ? (
             <p className="text-xs text-feature-foreground/70">
               Generated {formatGenerated(report.generated_at)}
