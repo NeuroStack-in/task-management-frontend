@@ -46,6 +46,25 @@ function shiftIso(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   return isoOf(new Date(y, m - 1, d + days));
 }
+/**
+ * When the report was written, or `null` when that isn't known.
+ *
+ * **`generated_at` is epoch milliseconds.** The backend stamps it with `now_ms()`, which is
+ * `as_millis()`. This surface multiplied it by 1000 as though it were seconds, and rendered
+ * "Generated 30/04/58610, 21:32:13" — a date thirty thousand years out, which is exactly what a
+ * seconds/milliseconds mix-up looks like. The dashboard's copy of this line never had the bug, so
+ * the two disagreed about the same field.
+ *
+ * `0` is the DTO's stand-in for "absent" (`generated_at: state.data.generated_at ?? 0`), and
+ * `new Date(0)` is 1 Jan 1970 — a real-looking date for a report that was never stamped. Returning
+ * null makes the caller drop the line instead.
+ */
+export function formatGenerated(ms: number): string | null {
+  if (!ms || !Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
+}
+
 function prettyDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {
@@ -234,7 +253,6 @@ function ExecutiveOverview({
 
 function AiBriefing({ report }: { report: AiReport }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
-  const generated = new Date(report.generated_at * 1000);
   const attention = report.metrics.needs_attention.slice(0, 3);
 
   return (
@@ -280,9 +298,11 @@ function AiBriefing({ report }: { report: AiReport }) {
           <Button variant="secondary" size="sm" onClick={() => openAssistant()}>
             Ask the assistant <ArrowUpRight className="size-4" />
           </Button>
-          <p className="text-xs text-feature-foreground/70">
-            Generated {generated.toLocaleString()}
-          </p>
+          {formatGenerated(report.generated_at) ? (
+            <p className="text-xs text-feature-foreground/70">
+              Generated {formatGenerated(report.generated_at)}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
