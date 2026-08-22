@@ -2,14 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
-import { AlertCircle, Lock } from "lucide-react"
+import { AlertCircle, Building2, Lock } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,7 +21,6 @@ import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { DepartmentsManager } from "./departments-manager"
 import { OrgProductivityWeightsCard } from "./org/org-productivity-weights-card"
-import { BrandingManager } from "./org/branding-manager"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
 import { OfficePerimeterCard } from "./org/office-perimeter-card"
@@ -131,6 +127,34 @@ function formFromView(v: OrgView): OrgProfileForm {
     industry: v.industry ?? "",
     size: v.size ?? "",
   }
+}
+
+/**
+ * A titled band of related fields.
+ *
+ * Six inputs under one heading is a form; three named groups of two is a profile. The label is a
+ * small-caps rule rather than a second card so the whole thing still reads as one object with one
+ * save bar — splitting it into three cards would imply three independent saves, which is exactly
+ * what the rest of this page does mean and this section does not.
+ */
+function FieldGroup({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-3">
+        <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          {label}
+        </p>
+        <span className="bg-border h-px flex-1" aria-hidden />
+      </div>
+      <div className="grid content-start gap-4 sm:grid-cols-2">{children}</div>
+    </section>
+  )
 }
 
 export function OrganizationTab() {
@@ -271,15 +295,33 @@ export function OrganizationTab() {
         <Loader label="Loading organization settings…" />
       ) : (
       <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Organization profile</CardTitle>
-          <CardDescription>
-            Basic profile used across the platform and in exported reports.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid content-start gap-4 sm:grid-cols-2">
+      <Card className="overflow-hidden p-0">
+        {/* The org's own name leads the card rather than sitting as the first of six identical
+            inputs. This page is *about* this organisation; six flat fields under one heading read
+            as a form to fill in, not a profile you already have. */}
+        <div className="from-feature-tint/60 via-card to-card flex flex-wrap items-center gap-4 border-b bg-gradient-to-br p-5 sm:p-6">
+          <span className="bg-primary/10 text-primary flex size-12 shrink-0 items-center justify-center rounded-xl">
+            <Building2 className="size-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="font-heading truncate text-xl font-semibold">
+              {draft.name.trim() || "Your organization"}
+            </h2>
+            <p className="text-muted-foreground mt-0.5 text-sm">
+              Used across the platform and on every exported report.
+            </p>
+          </div>
+          {/* Says plainly why the fields below are inert, instead of leaving a reader to discover
+              it by clicking one. */}
+          {!canManage ? (
+            <span className="text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs">
+              <Lock className="size-3" /> Read-only
+            </span>
+          ) : null}
+        </div>
+
+        <CardContent className="space-y-6 p-5 sm:p-6">
+          <FieldGroup label="Identity">
             <div className="space-y-1.5">
               <Label>Organization name</Label>
               <Input
@@ -299,6 +341,9 @@ export function OrganizationTab() {
                 onChange={(e) => update({ website: e.target.value })}
               />
             </div>
+          </FieldGroup>
+
+          <FieldGroup label="Locale">
             <div className="space-y-1.5">
               <Label>Primary timezone</Label>
               <Select
@@ -344,6 +389,9 @@ export function OrganizationTab() {
                 </SelectContent>
               </Select>
             </div>
+          </FieldGroup>
+
+          <FieldGroup label="Details">
             <div className="space-y-1.5">
               <Label>Company size</Label>
               <Select
@@ -386,12 +434,17 @@ export function OrganizationTab() {
                 .
               </p>
             </div>
-          </div>
+          </FieldGroup>
         </CardContent>
       </Card>
 
       {/* Each of these is its own live-backend CRUD, independent of the org-profile save bar. */}
-      <BrandingManager />
+      {/* `BrandingManager` was here. Removed 2026-08-22: **nothing in the app reads any of it.**
+          `logo_url` is never rendered — the only other reference is an unused field on the `User`
+          type — and the stored brand colours are read by nothing either (the `accentColor` uses
+          elsewhere are CSS on checkboxes, bound to `var(--primary)`, not to these). It was a form
+          that saved three values into a void. The component and its endpoints still exist, so
+          restoring it is one import and one line if branding is ever wired up for real. */}
       <TrackingModeCard />
       <DepartmentsManager />
       <OrgProductivityWeightsCard />
