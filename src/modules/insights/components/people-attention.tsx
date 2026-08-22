@@ -78,10 +78,32 @@ function summary(absent: number, partial: number): string {
 
 export function PeopleAttentionCard({
   title = "People to check in on",
+  date: controlledDate,
+  onDateChange,
 }: {
   title?: string;
+  /**
+   * The day to show, when a page owns the date.
+   *
+   * Given one, this card renders **no date control of its own** — the AI reports tab used to have
+   * two pagers that drifted apart, so it would show an executive summary for one day above a
+   * check-in list for another. Omit it and the card manages its own date exactly as before, which
+   * is what the tests and any standalone use rely on.
+   */
+  date?: string;
+  onDateChange?: (date: string) => void;
 }) {
-  const [date, setDate] = useState<string>("");
+  const controlled = controlledDate !== undefined;
+  const [ownDate, setOwnDate] = useState<string>("");
+  const date = controlled ? controlledDate : ownDate;
+  /**
+   * The most recent closed day that actually has rows.
+   *
+   * Uncontrolled, this is what the card opens on. Controlled, the page decides the day — usually
+   * today, which is never closed — so this becomes the one-click way out of the "not closed yet"
+   * state rather than something the card silently does behind the page's back.
+   */
+  const [suggested, setSuggested] = useState<string>("");
   const [filter, setFilter] = useState<Kind>("all");
   // `closed` distinguishes "loaded, nobody to flag" from "this day hasn't been closed yet".
   const [state, setState] = useState<{ people: CheckIn[]; closed: boolean } | null>(null);
@@ -101,7 +123,9 @@ export function PeopleAttentionCard({
       ),
     ).then((rs) => {
       if (!live) return;
-      setDate(rs.find((r) => r.has)?.d ?? today);
+      const best = rs.find((r) => r.has)?.d ?? today;
+      setSuggested(best);
+      if (!controlled) setOwnDate(best);
     });
     return () => {
       live = false;
@@ -173,27 +197,29 @@ export function PeopleAttentionCard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Previous day"
-              disabled={!date}
-              onClick={() => setDate((d) => (d ? shiftIso(d, -1) : d))}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <DatePicker value={date} max={today} onChange={setDate} className="w-36" />
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Next day"
-              disabled={!date || date >= today}
-              onClick={() => setDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
+          {controlled ? null : (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Previous day"
+                disabled={!date}
+                onClick={() => setOwnDate((d) => (d ? shiftIso(d, -1) : d))}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <DatePicker value={date} max={today} onChange={setOwnDate} className="w-36" />
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Next day"
+                disabled={!date || date >= today}
+                onClick={() => setOwnDate((d) => (d && d < today ? shiftIso(d, 1) : d))}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          )}
           {FILTERS.map((f) => (
             <button
               key={f}
@@ -228,11 +254,25 @@ export function PeopleAttentionCard({
             <Loader label="Reading attendance…" />
           </div>
         ) : !state.closed ? (
+          // Today is never closed, and with the page owning the date that is the default view —
+          // so this state needs a way *out*, not just an explanation. `suggested` is the most
+          // recent day that actually has rows, which is the day the reader wanted.
           <EmptyState
             icon={CalendarClock}
             title="This day isn't closed yet"
-            description="Attendance resolves after the 00:15 close. Use ‹ to review a past day — that's where absences and short days show up."
+            description={
+              controlled
+                ? "Attendance resolves after the 00:15 close, so today has nothing to show yet. Pick an earlier date above — that's where absences and short days appear."
+                : "Attendance resolves after the 00:15 close. Use ‹ to review a past day — that's where absences and short days show up."
+            }
             className="m-4 border-0"
+            action={
+              controlled && suggested && suggested !== date && onDateChange ? (
+                <Button variant="outline" size="sm" onClick={() => onDateChange(suggested)}>
+                  Show {longDay(suggested)}
+                </Button>
+              ) : undefined
+            }
           />
         ) : visible.length === 0 ? (
           <EmptyState

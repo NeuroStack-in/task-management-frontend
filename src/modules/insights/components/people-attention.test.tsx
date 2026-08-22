@@ -62,4 +62,41 @@ describe("PeopleAttentionCard", () => {
     render(<PeopleAttentionCard />);
     expect(await screen.findByText(/isn't closed yet/i)).toBeInTheDocument();
   });
+
+  /**
+   * The AI reports tab owns the date and passes it down. It used to have two pagers, so the
+   * executive summary could describe one day while the list below described another — with
+   * nothing on screen admitting it. Given a `date`, this card must render no date control at all.
+   */
+  describe("when a page owns the date", () => {
+    it("renders no date control of its own", async () => {
+      mockDay.mockResolvedValue(day([{ user_id: "u1", status: "absent" }]));
+      render(<PeopleAttentionCard date="2026-07-17" onDateChange={vi.fn()} />);
+
+      expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Previous day")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Next day")).not.toBeInTheDocument();
+    });
+
+    /** Uncontrolled it still owns its pager — the standalone use must not lose it. */
+    it("keeps its own pager when no date is given", async () => {
+      mockDay.mockResolvedValue(day([{ user_id: "u1", status: "absent" }]));
+      render(<PeopleAttentionCard />);
+
+      expect(await screen.findByLabelText("Previous day")).toBeInTheDocument();
+    });
+
+    /**
+     * The page defaults to today, which is never closed, so the default view of this card is the
+     * empty state. It has to offer a way out rather than just explaining itself.
+     */
+    it("offers a jump to the last day that has data", async () => {
+      mockDay.mockResolvedValue(day([]));
+      const onDateChange = vi.fn();
+      render(<PeopleAttentionCard date="2026-07-17" onDateChange={onDateChange} />);
+
+      expect(await screen.findByText(/isn't closed yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/Pick an earlier date above/i)).toBeInTheDocument();
+    });
+  });
 });

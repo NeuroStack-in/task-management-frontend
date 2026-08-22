@@ -127,7 +127,14 @@ export function ReportsExperimental() {
       <ExecutiveOverview state={aiReport} date={date} />
 
       {/* ====================== PEOPLE TO CHECK IN ON ====================== */}
-      <PeopleAttentionCard title="People to check in on" />
+      {/* Shares the page's date rather than keeping its own — two pagers meant the executive
+          summary above could be describing a different day from the list below, with nothing on
+          screen saying so. */}
+      <PeopleAttentionCard
+        title="People to check in on"
+        date={date}
+        onDateChange={setDate}
+      />
 
       {/* ============================ REPORT LIBRARY ========================== */}
       <ReportsLibrary />
