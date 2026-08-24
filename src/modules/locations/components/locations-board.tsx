@@ -34,6 +34,7 @@ import {
 } from "@/modules/insights/services/insights.service";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useDataScope } from "@/hooks/use-data-scope";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useGeofenceStore } from "@/stores/geofence.store";
 import { initials, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import {
@@ -232,6 +233,23 @@ function LocationsBoard({
   // Without one we don't invent a number — the AI hero tiles read an honest note instead.
   const onSiteCount = showFence ? locatedCount - outsideCount : null;
   const offSiteCount = showFence ? outsideCount : null;
+
+  // Publish the location board's day + counts to the assistant.
+  useAssistantPageContext({
+    date: date || null,
+    facts: [
+      { label: "People", value: String(scoped.length) },
+      { label: "Located (have a fix)", value: String(locatedCount) },
+      ...(showFence && onSiteCount !== null && offSiteCount !== null
+        ? [
+            { label: "On-site", value: String(onSiteCount) },
+            { label: "Off-site", value: String(offSiteCount) },
+          ]
+        : []),
+      ...(dept !== "all" ? [{ label: "Department filter", value: deptLabel(dept) }] : []),
+      ...(query.trim() ? [{ label: "Search", value: query.trim() }] : []),
+    ],
+  });
 
   // A factual recap of the day's real fixes — deliberately not an AI inference.
   const label = dateLabel(date);

@@ -20,6 +20,7 @@ import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 import { useAssistantStore } from "@/stores/assistant.store";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { PeopleAttentionCard } from "./people-attention";
 import { ReportsLibrary } from "./reports-library";
 import { useAiReport } from "../use-reports";
@@ -92,6 +93,27 @@ export function ReportsExperimental() {
   const today = isoOf(new Date());
   // This surface is day-scoped by design (its date pager steps days), so the daily artifact.
   const aiReport = useAiReport("daily", date);
+
+  // Publish the day's AI executive metrics to the assistant so questions about "this report" resolve
+  // against the same headline figures. Date-scoped to the day the pager is on.
+  const m = aiReport.data?.metrics;
+  const topPerformer = m?.top_performers[0];
+  useAssistantPageContext({
+    date: date || null,
+    facts: m
+      ? [
+          { label: "Report", value: "AI daily executive report" },
+          { label: "Org avg score", value: m.avg_score === null ? "no data" : `${m.avg_score}%` },
+          { label: "People scored", value: `${m.scored_people} of ${m.total_people}` },
+          { label: "Active hours", value: `${m.active_hours_total}h` },
+          { label: "Productive hours", value: `${m.productive_hours_total}h` },
+          ...(topPerformer
+            ? [{ label: "Top performer", value: `${topPerformer.name} (${topPerformer.score}%)` }]
+            : []),
+          { label: "Needs attention", value: String(m.needs_attention.length) },
+        ]
+      : [{ label: "Report", value: "AI daily executive report" }],
+  });
 
   return (
     <div className="wp-enter space-y-8">

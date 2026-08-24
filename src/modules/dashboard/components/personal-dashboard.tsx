@@ -18,6 +18,7 @@ import { MyTasksCard } from "./my-tasks-card";
 import { useMyWork } from "../use-my-work";
 import { useMyAttendance, ymd } from "@/modules/attendance/use-my-attendance";
 import { useIsSurfaceOn } from "@/hooks/use-features";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { cn } from "@/lib/utils";
 
 const ATTENDANCE: Record<string, { dot: string; label: string }> = {
@@ -63,6 +64,23 @@ export function PersonalDashboard() {
   const weekHours =
     Math.round(attRows.reduce((sum, w) => sum + (w.record?.hours ?? 0), 0) * 10) / 10;
   const daysPresent = attRows.filter((w) => w.record?.status === "present").length;
+
+  // Publish the viewer's own at-a-glance figures to the assistant.
+  useAssistantPageContext({
+    facts: [
+      ...(showProjects
+        ? [
+            { label: "My open tasks", value: String(openTasks.length) },
+            { label: "Completed tasks", value: String(doneCount) },
+            { label: "My projects", value: String(myProjects.length) },
+          ]
+        : []),
+      ...(showTimer
+        ? [{ label: "Hours (last 7 days)", value: `${weekHours}h` }]
+        : []),
+      { label: "Days present (last 7)", value: String(daysPresent) },
+    ],
+  });
 
   if (loading && openTasks.length === 0 && myProjects.length === 0) {
     return (

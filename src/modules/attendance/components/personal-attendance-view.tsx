@@ -7,6 +7,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth.store";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import {
   MONTH_NAMES,
   TODAY,
@@ -177,6 +178,24 @@ export function PersonalAttendanceView() {
   const rate = summary.workdays
     ? Math.round((summary.present / summary.workdays) * 100)
     : 0;
+
+  // Publish the viewer's own attendance summary (for the month on screen) to the assistant, plus the
+  // selected day so a date-scoped question lands on the day the user is looking at.
+  useAssistantPageContext({
+    date: ymd(selected.year, selected.month, selected.day),
+    facts: [
+      {
+        label: "Viewing month",
+        value: `${view.year}-${String(view.month + 1).padStart(2, "0")}`,
+      },
+      { label: "Attendance rate (month)", value: `${rate}%` },
+      { label: "Present days", value: String(summary.present) },
+      { label: "Absent", value: String(summary.absent) },
+      { label: "On leave", value: String(summary.leave) },
+      { label: "Late arrivals", value: String(summary.late) },
+      { label: "Hours (month)", value: `${summary.hours}h` },
+    ],
+  });
 
   // The user's own recent working days (most recent first) — only days the cron has resolved. Walks
   // back across the fetched window and takes up to 10 resolved workdays; an unclosed day is skipped
