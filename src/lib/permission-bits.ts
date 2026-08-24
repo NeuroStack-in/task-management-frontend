@@ -45,6 +45,11 @@ const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {
   33: ["attendance:view"], // AttendanceReadSelf
   34: ["attendance:view", "attendance:manage"], // AttendanceReadTeam
   35: ["attendance:view", "attendance:manage"], // AttendanceReadOrg
+  // AttendanceManage — the day-override WRITE path. Distinct from bits 34/35, which map to
+  // `attendance:manage` only because oversight *reads* unlock the management view; this is the bit
+  // the server actually requires to change a day. It was missing entirely, so a custom role granted
+  // day-overrides on the server saw no override affordance in the UI.
+  36: ["attendance:view", "attendance:manage"], // AttendanceManage
   // ── leave / approvals · 40–49 ──
   40: ["leave:view", "leave:request"], // LeaveRequest
   41: ["leave:view", "leave:approve", "approvals:view", "approvals:approve"], // LeaveApprove
@@ -82,6 +87,14 @@ const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {
   101: ["notifications:view"], // NotificationsManage
   // ── contributor-only · 110–119 ──
   110: ["time-tracking:view", "time-tracking:self"], // TimeTrackSelf
+  // ── integrations · 120–121 ──
+  //
+  // Both were missing, which hid the Integrations section from every server-created custom role that
+  // held them — the server said yes and the sidebar had no entry to show. Bits 74 (AuditRead,
+  // vestigial), 81 (RemoteSupportApprove, CUT) and 82 (SupportRespond, platform-internal) stay
+  // deliberately unmapped: they are absent from the server's own `CATALOG` too.
+  120: ["integrations:view"], // IntegrationsRead
+  121: ["integrations:view", "integrations:manage"], // IntegrationsManage
 };
 
 /**
