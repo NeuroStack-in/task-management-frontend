@@ -37,6 +37,7 @@ import { formatDuration } from "@/lib/format";
 import { formatHours } from "@/lib/mock-time";
 import { cn } from "@/lib/utils";
 import { useTrackingMode } from "@/hooks/use-features";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import { HolidayBadge } from "@/components/shared/holiday-badge";
 import { useTimesheet } from "../use-timesheet";
@@ -98,6 +99,23 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
     setTodayIso(`${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`);
   }, []);
   const todayHoliday = todayIso ? holidays.nameFor(todayIso) : undefined;
+
+  // Publish today's timesheet totals to the assistant so "how much have I tracked" resolves against
+  // exactly what this page shows.
+  useAssistantPageContext({
+    date: todayIso || null,
+    facts: [
+      { label: "Tracked today", value: formatHours(totalSec / 3600) },
+      ...(isMachine ? [] : [{ label: "Billable today", value: dayStats.billable }]),
+      { label: "Timer running", value: running ? "yes" : "no" },
+      ...(isMachine
+        ? []
+        : [
+            { label: "Projects touched", value: dayStats.projects },
+            { label: "Tasks touched", value: dayStats.tasks },
+          ]),
+    ],
+  });
 
   const exportCsv = () => {
     // Machine mode drops Project/Task/Billable (they don't exist for a device) — one union header.

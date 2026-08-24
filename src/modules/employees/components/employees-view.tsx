@@ -42,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { Loader } from "@/components/shared/loader";
 import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
@@ -272,6 +273,24 @@ export function EmployeesView() {
       return true;
     });
   }, [allEmployees, query, dept, status]);
+
+  // Publish the directory's on-screen figures + active filters to the assistant, so a question about
+  // "these people" resolves against the same roster/counts the user is looking at.
+  useAssistantPageContext({
+    facts: [
+      { label: "Total employees", value: String(liveStats.total) },
+      { label: "Active (not benched)", value: String(liveStats.activeWorking) },
+      { label: "On bench", value: String(liveStats.benched) },
+      { label: "Departments", value: String(liveStats.departments) },
+      ...(liveStats.avgProductivity !== null
+        ? [{ label: "Avg productivity", value: `${liveStats.avgProductivity}%` }]
+        : []),
+      ...(dept !== "all" ? [{ label: "Department filter", value: dept }] : []),
+      ...(status !== "all" ? [{ label: "Status filter", value: status }] : []),
+      ...(query.trim() ? [{ label: "Search", value: query.trim() }] : []),
+      { label: "Showing (after filters)", value: String(filtered.length) },
+    ],
+  });
 
   // The dedicated bench roster — everyone flagged `benched`, name-sorted, independent of the
   // table's filters. This is the "who is on the bench" answer at a glance.

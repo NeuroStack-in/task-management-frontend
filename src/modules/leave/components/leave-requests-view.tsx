@@ -24,6 +24,7 @@ import { RequestLeaveDialog } from "./request-leave-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
 import { DocumentList } from "@/components/shared/document-list";
 import { useAuthStore } from "@/stores/auth.store";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { getLeaveDocumentUrl } from "../services/leave.service";
 import { OrgBalancesTable } from "./org-balances-table";
 
@@ -101,6 +102,22 @@ function EmployeeLeaveView() {
   const [open, setOpen] = useState(false);
   // Only active types are requestable — the server rejects an archived `type_id` anyway.
   const requestableTypes = types.filter((t) => t.active !== false);
+
+  // Publish the viewer's own leave picture to the assistant (this page is always self-owned).
+  useAssistantPageContext({
+    facts: [
+      { label: "My leave requests", value: String(requests.length) },
+      {
+        label: "Pending",
+        value: String(requests.filter((r) => r.status === "pending").length),
+      },
+      {
+        label: "Approved",
+        value: String(requests.filter((r) => r.status === "approved").length),
+      },
+      { label: "Leave types available", value: String(requestableTypes.length) },
+    ],
+  });
 
   const handleCancel = async (id: string) => {
     try {

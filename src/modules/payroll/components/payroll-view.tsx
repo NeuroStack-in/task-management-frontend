@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import { usePayroll } from "../use-payroll";
@@ -53,6 +54,22 @@ export function PayrollView() {
     if (!runs.length) return null;
     return runs.find((r) => r.period === selectedPeriod) ?? runs[0];
   }, [runs, selectedPeriod]);
+
+  // Publish the selected pay run's figures to the assistant.
+  useAssistantPageContext({
+    facts: [
+      { label: "Pay runs", value: String(runs.length) },
+      ...(selected
+        ? [
+            { label: "Selected period", value: periodLabel(selected.period) },
+            { label: "Status", value: selected.status === "final" ? "Final" : "Draft" },
+            { label: "Net pay", value: formatCurrency(selected.net) },
+            { label: "Gross pay", value: formatCurrency(selected.gross) },
+            { label: "Deductions", value: formatCurrency(selected.deductions) },
+          ]
+        : []),
+    ],
+  });
 
   async function handleDraft() {
     const p = newPeriod.trim();

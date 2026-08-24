@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { TriangleAlert } from "lucide-react";
@@ -120,6 +121,23 @@ export function ProjectsView() {
     for (const p of projects) c[p.status] += 1;
     return c;
   }, [projects, overdueProjectIds]);
+
+  // Publish the board's on-screen figures + active filters to the assistant, so questions about
+  // "these projects" resolve against the same counts the user sees.
+  useAssistantPageContext({
+    facts: [
+      { label: "View", value: view === "tasks" ? "Tasks" : "Projects" },
+      { label: "Total projects", value: String(stats.total) },
+      { label: "Active", value: String(stats.active) },
+      { label: "On hold", value: String(statusCounts.on_hold) },
+      { label: "At risk", value: String(stats.atRisk) },
+      { label: "Overdue", value: String(overdueProjectIds.size) },
+      { label: "Avg progress", value: `${stats.avgProgress}%` },
+      { label: "Total tasks", value: String(visibleTasks.length) },
+      ...(statusFilter !== "all" ? [{ label: "Status filter", value: statusFilter }] : []),
+      ...(query.trim() ? [{ label: "Search", value: query.trim() }] : []),
+    ],
+  });
 
   // Tasks matching the shared search (title or parent project name/key).
   const searchedTasks = useMemo(() => {

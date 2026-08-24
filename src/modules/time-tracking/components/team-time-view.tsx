@@ -2,6 +2,7 @@
 
 import { Clock, BadgeDollarSign, Activity } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { TimesheetGrid } from "./timesheet-grid";
 import type { DailyHours, ProjectTimesheet, TeamMemberTime } from "../types";
 
@@ -28,6 +29,17 @@ export function TeamTimeView({
   const avgActivity = Math.round(
     rows.reduce((s, r) => s + r.activity, 0) / (rows.length || 1),
   );
+
+  // Publish the team timesheet's week totals to the assistant.
+  useAssistantPageContext({
+    facts: [
+      { label: "Week", value: weekLabel },
+      { label: "Team hours", value: `${Math.round(teamHours).toLocaleString()}h` },
+      { label: "Billable", value: `${billablePct}%` },
+      { label: "Avg activity", value: `${avgActivity}%` },
+      { label: "Team members", value: String(rows.length) },
+    ],
+  });
 
   return (
     <div className="space-y-5">

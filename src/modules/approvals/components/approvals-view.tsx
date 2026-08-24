@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { initials } from "@/lib/format";
 import { useApprovals, type ApprovalItem } from "../use-approvals";
 import { cn } from "@/lib/utils";
@@ -87,6 +88,17 @@ export function ApprovalsView() {
 
   const selected = items.find((a) => a.requestId === selectedId) ?? null;
   const showActions = canApprove && rows.some((r) => r.status === "pending");
+
+  // Publish the approval queue's counts + active filter to the assistant.
+  useAssistantPageContext({
+    facts: [
+      { label: "Pending", value: String(counts.pending ?? 0) },
+      { label: "Approved", value: String(counts.approved ?? 0) },
+      { label: "Rejected", value: String(counts.rejected ?? 0) },
+      { label: "Filter", value: filter },
+      { label: "Showing", value: String(rows.length) },
+    ],
+  });
 
   const runDecide = async (item: ApprovalItem, decision: "approve" | "reject") => {
     setDeciding(item.requestId);

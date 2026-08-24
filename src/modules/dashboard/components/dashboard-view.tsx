@@ -21,6 +21,7 @@ import { PersonalDashboard } from "./personal-dashboard";
 import { MyTasksCardSelf } from "./my-tasks-card";
 import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import { useIsSurfaceOn } from "@/hooks/use-features";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { ATTENDANCE_LOG_ANCHOR } from "@/modules/attendance/components/attendance-log";
 import { useDashboardData } from "../use-dashboard-data";
 import type { DashboardRange } from "../lib/dashboard-data";
@@ -79,6 +80,64 @@ function OrgDashboard() {
       }),
     );
   }, [range, team, start, end, data]);
+
+  // Publish the board's on-screen figures to the assistant so "explain this dashboard" and questions
+  // about the numbers here resolve against the same values the user sees. Called unconditionally
+  // (empty until data lands) to keep the hook above the early returns; the server still authorizes
+  // every follow-up read. Date-scoped only when the window is a single day.
+  const top = data?.topPerformers[0];
+  useAssistantPageContext({
+    date: data && data.days.length === 1 ? data.days[0] : null,
+    facts: data
+      ? [
+          { label: "View", value: data.rangeLabel },
+          ...(team !== "all" && data.teamLabel
+            ? [{ label: "Department filter", value: data.teamLabel }]
+            : []),
+          {
+            label: "Productivity score",
+            value:
+              data.productivityCoverage.scored === 0
+                ? "no agent reported"
+                : `${data.kpis.productivity.value}% (${data.productivityCoverage.scored} of ${data.productivityCoverage.team} reporting)`,
+          },
+          ...(range === "today"
+            ? [
+                {
+                  label: "Working now",
+                  value: `${data.kpis.active.value} of ${data.kpis.active.value + data.kpis.inactive.value}`,
+                },
+                {
+                  label: "Hours tracked today",
+                  value: `${data.kpis.hours.value.toLocaleString()}h`,
+                },
+                {
+                  label: "Screenshots today",
+                  value: `${data.screenshotCount.toLocaleString()}${data.screenshotCountPartial && data.screenshotCount > 0 ? "+" : ""}`,
+                },
+              ]
+            : [
+                {
+                  label: "Hours tracked",
+                  value: `${data.kpis.hours.value.toLocaleString()}h`,
+                },
+                {
+                  label: "Attendance rate",
+                  value:
+                    data.attendanceResolvedDays === 0
+                      ? "awaiting nightly close"
+                      : `${data.kpis.attendance.value}%`,
+                },
+              ]),
+          ...(data.screenshotsFlagged > 0
+            ? [{ label: "Screenshots needing review", value: String(data.screenshotsFlagged) }]
+            : []),
+          ...(top
+            ? [{ label: "Top performer", value: `${top.name} (${top.productivityScore}%)` }]
+            : []),
+        ]
+      : [],
+  });
 
   if (loading && !data) {
     return (

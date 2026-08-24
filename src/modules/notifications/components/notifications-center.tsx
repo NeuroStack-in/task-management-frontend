@@ -25,6 +25,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { useNotificationStore } from "@/stores/notification.store";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useNotifications } from "../use-notifications";
 import { NOTIFICATION_TYPE_META } from "@/modules/notifications/lib/type-meta";
 import { timeAgo } from "@/lib/format";
@@ -98,6 +99,16 @@ export function NotificationsCenter() {
     if (filter === "all") return true;
     if (filter === "unread") return !n.read;
     return n.type === filter;
+  });
+
+  // Publish the notification counts + active filter to the assistant.
+  useAssistantPageContext({
+    facts: [
+      { label: "Total notifications", value: String(allowed.length) },
+      { label: "Unread", value: String(unread) },
+      { label: "Filter", value: filter },
+      { label: "Showing", value: String(visible.length) },
+    ],
   });
 
   return (
