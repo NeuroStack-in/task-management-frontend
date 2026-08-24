@@ -202,15 +202,19 @@ export function ProfileView() {
 
   if (!user) return <Loader label="Loading profile…" />;
 
-  // One unified profile pattern for every role — identity hero, productivity,
-  // and (for tracked roles) attendance. Org leadership (Owner/Admin/HR/Finance)
-  // aren't time-tracked, so the personal attendance card is dropped for them.
-  const showAttendance = role?.scope !== "org";
+  // One unified profile pattern for every role — identity hero, productivity, and (for tracked
+  // roles) the time-based panels. Org leadership (Owner/Admin/HR/Finance) aren't time-tracked, so
+  // both the attendance card **and** the "avg. hours / day" tile are dropped for them: neither can
+  // ever be anything but a dash, and an owner's profile led with an empty statistic reading "no
+  // tracked time yet" as though something were missing.
+  //
+  // Scope, not role name: a team-scoped Manager still tracks their own time and keeps both.
+  const tracksTime = role?.scope !== "org";
   return (
     <RichProfile
       user={user}
       roleName={role?.name ?? "—"}
-      showAttendance={showAttendance}
+      tracksTime={tracksTime}
     />
   );
 }
@@ -222,11 +226,12 @@ export function ProfileView() {
 function RichProfile({
   user,
   roleName,
-  showAttendance,
+  tracksTime,
 }: {
   user: User;
   roleName: string;
-  showAttendance: boolean;
+  /** Whether this role logs time at all — gates every panel built from tracked hours. */
+  tracksTime: boolean;
 }) {
   const updateUser = useAuthStore((s) => s.updateUser);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -540,24 +545,29 @@ function RichProfile({
             </div>
           </div>
 
-          <div className="shrink-0 rounded-xl bg-white/10 p-4 ring-1 ring-inset ring-white/15 backdrop-blur-sm sm:min-w-60">
-            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-feature-foreground/75">
-              <Clock className="size-3.5" /> Avg. hours / day
-            </p>
-            <p className="mt-1 font-display text-4xl font-semibold leading-none tabular-nums">
-              {stats.avgHours ?? "—"}
-            </p>
-            <p className="mt-1 text-xs text-feature-foreground/70">
-              {stats.avgHours ? "tracked, last 30 days" : "no tracked time yet"}
-            </p>
-          </div>
+          {/* Only for roles that actually log time. An Owner or Admin has no timer, so this could
+              only ever read "—  no tracked time yet" — an empty statistic given hero billing, which
+              reads as broken rather than inapplicable. Same rule as the attendance card below. */}
+          {tracksTime ? (
+            <div className="shrink-0 rounded-xl bg-white/10 p-4 ring-1 ring-inset ring-white/15 backdrop-blur-sm sm:min-w-60">
+              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-feature-foreground/75">
+                <Clock className="size-3.5" /> Avg. hours / day
+              </p>
+              <p className="mt-1 font-display text-4xl font-semibold leading-none tabular-nums">
+                {stats.avgHours ?? "—"}
+              </p>
+              <p className="mt-1 text-xs text-feature-foreground/70">
+                {stats.avgHours ? "tracked, last 30 days" : "no tracked time yet"}
+              </p>
+            </div>
+          ) : null}
         </div>
       </section>
 
       <div
         className={cn(
           "grid gap-5",
-          showAttendance && "lg:grid-cols-[1.6fr_1fr]",
+          tracksTime && "lg:grid-cols-[1.6fr_1fr]",
         )}
       >
         <Card
@@ -578,7 +588,7 @@ function RichProfile({
           <ManagerGroup label="Employment" rows={employment} />
         </Card>
 
-        {showAttendance ? (
+        {tracksTime ? (
           <Card
             className="animate-in fade-in slide-in-from-bottom-3 flex flex-col gap-5 p-6 duration-500 sm:p-7 [--card-spacing:--spacing(3)]"
             style={{ animationDelay: "160ms", animationFillMode: "backwards" } as CSSProperties}
