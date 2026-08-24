@@ -38,9 +38,9 @@ export const SYSTEM_ROLES: Role[] = [
       "employees:manage",
       "attendance:view",
       "attendance:manage",
-      "payroll:view",
-      "payroll:manage",
-      "payroll:export",
+      // No payroll ids: `wp-contracts::roles::admin()` grants neither PayrollRead nor PayrollManage
+      // ("payroll stays a deliberately narrow grant"). Listing them here rendered a Payroll menu
+      // that 403s on click. An org that wants an admin on payroll grants it a custom role.
       "activity:view",
       "screenshots:view",
       "locations:view",
@@ -82,10 +82,14 @@ export const SYSTEM_ROLES: Role[] = [
       "time-tracking:view",
       "time-tracking:self",
       "tasks:view",
-      "tasks:create",
-      "tasks:edit",
+      // No `tasks:create` / `tasks:edit`: those ride bits 21/22 (ProjectsCreate/ProjectsManage),
+      // and `wp-contracts::roles::employee()` holds only ProjectsRead. Task authority inside a
+      // project comes from the per-project role (LLD §5), not from org RBAC.
       "projects:view",
       "attendance:view",
+      // ReportsRead **is** granted server-side; omitting it hid the Reports page from every
+      // Employee who was entitled to open it.
+      "reports:view",
       "notifications:view",
       "help:view",
       // The chat assistant, but NOT `ai:view` — an Employee may talk to it (general product
