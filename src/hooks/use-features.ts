@@ -118,9 +118,16 @@ export function useEntitlementsSync(active: boolean): void {
     getEntitlements()
       .then((e) => {
         if (live)
+          // Every field, not a hand-picked subset. This is the ONLY app-wide hydrate — the
+          // Settings page has its own local copy — so anything omitted here is simply absent for
+          // every surface outside Settings. Omitting `pages` meant page toggles took effect on the
+          // page that set them and nowhere else, which is the whole feature not working.
           hydrate({
             allowed: e.allowed,
             enabled: e.enabled,
+            disabled_by: e.disabled_by,
+            pages: e.pages,
+            pages_disabled_by: e.pages_disabled_by,
             tracking_mode: e.tracking_mode,
           });
       })

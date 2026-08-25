@@ -47,6 +47,15 @@ import { Loader } from "@/components/shared/loader"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils"
 import { useEntitlements } from "../use-entitlements"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface FeatureDef {
   key: FeatureKey
@@ -254,8 +263,15 @@ export function FeaturesTab() {
   // Edit a local draft; commit to the server only on Save.
   const [draft, setDraft] = useState<Record<FeatureKey, boolean>>(() => draftFromServer({}))
   const [saving, setSaving] = useState(false)
+  /** Which confirmation is open, if any. Toggles reach the agents, so neither action is silent. */
+  const [confirm, setConfirm] = useState<"save" | "reset" | null>(null)
   const server = draftFromServer(enabled)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(server)
+  // Both halves. A row's single switch can change either or both, so comparing only the feature
+  // draft meant a page-only edit left the save bar hidden and the change silently discarded.
+  const pagesDirty = CONTROLS.some(
+    (c) => c.page && pageDraft[c.page] !== (storePages[c.page] !== false),
+  )
+  const dirty = JSON.stringify(draft) !== JSON.stringify(server) || pagesDirty
   // Leaving via the settings rail now asks before discarding this draft.
   useUnsavedGuard(dirty)
 
@@ -288,6 +304,7 @@ export function FeaturesTab() {
       for (const c of pagesChanged) {
         await toggleFeature(c.page as string, pageDraft[c.page as string], "page")
       }
+      setConfirm(null)
       toast.success("Feature settings saved")
       // Push the saved state into the shared store so the nav re-filters right away — `reload()`
       // only refreshes this page's copy, and without this the owner keeps seeing the section they
@@ -312,6 +329,37 @@ export function FeaturesTab() {
 
   function handleReset() {
     setDraft(server)
+    setPageDraft(
+      Object.fromEntries(
+        CONTROLS.filter((c) => c.page).map((c) => [
+          c.page as string,
+          storePages[c.page as string] !== false,
+        ]),
+      ),
+    )
+    setConfirm(null)
+  }
+
+  /**
+   * What this save would actually change, in words, for the confirmation.
+   *
+   * Worth spelling out rather than asking "are you sure?": these switches reach further than the
+   * page you are on — turning Screenshots off stops the desktop agents capturing, and turning AI
+   * off stops summaries being generated. A list of names is the difference between confirming and
+   * guessing.
+   */
+  function pendingChanges(): { on: string[]; off: string[] } {
+    const on: string[] = []
+    const off: string[] = []
+    for (const c of CONTROLS) {
+      const featChanged = (c.features ?? []).some((k) => draft[k] !== server[k])
+      const pageChanged =
+        c.page && pageDraft[c.page] !== (storePages[c.page] !== false)
+      if (!featChanged && !pageChanged) continue
+      const nowOn = (c.features ?? []).every((k) => draft[k]) && (c.page ? pageDraft[c.page] !== false : true)
+      ;(nowOn ? on : off).push(c.label)
+    }
+    return { on, off }
   }
 
   if (loading) {
@@ -446,11 +494,81 @@ export function FeaturesTab() {
         <SettingsSaveBar
           dirty={dirty}
           saving={saving}
-          onSave={handleSave}
-          onReset={handleReset}
+          onSave={() => setConfirm("save")}
+          onReset={() => setConfirm("reset")}
           saveLabel="Save changes"
         />
       )}
+
+      {/* Confirmation, not a courtesy. These switches reach the desktop agents and the model bill,
+          so the dialog NAMES what is about to change rather than asking "are you sure?" — the
+          difference between confirming and guessing. */}
+      <Dialog open={confirm === "save"} onOpenChange={(v) => !v && setConfirm(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Apply these changes?</DialogTitle>
+            <DialogDescription>
+              Everyone except organization owners is affected as soon as you save.
+            </DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const { on, off } = pendingChanges()
+            return (
+              <div className="space-y-3 text-sm">
+                {off.length > 0 && (
+                  <div>
+                    <p className="font-medium text-destructive">Turning off</p>
+                    <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                      {off.map((l) => (
+                        <li key={l}>{l}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {on.length > 0 && (
+                  <div>
+                    <p className="font-medium">Turning on</p>
+                    <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                      {on.map((l) => (
+                        <li key={l}>{l}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Named explicitly: these two do more than hide a page, and someone switching them
+                    off to tidy the sidebar should find that out here, not from an employee. */}
+                {off.some((l) => l === "Screenshots" || l === "Activity monitoring") && (
+                  <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
+                    This also stops the desktop agents capturing — not just hiding the page.
+                  </p>
+                )}
+              </div>
+            )
+          })()}
+          <DialogFooter showCloseButton>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Apply changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirm === "reset"} onOpenChange={(v) => !v && setConfirm(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Discard your changes?</DialogTitle>
+            <DialogDescription>
+              Every switch goes back to what is currently saved. Nothing has been applied yet, so
+              nobody has been affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter showCloseButton>
+            <Button variant="destructive" onClick={handleReset}>
+              Discard changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

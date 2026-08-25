@@ -161,6 +161,16 @@ export interface Entitlements {
     string,
     { by_user?: string; by_owner: boolean; at?: number; locked: boolean }
   >;
+  /**
+   * Page/tab visibility by href (plus `page:` pseudo-keys). Absent key ⇒ visible, so only pages
+   * someone has actually hidden appear here.
+   */
+  pages?: Record<string, boolean>;
+  /** Who hid each page, and whether this caller may show it again. */
+  pages_disabled_by?: Record<
+    string,
+    { by_user?: string; by_owner: boolean; at?: number; locked: boolean }
+  >;
   version: number;
   /**
    * The org's tracking mode — `"project"` (default) | `"machine"` | `"both"` (MANAGED-AGENT.md §4).
