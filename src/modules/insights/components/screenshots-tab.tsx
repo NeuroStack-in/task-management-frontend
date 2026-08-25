@@ -47,7 +47,10 @@ import { ApiError } from "@/lib/api";
 import { useScreenshots } from "../use-screenshots";
 import {
   getScreenshotReport,
+  getScreenshotDeptSummary,
+  regenerateScreenshotDeptSummary,
   runScreenshotReports,
+  type ScreenshotDeptSummary,
   type ScreenshotReport,
   type ShotRow,
 } from "../services/insights.service";
@@ -143,6 +146,12 @@ export function ScreenshotsTab() {
    */
   const [openUser, setOpenUser] = useState<string | null>(null);
 
+  // Department-scoped AI narrative of the day's screen activity, judged for the department's role.
+  // The backend generates it once per day's frame count and caches it; regenerate forces a fresh one.
+  // Falls back to the deterministic template line while it loads or when the model is unavailable.
+  const [aiSummary, setAiSummary] = useState<ScreenshotDeptSummary | null>(null);
+  const [aiRegenerating, setAiRegenerating] = useState(false);
+
   const { shots, loading, loadingMore, error, hasMore, loadMore, reload } =
     useScreenshots(date);
 
@@ -192,6 +201,33 @@ export function ScreenshotsTab() {
   );
   const deptLabel = (id: string) =>
     deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : "");
+
+  // Fetch the department-scoped screenshot narrative for the day/department in view. Best-effort: a
+  // failure (or the model being off) leaves `aiSummary` null and the card shows the template line.
+  useEffect(() => {
+    if (!date) return;
+    let live = true;
+    const label = dept === ALL_DEPTS ? undefined : deptNames.get(dept);
+    getScreenshotDeptSummary({ department: dept, date, label })
+      .then((s) => live && setAiSummary(s))
+      .catch(() => live && setAiSummary(null));
+    return () => {
+      live = false;
+    };
+  }, [date, dept, deptNames]);
+
+  const regenerateAi = async () => {
+    if (aiRegenerating || !date) return;
+    setAiRegenerating(true);
+    try {
+      const label = dept === ALL_DEPTS ? undefined : deptNames.get(dept);
+      setAiSummary(await regenerateScreenshotDeptSummary({ department: dept, date, label }));
+    } catch {
+      /* keep the current narrative on a failed re-run */
+    } finally {
+      setAiRegenerating(false);
+    }
+  };
 
   // Team leads only see their own team's shots; org roles see all.
   const scopedShots = useMemo(
@@ -326,8 +362,14 @@ export function ScreenshotsTab() {
   return (
     <div className="space-y-5" data-tour="shots:review">
       <AiReportCard
-        title="AI screenshot report"
-        summary={summary}
+        title={
+          dept === ALL_DEPTS
+            ? "AI screenshot report"
+            : `AI screenshot report · ${deptLabel(dept)}`
+        }
+        summary={aiSummary?.narrative || summary}
+        onRegenerate={regenerateAi}
+        regenerating={aiRegenerating}
         metrics={[
           { label: "Monitored", value: monitored },
           {
@@ -337,6 +379,18 @@ export function ScreenshotsTab() {
           },
           { label: "Needs review", value: needsReview },
           { label: "Avg activity", value: `${onTaskPct}%`, hint: "on-task rate" },
+          // The department's AI screenshot-productivity — the per-department score for this surface.
+          // Present only once vision has graded frames for the day/department in view.
+          ...(aiSummary?.metrics.avg_productivity != null
+            ? [
+                {
+                  label:
+                    dept === ALL_DEPTS ? "Screen productivity" : `${deptLabel(dept)} productivity`,
+                  value: `${Math.round(aiSummary.metrics.avg_productivity)}/100`,
+                  hint: "AI-graded screenshots",
+                },
+              ]
+            : []),
         ]}
       />
 
