@@ -147,8 +147,20 @@ export interface Entitlements {
   plan: string;
   /** Feature keys the plan permits (the ceiling). */
   allowed: string[];
-  /** Feature key → owner-activated flag. */
+  /** Feature key → activated flag. */
   enabled: Record<string, boolean>;
+  /**
+   * Provenance for each **disabled** feature: who turned it off, and whether *this caller* may turn
+   * it back on. Keys present only for features that are off AND attributed — one disabled before
+   * attribution existed is absent, and deliberately unlocked.
+   *
+   * `locked` is computed per request server-side, because it is a fact about the reader rather than
+   * the feature: an owner and an admin looking at the same disabled feature get different answers.
+   */
+  disabled_by?: Record<
+    string,
+    { by_user?: string; by_owner: boolean; at?: number; locked: boolean }
+  >;
   version: number;
   /**
    * The org's tracking mode — `"project"` (default) | `"machine"` | `"both"` (MANAGED-AGENT.md §4).
@@ -167,10 +179,18 @@ export function getEntitlements(): Promise<Entitlements> {
  * gate; the server enforces `enabled ⊆ allowed`, so enabling a key the plan doesn't include is
  * rejected. Returns the full, updated entitlements (both layers) so callers re-sync to server truth.
  */
-export function toggleFeature(key: string, enabled: boolean): Promise<Entitlements> {
+export function toggleFeature(
+  key: string,
+  enabled: boolean,
+  /**
+   * `"page"` targets the page-visibility layer instead of the plan-feature layer. Omitted ⇒
+   * `"feature"`, matching the server's default, so every existing call site is unaffected.
+   */
+  scope?: "feature" | "page",
+): Promise<Entitlements> {
   return apiFetch<Entitlements>("/v1/org/entitlements", {
     method: "PATCH",
-    body: JSON.stringify({ key, enabled }),
+    body: JSON.stringify({ key, enabled, scope }),
   });
 }
 

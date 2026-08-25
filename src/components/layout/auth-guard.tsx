@@ -8,6 +8,7 @@ import { useCurrentRole } from "@/hooks/use-permissions";
 import {
   useEntitlementsSync,
   useIsFeatureOn,
+  useIsPageOn,
   useTrackingMode,
 } from "@/hooks/use-features";
 import { featureForPath, isPathModeHidden } from "@/constants/features";
@@ -32,6 +33,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // result. This is the first point inside the authenticated tree, so everything downstream has it.
   useEntitlementsSync(hydrated && isAuthenticated);
   const isFeatureOn = useIsFeatureOn();
+  const isPageOn = useIsPageOn();
   const mode = useTrackingMode();
 
   useEffect(() => {
@@ -73,6 +75,26 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           icon={ShieldX}
           title="Not available here"
           description="This section isn't part of your organization's tracking setup. An owner can change how this organization tracks work under Settings → Organization."
+          action={
+            <Button onClick={() => router.push("/dashboard")}>
+              Back to Dashboard
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // Layer 3 — the org hid this page. Checked alongside the others rather than only in the nav,
+  // because hiding a route in the sidebar while leaving the URL open is the exact gap that let an
+  // Employee reach Analytics earlier today.
+  if (!isPageOn(pathname)) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <EmptyState
+          icon={ShieldX}
+          title="This page is turned off"
+          description="Your organization has hidden this page. An owner or admin can show it again under Settings → Features."
           action={
             <Button onClick={() => router.push("/dashboard")}>
               Back to Dashboard

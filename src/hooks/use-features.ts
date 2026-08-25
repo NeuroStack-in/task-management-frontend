@@ -132,3 +132,36 @@ export function useEntitlementsSync(active: boolean): void {
     };
   }, [active, hydrate]);
 }
+
+/**
+ * Is this page visible for the caller? Layer 3 — org preference, on top of plan and permission.
+ *
+ * **Absent key means visible.** A page nobody has toggled needs no stored entry, and a renamed
+ * route fails OPEN rather than silently disappearing — the safe direction for a visibility rule
+ * layered over gates that already deny properly.
+ *
+ * **Owners are exempt**, exactly as they are from feature toggles: an org that hid a page must
+ * always have someone who can still reach it to un-hide it. `/settings/*` is additionally never
+ * toggleable server-side, so nobody can hide the page holding the switches.
+ */
+export function useIsPageOn(): (href: string) => boolean {
+  const pages = useEntitlementsStore((s) => s.pages);
+  const isOwner = useAuthStore(isOwnerOf);
+  return useCallback(
+    (href: string) => {
+      if (isOwner) return true;
+      // Longest-prefix match, so hiding `/insights` hides its tabs without listing each one, while
+      // a tab may still be hidden on its own.
+      let hidden = false;
+      let best = -1;
+      for (const [key, on] of Object.entries(pages)) {
+        if ((href === key || href.startsWith(`${key}/`)) && key.length > best) {
+          best = key.length;
+          hidden = !on;
+        }
+      }
+      return !hidden;
+    },
+    [pages, isOwner],
+  );
+}

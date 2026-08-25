@@ -90,6 +90,11 @@ export function isNavItemVisible(
    * routes a mode hides that have **no** feature key (e.g. `/payroll`), which `isFeatureOn` can't.
    */
   isHrefHidden?: (href: string) => boolean,
+  /**
+   * Layer 3 — the org's page-visibility toggles. Optional so callers that predate it (or run before
+   * entitlements hydrate) behave exactly as before: omitting it gates on plan + permission alone.
+   */
+  isPageOn?: (href: string) => boolean,
 ): boolean {
   // An org that has switched a feature off should not see it at all, whatever the role allows —
   // "Disabled features are hidden from all users" (Settings → Features).
@@ -99,6 +104,9 @@ export function isNavItemVisible(
   }
   // A route the org's tracking mode hides is gone regardless of plan/role.
   if (isHrefHidden?.(item.href)) return false;
+  // …and one the org has hidden outright. Owners are exempt inside `isPageOn`, so whoever can undo
+  // the toggle can always still see the page.
+  if (isPageOn && !isPageOn(item.href)) return false;
   if (item.anyPermissions) return canAny(role, item.anyPermissions);
   return canAccess(role, item.permission);
 }
@@ -111,11 +119,12 @@ export function getAccessibleNav(
   role: Role | null | undefined,
   isFeatureOn?: (key: FeatureKey) => boolean,
   isHrefHidden?: (href: string) => boolean,
+  isPageOn?: (href: string) => boolean,
 ): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) =>
-      isNavItemVisible(role, item, isFeatureOn, isHrefHidden),
+      isNavItemVisible(role, item, isFeatureOn, isHrefHidden, isPageOn),
     ),
   })).filter((group) => group.items.length > 0);
 }

@@ -6,7 +6,7 @@ import { Sparkles, X, ArrowUp, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAssistantStore } from "@/stores/assistant.store";
-import { useIsFeatureOn } from "@/hooks/use-features";
+import { useIsFeatureOn, useIsPageOn } from "@/hooks/use-features";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import { sendAssistantMessage } from "@/modules/communication/services/assistant.service";
@@ -14,6 +14,13 @@ import { navItemForPath } from "@/constants/navigation";
 import { usePublishedPageContext } from "@/stores/page-context.store";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
+
+/**
+ * The assistant's page key. It is a floating launcher, not a route, so it cannot key off an href —
+ * but it is a surface an org may want to hide, so it carries a pseudo-key in the same namespace.
+ * The `page:` prefix keeps it unmistakable from a real path.
+ */
+export const ASSISTANT_PAGE_KEY = "page:assistant";
 
 interface Message {
   id: number;
@@ -57,7 +64,8 @@ export function isHelpRoute(pathname: string | null | undefined): boolean {
 export function ChatBot() {
   // The assistant is a plan feature: when the org switches it off, the launcher goes with it
   // rather than sitting there offering a surface every request would be refused for.
-  const isFeatureOn = useIsFeatureOn();
+  const isFeatureOn = useIsFeatureOn()
+  const isPageOn = useIsPageOn();
   // …and on the caller holding the assistant bit. The two gates answer different questions —
   // "did the org buy it" vs "may this role use it" — and both must pass. Without the second, every
   // signed-in user got the launcher and reached a surface the server refuses outright.
@@ -268,6 +276,9 @@ export function ChatBot() {
   // Deliberately not org-wide for them: their collective questions are refused server-side by
   // `scope::authorize`, and a launcher on every page would mostly be offering answers they can't
   // have. Widening it later is one line here — the backend grant is what actually gates it.
+  // The assistant is a launcher, not a route, so it carries a pseudo page-key rather than an href.
+  // Same layer-3 rule as any page: org preference on top of plan + permission, owners exempt.
+  if (!isPageOn(ASSISTANT_PAGE_KEY)) return null;
   if (!isFeatureOn("ai.assistant") || !can("ai:use")) return null;
   if (!can("ai:view") && !isHelpRoute(pathname)) return null;
 

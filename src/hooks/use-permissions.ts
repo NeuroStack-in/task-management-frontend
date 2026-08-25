@@ -10,7 +10,7 @@ import {
 } from "@/constants/permissions";
 import { canAccess, canAll, canAny, getAccessibleNav } from "@/lib/rbac";
 import { permissionsFromBitset } from "@/lib/permission-bits";
-import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import { useIsFeatureOn, useIsPageOn, useTrackingMode } from "@/hooks/use-features";
 import { isPathModeHidden } from "@/constants/features";
 import type { PermissionId, Role } from "@/types/rbac";
 
@@ -125,13 +125,18 @@ export function usePermissions() {
   // …and by the org's tracking mode, which hides whole route families (Projects/Leave/Payroll in
   // `machine` mode) including key-less ones (MANAGED-AGENT.md §4/§8).
   const mode = useTrackingMode();
+  // …and by the org's page-visibility toggles (layer 3). Owners are exempt inside the hook.
+  const isPageOn = useIsPageOn();
   return {
     role,
     can: (permission: PermissionId | null) => canAccess(role, permission),
     canAll: (permissions: PermissionId[]) => canAll(role, permissions),
     canAny: (permissions: PermissionId[]) => canAny(role, permissions),
-    nav: getAccessibleNav(role, isFeatureOn, (href) =>
-      isPathModeHidden(href, mode),
+    nav: getAccessibleNav(
+      role,
+      isFeatureOn,
+      (href) => isPathModeHidden(href, mode),
+      isPageOn,
     ),
   };
 }
