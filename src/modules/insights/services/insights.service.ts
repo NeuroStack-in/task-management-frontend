@@ -33,6 +33,13 @@ export interface ScoreBreakdown {
    * what was really an instrumentation gap.** Absent (older payloads) means measured.
    */
   q_measured?: boolean;
+  /**
+   * `true` when Q was derived from the **AI per-screenshot scores**; `false` when it fell back to
+   * the **rule-based app-classification share** because no frame was AI-scored that day. This is the
+   * "AI-graded vs estimated" signal — mark the score **estimated** when this is `false` (and
+   * `q_measured` is not false). Absent (older payloads) ⇒ treat as not AI-scored.
+   */
+  q_ai_scored?: boolean;
 }
 
 // ── GET /v1/me/insights/summary?date= ──
