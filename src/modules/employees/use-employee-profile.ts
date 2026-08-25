@@ -26,6 +26,7 @@ import {
 import { getUserDay } from "@/modules/attendance/services/attendance.service";
 import {
   getEmployeeProfile,
+  getEmployeeAvatarUrl,
   departmentMap,
   teamMap,
 } from "./services/employees.service";
@@ -52,6 +53,8 @@ export interface EmployeeProfileData {
   departmentId: string;
   teamId: string;
   roleName: string;
+  /** Raw role id — needed to ask whether this person is a tracked contributor (`time-tracking:self`). */
+  roleId: string;
   status: "active" | "inactive" | "invited" | "suspended";
   /** `null` = no scored day in the window (agent not reporting) — **not** a score of zero. */
   productivityScore: number | null;
@@ -271,13 +274,14 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           id: p.user_id,
           name: p.name,
           email: p.email,
-          avatarUrl: undefined, // no avatar field on the backend profile
+          avatarUrl: undefined, // filled in below by `GET /v1/users/{id}/avatar`
           jobTitle: p.title ?? "",
           department: p.department_id ? (depts.get(p.department_id) ?? UNKNOWN_DEPARTMENT) : "",
           team: p.team_id ? (teams.get(p.team_id) ?? UNKNOWN_TEAM) : "",
           departmentId: p.department_id ?? "",
           teamId: p.team_id ?? "",
           roleName,
+          roleId: p.role_id ?? "",
           status: p.status === "deactivated" ? "inactive" : "active",
           productivityScore,
           empCode: p.emp_id ?? "",
@@ -301,6 +305,18 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           totalTasks,
           avgCompletion,
         });
+
+        // The photo, second and separately. It is a presigned URL that expires, it is cosmetic,
+        // and it needs its own permission (`employees:read`) — so it must never be able to fail
+        // the page. Patched in when it lands; until then the card renders initials, which is the
+        // correct empty state for someone who has not uploaded one.
+        getEmployeeAvatarUrl(p.user_id)
+          .then((url) => {
+            if (live && url) setData((d) => (d ? { ...d, avatarUrl: url } : d));
+          })
+          .catch(() => {
+            /* cosmetic — initials are a correct fallback */
+          });
       } catch (e) {
         if (!live) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);

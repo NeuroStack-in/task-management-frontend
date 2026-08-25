@@ -7,7 +7,7 @@
  *   - **productivityScore needs `insights`, which needs the desktop agent's activity data** — not
  *     flowing yet. So the roster is real; the monitoring numbers degrade honestly to "unavailable".
  */
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
 /** Mirrors `workforce::directory_list::dto::EmployeeRow`. */
@@ -526,4 +526,29 @@ export async function resendInvite(inviteId: string): Promise<void> {
   await apiFetch(`/v1/employees/invites/${encodeURIComponent(inviteId)}/resend`, {
     method: "POST",
   });
+}
+
+/* ── Avatar (identity::avatar_upload::view_user_handler) ──────────────────────────────────────── */
+
+/**
+ * `GET /v1/users/{id}/avatar` — a short-lived presigned view URL for **another** employee's photo,
+ * or `null` when they haven't uploaded one.
+ *
+ * Requires `employees:read` server-side — the same bit that governs seeing the directory at all.
+ * The 404 is the documented empty state, not a fault: render initials. A 403 is also swallowed,
+ * because a caller who may see the page but not this bit should get initials rather than an error
+ * banner over a cosmetic detail.
+ *
+ * **Don't cache the URL** — it is a short-lived presign, and it expires. Re-fetch on mount.
+ */
+export async function getEmployeeAvatarUrl(userId: string): Promise<string | null> {
+  try {
+    const { url } = await apiFetch<{ url: string }>(
+      `/v1/users/${encodeURIComponent(userId)}/avatar`,
+    );
+    return url;
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 403)) return null;
+    throw e;
+  }
 }

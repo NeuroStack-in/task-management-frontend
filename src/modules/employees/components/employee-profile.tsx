@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday } from "@/lib/workdays";
 import Link from "next/link";
@@ -69,6 +69,7 @@ import { TablePagination } from "@/components/shared/table-pagination";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { initials, isUuid, UNKNOWN_ROLE } from "@/lib/format";
+import { useRolesStore } from "@/stores/roles.store";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -137,12 +138,28 @@ const ATTENDANCE_BADGE: Record<string, { label: string; className: string }> = {
 function headerBadge(
   data: EmployeeProfileData,
   todayIsWorkday: boolean,
+  /**
+   * Whether this person personally tracks time — their role holds `time-tracking:self`
+   * (wp-contracts bit 110, the contributor-only bit `is_owner` deliberately does not grant).
+   */
+  isTracked: boolean,
 ): { label: string; className: string; title: string } {
   if (data.status !== "active") {
     return {
       label: EMPLOYMENT_LABEL[data.status],
       className: STATUS_META[data.status],
       title: `This employee is ${EMPLOYMENT_LABEL[data.status].toLowerCase()}`,
+    };
+  }
+  // An Owner or Admin is not tracked, so a "Today" attendance verdict is true and meaningless — it
+  // reads as a performance judgement on someone the product never asked to run a timer. Show the
+  // employment state instead. Gated on the contributor bit rather than a role id, so an admin who
+  // genuinely also contributes keeps their real attendance badge.
+  if (!isTracked) {
+    return {
+      label: EMPLOYMENT_LABEL.active,
+      className: STATUS_META.active,
+      title: "This role doesn't track time, so there's no daily attendance to show",
     };
   }
   if (!todayIsWorkday) {
@@ -690,6 +707,16 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
   // quieter "Non-working day" label.
   const workdays = useWorkdays();
   const [todayIsWorkday, setTodayIsWorkday] = useState(true);
+  // Does THIS employee personally track time? Resolved from their role's permission list, not from
+  // a role-id comparison: an Owner or Admin who is also a contributor holds `time-tracking:self`
+  // explicitly, and must keep the attendance badge that a name check would have taken away.
+  // Unknown role (not yet loaded, or a role the store hasn't seen) ⇒ treat as tracked, so a loading
+  // race never silently blanks a real employee's badge.
+  const allRoles = useRolesStore((st) => st.getAllRoles());
+  const isTracked = useMemo(() => {
+    const role = allRoles.find((r) => r.id === data?.roleId);
+    return role ? role.permissions.includes("time-tracking:self") : true;
+  }, [allRoles, data?.roleId]);
   useEffect(() => {
     setTodayIsWorkday(isWorkday(new Date(), workdays));
   }, [workdays]);
@@ -827,7 +854,7 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
                     {data.roleName}
                   </Badge>
                   {(() => {
-                    const b = headerBadge(data, todayIsWorkday);
+                    const b = headerBadge(data, todayIsWorkday, isTracked);
                     return (
                       <Badge className={b.className} title={b.title}>
                         {b.label}
