@@ -1170,11 +1170,15 @@ function EmployeeCaptures({
             </label>
           </div>
         </Field>
+        {/* Pushed to the row's right edge rather than sitting immediately after the radios, where
+            the `gap-x-6` left it stranded mid-bar looking like a stray label. Right-aligned is
+            where a filter reset belongs, and it means the control appearing and disappearing with
+            `dirty` no longer nudges anything else on the row. */}
         {dirty ? (
           <Button
             variant="ghost"
             size="sm"
-            className="h-8"
+            className="ml-auto h-8 text-muted-foreground hover:text-foreground"
             onClick={() => {
               setFrom("");
               setTo("");
