@@ -21,6 +21,7 @@ import { PersonalDashboard } from "./personal-dashboard";
 import { MyTasksCardSelf } from "./my-tasks-card";
 import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import { useIsSurfaceOn } from "@/hooks/use-features";
+import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { ATTENDANCE_LOG_ANCHOR } from "@/modules/attendance/components/attendance-log";
 import { useDashboardData } from "../use-dashboard-data";
@@ -54,6 +55,18 @@ function OrgDashboard() {
   // sitting there empty.
   const isSurfaceOn = useIsSurfaceOn();
   const showProjects = isSurfaceOn("projects");
+  // …and on whether this person is a CONTRIBUTOR at all. "My tasks" answers "what am I personally
+  // working on", which is not a question an oversight role is on this page to ask — an Owner got a
+  // permanent "You're all caught up" card telling them nothing.
+  //
+  // Gated on the contributor-only bit rather than on a role id, because that is the distinction the
+  // permission model already draws: `time-tracking:self` (wp-contracts bit 110, `TimeTrackSelf`) is
+  // one of the bits `is_owner` deliberately does NOT grant — it means "I personally do this", not "I
+  // may oversee it". `canAccess` refuses to let the wildcard grant it, so Owner and Admin drop the
+  // card by default while an admin who *is* also a contributor (a custom role granting the bit)
+  // keeps it. Hardcoding "not owner, not admin" would have got that last case wrong.
+  const { can } = usePermissions();
+  const isContributor = can("time-tracking:self");
   // "Today" by default: the dashboard answers "what is happening right now", and a 7-day default
   // buried today's numbers in a week's average. The LLD does not fix a page-level default (§3 is
   // layout persistence; `date-range` there is per-widget config), so this is a product choice.
@@ -288,10 +301,11 @@ function OrgDashboard() {
 
       <CustomizableDashboard data={data} />
 
-      {/* An org-scoped role (Admin/Owner/Manager/HR) never renders `PersonalDashboard`, and the
-          widget catalog has no my-tasks entry — so before this, a task assigned to an admin
-          appeared nowhere on their dashboard. Same card the personal view uses. */}
-      {showProjects && <MyTasksCardSelf />}
+      {/* An org-scoped role never renders `PersonalDashboard`, and the widget catalog has no
+          my-tasks entry — so a task assigned to an org-scoped CONTRIBUTOR would appear nowhere.
+          That is what this covers, and only that: `isContributor` keeps it off the dashboard of a
+          pure oversight role (Owner/Admin), where it could only ever render an empty state. */}
+      {showProjects && isContributor && <MyTasksCardSelf />}
       </div>
     </div>
   );
