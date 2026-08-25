@@ -180,8 +180,13 @@ export function EmployeeRecapCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1.5">
+        {/* NOT `flex-wrap`. With wrapping, the button's position depended on how long the
+            description happened to be: "Mon 24 Aug · recapped after the day closed · the same recap
+            Rahul sees about themselves" pushed it onto a second line, while the shorter Overall
+            copy left it top-right — so switching tabs made the control jump. `min-w-0` lets the
+            description wrap inside its own column instead of shoving the button anywhere. */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5">
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="size-4 text-primary" /> AI summary
             </CardTitle>
@@ -194,6 +199,7 @@ export function EmployeeRecapCard({
           <Button
             size="sm"
             variant="outline"
+            className="shrink-0"
             onClick={regenerate}
             disabled={loading || regenerating}
             // Said plainly: this is not a private re-roll.
