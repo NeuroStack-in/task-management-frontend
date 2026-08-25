@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { initials } from "@/lib/format";
 import { useAvatarStore } from "@/stores/avatars.store";
+import { useAuthStore } from "@/stores/auth.store";
 
 interface UserAvatarProps {
   /**
@@ -40,15 +41,22 @@ export function UserAvatar({
   size,
 }: UserAvatarProps) {
   const ensure = useAvatarStore((s) => s.ensure);
-  const url = useAvatarStore((s) => (userId ? s.urls[userId] : undefined));
+  const cached = useAvatarStore((s) => (userId ? s.urls[userId] : undefined));
+  // **Your own face never depends on a network call.** `AvatarSync` already resolved it into the
+  // auth store at sign-in, so when this avatar IS the signed-in user we use that directly. Without
+  // it, anything that stopped the shared lookup — a permission, a throttle, an expired presign —
+  // made you disappear from your own project's member list, which reads as the upload having failed.
+  const me = useAuthStore((s) => s.user);
+  const url = userId && me?.id === userId ? (me.avatarUrl ?? cached) : cached;
 
   // In an effect, not in render: `ensure` writes to the store, and a store write during render is
   // exactly the "cannot update a component while rendering a different component" warning — and,
   // with a selector returning a fresh value, the infinite loop that took the employee profile page
   // down earlier today.
   useEffect(() => {
-    if (userId) ensure([userId]);
-  }, [userId, ensure]);
+    // No lookup needed for yourself — the auth store already has it.
+    if (userId && me?.id !== userId) ensure([userId]);
+  }, [userId, me?.id, ensure]);
 
   return (
     <Avatar className={className} size={size}>

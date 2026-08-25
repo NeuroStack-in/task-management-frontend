@@ -15,6 +15,14 @@ import {
   Sparkles,
   Timer,
   TriangleAlert,
+  Bell,
+  CheckCheck,
+  HelpCircle,
+  LayoutDashboard,
+  LineChart,
+  MapPin,
+  Users,
+  Wallet,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -68,23 +76,55 @@ interface FeatureDef {
  * the only guard. The assistant is here despite not being a route — it is a surface people want to
  * turn off, so it carries a `page:` pseudo-key.
  */
-const PAGE_LIST: { key: string; label: string; description: string }[] = [
-  { key: "/dashboard", label: "Dashboard", description: "The at-a-glance home screen." },
-  { key: "/time-tracking", label: "Time Tracking", description: "Weekly timesheets by employee and project." },
-  { key: "/projects", label: "Projects", description: "Projects, tasks and per-project members." },
-  { key: "/employees", label: "Employees", description: "The people directory and employee profiles." },
-  { key: "/attendance", label: "Attendance", description: "Daily present/partial/absent roster." },
-  { key: "/leave-requests", label: "Leave", description: "Leave balances and requests." },
-  { key: "/approvals", label: "Approvals", description: "The approval queue." },
-  { key: "/payroll", label: "Payroll", description: "Payroll runs and payslips." },
-  { key: "/insights", label: "Analytics", description: "The whole Analytics hub, including its tabs." },
-  { key: "/insights/activity", label: "— Activity tab", description: "Activity read-models inside Analytics." },
-  { key: "/insights/screenshots", label: "— Screenshots tab", description: "The screenshot review grid." },
-  { key: "/insights/locations", label: "— Locations tab", description: "The device-location board." },
-  { key: "/insights/ai-reports", label: "— AI reports tab", description: "AI executive reads and exports." },
-  { key: "/notifications", label: "Notifications", description: "The notification centre." },
-  { key: "/help", label: "Help Center", description: "Help articles and support tickets." },
-  { key: "page:assistant", label: "AI assistant launcher", description: "The floating chat button. Not a page — the launcher itself." },
+/**
+ * **One row, one switch, one subject.**
+ *
+ * A row turns its whole subject on or off: the capability AND the page it lives on. Underneath they
+ * are still two different things — `features` reaches the desktop agents and the API (switching
+ * Screenshots off stops agents capturing; switching AI off stops summaries being generated and
+ * billed), while `page` is only what people see — but nobody wants to reason about that pair, so
+ * one switch drives both.
+ *
+ * That is also why sub-features are folded in rather than listed: an export lives inside a tab, so
+ * hiding the tab is the honest control. AI reports carries both `reports.basic` and the per-
+ * generation `insights.reports.ai_pdf` for exactly that reason.
+ *
+ * A row may have only one half — Payroll is a page with no capability behind it, AI insights is a
+ * capability that surfaces on cards rather than a page of its own.
+ *
+ * `/settings/*` is deliberately absent: an org that could hide Settings could not undo it, and the
+ * server refuses those keys too.
+ */
+interface ControlDef {
+  icon: LucideIcon
+  label: string
+  description: string
+  /** Plan-gated capability keys. More than one when a subject owns a sub-feature (e.g. exports). */
+  features?: FeatureKey[]
+  /** Page/tab href, or a `page:` pseudo-key for a surface that is not a route. */
+  page?: string
+  beta?: true
+}
+
+const CONTROLS: ControlDef[] = [
+  { icon: LayoutDashboard, label: "Dashboard", description: "The at-a-glance home screen.", page: "/dashboard" },
+  { icon: Timer, label: "Time tracking", description: "The desktop agent's timer, hours logged against projects, and the timesheet pages.", features: ["time.tracking"], page: "/time-tracking" },
+  { icon: CalendarCheck, label: "Attendance", description: "Daily present/partial/absent status, computed nightly from recorded sessions.", features: ["attendance"], page: "/attendance" },
+  { icon: Plane, label: "Leave", description: "Leave types, balances, requests and the approval queue.", features: ["leave"], page: "/leave-requests" },
+  { icon: FolderKanban, label: "Projects & tasks", description: "Projects, tasks, assignments and per-project roles.", features: ["projects"], page: "/projects" },
+  { icon: Users, label: "Employees", description: "The people directory and employee profiles.", page: "/employees" },
+  { icon: CheckCheck, label: "Approvals", description: "The approval queue.", page: "/approvals" },
+  { icon: Wallet, label: "Payroll", description: "Payroll runs and payslips.", page: "/payroll" },
+  { icon: LineChart, label: "Analytics", description: "The Analytics hub. Turning it off turns off every tab below it.", page: "/insights" },
+  { icon: Activity, label: "Activity monitoring", description: "Active vs idle time, application usage and input intensity — and the Activity tab.", features: ["monitoring.activity"], page: "/insights/activity" },
+  { icon: Camera, label: "Screenshots", description: "Periodic screenshot capture and the review grid. Off stops the agents capturing, not just the page.", features: ["monitoring.screenshots"], page: "/insights/screenshots" },
+  { icon: MapPin, label: "Locations", description: "The device-location board.", page: "/insights/locations" },
+  { icon: FileText, label: "Reports", description: "Workforce, time and project reports, CSV export, and the narrated AI PDF — which is billed per generation.", features: ["reports.basic", "insights.reports.ai_pdf"], page: "/insights/ai-reports" },
+  { icon: Sparkles, label: "AI insights", description: "AI-narrated productivity summaries over the day's activity. Off stops them being generated and billed.", features: ["ai.insights"], beta: true },
+  { icon: Bot, label: "AI assistant", description: "Ask questions about your workspace. Session-only — nothing is stored.", features: ["ai.assistant"], page: "page:assistant", beta: true },
+  { icon: Plug, label: "Integrations", description: "Connect Slack so leave, joiner and payroll updates land in your channels.", features: ["integrations"] },
+  { icon: Bell, label: "Notifications", description: "The notification centre.", page: "/notifications" },
+  { icon: HelpCircle, label: "Help Center", description: "Help articles and support tickets.", page: "/help" },
 ]
 
 const FEATURE_LIST: FeatureDef[] = [
@@ -198,7 +238,12 @@ export function FeaturesTab() {
   const [pageDraft, setPageDraft] = useState<Record<string, boolean>>({})
   useEffect(() => {
     setPageDraft(
-      Object.fromEntries(PAGE_LIST.map((p) => [p.key, storePages[p.key] !== false])),
+      Object.fromEntries(
+        CONTROLS.filter((c) => c.page).map((c) => [
+          c.page as string,
+          storePages[c.page as string] !== false,
+        ]),
+      ),
     )
   }, [storePages])
   const isOwner = useAuthStore(isOwnerOf)
@@ -236,11 +281,12 @@ export function FeaturesTab() {
         await toggleFeature(f.key, draft[f.key])
       }
       // Page toggles ride the same endpoint with `scope: "page"` — one route, one lock, one audit.
-      const pagesChanged = PAGE_LIST.filter(
-        (p) => pageDraft[p.key] !== (storePages[p.key] !== false),
+      const pagesChanged = CONTROLS.filter(
+        (c) =>
+          c.page && pageDraft[c.page] !== (storePages[c.page] !== false),
       )
-      for (const p of pagesChanged) {
-        await toggleFeature(p.key, pageDraft[p.key], "page")
+      for (const c of pagesChanged) {
+        await toggleFeature(c.page as string, pageDraft[c.page as string], "page")
       }
       toast.success("Feature settings saved")
       // Push the saved state into the shared store so the nav re-filters right away — `reload()`
@@ -303,28 +349,40 @@ export function FeaturesTab() {
         <CardHeader>
           <CardTitle>Features</CardTitle>
           <CardDescription>
-            Disabled features are hidden from everyone <strong>except organization owners</strong>,
-            who keep access so a feature can always be switched back on. Re-enabling restores access
-            based on each role&apos;s existing permissions &mdash; and you can only re-enable
-            something switched off by a role you could grant.
+            Two switches per row, because they answer different questions.{" "}
+            <strong>On</strong> is what WorkPulse <em>does</em> &mdash; it reaches the desktop agents
+            and the API, so switching Screenshots off stops agents capturing and switching AI off
+            stops summaries being generated and billed. <strong>Visible</strong> is only what people{" "}
+            <em>see</em>; it never changes capture or your bill. Both are hidden from everyone except
+            organization owners, who keep access so anything can be switched back on &mdash; and you
+            can only re-enable something switched off by a role you could grant.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="grid lg:grid-cols-2 lg:divide-x">
-            {FEATURE_LIST.map((f) => {
-              const Icon = f.icon
-              const isOn = draft[f.key]
-              // Layer 1: a key the plan doesn't include can't be switched on (the server rejects it).
-              const planAllows = allowed.has(f.key)
-              // Layer 2: who turned it off, and whether THIS caller may undo it. Computed server-side
-              // per request — an owner and an admin get different answers for the same feature.
-              const off = disabledBy[f.key]
-              const locked = Boolean(off?.locked)
+          <div className="divide-y">
+            {CONTROLS.map((c) => {
+              const Icon = c.icon
+              const feats = c.features ?? []
+              // ON means the whole subject is on: every capability it owns, and its page.
+              const featOn = feats.every((k) => draft[k])
+              const pageOn = c.page ? pageDraft[c.page] !== false : true
+              const isOn = featOn && pageOn
+
+              // A capability outside the plan can never be switched on (the server rejects it).
+              const planAllows = feats.every((k) => allowed.has(k))
+              // Locked if ANY half was switched off by a role this caller could not grant.
+              const notes = [
+                ...feats.map((k) => disabledBy[k]),
+                c.page ? pagesDisabledBy[c.page] : undefined,
+              ].filter(Boolean) as { by_owner: boolean; locked: boolean }[]
+              const locked = notes.some((n) => n.locked)
+              const note = notes[0]
+
               return (
                 <div
-                  key={f.key}
+                  key={c.label}
                   className={cn(
-                    "flex items-center gap-4 border-b border-border px-6 py-3 transition-opacity last:border-b-0 lg:[&:nth-last-child(2):nth-child(odd)]:border-b-0",
+                    "flex items-center gap-4 px-6 py-3 transition-opacity",
                     !isOn && "opacity-60",
                   )}
                 >
@@ -333,24 +391,24 @@ export function FeaturesTab() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{f.label}</p>
-                      {f.beta && (
+                      <p className="text-sm font-medium">{c.label}</p>
+                      {c.beta && (
                         <Badge variant="secondary" className="text-xs">
                           Beta
                         </Badge>
                       )}
                     </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{f.description}</p>
-                    {/* Three distinct states, deliberately worded apart: outside the plan is a
-                        billing conversation, locked is a colleague, and off-but-you're-an-owner
-                        explains why you can still open something the page says is off. */}
+                    <p className="mt-0.5 text-xs text-muted-foreground">{c.description}</p>
+                    {/* Three states, worded apart because they need different reactions: outside the
+                        plan is a billing conversation, locked is a colleague, and off-but-you're-an-
+                        owner explains why you still see something the row says is off. */}
                     {!planAllows && !isOn ? (
                       <p className="mt-1 text-xs text-muted-foreground">
                         Not included in your plan.
                       </p>
-                    ) : off ? (
+                    ) : note ? (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Turned off by {off.by_owner ? "an owner" : "an admin"}
+                        Turned off by {note.by_owner ? "an owner" : "an admin"}
                         {locked
                           ? " — only they can turn it back on."
                           : isOwner
@@ -362,65 +420,20 @@ export function FeaturesTab() {
                   <Switch
                     checked={isOn}
                     disabled={!canManage || (!planAllows && !isOn) || locked}
-                    aria-label={`${f.label} — ${isOn ? "enabled" : "disabled"}`}
-                    onCheckedChange={(v) =>
-                      setDraft((p) => ({ ...p, [f.key]: v }))
-                    }
-                  />
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Layer 3 — visibility. Separate card on purpose: these are NOT plan features, they cost
-          nothing, and mixing them into the list above would imply they affect billing. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Pages</CardTitle>
-          <CardDescription>
-            Hide individual pages and tabs from everyone except organization owners. This is
-            visibility only &mdash; it doesn&apos;t change your plan, and hiding a page never
-            affects what you&apos;re billed. Settings pages can&apos;t be hidden, so there is always
-            a way back.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="grid lg:grid-cols-2 lg:divide-x">
-            {PAGE_LIST.map((p) => {
-              const isOn = pageDraft[p.key] !== false
-              const off = pagesDisabledBy[p.key]
-              const locked = Boolean(off?.locked)
-              return (
-                <div
-                  key={p.key}
-                  className={cn(
-                    "flex items-center gap-4 border-b border-border px-6 py-3 transition-opacity last:border-b-0 lg:[&:nth-last-child(2):nth-child(odd)]:border-b-0",
-                    !isOn && "opacity-60",
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{p.label}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{p.description}</p>
-                    {off ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Hidden by {off.by_owner ? "an owner" : "an admin"}
-                        {locked
-                          ? " — only they can show it again."
-                          : isOwner
-                            ? " — you still see it because you're an owner."
-                            : "."}
-                      </p>
-                    ) : null}
-                  </div>
-                  <Switch
-                    checked={isOn}
-                    disabled={!canManage || locked}
-                    aria-label={`${p.label} — ${isOn ? "visible" : "hidden"}`}
-                    onCheckedChange={(v) =>
-                      setPageDraft((prev) => ({ ...prev, [p.key]: v }))
-                    }
+                    aria-label={`${c.label} — ${isOn ? "on" : "off"}`}
+                    onCheckedChange={(v) => {
+                      // One switch, both halves — the two layers stay separate underneath, but a
+                      // reader should never have to hold that distinction to use this page.
+                      if (feats.length) {
+                        setDraft((prev) => ({
+                          ...prev,
+                          ...Object.fromEntries(feats.map((k) => [k, v])),
+                        }))
+                      }
+                      if (c.page) {
+                        setPageDraft((prev) => ({ ...prev, [c.page as string]: v }))
+                      }
+                    }}
                   />
                 </div>
               )
