@@ -70,6 +70,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { initials, isUuid, UNKNOWN_ROLE } from "@/lib/format";
 import { useRolesStore } from "@/stores/roles.store";
+import { SYSTEM_ROLES } from "@/constants/roles";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -712,11 +713,21 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
   // explicitly, and must keep the attendance badge that a name check would have taken away.
   // Unknown role (not yet loaded, or a role the store hasn't seen) ⇒ treat as tracked, so a loading
   // race never silently blanks a real employee's badge.
-  const allRoles = useRolesStore((st) => st.getAllRoles());
+  //
+  // Select the STABLE `customRoles` slice and merge here — never `useRolesStore(s =>
+  // s.getAllRoles())`. That helper returns `[...SYSTEM_ROLES, ...customRoles]`, a fresh array on
+  // every call, and zustand compares selector output with `Object.is` — so the selector reported a
+  // change on every render, re-rendered, and looped until React gave up and showed the error
+  // boundary. It took down the whole employee profile page.
+  const customRoles = useRolesStore((st) => st.customRoles);
   const isTracked = useMemo(() => {
-    const role = allRoles.find((r) => r.id === data?.roleId);
+    const roleId = data?.roleId;
+    if (!roleId) return true;
+    const role =
+      SYSTEM_ROLES.find((r) => r.id === roleId) ??
+      customRoles.find((r) => r.id === roleId);
     return role ? role.permissions.includes("time-tracking:self") : true;
-  }, [allRoles, data?.roleId]);
+  }, [customRoles, data?.roleId]);
   useEffect(() => {
     setTodayIsWorkday(isWorkday(new Date(), workdays));
   }, [workdays]);
