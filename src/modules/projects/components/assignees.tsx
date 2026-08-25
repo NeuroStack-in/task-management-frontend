@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { cn } from "@/lib/utils";
 import { initials, personName } from "@/lib/format";
 import type { UserMini } from "../lib";
@@ -77,10 +78,13 @@ export function AssigneeStack({
         {shown.map((a) => {
           const u = userMap[a.userId];
           return (
-            <Avatar key={a.userId} className={cn(s.avatar, s.ring, ringClass)}>
-              {u?.avatarUrl ? <AvatarImage src={u.avatarUrl} alt={personName(u.name)} /> : null}
-              <AvatarFallback className={s.text}>{initials(personName(u?.name))}</AvatarFallback>
-            </Avatar>
+            <UserAvatar
+              key={a.userId}
+              userId={a.userId}
+              name={personName(u?.name)}
+              className={cn(s.avatar, s.ring, ringClass)}
+              fallbackClassName={s.text}
+            />
           );
         })}
         {hidden.length > 0 ? (

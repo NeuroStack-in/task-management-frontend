@@ -2,15 +2,9 @@
  * Small presentational building blocks shared across the Projects views.
  * Composed from the shared UI primitives + the tone class maps in ../lib.
  */
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarGroup,
-  AvatarGroupCount,
-  AvatarImage,
-} from "@/components/ui/avatar";
+import { AvatarGroup, AvatarGroupCount } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import {
   toneBar,
   toneDot,
@@ -83,10 +77,7 @@ export function MemberStack({
   return (
     <AvatarGroup>
       {shown.map((m) => (
-        <Avatar key={m.id} size="sm">
-          {m.avatarUrl ? <AvatarImage src={m.avatarUrl} alt={m.name} /> : null}
-          <AvatarFallback>{initials(m.name)}</AvatarFallback>
-        </Avatar>
+        <UserAvatar key={m.id} userId={m.id} name={m.name} size="sm" />
       ))}
       {extra > 0 ? (
         <AvatarGroupCount className="size-6 text-[0.65rem]">

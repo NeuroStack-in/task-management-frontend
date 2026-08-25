@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MAX_WEEKS_BACK } from "../use-weekly-hours";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Card } from "@/components/ui/card";
 import {
   Select,
@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { initials } from "@/lib/format";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import type {
   ProjectTimesheet,
@@ -434,12 +433,12 @@ export function TimesheetGrid({
                           <FolderKanban className="size-4" />
                         </span>
                       ) : (
-                        <Avatar className="size-8">
-                          <AvatarImage src={r.avatarUrl} alt={r.name} />
-                          <AvatarFallback className="text-xs">
-                            {initials(r.name)}
-                          </AvatarFallback>
-                        </Avatar>
+                        <UserAvatar
+                          userId={r.id}
+                          name={r.name}
+                          className="size-8"
+                          fallbackClassName="text-xs"
+                        />
                       )}
                       <div className="min-w-0">
                         <p className="flex items-center gap-1.5 truncate font-medium">
