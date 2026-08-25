@@ -3,6 +3,7 @@
 import { ThemeProvider } from "next-themes";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { AvatarSync } from "./avatar-sync";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -17,6 +18,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
     >
       <TooltipProvider delay={200}>
+        {/* Publishes the signed-in user's avatar to the auth store on any route — see AvatarSync
+            for why this cannot live on the profile page. Renders nothing. */}
+        <AvatarSync />
         {children}
         <Toaster richColors position="top-right" />
       </TooltipProvider>

@@ -12,6 +12,7 @@ import {
   CheckSquare,
   CalendarCheck,
   ImagePlus,
+  Trash2,
   Hash,
   ShieldCheck,
   Briefcase,
@@ -447,6 +448,28 @@ function RichProfile({
     );
   };
 
+  /**
+   * Remove the photo from the hero menu — a real save, not a staged edit.
+   *
+   * The staged `setPhoto(null)` in the edit dialog only takes effect when that form is submitted;
+   * the hero menu has no submit, so it PATCHes directly. `avatar_s3_key: ""` is the documented
+   * clear (`set_or_clear` in identity::update_my_profile removes the attribute on an empty string) —
+   * sending `undefined` would mean "leave it alone" and silently do nothing.
+   */
+  const onRemovePhoto = () => {
+    void toast.promise(
+      updateMyProfile({ avatar_s3_key: "" }).then(() =>
+        updateUser({ avatarUrl: undefined }),
+      ),
+      {
+        loading: "Removing photo…",
+        success: "Profile photo removed",
+        error: (e: unknown) =>
+          friendlyError(e, "Couldn't remove the photo. Try again."),
+      },
+    );
+  };
+
   const dash = (v: string | undefined | null) => v?.trim() || "—";
   const empId = dash(profile?.emp_id);
   const jobTitle = profile?.title ?? user.jobTitle;
@@ -522,6 +545,15 @@ function RichProfile({
                     <ImagePlus className="size-4" />
                     {user.avatarUrl ? "Replace photo" : "Upload photo"}
                   </DropdownMenuItem>
+                  {user.avatarUrl ? (
+                    <DropdownMenuItem
+                      onClick={onRemovePhoto}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="size-4" />
+                      Remove photo
+                    </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -781,6 +813,8 @@ function RichProfile({
       </Dialog>
 
       <PhotoEditor
+        onRemove={onRemovePhoto}
+        hasPhoto={Boolean(user.avatarUrl)}
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
         onApply={onUploadPhoto}
