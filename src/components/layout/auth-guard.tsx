@@ -11,7 +11,7 @@ import {
   useTrackingMode,
 } from "@/hooks/use-features";
 import { featureForPath, isPathModeHidden } from "@/constants/features";
-import { canAccess, permissionForPath } from "@/lib/rbac";
+import { canAccessPath } from "@/lib/rbac";
 import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -83,8 +83,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const required = permissionForPath(pathname);
-  if (!canAccess(role, required)) {
+  if (!canAccessPath(role, pathname)) {
     return (
       <div className="flex flex-1 items-center justify-center p-6">
         <EmptyState

@@ -121,6 +121,46 @@ export function getAccessibleNav(
 }
 
 /**
+ * Can this role open `pathname`?
+ *
+ * **Use this, not `canAccess(role, permissionForPath(p))`.** That pairing silently allows any nav
+ * entry gated by `anyPermissions` instead of a single `permission`, because `permissionForPath`
+ * only reads the latter and `canAccess(role, null)` is `true`. The Analytics hub is exactly such an
+ * entry, so `/insights` — and `/insights/anomalies` and `/insights/reports`, which have no tab of
+ * their own and fall back to it — were reachable by anyone signed in, whatever the sidebar showed.
+ *
+ * Matches the most specific nav entry (longest `href`) and applies the same rule the sidebar does:
+ * `anyPermissions` when present, else `permission`, and an unmatched path is open — a route nobody
+ * registered is not a route this function gets to guess about.
+ */
+export function canAccessPath(
+  role: Role | null | undefined,
+  pathname: string,
+): boolean {
+  const item = navItemForPath(pathname);
+  if (!item) return true;
+  if (item.anyPermissions) return canAny(role, item.anyPermissions);
+  return canAccess(role, item.permission);
+}
+
+/** The most specific registered nav entry for a path, across every surface that declares one. */
+function navItemForPath(pathname: string): NavItem | null {
+  const items: NavItem[] = [
+    ...NAV_GROUPS.flatMap((g) => g.items),
+    ...ADMIN_SECTIONS.flatMap((g) => g.items),
+    ...ACCOUNT_SECTIONS,
+    ...INSIGHTS_TABS,
+  ];
+  let match: NavItem | null = null;
+  for (const item of items) {
+    if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
+      if (!match || item.href.length > match.href.length) match = item;
+    }
+  }
+  return match;
+}
+
+/**
  * Resolves the required permission for a given pathname. Scans the sidebar nav
  * AND the admin sections (which live in the Settings hub, not the sidebar) so
  * relocated routes stay guarded. Returns the most specific (longest href) match.
@@ -163,7 +203,7 @@ export function safeLandingPath(
   // Must be a same-origin absolute path. `//evil.com` and `/\evil.com` both start with "/" yet are
   // protocol-relative URLs to another host — a redirect the attacker controls.
   if (!from || !from.startsWith("/") || /^\/[\\/]/.test(from)) return "/dashboard";
-  return canAccess(role, permissionForPath(from)) ? from : "/dashboard";
+  return canAccessPath(role, from) ? from : "/dashboard";
 }
 
 /**

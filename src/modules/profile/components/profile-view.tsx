@@ -320,6 +320,11 @@ function RichProfile({
   }, []);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  // The edit dialog's own cropper. Separate from `uploadOpen` (the hero menu's) because the two
+  // differ in what they do with the result: the hero uploads immediately, this one STAGES the file
+  // so it lands with the rest of the form on Save. Sharing one flag would have quietly turned the
+  // dialog's staged edit into an instant write.
+  const [cropOpen, setCropOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   // Values shown when the edit dialog opened — the diff baseline, so only changes are PATCHed.
@@ -730,7 +735,11 @@ function RichProfile({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => fileRef.current?.click()}
+                  // Opens the SAME cropper the hero menu uses. It used to trigger a bare
+                  // `<input type=file>`, so which entry point you happened to take decided whether
+                  // you could adjust the photo at all — one path cropped, the other uploaded
+                  // whatever you picked and let `object-cover` centre-crop it.
+                  onClick={() => setCropOpen(true)}
                 >
                   <ImagePlus className="size-4" /> Change photo
                 </Button>
@@ -811,6 +820,21 @@ function RichProfile({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit-dialog cropper: same component, but `onApply` STAGES rather than uploads, so the
+          photo is saved with the form instead of jumping ahead of it. */}
+      <PhotoEditor
+        open={cropOpen}
+        onClose={() => setCropOpen(false)}
+        hasPhoto={Boolean(previewSrc)}
+        onRemove={() => setPhoto(null)}
+        onApply={(file) => {
+          const reader = new FileReader();
+          reader.onload = () =>
+            setPhoto({ file, preview: reader.result as string });
+          reader.readAsDataURL(file);
+        }}
+      />
 
       <PhotoEditor
         onRemove={onRemovePhoto}

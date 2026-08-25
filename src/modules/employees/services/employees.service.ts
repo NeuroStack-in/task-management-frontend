@@ -552,3 +552,32 @@ export async function getEmployeeAvatarUrl(userId: string): Promise<string | nul
     throw e;
   }
 }
+
+/**
+ * `GET /v1/users/avatars?ids=a,b,c` — presigned view URLs for a whole page of employees at once.
+ *
+ * One request instead of one per row. The single-avatar route cannot serve a list: each photo needs
+ * its own presign, so nine rows would be nine calls — the per-item fan-out this codebase warns
+ * about, against an account whose default Lambda concurrency ceiling is 10.
+ *
+ * Ids without an avatar are simply **absent** from the map; render initials for those. Capped at 50
+ * server-side, so pass a page's worth, not a directory.
+ *
+ * Best-effort by contract: any failure resolves to an empty map rather than throwing. These are
+ * decorative, they need `employees:read`, and the URLs expire — none of that should be able to
+ * break a list that is otherwise fine.
+ */
+export async function getEmployeeAvatarUrls(
+  userIds: string[],
+): Promise<Record<string, string>> {
+  const ids = userIds.filter(Boolean).slice(0, 50);
+  if (ids.length === 0) return {};
+  try {
+    const { urls } = await apiFetch<{ urls: Record<string, string> }>(
+      `/v1/users/avatars?ids=${encodeURIComponent(ids.join(","))}`,
+    );
+    return urls ?? {};
+  } catch {
+    return {};
+  }
+}

@@ -30,6 +30,7 @@ import {
   deactivateEmployee,
   reactivateEmployee,
   setEmployeeBenched,
+  getEmployeeAvatarUrls,
 } from "./services/employees.service";
 
 /** Small cap: a per-day fan-out is exactly the burst that trips the Lambda's 503 throttle. */
@@ -166,6 +167,20 @@ export function useEmployees(): EmployeesData {
         // of this screen — the score is an enrichment, and it fills in a moment later.
         setEmployees(rows);
         setLoading(false);
+
+        // Photos, in ONE request for the whole roster — same reasoning as the scores below: the
+        // directory is the point of this screen and must not wait on an enrichment. Absent ids
+        // simply keep their initials, which is the correct state for someone with no photo.
+        getEmployeeAvatarUrls(rows.map((r) => r.id))
+          .then((urls) => {
+            if (!live || Object.keys(urls).length === 0) return;
+            setEmployees((prev) =>
+              prev.map((r) => (urls[r.id] ? { ...r, avatarUrl: urls[r.id] } : r)),
+            );
+          })
+          .catch(() => {
+            /* decorative — initials are a correct fallback */
+          });
 
         const scores = await scoresByUser().catch(() => new Map<string, number>());
         if (!live || scores.size === 0) return;

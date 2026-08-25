@@ -137,12 +137,11 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/insights",
         icon: LineChart,
         permission: null,
-        anyPermissions: [
-          "activity:view",
-          "screenshots:view",
-          "reports:view",
-          "ai:view",
-        ],
+        // Oversight bits only. `reports:view` used to be here, and an Employee holds it
+        // (wp-contracts grants `ReportsRead` to the contributor baseline) — so the whole Analytics
+        // hub was reachable by someone with no oversight over anyone. Analytics is an org-wide
+        // surface: activity, screenshots, locations and AI reads about OTHER people.
+        anyPermissions: ["activity:view", "screenshots:view", "ai:view"],
         keywords: "insights reports activity monitoring charts statistics trends",
       },
     ],
@@ -217,7 +216,11 @@ export const INSIGHTS_TABS: NavItem[] = [
     label: "AI reports",
     href: "/insights/ai-reports",
     icon: WandSparkles,
-    permission: "reports:view",
+    // `ai:view` (AiInsightsRead), not `reports:view`. These are AI reads about the WORKFORCE, and
+    // an Employee holds `reports:view` — so this tab, and the hub with it, was reachable by someone
+    // with no oversight at all. `wp-contracts` deliberately withholds AiInsightsRead from the
+    // Employee baseline while granting the assistant, which is exactly this distinction.
+    permission: "ai:view",
     description:
       "AI summary, workforce health, alerts, and exportable reports in one place.",
     keywords: "summary anomalies alerts export pdf csv workforce health assistant",
