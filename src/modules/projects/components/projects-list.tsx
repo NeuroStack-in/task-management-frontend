@@ -2,13 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import { initials } from "@/lib/format";
 import {
   PROJECT_STATUS_META,
   PROJECT_STATUS_ORDER,
@@ -21,6 +15,7 @@ import {
   type UserMini,
 } from "../lib";
 import { MemberStack, ProgressTrack } from "./parts";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 interface TaskSummary {
   done: number;
@@ -132,12 +127,12 @@ export function ProjectsList({
                       {/* Project */}
                       <div className="flex min-w-0 items-center gap-3">
                         {lead ? (
-                          <Avatar size="sm" className="shrink-0">
-                            {lead.avatarUrl ? (
-                              <AvatarImage src={lead.avatarUrl} alt={lead.name} />
-                            ) : null}
-                            <AvatarFallback>{initials(lead.name)}</AvatarFallback>
-                          </Avatar>
+                          <UserAvatar
+                            userId={p.leadUserId}
+                            name={lead.name}
+                            size="sm"
+                            className="shrink-0"
+                          />
                         ) : null}
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">

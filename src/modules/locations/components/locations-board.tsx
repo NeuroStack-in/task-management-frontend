@@ -1,53 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  MapPin,
-  MapPinOff,
-  Navigation,
-  Search,
-  Users,
-} from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, MapPin, MapPinOff, Navigation, Search, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { AiReportCard } from "@/modules/insights/components/ai-report-card";
 import { ApiError } from "@/lib/api";
-import {
-  getOversightLocations,
-  type OversightPersonLocation,
-} from "@/modules/insights/services/insights.service";
+import { getOversightLocations, type OversightPersonLocation } from "@/modules/insights/services/insights.service";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useDataScope } from "@/hooks/use-data-scope";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useGeofenceStore } from "@/stores/geofence.store";
-import { initials, UNKNOWN_DEPARTMENT } from "@/lib/format";
-import {
-  deriveMode,
-  deriveStatus,
-  insidePerimeter,
-  WORK_MODE_LABEL,
-  type GeoPoint,
-  type WorkMode,
-} from "@/modules/locations/types";
+import { UNKNOWN_DEPARTMENT } from "@/lib/format";
+import { deriveMode, deriveStatus, insidePerimeter, WORK_MODE_LABEL, type GeoPoint, type WorkMode } from "@/modules/locations/types";
 import { cn } from "@/lib/utils";
 import { LiveMap, type MapMarker } from "./live-map";
 import { EmployeeLocationView } from "./employee-location";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 function isoOf(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -616,11 +591,12 @@ function LocationsBoard({
                 onClick={() => onSelect(p)}
                 className="group flex items-center gap-3 rounded-2xl border bg-card p-3 text-left transition hover:ring-1 hover:ring-primary/40"
               >
-                <Avatar className="size-10">
-                  <AvatarFallback className="text-xs">
-                    {initials(p.name)}
-                  </AvatarFallback>
-                </Avatar>
+                <UserAvatar
+                  userId={p.user_id}
+                  name={p.name}
+                  className="size-10"
+                  fallbackClassName="text-xs"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{p.name}</p>
                   {outside ? (

@@ -5,26 +5,15 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Download, Eye, Loader2, Paperclip, Star } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { initials, personName } from "@/lib/format";
-import {
-  TASK_PRIORITY_META,
-  TASK_STATUS_META,
-  type Attachment,
-  type Task,
-} from "../types";
+import { personName } from "@/lib/format";
+import { TASK_PRIORITY_META, TASK_STATUS_META, type Attachment, type Task } from "../types";
 import { toneSoft, type UserMini } from "../lib";
 import { AssignedByLine } from "./assignees";
 import { StatusBadge } from "./parts";
 import { getAttachmentDownloadUrl } from "../services/projects.service";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 /** Human file size, e.g. "812 B", "2.3 MB". */
 function humanSize(bytes: number): string {
@@ -204,10 +193,12 @@ export function ViewTaskDialog({
                       // the far edge it opened a gap the width of the dialog and read as an
                       // unrelated column; stacked, it is plainly a footnote about this person.
                       <li key={a.userId} className="flex items-center gap-2.5">
-                        <Avatar className="size-8 shrink-0">
-                          {u?.avatarUrl ? <AvatarImage src={u.avatarUrl} alt={name} /> : null}
-                          <AvatarFallback className="text-xs">{initials(name)}</AvatarFallback>
-                        </Avatar>
+                        <UserAvatar
+                          userId={a.userId}
+                          name={name}
+                          className="size-8 shrink-0"
+                          fallbackClassName="text-xs"
+                        />
                         <span className="flex min-w-0 flex-col leading-tight">
                           <span className="truncate text-sm font-medium">{name}</span>
                           <AssignedByLine assignee={a} userMap={userMap} />

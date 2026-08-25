@@ -1,43 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Building2,
-  Clock,
-  House,
-  MapPin,
-  TimerOff,
-  Users,
-} from "lucide-react";
+import { AlertTriangle, ArrowLeft, Building2, Clock, House, MapPin, TimerOff, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader } from "@/components/shared/loader";
 import { DatePicker, TimePicker } from "@/components/ui/date-picker";
-import { initials, todayIso } from "@/lib/format";
+import { todayIso } from "@/lib/format";
 import { ApiError } from "@/lib/api";
-import {
-  getLocationTrail,
-  type LocationPoint,
-  type OversightPersonLocation,
-} from "@/modules/insights/services/insights.service";
+import { getLocationTrail, type LocationPoint, type OversightPersonLocation } from "@/modules/insights/services/insights.service";
 import { getUserTimesheet } from "@/modules/time-tracking/services/timesheet.service";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useGeofenceStore } from "@/stores/geofence.store";
-import {
-  deriveMode,
-  deriveStatus,
-  distanceMeters,
-  insidePerimeter,
-  WORK_MODE_LABEL,
-  type GeoPoint,
-} from "@/modules/locations/types";
+import { deriveMode, deriveStatus, distanceMeters, insidePerimeter, WORK_MODE_LABEL, type GeoPoint } from "@/modules/locations/types";
 import { LiveMap, type MapMarker } from "./live-map";
 import { LocationTimeline, type MomentEntry } from "./location-timeline";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 const toGeoPoint = (p: { lat: number; lon: number }): GeoPoint => ({
   lat: p.lat,
@@ -341,11 +321,12 @@ export function EmployeeLocationView({
       {/* Identity */}
       <div className="rounded-2xl bg-card px-5 py-4 shadow-soft">
         <div className="flex flex-wrap items-start gap-4">
-          <Avatar className="size-14 shrink-0">
-            <AvatarFallback className="text-base">
-              {initials(person.name)}
-            </AvatarFallback>
-          </Avatar>
+          <UserAvatar
+            userId={person.user_id}
+            name={person.name}
+            className="size-14 shrink-0"
+            fallbackClassName="text-base"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
               <h2 className="font-heading text-lg font-semibold">

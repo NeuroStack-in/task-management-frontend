@@ -1,13 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import {
-  CalendarOff,
-  Check,
-  ClipboardCheck,
-  X,
-  TriangleAlert,
-} from "lucide-react";
+import { CalendarOff, Check, ClipboardCheck, X, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { getLeaveDocumentUrl } from "@/modules/leave/services/leave.service";
 import { DocumentList } from "@/components/shared/document-list";
@@ -15,30 +9,15 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
-import { initials } from "@/lib/format";
 import { useApprovals, type ApprovalItem } from "../use-approvals";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 const STATUS_BADGE: Record<string, string> = {
   pending: "bg-warning/15 text-warning",
@@ -190,11 +169,12 @@ export function ApprovalsView() {
                   >
                     <TableCell>
                       <div className="flex min-w-0 items-center gap-2.5">
-                        <Avatar className="size-7 shrink-0">
-                          <AvatarFallback className="text-[10px]">
-                            {initials(req.requesterName)}
-                          </AvatarFallback>
-                        </Avatar>
+                        <UserAvatar
+                          userId={req.userId}
+                          name={req.requesterName}
+                          className="size-7 shrink-0"
+                          fallbackClassName="text-[10px]"
+                        />
                         <span className="truncate font-medium">{req.requesterName}</span>
                       </div>
                     </TableCell>
@@ -307,9 +287,7 @@ function ApprovalDialog({
               tabIndex={-1}
               className="flex items-center gap-3 rounded-xl bg-muted/50 p-3 outline-none"
             >
-              <Avatar className="size-10">
-                <AvatarFallback>{initials(req.requesterName)}</AvatarFallback>
-              </Avatar>
+              <UserAvatar userId={req.userId} name={req.requesterName} className="size-10" />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{req.requesterName}</p>
                 <p className="truncate text-sm text-muted-foreground">

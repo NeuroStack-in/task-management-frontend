@@ -13,44 +13,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pencil, TriangleAlert, Users } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
-import { initials } from "@/lib/format";
-import {
-  adjustBalance,
-  getOrgBalances,
-  type ApiOrgBalances,
-  type ApiTypeBalance,
-} from "../services/leave.service";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import { adjustBalance, getOrgBalances, type ApiOrgBalances, type ApiTypeBalance } from "../services/leave.service";
 
 /** Which person + type the editor is open on. */
 interface EditTarget {
@@ -176,15 +150,12 @@ export function OrgBalancesTable() {
                     <TableRow key={emp.user_id}>
                       <TableCell className="max-w-0">
                         <div className="flex items-center gap-3">
-                          {/* Initials only, deliberately: no route serves another user's avatar
-                              image (`GET /v1/me/avatar` is self-scoped), so every employee list in
-                              the app renders the same fallback. Adding `AvatarImage` here would be
-                              a `src={undefined}` that never resolves. */}
-                          <Avatar className="size-8 shrink-0">
-                            <AvatarFallback className="text-xs">
-                              {initials(emp.name)}
-                            </AvatarFallback>
-                          </Avatar>
+                          <UserAvatar
+                            userId={emp.user_id}
+                            name={emp.name}
+                            className="size-8 shrink-0"
+                            fallbackClassName="text-xs"
+                          />
                           <div className="min-w-0">
                             <span className="block truncate font-medium">{emp.name}</span>
                             {emp.emp_id ? (

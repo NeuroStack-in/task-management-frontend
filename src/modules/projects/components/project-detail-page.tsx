@@ -3,78 +3,24 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  Building2,
-  CalendarRange,
-  ChevronRight,
-  Crown,
-  Eye,
-  FileDown,
-  FolderKanban,
-  ListChecks,
-  Pencil,
-  Plus,
-  Star,
-  Trash2,
-  Users,
-  AlertTriangle,
-} from "lucide-react";
+import { ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, ListChecks, Pencil, Plus, Star, Trash2, Users, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import {
-  DndContext,
-  PointerSensor,
-  closestCorners,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { DndContext, PointerSensor, closestCorners, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ApiError } from "@/lib/api";
 import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
-import { initials, personName } from "@/lib/format";
+import { personName } from "@/lib/format";
 import type { ProjectFormValues } from "@/stores/projects.store";
 import type { TaskFormValues } from "@/stores/tasks.store";
 import { useProjectDetail } from "../use-project-detail";
-import {
-  PROJECT_STATUS_META,
-  TASK_PRIORITY_META,
-  TASK_STATUS_META,
-  TASK_STATUS_ORDER,
-  TASK_STATUS_SETTABLE,
-  type SettableTaskStatus,
-  type Task,
-  type TaskStatus,
-} from "../types";
-import {
-  canDeleteTask,
-  canReviewTask,
-  daysUntil,
-  dueLabel,
-  formatDate,
-  isAtRisk,
-  selectablePeople,
-  taskCounts,
-  toneDot,
-  toneSoft,
-  type UserMini,
-} from "../lib";
+import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
+import { canDeleteTask, canReviewTask, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, taskCounts, toneDot, toneSoft, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
 import { MemberStack, Segmented, StatusBadge } from "./parts";
@@ -83,6 +29,7 @@ import { TaskReviewDialog } from "./task-review-dialog";
 import { TaskFormDialog } from "./task-form-dialog";
 import { ViewTaskDialog } from "./view-task-dialog";
 import { generateProjectReportPdf } from "../report";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 interface ProjectDetailPageProps {
   id: string;
@@ -472,14 +419,13 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               </span>
               {lead ? (
                 <span className="inline-flex items-center gap-1.5">
-                  <Avatar size="sm" className="size-5 ring-1 ring-white/15">
-                    {lead.avatarUrl ? (
-                      <AvatarImage src={lead.avatarUrl} alt={lead.name} />
-                    ) : null}
-                    <AvatarFallback className="bg-white/10 text-[0.55rem] text-white">
-                      {initials(lead.name)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar
+                    userId={project.leadUserId}
+                    name={lead.name}
+                    size="sm"
+                    className="size-5 ring-1 ring-white/15"
+                    fallbackClassName="bg-white/10 text-[0.55rem] text-white"
+                  />
                   Led by {lead.name}
                 </span>
               ) : null}
@@ -835,12 +781,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                       key={mid}
                       className="flex items-center gap-3 rounded-xl border p-3"
                     >
-                      <Avatar size="sm">
-                        {u.avatarUrl ? (
-                          <AvatarImage src={u.avatarUrl} alt={u.name} />
-                        ) : null}
-                        <AvatarFallback>{initials(u.name)}</AvatarFallback>
-                      </Avatar>
+                      <UserAvatar userId={mid} name={u.name} size="sm" />
                       <div className="min-w-0 flex-1 leading-tight">
                         <p className="flex items-center gap-1 truncate text-sm font-medium">
                           {u.name}

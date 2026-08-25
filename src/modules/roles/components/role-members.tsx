@@ -33,21 +33,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Loader2, ShieldCheck, UserCog } from "lucide-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { initials } from "@/lib/format";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { friendlyError } from "@/lib/errors";
 import { assignRole, type ApiRole } from "../services/roles.service";
 import { grantOwner } from "@/modules/settings/services/org.service";
 import { useAuthStore } from "@/stores/auth.store";
 import type { ApiEmployee } from "@/modules/employees/services/employees.service";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 /** The system role id ownership rides on — assignable only through Settings → Ownership. */
 const ROLE_OWNER = "role-owner";
@@ -154,9 +147,12 @@ export function RoleMembers({
       <ul className="divide-border/60 divide-y">
         {members.map((m) => (
           <li key={m.user_id} className="flex items-center gap-3 py-2">
-            <Avatar className="size-7 shrink-0">
-              <AvatarFallback className="text-[11px]">{initials(m.name)}</AvatarFallback>
-            </Avatar>
+            <UserAvatar
+              userId={m.user_id}
+              name={m.name}
+              className="size-7 shrink-0"
+              fallbackClassName="text-[11px]"
+            />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{m.name}</p>
               {m.title ? (

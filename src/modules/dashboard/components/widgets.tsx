@@ -2,45 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  CalendarClock,
-  CreditCard,
-  Camera,
-  ArrowUpRight,
-  Trophy,
-  BellRing,
-  TriangleAlert,
-  FolderKanban,
-  CheckSquare,
-} from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { CalendarClock, CreditCard, Camera, ArrowUpRight, Trophy, BellRing, TriangleAlert, FolderKanban, CheckSquare } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkline } from "@/components/shared/sparkline";
-import { initials, todayIso } from "@/lib/format";
+import { todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Performer } from "@/modules/dashboard/lib/dashboard-data";
 import { getAttention, type AttentionRow } from "@/modules/insights/services/insights.service";
-import {
-  getDayOversight,
-  type ApiDayUser,
-} from "@/modules/attendance/services/attendance.service";
+import { getDayOversight, type ApiDayUser } from "@/modules/attendance/services/attendance.service";
 import { listAllEmployees } from "@/modules/employees/services/employees.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
-import {
-  listMyTasks,
-  listProjects,
-  getProject,
-  type ApiMyTask,
-} from "@/modules/projects/services/projects.service";
+import { listMyTasks, listProjects, getProject, type ApiMyTask } from "@/modules/projects/services/projects.service";
 import { isOpenTaskStatus } from "@/modules/projects/types";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 /** Whole days from today to an ISO date (`YYYY-MM-DD`). Negative ⇒ overdue. */
 function daysUntil(iso: string): number {
@@ -119,12 +95,12 @@ export function TopEmployeesWidget({ people }: { people: Performer[] }) {
               <span className="w-4 text-xs font-medium text-muted-foreground tabular-nums">
                 {i + 1}
               </span>
-              <Avatar className="size-9">
-                <AvatarImage src={u.avatarUrl} alt={u.name} />
-                <AvatarFallback className="text-xs">
-                  {initials(u.name)}
-                </AvatarFallback>
-              </Avatar>
+              <UserAvatar
+                userId={u.id}
+                name={u.name}
+                className="size-9"
+                fallbackClassName="text-xs"
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{u.name}</p>
                 <p className="truncate text-xs text-muted-foreground">

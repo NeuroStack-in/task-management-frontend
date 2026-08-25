@@ -15,55 +15,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
-import {
-  ArrowDown,
-  ArrowUp,
-  CalendarDays,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Search,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
-import {
-  isFutureDate,
-  monthMatrix,
-  MONTH_NAMES,
-  WEEKDAY_LABELS,
-} from "../lib/calendar";
+import { isFutureDate, monthMatrix, MONTH_NAMES, WEEKDAY_LABELS } from "../lib/calendar";
 import type {
   OversightMode,
   OversightRow,
 } from "../use-oversight-attendance";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 /* ────────────────────────── Attendance log ────────────────────────── */
 
@@ -396,11 +365,12 @@ export function AttendanceLog({
                       >
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <Avatar className="size-8">
-                              <AvatarFallback className="text-xs">
-                                {initials(r.name)}
-                              </AvatarFallback>
-                            </Avatar>
+                            <UserAvatar
+                              userId={r.userId}
+                              name={r.name}
+                              className="size-8"
+                              fallbackClassName="text-xs"
+                            />
                             <span className="font-medium">{r.name}</span>
                           </div>
                         </TableCell>
