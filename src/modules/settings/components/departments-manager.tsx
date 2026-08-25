@@ -32,7 +32,7 @@ import {
   deleteDepartment,
   type ApiDepartment,
 } from "@/modules/employees/services/employees.service";
-import { DeptProductivitySheet } from "./org/dept-productivity-sheet";
+import { DeptProductivityDialog } from "./org/dept-productivity-dialog";
 
 /**
  * The standard starter set. Kept in step with the backend `create_org` seed (identity crate), so an
@@ -336,7 +336,7 @@ export function DepartmentsManager() {
       {/* Per-department productivity (weights + classification rules). Keyed so switching
           departments remounts the load cycle. Unmounts on close. */}
       {productivityDept ? (
-        <DeptProductivitySheet
+        <DeptProductivityDialog
           key={productivityDept.id}
           department={productivityDept}
           open={true}
