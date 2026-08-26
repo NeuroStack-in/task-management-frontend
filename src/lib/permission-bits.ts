@@ -29,6 +29,10 @@ const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {
   3: ["screenshots:view"], // ScreenshotsRead
   4: ["settings:view", "monitoring:manage"], // MonitoringManage — monitoring settings live under Settings; the office-perimeter (geofence) editor gates on `monitoring:manage`
   5: ["reports:export"], // ActivityExport
+  // AppUsageReadPerson — reading WHICH apps one named person used. Its own bit, and its own
+  // frontend id, because it is deliberately grantable apart from `activity:view`: the
+  // aggregate oversight and the individual application history are different privileges.
+  6: ["activity:apps:person"],
   // ── employees / org structure · 10–19 ──
   10: ["employees:view"], // EmployeesRead
   11: ["employees:view", "employees:manage"], // EmployeesManage

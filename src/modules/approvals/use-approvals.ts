@@ -12,7 +12,8 @@
  * tab is instant — three GSI2 queries on an admin screen, not a hot path.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ApiError, apiFetch } from "@/lib/api";
+import { ApiError } from "@/lib/api";
+import { employeeNameMap } from "@/modules/employees/services/employees.service";
 import { UNKNOWN_TYPE } from "@/lib/format";
 import {
   getTypes,
@@ -76,7 +77,9 @@ export function useApprovals(): ApprovalsData {
           getTypes()
             .then((ts) => new Map(ts.map((t) => [t.type_id, t.name])))
             .catch(() => new Map<string, string>()),
-          resolveNames().catch(() => new Map<string, string>()),
+          // Names are a nicety: a `leave:approve` holder can usually read the directory, but if
+          // they can't, the rows fall back to short ids rather than failing the whole queue.
+          employeeNameMap().catch(() => new Map<string, string>()),
         ]);
         if (!live) return;
         setTypeName(types);
@@ -134,21 +137,6 @@ export function useApprovals(): ApprovalsData {
   );
 
   return { items, counts, loading, error, reload, decide };
-}
-
-/**
- * Build a `user_id → name` map from the employees directory.
- *
- * Uses the directory list, which a `leave:approve` holder can typically also read. It's a nicety,
- * so the caller treats a failure as "no names" and shows short ids instead — never an error.
- */
-async function resolveNames(): Promise<Map<string, string>> {
-  // The directory read isn't wired as its own service yet — Employees is a later row in the
-  // campaign — so this hits the endpoint directly through the shared client with a minimal shape.
-  const res = await apiFetch<{ employees: { user_id: string; name: string }[] }>(
-    "/v1/employees",
-  );
-  return new Map(res.employees.map((e) => [e.user_id, e.name]));
 }
 
 /** A short, human-ish fallback when a name can't be resolved — the id's tail, not the whole ULID. */

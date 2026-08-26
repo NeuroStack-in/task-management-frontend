@@ -34,7 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDuration } from "@/lib/format";
-import { formatHours } from "@/lib/mock-time";
+import { formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useTrackingMode } from "@/hooks/use-features";
 import { useAssistantPageContext } from "@/stores/page-context.store";

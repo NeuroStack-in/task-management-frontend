@@ -42,7 +42,7 @@ import {
   uploadFileToPresignedUrl,
   type ApiAttachment,
 } from "../services/projects.service";
-import type { TaskFormValues } from "@/stores/tasks.store";
+import type { TaskFormValues } from "@/modules/projects/forms";
 
 const schema = z.object({
   title: z.string().trim().min(2, "Give the task a title"),

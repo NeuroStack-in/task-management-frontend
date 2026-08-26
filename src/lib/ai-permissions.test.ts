@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { permissionsFromBitset } from "./permission-bits";
 import { canAccess } from "./rbac";
-import { isHelpRoute } from "@/components/layout/chat-bot";
+import { SYSTEM_ROLES } from "@/constants/roles";
 import type { Role } from "@/types/rbac";
 
 /**
@@ -50,31 +50,42 @@ describe("the two AI permissions are distinct", () => {
   });
 });
 
-describe("who gets the chat launcher, and where", () => {
-  const employee = role(idsFor(AI_ASSISTANT));
+describe("who gets the chat launcher", () => {
+  const assistantOnly = role(idsFor(AI_ASSISTANT));
   const admin = role(idsFor(AI_INSIGHTS, AI_ASSISTANT));
   const owner = role(["*"]);
 
-  /** The launcher's rule, mirrored from `ChatBot`. */
-  const shows = (r: Role, path: string) =>
-    canAccess(r, "ai:use") && (canAccess(r, "ai:view") || isHelpRoute(path));
+  /** The launcher's rule, mirrored from `ChatBot`: the bit alone, on every page. */
+  const shows = (r: Role, _path: string) => canAccess(r, "ai:use");
 
-  it("gives an Employee the assistant on the Help Center", () => {
-    expect(shows(employee, "/help")).toBe(true);
-    expect(shows(employee, "/help/getting-started")).toBe(true);
-  });
-
-  /** Their collective questions are refused server-side, so it isn't offered org-wide. */
-  it("does not follow an Employee onto other pages", () => {
-    expect(shows(employee, "/dashboard")).toBe(false);
-    expect(shows(employee, "/projects/p1")).toBe(false);
+  /**
+   * The 2026-08-26 decision: the chatbot is an oversight surface. `SYSTEM_ROLES`' Employee must
+   * not carry `ai:use`, mirroring `wp-contracts::roles::employee` dropping bit 65. This is the
+   * assertion that fails if someone re-adds it to either side without changing the other.
+   */
+  it("the Employee system role does not get the assistant at all", () => {
+    const employee = SYSTEM_ROLES.find((r) => r.id === "role-employee")!;
+    expect(employee.permissions).not.toContain("ai:use");
+    expect(shows(employee as Role, "/help")).toBe(false);
+    expect(shows(employee as Role, "/dashboard")).toBe(false);
   });
 
   /** The regression that would matter most: oversight roles must be unaffected. */
-  it("still follows an Admin and an Owner everywhere", () => {
+  it("follows an Admin and an Owner everywhere", () => {
     for (const path of ["/dashboard", "/help", "/analytics"]) {
       expect(shows(admin, path)).toBe(true);
       expect(shows(owner, path)).toBe(true);
+    }
+  });
+
+  /**
+   * A custom role granted the bit gets it on every page — not Help-Center-only. That carve-out
+   * existed only for Employees; keeping it would make a deliberately-granted permission behave
+   * unpredictably.
+   */
+  it("a custom role granted the bit gets it everywhere", () => {
+    for (const path of ["/dashboard", "/help", "/projects/p1"]) {
+      expect(shows(assistantOnly, path)).toBe(true);
     }
   });
 
@@ -83,20 +94,9 @@ describe("who gets the chat launcher, and where", () => {
     expect(canAccess(owner, "ai:use")).toBe(true);
   });
 
-  it("a role with neither bit gets nothing, Help Center included", () => {
+  it("a role without the bit gets nothing, Help Center included", () => {
     const plain = role(["dashboard:view"]);
     expect(shows(plain, "/help")).toBe(false);
     expect(shows(plain, "/dashboard")).toBe(false);
-  });
-});
-
-describe("isHelpRoute", () => {
-  it("matches the Help Center and its sub-pages only", () => {
-    expect(isHelpRoute("/help")).toBe(true);
-    expect(isHelpRoute("/help/tickets")).toBe(true);
-    // Guards against a bare `startsWith("/help")` matching an unrelated future route.
-    expect(isHelpRoute("/helpdesk")).toBe(false);
-    expect(isHelpRoute("/dashboard")).toBe(false);
-    expect(isHelpRoute(null)).toBe(false);
   });
 });

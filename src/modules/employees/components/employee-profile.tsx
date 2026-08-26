@@ -83,6 +83,8 @@ import {
   type UpdateEmployeeBody,
 } from "../services/employees.service";
 import { EmployeeRecapCard } from "./employee-recap-card";
+import { EmployeeAppUsageCard } from "./employee-app-usage-card";
+import { isoDay } from "@/lib/format";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
 import { EmployeeManageMenu } from "./employee-manage-menu";
 
@@ -652,11 +654,22 @@ function HoursTooltip({
   );
 }
 
+/** The window the app-usage panel shows: the last 14 days, ending today.
+ *
+ * Computed at module load rather than in render — `new Date()` in a render path differs between the
+ * server and client pass and produces a hydration mismatch (frontend/CLAUDE.md). Two weeks is wide
+ * enough to show a pattern and inside the endpoint's range cap. */
+const APP_USAGE_TO = isoDay(new Date());
+const APP_USAGE_FROM = isoDay(new Date(Date.now() - 13 * 86_400_000));
+
 function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () => void }) {
   const router = useRouter();
   const { can } = usePermissions();
   const canManage = can("employees:manage");
   const canViewLocations = can("locations:view");
+  // Separate from `activity:view` on purpose — see the card's own note. The server is the
+  // real gate; this keeps a 403 card off a page the viewer is otherwise entitled to.
+  const canSeeAppUsage = can("activity:apps:person");
 
   // Whether *today* is a scheduled working day, so a Sunday isn't reported as an absence.
   //
@@ -929,6 +942,18 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
               the stat cards below, so removing it costs no fact — only a verdict nothing had
               earned the right to make. */}
           <EmployeeRecapCard userId={data.id} name={data.name} />
+
+          {/* Where the time actually went. Sits under the recap because it is the evidence the
+              recap narrates — both read the same per-person APPDAY#/URLDAY# rows, so the panel and
+              the summary above it cannot tell different stories about the same fortnight.
+
+              Gated on its own permission rather than the page's: everything else here is aggregate
+              oversight, and an individual's application history is a narrower privilege an org can
+              withhold from a manager who still needs the rest of this page. The server enforces it
+              (`AppUsageReadPerson`); this only avoids rendering a card that would 403. */}
+          {canSeeAppUsage ? (
+            <EmployeeAppUsageCard userId={data.id} from={APP_USAGE_FROM} to={APP_USAGE_TO} />
+          ) : null}
 
           {/* Stat cards row */}
           <div className="grid grid-cols-2 gap-4">

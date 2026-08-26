@@ -32,7 +32,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { initials, todayIso } from "@/lib/format";
 import type { UserMini } from "../lib";
-import type { ProjectFormValues } from "@/stores/projects.store";
+import type { ProjectFormValues } from "@/modules/projects/forms";
 
 export const PROJECT_DEPARTMENTS = [
   "Engineering",

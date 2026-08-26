@@ -2,7 +2,7 @@
 
 A **Workforce Activity & Productivity Management Platform** — time tracking, task management, activity monitoring, and AI-powered productivity insights for modern teams.
 
-> **Wired to the live backend (as of 2026-07-27).** Authentication is real Cognito (SRP + Hosted-UI social sign-in) and ~every module calls the live API through `lib/api.ts` — 21 module services over 110+ `/v1/*` routes. The only remaining mock is deliberate: `mock-agents.ts` (device-fleet demo fallback) and `mock-time.ts` (a `formatHours` helper — the web timer is design-forbidden). Monitoring surfaces are wired but honest-empty until a desktop agent reports.
+> **Wired to the live backend (as of 2026-08-26).** Authentication is real Cognito (SRP + Hosted-UI social sign-in) and every module calls the live API through `lib/api.ts` — 25 module services over 110+ `/v1/*` routes. **There is no mock data left**: the fixtures, the Faker seed script and the two seeded stores were deleted 2026-08-26. Monitoring surfaces are wired but honest-empty until a desktop agent reports.
 
 WorkPulse has its own original visual identity (see [Docs/DESIGN.md](Docs/DESIGN.md)) — the **Graphite & Indigo** palette (cool graphite neutrals + an indigo accent) with a recurring pulse-line motif. It is not modeled on any existing product.
 
@@ -14,7 +14,7 @@ cp .env.example .env.local   # set NEXT_PUBLIC_API_URL + Cognito pool config (re
 npm run dev                  # http://localhost:3000
 ```
 
-Sign in with the seeded Cognito account **`owner@acme.test`** (Organization Owner — full access) using its **real password** — auth is a genuine SRP exchange, so a wrong password fails. `npm run seed` regenerates the local JSON fixtures used for design/seed data.
+Sign in with the seeded Cognito account **`owner@acme.test`** (Organization Owner — full access) using its **real password** — auth is a genuine SRP exchange, so a wrong password fails. All data comes from the live `dev` backend; there are no local fixtures.
 
 ## Scripts
 
@@ -25,7 +25,6 @@ Sign in with the seeded Cognito account **`owner@acme.test`** (Organization Owne
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier write |
-| `npm run seed` | Regenerate mock data via Faker |
 | `npm run test` | Vitest (unit/component) — `vitest.config.ts` is wired; ~15 tests run |
 | `npm run test:e2e` | Playwright (E2E) — script/dep exist but no `playwright.config.*` yet |
 
@@ -45,7 +44,7 @@ Module-first under `src/`:
 - `lib/` — `api.ts` (real backend client), `cognito.ts` / `oauth.ts` (auth), `push.ts` (MQTT doorbell), `rbac.ts`, `permission-bits.ts`, `format.ts`, `utils.ts`.
 - `constants/` — permission catalog, system roles, navigation tree.
 - `components/shared/` + `components/ui/` (shadcn).
-- `data/` — generated JSON (output of `npm run seed`; never edit by hand).
+- `e2e/` — Playwright specs (`npm run test:e2e`); credential-free by design.
 
 **RBAC drives the UI.** Roles hold permission ids (`<module>:<action>`) or the wildcard `*`. The sidebar and routes are generated/guarded from the active role's permissions via `canAccess`.
 

@@ -135,6 +135,22 @@ export async function listAllEmployees(): Promise<ApiEmployee[]> {
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * `user_id → name` for the whole org — the label source for any surface that renders a bare user id.
+ *
+ * Built on {@link listAllEmployees}, **not** a bare `listEmployees()`. A bare directory read returns
+ * at most `limit` people alphabetically with no truncation signal (see the warning on
+ * {@link listEmployees}), so a map built from one silently resolves the A-names and leaves everyone
+ * else showing a raw ULID — which reads as "this row is broken" rather than "the list was cut short".
+ *
+ * Best-effort by contract: callers use it to *improve* a row, so a rejection here should degrade to
+ * short ids, never to an error.
+ */
+export async function employeeNameMap(): Promise<Map<string, string>> {
+  const people = await listAllEmployees();
+  return new Map(people.map((e) => [e.user_id, e.name]));
+}
+
 export interface ApiDepartment {
   id: string;
   name: string;

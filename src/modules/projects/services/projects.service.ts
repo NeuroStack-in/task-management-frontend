@@ -12,6 +12,8 @@
  */
 import { apiFetch } from "@/lib/api";
 import type { TaskReview } from "../types";
+import type { UserMini } from "../lib";
+import { listAllEmployees } from "@/modules/employees/services/employees.service";
 
 /** Mirrors `projects::features::list_projects::dto::ProjectRow`. */
 export interface ApiProject {
@@ -115,6 +117,59 @@ export interface ApiProjectDetail {
 
 export function getProject(id: string): Promise<ApiProjectDetail> {
   return apiFetch<ApiProjectDetail>(`/v1/projects/${encodeURIComponent(id)}`);
+}
+
+// ── Project writes (POST / PATCH / DELETE /v1/projects) ────────────────────────────────────────
+
+/** `POST /v1/projects` body. The server mints the id and makes `manager_user_id` a member. */
+export interface NewProject {
+  name: string;
+  billable: boolean;
+  start_date: string;
+  end_date?: string;
+  manager_user_id: string;
+  key: string;
+  department?: string;
+}
+
+/** `POST /v1/projects` — create a project. Returns the new id; the caller re-reads for the rest. */
+export function createProject(body: NewProject): Promise<{ id: string }> {
+  return apiFetch<{ id: string }>("/v1/projects", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * `PATCH /v1/projects/{id}` body.
+ *
+ * `department` is **always sent, empty string included**: the server reads `""` as "clear it", so
+ * deselecting a department is a real edit rather than an unreachable state.
+ */
+export interface ProjectPatch {
+  name: string;
+  description: string;
+  billable: boolean;
+  department: string;
+  end_date?: string;
+}
+
+/** `PATCH /v1/projects/{id}` — edit a project's own fields. Membership is a separate resource. */
+export async function updateProject(id: string, body: ProjectPatch): Promise<void> {
+  await apiFetch(`/v1/projects/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * `DELETE /v1/projects/{id}` — the project and all its children, server-side.
+ *
+ * The caller must navigate away rather than re-reading: the project no longer exists, so a reload
+ * would only 404 and flip the page into its not-found state.
+ */
+export async function deleteProject(id: string): Promise<void> {
+  await apiFetch(`/v1/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 // ── Task board (GET /v1/projects/{id}/tasks) ───────────────────────────────────────────────────
@@ -315,6 +370,27 @@ export async function removeMember(projectId: string, userId: string): Promise<v
 export async function projectNameMap(): Promise<Map<string, string>> {
   const projects = await listProjects();
   return new Map(projects.map((p) => [p.id, p.name]));
+}
+
+/**
+ * `user_id → UserMini` for every person in the org — the option list behind the project's lead,
+ * manager and member pickers, and the join that turns an assignee id into a name.
+ *
+ * Reads the directory through the **employees** module service (`listAllEmployees`), which walks
+ * every department partition. Both project hooks used to call a bare `GET /v1/employees` directly:
+ * that endpoint truncates to `limit` alphabetically with **no cursor and no signal** (see the
+ * warning on `listEmployees`), so a picker built from it silently could not offer anyone past the
+ * first page — a member you cannot select reads as a broken form, not a short list.
+ *
+ * Best-effort by contract: callers fall back to `{}` and render ids, never an error.
+ */
+export async function directoryUserMap(): Promise<Record<string, UserMini>> {
+  const people = await listAllEmployees();
+  const map: Record<string, UserMini> = {};
+  for (const e of people) {
+    map[e.user_id] = { id: e.user_id, name: e.name, jobTitle: e.title ?? "" };
+  }
+  return map;
 }
 
 /**
