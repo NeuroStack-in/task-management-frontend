@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
 import { Loader } from "@/components/shared/loader"
-import { CaptureGateCard } from "./capture-gate-card"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { ApiError } from "@/lib/api"
@@ -44,13 +43,24 @@ const CUSTOM_MIN = 1
 const CUSTOM_MAX = 60
 const CUSTOM_DEFAULT = 7
 
-/** The form fields (agent `TrackingConfig`, sans `version`), with cadence split into choice + minutes. */
+/**
+ * The form fields (agent `TrackingConfig`, sans `version`), with cadence split into choice + minutes.
+ *
+ * `blur_level` and `silent` have no control any more but stay in the shape: the PUT sends the whole
+ * config, so dropping them would write a default over whatever is stored. They are carried through
+ * load → save untouched.
+ */
 type PolicyForm = {
   cadence: CadenceChoice
   /** Minutes for the `"custom"` choice; ignored otherwise. */
   customMinutes: number
+  /** No UI. Screenshots are meant to be legible; sent back exactly as loaded. */
   blur_level: number
   retention_days: number
+  /**
+   * No UI, and pinned `false`. The agent's capture indicator is the only notice an employee gets
+   * that monitoring is running, so switching it off is not an admin-facing setting.
+   */
   silent: boolean
   auto_update: boolean
 }
@@ -313,29 +323,12 @@ export function MonitoringTab() {
                   )}
                 />
               </SettingRow>
-              <SettingRow
-                label="Blur level"
-                description="Strength of the automatic blur applied before upload (0 = none, 3 = heaviest)."
-                disabled={!canManage}
-              >
-                <Controller
-                  control={control}
-                  name="blur_level"
-                  render={({ field }) => (
-                    <NumericStepper
-                      value={field.value}
-                      min={0}
-                      max={3}
-                      suffix="level"
-                      disabled={!canManage}
-                      onChange={field.onChange}
-                    />
-                  )}
-                />
-              </SettingRow>
+              {/* No Blur control. Screenshots are meant to be legible — a blurred one costs the
+                  same to capture, store and retain while answering nothing. `blur_level` stays in
+                  the wire type (the agent reads it) and is sent unchanged at 0. */}
               <SettingRow
                 label="Retention period"
-                description="Days to keep screenshots before automatic deletion."
+                description="Days to keep screenshots before they are deleted automatically."
                 disabled={!canManage}
               >
                 <Controller
@@ -385,44 +378,15 @@ export function MonitoringTab() {
             </CardContent>
           </Card>
 
-          {/* ── Employee disclosure ── */}
-          {/* Re-added: the desktop agent DOES honour `silent` (agent v0.1.11+) — it hides the capture
-              indicator and suppresses its on-screen notices (screenshot-taken, restricted-app warning).
-              The earlier "no effect" note is stale. */}
-          <Card id="disclosure" className="scroll-mt-24 shadow-none">
-            <CardHeader>
-              <CardTitle>Employee disclosure</CardTitle>
-              <CardDescription>
-                Controls what the desktop agent shows the employee on their own machine. Capture and
-                reporting are unaffected either way.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-0 pb-2">
-              <SettingRow
-                label="Silent monitoring"
-                description="Hide the agent's capture indicator and suppress its on-screen notices (screenshot taken, restricted-app warnings). Covert monitoring is restricted or unlawful in some regions — confirm your local notice and consent obligations before enabling."
-                disabled={!canManage}
-              >
-                <Controller
-                  control={control}
-                  name="silent"
-                  render={({ field }) => (
-                    <Switch
-                      checked={field.value}
-                      disabled={!canManage}
-                      onCheckedChange={field.onChange}
-                    />
-                  )}
-                />
-              </SettingRow>
-            </CardContent>
-          </Card>
-
-          {/* ── Legal capture gate (§9.2, D16) — its own version-locked save, so it sits outside the
-              tracking-policy form's SettingsSaveBar. ── */}
-          <div id="capture-gate" className="scroll-mt-24">
-            <CaptureGateCard canManage={canManage} />
-          </div>
+          {/* No Employee-disclosure card, and no capture-authorisation card.
+              `silent` is pinned to `false` (see EMPTY) and sent unchanged, so the agent keeps
+              showing its capture indicator — that indicator is what tells an employee monitoring is
+              running, and it is the only notice the product gives. It is deliberately not something
+              an admin can switch off from a settings page.
+              Capture authorisation is gone with it: these are company-managed machines and the org
+              has already decided. `fleet::serve_config` now treats an absent gate as capture-allowed
+              (it used to fail closed, which is why managed devices had been capturing nothing at
+              all). "Don't capture" is still expressible — set the cadence to Off. */}
 
           {canManage && (
             <SettingsSaveBar

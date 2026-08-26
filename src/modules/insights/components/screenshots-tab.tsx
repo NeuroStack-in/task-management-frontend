@@ -12,6 +12,7 @@ import {
   Search,
   ShieldOff,
   Sparkles,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -41,6 +42,7 @@ import { useDataScope } from "@/hooks/use-data-scope";
 import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
+import { getTrackingPolicy } from "@/modules/agents/services/fleet.service";
 import { initials, personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
@@ -132,6 +134,41 @@ export function ScreenshotsTab() {
   const [date, setDate] = useState<string>("");
   useEffect(() => setDate(isoOf(new Date())), []);
   const today = isoOf(new Date());
+
+  /**
+   * The org's screenshot retention, so this page can say what happened to older days rather than
+   * showing an empty grid that looks like a capture failure. `null` until it loads, and on failure —
+   * the notice is an explanation, never a precondition for showing the grid.
+   *
+   * `GET /v1/agent/config` needs only a signed-in user (no permission gate), so anyone who can reach
+   * this page can read it.
+   */
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    getTrackingPolicy()
+      .then((cfg) => live && setRetentionDays(cfg.tracking.retention_days))
+      .catch(() => {
+        /* no notice rather than a wrong one */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  /**
+   * Is the chosen day past the point where the sweep would have deleted it?
+   *
+   * Compared in whole days against the same window `fleet::retention_sweep` enforces. Deliberately
+   * strict (`>`): the boundary day is still being kept, so claiming it was deleted would be the
+   * same lie in the other direction.
+   */
+  const beyondRetention =
+    retentionDays !== null &&
+    date !== "" &&
+    Math.floor(
+      (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000,
+    ) > retentionDays;
 
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState<string>(ALL_DEPTS);
@@ -481,6 +518,14 @@ export function ScreenshotsTab() {
         </fieldset>
       </div>
 
+      {/* Stated once, plainly, rather than only when someone stumbles onto a deleted day. */}
+      {retentionDays !== null ? (
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+          <Trash2 className="size-3.5 shrink-0" />
+          Screenshots are deleted automatically {retentionDays} days after capture.
+        </p>
+      ) : null}
+
       {filteredShots.length > 0 ? (
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{groups.length}</span>{" "}
@@ -498,6 +543,15 @@ export function ScreenshotsTab() {
         </div>
       ) : error ? (
         <EmptyState icon={ShieldOff} title="Couldn't load screenshots" description={error} />
+      ) : scopedShots.length === 0 && beyondRetention ? (
+        /* An empty day past the retention window is not the same fact as an empty day inside it.
+           "Nothing was reported" invites you to go looking for a capture bug; the frames were
+           deleted on purpose, and saying so is the difference between a dead end and an answer. */
+        <EmptyState
+          icon={Trash2}
+          title="Deleted by the retention policy"
+          description={`${dateLabel(date)} is older than this organization's ${retentionDays}-day retention window, so any screenshots from that day have been permanently deleted. Pick a more recent date to see captures.`}
+        />
       ) : scopedShots.length === 0 ? (
         <EmptyState
           icon={Camera}
