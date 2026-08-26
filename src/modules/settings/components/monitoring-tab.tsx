@@ -117,7 +117,11 @@ function SettingRow({
 
 export function MonitoringTab() {
   const { can } = usePermissions()
-  const canManage = can("settings:manage")
+  // Both writes on this page (`PUT /v1/fleet/update-policy`, `PUT /v1/fleet/capture-gate`) require
+  // `MonitoringManage` server-side, not org-settings. Gating on `settings:manage` happened to work
+  // because Owner and Admin hold both, but it read the wrong bit: a role with one and not the other
+  // saw controls that 403, or read-only controls it was entitled to use.
+  const canManage = can("monitoring:manage")
 
   const {
     control,

@@ -31,7 +31,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Loader2, ShieldCheck, UserCog } from "lucide-react";
+import { ArrowUpRight, Loader2, Shield, ShieldCheck, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -125,6 +125,10 @@ export function RoleMembers({
   const targets = roles.filter(
     (r) => r.id !== role.id && (r.id !== ROLE_OWNER || callerIsOwner),
   );
+  // Split so the menu can put ownership last, behind its own separator. It was rendered first,
+  // which put the one irreversible, org-wide action directly under the cursor on open.
+  const roleTargets = targets.filter((r) => r.id !== ROLE_OWNER);
+  const ownerTarget = targets.find((r) => r.id === ROLE_OWNER) ?? null;
 
   return (
     <div className="bg-muted/30 px-6 py-4">
@@ -179,30 +183,51 @@ export function RoleMembers({
                   )}
                   Change role
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="w-64">
                   {/* A plain element, not `DropdownMenuLabel`. That component wraps Base UI's
                       `Menu.GroupLabel`, which reads context from a `Menu.Group` and **throws when
                       rendered without one** — it crashed the Employees page once already
                       (see pending-invites.tsx). The trigger's aria-label already names the person,
                       so this heading is decorative. */}
-                  <div className="text-muted-foreground px-2 py-1.5 text-xs">
-                    Move {m.name} to
+                  <div className="px-2 py-1.5">
+                    <p className="text-muted-foreground text-[0.6875rem] font-semibold uppercase tracking-wide">
+                      Move to
+                    </p>
+                    <p className="truncate text-sm font-medium">{m.name}</p>
                   </div>
                   <DropdownMenuSeparator />
-                  {targets.map((r) =>
-                    r.id === ROLE_OWNER ? (
-                      // Set apart, because it is not the same kind of action as the others: it
-                      // grants unrestricted access to the whole organisation.
-                      <DropdownMenuItem key={r.id} onClick={() => move(m, r)}>
-                        <ShieldCheck className="size-4" />
-                        Make an owner
+                  {roleTargets.map((r) => (
+                    <DropdownMenuItem
+                      key={r.id}
+                      onClick={() => move(m, r)}
+                      className="gap-2"
+                    >
+                      {/* Every row carries an icon so the labels share a left edge — without one,
+                          the plain roles sat flush while "Make an owner" was indented past its
+                          shield. */}
+                      <Shield className="text-muted-foreground size-4 shrink-0" />
+                      <span className="truncate">{r.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                  {ownerTarget ? (
+                    <>
+                      {/* Set apart, because it is not the same kind of action as the others: it
+                          grants unrestricted access to the whole organisation. */}
+                      {roleTargets.length > 0 ? <DropdownMenuSeparator /> : null}
+                      <DropdownMenuItem
+                        onClick={() => move(m, ownerTarget)}
+                        className="gap-2"
+                      >
+                        <ShieldCheck className="text-primary size-4 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="block">Make an owner</span>
+                          <span className="text-muted-foreground block text-xs">
+                            Full, unrestricted access
+                          </span>
+                        </span>
                       </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem key={r.id} onClick={() => move(m, r)}>
-                        {r.name}
-                      </DropdownMenuItem>
-                    ),
-                  )}
+                    </>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
