@@ -18,7 +18,6 @@ import {
   Bell,
   CheckCheck,
   HelpCircle,
-  LayoutDashboard,
   LineChart,
   MapPin,
   Users,
@@ -113,7 +112,6 @@ interface ControlDef {
 }
 
 const CONTROLS: ControlDef[] = [
-  { icon: LayoutDashboard, label: "Dashboard", description: "The at-a-glance home screen.", page: "/dashboard" },
   { icon: Timer, label: "Time tracking", description: "The desktop agent's timer, hours logged against projects, and the timesheet pages.", features: ["time.tracking"], page: "/time-tracking" },
   { icon: CalendarCheck, label: "Attendance", description: "Daily present/partial/absent status, computed nightly from recorded sessions.", features: ["attendance"], page: "/attendance" },
   { icon: Plane, label: "Leave", description: "Leave types, balances, requests and the approval queue.", features: ["leave"], page: "/leave-requests" },
