@@ -23,8 +23,10 @@ import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import {
   listTeamMembers,
+  updateTeam,
   addTeamMembers,
   removeTeamMember,
   listAllEmployees,
@@ -39,6 +41,7 @@ export function TeamMembersDialog({
   open,
   onOpenChange,
   onCountChange,
+  onRenamed,
 }: {
   teamId: string;
   teamName: string;
@@ -46,12 +49,21 @@ export function TeamMembersDialog({
   onOpenChange: (v: boolean) => void;
   /** So the row in the parent list can update its member-count badge without a full reload. */
   onCountChange?: (count: number) => void;
+  /**
+   * Renaming moved in here from an inline input on the row, so the pencil means one thing —
+   * "change this team" — instead of the row carrying two different edit affordances.
+   */
+  onRenamed?: (name: string) => void;
 }) {
   const [members, setMembers] = useState<ApiTeamMember[]>([]);
   const [everyone, setEveryone] = useState<ApiEmployee[]>([]);
   const [deptNames, setDeptNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [name, setName] = useState(teamName);
+  const [renaming, setRenaming] = useState(false);
+  // Re-seed when a DIFFERENT team is opened; the component is reused across rows.
+  useEffect(() => setName(teamName), [teamName]);
   /** user_ids with an in-flight add/remove, so a row disables without freezing the dialog. */
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
@@ -81,7 +93,8 @@ export function TeamMembersDialog({
       })
       .catch(() => live && toast.error("Couldn't load team members."))
       .finally(() => live && setLoading(false));
-    return () => {
+
+  return () => {
       live = false;
     };
   }, [teamId]);
@@ -135,17 +148,65 @@ export function TeamMembersDialog({
 
   const deptLabel = (id?: string) => (id ? (deptNames.get(id) ?? null) : null);
 
+  async function saveName() {
+  const next = name.trim();
+  if (!next || next === teamName || renaming) return;
+  setRenaming(true);
+  try {
+    await updateTeam(teamId, { name: next });
+    onRenamed?.(next);
+    toast.success("Team renamed");
+  } catch (e) {
+    // Put the old name back — leaving the failed text in the box reads as if it saved.
+    setName(teamName);
+    toast.error(
+      e instanceof ApiError ? e.message : "Couldn't rename the team.",
+    );
+  } finally {
+    setRenaming(false);
+  }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-[56rem]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Users className="size-4 text-primary" /> {teamName} · members
+            <Users className="size-4 text-primary" /> Edit team
           </DialogTitle>
           <DialogDescription>
-            A team can include people from any department. Add or remove them here.
+            Rename the team, and add or remove people. A team can include people from any
+            department. Changes save as you make them.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Rename lives here now. It used to be an inline input on the row, which meant the pencil
+            and the members icon were two different "edit this" affordances side by side. Saves on
+            blur and on Enter — there is no save button in this dialog for anything else, and adding
+            one only for the name would imply the rest needed saving too. */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor="team-name"
+            className="text-muted-foreground text-xs font-semibold uppercase tracking-wide"
+          >
+            Team name
+          </label>
+          <Input
+            id="team-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={saveName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void saveName();
+              }
+              if (e.key === "Escape") setName(teamName);
+            }}
+            disabled={renaming}
+            className="h-9"
+          />
+        </div>
 
         {loading ? (
           <div className="flex min-h-[16rem] items-center justify-center">
@@ -158,7 +219,7 @@ export function TeamMembersDialog({
               <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">
                 In the team ({members.length})
               </p>
-              <div className="max-h-[18rem] space-y-1 overflow-y-auto rounded-lg border p-1">
+              <div className="max-h-[26rem] min-h-[16rem] space-y-1 overflow-y-auto rounded-lg border p-1">
                 {members.length === 0 ? (
                   <p className="text-muted-foreground p-3 text-sm">
                     No one is in this team yet.
@@ -169,10 +230,16 @@ export function TeamMembersDialog({
                       key={m.user_id}
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
                     >
-                      <span className="flex-1 truncate">
-                        {m.name}
+                      <UserAvatar
+                        userId={m.user_id}
+                        name={m.name}
+                        className="size-7 shrink-0"
+                        fallbackClassName="text-[0.65rem]"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{m.name}</span>
                         {deptLabel(m.department_id) ? (
-                          <span className="text-muted-foreground ml-1.5 text-xs">
+                          <span className="text-muted-foreground block truncate text-xs">
                             {deptLabel(m.department_id)}
                           </span>
                         ) : null}
@@ -207,7 +274,7 @@ export function TeamMembersDialog({
                   aria-label="Search employees to add"
                 />
               </div>
-              <div className="max-h-[15rem] space-y-1 overflow-y-auto rounded-lg border p-1">
+              <div className="max-h-[22rem] min-h-[12rem] space-y-1 overflow-y-auto rounded-lg border p-1">
                 {candidates.length === 0 ? (
                   <p className="text-muted-foreground p-3 text-sm">
                     {query.trim() ? "No matches." : "Everyone is already in this team."}
@@ -224,15 +291,21 @@ export function TeamMembersDialog({
                         busy.has(e.user_id) && "opacity-50",
                       )}
                     >
-                      <UserPlus className="text-muted-foreground size-4 shrink-0" />
-                      <span className="flex-1 truncate">
-                        {e.name}
+                      <UserAvatar
+                        userId={e.user_id}
+                        name={e.name}
+                        className="size-7 shrink-0"
+                        fallbackClassName="text-[0.65rem]"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{e.name}</span>
                         {deptLabel(e.department_id) ? (
-                          <span className="text-muted-foreground ml-1.5 text-xs">
+                          <span className="text-muted-foreground block truncate text-xs">
                             {deptLabel(e.department_id)}
                           </span>
                         ) : null}
                       </span>
+                      <UserPlus className="text-muted-foreground size-4 shrink-0" />
                     </button>
                   ))
                 )}

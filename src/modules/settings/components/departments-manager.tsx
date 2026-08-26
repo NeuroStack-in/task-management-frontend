@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Check, X, Building2, SlidersHorizontal } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Building2, SlidersHorizontal, Eye } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,11 +27,13 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import {
   listDepartments,
+  listAllEmployees,
   createDepartment,
   updateDepartment,
   deleteDepartment,
   type ApiDepartment,
 } from "@/modules/employees/services/employees.service";
+import { EntityPeopleDialog } from "./org/entity-people-dialog";
 import { DeptProductivitySheet } from "./org/dept-productivity-sheet";
 
 /**
@@ -77,6 +79,7 @@ export function DepartmentsManager() {
 
   // Per-department productivity config (weights + rules) — one department at a time.
   const [productivityDept, setProductivityDept] = useState<ApiDepartment | null>(null);
+  const [viewing, setViewing] = useState<ApiDepartment | null>(null);
 
   const load = useCallback(() => {
     let live = true;
@@ -286,9 +289,24 @@ export function DepartmentsManager() {
                         >
                           <SlidersHorizontal className="size-3.5" /> Productivity
                         </Button>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          onClick={() => setViewing(d)}
+                          aria-label={`View ${d.name}`}
+                          title="View department"
+                        >
+                          <Eye className="size-3.5" />
+                        </Button>
                         {canManage ? (
                           <>
-                            <Button size="icon-sm" variant="ghost" onClick={() => beginEdit(d)} aria-label={`Rename ${d.name}`}>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              onClick={() => beginEdit(d)}
+                              aria-label={`Edit ${d.name}`}
+                              title="Edit department"
+                            >
                               <Pencil className="size-3.5" />
                             </Button>
                             <Button
@@ -335,6 +353,25 @@ export function DepartmentsManager() {
 
       {/* Per-department productivity (weights + classification rules). Keyed so switching
           departments remounts the load cycle. Unmounts on close. */}
+      {viewing ? (
+        <EntityPeopleDialog
+          open
+          onClose={() => setViewing(null)}
+          title={viewing.name}
+          subtitle="Everyone assigned to this department."
+          load={async () =>
+            (await listAllEmployees())
+              .filter((e) => e.department_id === viewing.id)
+              .map((e) => ({
+                user_id: e.user_id,
+                name: e.name,
+                detail: e.title,
+              }))
+          }
+          emptyLabel="Nobody is assigned to this department yet."
+        />
+      ) : null}
+
       {productivityDept ? (
         <DeptProductivitySheet
           key={productivityDept.id}

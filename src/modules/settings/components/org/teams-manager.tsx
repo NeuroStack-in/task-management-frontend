@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Check, X, Users, UserCog } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Eye } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,9 +35,9 @@ import { ApiError } from "@/lib/api";
 import {
   listTeams,
   createTeam,
-  updateTeam,
   deleteTeam,
   listDepartments,
+  listTeamMembers,
   type ApiTeam,
   type ApiDepartment,
 } from "@/modules/employees/services/employees.service";
@@ -48,6 +48,7 @@ function messageOf(e: unknown, fallback: string): string {
 
 const byName = (a: ApiTeam, b: ApiTeam) => a.name.localeCompare(b.name);
 
+import { EntityPeopleDialog } from "./entity-people-dialog";
 import { TeamMembersDialog } from "./team-members-dialog";
 
 const NO_DEPT = "__none__";
@@ -65,13 +66,11 @@ export function TeamsManager() {
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDept, setNewDept] = useState<string>("");
+  const [viewing, setViewing] = useState<ApiTeam | null>(null);
   const [membersOf, setMembersOf] = useState<ApiTeam | null>(null);
   const [adding, setAdding] = useState(false);
 
   // Inline rename.
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [savingEdit, setSavingEdit] = useState(false);
 
   // Delete confirm.
   const [pendingDelete, setPendingDelete] = useState<ApiTeam | null>(null);
@@ -129,36 +128,7 @@ export function TeamsManager() {
     }
   }
 
-  function beginEdit(t: ApiTeam) {
-    setEditId(t.id);
-    setEditName(t.name);
-  }
 
-  async function saveEdit() {
-    if (!editId) return;
-    const name = editName.trim();
-    if (!name) return;
-    const original = teams.find((t) => t.id === editId);
-    if (original && original.name === name) {
-      setEditId(null);
-      return;
-    }
-    setSavingEdit(true);
-    try {
-      const updated = await updateTeam(editId, { name });
-      setTeams((cur) => cur.map((t) => (t.id === editId ? updated : t)).sort(byName));
-      setEditId(null);
-      toast.success("Team renamed");
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 403) {
-        toast.error("You don't have permission to rename teams.");
-      } else {
-        toast.error(messageOf(e, "Couldn't rename the team."));
-      }
-    } finally {
-      setSavingEdit(false);
-    }
-  }
 
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -235,31 +205,6 @@ export function TeamsManager() {
             {teams.map((t) => (
               <li key={t.id} className="flex items-center gap-3 px-3 py-2.5">
                 <Users className="size-4 shrink-0 text-muted-foreground" />
-                {editId === t.id ? (
-                  <>
-                    <Input
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          saveEdit();
-                        }
-                        if (e.key === "Escape") setEditId(null);
-                      }}
-                      className="h-8 flex-1"
-                      autoFocus
-                      disabled={savingEdit}
-                      aria-label="Team name"
-                    />
-                    <Button size="icon-sm" variant="ghost" onClick={saveEdit} disabled={savingEdit || !editName.trim()} aria-label="Save">
-                      <Check className="size-4" />
-                    </Button>
-                    <Button size="icon-sm" variant="ghost" onClick={() => setEditId(null)} disabled={savingEdit} aria-label="Cancel">
-                      <X className="size-4" />
-                    </Button>
-                  </>
-                ) : (
                   <>
                     <span className="flex-1 truncate text-sm font-medium">{t.name}</span>
                     <span className="shrink-0 text-xs text-muted-foreground">
@@ -268,18 +213,24 @@ export function TeamsManager() {
                     <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
                       {t.member_count ?? 0} {(t.member_count ?? 0) === 1 ? "member" : "members"}
                     </span>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      onClick={() => setViewing(t)}
+                      aria-label={`View ${t.name}`}
+                      title="View team"
+                    >
+                      <Eye className="size-3.5" />
+                    </Button>
                     {canManage ? (
                       <>
                         <Button
                           size="icon-sm"
                           variant="ghost"
                           onClick={() => setMembersOf(t)}
-                          aria-label={`Manage members of ${t.name}`}
-                          title="Manage members"
+                          aria-label={`Edit ${t.name}`}
+                          title="Edit team"
                         >
-                          <UserCog className="size-3.5" />
-                        </Button>
-                        <Button size="icon-sm" variant="ghost" onClick={() => beginEdit(t)} aria-label={`Rename ${t.name}`}>
                           <Pencil className="size-3.5" />
                         </Button>
                         <Button
@@ -294,7 +245,6 @@ export function TeamsManager() {
                       </>
                     ) : null}
                   </>
-                )}
               </li>
             ))}
           </ul>
@@ -356,12 +306,48 @@ export function TeamsManager() {
       </Dialog>
 
       {/* Members editor */}
+      {viewing ? (
+        <EntityPeopleDialog
+          open
+          onClose={() => setViewing(null)}
+          title={viewing.name}
+          subtitle="Who is in this team. Use the pencil to change it."
+          facts={[
+            {
+              label: "Department",
+              value: viewing.department_id
+                ? deptName(viewing.department_id)
+                : "Cross-department",
+            },
+            {
+              label: "Members",
+              value: String(viewing.member_count ?? 0),
+            },
+          ]}
+          load={async () =>
+            (await listTeamMembers(viewing.id)).map((m) => ({
+              user_id: m.user_id,
+              name: m.name,
+              detail: m.department_id ? deptName(m.department_id) : undefined,
+            }))
+          }
+          emptyLabel="No one is in this team yet."
+        />
+      ) : null}
+
       {membersOf ? (
         <TeamMembersDialog
           teamId={membersOf.id}
           teamName={membersOf.name}
           open={!!membersOf}
           onOpenChange={(o) => !o && setMembersOf(null)}
+          onRenamed={(name) =>
+            setTeams((cur) =>
+              cur
+                .map((t) => (t.id === membersOf.id ? { ...t, name } : t))
+                .sort((a, b) => a.name.localeCompare(b.name)),
+            )
+          }
           onCountChange={(count) =>
             setTeams((cur) =>
               cur.map((t) => (t.id === membersOf.id ? { ...t, member_count: count } : t)),

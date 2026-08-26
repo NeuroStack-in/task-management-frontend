@@ -23,7 +23,6 @@ import { DepartmentsManager } from "./departments-manager"
 import { OrgProductivityWeightsCard } from "./org/org-productivity-weights-card"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
-import { OfficePerimeterCard } from "./org/office-perimeter-card"
 import { TrackingModeCard } from "./org/tracking-mode-card"
 import { WorkingDaysManager } from "./org/working-days-manager"
 import { WorkingHoursManager } from "./org/working-hours-manager"
@@ -446,11 +445,15 @@ export function OrganizationTab() {
           that saved three values into a void. The component and its endpoints still exist, so
           restoring it is one import and one line if branding is ever wired up for real. */}
       <TrackingModeCard />
-      <DepartmentsManager />
+      {/* Productivity first: it is the setting that changes what every other number on the product
+          means, so it should not sit buried between two roster editors. Then the structures those
+          numbers are grouped by — departments, then the teams that span them. */}
       <OrgProductivityWeightsCard />
+      <DepartmentsManager />
       <TeamsManager />
+      {/* Perimeter now lives inside LocationsManager — one card, since "where the offices
+          are" and "which circle counts as on-site" were the same question split in two. */}
       <LocationsManager />
-      <OfficePerimeterCard />
       <WorkingDaysManager />
       <WorkingHoursManager />
       <HolidaysManager />
