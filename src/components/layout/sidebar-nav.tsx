@@ -276,7 +276,13 @@ export function SidebarNav({
             <span className="font-display truncate text-lg leading-tight font-semibold tracking-tight">
               WorkPulse
             </span>
-            {orgName ? (
+            {/* A dedicated operator account is not a member of any one customer org — it works every
+                org's queue. Show its platform role, not the tenant its login happens to be minted in. */}
+            {opsOnly ? (
+              <span className="text-muted-foreground truncate text-xs leading-tight">
+                Platform Support
+              </span>
+            ) : orgName ? (
               <span className="text-muted-foreground truncate text-xs leading-tight">
                 {orgName}
               </span>
