@@ -18,7 +18,7 @@
 import type { PermissionId } from "@/types/rbac";
 
 /** Frontend ids every authenticated member gets regardless of bits (no server-side bit exists). */
-const BASELINE: PermissionId[] = ["dashboard:view"];
+export const BASELINE: PermissionId[] = ["dashboard:view"];
 
 /** bit index (wp-contracts discriminant) → frontend permission ids it grants. */
 const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {

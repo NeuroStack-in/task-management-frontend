@@ -5,7 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, PanelLeftClose, LogOut, Search, LifeBuoy } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
-import { usePlatformAdmin } from "@/modules/ops/use-platform-admin";
+import {
+  usePlatformAdmin,
+  hasNoCustomerPermissions,
+} from "@/modules/ops/use-platform-admin";
 import type { NavGroup } from "@/constants/navigation";
 import { useIsFeatureOffForOthers } from "@/hooks/use-features";
 import { featureForHref } from "@/constants/features";
@@ -58,7 +61,8 @@ export function SidebarNav({
   const { isAdmin: isPlatformAdmin } = usePlatformAdmin();
   // A dedicated operator account (allowlisted, no customer permissions) sees ONLY the support desk;
   // an owner/admin who is also an operator keeps their full nav plus the ops group.
-  const opsOnly = isPlatformAdmin && (role?.permissions.length ?? 0) === 0;
+  const opsOnly =
+    isPlatformAdmin && !!role && hasNoCustomerPermissions(role.permissions);
   const nav = useMemo(
     () =>
       opsOnly ? [OPS_GROUP] : isPlatformAdmin ? [...baseNav, OPS_GROUP] : baseNav,
@@ -276,7 +280,13 @@ export function SidebarNav({
             <span className="font-display truncate text-lg leading-tight font-semibold tracking-tight">
               WorkPulse
             </span>
-            {orgName ? (
+            {/* A dedicated operator account is not a member of any one customer org — it works every
+                org's queue. Show its platform role, not the tenant its login happens to be minted in. */}
+            {opsOnly ? (
+              <span className="text-muted-foreground truncate text-xs leading-tight">
+                Platform Support
+              </span>
+            ) : orgName ? (
               <span className="text-muted-foreground truncate text-xs leading-tight">
                 {orgName}
               </span>

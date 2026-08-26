@@ -13,6 +13,7 @@ import {
 } from "@/hooks/use-features";
 import { featureForPath, isPathModeHidden } from "@/constants/features";
 import { canAccessPath } from "@/lib/rbac";
+import { useIsOpsOnly } from "@/modules/ops/use-platform-admin";
 import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -36,14 +37,33 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const isPageOn = useIsPageOn();
   const mode = useTrackingMode();
 
+  // A dedicated platform-support operator has no customer console at all — it is not a member of the
+  // tenant its login happens to be minted in. Hiding the nav and redirecting the dashboard isn't
+  // enough: /settings and other member-readable pages still answer to a typed URL, which would leak
+  // the host org's details. Bounce the operator off every non-/ops route, the same way features and
+  // hidden pages are closed here rather than only in the sidebar.
+  const { opsOnly } = useIsOpsOnly();
+  const isOpsRoute = pathname === "/ops" || pathname.startsWith("/ops/");
+
   useEffect(() => {
     if (hydrated && !isAuthenticated) {
       router.replace(`/login?from=${encodeURIComponent(pathname)}`);
     }
   }, [hydrated, isAuthenticated, pathname, router]);
 
+  useEffect(() => {
+    if (hydrated && isAuthenticated && opsOnly && !isOpsRoute) {
+      router.replace("/ops/support");
+    }
+  }, [hydrated, isAuthenticated, opsOnly, isOpsRoute, router]);
+
   if (!hydrated || !isAuthenticated) {
     return <Loader label="Loading your workspace…" />;
+  }
+
+  // Don't paint a customer page for an operator account even for the tick before the redirect lands.
+  if (opsOnly && !isOpsRoute) {
+    return <Loader label="Opening the support desk…" />;
   }
 
   // Hiding the nav entry isn't enough — the URL still works. A feature the org has switched off is
