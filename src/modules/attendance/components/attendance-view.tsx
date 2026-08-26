@@ -29,6 +29,7 @@ import { PersonalAttendanceView } from "./personal-attendance-view";
 import { AttendanceOverview } from "./attendance-overview";
 import { AttendanceCalendar } from "./attendance-calendar";
 import { AttendanceLog } from "./attendance-log";
+import { PeopleAttentionCard } from "@/modules/insights/components/people-attention";
 
 export function AttendanceView() {
   const selfScoped = useIsSelfScoped();
@@ -135,6 +136,13 @@ function OversightAttendance() {
           note={data.note}
         />
       </div>
+
+      {/* Who needs following up on, straight after the day's numbers and before the roster detail.
+          It used to sit on the AI-reports tab, which is where you go to *read* about the org rather
+          than act on it — absences and short days are an attendance job, and this is the attendance
+          page. Given the page's own `iso`, so it renders no second date control: the card is always
+          describing the day the rest of the page is showing. */}
+      <PeopleAttentionCard date={iso} />
 
       {month.error ? (
         <div className="border-destructive/30 bg-destructive/5 flex items-center justify-between rounded-lg border px-4 py-2 text-sm">

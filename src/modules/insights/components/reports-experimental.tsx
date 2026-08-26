@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 import { useAssistantStore } from "@/stores/assistant.store";
 import { useAssistantPageContext } from "@/stores/page-context.store";
-import { PeopleAttentionCard } from "./people-attention";
 import { ReportsLibrary } from "./reports-library";
 import { useAiReport } from "../use-reports";
 import { useWeekPerformers } from "../use-week-performers";
@@ -32,7 +31,8 @@ import type { AiReport, NamedScore } from "../services/insights.service";
  *  • **AI briefing** + **workforce health** score (`GET /v1/insights/reports/ai`, entitlement-gated)
  *    — the AI-written org narrative, a real average-score ring, and the real day rollup. A 403 (the
  *    org lacks the AI Reports add-on) degrades to an honest upsell, not a failure.
- *  • **People to check in on** — the real attention ranking (`GET /v1/insights/attention`).
+ *  • **People to check in on** moved to the Attendance page — absences and short days are acted on
+ *    against the roster, and this tab is a reading surface.
  *  • **Report library** ({@link ReportsLibrary}) — the preview's full "All reports" surface, every
  *    report composed from real endpoints (real preview rows, real row/column counts, working
  *    CSV/PDF export). No mock; honest omission where a report needs a signal that doesn't exist yet.
@@ -161,15 +161,9 @@ export function ReportsExperimental() {
         regenerating={aiReport.regenerating}
       />
 
-      {/* ====================== PEOPLE TO CHECK IN ON ====================== */}
-      {/* Shares the page's date rather than keeping its own — two pagers meant the executive
-          summary above could be describing a different day from the list below, with nothing on
-          screen saying so. */}
-      <PeopleAttentionCard
-        title="People to check in on"
-        date={date}
-        onDateChange={setDate}
-      />
+      {/* "People to check in on" now lives on the Attendance page. Absences and short days are
+          something you act on against the roster, not something you read about here — and this tab
+          is the reading surface. */}
 
       {/* ============================ REPORT LIBRARY ========================== */}
       <ReportsLibrary />

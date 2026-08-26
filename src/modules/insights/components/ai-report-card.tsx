@@ -47,6 +47,7 @@ export function AiReportCard({
   summary,
   signals = [],
   metrics = [],
+  action,
   onRegenerate,
   regenerating = false,
 }: {
@@ -54,6 +55,14 @@ export function AiReportCard({
   summary: string;
   signals?: AiSignal[];
   metrics?: AiMetric[];
+  /**
+   * A control rendered beside the title — the scope this summary is written about.
+   *
+   * It belongs in the card rather than above it: a filter that sits outside looks like it filters
+   * the whole page, and the Activity tab already has a date/granularity bar that does exactly that.
+   * Inside, it plainly reads as "which slice this narrative describes".
+   */
+  action?: React.ReactNode;
   /** Re-run the model for this period (the narrative is otherwise generate-once-cached).
    *  Omit to hide the button — e.g. while locked behind the add-on or before data loads. */
   onRegenerate?: () => void;
@@ -63,9 +72,12 @@ export function AiReportCard({
   return (
     <Card className="border-0 bg-feature text-feature-foreground shadow-none">
       <CardHeader className="pb-0">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Sparkles className="size-4" /> {title}
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="size-4" /> {title}
+          </CardTitle>
+          {action}
+        </div>
       </CardHeader>
       <CardContent className="space-y-3 pt-3">
         {/* The model writes Markdown; printed raw it arrived as literal `**` and pipes. */}

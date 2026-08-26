@@ -1,18 +1,19 @@
 "use client";
 
 /**
- * Per-department productivity-score focus for the Analytics/Activity page.
+ * The Activity tab's **single** AI summary — org-wide or one department, chosen in the card.
  *
- * A single-department deep-dive (average score + coverage + Top/Needs performers + an AI line),
- * scoped to the range the Activity page is already showing. Distinct from the dashboard's Team
- * comparison, which shows every department at once as bars — this is the analytics home for reading
- * one department's score in context. Reuses the existing `getDeptSummary` endpoint, so no per-item
- * fan-out and no new backend.
+ * This used to be a second, plainer card sitting under a blue "AI activity report" banner, so the
+ * page opened with two AI-written narratives about the same period saying much the same thing. One
+ * of them had to go, and the department-scoped one is the more useful: `"all"` produces the
+ * org-wide reading the banner already gave, and the filter buys per-department detail the banner
+ * could never express.
+ *
+ * Reuses the existing `getDeptSummary` / `regenerateDeptSummary` endpoints, so there is no new
+ * backend and no per-item fan-out — one request per selection.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -20,28 +21,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader } from "@/components/shared/loader";
-import { Markdown } from "@/components/shared/markdown";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import {
   getDeptSummary,
+  regenerateDeptSummary,
   type DeptPersonStat,
   type DeptSummary,
 } from "../services/insights.service";
+import { AiReportCard, type AiMetric } from "./ai-report-card";
 
 const ALL = "all";
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-0.5">
-      <p className="text-muted-foreground text-xs">{label}</p>
-      <p className="font-heading text-lg font-semibold tabular-nums">{value}</p>
-    </div>
-  );
-}
-
-const person = (p: DeptPersonStat | null) =>
-  p ? `${p.name} · ${p.score}` : "—";
+const person = (p: DeptPersonStat | null) => (p ? `${p.name} · ${p.score}` : "—");
 
 export function DepartmentScoreFocus({
   from,
@@ -57,6 +48,7 @@ export function DepartmentScoreFocus({
   const [dept, setDept] = useState<string>(ALL);
   const [data, setData] = useState<DeptSummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -68,11 +60,12 @@ export function DepartmentScoreFocus({
     };
   }, []);
 
+  const label = dept === ALL ? undefined : depts.get(dept);
+
   useEffect(() => {
     if (!from || !to) return;
     let live = true;
     setLoading(true);
-    const label = dept === ALL ? undefined : depts.get(dept);
     getDeptSummary({ department: dept, from, to, label, period })
       .then((d) => live && setData(d))
       .catch(() => live && setData(null))
@@ -80,22 +73,60 @@ export function DepartmentScoreFocus({
     return () => {
       live = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dept, from, to, period, depts]);
 
+  async function regenerate() {
+    if (regenerating || !from || !to) return;
+    setRegenerating(true);
+    try {
+      setData(await regenerateDeptSummary({ department: dept, from, to, label, period }));
+    } catch {
+      /* keep the narrative already on screen — a failed re-run must not blank the card */
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   const options = useMemo(
-    () =>
-      Array.from(depts.entries()).sort((a, b) => a[1].localeCompare(b[1])),
+    () => Array.from(depts.entries()).sort((a, b) => a[1].localeCompare(b[1])),
     [depts],
   );
 
+  /**
+   * Absent figures stay absent rather than rendering as `0`. "Avg score 0/100" is a verdict on the
+   * team; "—" is the truth when nobody was scored in the window.
+   */
+  const metrics: AiMetric[] = data
+    ? [
+        {
+          label: "Avg score",
+          value: data.metrics.avg_score == null ? "—" : data.metrics.avg_score,
+          hint: data.metrics.avg_score == null ? undefined : "/ 100",
+        },
+        {
+          label: "Reporting",
+          value: `${data.metrics.scored_people} / ${data.metrics.total_people}`,
+        },
+        { label: "Top performer", value: person(data.metrics.top_performer) },
+        { label: "Needs attention", value: person(data.metrics.needs_improvement) },
+      ]
+    : [];
+
+  const summary = loading && !data
+    ? "Reading the scores for this period…"
+    : data?.narrative || "No scored activity in this period yet.";
+
   return (
-    <Card className="space-y-4 p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-heading flex items-center gap-2 text-base font-medium">
-          <Sparkles className="text-primary size-4" /> Score by department
-        </h3>
+    <AiReportCard
+      title="AI activity report"
+      summary={summary}
+      metrics={metrics}
+      action={
         <Select value={dept} onValueChange={(v) => setDept(String(v))}>
-          <SelectTrigger className="w-56">
+          {/* Light-on-dark: the card's surface is `bg-feature`, so the trigger has to be styled for
+              it rather than inheriting the page's default input colours. */}
+          <SelectTrigger className="w-56 border-white/25 bg-white/10 text-feature-foreground">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -107,40 +138,11 @@ export function DepartmentScoreFocus({
             ))}
           </SelectContent>
         </Select>
-      </div>
-
-      {loading && !data ? (
-        <div className="flex min-h-[4rem] items-center">
-          <Loader label="Loading the department's scores…" />
-        </div>
-      ) : data ? (
-        <>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Stat
-              label="Avg score"
-              value={
-                data.metrics.avg_score == null
-                  ? "—"
-                  : `${data.metrics.avg_score}/100`
-              }
-            />
-            <Stat
-              label="Reporting"
-              value={`${data.metrics.scored_people} / ${data.metrics.total_people}`}
-            />
-            <Stat label="Top performer" value={person(data.metrics.top_performer)} />
-            <Stat
-              label="Needs attention"
-              value={person(data.metrics.needs_improvement)}
-            />
-          </div>
-          {data.narrative ? (
-            <Markdown className="text-muted-foreground text-sm leading-relaxed">
-              {data.narrative}
-            </Markdown>
-          ) : null}
-        </>
-      ) : null}
-    </Card>
+      }
+      // Only once a narrative exists: an empty period has nothing to re-run, and each press is a
+      // fresh billed generation.
+      onRegenerate={data?.narrative ? regenerate : undefined}
+      regenerating={regenerating}
+    />
   );
 }

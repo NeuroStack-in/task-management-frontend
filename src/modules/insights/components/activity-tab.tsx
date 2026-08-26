@@ -25,10 +25,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ActiveInactiveRing } from "@/modules/dashboard/components/insight-widgets";
 import { cn } from "@/lib/utils";
-import { AiReportCard } from "./ai-report-card";
 import { DepartmentScoreFocus } from "./department-score-focus";
 import { useOrgActivity } from "../use-activity";
-import { useAiReport } from "../use-reports";
 import { useOrgActivityRange } from "../use-activity-range";
 import { useHourlyActivity } from "../use-hourly-activity";
 import { getAppUsage, type UsageRow } from "../services/insights.service";
@@ -157,10 +155,9 @@ export function ActivityTab() {
   const anchor = date || today;
 
   const org = useOrgActivity(date);
-  // The AI narrative follows BOTH filters: the granularity toggle picks the artifact (org day /
-  // ISO-week / month report — separately cached server-side), the date anchors which one.
-  const ai = useAiReport(granularity, date);
-
+  // No `useAiReport` here any more. The org-wide `reports` narrative was what the old blue banner
+  // rendered; `DepartmentScoreFocus` now owns the page's one summary and fetches its own. Leaving
+  // this call would keep paying for a second generation nothing displays.
   const workdays = useWorkdays();
 
   // Hour-by-hour comes from the day's captures (see the hook) — only fetched on the Daily tab,
@@ -339,17 +336,6 @@ export function ActivityTab() {
   const inactive = stats?.inactive ?? 0;
   const catTotal = stats?.catTotal ?? 0;
 
-  // AI narrative: real, or an honest note when locked / loading / unavailable — never a fabricated paragraph.
-  const summary = useMemo(() => {
-    if (ai.loading && !ai.data && !ai.locked) return "Generating the AI activity report…";
-    if (ai.locked)
-      return "The AI activity report is an Enterprise add-on. The team metrics below are live — upgrade to unlock the AI-written narrative for this period.";
-    if (ai.error) return ai.error;
-    // A period with nothing to reduce returns an empty narrative + the server's reason — show it.
-    if (ai.data) return ai.data.narrative || ai.data.reason || "";
-    return "The AI activity report appears here once there's scored activity for this period.";
-  }, [ai.loading, ai.data, ai.locked, ai.error]);
-
   // Metrics: the real rollup for the selected period (available regardless of the AI add-on).
   // Empty when nothing was scored in that period — the tiles must never assert a figure the
   // narrative beside them is simultaneously calling non-existent.
@@ -421,18 +407,10 @@ export function ActivityTab() {
         </label>
       </div>
 
-      <AiReportCard
-        title="AI activity report"
-        summary={summary}
-        metrics={metrics}
-        // Only when a narrative actually loaded: locked orgs get the upsell, empty periods have
-        // nothing to re-run, and each press is a fresh billed generation.
-        onRegenerate={ai.data?.narrative ? ai.regenerate : undefined}
-        regenerating={ai.regenerating}
-      />
-
-      {/* Per-department score focus — the org charts below stay org-wide; this reads one
-          department's score in context for the same window. */}
+      {/* **One** AI summary, not two. This banner used to be an org-wide narrative with a second,
+          near-identical department card underneath it — two models describing the same period on
+          the same screen. `DepartmentScoreFocus` now renders the banner itself, defaulting to "all"
+          (the org-wide reading the old one gave) with a filter for per-department detail. */}
       {usageRange ? (
         <DepartmentScoreFocus
           from={usageRange.from}
