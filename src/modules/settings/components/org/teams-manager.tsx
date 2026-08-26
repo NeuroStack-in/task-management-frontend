@@ -3,23 +3,22 @@
 /**
  * Teams — org structure on the **live backend** (`/v1/teams`, workforce context).
  *
- * A team belongs to a department, so this loads departments too (for the picker + labels). List needs
- * `employees:view`; create / rename / delete need `settings:manage` (server 403 → toast otherwise).
+ * List needs `employees:view`; create / rename / delete and **membership** need `settings:manage`
+ * (server 403 → toast otherwise).
+ *
+ * **Teams are cross-department by design.** A team is a working group, not a slice of the org chart:
+ * it owns no department, and a person can be in several at once. Membership lives entirely in the
+ * `TEAM#` rows the members endpoints maintain — nothing here writes `employee.team_id`, so a team
+ * roster has exactly one source of truth. Departments are the other axis and are edited in their own
+ * section.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Check, X, Users, UserCog } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Eye } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -38,42 +37,42 @@ import {
   updateTeam,
   deleteTeam,
   listDepartments,
+  listAllEmployees,
+  listTeamMembers,
+  addTeamMembers,
+  removeTeamMember,
   type ApiTeam,
   type ApiDepartment,
+  type ApiEmployee,
 } from "@/modules/employees/services/employees.service";
+import { EntityPeopleDialog } from "./entity-people-dialog";
+import { MemberEditorDialog } from "./member-editor-dialog";
 
 function messageOf(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
 }
 
-const byName = (a: ApiTeam, b: ApiTeam) => a.name.localeCompare(b.name);
-
-import { TeamMembersDialog } from "./team-members-dialog";
-
-const NO_DEPT = "__none__";
+const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name);
 
 export function TeamsManager() {
   const { can } = usePermissions();
   const canManage = can("settings:manage");
 
   const [teams, setTeams] = useState<ApiTeam[]>([]);
+  /** Departments are still loaded — not to own a team, but to label each *person* with theirs, which
+   *  is the useful thing to see when picking members for a cross-department group. */
   const [depts, setDepts] = useState<ApiDepartment[]>([]);
+  const [people, setPeople] = useState<ApiEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Add dialog.
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newDept, setNewDept] = useState<string>("");
-  const [membersOf, setMembersOf] = useState<ApiTeam | null>(null);
   const [adding, setAdding] = useState(false);
 
-  // Inline rename.
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [viewing, setViewing] = useState<ApiTeam | null>(null);
+  const [editing, setEditing] = useState<ApiTeam | null>(null);
 
-  // Delete confirm.
   const [pendingDelete, setPendingDelete] = useState<ApiTeam | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -81,11 +80,18 @@ export function TeamsManager() {
     let live = true;
     setLoading(true);
     setError(null);
-    Promise.all([listTeams(), listDepartments().catch(() => [] as ApiDepartment[])])
-      .then(([t, d]) => {
+    // Teams are the page; departments and the directory are enrichment for the member picker, so
+    // either failing degrades a label rather than blanking the section.
+    Promise.all([
+      listTeams(),
+      listDepartments().catch(() => [] as ApiDepartment[]),
+      listAllEmployees().catch(() => [] as ApiEmployee[]),
+    ])
+      .then(([t, d, e]) => {
         if (!live) return;
         setTeams([...t].sort(byName));
-        setDepts([...d].sort((a, b) => a.name.localeCompare(b.name)));
+        setDepts([...d].sort(byName));
+        setPeople(e);
       })
       .catch((e) => {
         if (live) setError(messageOf(e, "Couldn't load teams."));
@@ -99,25 +105,40 @@ export function TeamsManager() {
   }, []);
   useEffect(() => load(), [load]);
 
-  const deptName = (id?: string) =>
-    id ? (depts.find((d) => d.id === id)?.name ?? "—") : "—";
+  const deptName = useCallback(
+    (id?: string) => (id ? (depts.find((d) => d.id === id)?.name ?? "—") : "No department"),
+    [depts],
+  );
+
+  /** Everyone, labelled with their own department — the candidate pool for every team. */
+  const directory = useMemo(
+    () =>
+      people.map((e) => ({
+        user_id: e.user_id,
+        name: e.name,
+        detail: deptName(e.department_id),
+      })),
+    [people, deptName],
+  );
 
   async function add() {
     const name = newName.trim();
     if (!name) return;
+    if (teams.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+      toast.error("A team with that name already exists.");
+      return;
+    }
     setAdding(true);
     try {
-      // NONE sentinel = cross-department. Base UI Select treats "" as "unselected", so a real
-      // sentinel is needed to distinguish "chose cross-department" from "picked nothing yet".
-      const created = await createTeam({
-        name,
-        department_id: newDept && newDept !== NO_DEPT ? newDept : undefined,
-      });
+      // No `department_id`: a team never belongs to one. The field survives on older rows and is
+      // simply not read — see the header note about a single source of truth.
+      const created = await createTeam({ name });
       setTeams((cur) => [...cur, created].sort(byName));
       setNewName("");
-      setNewDept("");
       setAddOpen(false);
       toast.success(`“${created.name}” added`);
+      // Straight into the roster: a team with no people in it is not yet a team.
+      setEditing(created);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
         toast.error("You don't have permission to create teams.");
@@ -126,37 +147,6 @@ export function TeamsManager() {
       }
     } finally {
       setAdding(false);
-    }
-  }
-
-  function beginEdit(t: ApiTeam) {
-    setEditId(t.id);
-    setEditName(t.name);
-  }
-
-  async function saveEdit() {
-    if (!editId) return;
-    const name = editName.trim();
-    if (!name) return;
-    const original = teams.find((t) => t.id === editId);
-    if (original && original.name === name) {
-      setEditId(null);
-      return;
-    }
-    setSavingEdit(true);
-    try {
-      const updated = await updateTeam(editId, { name });
-      setTeams((cur) => cur.map((t) => (t.id === editId ? updated : t)).sort(byName));
-      setEditId(null);
-      toast.success("Team renamed");
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 403) {
-        toast.error("You don't have permission to rename teams.");
-      } else {
-        toast.error(messageOf(e, "Couldn't rename the team."));
-      }
-    } finally {
-      setSavingEdit(false);
     }
   }
 
@@ -186,7 +176,8 @@ export function TeamsManager() {
           <div className="space-y-1.5">
             <CardTitle>Teams</CardTitle>
             <CardDescription>
-              Teams group people within a department. A team is assigned when an employee joins.
+              Working groups that cut across departments. Someone can be in as many teams as they
+              need.
             </CardDescription>
           </div>
           {canManage && !loading && !error ? (
@@ -195,10 +186,8 @@ export function TeamsManager() {
               className="shrink-0"
               onClick={() => {
                 setNewName("");
-                setNewDept(depts[0]?.id ?? "");
                 setAddOpen(true);
               }}
-              disabled={depts.length === 0}
             >
               <Plus className="size-4" /> Add team
             </Button>
@@ -223,126 +212,86 @@ export function TeamsManager() {
             title="No teams yet"
             description={
               canManage
-                ? depts.length === 0
-                  ? "Create a department first, then add teams within it."
-                  : "Add a team to group people within a department."
+                ? "Add a team to group people from any department around a piece of work."
                 : "No teams have been created for this organization."
             }
             className="border-0"
           />
         ) : (
           <ul className="divide-y divide-border rounded-lg border">
-            {teams.map((t) => (
-              <li key={t.id} className="flex items-center gap-3 px-3 py-2.5">
-                <Users className="size-4 shrink-0 text-muted-foreground" />
-                {editId === t.id ? (
-                  <>
-                    <Input
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          saveEdit();
-                        }
-                        if (e.key === "Escape") setEditId(null);
-                      }}
-                      className="h-8 flex-1"
-                      autoFocus
-                      disabled={savingEdit}
-                      aria-label="Team name"
-                    />
-                    <Button size="icon-sm" variant="ghost" onClick={saveEdit} disabled={savingEdit || !editName.trim()} aria-label="Save">
-                      <Check className="size-4" />
-                    </Button>
-                    <Button size="icon-sm" variant="ghost" onClick={() => setEditId(null)} disabled={savingEdit} aria-label="Cancel">
-                      <X className="size-4" />
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 truncate text-sm font-medium">{t.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {t.department_id ? deptName(t.department_id) : "Cross-department"}
-                    </span>
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
-                      {t.member_count ?? 0} {(t.member_count ?? 0) === 1 ? "member" : "members"}
-                    </span>
-                    {canManage ? (
-                      <>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={() => setMembersOf(t)}
-                          aria-label={`Manage members of ${t.name}`}
-                          title="Manage members"
-                        >
-                          <UserCog className="size-3.5" />
-                        </Button>
-                        <Button size="icon-sm" variant="ghost" onClick={() => beginEdit(t)} aria-label={`Rename ${t.name}`}>
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => setPendingDelete(t)}
-                          aria-label={`Delete ${t.name}`}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </>
-                    ) : null}
-                  </>
-                )}
-              </li>
-            ))}
+            {teams.map((t) => {
+              const count = t.member_count ?? 0;
+              return (
+                <li key={t.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <Users className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate text-sm font-medium">{t.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">Cross-department</span>
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                    {count} {count === 1 ? "member" : "members"}
+                  </span>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => setViewing(t)}
+                    aria-label={`View ${t.name}`}
+                    title="View team"
+                  >
+                    <Eye className="size-3.5" />
+                  </Button>
+                  {canManage ? (
+                    <>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={() => setEditing(t)}
+                        aria-label={`Edit ${t.name}`}
+                        title="Rename and edit members"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => setPendingDelete(t)}
+                        aria-label={`Delete ${t.name}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </CardContent>
 
-      {/* Add team */}
+      {/* Add team — name only. */}
       <Dialog open={addOpen} onOpenChange={(o) => !o && setAddOpen(false)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Add a team</DialogTitle>
             <DialogDescription>
-              Name the team. A team can span departments &mdash; leave the department blank for one
-              like &ldquo;Workpulse&rdquo; with people from several.
+              Name the team &mdash; you&apos;ll pick its members next. Teams span departments, so
+              there&apos;s nothing else to choose.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Team name</Label>
-              <Input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Platform"
-                autoFocus
-                disabled={adding}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Department (optional)</Label>
-              <Select
-                value={newDept}
-                onValueChange={(v) => setNewDept(v as string)}
-                disabled={adding}
-                items={Object.fromEntries(depts.map((d) => [d.id, d.name]))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a department…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_DEPT}>No department (cross-department)</SelectItem>
-                  {depts.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-1.5">
+            <Label>Team name</Label>
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newName.trim()) {
+                  e.preventDefault();
+                  add();
+                }
+              }}
+              placeholder="Platform"
+              autoFocus
+              disabled={adding}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)} disabled={adding}>
@@ -355,18 +304,63 @@ export function TeamsManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Members editor */}
-      {membersOf ? (
-        <TeamMembersDialog
-          teamId={membersOf.id}
-          teamName={membersOf.name}
-          open={!!membersOf}
-          onOpenChange={(o) => !o && setMembersOf(null)}
-          onCountChange={(count) =>
+      {viewing ? (
+        <EntityPeopleDialog
+          open
+          onClose={() => setViewing(null)}
+          title={viewing.name}
+          subtitle="Who is in this team. Use the pencil to change it."
+          facts={[
+            { label: "Scope", value: "Cross-department" },
+            { label: "Members", value: String(viewing.member_count ?? 0) },
+          ]}
+          load={async () =>
+            (await listTeamMembers(viewing.id))
+              .sort(byName)
+              .map((m) => ({
+                user_id: m.user_id,
+                name: m.name,
+                detail: deptName(m.department_id),
+              }))
+          }
+          emptyLabel="No one is in this team yet."
+        />
+      ) : null}
+
+      {editing ? (
+        <MemberEditorDialog
+          open
+          onClose={() => setEditing(null)}
+          heading={`Edit ${editing.name}`}
+          description="Rename the team and choose who's in it. Anyone can join, from any department."
+          name={editing.name}
+          nameLabel="Team name"
+          onRename={async (next) => {
+            const updated = await updateTeam(editing.id, { name: next });
             setTeams((cur) =>
-              cur.map((t) => (t.id === membersOf.id ? { ...t, member_count: count } : t)),
+              cur.map((t) => (t.id === editing.id ? { ...t, ...updated } : t)).sort(byName),
+            );
+          }}
+          loadMembers={async () =>
+            (await listTeamMembers(editing.id)).map((m) => ({
+              user_id: m.user_id,
+              name: m.name,
+              detail: deptName(m.department_id),
+            }))
+          }
+          loadCandidates={async () => directory}
+          // The add endpoint takes the whole set in one call; removal is per-person, so that one
+          // loops. Writes are never retried by `apiFetch`, hence sequential rather than a burst.
+          applyAdd={(ids) => addTeamMembers(editing.id, ids).then(() => undefined)}
+          applyRemove={async (ids) => {
+            for (const id of ids) await removeTeamMember(editing.id, id);
+          }}
+          onSaved={(count) =>
+            setTeams((cur) =>
+              cur.map((t) => (t.id === editing.id ? { ...t, member_count: count } : t)),
             )
           }
+          hint="A person can be in several teams — adding them here doesn't remove them from another."
         />
       ) : null}
 
@@ -376,8 +370,8 @@ export function TeamsManager() {
           <DialogHeader>
             <DialogTitle>Delete “{pendingDelete?.name}”?</DialogTitle>
             <DialogDescription>
-              Members currently on this team keep the assignment until it&apos;s changed. This
-              can&apos;t be undone.
+              The {pendingDelete?.member_count ?? 0} people in it stay in their departments and in any
+              other teams. This can&apos;t be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

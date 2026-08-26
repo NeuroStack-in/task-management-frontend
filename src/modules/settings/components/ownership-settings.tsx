@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Lock,
   TriangleAlert,
-  ArrowLeftRight,
-  ChevronDown,
-  Check,
   Download,
   Loader2,
   ShieldOff,
@@ -21,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -30,36 +26,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useAuthStore } from "@/stores/auth.store";
 import { WILDCARD } from "@/constants/permissions";
-import { useEmployees } from "@/modules/employees/use-employees";
 import { ApiError } from "@/lib/api";
 import {
-  transferOwnership,
   exportOrg,
   getExportStatus,
   closeOrg,
   type ExportStatusResult,
 } from "@/modules/settings/services/org.service";
-import { initials } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { buildZip } from "@/lib/zip";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
 /**
  * Ownership & lifecycle — the real backend (`identity` context, LLD §14).
  *
- * Wired onto the owner-only routes: `POST /v1/org/transfer-ownership`, `/v1/org/export`, and
- * `/v1/org/close`. Every irreversible action requires the owner to **re-type the workspace slug**
- * (the `confirm` field) — never a one-click. The successor picker lists **real** employees from the
- * workforce directory (reused via `useEmployees`), not mock users.
+ * Wired onto the owner-only routes: `POST /v1/org/export` and `POST /v1/org/close`. Every
+ * irreversible action requires the owner to **re-type the workspace slug** (the `confirm` field) —
+ * never a one-click.
+ *
+ * Ownership is handed over by **adding** an owner (see `OrgOwnersCard`), not by transferring one.
+ * An org can hold several owners, so the transfer flow — which moved the role and demoted the
+ * caller in a single irreversible step — was a sharper tool for the same job.
  */
 
 /** What closing removes — shown before the owner commits. */
@@ -168,26 +156,7 @@ function ConfirmSlugDialog({
 
 export function OwnershipSettings() {
   const { role } = usePermissions();
-  const currentUser = useAuthStore((s) => s.user);
   const isOwner = role?.permissions.includes(WILDCARD) ?? false;
-
-  const { employees, loading, error } = useEmployees();
-
-  // Eligible successors: active teammates other than the current owner.
-  const candidates = useMemo(
-    () =>
-      employees.filter(
-        (u) => u.status === "active" && u.id !== currentUser?.id,
-      ),
-    [employees, currentUser?.id],
-  );
-
-  const [newOwnerId, setNewOwnerId] = useState<string | null>(null);
-  const newOwner = candidates.find((u) => u.id === newOwnerId) ?? null;
-  const [takeRole, setTakeRole] = useState("");
-
-  const [transferOpen, setTransferOpen] = useState(false);
-  const [transferBusy, setTransferBusy] = useState(false);
 
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
@@ -213,30 +182,6 @@ export function OwnershipSettings() {
   const [acknowledged, setAcknowledged] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeBusy, setCloseBusy] = useState(false);
-
-  async function handleTransfer(slug: string) {
-    if (!newOwner) return;
-    setTransferBusy(true);
-    try {
-      const res = await transferOwnership({
-        new_owner_id: newOwner.id,
-        take_role: takeRole.trim() || null,
-        confirm: slug,
-      });
-      setTransferOpen(false);
-      setNewOwnerId(null);
-      setTakeRole("");
-      toast.success("Ownership transferred", {
-        description: `${newOwner.name} is now the Organization Owner${
-          res.transferor_left ? " and you have left the organization" : ""
-        }.`,
-      });
-    } catch (e) {
-      reportError(e, "Couldn't transfer ownership.");
-    } finally {
-      setTransferBusy(false);
-    }
-  }
 
   async function handleExport(slug: string) {
     setExportBusy(true);
@@ -326,112 +271,6 @@ export function OwnershipSettings() {
 
       {/* ── Owners ── */}
       <OrgOwnersCard />
-
-      {/* ── Transfer ownership ── */}
-      <Card className="gap-0 p-0">
-        <div className="flex items-start gap-4 px-6 py-5">
-          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-feature-tint text-primary">
-            <ArrowLeftRight className="size-4" />
-          </span>
-          <div className="min-w-0 space-y-1">
-            <h3 className="font-heading text-base font-medium">
-              Transfer ownership
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Hand the Organization Owner role to another active member. They gain
-              full, unrestricted access; you keep the role you choose below
-              (Admin by default).
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-4 border-t border-border px-6 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    disabled={!isOwner || loading}
-                    className="w-full justify-between gap-2 sm:w-72"
-                  />
-                }
-              >
-                {newOwner ? (
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Avatar className="size-5">
-                      <AvatarFallback className="text-[10px]">
-                        {initials(newOwner.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="truncate">{newOwner.name}</span>
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">
-                    {loading ? "Loading members…" : "Select new owner…"}
-                  </span>
-                )}
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="max-h-72 w-72 overflow-y-auto"
-              >
-                {candidates.length === 0 ? (
-                  <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-                    {error ?? "No other active members to transfer to."}
-                  </div>
-                ) : (
-                  candidates.map((u) => (
-                    <DropdownMenuItem
-                      key={u.id}
-                      onClick={() => setNewOwnerId(u.id)}
-                      className="gap-2"
-                    >
-                      <Avatar className="size-6">
-                        <AvatarFallback className="text-[10px]">
-                          {initials(u.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{u.name}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {u.jobTitle || u.department || "Member"}
-                        </span>
-                      </span>
-                      <Check
-                        className={cn(
-                          "size-4",
-                          u.id === newOwnerId ? "opacity-100" : "opacity-0",
-                        )}
-                      />
-                    </DropdownMenuItem>
-                  ))
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <div className="space-y-1.5 sm:w-64">
-              <Input
-                value={takeRole}
-                disabled={!isOwner}
-                placeholder="Your role after transfer (optional)"
-                onChange={(e) => setTakeRole(e.target.value)}
-                aria-label="Role to keep after transfer"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <Button
-              disabled={!isOwner || !newOwner}
-              onClick={() => setTransferOpen(true)}
-            >
-              <ArrowLeftRight className="size-4" /> Transfer ownership
-            </Button>
-          </div>
-        </div>
-      </Card>
 
       {/* ── Export data ── */}
       <Card className="gap-0 p-0">
@@ -560,22 +399,6 @@ export function OwnershipSettings() {
       </Card>
 
       {/* ── Confirmations (typed-slug) ── */}
-      <ConfirmSlugDialog
-        open={transferOpen}
-        onOpenChange={setTransferOpen}
-        title="Transfer ownership?"
-        description={
-          <>
-            {newOwner?.name} will become the Organization Owner with full access.
-            Type your <span className="font-medium text-foreground">workspace
-            slug</span> to confirm.
-          </>
-        }
-        confirmLabel={transferBusy ? "Transferring…" : "Transfer ownership"}
-        busy={transferBusy}
-        onConfirm={handleTransfer}
-      />
-
       <ConfirmSlugDialog
         open={exportOpen}
         onOpenChange={setExportOpen}

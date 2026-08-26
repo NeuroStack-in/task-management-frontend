@@ -446,8 +446,11 @@ export function OrganizationTab() {
           that saved three values into a void. The component and its endpoints still exist, so
           restoring it is one import and one line if branding is ever wired up for real. */}
       <TrackingModeCard />
-      <DepartmentsManager />
+      {/* Productivity first: it is the setting that changes what every other number on the product
+          means, so it should not sit buried between two roster editors. Then the structures those
+          numbers are grouped by — departments, then the teams that span them. */}
       <OrgProductivityWeightsCard />
+      <DepartmentsManager />
       <TeamsManager />
       <LocationsManager />
       <OfficePerimeterCard />

@@ -78,10 +78,8 @@ import { ApiError } from "@/lib/api";
 import { listRoles, assignRole, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
   listDepartments,
-  listTeams,
   updateEmployee,
   type ApiDepartment,
-  type ApiTeam,
   type UpdateEmployeeBody,
 } from "../services/employees.service";
 import { EmployeeRecapCard } from "./employee-recap-card";
@@ -205,7 +203,6 @@ function exportEmployeeCsv(d: EmployeeProfileData) {
     ["Role", d.roleName],
     ["Title", d.jobTitle],
     ["Department", d.department],
-    ["Team", d.team],
     ["Status", d.status],
     ["Email", d.email],
     ["Phone", d.phone],
@@ -371,7 +368,7 @@ function ReassignDialog({
         <DialogHeader>
           <DialogTitle>Reassign {name}</DialogTitle>
           <DialogDescription>
-            Change this employee&apos;s access role. Department and team moves aren&apos;t available
+            Change this employee&apos;s access role. Department moves aren&apos;t available
             yet.
           </DialogDescription>
         </DialogHeader>
@@ -429,14 +426,12 @@ function EditEmployeeDialog({
   onSaved: () => void;
 }) {
   const [depts, setDepts] = useState<ApiDepartment[]>([]);
-  const [teams, setTeams] = useState<ApiTeam[]>([]);
   const [loadingOpts, setLoadingOpts] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: "",
     title: "",
     departmentId: "",
-    teamId: "",
     location: "",
     phone: "",
   });
@@ -448,18 +443,16 @@ function EditEmployeeDialog({
       name: data.name,
       title: data.jobTitle,
       departmentId: data.departmentId,
-      teamId: data.teamId,
       location: data.cityState,
       phone: data.phone,
     });
     let live = true;
     setLoadingOpts(true);
-    Promise.all([listDepartments().catch(() => []), listTeams().catch(() => [])])
-      .then(([d, t]) => {
-        if (!live) return;
-        setDepts(d);
-        setTeams(t);
+    listDepartments()
+      .then((d) => {
+        if (live) setDepts(d);
       })
+      .catch(() => {})
       .finally(() => {
         if (live) setLoadingOpts(false);
       });
@@ -468,23 +461,12 @@ function EditEmployeeDialog({
     };
   }, [open, data]);
 
-  // Teams follow the chosen department; teams without a department are always offered.
-  const teamOptions = form.departmentId
-    ? teams.filter((t) => !t.department_id || t.department_id === form.departmentId)
-    : teams;
 
   const setField = (k: keyof typeof form) => (v: string) =>
     setForm((s) => ({ ...s, [k]: v }));
 
-  const onDepartmentChange = (v: string) => {
-    const departmentId = v === NONE ? "" : v;
-    setForm((s) => {
-      const team = teams.find((t) => t.id === s.teamId);
-      const teamStillValid =
-        !departmentId || !team?.department_id || team.department_id === departmentId;
-      return { ...s, departmentId, teamId: teamStillValid ? s.teamId : "" };
-    });
-  };
+  const onDepartmentChange = (v: string) =>
+    setForm((s) => ({ ...s, departmentId: v === NONE ? "" : v }));
 
   async function save() {
     const name = form.name.trim();
@@ -497,7 +479,6 @@ function EditEmployeeDialog({
     if (name !== data.name) body.name = name;
     if (form.title.trim() !== data.jobTitle) body.title = form.title.trim();
     if (form.departmentId !== data.departmentId) body.department_id = form.departmentId;
-    if (form.teamId !== data.teamId) body.team_id = form.teamId;
     if (form.location.trim() !== data.cityState) body.location = form.location.trim();
     if (form.phone.trim() !== data.phone) body.phone = form.phone.trim();
     if (Object.keys(body).length === 0) {
@@ -556,29 +537,6 @@ function EditEmployeeDialog({
                 {depts.map((d) => (
                   <SelectItem key={d.id} value={d.id}>
                     {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Team</Label>
-            <Select
-              value={form.teamId || NONE}
-              onValueChange={(v) => setField("teamId")(v === NONE ? "" : (v as string))}
-              items={{
-                [NONE]: "— None —",
-                ...Object.fromEntries(teamOptions.map((t) => [t.id, t.name])),
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={loadingOpts ? "Loading…" : "Select a team"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE}>— None —</SelectItem>
-                {teamOptions.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -733,7 +691,6 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
   }, [workdays]);
 
   const department = data.department;
-  const team = data.team;
   const [reassignOpen, setReassignOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -888,7 +845,6 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
 
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5">
               <Detail label="Department" value={department} />
-              <Detail label="Team" value={team} />
               <Detail label="Phone" value={data.phone} />
               <Detail label="Email" value={data.email} />
               <Detail label="Hire date" value={data.hireDate} />

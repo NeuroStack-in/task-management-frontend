@@ -74,7 +74,10 @@ const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {
   70: ["roles:view", "roles:manage"], // RolesManage
   71: ["security:view"], // SecurityRead
   72: ["security:view", "security:manage", "audit-logs:view"], // SecurityManage (covers audit, LLD §17)
-  73: ["settings:view"], // EntitlementsManage — Features tab lives under Settings
+  // EntitlementsManage. The Features tab lives under Settings, but `settings:view` alone is what
+  // the tab READS with — the toggles gate on `entitlements:manage`, so mapping only the former
+  // left every Admin holding this bit staring at switches the server would have accepted.
+  73: ["settings:view", "entitlements:manage"],
   75: ["settings:view"], // OwnershipManage — page itself is is_owner-gated server-side
   // ── fleet / help / notifications ──
   80: ["agents:view", "agents:manage"], // AgentsManage

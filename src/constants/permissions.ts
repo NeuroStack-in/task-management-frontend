@@ -213,6 +213,14 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("settings", "view", "View Settings"),
       p("settings", "manage", "Manage Organization Settings"),
+      // `entitlements:manage` is its own bit (wp-contracts 73), not part of settings:manage —
+      // filed under Settings because that is where the backend files it and where the tab lives.
+      {
+        id: "entitlements:manage",
+        module: "settings",
+        action: "manage",
+        label: "Manage Feature Toggles",
+      },
     ],
   },
   {

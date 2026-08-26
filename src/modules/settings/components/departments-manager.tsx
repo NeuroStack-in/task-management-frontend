@@ -3,13 +3,18 @@
 /**
  * Department management — on the **live backend** (`/v1/departments`, workforce context).
  *
- * List needs `employees:view`; create / rename / delete need `settings:manage` (backend `OrgManage`).
- * Lives on the Organization settings page because departments are org structure. Employees are
- * assigned a department when they accept their invite; this is where the choosable set is defined.
+ * List needs `employees:view`; create / rename / delete and **membership** need `settings:manage`
+ * (backend `OrgManage` / `employees:manage`). Lives on the Organization settings page because
+ * departments are org structure.
+ *
+ * A department is a **roster you edit here**, not just a name in a picker. Membership is a single
+ * field on the employee (`department_id`), so a person is in exactly one department and adding them
+ * to a second **moves** them out of the first — enforced by the data model, not by a check in this
+ * file, and the editor says so before you press Save.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Check, X, Building2, SlidersHorizontal } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, SlidersHorizontal, Eye } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,12 +32,17 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import {
   listDepartments,
+  listAllEmployees,
   createDepartment,
   updateDepartment,
+  updateEmployee,
   deleteDepartment,
   type ApiDepartment,
+  type ApiEmployee,
 } from "@/modules/employees/services/employees.service";
+import { EntityPeopleDialog } from "./org/entity-people-dialog";
 import { DeptProductivityDialog } from "./org/dept-productivity-dialog";
+import { MemberEditorDialog } from "./org/member-editor-dialog";
 
 /**
  * The standard starter set. Kept in step with the backend `create_org` seed (identity crate), so an
@@ -54,11 +64,19 @@ function messageOf(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
 }
 
+const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name);
+
 export function DepartmentsManager() {
   const { can } = usePermissions();
   const canManage = can("settings:manage");
 
   const [depts, setDepts] = useState<ApiDepartment[]>([]);
+  /**
+   * The whole directory, held once: it supplies both the per-row counts and the editor's roster, so
+   * opening a department costs no extra request and the count on the row can never disagree with the
+   * list inside it.
+   */
+  const [people, setPeople] = useState<ApiEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,25 +84,25 @@ export function DepartmentsManager() {
   const [adding, setAdding] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
-  // Inline rename: the id being edited + its working value.
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [savingEdit, setSavingEdit] = useState(false);
-
-  // Delete confirm: the department pending deletion.
+  const [editing, setEditing] = useState<ApiDepartment | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ApiDepartment | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Per-department productivity config (weights + rules) — one department at a time.
   const [productivityDept, setProductivityDept] = useState<ApiDepartment | null>(null);
+  const [viewing, setViewing] = useState<ApiDepartment | null>(null);
 
   const load = useCallback(() => {
     let live = true;
     setLoading(true);
     setError(null);
-    listDepartments()
-      .then((d) => {
-        if (live) setDepts([...d].sort((a, b) => a.name.localeCompare(b.name)));
+    // Departments are the page; the directory is enrichment. A directory failure degrades the counts
+    // to zero rather than blanking the section, so a viewer without `employees:view` still sees the
+    // structure.
+    Promise.all([listDepartments(), listAllEmployees().catch(() => [] as ApiEmployee[])])
+      .then(([d, e]) => {
+        if (!live) return;
+        setDepts([...d].sort(byName));
+        setPeople(e);
       })
       .catch((e) => {
         if (live) setError(messageOf(e, "Couldn't load departments."));
@@ -98,6 +116,25 @@ export function DepartmentsManager() {
   }, []);
   useEffect(() => load(), [load]);
 
+  const refreshPeople = useCallback(async () => {
+    const fresh = await listAllEmployees();
+    setPeople(fresh);
+    return fresh;
+  }, []);
+
+  const countOf = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of people) {
+      if (p.department_id) counts.set(p.department_id, (counts.get(p.department_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [people]);
+
+  const deptName = useCallback(
+    (id?: string) => (id ? (depts.find((d) => d.id === id)?.name ?? "—") : "No department"),
+    [depts],
+  );
+
   async function add() {
     const name = newName.trim();
     if (!name) return;
@@ -108,7 +145,7 @@ export function DepartmentsManager() {
     setAdding(true);
     try {
       const created = await createDepartment(name);
-      setDepts((cur) => [...cur, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setDepts((cur) => [...cur, created].sort(byName));
       setNewName("");
       toast.success(`“${created.name}” added`);
     } catch (e) {
@@ -137,40 +174,11 @@ export function DepartmentsManager() {
       }
     }
     if (created.length) {
-      setDepts((cur) => [...cur, ...created].sort((a, b) => a.name.localeCompare(b.name)));
+      setDepts((cur) => [...cur, ...created].sort(byName));
       toast.success(`Added ${created.length} department${created.length === 1 ? "" : "s"}`);
     }
     if (failed) toast.error(`${failed} couldn't be added — you can add them manually.`);
     setSeeding(false);
-  }
-
-  function beginEdit(d: ApiDepartment) {
-    setEditId(d.id);
-    setEditName(d.name);
-  }
-
-  async function saveEdit() {
-    if (!editId) return;
-    const name = editName.trim();
-    if (!name) return;
-    const original = depts.find((d) => d.id === editId);
-    if (original && original.name === name) {
-      setEditId(null);
-      return;
-    }
-    setSavingEdit(true);
-    try {
-      const updated = await updateDepartment(editId, name);
-      setDepts((cur) =>
-        cur.map((d) => (d.id === editId ? updated : d)).sort((a, b) => a.name.localeCompare(b.name)),
-      );
-      setEditId(null);
-      toast.success("Department renamed");
-    } catch (e) {
-      toast.error(messageOf(e, "Couldn't rename the department."));
-    } finally {
-      setSavingEdit(false);
-    }
   }
 
   async function confirmDelete() {
@@ -189,13 +197,15 @@ export function DepartmentsManager() {
     }
   }
 
+  const pendingDeleteCount = pendingDelete ? (countOf.get(pendingDelete.id) ?? 0) : 0;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Departments</CardTitle>
         <CardDescription>
-          The departments people can be assigned to. A department is chosen when an employee accepts
-          their invite.
+          Who belongs to each part of the org. Everyone is in exactly one department &mdash; adding
+          someone here moves them out of their current one.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -206,18 +216,22 @@ export function DepartmentsManager() {
         ) : error ? (
           <div className="flex flex-col items-center gap-3 py-8 text-center">
             <p className="text-sm text-muted-foreground">{error}</p>
-            <Button variant="outline" size="sm" onClick={load}>Retry</Button>
+            <Button variant="outline" size="sm" onClick={load}>
+              Retry
+            </Button>
           </div>
         ) : (
           <>
-            {/* Add — managers only */}
             {canManage ? (
               <div className="flex gap-2">
                 <Input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); add(); }
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      add();
+                    }
                   }}
                   placeholder="New department name"
                   aria-label="New department name"
@@ -242,70 +256,71 @@ export function DepartmentsManager() {
                   className="border-0 pt-8 pb-4"
                 />
                 {canManage ? (
-                  <Button variant="outline" onClick={seedDefaults} disabled={seeding} className="mb-4">
+                  <Button
+                    variant="outline"
+                    onClick={seedDefaults}
+                    disabled={seeding}
+                    className="mb-4"
+                  >
                     {seeding ? "Adding…" : "Add the standard set"}
                   </Button>
                 ) : null}
               </div>
             ) : (
               <ul className="divide-y divide-border rounded-lg border">
-                {depts.map((d) => (
-                  <li key={d.id} className="flex items-center gap-3 px-3 py-2.5">
-                    <Building2 className="size-4 shrink-0 text-muted-foreground" />
-                    {editId === d.id ? (
-                      <>
-                        <Input
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") { e.preventDefault(); saveEdit(); }
-                            if (e.key === "Escape") setEditId(null);
-                          }}
-                          className="h-8 flex-1"
-                          autoFocus
-                          disabled={savingEdit}
-                          aria-label="Department name"
-                        />
-                        <Button size="icon-sm" variant="ghost" onClick={saveEdit} disabled={savingEdit || !editName.trim()} aria-label="Save">
-                          <Check className="size-4" />
-                        </Button>
-                        <Button size="icon-sm" variant="ghost" onClick={() => setEditId(null)} disabled={savingEdit} aria-label="Cancel">
-                          <X className="size-4" />
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <span className="flex-1 truncate text-sm font-medium">{d.name}</span>
-                        {/* Productivity config is readable by any member; saving is gated inside. */}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0 text-muted-foreground"
-                          onClick={() => setProductivityDept(d)}
-                          aria-label={`Configure productivity for ${d.name}`}
-                        >
-                          <SlidersHorizontal className="size-3.5" /> Productivity
-                        </Button>
-                        {canManage ? (
-                          <>
-                            <Button size="icon-sm" variant="ghost" onClick={() => beginEdit(d)} aria-label={`Rename ${d.name}`}>
-                              <Pencil className="size-3.5" />
-                            </Button>
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              className="text-muted-foreground hover:text-destructive"
-                              onClick={() => setPendingDelete(d)}
-                              aria-label={`Delete ${d.name}`}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          </>
-                        ) : null}
-                      </>
-                    )}
-                  </li>
-                ))}
+                {depts.map((d) => {
+                  const count = countOf.get(d.id) ?? 0;
+                  return (
+                    <li key={d.id} className="flex items-center gap-3 px-3 py-2.5">
+                      <Building2 className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate text-sm font-medium">{d.name}</span>
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                        {count} {count === 1 ? "member" : "members"}
+                      </span>
+                      {/* Productivity config is readable by any member; saving is gated inside. */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0 text-muted-foreground"
+                        onClick={() => setProductivityDept(d)}
+                        aria-label={`Configure productivity for ${d.name}`}
+                      >
+                        <SlidersHorizontal className="size-3.5" /> Productivity
+                      </Button>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={() => setViewing(d)}
+                        aria-label={`View ${d.name}`}
+                        title="View department"
+                      >
+                        <Eye className="size-3.5" />
+                      </Button>
+                      {canManage ? (
+                        <>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            onClick={() => setEditing(d)}
+                            aria-label={`Edit ${d.name}`}
+                            title="Rename and edit members"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => setPendingDelete(d)}
+                            aria-label={`Delete ${d.name}`}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </>
@@ -318,7 +333,9 @@ export function DepartmentsManager() {
           <DialogHeader>
             <DialogTitle>Delete “{pendingDelete?.name}”?</DialogTitle>
             <DialogDescription>
-              Employees currently in this department will keep the assignment until it&apos;s changed.
+              {pendingDeleteCount > 0
+                ? `${pendingDeleteCount} ${pendingDeleteCount === 1 ? "person is" : "people are"} in this department and will be left without one. `
+                : ""}
               This can&apos;t be undone.
             </DialogDescription>
           </DialogHeader>
@@ -332,6 +349,63 @@ export function DepartmentsManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {viewing ? (
+        <EntityPeopleDialog
+          open
+          onClose={() => setViewing(null)}
+          title={viewing.name}
+          subtitle="Everyone assigned to this department."
+          facts={[{ label: "Members", value: String(countOf.get(viewing.id) ?? 0) }]}
+          load={async () =>
+            people
+              .filter((e) => e.department_id === viewing.id)
+              .sort(byName)
+              .map((e) => ({ user_id: e.user_id, name: e.name, detail: e.title }))
+          }
+          emptyLabel="Nobody is assigned to this department yet."
+        />
+      ) : null}
+
+      {editing ? (
+        <MemberEditorDialog
+          open
+          onClose={() => setEditing(null)}
+          heading={`Edit ${editing.name}`}
+          description="Rename the department and choose who belongs to it."
+          name={editing.name}
+          nameLabel="Department name"
+          onRename={async (next) => {
+            const updated = await updateDepartment(editing.id, next);
+            setDepts((cur) => cur.map((d) => (d.id === editing.id ? updated : d)).sort(byName));
+          }}
+          loadMembers={async () =>
+            (await refreshPeople())
+              .filter((e) => e.department_id === editing.id)
+              .map((e) => ({ user_id: e.user_id, name: e.name, detail: e.title }))
+          }
+          loadCandidates={async () =>
+            people
+              .filter((e) => e.department_id !== editing.id)
+              .map((e) => ({
+                user_id: e.user_id,
+                name: e.name,
+                // Their CURRENT department, so "this will move them" is visible before you click.
+                detail: deptName(e.department_id),
+              }))
+          }
+          applyAdd={async (ids) => {
+            // Sequential: these are writes, which `apiFetch` never retries, so a parallel burst
+            // against the gateway's throttle would drop some of them silently.
+            for (const id of ids) await updateEmployee(id, { department_id: editing.id });
+          }}
+          applyRemove={async (ids) => {
+            // "" clears the field — the server contract for these string columns.
+            for (const id of ids) await updateEmployee(id, { department_id: "" });
+          }}
+          hint="Everyone belongs to one department. Adding someone already in another moves them here."
+        />
+      ) : null}
 
       {/* Per-department productivity (weights + classification rules). Keyed so switching
           departments remounts the load cycle. Unmounts on close. */}

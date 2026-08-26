@@ -18,6 +18,9 @@ function isPageOn(
   isOwner = false,
 ): boolean {
   if (isOwner) return true;
+  if (["/dashboard", "/settings"].some((p) => href === p || href.startsWith(`${p}/`))) {
+    return true;
+  }
   let hidden = false;
   let best = -1;
   for (const [key, on] of Object.entries(pages)) {
@@ -37,6 +40,13 @@ describe("page visibility", () => {
 
   it("hiding a page hides it", () => {
     expect(isPageOn({ "/payroll": false }, "/payroll")).toBe(false);
+  });
+
+  it("the home page and the settings page can never be hidden", () => {
+    // Both are escape hatches: /dashboard is where every "back" button goes, /settings is where
+    // the switch to undo it lives. A stored `false` for either must be ignored, not obeyed.
+    expect(isPageOn({ "/dashboard": false }, "/dashboard")).toBe(true);
+    expect(isPageOn({ "/settings": false }, "/settings/features")).toBe(true);
   });
 
   it("hiding a parent hides its tabs", () => {

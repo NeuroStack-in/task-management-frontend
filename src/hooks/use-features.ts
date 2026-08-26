@@ -151,12 +151,28 @@ export function useEntitlementsSync(active: boolean): void {
  * always have someone who can still reach it to un-hide it. `/settings/*` is additionally never
  * toggleable server-side, so nobody can hide the page holding the switches.
  */
+/**
+ * Routes no toggle can hide.
+ *
+ * `/dashboard` is the app's home: every "back to safety" affordance in the UI — including the
+ * button on the "this page is turned off" screen itself — lands there, so hiding it would strand a
+ * user in a loop with nowhere to go. `/settings` holds the switches, so hiding it would make the
+ * hiding irreversible.
+ *
+ * The server refuses to store either (identity::toggle_feature). This is the client half of the
+ * same rule, which is what covers an org that hid one *before* the guard existed.
+ */
+const ALWAYS_VISIBLE = ["/dashboard", "/settings"] as const;
+
 export function useIsPageOn(): (href: string) => boolean {
   const pages = useEntitlementsStore((s) => s.pages);
   const isOwner = useAuthStore(isOwnerOf);
   return useCallback(
     (href: string) => {
       if (isOwner) return true;
+      if (ALWAYS_VISIBLE.some((p) => href === p || href.startsWith(`${p}/`))) {
+        return true;
+      }
       // Longest-prefix match, so hiding `/insights` hides its tabs without listing each one, while
       // a tab may still be hidden on its own.
       let hidden = false;

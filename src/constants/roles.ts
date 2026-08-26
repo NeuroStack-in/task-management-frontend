@@ -66,6 +66,7 @@ export const SYSTEM_ROLES: Role[] = [
       "audit-logs:view",
       "settings:view",
       "settings:manage",
+      "entitlements:manage",
       "help:view",
       "leave:view",
       "leave:request",
