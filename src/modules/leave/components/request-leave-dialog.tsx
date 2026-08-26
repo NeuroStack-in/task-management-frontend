@@ -9,6 +9,7 @@ import { CalendarPlus, Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +72,12 @@ const schema = z
     startDate: z.string().min(1, "Select a start date."),
     endDate: z.string().min(1, "Select an end date."),
     reason: z.string().trim().min(3, "Add a short reason."),
+    halfDay: z.boolean().default(false),
+  })
+  .refine((d) => !d.halfDay || d.startDate === d.endDate, {
+    // Mirrors the server rule rather than trusting it: a half day is half of ONE day.
+    message: "A half day must be a single date — set the same start and end date.",
+    path: ["halfDay"],
   })
   .refine((d) => d.endDate >= d.startDate, {
     message: "End date can't be before the start date.",
@@ -103,12 +110,15 @@ export function RequestLeaveDialog({
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { type: "", startDate: "", endDate: "", reason: "" },
+    defaultValues: { type: "", startDate: "", endDate: "", reason: "", halfDay: false },
   });
 
   const start = watch("startDate");
   const end = watch("endDate");
-  const days = useMemo(() => workingDays(start, end), [start, end]);
+  const halfDay = watch("halfDay");
+  const wholeDays = useMemo(() => workingDays(start, end), [start, end]);
+  // What will actually be deducted, so the preview matches the balance rather than the calendar.
+  const days = halfDay && start && start === end ? 0.5 : wholeDays;
   // Earliest selectable day — leave can't start in the past (computed once, client-local).
   const today = useMemo(() => isoToday(), []);
 
@@ -187,12 +197,13 @@ export function RequestLeaveDialog({
         type_id: data.type,
         from: data.startDate,
         to: data.endDate,
+        ...(data.halfDay ? { half_day: true } : {}),
         reason: data.reason,
         ...(docs.length ? { attachments: docs } : {}),
       });
-      const d = workingDays(data.startDate, data.endDate);
+      const d = data.halfDay ? 0.5 : workingDays(data.startDate, data.endDate);
       toast.success("Leave request submitted", {
-        description: `${label} · ${d} day${d === 1 ? "" : "s"} — pending approval`,
+        description: `${label} · ${d === 0.5 ? "half a day" : `${d} day${d === 1 ? "" : "s"}`} — pending approval`,
       });
       close();
     } catch (e) {
@@ -269,10 +280,38 @@ export function RequestLeaveDialog({
             </Field>
           </div>
 
+          {/* Only offered for a single date — the server refuses the combination otherwise, and a
+              checkbox that silently fails validation is worse than one that isn't there. */}
+          {start && start === end ? (
+            <Controller
+              control={control}
+              name="halfDay"
+              render={({ field }) => (
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3">
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={(v) => field.onChange(Boolean(v))}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium">Half day</span>
+                    <span className="text-muted-foreground block text-xs">
+                      Take half of this day instead of all of it &mdash; 0.5 is deducted from your
+                      balance, and the day shows as a half-day leave.
+                    </span>
+                  </span>
+                </label>
+              )}
+            />
+          ) : null}
+          {errors.halfDay?.message ? (
+            <p className="text-destructive text-sm">{errors.halfDay.message}</p>
+          ) : null}
+
           {days > 0 ? (
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{days}</span> working
-              day{days === 1 ? "" : "s"} requested.
+              <span className="font-medium text-foreground">{days}</span>{" "}
+              {days === 0.5 ? "of a working day" : `working day${days === 1 ? "" : "s"}`} requested.
             </p>
           ) : null}
 

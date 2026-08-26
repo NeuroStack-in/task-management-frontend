@@ -41,7 +41,12 @@ const fmtSubmitted = (ms?: number) => {
   const d = new Date(ms);
   return `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`;
 };
-const dayLabel = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+/**
+ * `0.5` is a real value now (half-day leave), so this can no longer assume whole days. "0.5 days"
+ * is technically right and reads like a rounding error; an approver should see the words.
+ */
+const dayLabel = (n: number) =>
+  n === 0.5 ? "Half day" : `${n} day${n === 1 ? "" : "s"}`;
 
 type Filter = "pending" | "approved" | "rejected" | "all";
 const FILTERS: { value: Filter; label: string }[] = [

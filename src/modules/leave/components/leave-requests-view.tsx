@@ -240,7 +240,9 @@ function EmployeeLeaveView() {
                     <TableCell className="text-muted-foreground">
                       {fmtRange(r.from, r.to)}
                     </TableCell>
-                    <TableCell className="tabular-nums">{r.days}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {r.days === 0.5 ? "Half day" : r.days}
+                    </TableCell>
                     <TableCell className="max-w-[16rem] truncate text-muted-foreground">
                       {r.reason ?? "—"}
                     </TableCell>

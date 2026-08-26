@@ -25,6 +25,7 @@ const ATTENDANCE: Record<string, { dot: string; label: string }> = {
   present: { dot: "bg-success", label: "Present" },
   partial: { dot: "bg-warning", label: "Partial" },
   leave: { dot: "bg-primary", label: "On leave" },
+  half_day_leave: { dot: "bg-primary", label: "Half-day leave" },
   absent: { dot: "bg-destructive", label: "Absent" },
   non_workday: { dot: "bg-muted-foreground/40", label: "Non-working day" },
 };

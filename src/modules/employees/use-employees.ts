@@ -88,7 +88,7 @@ export interface EmployeeRow {
   jobTitle: string;
   department: string;
   team: string;
-  status: "active" | "inactive" | "invited" | "suspended";
+  status: "active" | "deactivated" | "invited" | "suspended";
   /**
    * This person has **no login** — a monitored employee (MANAGED-AGENT.md §6.4), recorded by a
    * managed agent rather than by signing in. Distinct from "invited, hasn't accepted yet", which
@@ -111,10 +111,17 @@ export interface EmployeesData {
   bench: (id: string, benched: boolean) => Promise<void>;
 }
 
-/** Backend status → the view's union. The directory only ever emits active/deactivated. */
+/**
+ * Backend status → the view's union. The directory only ever emits active/deactivated.
+ *
+ * **`deactivated` is no longer renamed to `inactive`.** That rename is what made this screen
+ * unreadable: the `benched` flag was *also* surfaced as "Inactive", so one word stood for two
+ * unrelated states — one where the person still signs in, one where their access is revoked — and
+ * they looked like the same thing because we called them the same thing.
+ */
 function mapStatus(s: string): EmployeeRow["status"] {
   if (s === "active") return "active";
-  if (s === "deactivated") return "inactive";
+  if (s === "deactivated") return "deactivated";
   return "active";
 }
 

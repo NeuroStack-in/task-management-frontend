@@ -18,12 +18,19 @@
  */
 import { apiFetch } from "@/lib/api";
 
-/** The five-status model (LLD §7). `late` is a qualifier on `present`, not a sixth status. */
+/**
+ * The attendance model (LLD §7). `late` is a qualifier on `present`, not a status of its own.
+ *
+ * `half_day_leave` IS a status rather than a qualifier, unlike `late` — the oversight board reads
+ * GSI3, whose projection carries the status string and nothing else, so a boolean beside it would
+ * never reach that screen.
+ */
 export type AttendanceStatus =
   | "present"
   | "partial"
   | "absent"
   | "leave"
+  | "half_day_leave"
   | "non_workday";
 
 /** Mirrors `time_attendance::personal_attendance::dto::AttendanceDayRow`. */

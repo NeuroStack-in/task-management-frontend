@@ -38,6 +38,7 @@ const STATUS: Record<
   present: { label: "Present", tile: "bg-success/15 ring-success/30", dot: "bg-success" },
   partial: { label: "Partial", tile: "bg-warning/15 ring-warning/40", dot: "bg-warning" },
   leave: { label: "On leave", tile: "bg-primary/12 ring-primary/30", dot: "bg-primary" },
+  half_day_leave: { label: "Half-day leave", tile: "bg-primary/12 ring-primary/30", dot: "bg-primary" },
   absent: { label: "Absent", tile: "bg-destructive/12 ring-destructive/30", dot: "bg-destructive" },
   non_workday: { label: "Non-working day", tile: "bg-muted/40 ring-border", dot: "bg-muted-foreground/40" },
 };
@@ -148,6 +149,7 @@ export function PersonalAttendanceView() {
       present: 0,
       partial: 0,
       leave: 0,
+      half_day_leave: 0,
       absent: 0,
       non_workday: 0,
       /** Subset of `present` — never add the two. */

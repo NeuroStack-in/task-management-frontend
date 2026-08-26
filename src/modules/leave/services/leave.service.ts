@@ -195,6 +195,11 @@ export interface NewLeaveRequest {
   /** Inclusive `YYYY-MM-DD`. */
   from: string;
   to: string;
+  /**
+   * Take **half** of a single day. The server refuses it across a range — "half of five days" has
+   * no agreed meaning — so this is only ever sent with `from === to`.
+   */
+  half_day?: boolean;
   reason?: string;
   /** Uploaded documents, by the ids the presign route minted. Always optional. */
   attachments?: ApiLeaveAttachment[];

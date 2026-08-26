@@ -18,8 +18,11 @@ import {
   Sheet,
   UserPlus,
   UserMinus,
+  UserX,
   MoreVertical,
 } from "lucide-react";
+import Link from "next/link";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -57,13 +60,24 @@ import { useEmployees, type EmployeeRow } from "../use-employees";
 
 export type { EmployeeRow };
 
-// Lifecycle filters shown in the Status dropdown. `benched` (the backend flag) surfaces as
-// "Inactive" — the app has no separate deactivated/suspended filter in this UI.
-const STATUSES = ["all", "active", "benched", "invited"] as const;
+/**
+ * Lifecycle filters shown in the Status dropdown.
+ *
+ * **`benched` and `deactivated` are different things and must never be merged.** Benched is an
+ * orthogonal flag: the person is still an employee with a working login, just excluded from
+ * Attendance and Time-Tracking. Deactivated is a lifecycle end: their login is disabled and their
+ * work is reassigned. One control for both would put "re-include in tracking" and "restore system
+ * access to someone who left" behind the same click.
+ *
+ * `benched` used to be labelled "Inactive", which collided with "Deactivate" in the same UI and is
+ * what made them look like one idea. It now says what it is.
+ */
+const STATUSES = ["all", "active", "benched", "deactivated", "invited"] as const;
 const STATUS_LABELS: Record<(typeof STATUSES)[number], string> = {
   all: "All statuses",
   active: "Active",
-  benched: "Inactive",
+  benched: "Not tracked",
+  deactivated: "Deactivated",
   invited: "Invited",
 };
 const PAGE_SIZE = 9;
@@ -256,7 +270,9 @@ export function EmployeesView() {
       if (dept !== "all" && e.department !== dept) return false;
       // "benched" (surfaced as "Inactive") is an orthogonal flag, not a lifecycle status. Filter on
       // it directly, and keep it out of "Active" so the two filters stay mutually exclusive.
-      if (status === "benched") {
+      if (status === "deactivated") {
+        if (e.status !== "deactivated") return false;
+      } else if (status === "benched") {
         if (!e.benched) return false;
       } else if (status === "active") {
         if (e.status !== "active" || e.benched) return false;
@@ -302,6 +318,21 @@ export function EmployeesView() {
     [allEmployees],
   );
 
+  /**
+   * Everyone whose lifecycle has ended. Its own roster, separate from the bench above.
+   *
+   * Without this they had nowhere to be: there was no Deactivated filter and no section, so a
+   * deactivated person fell into "All statuses" unlabelled and Reactivate was reachable only by
+   * knowing their profile URL.
+   */
+  const deactivatedEmployees = useMemo(
+    () =>
+      allEmployees
+        .filter((e) => e.status === "deactivated")
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [allEmployees],
+  );
+
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const rows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
@@ -311,7 +342,7 @@ export function EmployeesView() {
     try {
       await bench(e.id, !e.benched);
       toast.success(
-        e.benched ? `${e.name} marked active` : `${e.name} marked inactive`,
+        e.benched ? `${e.name} is tracked again` : `${e.name} is no longer tracked`,
       );
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Couldn't update status. Try again.");
@@ -576,11 +607,11 @@ export function EmployeesView() {
                               <DropdownMenuItem onClick={() => onToggleBench(e)}>
                                 {e.benched ? (
                                   <>
-                                    <UserCheck className="size-4" /> Mark active
+                                    <UserCheck className="size-4" /> Start tracking
                                   </>
                                 ) : (
                                   <>
-                                    <UserMinus className="size-4" /> Mark inactive
+                                    <UserMinus className="size-4" /> Stop tracking
                                   </>
                                 )}
                               </DropdownMenuItem>
@@ -635,14 +666,14 @@ export function EmployeesView() {
           <CardContent className="space-y-3 p-4">
             <div className="flex items-center gap-2">
               <UserMinus className="size-4 text-warning" />
-              <h3 className="text-sm font-semibold">Inactive</h3>
+              <h3 className="text-sm font-semibold">Not tracked</h3>
               <Badge className="bg-warning/15 text-warning">
                 {benchedEmployees.length}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Inactive employees stay in the directory but are excluded from Attendance and
-              Time-Tracking.
+              Still employed and still able to sign in &mdash; just excluded from Attendance and
+              Time-Tracking. Different from deactivated, which ends their access.
             </p>
             <div className="divide-y">
               {benchedEmployees.map((e) => (
@@ -669,9 +700,63 @@ export function EmployeesView() {
                       size="sm"
                       onClick={() => onToggleBench(e)}
                     >
-                      <UserCheck className="size-4" /> Mark active
+                      <UserCheck className="size-4" /> Start tracking
                     </Button>
                   )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Deactivated — its own roster, deliberately NOT merged with the bench above.
+          They read as similar and are not: a benched person still signs in, a deactivated one
+          cannot. Until this existed they had nowhere to be — no filter, no section — so a
+          deactivated person sat unlabelled in "All statuses" and Reactivate was reachable only by
+          knowing their profile URL. Reactivating restores access, so it is a link to the profile
+          (where the confirmation lives) rather than an inline one-click. */}
+      {deactivatedEmployees.length > 0 && (
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-center gap-2">
+              <UserX className="size-4 text-destructive" />
+              <h3 className="text-sm font-semibold">Deactivated</h3>
+              <Badge className="bg-destructive/15 text-destructive">
+                {deactivatedEmployees.length}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Their sign-in is disabled and their work has been reassigned. They stay in the
+              directory so the record survives &mdash; open one to reactivate.
+            </p>
+            <div className="divide-y">
+              {deactivatedEmployees.map((e) => (
+                <div key={e.id} className="flex items-center gap-3 py-2">
+                  <UserAvatar
+                    userId={e.id}
+                    name={e.name}
+                    className="size-8 opacity-60"
+                    fallbackClassName="text-xs"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{e.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {e.empId ? (
+                        <span className="font-mono tabular-nums">{e.empId}</span>
+                      ) : null}
+                      {e.empId && e.department ? " · " : ""}
+                      {e.department}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    render={<Link href={`/employees/${e.id}`} />}
+                    nativeButton={false}
+                  >
+                    View
+                  </Button>
                 </div>
               ))}
             </div>
