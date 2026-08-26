@@ -19,17 +19,35 @@ import { DashboardControls } from "./dashboard-controls";
 import { CustomizableDashboard } from "./customizable-dashboard";
 import { PersonalDashboard } from "./personal-dashboard";
 import { MyTasksCardSelf } from "./my-tasks-card";
+import { useRouter } from "next/navigation";
 import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import { useIsSurfaceOn } from "@/hooks/use-features";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useIsOpsOnly } from "@/modules/ops/use-platform-admin";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { ATTENDANCE_LOG_ANCHOR } from "@/modules/attendance/components/attendance-log";
 import { useDashboardData } from "../use-dashboard-data";
 import type { DashboardRange } from "../lib/dashboard-data";
 
 export function DashboardView() {
+  const router = useRouter();
+  // A dedicated support operator has no customer dashboard — send them to the support desk instead
+  // of an empty personal board.
+  const { opsOnly } = useIsOpsOnly();
+  useEffect(() => {
+    if (opsOnly) router.replace("/ops/support");
+  }, [opsOnly, router]);
+
   // Self-scoped roles (Employee) get a personal dashboard, never org aggregates.
   const personal = useIsPersonalDashboard();
+
+  if (opsOnly) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader label="Opening the support desk…" />
+      </div>
+    );
+  }
 
   if (personal) {
     return (
