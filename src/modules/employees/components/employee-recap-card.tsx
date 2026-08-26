@@ -175,6 +175,11 @@ export function EmployeeRecapCard({
   const reason = (recap as PeriodRecap | null)?.reason;
   const generatedAt = recap?.generated_at;
   const base = recap ? evidence(recap) : null;
+  // The day's score is an *estimate* when Q fell back to app-classification (no AI-graded
+  // screenshots). Only meaningful for the daily recap, and only when Q was measured at all.
+  const dayScore = period === "daily" ? (recap as DailySummary | null)?.score : undefined;
+  const scoreEstimated =
+    !!dayScore && dayScore.q_measured !== false && dayScore.q_ai_scored === false;
   const first = name.split(" ")[0] || "this employee";
 
   return (
@@ -264,6 +269,12 @@ export function EmployeeRecapCard({
                 ? `text written ${new Date(generatedAt).toLocaleString()}`
                 : null}
             </p>
+            {scoreEstimated ? (
+              <p className="text-warning text-xs">
+                Productivity score is <strong>estimated</strong> from app activity — no AI-graded
+                screenshots for this day.
+              </p>
+            ) : null}
           </>
         ) : (
           // The ladder's honest empty state: nothing below this level was generated, so there is

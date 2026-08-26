@@ -34,7 +34,7 @@ import {
   type ApiDepartment,
 } from "@/modules/employees/services/employees.service";
 import { EntityPeopleDialog } from "./org/entity-people-dialog";
-import { DeptProductivitySheet } from "./org/dept-productivity-sheet";
+import { DeptProductivityDialog } from "./org/dept-productivity-dialog";
 
 /**
  * The standard starter set. Kept in step with the backend `create_org` seed (identity crate), so an
@@ -373,7 +373,7 @@ export function DepartmentsManager() {
       ) : null}
 
       {productivityDept ? (
-        <DeptProductivitySheet
+        <DeptProductivityDialog
           key={productivityDept.id}
           department={productivityDept}
           open={true}

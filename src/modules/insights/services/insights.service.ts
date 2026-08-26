@@ -33,6 +33,13 @@ export interface ScoreBreakdown {
    * what was really an instrumentation gap.** Absent (older payloads) means measured.
    */
   q_measured?: boolean;
+  /**
+   * `true` when Q was derived from the **AI per-screenshot scores**; `false` when it fell back to
+   * the **rule-based app-classification share** because no frame was AI-scored that day. This is the
+   * "AI-graded vs estimated" signal — mark the score **estimated** when this is `false` (and
+   * `q_measured` is not false). Absent (older payloads) ⇒ treat as not AI-scored.
+   */
+  q_ai_scored?: boolean;
 }
 
 // ── GET /v1/me/insights/summary?date= ──
@@ -589,6 +596,64 @@ export function getDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> {
 export function regenerateDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> {
   return apiFetch<DeptSummary>(
     `/v1/insights/reports/dept-summary/regenerate?${deptSummaryQuery(a)}`,
+    { method: "POST" },
+  );
+}
+
+// ── screenshot department summary (GET/POST /v1/insights/screenshots/dept-summary) ──
+// A day's screen activity for one department, narrated for that department's role. Distinct from
+// getDeptSummary (scores/hours): this summarises what was on screen.
+
+export interface ScreenshotDeptSummary {
+  department: string;
+  date: string;
+  metrics: {
+    people_captured: number;
+    people_total: number;
+    frames: number;
+    productive: number;
+    neutral: number;
+    distracting: number;
+    work_related: number;
+    flagged: number;
+    avg_productivity: number | null;
+    on_task_pct: number;
+    notable: string[];
+  };
+  narrative: string;
+  generated_at: number;
+}
+
+export interface ScreenshotDeptSummaryArgs {
+  /** Department id, or `"all"` for the whole organization. */
+  department: string;
+  /** The day, `YYYY-MM-DD`. */
+  date: string;
+  /** Display label the narrative should use (the dropdown text). Omitted for `"all"`. */
+  label?: string;
+}
+
+function shotDeptSummaryQuery(a: ScreenshotDeptSummaryArgs): string {
+  const p = new URLSearchParams({ department: a.department, date: a.date });
+  if (a.label && a.department !== "all") p.set("label", a.label);
+  return p.toString();
+}
+
+/** `GET /v1/insights/screenshots/dept-summary?department=&date=[&label=]`. */
+export function getScreenshotDeptSummary(
+  a: ScreenshotDeptSummaryArgs,
+): Promise<ScreenshotDeptSummary> {
+  return apiFetch<ScreenshotDeptSummary>(
+    `/v1/insights/screenshots/dept-summary?${shotDeptSummaryQuery(a)}`,
+  );
+}
+
+/** `POST /v1/insights/screenshots/dept-summary/regenerate?…` — re-run the model, re-cache. */
+export function regenerateScreenshotDeptSummary(
+  a: ScreenshotDeptSummaryArgs,
+): Promise<ScreenshotDeptSummary> {
+  return apiFetch<ScreenshotDeptSummary>(
+    `/v1/insights/screenshots/dept-summary/regenerate?${shotDeptSummaryQuery(a)}`,
     { method: "POST" },
   );
 }

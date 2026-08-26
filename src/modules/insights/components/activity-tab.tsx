@@ -26,6 +26,7 @@ import { Loader } from "@/components/shared/loader";
 import { ActiveInactiveRing } from "@/modules/dashboard/components/insight-widgets";
 import { cn } from "@/lib/utils";
 import { AiReportCard } from "./ai-report-card";
+import { DepartmentScoreFocus } from "./department-score-focus";
 import { useOrgActivity } from "../use-activity";
 import { useAiReport } from "../use-reports";
 import { useOrgActivityRange } from "../use-activity-range";
@@ -429,6 +430,16 @@ export function ActivityTab() {
         onRegenerate={ai.data?.narrative ? ai.regenerate : undefined}
         regenerating={ai.regenerating}
       />
+
+      {/* Per-department score focus — the org charts below stay org-wide; this reads one
+          department's score in context for the same window. */}
+      {usageRange ? (
+        <DepartmentScoreFocus
+          from={usageRange.from}
+          to={usageRange.to}
+          period={granularity === "daily" ? "today" : granularity}
+        />
+      ) : null}
 
       <Card data-tour="insights:trend">
         <CardHeader>

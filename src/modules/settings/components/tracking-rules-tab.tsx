@@ -2,7 +2,7 @@
 
 /**
  * The org-wide app/URL tracking-rules page. Thin wrapper around the shared {@link RulesEditor}
- * (also used, department-scoped, by `dept-productivity-sheet.tsx`): this file supplies the page
+ * (also used, department-scoped, by `dept-productivity-dialog.tsx`): this file supplies the page
  * chrome (header, permission banner, agent note) and the org-scoped rules state; the editor owns the
  * tabs, panels and save bar.
  */

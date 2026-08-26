@@ -17,12 +17,12 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Info, RotateCcw } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -199,7 +199,7 @@ function DeptRulesSection({
   );
 }
 
-export function DeptProductivitySheet({
+export function DeptProductivityDialog({
   department,
   open,
   onOpenChange,
@@ -213,20 +213,22 @@ export function DeptProductivitySheet({
   const [tab, setTab] = useState<"weights" | "rules">("weights");
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-full gap-0 sm:max-w-2xl"
-      >
-        <SheetHeader className="border-b">
-          <SheetTitle>Productivity · {department.name}</SheetTitle>
-          <SheetDescription>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* A centred modal rather than a side sheet: this is a focused, self-contained edit — pick a
+          tab, change four numbers, save — not a companion panel you consult while working the list
+          behind it. `p-0` so the header, tab rail and body own their own padding and the two
+          borders can run edge to edge; the body is the only scroller, so the header and tabs stay
+          put on a long rules list. */}
+      <DialogContent className="flex max-h-[85vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b px-6 pt-6 pb-4 pr-12">
+          <DialogTitle>Productivity · {department.name}</DialogTitle>
+          <DialogDescription>
             Score weights and classification rules for the {department.name} department. Anything not
             set here inherits the organization defaults.
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="flex gap-1 border-b px-4">
+        <div className="flex shrink-0 gap-1 border-b px-4">
           {(["weights", "rules"] as const).map((k) => (
             <button
               key={k}
@@ -243,14 +245,14 @@ export function DeptProductivitySheet({
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {tab === "weights" ? (
             <DeptWeightsSection deptId={department.id} canManage={canManage} />
           ) : (
             <DeptRulesSection deptId={department.id} canManage={canManage} />
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
