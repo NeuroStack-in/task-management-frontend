@@ -33,7 +33,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { PageHeader } from "@/components/shared/page-header"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
@@ -62,7 +61,6 @@ interface FeatureDef {
   icon: LucideIcon
   label: string
   description: string
-  beta?: true
 }
 
 /**
@@ -112,7 +110,6 @@ interface ControlDef {
   features?: FeatureKey[]
   /** Page/tab href, or a `page:` pseudo-key for a surface that is not a route. */
   page?: string
-  beta?: true
 }
 
 const CONTROLS: ControlDef[] = [
@@ -129,8 +126,8 @@ const CONTROLS: ControlDef[] = [
   { icon: Camera, label: "Screenshots", description: "Periodic screenshot capture and the review grid. Off stops the agents capturing, not just the page.", features: ["monitoring.screenshots"], page: "/insights/screenshots" },
   { icon: MapPin, label: "Locations", description: "The device-location board.", page: "/insights/locations" },
   { icon: FileText, label: "Reports", description: "Workforce, time and project reports, CSV export, and the narrated AI PDF — which is billed per generation.", features: ["reports.basic", "insights.reports.ai_pdf"], page: "/insights/ai-reports" },
-  { icon: Sparkles, label: "AI insights", description: "AI-narrated productivity summaries over the day's activity. Off stops them being generated and billed.", features: ["ai.insights"], beta: true },
-  { icon: Bot, label: "AI assistant", description: "Ask questions about your workspace. Session-only — nothing is stored.", features: ["ai.assistant"], page: "page:assistant", beta: true },
+  { icon: Sparkles, label: "AI insights", description: "AI-narrated productivity summaries over the day's activity. Off stops them being generated and billed.", features: ["ai.insights"] },
+  { icon: Bot, label: "AI assistant", description: "Ask questions about your workspace. Session-only — nothing is stored.", features: ["ai.assistant"], page: "page:assistant" },
   { icon: Plug, label: "Integrations", description: "Connect Slack so leave, joiner and payroll updates land in your channels.", features: ["integrations"] },
   { icon: Bell, label: "Notifications", description: "The notification centre.", page: "/notifications" },
   { icon: HelpCircle, label: "Help Center", description: "Help articles and support tickets.", page: "/help" },
@@ -197,7 +194,6 @@ const FEATURE_LIST: FeatureDef[] = [
     label: "AI insights",
     description:
       "AI-narrated productivity summaries over the day's activity.",
-    beta: true,
   },
   {
     key: "ai.assistant",
@@ -205,7 +201,6 @@ const FEATURE_LIST: FeatureDef[] = [
     label: "AI assistant",
     description:
       "Ask questions about your workspace. Session-only — nothing is stored.",
-    beta: true,
   },
   {
     key: "integrations",
@@ -397,13 +392,10 @@ export function FeaturesTab() {
         <CardHeader>
           <CardTitle>Features</CardTitle>
           <CardDescription>
-            Two switches per row, because they answer different questions.{" "}
-            <strong>On</strong> is what WorkPulse <em>does</em> &mdash; it reaches the desktop agents
-            and the API, so switching Screenshots off stops agents capturing and switching AI off
-            stops summaries being generated and billed. <strong>Visible</strong> is only what people{" "}
-            <em>see</em>; it never changes capture or your bill. Both are hidden from everyone except
-            organization owners, who keep access so anything can be switched back on &mdash; and you
-            can only re-enable something switched off by a role you could grant.
+            Turn a feature on or off for the whole organization. Off hides its pages and stops
+            the work behind it &mdash; Screenshots off stops the desktop agents capturing, AI off
+            stops summaries being generated and billed. Owners always keep access, so nothing can be
+            switched off for good.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -438,14 +430,7 @@ export function FeaturesTab() {
                     <Icon className="size-4 text-muted-foreground" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{c.label}</p>
-                      {c.beta && (
-                        <Badge variant="secondary" className="text-xs">
-                          Beta
-                        </Badge>
-                      )}
-                    </div>
+                    <p className="text-sm font-medium">{c.label}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">{c.description}</p>
                     {/* Three states, worded apart because they need different reactions: outside the
                         plan is a billing conversation, locked is a colleague, and off-but-you're-an-
