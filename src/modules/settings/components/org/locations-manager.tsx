@@ -10,7 +10,6 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, MapPin } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { OfficePerimeterSection } from "./office-perimeter-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -189,10 +188,7 @@ export function LocationsManager() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1.5">
             <CardTitle>Locations</CardTitle>
-            <CardDescription>
-              Offices and sites your workforce is based at, and the perimeter that decides who
-              reads as on-site.
-            </CardDescription>
+            <CardDescription>Offices and sites your workforce is based at.</CardDescription>
           </div>
           {canManage && !loading && !error ? (
             <Button size="sm" className="shrink-0" onClick={openAdd}>
@@ -255,8 +251,6 @@ export function LocationsManager() {
             ))}
           </ul>
         )}
-
-        <OfficePerimeterSection />
       </CardContent>
 
       {/* Add / edit */}

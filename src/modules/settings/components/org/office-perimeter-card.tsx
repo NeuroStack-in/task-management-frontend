@@ -15,13 +15,19 @@
 import { useEffect, useState } from "react";
 import { MapPin } from "lucide-react";
 
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
-import { AddressSearch } from "./address-search";
 import { LiveMap } from "@/modules/locations/components/live-map";
 import { useGeofenceStore } from "@/stores/geofence.store";
 
-export function OfficePerimeterSection() {
+export function OfficePerimeterCard() {
   const { can } = usePermissions();
   // The write route is `PUT /v1/org/geofence`, which the server gates on `monitoring:manage`
   // (not `settings:manage`) — mirror that here so the controls only enable for users the
@@ -52,32 +58,18 @@ export function OfficePerimeterSection() {
   const fence = { center, radiusM };
 
   return (
-    <div className="space-y-3 border-t pt-4">
-      <div className="space-y-1">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
           <MapPin className="size-4 text-primary" /> Office perimeter
-        </h3>
-        <p className="text-muted-foreground text-sm">
-          Everyone inside it reads as &ldquo;on-site&rdquo; on the
-          Analytics&nbsp;&rarr;&nbsp;Locations map. It&apos;s a review aid only — being outside
-          raises no alert.
-        </p>
-      </div>
-
-      {/* Search is an ADDITION to the map, not a replacement: the pin stays draggable and the
-          radius stays adjustable. Gated on the same permission as the rest of the perimeter — the
-          server refuses the write from anyone else, so offering the control would be a lie. */}
-      {canManage && showFence ? (
-        <AddressSearch
-          onPick={(r) => {
-            setCenter({ lat: r.lat, lng: r.lng });
-            // Placing by address implies intent to move the office, so open the edit mode the drag
-            // path requires — otherwise the pin jumps and the Save button never appears.
-            setEditing(true);
-          }}
-        />
-      ) : null}
-
+        </CardTitle>
+        <CardDescription>
+          Set your office location and radius on the map. Everyone inside it reads as
+          &ldquo;on-site&rdquo; on the Analytics&nbsp;&rarr;&nbsp;Locations map. It&apos;s a review
+          aid only — being outside raises no alert.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
         <LiveMap
           markers={[]}
           geofence={showFence ? fence : null}
@@ -156,6 +148,7 @@ export function OfficePerimeterSection() {
             ? "Turn on “Move office”, drag the 🏢 pin (or click the map) to place your office, size it with the slider, then Save. The change applies org-wide and appears on the Analytics Locations map."
             : "You can view the office perimeter here; changing it needs the monitoring-manage permission."}
         </p>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

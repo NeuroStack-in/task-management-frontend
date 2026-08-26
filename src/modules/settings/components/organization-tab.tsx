@@ -23,6 +23,7 @@ import { DepartmentsManager } from "./departments-manager"
 import { OrgProductivityWeightsCard } from "./org/org-productivity-weights-card"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
+import { OfficePerimeterCard } from "./org/office-perimeter-card"
 import { TrackingModeCard } from "./org/tracking-mode-card"
 import { WorkingDaysManager } from "./org/working-days-manager"
 import { WorkingHoursManager } from "./org/working-hours-manager"
@@ -451,9 +452,8 @@ export function OrganizationTab() {
       <OrgProductivityWeightsCard />
       <DepartmentsManager />
       <TeamsManager />
-      {/* Perimeter now lives inside LocationsManager — one card, since "where the offices
-          are" and "which circle counts as on-site" were the same question split in two. */}
       <LocationsManager />
+      <OfficePerimeterCard />
       <WorkingDaysManager />
       <WorkingHoursManager />
       <HolidaysManager />
