@@ -56,9 +56,13 @@ export function SidebarNav({
   // cross-tenant identity outside the tenant RBAC model), so it's appended only when the server-side
   // allowlist confirms this account is an operator.
   const { isAdmin: isPlatformAdmin } = usePlatformAdmin();
+  // A dedicated operator account (allowlisted, no customer permissions) sees ONLY the support desk;
+  // an owner/admin who is also an operator keeps their full nav plus the ops group.
+  const opsOnly = isPlatformAdmin && (role?.permissions.length ?? 0) === 0;
   const nav = useMemo(
-    () => (isPlatformAdmin ? [...baseNav, OPS_GROUP] : baseNav),
-    [baseNav, isPlatformAdmin],
+    () =>
+      opsOnly ? [OPS_GROUP] : isPlatformAdmin ? [...baseNav, OPS_GROUP] : baseNav,
+    [baseNav, isPlatformAdmin, opsOnly],
   );
   const orgName = useOrgName();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
