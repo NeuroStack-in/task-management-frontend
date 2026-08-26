@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, PanelLeftClose, LogOut, Search } from "lucide-react";
+import { Activity, PanelLeftClose, LogOut, Search, LifeBuoy } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
+import { usePlatformAdmin } from "@/modules/ops/use-platform-admin";
+import type { NavGroup } from "@/constants/navigation";
 import { useIsFeatureOffForOthers } from "@/hooks/use-features";
 import { featureForHref } from "@/constants/features";
 import { useOrgName } from "@/hooks/use-org";
@@ -16,6 +18,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SidebarSearch } from "./sidebar-search";
+
+/** The platform-support rail group, shown only to allowlisted operators (not permission-gated). */
+const OPS_GROUP: NavGroup = {
+  label: "Platform",
+  items: [
+    { label: "Support desk", href: "/ops/support", icon: LifeBuoy, permission: null },
+  ],
+};
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") return pathname === href;
@@ -41,7 +51,15 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const offForOthers = useIsFeatureOffForOthers();
-  const { nav, role } = usePermissions();
+  const { nav: baseNav, role } = usePermissions();
+  // Platform-support operators get one extra rail group. It is NOT permission-driven (ops is a
+  // cross-tenant identity outside the tenant RBAC model), so it's appended only when the server-side
+  // allowlist confirms this account is an operator.
+  const { isAdmin: isPlatformAdmin } = usePlatformAdmin();
+  const nav = useMemo(
+    () => (isPlatformAdmin ? [...baseNav, OPS_GROUP] : baseNav),
+    [baseNav, isPlatformAdmin],
+  );
   const orgName = useOrgName();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
