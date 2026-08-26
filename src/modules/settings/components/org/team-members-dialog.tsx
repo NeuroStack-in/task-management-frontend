@@ -14,6 +14,7 @@ import { Search, UserPlus, X, Users } from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -61,19 +62,18 @@ export function TeamMembersDialog({
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [name, setName] = useState(teamName);
-  const [renaming, setRenaming] = useState(false);
   // Re-seed when a DIFFERENT team is opened; the component is reused across rows.
   useEffect(() => setName(teamName), [teamName]);
   /** user_ids with an in-flight add/remove, so a row disables without freezing the dialog. */
-  const [busy, setBusy] = useState<Set<string>>(new Set());
-
-  const setBusyFor = (id: string, on: boolean) =>
-    setBusy((s) => {
-      const next = new Set(s);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  /**
+   * Staged membership. Adds and removes used to hit the server on click, which is why this dialog
+   * had no Save — there was nothing to save. A Save button on top of immediate writes would be a
+   * lie: the work is already done and Cancel could not undo it. So the edits are held here and
+   * applied together, which is what makes both buttons mean what they say.
+   */
+  const [pendingAdd, setPendingAdd] = useState<Set<string>>(new Set());
+  const [pendingRemove, setPendingRemove] = useState<Set<string>>(new Set());
+  const [savingAll, setSavingAll] = useState(false);
 
   const load = useCallback(() => {
     let live = true;
@@ -103,7 +103,27 @@ export function TeamMembersDialog({
     if (open) return load();
   }, [open, load]);
 
-  const memberIds = useMemo(() => new Set(members.map((m) => m.user_id)), [members]);
+  /** What the left column shows: the saved roster, plus staged adds, minus staged removes. */
+  const shownMembers = useMemo(() => {
+    const kept = members.filter((m) => !pendingRemove.has(m.user_id));
+    const added = everyone
+      .filter((e) => pendingAdd.has(e.user_id))
+      .map((e) => ({
+        user_id: e.user_id,
+        name: e.name,
+        department_id: e.department_id,
+      })) as ApiTeamMember[];
+    return [...kept, ...added].sort((a, b) => a.name.localeCompare(b.name));
+  }, [members, everyone, pendingAdd, pendingRemove]);
+
+  const memberIds = useMemo(
+    () => new Set(shownMembers.map((m) => m.user_id)),
+    [shownMembers],
+  );
+
+  const membershipDirty = pendingAdd.size > 0 || pendingRemove.size > 0;
+  const nameDirty = name.trim() !== teamName && name.trim().length > 0;
+  const dirty = membershipDirty || nameDirty;
 
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -113,70 +133,87 @@ export function TeamMembersDialog({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [everyone, memberIds, query]);
 
-  async function add(e: ApiEmployee) {
-    setBusyFor(e.user_id, true);
-    try {
-      const next = await addTeamMembers(teamId, [e.user_id]);
-      setMembers(next);
-      onCountChange?.(next.length);
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError && err.status === 403
-          ? "You don't have permission to change team members."
-          : "Couldn't add that person.",
-      );
-    } finally {
-      setBusyFor(e.user_id, false);
+  function add(e: ApiEmployee) {
+    // Re-adding someone staged for removal just cancels the removal — recording both would send a
+    // pointless remove+add pair on save.
+    if (pendingRemove.has(e.user_id)) {
+      setPendingRemove((c) => {
+        const n = new Set(c);
+        n.delete(e.user_id);
+        return n;
+      });
+      return;
     }
+    setPendingAdd((c) => new Set(c).add(e.user_id));
   }
 
-  async function remove(m: ApiTeamMember) {
-    setBusyFor(m.user_id, true);
-    try {
-      await removeTeamMember(teamId, m.user_id);
-      setMembers((cur) => {
-        const next = cur.filter((x) => x.user_id !== m.user_id);
-        onCountChange?.(next.length);
-        return next;
+  function remove(m: ApiTeamMember) {
+    if (pendingAdd.has(m.user_id)) {
+      setPendingAdd((c) => {
+        const n = new Set(c);
+        n.delete(m.user_id);
+        return n;
       });
-    } catch {
-      toast.error("Couldn't remove that person.");
+      return;
+    }
+    setPendingRemove((c) => new Set(c).add(m.user_id));
+  }
+
+  function discard() {
+    setPendingAdd(new Set());
+    setPendingRemove(new Set());
+    setName(teamName);
+  }
+
+  /**
+   * Apply everything, then reload from the server rather than trusting local arithmetic.
+   *
+   * Removes run before adds so a team at a size limit cannot fail on the add half. Each call is
+   * idempotent, so a partial failure retried by the user cannot double-apply.
+   */
+  async function saveAll() {
+    if (!dirty || savingAll) return;
+    setSavingAll(true);
+    try {
+      for (const id of pendingRemove) await removeTeamMember(teamId, id);
+      if (pendingAdd.size > 0) await addTeamMembers(teamId, [...pendingAdd]);
+      if (nameDirty) {
+        await updateTeam(teamId, { name: name.trim() });
+        onRenamed?.(name.trim());
+      }
+      const fresh = await listTeamMembers(teamId);
+      setMembers(fresh);
+      onCountChange?.(fresh.length);
+      setPendingAdd(new Set());
+      setPendingRemove(new Set());
+      toast.success("Team updated");
+      onOpenChange(false);
+    } catch (err) {
+      // Deliberately keep the dialog open and the staged edits intact — discarding someone's work
+      // because one call failed is worse than making them press Save again.
+      toast.error(
+        err instanceof ApiError && err.status === 403
+          ? "You don't have permission to change this team."
+          : "Couldn't save every change. Nothing was lost — try again.",
+      );
     } finally {
-      setBusyFor(m.user_id, false);
+      setSavingAll(false);
     }
   }
 
   const deptLabel = (id?: string) => (id ? (deptNames.get(id) ?? null) : null);
 
-  async function saveName() {
-  const next = name.trim();
-  if (!next || next === teamName || renaming) return;
-  setRenaming(true);
-  try {
-    await updateTeam(teamId, { name: next });
-    onRenamed?.(next);
-    toast.success("Team renamed");
-  } catch (e) {
-    // Put the old name back — leaving the failed text in the box reads as if it saved.
-    setName(teamName);
-    toast.error(
-      e instanceof ApiError ? e.message : "Couldn't rename the team.",
-    );
-  } finally {
-    setRenaming(false);
-  }
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[56rem]">
+      <DialogContent className="sm:max-w-[58rem]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="size-4 text-primary" /> Edit team
           </DialogTitle>
           <DialogDescription>
             Rename the team, and add or remove people. A team can include people from any
-            department. Changes save as you make them.
+            department. Nothing is applied until you save.
           </DialogDescription>
         </DialogHeader>
 
@@ -195,15 +232,14 @@ export function TeamMembersDialog({
             id="team-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onBlur={saveName}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                void saveName();
+                void saveAll();
               }
               if (e.key === "Escape") setName(teamName);
             }}
-            disabled={renaming}
+            disabled={savingAll}
             className="h-9"
           />
         </div>
@@ -213,19 +249,19 @@ export function TeamMembersDialog({
             <Loader label="Loading members…" />
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-6 sm:grid-cols-2">
             {/* ── Current members ── */}
             <div className="space-y-2">
               <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">
-                In the team ({members.length})
+                In the team ({shownMembers.length})
               </p>
-              <div className="max-h-[26rem] min-h-[16rem] space-y-1 overflow-y-auto rounded-lg border p-1">
-                {members.length === 0 ? (
+              <div className="max-h-[28rem] min-h-[18rem] space-y-1 overflow-y-auto rounded-lg border p-1.5">
+                {shownMembers.length === 0 ? (
                   <p className="text-muted-foreground p-3 text-sm">
                     No one is in this team yet.
                   </p>
                 ) : (
-                  members.map((m) => (
+                  shownMembers.map((m) => (
                     <div
                       key={m.user_id}
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
@@ -248,7 +284,6 @@ export function TeamMembersDialog({
                         size="icon-sm"
                         variant="ghost"
                         onClick={() => remove(m)}
-                        disabled={busy.has(m.user_id)}
                         aria-label={`Remove ${m.name}`}
                       >
                         <X className="size-4" />
@@ -274,7 +309,7 @@ export function TeamMembersDialog({
                   aria-label="Search employees to add"
                 />
               </div>
-              <div className="max-h-[22rem] min-h-[12rem] space-y-1 overflow-y-auto rounded-lg border p-1">
+              <div className="max-h-[24rem] min-h-[14rem] space-y-1 overflow-y-auto rounded-lg border p-1.5">
                 {candidates.length === 0 ? (
                   <p className="text-muted-foreground p-3 text-sm">
                     {query.trim() ? "No matches." : "Everyone is already in this team."}
@@ -285,10 +320,8 @@ export function TeamMembersDialog({
                       key={e.user_id}
                       type="button"
                       onClick={() => add(e)}
-                      disabled={busy.has(e.user_id)}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
-                        busy.has(e.user_id) && "opacity-50",
                       )}
                     >
                       <UserAvatar
@@ -313,6 +346,30 @@ export function TeamMembersDialog({
             </div>
           </div>
         )}
+
+        {/* Explicit save, because the edits above are staged. Offered only when something changed —
+            a permanently-enabled Save on an unchanged dialog trains people to press it for nothing. */}
+        <DialogFooter showCloseButton>
+          {dirty ? (
+            <>
+              <span className="text-muted-foreground mr-auto self-center text-xs">
+                {[
+                  pendingAdd.size ? `${pendingAdd.size} to add` : null,
+                  pendingRemove.size ? `${pendingRemove.size} to remove` : null,
+                  nameDirty ? "name changed" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+              <Button variant="ghost" onClick={discard} disabled={savingAll}>
+                Discard
+              </Button>
+              <Button onClick={saveAll} disabled={savingAll}>
+                {savingAll ? "Saving…" : "Save changes"}
+              </Button>
+            </>
+          ) : null}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
