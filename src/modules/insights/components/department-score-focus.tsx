@@ -126,8 +126,21 @@ export function DepartmentScoreFocus({
         <Select value={dept} onValueChange={(v) => setDept(String(v))}>
           {/* Light-on-dark: the card's surface is `bg-feature`, so the trigger has to be styled for
               it rather than inheriting the page's default input colours. */}
-          <SelectTrigger className="w-56 border-white/25 bg-white/10 text-feature-foreground">
-            <SelectValue />
+          <SelectTrigger
+            aria-label="Summarise which department"
+            className="w-60 border-white/25 bg-white/10 text-feature-foreground hover:bg-white/15 focus-visible:ring-white/40"
+          >
+            {/* **Renders the name, not the id.** A bare `SelectValue` prints the raw value, so the
+                trigger read `dept-01K…` truncated to `dept-…` — every department looked identical
+                and none of them looked like a department. The render form maps the id back through
+                the same list the menu is built from. */}
+            <SelectValue>
+              {(v) =>
+                !v || v === ALL
+                  ? "All departments"
+                  : (depts.get(String(v)) ?? "All departments")
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All departments</SelectItem>
