@@ -12,7 +12,12 @@ import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { AiReportCard } from "@/modules/insights/components/ai-report-card";
 import { ApiError } from "@/lib/api";
-import { getOversightLocations, type OversightPersonLocation } from "@/modules/insights/services/insights.service";
+import {
+  getLocationSummary,
+  getOversightLocations,
+  regenerateLocationSummary,
+  type OversightPersonLocation,
+} from "@/modules/insights/services/insights.service";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useDataScope } from "@/hooks/use-data-scope";
 import { useAssistantPageContext } from "@/stores/page-context.store";
@@ -226,14 +231,60 @@ function LocationsBoard({
     ],
   });
 
-  // A factual recap of the day's real fixes — deliberately not an AI inference.
   const label = dateLabel(date);
-  const aiSummary =
+
+  /**
+   * The day's AI narrative (`insights::location_summary`).
+   *
+   * This card was titled "AI location report" while the sentence under it was assembled from a
+   * template string in this file — a surface labelled AI that never called a model. It calls one
+   * now, over figures the server computes from the same reach-narrowed read the map plots, so the
+   * two cannot disagree.
+   *
+   * A failure keeps the card usable rather than blanking it: the local recap below is the same
+   * facts in our own words, so the page still answers the question when the model doesn't.
+   */
+  const localRecap =
     scoped.length === 0
       ? `No employees in view for ${label}.`
       : showFence
         ? `${locatedCount} of ${scoped.length} employees located on ${label}; ${onSiteCount} on-site, ${offSiteCount} off-site.`
         : `${locatedCount} of ${scoped.length} employees located on ${label}. Set an office location to see on-site vs off-site.`;
+
+  const [aiNarrative, setAiNarrative] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  useEffect(() => {
+    if (!date) return;
+    let live = true;
+    setAiLoading(true);
+    setAiNarrative(null);
+    getLocationSummary(date)
+      .then((s) => live && setAiNarrative(s.narrative))
+      .catch(() => live && setAiNarrative(null))
+      .finally(() => live && setAiLoading(false));
+    return () => {
+      live = false;
+    };
+  }, [date]);
+
+  async function regenerateAi() {
+    if (regenerating || !date) return;
+    setRegenerating(true);
+    try {
+      const s = await regenerateLocationSummary(date);
+      setAiNarrative(s.narrative);
+    } catch {
+      /* keep what's on screen — a failed re-run must not blank the card */
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  const aiSummary = aiLoading && !aiNarrative
+    ? "Reading the day's locations…"
+    : aiNarrative || localRecap;
 
   const q = query.trim().toLowerCase();
   const matchesStatus = (p: OversightPersonLocation) => {
@@ -298,6 +349,10 @@ function LocationsBoard({
       <AiReportCard
         title="AI location report"
         summary={aiSummary}
+        // Only once a real narrative exists: with the local recap showing there is nothing to
+        // re-run, and each press is a fresh billed generation.
+        onRegenerate={aiNarrative ? regenerateAi : undefined}
+        regenerating={regenerating}
         metrics={[
           { label: "Employees", value: scoped.length },
           {

@@ -592,6 +592,43 @@ export function getDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> {
   return apiFetch<DeptSummary>(`/v1/insights/reports/dept-summary?${deptSummaryQuery(a)}`);
 }
 
+// ── Locations board summary (insights::location_summary) ──────────────────────
+//
+// Mirrors `LocationSummaryResponse`. Every figure is computed server-side from the same
+// reach-narrowed read the board plots, so the narrative and the map cannot disagree.
+
+export interface LocationSummary {
+  date: string;
+  metrics: {
+    /** Active employees in the caller's reach. */
+    people: number;
+    /** …of whom reported at least one fix. */
+    located: number;
+    /** `false` ⇒ `on_site`/`off_site` are null — "no perimeter" is not "nobody on-site". */
+    perimeter_set: boolean;
+    on_site: number | null;
+    off_site: number | null;
+    fixes: number;
+  };
+  narrative: string;
+  generated_at: number;
+}
+
+/** `GET /v1/insights/locations/summary?date=` — needs `activity:view` + `ai:view`. */
+export function getLocationSummary(date: string): Promise<LocationSummary> {
+  return apiFetch<LocationSummary>(
+    `/v1/insights/locations/summary?date=${encodeURIComponent(date)}`,
+  );
+}
+
+/** `POST /v1/insights/locations/summary/regenerate?date=` — re-run the model, re-cache. */
+export function regenerateLocationSummary(date: string): Promise<LocationSummary> {
+  return apiFetch<LocationSummary>(
+    `/v1/insights/locations/summary/regenerate?date=${encodeURIComponent(date)}`,
+    { method: "POST" },
+  );
+}
+
 /** `POST /v1/insights/reports/dept-summary/regenerate?…` — re-run the model, re-cache. */
 export function regenerateDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> {
   return apiFetch<DeptSummary>(
