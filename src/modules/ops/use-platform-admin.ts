@@ -2,7 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { usePermissions } from "@/hooks/use-permissions";
+import { BASELINE } from "@/lib/permission-bits";
 import { getOpsMe } from "./services/ops.service";
+
+/**
+ * True when a resolved role carries **no customer permission of its own** — nothing beyond the
+ * baseline ids (`dashboard:view`) every authenticated member gets for free. A zero-perm operator
+ * account lands here; an owner (who holds the `"*"` wildcard) and any real role do not.
+ *
+ * This is the load-bearing distinction for `opsOnly`: a `perm=0` account still resolves to
+ * `permissions: ["dashboard:view"]` (the baseline is always injected), so a naive `length === 0`
+ * check never fires. Filter the baseline out first.
+ */
+export function hasNoCustomerPermissions(
+  permissions: readonly string[] | undefined,
+): boolean {
+  if (!permissions) return false;
+  return permissions.every((p) => (BASELINE as readonly string[]).includes(p));
+}
 
 /**
  * Whether the signed-in account is a platform-support operator (on the server-side allowlist).
@@ -38,6 +55,8 @@ export function usePlatformAdmin(): { isAdmin: boolean; loading: boolean } {
 export function useIsOpsOnly(): { opsOnly: boolean; loading: boolean } {
   const { isAdmin, loading } = usePlatformAdmin();
   const { role } = usePermissions();
-  const opsOnly = isAdmin && (role?.permissions.length ?? 0) === 0;
+  // `!!role` guards the loading window: a null role would make `hasNoCustomerPermissions` vacuously
+  // true and briefly flag a normal admin as ops-only before their permissions land.
+  const opsOnly = isAdmin && !!role && hasNoCustomerPermissions(role.permissions);
   return { opsOnly, loading };
 }
