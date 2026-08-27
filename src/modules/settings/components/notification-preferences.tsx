@@ -292,9 +292,13 @@ export function NotificationPreferences() {
           <div className="flex items-center justify-between gap-6 py-3">
             <div>
               <p className="text-sm font-medium">Quiet hours</p>
+              {/* "your timezone" was not true: there is no per-user timezone anywhere in the
+                  product. The window is evaluated against the organization's, which is the only one
+                  that exists — saying otherwise made the setting look more personal than it is. */}
               <p className="text-xs text-muted-foreground">
-                Pause non-urgent notifications from 8:00 PM to 8:00 AM in your
-                timezone.
+                Pause non-urgent <strong>emails</strong> from 8:00 PM to 8:00 AM in your
+                organization&apos;s timezone. Security alerts always come through, and every
+                notification still appears in the app.
               </p>
             </div>
             <Switch
@@ -308,7 +312,8 @@ export function NotificationPreferences() {
             <div>
               <p className="text-sm font-medium">Email digest</p>
               <p className="text-xs text-muted-foreground">
-                Bundle low-priority updates into a single recurring email.
+                Bundle task and system updates into one email instead of several. Approvals,
+                billing and security alerts always send straight away.
               </p>
             </div>
             <div className="flex gap-1 rounded-lg bg-muted p-1">

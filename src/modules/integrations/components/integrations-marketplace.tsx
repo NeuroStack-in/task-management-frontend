@@ -143,13 +143,14 @@ export function IntegrationsMarketplace() {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
-        {rows.map((row) => (
+        {rows
+          .filter((row) => !HIDDEN_PROVIDERS.has(row.provider))
+          .map((row) => (
           <ProviderCard
             key={row.provider}
             row={row}
             canManage={canManage}
             busy={busy === row.provider}
-            comingSoon={COMING_SOON.has(row.provider)}
             // The channel-routing view is Slack-specific and only meaningful once connected; the
             // eye button that opens it is shown only then.
             onViewChannels={
@@ -186,18 +187,21 @@ export function IntegrationsMarketplace() {
 }
 
 /**
- * Providers shown but temporarily switched off in the UI — rendered softly blurred and
- * non-interactive with a "Coming soon" overlay. Softly: the point is to say *this one isn't ready
- * yet*, not to hide which provider it is. The backend still lists and can connect them; this is a
- * front-end gate only (e.g. Google Calendar is parked until its OAuth verification lands).
+ * Providers the **frontend** does not show at all.
+ *
+ * Distinct from the old "Coming soon" treatment, which rendered the card blurred with an overlay:
+ * a parked card still occupies the page and still invites the question "when?". Google Calendar is
+ * hidden outright (2026-08-27) — Slack is the integration this product ships.
+ *
+ * A front-end gate only. `GET /v1/integrations` still lists it and the backend can still connect
+ * it, so restoring the card is deleting one string; nothing server-side was removed.
  */
-const COMING_SOON = new Set<string>(["google_calendar"]);
+const HIDDEN_PROVIDERS = new Set<string>(["google_calendar"]);
 
 function ProviderCard({
   row,
   canManage,
   busy,
-  comingSoon,
   onViewChannels,
   onConnect,
   onDisconnect,
@@ -205,7 +209,6 @@ function ProviderCard({
   row: ApiIntegration;
   canManage: boolean;
   busy: boolean;
-  comingSoon?: boolean;
   /** When set (Slack, connected), an eye button that opens the channel-routing dialog. */
   onViewChannels?: () => void;
   onConnect: () => void;
@@ -216,44 +219,6 @@ function ProviderCard({
   // A personal connection is the user's own to make; an org-wide one is an admin action, because
   // connecting hands WorkPulse a credential to the whole company's workspace.
   const mayAct = row.org_wide ? canManage : true;
-
-  // Parked in the UI: blur a representative card and overlay a "Coming soon" badge, made inert so
-  // nothing can fire. The backend still supports the provider — this is a front-end pause only.
-  if (comingSoon) {
-    return (
-      <Card className="relative overflow-hidden">
-        {/* 1px, not 3px: enough to read as "parked" without hiding *which* provider is parked.
-            At 3px the name and logo were unreadable, so the card said "Coming soon" about nothing
-            in particular. The scrim below carries most of the de-emphasis; the blur only softens. */}
-        <div className="pointer-events-none select-none blur-[1px]" aria-hidden>
-          <CardHeader>
-            <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
-                <ProviderLogo provider={row.provider} className="size-6" />
-              </span>
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  {row.label}
-                  <Badge variant="secondary" className="text-xs">
-                    {row.org_wide ? "Organization" : "Personal"}
-                  </Badge>
-                </CardTitle>
-                <CardDescription className="mt-1">Not connected</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Button disabled>Connect</Button>
-          </CardContent>
-        </div>
-        <div className="absolute inset-0 flex items-center justify-center bg-background/25">
-          <Badge variant="secondary" className="text-sm font-medium shadow-soft">
-            Coming soon
-          </Badge>
-        </div>
-      </Card>
-    );
-  }
 
   return (
     <Card>
