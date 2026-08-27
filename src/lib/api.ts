@@ -276,7 +276,12 @@ export interface CreateOrgBody {
     timezone?: string;
     country?: string;
     currency?: string;
-    emp_id_prefix?: string;
+    /**
+     * Employee-id prefix, e.g. `INF` → `INF-0001`. **Required** — the server validates it and
+     * claims it globally (`SYS#EMPPFX`). Typed non-optional deliberately: it was optional once, and
+     * a second signup path silently omitted it, which the server would have rejected at runtime.
+     */
+    emp_id_prefix: string;
   };
   owner: {
     email: string;
@@ -319,4 +324,46 @@ export function slugify(raw: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+/** Longest employee-id prefix the server stores (`EMP_PREFIX_MAX`). */
+export const EMP_PREFIX_MAX = 8;
+
+/**
+ * Mirror of the server's `normalize_emp_prefix` (`identity::features::create_org::dto`).
+ *
+ * Beside `slugify` and for the same reason: the server re-normalizes whatever we send, so drift
+ * means the prefix a user picked at sign-up is not the one their employee ids get. Uppercase and
+ * alphanumeric-only, because the id renders as `INF-0004` — a prefix carrying its own `-` would
+ * produce `IN-F-0004`, which no longer splits back into prefix and sequence.
+ */
+export function normalizeEmpPrefix(raw: string): string {
+  return raw
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, EMP_PREFIX_MAX);
+}
+
+/**
+ * Suggested employee-id prefixes for an org name, best first — the mirror of the server's
+ * `emp_prefix_candidates`.
+ *
+ * Deterministic rather than AI-generated: turning "Infiniqon" into `INF` is string manipulation, and
+ * doing it locally means suggestions appear as the user types, with no request, no cost, and no
+ * pre-auth endpoint to abuse. **Uniqueness is not decided here** — the server holds a global claim
+ * (`SYS#EMPPFX`) and rejects a taken prefix at create time, exactly as it already does for slugs.
+ */
+export function empPrefixCandidates(name: string): string[] {
+  const words = name.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const first = words[0];
+  const raw = [
+    normalizeEmpPrefix(first.slice(0, 3)),
+    // Initials — what actually fits multi-word names ("Lumenforge Studios" → LS).
+    normalizeEmpPrefix(words.map((w) => w[0]).join("")),
+    normalizeEmpPrefix(first.slice(0, 4)),
+    normalizeEmpPrefix(first),
+  ];
+  return raw.filter((p, i) => p.length > 0 && raw.indexOf(p) === i);
 }

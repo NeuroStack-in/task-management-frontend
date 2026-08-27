@@ -19,7 +19,11 @@ import {
   X,
 } from "lucide-react";
 import { GoogleIcon, MicrosoftIcon } from "@/modules/marketing/brand-icons";
-import { slugify as serverSlugify } from "@/lib/api";
+import {
+  slugify as serverSlugify,
+  empPrefixCandidates,
+  normalizeEmpPrefix,
+} from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 
 /* ----------------------------- options ------------------------------- */
@@ -528,6 +532,12 @@ export interface OrgSetupData {
   org: {
     name: string;
     slug: string;
+    /**
+     * Employee-id prefix, e.g. `INF` → `INF-0001`. **Required, like `slug`** — the server rejects a
+     * signup without one, and a prefix nobody supplied is a prefix nobody claimed in the global
+     * `SYS#EMPPFX` partition.
+     */
+    emp_id_prefix: string;
     industry?: string;
     size?: string;
     website?: string;
@@ -559,8 +569,10 @@ export function OrgSetupModal({
   const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
   const [err, setErr] = useState<string | null>(null);
 
-  const [org, setOrg] = useState({ name: "", slug: "", industry: "", size: "", website: "", logo: "" });
+  const [org, setOrg] = useState({ name: "", slug: "", industry: "", size: "", website: "", logo: "", empPrefix: "" });
   const [slugTouched, setSlugTouched] = useState(false);
+  // Like the slug: derived from the org name until the user types their own, then left alone.
+  const [prefixTouched, setPrefixTouched] = useState(false);
   const [region, setRegion] = useState({ country: "", currency: "", timezone: "" });
   const [profile, setProfile] = useState({
     fullName: "", jobTitle: "", department: "", location: "", phone: "", avatar: "",
@@ -574,7 +586,12 @@ export function OrgSetupModal({
   const avatarInput = useRef<HTMLInputElement>(null);
 
   const setName = (v: string) =>
-    setOrg((o) => ({ ...o, name: v, slug: slugTouched ? o.slug : slugify(v) }));
+    setOrg((o) => ({
+      ...o,
+      name: v,
+      slug: slugTouched ? o.slug : slugify(v),
+      empPrefix: prefixTouched ? o.empPrefix : (empPrefixCandidates(v)[0] ?? ""),
+    }));
 
   // Selecting a headquarters country pre-fills the matching billing currency.
   const setCountry = (v: string) =>
@@ -590,7 +607,7 @@ export function OrgSetupModal({
   const next = () => {
     setErr(null);
     if (step === 0) {
-      if (!org.name.trim() || !org.slug.trim() || !org.industry || !org.size)
+      if (!org.name.trim() || !org.slug.trim() || !org.industry || !org.size || !org.empPrefix.trim())
         return setErr("Add your organization name, workspace URL, industry and size.");
     }
     if (step === 1) {
@@ -625,6 +642,7 @@ export function OrgSetupModal({
         org: {
           name: org.name.trim(),
           slug: org.slug.trim(),
+          emp_id_prefix: org.empPrefix.trim(),
           industry: org.industry || undefined,
           size: org.size || undefined,
           website: org.website.trim() || undefined,
@@ -743,6 +761,53 @@ export function OrgSetupModal({
                   />
                   <span className="m-suffix">.workpulse.io</span>
                 </div>
+              </Field>
+
+              {/* Employee ID prefix — required, and globally unique. Every employee id is minted
+                  `<prefix>-0001`, so an org without one used to fall back to a shared `EMP`
+                  default and several unrelated orgs all minted `EMP-0001`. Suggestions are derived
+                  locally as the name is typed; the server holds the global claim and rejects a
+                  taken prefix at create time, exactly as it already does for the slug. */}
+              <Field label="Employee ID prefix" hint="Used for every employee ID, e.g. INF-0001">
+                <input
+                  className="m-input"
+                  value={org.empPrefix}
+                  onChange={(e) => {
+                    setPrefixTouched(true);
+                    setOrg((o) => ({ ...o, empPrefix: normalizeEmpPrefix(e.target.value) }));
+                  }}
+                  placeholder="INF"
+                  aria-label="Employee ID prefix"
+                />
+                {org.empPrefix ? (
+                  <p className="mt-1.5 text-xs text-white/45">
+                    Employee IDs will look like{" "}
+                    <span className="font-medium text-white/70">{org.empPrefix}-0001</span>
+                  </p>
+                ) : null}
+                {empPrefixCandidates(org.name).length > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-white/40">Suggestions</span>
+                    {empPrefixCandidates(org.name).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => {
+                          setPrefixTouched(true);
+                          setOrg((o) => ({ ...o, empPrefix: p }));
+                        }}
+                        className={
+                          "rounded-md border px-2 py-0.5 text-xs transition-colors " +
+                          (org.empPrefix === p
+                            ? "border-white/40 bg-white/10 text-white"
+                            : "border-white/15 text-white/60 hover:border-white/35 hover:text-white")
+                        }
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">

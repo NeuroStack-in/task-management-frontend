@@ -31,7 +31,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 // `createOrg` and `slugify` live in `lib/api` on this branch, not in a per-module service — the
 // signup contract is kept beside the other public identity calls (`lookupInvite`, `acceptInvite`).
-import { ApiError, createOrg, slugify } from "@/lib/api";
+import { ApiError, createOrg, empPrefixCandidates, slugify } from "@/lib/api";
 import {
   COUNTRIES,
   COUNTRY_CURRENCY,
@@ -184,6 +184,10 @@ export function SignupExperience() {
         org: {
           name: org.name.trim(),
           slug: slugify(org.slug || org.name),
+          // Required by the server, which claims it globally (`SYS#EMPPFX`). This flow has no
+          // prefix field, so it takes the first deterministic candidate from the org name — the
+          // same list the wizard offers as suggestions. A collision surfaces as `emp_prefix_taken`.
+          emp_id_prefix: empPrefixCandidates(org.name)[0] ?? "",
           industry: org.industry || undefined,
           size: org.size || undefined,
           website: org.website.trim() || undefined,
