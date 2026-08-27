@@ -95,12 +95,24 @@ export function isNavItemVisible(
    * entitlements hydrate) behave exactly as before: omitting it gates on plan + permission alone.
    */
   isPageOn?: (href: string) => boolean,
+  /**
+   * The plan ceiling (layer 1). When supplied, a feature the **plan doesn't include** stays *visible*
+   * so it can be discovered and show an Upgrade prompt on click — the freemium path. A feature that is
+   * in the plan but the org **toggled off** is still hidden. Omit it to keep the old behaviour (hide
+   * anything not effectively on), which the `/insights` redirect and search rely on.
+   */
+  isFeatureAllowed?: (key: FeatureKey) => boolean,
 ): boolean {
-  // An org that has switched a feature off should not see it at all, whatever the role allows —
-  // "Disabled features are hidden from all users" (Settings → Features).
   if (isFeatureOn) {
     const feature = featureForHref(item.href);
-    if (feature && !isFeatureOn(feature)) return false;
+    if (feature && !isFeatureOn(feature)) {
+      // "Disabled features are hidden from all users" — but only when the org actually *disabled* one
+      // it has (in the plan, toggled off). A feature the PLAN doesn't include is shown instead (so the
+      // user meets an Upgrade wall rather than a feature that silently doesn't exist) when the caller
+      // opts in with `isFeatureAllowed`. Without that predicate, hide as before.
+      const planLimited = isFeatureAllowed ? !isFeatureAllowed(feature) : false;
+      if (!planLimited) return false;
+    }
   }
   // A route the org's tracking mode hides is gone regardless of plan/role.
   if (isHrefHidden?.(item.href)) return false;
@@ -120,11 +132,14 @@ export function getAccessibleNav(
   isFeatureOn?: (key: FeatureKey) => boolean,
   isHrefHidden?: (href: string) => boolean,
   isPageOn?: (href: string) => boolean,
+  /** Plan ceiling — supply it so plan-limited features stay visible (Upgrade on click). See
+   *  {@link isNavItemVisible}. */
+  isFeatureAllowed?: (key: FeatureKey) => boolean,
 ): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) =>
-      isNavItemVisible(role, item, isFeatureOn, isHrefHidden, isPageOn),
+      isNavItemVisible(role, item, isFeatureOn, isHrefHidden, isPageOn, isFeatureAllowed),
     ),
   })).filter((group) => group.items.length > 0);
 }

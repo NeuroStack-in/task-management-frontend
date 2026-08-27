@@ -4,7 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { INSIGHTS_TABS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import {
+  useIsFeatureAllowed,
+  useIsFeatureOn,
+  useTrackingMode,
+} from "@/hooks/use-features";
 import { isNavItemVisible } from "@/lib/rbac";
 import { isPathModeHidden } from "@/constants/features";
 import { cn } from "@/lib/utils";
@@ -18,10 +22,17 @@ export function InsightsTabs() {
   const pathname = usePathname();
   const { role } = usePermissions();
   const isFeatureOn = useIsFeatureOn();
+  const isFeatureAllowed = useIsFeatureAllowed();
   const mode = useTrackingMode();
+  // Plan-limited tabs stay visible (they open an Upgrade wall) — only tabs the org toggled off vanish.
   const tabs = INSIGHTS_TABS.filter((t) =>
-    isNavItemVisible(role, t, isFeatureOn, (href) =>
-      isPathModeHidden(href, mode),
+    isNavItemVisible(
+      role,
+      t,
+      isFeatureOn,
+      (href) => isPathModeHidden(href, mode),
+      undefined,
+      isFeatureAllowed,
     ),
   );
 

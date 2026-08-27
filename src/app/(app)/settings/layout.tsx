@@ -9,7 +9,11 @@ import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useOrgName } from "@/hooks/use-org";
 import { isNavItemVisible } from "@/lib/rbac";
-import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import {
+  useIsFeatureAllowed,
+  useIsFeatureOn,
+  useTrackingMode,
+} from "@/hooks/use-features";
 import { isPathModeHidden } from "@/constants/features";
 import { InPaneHeaderContext } from "@/components/shared/page-header";
 import { usePageTitle } from "@/stores/page-header.store";
@@ -85,6 +89,7 @@ export default function SettingsLayout({
   // route its tracking mode hides, should not link into the "turned off" wall (a live bug when it
   // filtered on permission alone).
   const isFeatureOn = useIsFeatureOn();
+  const isFeatureAllowed = useIsFeatureAllowed();
   const mode = useTrackingMode();
   // Names the Company rail item after the org itself; null until `GET /v1/org` lands.
   const orgName = useOrgName();
@@ -101,8 +106,13 @@ export default function SettingsLayout({
     label: group.label,
     items: group.items
       .filter((item) =>
-        isNavItemVisible(role, item, isFeatureOn, (href) =>
-          isPathModeHidden(href, mode),
+        isNavItemVisible(
+          role,
+          item,
+          isFeatureOn,
+          (href) => isPathModeHidden(href, mode),
+          undefined,
+          isFeatureAllowed,
         ),
       )
       .map((item) => ({

@@ -10,7 +10,12 @@ import {
 } from "@/constants/permissions";
 import { canAccess, canAll, canAny, getAccessibleNav } from "@/lib/rbac";
 import { permissionsFromBitset } from "@/lib/permission-bits";
-import { useIsFeatureOn, useIsPageOn, useTrackingMode } from "@/hooks/use-features";
+import {
+  useIsFeatureAllowed,
+  useIsFeatureOn,
+  useIsPageOn,
+  useTrackingMode,
+} from "@/hooks/use-features";
 import { isPathModeHidden } from "@/constants/features";
 import type { PermissionId, Role } from "@/types/rbac";
 
@@ -127,6 +132,9 @@ export function usePermissions() {
   const mode = useTrackingMode();
   // …and by the org's page-visibility toggles (layer 3). Owners are exempt inside the hook.
   const isPageOn = useIsPageOn();
+  // Plan ceiling — passed so a feature the PLAN doesn't include stays in the sidebar (it opens an
+  // Upgrade wall) instead of vanishing, while a feature the org toggled off is still hidden.
+  const isFeatureAllowed = useIsFeatureAllowed();
   return {
     role,
     can: (permission: PermissionId | null) => canAccess(role, permission),
@@ -137,6 +145,7 @@ export function usePermissions() {
       isFeatureOn,
       (href) => isPathModeHidden(href, mode),
       isPageOn,
+      isFeatureAllowed,
     ),
   };
 }
