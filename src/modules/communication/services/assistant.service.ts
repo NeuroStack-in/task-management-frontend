@@ -6,6 +6,7 @@
  * Gated server-side by `ai_assistant:use`; a caller without it gets a 403, surfaced as `ApiError`.
  */
 import { apiFetch } from "@/lib/api";
+import { localDateOf } from "@/lib/local-day";
 
 interface MessageReply {
   reply: string;
@@ -72,35 +73,24 @@ export interface AssistantTurn {
  */
 export type AssistantSurface = "chat" | "help";
 
-/**
- * The browser's local date as `YYYY-MM-DD` — what "today" means to the person typing.
- *
- * The server used to derive this itself, in UTC, and for a UTC+05:30 org every question asked
- * between midnight and 05:30 local resolved to the previous day: "yesterday" answered about the day
- * before yesterday, with real figures for a day nobody asked about. The server now prefers the
- * org's stored timezone, but it cannot get there alone — the timezone is a display label on some
- * tenants and an IANA name on others, and neither says whether daylight saving is in effect today.
- * The browser knows all of it.
- *
- * Built from the local getters rather than `toISOString()`, which converts to UTC and would
- * reintroduce the very off-by-one this exists to fix.
- */
-function localDate(): string {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
-
 export async function sendAssistantMessage(
   message: string,
   history: AssistantTurn[] = [],
   page?: AssistantPage,
   surface: AssistantSurface = "chat",
 ): Promise<string> {
-  // Computed per call, not per module load: a chat panel left open across midnight would otherwise
-  // keep asserting yesterday's date.
-  const client_date = localDate();
+  // What "today" means to the person typing.
+  //
+  // The server used to derive this itself, in UTC, so for a UTC+05:30 org every question asked
+  // between midnight and 05:30 local resolved to the previous day — "yesterday" answered about the
+  // day before yesterday, with real figures for a day nobody asked about. The server now prefers
+  // the org's own timezone, but it can't get there alone: that's a display label on some tenants
+  // and an IANA name on others, and neither says whether daylight saving is in effect today.
+  //
+  // `localDateOf` (not `toISOString`, which is UTC and would reintroduce the exact off-by-one) is
+  // the same helper the charts use — one definition of "the viewer's day" for the whole app.
+  // Computed per call, so a panel left open across midnight doesn't keep asserting yesterday.
+  const client_date = localDateOf(Date.now());
   const res = await apiFetch<MessageReply>("/v1/assistant/messages", {
     method: "POST",
     // `page` is omitted rather than sent null when unknown — the server treats an absent page as

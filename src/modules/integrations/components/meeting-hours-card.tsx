@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { getCalendarSummary } from "@/modules/integrations/services/integrations.service";
+import { localDateOf } from "@/lib/local-day";
 
 /**
  * "In meetings today" — the payoff of the Google Calendar integration, on the personal dashboard.
@@ -25,9 +26,11 @@ export function MeetingHoursCard() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    // Local "today" — the card is a same-day glance. The sweep keys by UTC date, so at the very
-    // edges of the day this can differ by one; acceptable for an at-a-glance tile (§8.5).
-    const today = new Date().toISOString().slice(0, 10);
+    // Local "today" — the card is a same-day glance, so it must agree with the viewer's calendar.
+    // This used to say `toISOString()`, which is UTC: east of Greenwich the tile showed YESTERDAY's
+    // meeting hours for the first hours of every day, under a heading that said today. The comment
+    // already claimed "local"; only the code disagreed.
+    const today = localDateOf(Date.now());
     let live = true;
     getCalendarSummary(today, today)
       .then((s) => {
