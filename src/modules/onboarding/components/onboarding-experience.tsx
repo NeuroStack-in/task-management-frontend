@@ -7,6 +7,7 @@ import { Activity } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { Loader } from "@/components/shared/loader";
 import { OnboardingWizard } from "./onboarding-wizard";
+import { OnboardingProvision } from "./onboarding-provision";
 
 /**
  * Guards the standalone /onboarding route. It's reached right after sign-up (the
@@ -19,6 +20,9 @@ export function OnboardingExperience() {
   const router = useRouter();
   const hydrated = useAuthStore((s) => s.hydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  // A signed-in user with no organization yet (the "Continue with Google" self-signup) creates one
+  // here first; a user who already has an org continues to the setup wizard.
+  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
 
   useEffect(() => {
     if (hydrated && !isAuthenticated) {
@@ -42,7 +46,7 @@ export function OnboardingExperience() {
         </div>
         <span className="text-lg font-semibold tracking-tight">WorkPulse</span>
       </Link>
-      <OnboardingWizard />
+      {hasOrg ? <OnboardingWizard /> : <OnboardingProvision />}
     </div>
   );
 }

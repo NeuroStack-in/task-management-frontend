@@ -80,6 +80,27 @@ export function getIdToken(): Promise<string | null> {
   });
 }
 
+/**
+ * **Force** a new id token by exchanging the refresh token, re-running the pre-token trigger.
+ *
+ * `getIdToken` only refreshes when the cached token has *expired*, so a claim that changed
+ * server-side (e.g. `custom:orgId` after self-service org provisioning) would not appear for up to
+ * the token's lifetime. This bypasses the cache: it re-mints immediately so the new tenant/role
+ * claims take effect at once. Resolves `null` when nobody is signed in or the refresh fails.
+ */
+export function refreshSession(): Promise<CognitoUserSession | null> {
+  return new Promise((resolve) => {
+    const user: CognitoUser | null = userPool().getCurrentUser();
+    if (!user) return resolve(null);
+    user.getSession((err: Error | null, session: CognitoUserSession | null) => {
+      if (err || !session) return resolve(null);
+      user.refreshSession(session.getRefreshToken(), (e2: Error | null, fresh) => {
+        resolve(e2 || !fresh ? null : (fresh as CognitoUserSession));
+      });
+    });
+  });
+}
+
 /** Clear the Cognito session (tokens in localStorage). */
 export function cognitoSignOut(): void {
   userPool().getCurrentUser()?.signOut();
