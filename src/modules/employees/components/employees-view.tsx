@@ -235,6 +235,17 @@ export function EmployeesView() {
    */
   const mode = useTrackingMode();
   const addLeads = mode === "machine";
+  /**
+   * May this org create a **monitored** (no-login) employee at all?
+   *
+   * Only where a managed agent actually runs. The comment below says the mode decides which action
+   * *leads*, never which exists — true for `machine`, where the org still hires a manager who needs
+   * a console. It does not hold in reverse: in `project` mode tracking is done by the interactive
+   * desktop agent, and that **requires a login**. A no-login record there can never sign in, never
+   * run the agent, and never be assigned a managed device the org doesn't deploy — so it is a person
+   * who occupies a seat and reports nothing, indistinguishable from an agent that is broken.
+   */
+  const canAddMonitored = mode === "machine" || mode === "both";
 
   const allEmployees = employees;
   // Every row is a real directory user with a profile page — none are session-only.
@@ -472,15 +483,23 @@ export function EmployeesView() {
               <Button
                 data-tour="emp:invite"
                 // Flush right edge, and no active nudge: the pair must not shear apart on press,
-                // since only this half carries the base `active:translate-y-px`.
-                className="rounded-r-none active:translate-y-0"
+                // since only this half carries the base `active:translate-y-px`. With no chevron
+                // beside it (project mode) it is a plain button again, so the right edge rounds.
+                className={cn(
+                  "active:translate-y-0",
+                  canAddMonitored && "rounded-r-none",
+                )}
                 onClick={() => (addLeads ? setAddOpen(true) : setInviteOpen(true))}
               >
                 <UserPlus className="size-4" />
                 {addLeads ? "Add employee" : "Invite"}
               </Button>
-              {/* The other action, always reachable — the mode decides which leads, never which
-                  exists. An org in machine mode still hires the manager who needs a console. */}
+              {/* The second action exists only where a managed agent runs. In `machine`/`both` the
+                  mode decides which of the two leads — an org on managed devices still hires the
+                  manager who needs a console. In `project` there is no second action to offer: a
+                  no-login record cannot run the desktop agent, so the split button collapses to
+                  one. */}
+              {canAddMonitored ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -505,6 +524,7 @@ export function EmployeesView() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              ) : null}
             </div>
           ) : null}
         </div>

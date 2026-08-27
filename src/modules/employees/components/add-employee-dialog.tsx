@@ -201,9 +201,10 @@ export function AddEmployeeDialog({
         <DialogHeader>
           <DialogTitle>Add employee</DialogTitle>
           <DialogDescription>
-            Creates a directory record with <strong>no login</strong>. They can be assigned a
-            monitored device; they can&apos;t sign in to WorkPulse. Use <em>Invite</em> instead if
-            this person needs console access.
+            Creates a directory record with <strong>no login</strong>. They can&apos;t sign in to
+            WorkPulse, and their activity is recorded only once IT assigns them a{" "}
+            <strong>monitored device</strong> — until then this record reports nothing. Use{" "}
+            <em>Invite</em> instead if this person signs in or uses the desktop app.
           </DialogDescription>
         </DialogHeader>
 
