@@ -2,13 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/shared/page-header";
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar";
@@ -16,7 +10,6 @@ import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { getPrefs, updatePrefs } from "@/modules/notifications/services/notifications.service";
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
-import { cn } from "@/lib/utils";
 
 type Channel = "inApp" | "email";
 type DigestValue = "off" | "daily" | "weekly";
@@ -61,12 +54,6 @@ const NOTIFICATION_TYPES: NotificationType[] = [
     description: "MFA resets and other security changes to your account.",
     defaults: { inApp: true, email: true },
   },
-];
-
-const DIGEST_OPTIONS: { value: DigestValue; label: string }[] = [
-  { value: "off", label: "Off" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
 ];
 
 interface NotificationPrefs {
@@ -228,16 +215,8 @@ export function NotificationPreferences() {
               Notification types
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Pick a delivery channel for each kind of event.
+              Choose which events notify you in the app.
             </p>
-          </div>
-          <div className="hidden shrink-0 items-center gap-4 sm:flex">
-            <span className="w-16 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              In-app
-            </span>
-            <span className="w-16 text-center text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Email
-            </span>
           </div>
         </div>
 
@@ -255,24 +234,12 @@ export function NotificationPreferences() {
                     {type.description}
                   </p>
                 </div>
-                <div className="flex items-center gap-4 sm:pl-0">
-                  {(["inApp", "email"] as Channel[]).map((channel) => (
-                    <div
-                      key={channel}
-                      className="flex w-16 items-center justify-start gap-2 sm:justify-center"
-                    >
-                      <span className="text-xs text-muted-foreground sm:hidden">
-                        {channel === "inApp" ? "In-app" : "Email"}
-                      </span>
-                      <Switch
-                        checked={row[channel]}
-                        onCheckedChange={() => toggleChannel(type.key, channel)}
-                        aria-label={`${type.label} — ${
-                          channel === "inApp" ? "in-app" : "email"
-                        }`}
-                      />
-                    </div>
-                  ))}
+                <div className="flex shrink-0 items-center sm:pl-0">
+                  <Switch
+                    checked={row.inApp}
+                    onCheckedChange={() => toggleChannel(type.key, "inApp")}
+                    aria-label={`Notify me in the app about ${type.label}`}
+                  />
                 </div>
               </div>
             );
@@ -280,61 +247,8 @@ export function NotificationPreferences() {
         </div>
       </Card>
 
-      {/* ── Delivery preferences ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Delivery</CardTitle>
-          <CardDescription>
-            Control timing and how much email WorkPulse sends.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="divide-y">
-          <div className="flex items-center justify-between gap-6 py-3">
-            <div>
-              <p className="text-sm font-medium">Quiet hours</p>
-              {/* "your timezone" was not true: there is no per-user timezone anywhere in the
-                  product. The window is evaluated against the organization's, which is the only one
-                  that exists — saying otherwise made the setting look more personal than it is. */}
-              <p className="text-xs text-muted-foreground">
-                Pause non-urgent <strong>emails</strong> from 8:00 PM to 8:00 AM in your
-                organization&apos;s timezone. Security alerts always come through, and every
-                notification still appears in the app.
-              </p>
-            </div>
-            <Switch
-              checked={draft.quietHours}
-              onCheckedChange={(v) =>
-                setDraft((p) => ({ ...p, quietHours: v }))
-              }
-            />
-          </div>
-          <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-            <div>
-              <p className="text-sm font-medium">Email digest</p>
-              <p className="text-xs text-muted-foreground">
-                Bundle task and system updates into one email instead of several. Approvals,
-                billing and security alerts always send straight away.
-              </p>
-            </div>
-            <div className="flex gap-1 rounded-lg bg-muted p-1">
-              {DIGEST_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setDraft((p) => ({ ...p, digest: opt.value }))}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                    draft.digest === opt.value
-                      ? "bg-card text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Delivery preferences (Quiet hours / Email digest) intentionally removed — WorkPulse
+          notifications are in-app only, so there is no email timing or digest to control. */}
 
       {/* Sticky save bar — appears only when there are unsaved changes */}
       <SettingsSaveBar
