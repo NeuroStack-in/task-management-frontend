@@ -312,6 +312,12 @@ export interface PersonScore {
   /** Absent when the person has no summary that day (agent not reporting) — a gap, never a zero. */
   breakdown?: ScoreBreakdown;
   totals?: ActivityTotals;
+  /**
+   * Logged timer seconds for the day, read live from the TIME# sessions — present even when the
+   * person has no summary yet. This is the honest "Hours Tracked" number, distinct from
+   * `totals.active_sec` (input activity) and `totals.worked_minutes` (nightly attendance close).
+   */
+  tracked_sec: number;
 }
 
 export interface OrgActivity {
@@ -325,6 +331,8 @@ export interface OrgActivity {
     productive_sec_total: number;
     neutral_sec_total: number;
     distracting_sec_total: number;
+    /** Org-wide logged timer seconds for the day (sum of every contributor's `tracked_sec`). */
+    tracked_sec_total: number;
   };
 }
 
