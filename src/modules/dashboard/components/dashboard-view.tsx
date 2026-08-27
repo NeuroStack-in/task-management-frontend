@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatCard } from "@/components/shared/stat-card";
+import { UpgradeStatCard } from "@/components/shared/upgrade-stat-card";
+import { useIsFeatureAllowed } from "@/hooks/use-features";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { PageHeader } from "@/components/shared/page-header";
@@ -88,6 +90,7 @@ function OrgDashboard() {
   // "Today" by default: the dashboard answers "what is happening right now", and a 7-day default
   // buried today's numbers in a week's average. The LLD does not fix a page-level default (§3 is
   // layout persistence; `date-range` there is per-widget config), so this is a product choice.
+  const isFeatureAllowed = useIsFeatureAllowed();
   const [range, setRange] = useState<DashboardRange>("today");
   const [team, setTeam] = useState("all");
   const [start, setStart] = useState("");
@@ -225,12 +228,27 @@ function OrgDashboard() {
       {/* KPI strip — reactive to the active range/team. The "Today" range shows point-in-time counts;
           longer ranges show period aggregates. Deltas are omitted (no cheap real prior-window compare —
           a seeded % would be fabricated); sparklines render only where a real per-day series exists. */}
+      {/* **Plan, not failure.** A Free org has no `monitoring.*` entitlement, so nothing is ever
+          captured — and the monitoring tiles rendered "— no agent reported", "0h" and "0 captured",
+          which tells an owner their agents are broken. They were never sold the feature. Where the
+          plan excludes it, the same slot carries an upgrade card instead of a zero.
+
+          `useIsFeatureAllowed` (the PLAN ceiling), not `useIsFeatureOn` (ceiling + org toggle): a
+          feature the org owns and switched off is a Settings problem, and telling them to buy what
+          they already have would be wrong. */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
         {/* The score covers the whole trackable team, so state how much of it actually reported —
             otherwise a low number reads as "the org collapsed" when it means "one agent is on". */}
         {/* PRODUCTIVITY.md §3.2: the score is the mean over **those who reported**, and its
             coverage is always adjacent — a score without coverage is a misleading number.
             When nobody reported, there is no score: render the absence, never a confident 0%. */}
+        {!isFeatureAllowed("monitoring.activity") ? (
+          <UpgradeStatCard
+            label="Productivity Score"
+            description="Activity monitoring scores each day 0–100."
+            featured
+          />
+        ) : (
         <StatCard
           label="Productivity Score"
           value={
@@ -248,6 +266,7 @@ function OrgDashboard() {
           href="/insights/reports"
           featured
         />
+        )}
         {range === "today" ? (
           <>
             {/* One "Working now" card folds in the old Working-now / Not-working / Running-timers
@@ -264,32 +283,54 @@ function OrgDashboard() {
             {/* Two genuinely distinct dimensions the trio never showed: total effort (active hours)
                 and monitoring volume (screenshots) — both real, today-scoped, and drilling to their
                 canonical pages. */}
-            <StatCard
-              label="Hours Tracked"
-              value={`${kpis.hours.value.toLocaleString()}h`}
-              icon={Clock}
-              hint="active time today"
-              href="/time-tracking"
-            />
-            <StatCard
-              label="Screenshots"
-              value={`${data.screenshotCount.toLocaleString()}${
-                data.screenshotCountPartial && data.screenshotCount > 0 ? "+" : ""
-              }`}
-              icon={Camera}
-              hint="captured today"
-              href="/insights/screenshots"
-            />
+            {!isFeatureAllowed("monitoring.activity") ? (
+              <UpgradeStatCard
+                label="Hours Tracked"
+                description="Active time is measured by the desktop agent."
+              />
+            ) : (
+              <StatCard
+                label="Hours Tracked"
+                value={`${kpis.hours.value.toLocaleString()}h`}
+                icon={Clock}
+                hint="active time today"
+                href="/time-tracking"
+              />
+            )}
+            {!isFeatureAllowed("monitoring.screenshots") ? (
+              <UpgradeStatCard
+                label="Screenshots"
+                description="Periodic blurred captures, with AI review."
+              />
+            ) : (
+              <StatCard
+                label="Screenshots"
+                value={`${data.screenshotCount.toLocaleString()}${
+                  data.screenshotCountPartial && data.screenshotCount > 0 ? "+" : ""
+                }`}
+                icon={Camera}
+                hint="captured today"
+                href="/insights/screenshots"
+              />
+            )}
           </>
         ) : (
           <>
-            <StatCard
-              label="Hours Tracked"
-              value={`${kpis.hours.value.toLocaleString()}h`}
-              icon={Clock}
-              hint={rangeLabel}
-              href="/time-tracking"
-            />
+            {/* Same gate as the "today" branch — the range changes, the entitlement doesn't. */}
+            {!isFeatureAllowed("monitoring.activity") ? (
+              <UpgradeStatCard
+                label="Hours Tracked"
+                description="Active time is measured by the desktop agent."
+              />
+            ) : (
+              <StatCard
+                label="Hours Tracked"
+                value={`${kpis.hours.value.toLocaleString()}h`}
+                icon={Clock}
+                hint={rangeLabel}
+                href="/time-tracking"
+              />
+            )}
             {/* An unresolved rate is an absence, not a zero: statuses are stamped by the nightly
                 close, so a window covering only today has nothing to measure. Showing 0% there put
                 "nobody attended" beside a live productivity score for the same people. */}

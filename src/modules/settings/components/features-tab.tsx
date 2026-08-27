@@ -446,6 +446,21 @@ export function FeaturesTab() {
                             ? " — you still have access because you're an owner."
                             : "."}
                       </p>
+                    ) : !isOn && isOwner ? (
+                      /* The fourth state, and the one that was missing: in the plan, switched off,
+                         but NOBODY turned it off — so there is no `disabled_by` note to hang the
+                         explanation on. An upgrade lands here every time: the server widens
+                         `allowed` and leaves `enabled` untouched, so a newly-bought feature is off
+                         with no attribution.
+
+                         Without this an owner sees a row reading "off" while the feature is plainly
+                         working on their own screen (the owner exemption skips the toggle, never the
+                         plan — `useIsFeatureOn` / `effective_for_owner`), and has no way to tell
+                         whether their org can see it. */
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Off for your organization — you can still see it because you&apos;re an
+                        owner.
+                      </p>
                     ) : null}
                   </div>
                   <Switch

@@ -44,7 +44,7 @@ export function FeatureGateNotice({
             ) : (
               <div className="space-y-2 text-center">
                 <p className="text-muted-foreground text-xs">
-                  Ask an owner to upgrade the organization's plan.
+                  Ask an owner to upgrade the organization&apos;s plan.
                 </p>
                 <Button variant="outline" onClick={() => router.push("/dashboard")}>
                   Back to Dashboard
