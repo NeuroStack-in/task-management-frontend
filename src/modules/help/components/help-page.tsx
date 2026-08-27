@@ -61,11 +61,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { EmptyState } from "@/components/shared/empty-state"
-import { useAssistantStore } from "@/stores/assistant.store"
 import { useTourStore } from "@/stores/tour.store"
 import { getTour } from "../lib/tours"
 import { usePageTitle } from "@/stores/page-header.store"
 import { usePermissions } from "@/hooks/use-permissions"
+import { HelpAssistantDialog } from "./help-assistant-dialog"
 import { useIsSurfaceOn } from "@/hooks/use-features"
 import type { PermissionId } from "@/types/rbac"
 import {
@@ -544,16 +544,27 @@ export function HelpPage() {
    */
   const [playing, setPlaying] = useState<(typeof VIDEO_TUTORIALS)[number] | null>(null)
 
-  const openAssistant = useAssistantStore((s) => s.openAssistant)
   // The tour outlives this page — its later steps are on other routes — so it is driven by
   // ProductTour in the app shell and only *started* from here.
   const startTour = useTourStore((s) => s.startTour)
-  const askAi = () => openAssistant(search.trim() || undefined)
+  // **The Help Center opens its OWN assistant, not the floating chatbot.**
+  //
+  // The chatbot is Owner/Admin-only (it needs `ai:view`), so routing this button there would have
+  // left every employee pressing a button that opened nothing. `HelpAssistantDialog` is the surface
+  // employees actually have: product knowledge, `surface: "help"`, no lookups.
+  const [helpAiOpen, setHelpAiOpen] = useState(false)
+  const [helpAiSeed, setHelpAiSeed] = useState<string | undefined>(undefined)
+  const askAi = () => {
+    setHelpAiSeed(search.trim() || undefined)
+    setHelpAiOpen(true)
+  }
   const { can } = usePermissions()
   /**
-   * Mirrors ChatBot's own gate — if the panel would not render, don't offer a way to open it.
-   * On this page that is the assistant bit alone: an Employee holds it without `ai:view`, and the
-   * Help Center is exactly where they are meant to use it.
+   * `ai:use` alone — deliberately NOT the chatbot's `ai:use && ai:view`.
+   *
+   * This is the surface every user gets. An Employee holds `ai:use` and lacks `ai:view`, which is
+   * exactly what the server reads to confine them to the Help surface, and the Help Center is where
+   * they are meant to ask. Gating this on `ai:view` too would hide the one assistant they have.
    */
   const canAskAi = can("ai:use")
   const isSurfaceOn = useIsSurfaceOn()
@@ -740,9 +751,8 @@ export function HelpPage() {
               className="h-12 rounded-xl border-transparent bg-white pl-10 text-slate-900 shadow-sm placeholder:text-slate-500 dark:bg-white"
             />
           </div>
-          {/* The assistant is Owner/Admin-only, and ChatBot renders nothing without `ai:view` —
-              so for anyone else this button would set store state and open no panel. Hide it
-              rather than ship a control that silently does nothing. */}
+          {/* Opens the Help Center assistant (product knowledge, no lookups) — not the floating
+              chatbot, which needs `ai:view` and would open nothing for an employee. */}
           {canAskAi ? (
             <Button
               type="button"
@@ -1320,8 +1330,12 @@ export function HelpPage() {
         // reads as turning a page.
         onSelectArticle={setSelectedArticle}
         onAskAi={() => {
+          // The Help assistant, for the same reason as the hero button: the floating chatbot needs
+          // `ai:view`, so for an employee reading an article this would have opened nothing.
+          const seed = selectedArticle?.title
           setSelectedArticle(null)
-          openAssistant(selectedArticle?.title)
+          setHelpAiSeed(seed)
+          setHelpAiOpen(true)
         }}
       />
 
@@ -1330,6 +1344,11 @@ export function HelpPage() {
         ticketId={openThreadId}
         onClose={() => setOpenThreadId(null)}
         onReplied={loadTickets}
+      />
+    <HelpAssistantDialog
+        open={helpAiOpen}
+        onOpenChange={setHelpAiOpen}
+        seedQuestion={helpAiSeed}
       />
     </div>
   )

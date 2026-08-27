@@ -59,16 +59,32 @@ export interface AssistantTurn {
  * single turn and a follow-up like "from 2/8/26 to 8/8/26" had no question to attach to, which
  * read as the assistant forgetting the conversation. The server bounds and role-filters it.
  */
+/**
+ * Which assistant is being asked.
+ *
+ * - `"chat"` — the floating assistant: grounded data, org snapshot, full tool belt. Owner/Admin.
+ * - `"help"` — the Help Center box: product knowledge only, no lookups. Everyone.
+ *
+ * **This is a request, not a grant.** The server resolves the effective surface from the caller's
+ * permissions (`Surface::resolve`) and only ever narrows it — a caller without `ai:view` is
+ * answered on the Help surface whatever this says. Sending it is what lets an Owner/Admin *choose*
+ * the Help Center's narrower answer while on that page.
+ */
+export type AssistantSurface = "chat" | "help";
+
 export async function sendAssistantMessage(
   message: string,
   history: AssistantTurn[] = [],
   page?: AssistantPage,
+  surface: AssistantSurface = "chat",
 ): Promise<string> {
   const res = await apiFetch<MessageReply>("/v1/assistant/messages", {
     method: "POST",
     // `page` is omitted rather than sent null when unknown — the server treats an absent page as
     // "don't claim to know where they are", which is the honest default.
-    body: JSON.stringify(page ? { message, history, page } : { message, history }),
+    body: JSON.stringify(
+      page ? { message, history, page, surface } : { message, history, surface },
+    ),
   });
   return res.reply;
 }

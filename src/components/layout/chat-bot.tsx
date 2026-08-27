@@ -256,21 +256,26 @@ export function ChatBot() {
 
   // After every hook, so hook order is identical whether or not the gates pass.
   //
-  // **`ai:use` alone decides it, everywhere.** The assistant is an oversight surface: Employees
-  // no longer hold the bit at all (2026-08-26), so the only holders are Owner, Admin, and any
-  // custom role an admin has deliberately granted it in Roles & Permissions.
+  // **The floating chatbot needs BOTH bits; the Help Center needs only `ai:use`** (owner decision,
+  // 2026-08-27). There are two assistants now, and they are not the same product:
   //
-  // The old rule also required `ai:view` off the Help Center. That existed solely to give
-  // Employees a Help-Center-only launcher; with the Employee grant gone it would only have
-  // applied to custom roles — meaning an admin who ticks "Use the AI assistant" would get a
-  // chatbot that mysteriously appears on one page. The permission now means what its label says.
+  //   floating chatbot (here)  — `ai:use` + `ai:view` — Owner/Admin. Grounded data, org snapshot,
+  //                              full tool belt. Answers questions about other people.
+  //   Help Center box          — `ai:use`             — everyone. Product knowledge only; no
+  //                              lookups at all (see `help-page.tsx`).
   //
-  // This is UX convenience only: `auth.require(AiAssistantUse)` on `POST /v1/assistant/messages`
-  // is the real gate, and `scope::authorize` still bounds every read behind it.
+  // `ai:view` (`AiInsightsRead`, bit 62) is the oversight half. Employees hold `ai:use` so they can
+  // ask the Help Center how WorkPulse works, and lack `ai:view` — which is precisely what the
+  // server reads in `Surface::resolve` to confine them to the Help surface. Gating this widget on
+  // `ai:use` alone would put the oversight launcher on every page for every employee.
+  //
+  // This is UX convenience only. The real boundary is server-side: `Surface::resolve` decides the
+  // surface from the caller's own bits and ignores what the client asks for, so an employee who
+  // calls the endpoint directly still gets the Help assistant — no tools, no snapshot, no fetch.
   // The assistant is a launcher, not a route, so it carries a pseudo page-key rather than an href.
   // Same layer-3 rule as any page: org preference on top of plan + permission, owners exempt.
   if (!isPageOn(ASSISTANT_PAGE_KEY)) return null;
-  if (!isFeatureOn("ai.assistant") || !can("ai:use")) return null;
+  if (!isFeatureOn("ai.assistant") || !can("ai:use") || !can("ai:view")) return null;
 
   return (
     <>

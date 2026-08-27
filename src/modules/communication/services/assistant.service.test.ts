@@ -17,7 +17,9 @@ describe("assistant.service route contract", () => {
     const reply = await sendAssistantMessage("hello");
     expect(mock).toHaveBeenCalledWith("/v1/assistant/messages", {
       method: "POST",
-      body: JSON.stringify({ message: "hello", history: [] }),
+      // `surface` defaults to "chat" — the floating assistant. The server narrows it to
+      // "help" for a caller without `ai:view`, so this is a request, not a grant.
+      body: JSON.stringify({ message: "hello", history: [], surface: "chat" }),
     });
     expect(reply).toBe("hi");
   });
@@ -38,6 +40,22 @@ describe("assistant.service route contract", () => {
           { role: "user", content: "what is the productivity status of employees" },
           { role: "assistant", content: "I don't have any productivity score data." },
         ],
+        surface: "chat",
+      }),
+    });
+  });
+
+  it("the Help Center asks on the help surface, and sends no page context", async () => {
+    // Two things the Help Center assistant must not do: claim the oversight surface, and hand the
+    // model the figures on screen. `page` is omitted entirely rather than sent empty.
+    mock.mockResolvedValueOnce({ reply: "ok" });
+    await sendAssistantMessage("how is the score calculated", [], undefined, "help");
+    expect(mock).toHaveBeenCalledWith("/v1/assistant/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        message: "how is the score calculated",
+        history: [],
+        surface: "help",
       }),
     });
   });
