@@ -53,6 +53,23 @@ export function useIsFeatureOn(): (key: FeatureKey) => boolean {
   );
 }
 
+/**
+ * `(key) => boolean` — is the feature in the org's **plan** at all (layer 1, the ceiling)?
+ *
+ * Distinct from {@link useIsFeatureOn}, which also folds in the on/off toggle. This answers *why* a
+ * feature is unavailable: `false` here means the **plan** doesn't include it (→ "Upgrade"), whereas
+ * `useIsFeatureOn` false with this `true` means the org **toggled it off** (→ "enable in Settings").
+ * Returns `true` while entitlements load, so a gate never flashes "upgrade" before the plan is known.
+ */
+export function useIsFeatureAllowed(): (key: FeatureKey) => boolean {
+  const loaded = useEntitlementsStore((s) => s.loaded);
+  const allowed = useEntitlementsStore((s) => s.allowed);
+  return useCallback(
+    (key: FeatureKey) => !loaded || allowed.includes(key),
+    [loaded, allowed],
+  );
+}
+
 /** The org's tracking mode (MANAGED-AGENT.md §4). Defaults `project` until entitlements load. */
 export function useTrackingMode(): TrackingMode {
   return useEntitlementsStore((s) => s.trackingMode);

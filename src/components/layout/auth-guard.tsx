@@ -14,6 +14,7 @@ import {
 import { featureForPath, isPathModeHidden } from "@/constants/features";
 import { canAccessPath } from "@/lib/rbac";
 import { useIsOpsOnly } from "@/modules/ops/use-platform-admin";
+import { FeatureGateNotice } from "@/components/shared/feature-gate-notice";
 import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -81,24 +82,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <Loader label="Opening the support desk…" />;
   }
 
-  // Hiding the nav entry isn't enough — the URL still works. A feature the org has switched off is
-  // closed here too, so a bookmark or a typed address can't walk straight into it.
+  // Hiding the nav entry isn't enough — the URL still works. A feature that's unavailable is closed
+  // here too, so a bookmark or a typed address can't walk straight into it. The notice tells the
+  // honest reason: **not in the plan → Upgrade**, or **in the plan but toggled off → enable it**.
   const feature = featureForPath(pathname);
   if (feature && !isFeatureOn(feature)) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-6">
-        <EmptyState
-          icon={ShieldX}
-          title="This feature is turned off"
-          description="Your organization has disabled this feature. An owner can switch it back on under Settings → Features."
-          action={
-            <Button onClick={() => router.push("/dashboard")}>
-              Back to Dashboard
-            </Button>
-          }
-        />
-      </div>
-    );
+    return <FeatureGateNotice feature={feature} />;
   }
 
   // A route the org's tracking mode hides (e.g. Projects/Payroll in machine mode) is closed the same
