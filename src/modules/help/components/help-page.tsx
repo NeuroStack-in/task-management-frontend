@@ -5,6 +5,7 @@ import {
   BarChart2,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Clock,
   Compass,
   Loader2,
@@ -965,6 +966,8 @@ export function HelpPage() {
                           browsers resolve by silently dropping one of them. */}
                       <button
                         onClick={() => setOpenThreadId(ticket.ticket_id)}
+                        title="Open conversation"
+                        aria-label={`Open conversation for ${ticket.subject}`}
                         className="flex min-w-0 flex-1 items-center gap-3 text-left"
                       >
                         <span
@@ -977,6 +980,12 @@ export function HelpPage() {
                             {fmtDate(ticket.created_at)}
                           </p>
                         </div>
+                        {/* Affordance: the whole row opens the conversation (status + support replies
+                            + a box to reply back). Without a visible cue the rows read as static. */}
+                        <span className="hidden shrink-0 items-center gap-1 text-xs font-medium text-primary sm:flex sm:opacity-0 sm:transition-opacity sm:group-hover/ticket:opacity-100">
+                          View conversation
+                        </span>
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover/ticket:text-foreground" />
                       </button>
                       <StatusBadge status={ticket.status} />
                       {ticket.status !== "closed" && (
