@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import {
   getOrgActivity,
@@ -21,12 +22,13 @@ export function useOrgActivity(date: string): OrgActivityState {
   const [data, setData] = useState<OrgActivity | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
+  // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
+  // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
+  const { nonce, reload, isBackground } = useLiveRefresh();
   useEffect(() => {
     if (!date) return;
     let live = true;
-    setLoading(true);
+    if (!isBackground()) setLoading(true);
     setError(null);
     getOrgActivity(date)
       .then((d) => {
@@ -41,9 +43,8 @@ export function useOrgActivity(date: string): OrgActivityState {
     return () => {
       live = false;
     };
-  }, [date, nonce]);
+  }, [date, nonce, isBackground]);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
   return { data, loading, error, reload };
 }
 
@@ -59,12 +60,13 @@ export function useSelfActivity(from: string, to: string): SelfActivityState {
   const [data, setData] = useState<SelfActivity | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
+  // Live, same as the day hook above.
+  const { nonce, reload, isBackground } = useLiveRefresh();
 
   useEffect(() => {
     if (!from || !to) return;
     let live = true;
-    setLoading(true);
+    if (!isBackground()) setLoading(true);
     setError(null);
     getSelfActivity(from, to)
       .then((d) => {
@@ -81,7 +83,6 @@ export function useSelfActivity(from: string, to: string): SelfActivityState {
     };
   }, [from, to, nonce]);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
   return { data, loading, error, reload };
 }
 

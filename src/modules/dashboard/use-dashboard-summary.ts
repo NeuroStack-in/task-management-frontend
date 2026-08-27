@@ -21,6 +21,7 @@
  * throttles the Lambda and 503s the page.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import { UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { mapWithConcurrency } from "@/lib/concurrency";
@@ -84,11 +85,12 @@ export function useDashboardSummary(): DashboardSummaryState {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
+  // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
+  // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
+  const { nonce, reload, isBackground } = useLiveRefresh();
   useEffect(() => {
     let live = true;
-    setLoading(true);
+    if (!isBackground()) setLoading(true);
     setError(null);
 
     (async () => {
@@ -177,9 +179,8 @@ export function useDashboardSummary(): DashboardSummaryState {
     return () => {
       live = false;
     };
-  }, [nonce]);
+  }, [nonce, isBackground]);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
   return { summary, loading, error, reload };
 }
 

@@ -327,6 +327,7 @@ export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimeshee
                 description: entry.description?.trim() ?? "",
                 taskId: entry.task_id,
                 start: clockOf(entry.start),
+                startMs: entry.start,
                 end: entry.end === undefined ? null : clockOf(entry.end),
                 billable: entry.billable,
                 running: entry.end === undefined,

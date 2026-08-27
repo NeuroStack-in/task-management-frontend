@@ -30,6 +30,7 @@
  *    uncomputed one must not look alike.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
@@ -178,13 +179,14 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
+  // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
+  // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
+  const { nonce, reload, isBackground } = useLiveRefresh();
   const { range, team, start, end } = filters;
 
   useEffect(() => {
     let live = true;
-    setLoading(true);
+    if (!isBackground()) setLoading(true);
     setError(null);
 
     (async () => {
@@ -399,7 +401,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         // KPI aggregates over the **selected range** (§3.3 pooled person-days).
         let scoreSum = 0;
         let scoredPersonDays = 0;
-        let activeSecTotal = 0;
+        let trackedSecTotal = 0;
         let coverageScored = 0;
         let coverageTeam = 0;
         for (const b of bundles) {
@@ -413,12 +415,17 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           // into distinct people across a window.
           coverageScored = Math.max(coverageScored, scored.length);
           coverageTeam = Math.max(coverageTeam, people.length);
-          activeSecTotal += people.reduce((s, p) => s + (p.totals?.active_sec ?? 0), 0);
+          // "Hours Tracked" is the **logged timer time** (`tracked_sec`, from the TIME# sessions) —
+          // what the label and the /time-tracking link mean. It is present even for a contributor
+          // with no summary yet, and it is NOT `active_sec` (input activity): a timer left running
+          // logs hours while active input stays near zero, so the old active-sec number read as "0h"
+          // beside a full day of tracked work.
+          trackedSecTotal += people.reduce((s, p) => s + (p.tracked_sec ?? 0), 0);
         }
         const productivityValue = scoredPersonDays
           ? Math.round(scoreSum / scoredPersonDays)
           : 0;
-        const hoursTracked = Math.round(activeSecTotal / 3600);
+        const hoursTracked = Math.round(trackedSecTotal / 3600);
 
         // ── Productivity trend (the chart): a real multi-day line. A single "today" point is not a
         // trend, so when the selected range is one day, draw a rolling 7-day window fetched just for
@@ -751,9 +758,8 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
     return () => {
       live = false;
     };
-  }, [range, team, start, end, nonce]);
+  }, [range, team, start, end, nonce, isBackground]);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
   return { data, teams, loading, error, reload };
 }
 

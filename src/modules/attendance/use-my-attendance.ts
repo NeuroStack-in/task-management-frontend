@@ -11,6 +11,7 @@
  * today, which doesn't move when you page months). Each is one range read.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import {
   getMyAttendance,
@@ -53,11 +54,12 @@ export function useMyAttendance(from: string, to: string): MyAttendanceRange {
   const [byDate, setByDate] = useState<Map<string, ApiAttendanceDay>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
+  // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
+  // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
+  const { nonce, reload, isBackground } = useLiveRefresh();
   useEffect(() => {
     let live = true;
-    setLoading(true);
+    if (!isBackground()) setLoading(true);
     setError(null);
 
     getMyAttendance(from, to)
@@ -75,7 +77,7 @@ export function useMyAttendance(from: string, to: string): MyAttendanceRange {
     return () => {
       live = false;
     };
-  }, [from, to, nonce]);
+  }, [from, to, nonce, isBackground]);
 
   const recordFor = useCallback(
     (y: number, m0: number, day: number): DayRecord | null => {
@@ -98,7 +100,7 @@ export function useMyAttendance(from: string, to: string): MyAttendanceRange {
     recordFor,
     loading,
     error,
-    reload: useCallback(() => setNonce((n) => n + 1), []),
+    reload,
   };
 }
 

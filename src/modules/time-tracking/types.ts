@@ -39,6 +39,9 @@ export interface TimesheetSession {
   taskId: string;
   /** Local `HH:MM`. */
   start: string;
+  /** Epoch ms the session began — what a **running** row ticks from (`useRunningSeconds`).
+   *  `start` is already formatted for display and cannot be subtracted from `Date.now()`. */
+  startMs: number;
   /** Local `HH:MM`, or null while the session is still running. */
   end: string | null;
   billable: boolean;

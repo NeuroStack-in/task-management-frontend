@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatHours, type TimesheetDayEntry, type TimesheetStatus } from "../types";
+import { formatHMS, useRunningSeconds } from "@/hooks/use-live-refresh";
 import { cn } from "@/lib/utils";
 
 const STATUS_META: Record<TimesheetStatus, { label: string; className: string }> = {
@@ -190,6 +191,8 @@ function groupByLabel(entries: TimesheetDayEntry[]): [string, TimesheetDayEntry[
  */
 function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
   const s = entry.session!;
+  // Ticks only while this session is running; `null` starts no interval at all.
+  const liveSec = useRunningSeconds(s.running ? s.startMs : null);
   // Never fall back to the raw `taskId` — a task id is opaque; an empty description reads as untitled.
   const label = s.description || "Untitled session";
   return (
@@ -214,8 +217,17 @@ function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
           {s.taskInvalid ? <span className="text-warning">task removed</span> : null}
         </span>
       </span>
-      <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
-        {s.running ? "—" : formatHours(entry.hours)}
+      {/* A running session used to render "—" on the grounds that it has contributed no *settled*
+          time. True of the stored total, but useless on screen: the row someone is watching is the
+          one that should be moving. `useRunningSeconds` recomputes from the session's own start
+          stamp each second, so it climbs between the 30 s polls and self-corrects after a sleep. */}
+      <span
+        className={cn(
+          "shrink-0 font-mono text-xs tabular-nums",
+          s.running ? "text-primary font-medium" : "text-muted-foreground",
+        )}
+      >
+        {s.running ? formatHMS(liveSec) : formatHours(entry.hours)}
       </span>
     </li>
   );

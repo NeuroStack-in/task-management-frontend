@@ -11,6 +11,7 @@
  * remainder. A week with no tracked time reads as genuine zeros — not fabricated bars.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import { getRange, todayLocal } from "./services/timesheet.service";
 
@@ -76,9 +77,9 @@ export function useWeeklyHours(): WeeklyHoursState {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  // Live: re-fetch every 30 s in the background so a colleague's newly-logged time appears without
+  // a reload. `reload` stays the visible path (Retry); the poll uses the quiet one.
+  const { nonce, reload, isBackground } = useLiveRefresh();
 
   useEffect(() => {
     // Resolve "now" inside the effect (never during render) so the server and client passes agree —
@@ -89,7 +90,8 @@ export function useWeeklyHours(): WeeklyHoursState {
     const to = todayLocal(now);
 
     let live = true;
-    setLoading(true);
+    // A background poll must not blank the grid it is refreshing.
+    if (!isBackground()) setLoading(true);
     setError(null);
 
     getRange(from, to)
@@ -114,7 +116,7 @@ export function useWeeklyHours(): WeeklyHoursState {
     return () => {
       live = false;
     };
-  }, [nonce]);
+  }, [nonce, isBackground]);
 
   const week = useCallback(
     (offset: number): WeekDay[] => {

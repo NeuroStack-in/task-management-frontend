@@ -11,6 +11,7 @@
  * per-user membership endpoint). Progress/productivity are agent-gated and simply absent.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { useAuthStore } from "@/stores/auth.store";
@@ -56,11 +57,12 @@ export function useMyWork(): MyWork {
   const [myProjects, setMyProjects] = useState<MyProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
+  // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
+  // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
+  const { nonce, reload, isBackground } = useLiveRefresh();
   useEffect(() => {
     let live = true;
-    setLoading(true);
+    if (!isBackground()) setLoading(true);
     setError(null);
 
     (async () => {
@@ -118,9 +120,8 @@ export function useMyWork(): MyWork {
     return () => {
       live = false;
     };
-  }, [userId, nonce]);
+  }, [userId, nonce, isBackground]);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
   return { openTasks, doneCount, myProjects, loading, error, reload };
 }
 

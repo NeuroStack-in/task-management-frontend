@@ -286,14 +286,14 @@ function OrgDashboard() {
             {!isFeatureAllowed("monitoring.activity") ? (
               <UpgradeStatCard
                 label="Hours Tracked"
-                description="Active time is measured by the desktop agent."
+                description="Logged time is measured by the desktop timer."
               />
             ) : (
               <StatCard
                 label="Hours Tracked"
                 value={`${kpis.hours.value.toLocaleString()}h`}
                 icon={Clock}
-                hint="active time today"
+                hint="logged today"
                 href="/time-tracking"
               />
             )}
@@ -320,7 +320,7 @@ function OrgDashboard() {
             {!isFeatureAllowed("monitoring.activity") ? (
               <UpgradeStatCard
                 label="Hours Tracked"
-                description="Active time is measured by the desktop agent."
+                description="Logged time is measured by the desktop timer."
               />
             ) : (
               <StatCard

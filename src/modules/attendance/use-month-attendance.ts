@@ -20,6 +20,7 @@
  * still open (resolved by the 00:15 cron), so calling it would just return an empty day.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { getDayOversight, type ApiDayResponse } from "./services/attendance.service";
 import { monthMatrix } from "./lib/calendar";
 import { useWorkdays } from "@/hooks/use-working-hours";
@@ -60,8 +61,9 @@ export function useMonthAttendance(year: number, month: number): MonthAttendance
   const [days, setDays] = useState<Map<string, ApiDayResponse>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
-
+  // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
+  // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
+  const { nonce, reload, isBackground } = useLiveRefresh();
   // Today's iso, computed once client-side (avoids SSR drift). Days ≥ today are open → skip.
   const todayIso = useRef(
     isoOf(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()),
@@ -83,7 +85,7 @@ export function useMonthAttendance(year: number, month: number): MonthAttendance
 
   useEffect(() => {
     let live = true;
-    setLoading(true);
+    if (!isBackground()) setLoading(true);
     setError(null);
 
     if (targets.length === 0) {
@@ -124,9 +126,9 @@ export function useMonthAttendance(year: number, month: number): MonthAttendance
     return () => {
       live = false;
     };
-  }, [targets, nonce]);
+  }, [targets, nonce, isBackground]);
 
-  return { days, loading, error, reload: () => setNonce((n) => n + 1) };
+  return { days, loading, error, reload };
 }
 
 function isForbidden(e: unknown): boolean {
