@@ -28,7 +28,6 @@ import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { safeLandingPath } from "@/lib/rbac";
 import {
   AuthError,
-  DEMO_ACCOUNTS,
   TotpChallengeError,
 } from "@/modules/auth/services/auth.service";
 import {
@@ -253,23 +252,6 @@ export function LoginExperience() {
         />
 
         <AuthSwitch prompt="Don't have an account?" href="/register" label="Create a workspace" />
-
-        {DEMO_ACCOUNTS.length > 0 ? (
-          <p className="mt-3 text-center text-xs" style={{ color: "var(--m-faint)" }}>
-            Seeded account ·{" "}
-            {DEMO_ACCOUNTS.map((a) => (
-              <button
-                key={a.email}
-                type="button"
-                onClick={() => setEmail(a.email)}
-                className="underline underline-offset-2"
-              >
-                {a.email}
-              </button>
-            ))}{" "}
-            · real password required
-          </p>
-        ) : null}
       </AuthFrame>
     </>
   );

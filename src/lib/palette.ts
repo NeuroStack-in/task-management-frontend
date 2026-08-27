@@ -29,6 +29,7 @@ export const PALETTES: PaletteDef[] = [
   { id: "violet", name: "Violet", note: "Vivid purple", swatch: "#7c3aed" },
   { id: "dusk", name: "Dusk", note: "Muted purple", swatch: "#7e3bd4" },
   { id: "burgundy", name: "Burgundy", note: "Deep red", swatch: "#8c3f4d" },
+  { id: "crimson", name: "Crimson", note: "Crimson & graphite", swatch: "#c00b20" },
   { id: "fireopal", name: "Fire Opal", note: "Warm coral", swatch: "#ef6448" },
   { id: "iron", name: "Iron", note: "Neutral slate", swatch: "#3f4855" },
 ];

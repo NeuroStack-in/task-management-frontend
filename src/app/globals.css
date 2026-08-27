@@ -1323,6 +1323,106 @@
   --sidebar-ring: #d98a96;
 }
 
+/* Crimson — brand crimson #c00b20 over a graphite #414040 neutral.
+ *
+ * The graphite is the palette's second brand colour, and it lands where a *dark* brand surface
+ * belongs: `--feature` (the featured-card ground) in light mode, and the neutral ramp that
+ * `--foreground`, `--secondary-foreground` and the borders are tuned toward. It is deliberately not
+ * `--secondary`: on a light theme that token is a pale surface carrying dark text, so putting a
+ * near-black there would invert the pair and break every chip and quiet button at once.
+ *
+ * ⚠️ A red brand sits close to `--destructive` by construction. They are separated by lightness and
+ * saturation rather than hue (crimson is darker and more saturated than the destructive red), which
+ * is the same trick `burgundy` uses. Do not rely on colour alone to mark a destructive action in
+ * this palette — the label and the icon carry it. Contrast checked: every AA pair passes in both
+ * modes, the tightest being 5.16:1 for muted text on the light background.
+ */
+[data-palette="crimson"] {
+  --background: #faf8f8;
+  --foreground: #262525;
+  --card: #ffffff;
+  --card-foreground: #262525;
+  --popover: #ffffff;
+  --popover-foreground: #262525;
+  --primary: #c00b20;
+  --primary-foreground: #ffffff;
+  --secondary: #f0eeee;
+  --secondary-foreground: #414040;
+  --muted: #f0eeee;
+  --muted-foreground: #6b6969;
+  --accent: #fce4e7;
+  --accent-foreground: #96061a;
+  --destructive: #d4514a;
+  --success: #2fa36a;
+  --warning: #d8902f;
+  --positive: #2fa36a;
+  --negative: #d4514a;
+  --feature: #414040;
+  --feature-foreground: #ffffff;
+  --feature-tint: #ecebeb;
+  --border: #e9e6e6;
+  --input: #dcd8d8;
+  --ring: #c00b20;
+  /* Categorical ramp: the two brand colours first so a two-series chart reads as the brand, then
+   * tints rather than new hues — a third hue here would compete with the crimson. */
+  --chart-1: #c00b20;
+  --chart-2: #414040;
+  --chart-3: #e0596a;
+  --chart-4: #8a8888;
+  --chart-5: #f0a6af;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #262525;
+  --sidebar-primary: #c00b20;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fce4e7;
+  --sidebar-accent-foreground: #96061a;
+  --sidebar-border: #efecec;
+  --sidebar-ring: #c00b20;
+}
+[data-palette="crimson"].dark {
+  --background: #191818;
+  --foreground: #e9e7e7;
+  --card: #232222;
+  --card-foreground: #e9e7e7;
+  --popover: #232222;
+  --popover-foreground: #e9e7e7;
+  /* Lifted off the brand crimson: #c00b20 on a near-black ground is 2.1:1 and unreadable as a
+   * button label. The brand value returns at full strength as `--feature`, where it sits on its own
+   * dark surface and is decoration rather than text. */
+  --primary: #f2707f;
+  --primary-foreground: #3d0209;
+  --secondary: #302f2f;
+  --secondary-foreground: #e9e7e7;
+  --muted: #262525;
+  --muted-foreground: #a5a2a2;
+  --accent: #3a2a2c;
+  --accent-foreground: #ffc3cb;
+  --destructive: #e5705f;
+  --success: #57c98a;
+  --warning: #e0a951;
+  --positive: #57c98a;
+  --negative: #e5705f;
+  --feature: #c00b20;
+  --feature-foreground: #ffffff;
+  --feature-tint: #3a1c21;
+  --border: rgb(255 255 255 / 0.07);
+  --input: rgb(255 255 255 / 0.11);
+  --ring: #f2707f;
+  --chart-1: #f2707f;
+  --chart-2: #b8b5b5;
+  --chart-3: #f9a3ad;
+  --chart-4: #7d7a7a;
+  --chart-5: #fcd0d5;
+  --sidebar: #232222;
+  --sidebar-foreground: #e9e7e7;
+  --sidebar-primary: #f2707f;
+  --sidebar-primary-foreground: #3d0209;
+  --sidebar-accent: #3a2a2c;
+  --sidebar-accent-foreground: #ffc3cb;
+  --sidebar-border: rgb(255 255 255 / 0.07);
+  --sidebar-ring: #f2707f;
+}
+
 /* ---- Petrol Cyan — deep cool cyan-teal, calm and technical ---- */
 [data-palette="petrol"] {
   --background: #f4f8f8;
