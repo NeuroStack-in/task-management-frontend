@@ -55,18 +55,29 @@ describe("who gets the chat launcher", () => {
   const admin = role(idsFor(AI_INSIGHTS, AI_ASSISTANT));
   const owner = role(["*"]);
 
-  /** The launcher's rule, mirrored from `ChatBot`: the bit alone, on every page. */
-  const shows = (r: Role, _path: string) => canAccess(r, "ai:use");
+  /**
+   * The launcher's rule, mirrored from `ChatBot`: `ai:use` decides **whether**, `ai:view` decides
+   * **where**. Without the oversight half you get it on the Help Center only.
+   */
+  const isHelp = (p: string) => p === "/help" || p.startsWith("/help/");
+  const shows = (r: Role, path: string) =>
+    canAccess(r, "ai:use") && (canAccess(r, "ai:view") || isHelp(path));
 
   /**
-   * The 2026-08-26 decision: the chatbot is an oversight surface. `SYSTEM_ROLES`' Employee must
-   * not carry `ai:use`, mirroring `wp-contracts::roles::employee` dropping bit 65. This is the
-   * assertion that fails if someone re-adds it to either side without changing the other.
+   * The 2026-08-27 decision, which reversed the previous day's: an Employee gets the assistant on
+   * the **Help Center and nowhere else**, mirroring `wp-contracts::roles::employee` granting bit 65
+   * again while still withholding `AiInsightsRead`.
+   *
+   * Both halves are the assertion. Add `ai:view` to Employee and the second expectation fails —
+   * which is the point, because that is exactly how the launcher would silently spread to every
+   * page without anyone touching `ChatBot`.
    */
-  it("the Employee system role does not get the assistant at all", () => {
+  it("an Employee gets the assistant on the Help Center only", () => {
     const employee = SYSTEM_ROLES.find((r) => r.id === "role-employee")!;
-    expect(employee.permissions).not.toContain("ai:use");
-    expect(shows(employee as Role, "/help")).toBe(false);
+    expect(employee.permissions).toContain("ai:use");
+    expect(employee.permissions).not.toContain("ai:view");
+    expect(shows(employee as Role, "/help")).toBe(true);
+    expect(shows(employee as Role, "/help/tickets")).toBe(true);
     expect(shows(employee as Role, "/dashboard")).toBe(false);
   });
 
@@ -79,13 +90,17 @@ describe("who gets the chat launcher", () => {
   });
 
   /**
-   * A custom role granted the bit gets it on every page — not Help-Center-only. That carve-out
-   * existed only for Employees; keeping it would make a deliberately-granted permission behave
-   * unpredictably.
+   * A custom role granted only `ai:use` is treated exactly like an Employee: Help Center only.
+   *
+   * The alternative — everywhere — was argued for on the grounds that a deliberately-granted
+   * permission should not behave unpredictably. The rule is predictable, it just takes both bits
+   * to state: `ai:view` is the oversight half, and a role without it has nothing org-wide to ask
+   * anywhere else. Granting both is what puts the launcher on every page.
    */
-  it("a custom role granted the bit gets it everywhere", () => {
-    for (const path of ["/dashboard", "/help", "/projects/p1"]) {
-      expect(shows(assistantOnly, path)).toBe(true);
+  it("a custom role with only the assistant bit is Help-Center-only", () => {
+    expect(shows(assistantOnly, "/help")).toBe(true);
+    for (const path of ["/dashboard", "/projects/p1"]) {
+      expect(shows(assistantOnly, path)).toBe(false);
     }
   });
 

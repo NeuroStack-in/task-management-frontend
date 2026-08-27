@@ -50,6 +50,17 @@ const SUGGESTIONS = [
   "Explain the five attendance statuses",
 ];
 
+/**
+ * The Help Center, where an Employee is allowed the assistant.
+ *
+ * Prefix-matched rather than compared exactly so a future `/help/<topic>` keeps it. Exported so the
+ * page's own "Ask AI" button and this launcher can never disagree about where it is offered — a
+ * button that opens a panel which then refuses to render is the specific failure to avoid.
+ */
+export function isHelpRoute(pathname: string | null | undefined): boolean {
+  return !!pathname && (pathname === "/help" || pathname.startsWith("/help/"));
+}
+
 export function ChatBot() {
   // The assistant is a plan feature: when the org switches it off, the launcher goes with it
   // rather than sitting there offering a surface every request would be refused for.
@@ -256,21 +267,27 @@ export function ChatBot() {
 
   // After every hook, so hook order is identical whether or not the gates pass.
   //
-  // **`ai:use` alone decides it, everywhere.** The assistant is an oversight surface: Employees
-  // no longer hold the bit at all (2026-08-26), so the only holders are Owner, Admin, and any
-  // custom role an admin has deliberately granted it in Roles & Permissions.
+  // **`ai:use` decides whether; `ai:view` decides where.**
   //
-  // The old rule also required `ai:view` off the Help Center. That existed solely to give
-  // Employees a Help-Center-only launcher; with the Employee grant gone it would only have
-  // applied to custom roles — meaning an admin who ticks "Use the AI assistant" would get a
-  // chatbot that mysteriously appears on one page. The permission now means what its label says.
+  // Employees hold the assistant bit again as of 2026-08-27 (`wp-contracts::roles::employee`), so
+  // the "one bit, everywhere" rule that briefly replaced this would now put a chatbot on every
+  // page for every employee — the opposite of the decision that granted it back. The grant was
+  // deliberately narrow: an Employee gets it on the Help Center, where "how does WorkPulse work"
+  // is asked and the answer needs no data reads at all.
+  //
+  // The objection to this rule was that a custom role granted only `ai:use` would get a launcher
+  // that "mysteriously appears on one page". That is accepted, and it is not mysterious once the
+  // two bits are read as what they are: `ai:view` is the *oversight* half — it means you may ask
+  // about other people — and a role without it has nothing org-wide to ask, anywhere but here.
+  // Roles & Permissions describes them separately for that reason.
   //
   // This is UX convenience only: `auth.require(AiAssistantUse)` on `POST /v1/assistant/messages`
-  // is the real gate, and `scope::authorize` still bounds every read behind it.
+  // is the real gate, and `scope::authorize` still refuses every cross-person question behind it.
   // The assistant is a launcher, not a route, so it carries a pseudo page-key rather than an href.
   // Same layer-3 rule as any page: org preference on top of plan + permission, owners exempt.
   if (!isPageOn(ASSISTANT_PAGE_KEY)) return null;
   if (!isFeatureOn("ai.assistant") || !can("ai:use")) return null;
+  if (!can("ai:view") && !isHelpRoute(pathname)) return null;
 
   return (
     <>

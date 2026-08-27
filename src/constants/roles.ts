@@ -95,10 +95,15 @@ export const SYSTEM_ROLES: Role[] = [
       "reports:view",
       "notifications:view",
       "help:view",
-      // **No `ai:use`** (2026-08-26): the assistant is an oversight surface and Employees do
-      // not get the chatbot. Mirrors `wp-contracts::roles::employee`, which no longer grants
-      // bit 65 — see the rationale there, including why the Help Center (not the assistant) is
-      // where an employee's product questions belong.
+      // **`ai:use` — restored 2026-08-27, confined to the Help Center.** Mirrors
+      // `wp-contracts::roles::employee`, which grants bit 65 again.
+      //
+      // The 2026-08-26 removal closed more than it meant to: most of what an Employee asks is a
+      // product question, answered with zero reads and zero permissions consulted, and closing
+      // the bit closed those too — leaving the Help Center as static text with nothing to ask.
+      // Note the *absence* of `ai:view` below is deliberate and load-bearing: it is what keeps
+      // the launcher on `/help` only (see `chat-bot.tsx`).
+      "ai:use",
       "leave:view",
       "leave:request",
     ],
