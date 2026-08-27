@@ -102,6 +102,11 @@ export function ChatBot() {
   ]);
   const idRef = useRef(1);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Both halves of "outside": the panel, and the launcher that toggles it. Without the launcher in
+  // the exclusion, clicking it while open would close via this handler and immediately reopen via
+  // its own onClick — the button would look dead.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -109,6 +114,37 @@ export function ChatBot() {
       behavior: "smooth",
     });
   }, [messages, pending, open]);
+
+  /**
+   * Click (or tap) anywhere else closes the panel, as does Escape.
+   *
+   * `pointerdown` rather than `click`: a click fires only after pointerup, so dragging a text
+   * selection out of the panel and releasing over the page would dismiss it mid-drag. `pointerdown`
+   * also beats the FAB's own drag handler to the event, which is why the launcher is excluded by
+   * ref rather than by checking the event target's role.
+   *
+   * Only bound while open — a global listener that runs on every page for a closed panel is a
+   * listener nobody needs.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (panelRef.current?.contains(target)) return;
+      if (fabRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, setOpen]);
 
   const send = async (text: string) => {
     const trimmed = text.trim();
@@ -294,6 +330,7 @@ export function ChatBot() {
       {/* Panel */}
       {open ? (
         <div
+          ref={panelRef}
           role="dialog"
           aria-label="WorkPulse assistant"
           style={panelStyle}
@@ -406,6 +443,7 @@ export function ChatBot() {
         aria-label={open ? "Close assistant" : "Open assistant"}
         aria-expanded={open}
         style={fab ? { left: fab.x, top: fab.y } : undefined}
+        ref={fabRef}
         onPointerDown={onFabPointerDown}
         onPointerMove={onFabPointerMove}
         onPointerUp={onFabPointerUp}
