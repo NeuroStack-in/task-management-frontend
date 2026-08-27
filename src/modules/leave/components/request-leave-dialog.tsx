@@ -9,7 +9,7 @@ import { CalendarPlus, Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -66,19 +66,67 @@ export function workingDays(startIso: string, endIso: string): number {
 // `type` is a server-configured id (not a fixed enum), so it's validated as a non-empty string and
 // the picker is populated from the org's types. The server recomputes the authoritative day count;
 // the `days` shown here is a working-day preview only.
+/** One working day, in minutes — the divisor the server uses (docs/LEAVE.md §2). */
+const WORKDAY_MINUTES = 8 * 60;
+
+/** Minutes between two `HH:MM` values; `0` when either is unparseable or the range is backwards. */
+function minutesBetween(from: string, to: string): number {
+  const mins = (v: string) => {
+    const [h, m] = v.split(":").map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+  };
+  const a = mins(from);
+  const b = mins(to);
+  return Number.isFinite(a) && Number.isFinite(b) ? Math.max(0, b - a) : 0;
+}
+
 const schema = z
   .object({
     type: z.string().min(1, "Select a leave type."),
     startDate: z.string().min(1, "Select a start date."),
     endDate: z.string().min(1, "Select an end date."),
     reason: z.string().trim().min(3, "Add a short reason."),
-    halfDay: z.boolean().default(false),
+    kind: z.enum(["full_day", "permission"]).default("full_day"),
+    fromTime: z.string().default(""),
+    toTime: z.string().default(""),
   })
-  .refine((d) => !d.halfDay || d.startDate === d.endDate, {
-    // Mirrors the server rule rather than trusting it: a half day is half of ONE day.
-    message: "A half day must be a single date — set the same start and end date.",
-    path: ["halfDay"],
+  // Every rule below mirrors the server (docs/LEAVE.md §6) rather than trusting it, so the message
+  // arrives before the round-trip instead of as a 400.
+  .refine((d) => d.kind !== "permission" || d.startDate === d.endDate, {
+    message: "A permission is time off within one day — pick a single date.",
+    path: ["endDate"],
   })
+  .refine((d) => d.kind !== "permission" || (!!d.fromTime && !!d.toTime), {
+    message: "Enter the start and end time.",
+    path: ["fromTime"],
+  })
+  .refine(
+    (d) =>
+      d.kind !== "permission" ||
+      !d.fromTime ||
+      !d.toTime ||
+      minutesBetween(d.fromTime, d.toTime) > 0,
+    { message: "The end time must be after the start time.", path: ["toTime"] },
+  )
+  .refine(
+    (d) =>
+      d.kind !== "permission" ||
+      !d.fromTime ||
+      !d.toTime ||
+      minutesBetween(d.fromTime, d.toTime) >= 30,
+    { message: "A permission is at least 30 minutes.", path: ["toTime"] },
+  )
+  .refine(
+    (d) =>
+      d.kind !== "permission" ||
+      !d.fromTime ||
+      !d.toTime ||
+      minutesBetween(d.fromTime, d.toTime) <= 240,
+    {
+      message: "Longer than 4 hours? Request a full day instead.",
+      path: ["toTime"],
+    },
+  )
   .refine((d) => d.endDate >= d.startDate, {
     message: "End date can't be before the start date.",
     path: ["endDate"],
@@ -107,18 +155,33 @@ export function RequestLeaveDialog({
     control,
     reset,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { type: "", startDate: "", endDate: "", reason: "", halfDay: false },
+    defaultValues: {
+      type: "",
+      startDate: "",
+      endDate: "",
+      reason: "",
+      kind: "full_day",
+      fromTime: "",
+      toTime: "",
+    },
   });
 
   const start = watch("startDate");
   const end = watch("endDate");
-  const halfDay = watch("halfDay");
+  const kind = watch("kind");
+  const fromTime = watch("fromTime");
+  const toTime = watch("toTime");
+  const isPermission = kind === "permission";
+  const permissionMinutes = isPermission ? minutesBetween(fromTime, toTime) : 0;
   const wholeDays = useMemo(() => workingDays(start, end), [start, end]);
   // What will actually be deducted, so the preview matches the balance rather than the calendar.
-  const days = halfDay && start && start === end ? 0.5 : wholeDays;
+  const days = isPermission
+    ? permissionMinutes / WORKDAY_MINUTES
+    : wholeDays;
   // Earliest selectable day — leave can't start in the past (computed once, client-local).
   const today = useMemo(() => isoToday(), []);
 
@@ -196,15 +259,32 @@ export function RequestLeaveDialog({
       await submitRequest({
         type_id: data.type,
         from: data.startDate,
-        to: data.endDate,
-        ...(data.halfDay ? { half_day: true } : {}),
+        // A permission is one day; the picker below already forces this, and sending the real
+        // start twice is clearer than relying on the user not to have moved the end date.
+        to: data.kind === "permission" ? data.startDate : data.endDate,
+        ...(data.kind === "permission"
+          ? {
+              kind: "permission" as const,
+              from_time: data.fromTime,
+              to_time: data.toTime,
+            }
+          : {}),
         reason: data.reason,
         ...(docs.length ? { attachments: docs } : {}),
       });
-      const d = data.halfDay ? 0.5 : workingDays(data.startDate, data.endDate);
-      toast.success("Leave request submitted", {
-        description: `${label} · ${d === 0.5 ? "half a day" : `${d} day${d === 1 ? "" : "s"}`} — pending approval`,
-      });
+      const mins =
+        data.kind === "permission" ? minutesBetween(data.fromTime, data.toTime) : 0;
+      const what =
+        mins > 0
+          ? `permission ${data.fromTime}–${data.toTime}`
+          : (() => {
+              const d = workingDays(data.startDate, data.endDate);
+              return `${d} day${d === 1 ? "" : "s"}`;
+            })();
+      toast.success(
+        mins > 0 ? "Permission requested" : "Leave request submitted",
+        { description: `${label} · ${what} — pending approval` },
+      );
       close();
     } catch (e) {
       const msg =
@@ -224,6 +304,46 @@ export function RequestLeaveDialog({
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {/* The two kinds, chosen first — everything below reads differently depending on this,
+              so it cannot be a detail tucked underneath the dates. Picking Permission collapses the
+              request to one day, because that is what a permission is. */}
+          <Controller
+            control={control}
+            name="kind"
+            render={({ field }) => (
+              <div className="bg-muted/60 grid grid-cols-2 gap-1 rounded-lg p-1">
+                {(
+                  [
+                    ["full_day", "Full day", "One or more whole days"],
+                    ["permission", "Permission", "A few hours within a day"],
+                  ] as const
+                ).map(([value, label, hint]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      field.onChange(value);
+                      // A permission is a single date. Collapsing the range here means the user
+                      // never sees a validation error for a state the UI let them build.
+                      if (value === "permission" && start) setValue("endDate", start);
+                    }}
+                    className={cn(
+                      "rounded-md px-3 py-2 text-left transition-colors",
+                      field.value === value
+                        ? "bg-background shadow-soft"
+                        : "hover:bg-background/60",
+                    )}
+                  >
+                    <span className="block text-sm font-medium">{label}</span>
+                    <span className="text-muted-foreground block text-xs">
+                      {hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          />
+
           <Field label="Leave type" error={errors.type?.message}>
             <Controller
               control={control}
@@ -280,38 +400,38 @@ export function RequestLeaveDialog({
             </Field>
           </div>
 
-          {/* Only offered for a single date — the server refuses the combination otherwise, and a
-              checkbox that silently fails validation is worse than one that isn't there. */}
-          {start && start === end ? (
-            <Controller
-              control={control}
-              name="halfDay"
-              render={({ field }) => (
-                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border p-3">
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={(v) => field.onChange(Boolean(v))}
-                    className="mt-0.5"
-                  />
-                  <span className="text-sm">
-                    <span className="font-medium">Half day</span>
-                    <span className="text-muted-foreground block text-xs">
-                      Take half of this day instead of all of it &mdash; 0.5 is deducted from your
-                      balance, and the day shows as a half-day leave.
-                    </span>
-                  </span>
-                </label>
-              )}
-            />
-          ) : null}
-          {errors.halfDay?.message ? (
-            <p className="text-destructive text-sm">{errors.halfDay.message}</p>
+          {/* The permission window. Shown only in permission mode, so a full-day request never has
+              to look at time fields it will ignore. */}
+          {isPermission ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="From" error={errors.fromTime?.message}>
+                <Input type="time" step={300} {...register("fromTime")} />
+              </Field>
+              <Field label="To" error={errors.toTime?.message}>
+                <Input type="time" step={300} {...register("toTime")} />
+              </Field>
+            </div>
           ) : null}
 
-          {days > 0 ? (
+          {/* What it costs, stated before they submit. A fraction on its own ("0.25 days") is not
+              something anyone can sanity-check, so the hours lead and the deduction follows. */}
+          {isPermission && permissionMinutes > 0 ? (
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{days}</span>{" "}
-              {days === 0.5 ? "of a working day" : `working day${days === 1 ? "" : "s"}`} requested.
+              <span className="font-medium text-foreground">
+                {permissionMinutes >= 60
+                  ? `${+(permissionMinutes / 60).toFixed(2)}h`
+                  : `${permissionMinutes}m`}
+              </span>{" "}
+              of permission &mdash; deducts{" "}
+              <span className="font-medium text-foreground">
+                {+days.toFixed(3)}
+              </span>{" "}
+              of a day from your balance.
+            </p>
+          ) : !isPermission && days > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{days}</span> working
+              day{days === 1 ? "" : "s"} requested.
             </p>
           ) : null}
 

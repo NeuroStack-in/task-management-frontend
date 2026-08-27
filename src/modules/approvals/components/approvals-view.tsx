@@ -42,11 +42,27 @@ const fmtSubmitted = (ms?: number) => {
   return `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`;
 };
 /**
- * `0.5` is a real value now (half-day leave), so this can no longer assume whole days. "0.5 days"
- * is technically right and reads like a rounding error; an approver should see the words.
+ * What the approver reads instead of a fraction.
+ *
+ * `days` is fractional now (a 2-hour permission is `0.25`), and "0.25 days" is not something anyone
+ * can act on. A permission shows its hours and its window; a full day shows days.
  */
-const dayLabel = (n: number) =>
-  n === 0.5 ? "Half day" : `${n} day${n === 1 ? "" : "s"}`;
+function requestLabel(r: {
+  days: number;
+  permission_minutes?: number;
+  from_time?: string;
+  to_time?: string;
+}): string {
+  const mins = r.permission_minutes ?? 0;
+  if (mins > 0) {
+    const h = mins / 60;
+    const hours = `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
+    const window =
+      r.from_time && r.to_time ? ` · ${r.from_time}–${r.to_time}` : "";
+    return `Permission · ${hours}${window}`;
+  }
+  return `${r.days} day${r.days === 1 ? "" : "s"}`;
+}
 
 type Filter = "pending" | "approved" | "rejected" | "all";
 const FILTERS: { value: Filter; label: string }[] = [
@@ -193,7 +209,7 @@ export function ApprovalsView() {
                       <span className="block truncate">{fmtRange(req.from, req.to)}</span>
                     </TableCell>
                     <TableCell className="font-mono text-xs font-medium tabular-nums">
-                      {dayLabel(req.days)}
+                      {requestLabel(req)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       {fmtSubmitted(req.createdAt)}
@@ -300,7 +316,7 @@ function ApprovalDialog({
                 </p>
               </div>
               <span className="font-mono text-lg font-semibold tabular-nums">
-                {dayLabel(req.days)}
+                {requestLabel(req)}
               </span>
             </div>
 

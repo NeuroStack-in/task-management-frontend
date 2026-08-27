@@ -23,7 +23,15 @@ export interface ApiApprovalRow {
   type_id: string;
   from: string;
   to: string;
+  /** Fractional: a 2-hour permission is `0.25`. */
   days: number;
+  /** `full_day | permission`. */
+  kind?: string;
+  /** Minutes of permission; `0`/absent for a full day. */
+  permission_minutes?: number;
+  /** `HH:MM` window, present only for a permission. */
+  from_time?: string;
+  to_time?: string;
   /** `pending | approved | rejected | cancelled`. */
   status: string;
   reason?: string;
