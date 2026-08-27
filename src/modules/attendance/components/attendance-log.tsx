@@ -40,7 +40,6 @@ const STATUS_META: Record<string, { label: string; badge: string; dot: string }>
   present: { label: "Present", badge: "bg-success/12 text-success", dot: "bg-success" },
   partial: { label: "Partial", badge: "bg-warning/15 text-warning", dot: "bg-warning" },
   leave: { label: "On leave", badge: "bg-primary/12 text-primary", dot: "bg-primary" },
-  half_day_leave: { label: "Half-day leave", badge: "bg-primary/12 text-primary", dot: "bg-primary" },
   absent: { label: "Absent", badge: "bg-destructive/12 text-destructive", dot: "bg-destructive" },
   non_workday: { label: "Non-working", badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" },
   in: { label: "In now", badge: "bg-success/12 text-success", dot: "bg-success" },
@@ -167,7 +166,7 @@ export function AttendanceLog({
     if (isRange) return [];
     const seen = new Set<string>();
     for (const r of rows) if (r.status) seen.add(r.status);
-    const order = ["present", "partial", "leave", "half_day_leave", "absent", "non_workday", "in", "out"];
+    const order = ["present", "partial", "leave", "absent", "non_workday", "in", "out"];
     return ["all", ...order.filter((s) => seen.has(s))];
   }, [rows, isRange]);
 

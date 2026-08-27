@@ -8,21 +8,16 @@
  * performance conversations. The frontend only ever displays them.
  *
  * Resolution order, first match wins:
- *   1. leave / half_day_leave  →  2. non_workday  →  3. absent  →  4. partial  →  5. present
+ *   1. leave  →  2. non_workday  →  3. absent  →  4. partial  →  5. present
+ *
+ * **Permission is not in this list.** Short time off inside a working day (`docs/LEAVE.md`) does not
+ * change the day's status: the person turned up, and the server credits the approved minutes toward
+ * presence so the day still resolves `present` rather than `partial`.
  */
 
 export type DayStatus =
   /** An approved leave request covers the day. */
   | "leave"
-  /**
-   * An approved **half-day** leave covers the day — off for half of it, working the rest.
-   *
-   * Unlike `late`, this IS a status rather than a qualifier, and deliberately so: the oversight
-   * board reads GSI3, whose projection carries the status string and nothing else, so a boolean
-   * beside it would be invisible on the one screen that most needs it. Counted like `leave` — an
-   * authorised day either way.
-   */
-  | "half_day_leave"
   /**
    * A holiday or non-scheduled day. **Excluded from the expected set — not a counted
    * status**, so it must never land in an absence rate's denominator.
@@ -73,8 +68,6 @@ export interface DayCounts {
   late: number;
   partial: number;
   leave: number;
-  /** Half-days, kept separate from `leave` so a half day is never reported as a full absence. */
-  half_day_leave: number;
   absent: number;
   total: number;
 }
@@ -84,7 +77,6 @@ export const DAY_STATUS_LABEL: Record<DayStatus, string> = {
   present: "Present",
   partial: "Partial",
   leave: "On leave",
-  half_day_leave: "Half-day leave",
   absent: "Absent",
   non_workday: "Non-working day",
 };

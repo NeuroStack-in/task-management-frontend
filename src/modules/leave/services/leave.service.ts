@@ -58,7 +58,15 @@ export interface ApiLeaveRequest {
   /** Inclusive `YYYY-MM-DD`. */
   from: string;
   to: string;
+  /** Fractional: a 2-hour permission is `0.25`. */
   days: number;
+  /** `full_day | permission`. */
+  kind?: string;
+  /** Minutes of permission; `0`/absent for a full day. */
+  permission_minutes?: number;
+  /** `HH:MM` window, present only for a permission. */
+  from_time?: string;
+  to_time?: string;
   /** `pending | approved | cancelled`. */
   status: string;
   reason?: string;
@@ -196,10 +204,15 @@ export interface NewLeaveRequest {
   from: string;
   to: string;
   /**
-   * Take **half** of a single day. The server refuses it across a range — "half of five days" has
-   * no agreed meaning — so this is only ever sent with `from === to`.
+   * `full_day` (default) or `permission` — short time off inside one working day.
+   *
+   * A permission is 0.5–4 h on a single date and costs `hours / 8` days from the same balance
+   * (`docs/LEAVE.md`). Omitted entirely for a full-day request, so the server's default applies.
    */
-  half_day?: boolean;
+  kind?: "full_day" | "permission";
+  /** `HH:MM`. Required for a permission, ignored otherwise. */
+  from_time?: string;
+  to_time?: string;
   reason?: string;
   /** Uploaded documents, by the ids the presign route minted. Always optional. */
   attachments?: ApiLeaveAttachment[];

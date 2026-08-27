@@ -241,7 +241,11 @@ function EmployeeLeaveView() {
                       {fmtRange(r.from, r.to)}
                     </TableCell>
                     <TableCell className="tabular-nums">
-                      {r.days === 0.5 ? "Half day" : r.days}
+                      {/* A permission shows its window; "0.25" alone means nothing to the
+                          person who asked for two hours off. */}
+                      {(r.permission_minutes ?? 0) > 0
+                        ? `${r.from_time ?? ""}–${r.to_time ?? ""}`
+                        : r.days}
                     </TableCell>
                     <TableCell className="max-w-[16rem] truncate text-muted-foreground">
                       {r.reason ?? "—"}
