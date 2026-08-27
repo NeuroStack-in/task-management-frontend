@@ -1,9 +1,9 @@
 /**
  * Time-tracking view models for the **team / oversight** timesheet.
  *
- * These shapes were previously invented by `lib/mock-time.ts`; they now live in the module and are
- * populated from the real backend by `use-team-timesheet.ts` (see that hook for how each field maps
- * to a live call). Kept as a local contract so no component imports `@/lib/mock-*`.
+ * These shapes were previously invented by the since-deleted `lib/mock-time.ts`; they now live in
+ * the module and are populated from the real backend by `use-team-timesheet.ts` (see that hook for
+ * how each field maps to a live call). Kept as a local contract, owned by the module that uses it.
  */
 
 /** Health of a person's/project's tracked time — not an approval state.

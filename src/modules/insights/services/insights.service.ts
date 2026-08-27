@@ -257,6 +257,52 @@ export function getUserActivity(
   );
 }
 
+// ── GET /v1/insights/user/{id}/apps?from=&to=  (one employee's apps + sites) ──
+
+/** One app or site, with the time measured against it and how the org classifies it. */
+export interface AppUsageRow {
+  name: string;
+  seconds: number;
+  /** `productive` | `neutral` | `distracting` — the org's own rule, not a judgement made here. */
+  category: string;
+}
+
+export interface AppUsage {
+  from: string;
+  to: string;
+  apps: AppUsageRow[];
+  sites: AppUsageRow[];
+  /** The read hit its row cap, so the ranking is a top-N rather than the whole period. */
+  truncated: boolean;
+}
+
+/**
+ * One employee's measured app and website time over a range (org oversight, `activity:read`).
+ *
+ * **Empty is ambiguous and the caller must say which kind.** Per-person rows only exist from
+ * 2026-08-27 — before that the ingest fold kept category totals and discarded app names, so an
+ * empty list for an earlier range means "not recorded", not "used nothing". Rendering a bare
+ * "No activity" over a pre-rollout range states something false about a person.
+ */
+export function getUserAppUsage(
+  userId: string,
+  from: string,
+  to: string,
+): Promise<AppUsage> {
+  return apiFetch<AppUsage>(
+    `/v1/insights/user/${encodeURIComponent(userId)}/apps?from=${encodeURIComponent(
+      from,
+    )}&to=${encodeURIComponent(to)}`,
+  );
+}
+
+/** The caller's own, same shape. Self-scoped. */
+export function getMyAppUsage(from: string, to: string): Promise<AppUsage> {
+  return apiFetch<AppUsage>(
+    `/v1/me/insights/apps?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  );
+}
+
 // ── GET /v1/insights/activity?date=  (org day rollup) ──
 
 export interface PersonScore {

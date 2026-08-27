@@ -4,10 +4,10 @@
  * `component → module service → lib/api → HTTP`. This is the first read on the real seam, and the
  * pattern every other module service should copy.
  *
- * ## Where this deliberately differs from `lib/mock-time.ts`
+ * ## Two fields the pre-backend mock invented, deliberately absent here
  *
- * The mock was written before the backend existed and invented two fields the server does not
- * serve. They are **not** reproduced here, because a plausible-looking zero is worse than an
+ * The since-deleted `lib/mock-time.ts` was written before the backend existed and invented two
+ * fields the server does not serve. They are **not** reproduced here, because a plausible-looking zero is worse than an
  * absence — it reads as a measurement:
  *
  * - **`activity` (0–100)**. The agent captures activity samples, but no built read joins them onto

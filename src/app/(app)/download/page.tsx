@@ -28,7 +28,7 @@ import {
   AGENT_PLATFORMS,
   AGENT_RELEASE_VERSION,
   type AgentPlatform,
-} from "@/lib/mock-agents";
+} from "@/lib/agent-release";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
@@ -116,7 +116,7 @@ export default function DownloadPage() {
   }
 
   function downloadFor(p: AgentPlatform) {
-    // Real download once the installer URL is set (see the S3 URLs in lib/mock-agents). Until then,
+    // Real download once the installer URL is set (see the S3 URLs in lib/agent-release). Until then,
     // tell the user it's on the way rather than navigating to a dead link.
     if (p.url) triggerDownload(p.url, p.file);
     else toast(`The ${p.os} installer will be available to download shortly.`);

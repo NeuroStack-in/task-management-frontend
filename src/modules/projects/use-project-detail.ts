@@ -10,10 +10,13 @@
  * re-reads, so the KPI block (which the Streams aggregator recomputes on task changes) stays fresh.
  */
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, apiFetch } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import {
   getProject,
   getBoard,
+  updateProject as apiUpdateProject,
+  deleteProject as apiDeleteProject,
+  directoryUserMap,
   createTask as apiCreateTask,
   updateTask as apiUpdateTask,
   deleteTask as apiDeleteTask,
@@ -23,8 +26,8 @@ import {
 import type { Project, Task, TaskPriority, TaskStatus } from "./types";
 import { mapProjectStatus } from "./use-projects-data";
 import { membersToUserMap, toAssignees, type UserMini } from "./lib";
-import type { ProjectFormValues } from "@/stores/projects.store";
-import type { TaskFormValues } from "@/stores/tasks.store";
+import type { ProjectFormValues } from "@/modules/projects/forms";
+import type { TaskFormValues } from "@/modules/projects/forms";
 
 export interface ProjectDetailData {
   project: Project | null;
@@ -69,7 +72,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
         const [detail, board, names] = await Promise.all([
           getProject(id),
           getBoard(id).catch(() => []),
-          resolveUserMap().catch(() => ({}) as Record<string, UserMini>),
+          directoryUserMap().catch(() => ({}) as Record<string, UserMini>),
         ]);
         if (!live) return;
         setProject(toProject(detail));
@@ -124,22 +127,19 @@ export function useProjectDetail(id: string): ProjectDetailData {
    * flip the page into its not-found state. The caller navigates away instead.
    */
   const deleteProject = useCallback(async () => {
-    await apiFetch(`/v1/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await apiDeleteProject(id);
   }, [id]);
 
   const updateProject = useCallback(
     async (v: ProjectFormValues) => {
-      await apiFetch(`/v1/projects/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          name: v.name,
-          description: v.description,
-          billable: v.billable,
-          // Always sent, empty string included: the server reads "" as "clear it", so deselecting a
-          // department is a real edit rather than an unreachable state.
-          department: v.department ?? "",
-          ...(v.dueDate ? { end_date: v.dueDate } : {}),
-        }),
+      await apiUpdateProject(id, {
+        name: v.name,
+        description: v.description,
+        billable: v.billable,
+        // Always sent, empty string included: the server reads "" as "clear it", so deselecting a
+        // department is a real edit rather than an unreachable state.
+        department: v.department ?? "",
+        ...(v.dueDate ? { end_date: v.dueDate } : {}),
       });
       // Membership is a separate resource, and the form edits it in the same dialog. Without this the
       // PATCH succeeded, the toast said "saved", and the member the admin just added was never
@@ -283,17 +283,6 @@ async function syncMembers(
         : `The project was saved, but ${failed} of ${total} team changes failed. Reopen the dialog to check.`,
     );
   }
-}
-
-async function resolveUserMap(): Promise<Record<string, UserMini>> {
-  const res = await apiFetch<{
-    employees: { user_id: string; name: string; title?: string }[];
-  }>("/v1/employees");
-  const map: Record<string, UserMini> = {};
-  for (const e of res.employees) {
-    map[e.user_id] = { id: e.user_id, name: e.name, jobTitle: e.title ?? "" };
-  }
-  return map;
 }
 
 function messageOf(e: unknown): string {

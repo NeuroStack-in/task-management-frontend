@@ -50,17 +50,6 @@ const SUGGESTIONS = [
   "Explain the five attendance statuses",
 ];
 
-/**
- * The Help Center, where an Employee is allowed the assistant.
- *
- * Prefix-matched rather than compared exactly so a future `/help/<topic>` keeps it. Exported so the
- * page's own "Ask AI" button and this launcher can never disagree about where it is offered — a
- * button that opens a panel which then refuses to render is the specific failure to avoid.
- */
-export function isHelpRoute(pathname: string | null | undefined): boolean {
-  return !!pathname && (pathname === "/help" || pathname.startsWith("/help/"));
-}
-
 export function ChatBot() {
   // The assistant is a plan feature: when the org switches it off, the launcher goes with it
   // rather than sitting there offering a surface every request would be refused for.
@@ -267,20 +256,21 @@ export function ChatBot() {
 
   // After every hook, so hook order is identical whether or not the gates pass.
   //
-  // **Where** the launcher appears depends on what the caller may see. Someone with `ai:view` holds
-  // the oversight half too — they can ask about people, teams and the org — so it follows them
-  // everywhere, as it always has. Someone with only `ai:assistant` (an Employee) gets it on the
-  // Help Center, which is where "how does WorkPulse work" gets asked; the assistant answers those
-  // with no data reads at all, and self-scoped questions about their own hours still work.
+  // **`ai:use` alone decides it, everywhere.** The assistant is an oversight surface: Employees
+  // no longer hold the bit at all (2026-08-26), so the only holders are Owner, Admin, and any
+  // custom role an admin has deliberately granted it in Roles & Permissions.
   //
-  // Deliberately not org-wide for them: their collective questions are refused server-side by
-  // `scope::authorize`, and a launcher on every page would mostly be offering answers they can't
-  // have. Widening it later is one line here — the backend grant is what actually gates it.
+  // The old rule also required `ai:view` off the Help Center. That existed solely to give
+  // Employees a Help-Center-only launcher; with the Employee grant gone it would only have
+  // applied to custom roles — meaning an admin who ticks "Use the AI assistant" would get a
+  // chatbot that mysteriously appears on one page. The permission now means what its label says.
+  //
+  // This is UX convenience only: `auth.require(AiAssistantUse)` on `POST /v1/assistant/messages`
+  // is the real gate, and `scope::authorize` still bounds every read behind it.
   // The assistant is a launcher, not a route, so it carries a pseudo page-key rather than an href.
   // Same layer-3 rule as any page: org preference on top of plan + permission, owners exempt.
   if (!isPageOn(ASSISTANT_PAGE_KEY)) return null;
   if (!isFeatureOn("ai.assistant") || !can("ai:use")) return null;
-  if (!can("ai:view") && !isHelpRoute(pathname)) return null;
 
   return (
     <>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { AGENT_MANIFEST_URL, AGENT_RELEASE_VERSION } from "@/lib/mock-agents";
+import { AGENT_MANIFEST_URL, AGENT_RELEASE_VERSION } from "@/lib/agent-release";
 import { useUiStore } from "@/stores/ui.store";
 
 interface AgentRelease {

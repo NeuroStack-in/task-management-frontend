@@ -5,10 +5,15 @@ import { useEffect, useRef } from "react";
 /**
  * Run `fn` on an interval while the tab is visible — the app's **one** polling primitive.
  *
- * Freshness on WorkPulse is polling, not push (HLD §3: the WebSocket is deferred, and it couldn't
- * beat the agent's 300 s batch anyway). The rule from that decision: **never a `setInterval` + fetch
- * inside a component** — put it behind one abstraction, so if push ever lands, that swap touches this
- * hook and nothing else. This is that hook.
+ * Polling is the **permanent floor** for freshness, and push is an accelerator on top of it — not a
+ * replacement. The API Gateway WebSocket this comment used to call "deferred" was never built; the
+ * rail that shipped is AWS IoT / MQTT ([lib/push.ts](../lib/push.ts)), and it carries **doorbells,
+ * not state**: a message means "something changed for you" and the consumer re-fetches through the
+ * normal HTTP API. So push can fail entirely and the worst case is one interval of staleness. It
+ * could not replace polling anyway — it cannot beat the agent's own 300 s batch cycle.
+ *
+ * The rule that follows: **never a `setInterval` + fetch inside a component.** One abstraction, so
+ * the cadence is changed in one place. This is that hook.
  *
  * - **Paused when hidden.** No polling against a backgrounded tab (Page Visibility API) — it wastes
  *   requests and battery, and the answer is stale the moment you look away.

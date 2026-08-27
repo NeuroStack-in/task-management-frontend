@@ -9,7 +9,9 @@
  * guarded so the two consumers don't double-load, and the poll loop is ref-counted so there is
  * exactly one timer regardless of how many components mount the hook.
  *
- * **Freshness by polling** (backend HLD §3 — there is no WebSocket): the feed refreshes on a ~30s
+ * **Freshness by polling** (backend HLD §3; the API Gateway WebSocket was never built, and the MQTT
+ * rail that shipped instead is a doorbell that triggers a re-fetch, not a substitute): the feed
+ * refreshes on a ~30s
  * cadence *while the tab is visible*, and immediately when the tab/window regains focus or the bell
  * is opened. A hidden tab doesn't poll. This mirrors the backend's polling design and means a
  * notification created after page load (a teammate approves leave, a support reply lands) shows up

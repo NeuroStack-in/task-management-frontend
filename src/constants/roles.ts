@@ -46,6 +46,8 @@ export const SYSTEM_ROLES: Role[] = [
       "locations:view",
       "reports:view",
       "reports:export",
+      // Mirrors `wp-contracts::roles::admin()` granting AppUsageReadPerson (bit 6).
+      "activity:apps:person",
       "approvals:view",
       "approvals:approve",
       "leave:approve",
@@ -93,11 +95,10 @@ export const SYSTEM_ROLES: Role[] = [
       "reports:view",
       "notifications:view",
       "help:view",
-      // The chat assistant, but NOT `ai:view` — an Employee may talk to it (general product
-      // questions read no data at all, and questions about their own hours are self-scoped),
-      // while the AI insight surfaces stay closed. Mirrors bit 65 without bit 62 in
-      // `wp-contracts::roles::employee`.
-      "ai:use",
+      // **No `ai:use`** (2026-08-26): the assistant is an oversight surface and Employees do
+      // not get the chatbot. Mirrors `wp-contracts::roles::employee`, which no longer grants
+      // bit 65 — see the rationale there, including why the Help Center (not the assistant) is
+      // where an employee's product questions belong.
       "leave:view",
       "leave:request",
     ],

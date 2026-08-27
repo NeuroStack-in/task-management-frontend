@@ -15,11 +15,13 @@
  * still gets the board, just with short ids instead of names.
  */
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, apiFetch } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import {
   listProjects,
   getProject,
   getBoard,
+  createProject as apiCreateProject,
+  directoryUserMap,
   createTask as apiCreateTask,
   updateTask as apiUpdateTask,
   deleteTask as apiDeleteTask,
@@ -28,7 +30,7 @@ import {
 import type { NewTask, TaskPatch } from "./services/projects.service";
 import type { Project, ProjectStatus, Task, TaskPriority, TaskStatus } from "./types";
 import { membersToUserMap, toAssignees, type UserMini } from "./lib";
-import type { ProjectFormValues } from "@/stores/projects.store";
+import type { ProjectFormValues } from "@/modules/projects/forms";
 
 /**
  * How many projects to enrich (detail + board) at once. Each project is 2 calls, so this caps
@@ -90,7 +92,7 @@ export function useProjectsData(): ProjectsData {
       try {
         const [list, names] = await Promise.all([
           listProjects(),
-          resolveUserMap().catch(() => ({}) as Record<string, UserMini>),
+          directoryUserMap().catch(() => ({}) as Record<string, UserMini>),
         ]);
         if (!live) return;
 
@@ -168,17 +170,14 @@ export function useProjectsData(): ProjectsData {
   const createProject = useCallback(
     async (v: ProjectFormValues) => {
       const manager = v.managerId || v.leadUserId;
-      const created = await apiFetch<{ id: string }>("/v1/projects", {
-        method: "POST",
-        body: JSON.stringify({
-          name: v.name,
-          billable: v.billable,
-          start_date: todayIso(),
-          end_date: v.dueDate || undefined,
-          manager_user_id: manager,
-          key: deriveKey(v.name),
-          ...(v.department ? { department: v.department } : {}),
-        }),
+      const created = await apiCreateProject({
+        name: v.name,
+        billable: v.billable,
+        start_date: todayIso(),
+        end_date: v.dueDate || undefined,
+        manager_user_id: manager,
+        key: deriveKey(v.name),
+        ...(v.department ? { department: v.department } : {}),
       });
       // The manager is a member already (created with the project). Add the rest, best-effort — a
       // failed add shouldn't undo a created project.
@@ -258,18 +257,6 @@ function toProject(d: Awaited<ReturnType<typeof getProject>>): Project {
     startDate: d.start_date,
     dueDate: d.end_date ?? "",
   };
-}
-
-/** `user_id → UserMini` from the employee directory. Best-effort (see the module note). */
-async function resolveUserMap(): Promise<Record<string, UserMini>> {
-  const res = await apiFetch<{
-    employees: { user_id: string; name: string; title?: string }[];
-  }>("/v1/employees");
-  const map: Record<string, UserMini> = {};
-  for (const e of res.employees) {
-    map[e.user_id] = { id: e.user_id, name: e.name, jobTitle: e.title ?? "" };
-  }
-  return map;
 }
 
 function todayIso(): string {

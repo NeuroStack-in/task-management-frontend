@@ -7,6 +7,7 @@ import {
   completeTotpChallenge,
   login as loginService,
   logout as logoutService,
+  reestablishSession,
 } from "@/modules/auth/services/auth.service";
 
 interface AuthState {
@@ -23,6 +24,9 @@ interface AuthState {
   logout: () => void;
   /** Patch the signed-in user (self-service profile edits). Persisted. */
   updateUser: (patch: Partial<User>) => void;
+  /** Force-refresh the token and re-project its claims — after self-service org provisioning, so the
+   *  new tenant/owner claims take effect without a full sign-out/in. */
+  refreshClaims: () => Promise<void>;
   setHydrated: () => void;
 }
 
@@ -65,6 +69,11 @@ export const useAuthStore = create<AuthState>()(
 
       updateUser: (patch) =>
         set((s) => (s.user ? { user: { ...s.user, ...patch } } : s)),
+
+      refreshClaims: async () => {
+        const r = await reestablishSession();
+        if (r) set({ session: r.session, user: r.user, isAuthenticated: true });
+      },
 
       setHydrated: () => set({ hydrated: true }),
     }),

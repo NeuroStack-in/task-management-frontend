@@ -45,11 +45,21 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { opsOnly } = useIsOpsOnly();
   const isOpsRoute = pathname === "/ops" || pathname.startsWith("/ops/");
 
+  // A signed-in user with no organization yet (the "Continue with Google" self-signup) has nothing to
+  // see in the app shell — send them to the standalone onboarding flow to create their org first.
+  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
+
   useEffect(() => {
     if (hydrated && !isAuthenticated) {
       router.replace(`/login?from=${encodeURIComponent(pathname)}`);
     }
   }, [hydrated, isAuthenticated, pathname, router]);
+
+  useEffect(() => {
+    if (hydrated && isAuthenticated && !hasOrg) {
+      router.replace("/onboarding");
+    }
+  }, [hydrated, isAuthenticated, hasOrg, router]);
 
   useEffect(() => {
     if (hydrated && isAuthenticated && opsOnly && !isOpsRoute) {
@@ -59,6 +69,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!hydrated || !isAuthenticated) {
     return <Loader label="Loading your workspace…" />;
+  }
+
+  // No org yet — don't flash the app shell before the onboarding redirect lands.
+  if (!hasOrg) {
+    return <Loader label="Setting up your account…" />;
   }
 
   // Don't paint a customer page for an operator account even for the tick before the redirect lands.

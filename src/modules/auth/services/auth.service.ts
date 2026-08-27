@@ -17,7 +17,13 @@ import {
   CognitoUser,
   CognitoUserSession,
 } from "amazon-cognito-identity-js";
-import { claimsOf, clearCognitoCache, cognitoSignOut, userPool } from "@/lib/cognito";
+import {
+  claimsOf,
+  clearCognitoCache,
+  cognitoSignOut,
+  refreshSession,
+  userPool,
+} from "@/lib/cognito";
 import { completeSsoExchange } from "@/lib/oauth";
 import { friendlyError } from "@/lib/errors";
 import { resetOrgMeta } from "@/stores/org-meta.store";
@@ -90,6 +96,18 @@ export async function completeTotpChallenge(code: string): Promise<LoginResult> 
     );
   });
   pendingTotpUser = null;
+  return { session: toSession(session), user: toUser(session) };
+}
+
+/**
+ * Force a fresh token and re-project it onto our `User`/`AuthSession`. Used after self-service org
+ * provisioning: the server has stamped `custom:orgId`/`roleId`, but the cached token predates that —
+ * this re-mints so the new tenant + owner claims are live without a full sign-out/in. Resolves `null`
+ * if nobody is signed in or the refresh fails.
+ */
+export async function reestablishSession(): Promise<LoginResult | null> {
+  const session = await refreshSession();
+  if (!session) return null;
   return { session: toSession(session), user: toUser(session) };
 }
 

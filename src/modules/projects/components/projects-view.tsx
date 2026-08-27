@@ -21,7 +21,7 @@ import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { TriangleAlert } from "lucide-react";
 import { Loader } from "@/components/shared/loader";
-import type { ProjectFormValues } from "@/stores/projects.store";
+import type { ProjectFormValues } from "@/modules/projects/forms";
 import {
   PROJECT_STATUS_META,
   PROJECT_STATUS_ORDER,

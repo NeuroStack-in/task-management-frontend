@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatHours } from "@/lib/mock-time";
+import { formatHours } from "@/lib/format";
 import { MAX_WEEKS_BACK, useWeeklyHours } from "../use-weekly-hours";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
