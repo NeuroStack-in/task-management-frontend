@@ -11,6 +11,21 @@ import { listAssistantThreads, sendAssistantMessage } from "./assistant.service"
 const mock = vi.mocked(apiFetch);
 beforeEach(() => mock.mockClear());
 
+/**
+ * The browser's local date, built exactly as the service builds it.
+ *
+ * Deliberately not a hardcoded string: that would pass on the day it was written and fail every
+ * day after. Deliberately not `toISOString().slice(0, 10)` either — that is UTC, and reproducing
+ * the UTC conversion here would let the very off-by-one these tests guard against slip through
+ * agreeing with itself.
+ */
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
 describe("assistant.service route contract", () => {
   it("sendAssistantMessage POSTs the message body and unwraps res.reply", async () => {
     mock.mockResolvedValueOnce({ reply: "hi" });
@@ -19,7 +34,14 @@ describe("assistant.service route contract", () => {
       method: "POST",
       // `surface` defaults to "chat" — the floating assistant. The server narrows it to
       // "help" for a caller without `ai:view`, so this is a request, not a grant.
-      body: JSON.stringify({ message: "hello", history: [], surface: "chat" }),
+      // `client_date` is the browser's LOCAL date. The server used to compute "today" in UTC,
+      // so a UTC+05:30 org asking after midnight got answers about the previous day.
+      body: JSON.stringify({
+        message: "hello",
+        history: [],
+        surface: "chat",
+        client_date: today(),
+      }),
     });
     expect(reply).toBe("hi");
   });
@@ -41,6 +63,7 @@ describe("assistant.service route contract", () => {
           { role: "assistant", content: "I don't have any productivity score data." },
         ],
         surface: "chat",
+        client_date: today(),
       }),
     });
   });
@@ -56,6 +79,7 @@ describe("assistant.service route contract", () => {
         message: "how is the score calculated",
         history: [],
         surface: "help",
+        client_date: today(),
       }),
     });
   });

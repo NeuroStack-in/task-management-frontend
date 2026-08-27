@@ -72,18 +72,43 @@ export interface AssistantTurn {
  */
 export type AssistantSurface = "chat" | "help";
 
+/**
+ * The browser's local date as `YYYY-MM-DD` — what "today" means to the person typing.
+ *
+ * The server used to derive this itself, in UTC, and for a UTC+05:30 org every question asked
+ * between midnight and 05:30 local resolved to the previous day: "yesterday" answered about the day
+ * before yesterday, with real figures for a day nobody asked about. The server now prefers the
+ * org's stored timezone, but it cannot get there alone — the timezone is a display label on some
+ * tenants and an IANA name on others, and neither says whether daylight saving is in effect today.
+ * The browser knows all of it.
+ *
+ * Built from the local getters rather than `toISOString()`, which converts to UTC and would
+ * reintroduce the very off-by-one this exists to fix.
+ */
+function localDate(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 export async function sendAssistantMessage(
   message: string,
   history: AssistantTurn[] = [],
   page?: AssistantPage,
   surface: AssistantSurface = "chat",
 ): Promise<string> {
+  // Computed per call, not per module load: a chat panel left open across midnight would otherwise
+  // keep asserting yesterday's date.
+  const client_date = localDate();
   const res = await apiFetch<MessageReply>("/v1/assistant/messages", {
     method: "POST",
     // `page` is omitted rather than sent null when unknown — the server treats an absent page as
     // "don't claim to know where they are", which is the honest default.
     body: JSON.stringify(
-      page ? { message, history, page, surface } : { message, history, surface },
+      page
+        ? { message, history, page, surface, client_date }
+        : { message, history, surface, client_date },
     ),
   });
   return res.reply;
