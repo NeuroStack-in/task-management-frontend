@@ -141,6 +141,9 @@ export function useProjectsData(): ProjectsData {
                 dueDate: t.due ?? null,
                 estimateHours: t.estimate_hours ?? 0,
                 createdBy: t.created_by ?? null,
+                // A server predating subtasks omits this; an absent breakdown and an empty one are
+                // the same thing to a card, so both collapse to zero.
+                subtaskProgress: t.subtasks ?? { total: 0, done: 0 },
                 attachments: (t.attachments ?? []).map((a) => ({
                   id: a.id,
                   filename: a.filename,

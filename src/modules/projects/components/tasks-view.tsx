@@ -107,6 +107,17 @@ export function TasksView({
                     <span className="truncate">
                       {project?.name ?? "Unknown"}
                     </span>
+                    {/* The breakdown counter. Rendered only when the task actually has subtasks —
+                        "0/0" on every other row would be noise, and it is the normal case. */}
+                    {t.subtaskProgress.total > 0 ? (
+                      <span
+                        className="flex shrink-0 items-center gap-1 tabular-nums"
+                        title={`${t.subtaskProgress.done} of ${t.subtaskProgress.total} subtasks done`}
+                      >
+                        <ListChecks className="size-3" />
+                        {t.subtaskProgress.done}/{t.subtaskProgress.total}
+                      </span>
+                    ) : null}
                   </p>
                 </div>
                 <span

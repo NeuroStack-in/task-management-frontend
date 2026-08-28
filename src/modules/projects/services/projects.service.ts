@@ -191,6 +191,47 @@ export interface ApiTaskAssignee {
   assigned_at: number;
 }
 
+/** One subtask, as the server serves it. */
+export interface ApiSubtask {
+  id: string;
+  task_id: string;
+  title: string;
+  /** Same vocabulary as a task: `todo` | `in_progress` | `in_review` | `done` | `closed` | `blocked`. */
+  status: string;
+  assignee_id?: string;
+  created_by: string;
+  created_at: number;
+  completed_at?: number;
+}
+
+/** The `3/5` counter, computed server-side so every surface agrees what "done" counts. */
+export interface ApiSubtaskProgress {
+  total: number;
+  done: number;
+}
+
+interface SubtaskListResponse {
+  task_id: string;
+  subtasks: ApiSubtask[];
+  progress: ApiSubtaskProgress;
+}
+
+/**
+ * One task's breakdown (`GET /v1/projects/{id}/tasks/{taskId}/subtasks`).
+ *
+ * **Read-only from the web.** Subtasks are created and ticked off in the desktop app — that is a
+ * product decision, not a limitation of this endpoint, which would accept writes from either client.
+ * There is deliberately no `createSubtask` here: adding one would put a control in the browser that
+ * the desktop app is meant to own.
+ *
+ * Requires project membership; a non-member gets 404 rather than 403, like every project route.
+ */
+export function listSubtasks(projectId: string, taskId: string): Promise<SubtaskListResponse> {
+  return apiFetch<SubtaskListResponse>(
+    `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/subtasks`,
+  );
+}
+
 export interface ApiBoardTask {
   id: string;
   title: string;
@@ -218,6 +259,14 @@ export interface ApiBoardTask {
   created_by?: string;
   /** Sign-off, present only on a `closed` task — served inline so the badge needs no second call. */
   review?: TaskReview;
+  /**
+   * How much of this card's breakdown is finished. Served on the board so the counter needs no
+   * second call — the server reads every subtask in the project in one query.
+   *
+   * Absent only from a server that predates subtasks; treat that as "no breakdown", the same as
+   * `{total: 0, done: 0}`.
+   */
+  subtasks?: ApiSubtaskProgress;
 }
 
 export interface ApiBoardColumn {

@@ -32,6 +32,7 @@ function task(over: Partial<Task> = {}): Task {
     dueDate: "2026-08-31",
     estimateHours: 4,
     attachments: [],
+    subtaskProgress: { total: 0, done: 0 },
     ...over,
   };
 }

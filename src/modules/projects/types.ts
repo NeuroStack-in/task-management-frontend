@@ -128,6 +128,41 @@ export interface Task {
   createdBy?: string | null;
   /** Sign-off, present only on a `closed` task — who approved it, when, and their rating. */
   review?: TaskReview | null;
+  /**
+   * How much of this task's breakdown is done — the `3/5` counter on the card.
+   *
+   * `{total: 0, done: 0}` means the task has no subtasks, which is the normal case. The count comes
+   * from the server rather than from `subtasks.length` so every surface agrees what "done" counts:
+   * both `done` **and** `closed` are finished.
+   */
+  subtaskProgress: SubtaskProgress;
+}
+
+/** The `3/5` counter on a task card. */
+export interface SubtaskProgress {
+  total: number;
+  done: number;
+}
+
+/**
+ * One subtask — a single level of breakdown under a task.
+ *
+ * Real work, not a checklist tick: it carries a status and an assignee, and the desktop app's timer
+ * runs against it. It is **created and edited only in the desktop app**; the web shows it read-only.
+ *
+ * A subtask never appears on the kanban board or in "My tasks" — the parent task is the unit of
+ * delivery, so an employee breaking their work into five pieces does not add five cards to their
+ * manager's board or move the project's completion percentage.
+ */
+export interface Subtask {
+  id: string;
+  taskId: string;
+  title: string;
+  status: TaskStatus;
+  assigneeId: string | null;
+  createdBy: string;
+  createdAt: number;
+  completedAt: number | null;
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,18 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Download, Eye, Loader2, Paperclip, Star } from "lucide-react";
+import { CheckCircle2, Circle, Download, Eye, Loader2, Paperclip, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { personName } from "@/lib/format";
-import { TASK_PRIORITY_META, TASK_STATUS_META, type Attachment, type Task } from "../types";
+import {
+  TASK_PRIORITY_META,
+  TASK_STATUS_META,
+  type Attachment,
+  type Subtask,
+  type SubtaskProgress,
+  type Task,
+  type TaskStatus,
+} from "../types";
 import { toneSoft, type UserMini } from "../lib";
 import { AssignedByLine } from "./assignees";
 import { StatusBadge } from "./parts";
-import { getAttachmentDownloadUrl } from "../services/projects.service";
+import { getAttachmentDownloadUrl, listSubtasks } from "../services/projects.service";
+import { ApiError } from "@/lib/api";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
 /** Human file size, e.g. "812 B", "2.3 MB". */
@@ -115,6 +124,113 @@ function Section({
 /** A field with nothing in it. One component so "no description" and "no due date" match. */
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-muted-foreground text-sm">{children}</p>;
+}
+
+
+/**
+ * A task's breakdown, read-only.
+ *
+ * **Deliberately has no "add subtask" control.** Subtasks are created and ticked off in the desktop
+ * app, where the timer that runs against them lives; the web is a reader. A button here would put
+ * the two clients in disagreement about who owns the breakdown.
+ *
+ * Fetched when the dialog opens rather than with the board, because the board already carries the
+ * only thing every card needs — the counter. Pulling every task's full breakdown into the board read
+ * would load a hundred lists to render one.
+ */
+function SubtasksSection({
+  projectId,
+  taskId,
+  progress,
+  open,
+  userMap,
+}: {
+  projectId: string;
+  taskId: string;
+  progress: SubtaskProgress;
+  open: boolean;
+  userMap: Record<string, UserMini>;
+}) {
+  const [rows, setRows] = useState<Subtask[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Nothing to fetch when the counter already says there is no breakdown — the common case, and
+    // skipping it keeps opening a plain task at one request instead of two.
+    if (!open || progress.total === 0) {
+      setRows(null);
+      setError(null);
+      return;
+    }
+    let alive = true;
+    setError(null);
+    listSubtasks(projectId, taskId)
+      .then((r) => {
+        if (!alive) return;
+        setRows(
+          r.subtasks.map((x) => ({
+            id: x.id,
+            taskId: x.task_id,
+            title: x.title,
+            status: x.status as TaskStatus,
+            assigneeId: x.assignee_id ?? null,
+            createdBy: x.created_by,
+            createdAt: x.created_at,
+            completedAt: x.completed_at ?? null,
+          })),
+        );
+      })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        // Say the breakdown could not be loaded rather than rendering an empty list — an empty list
+        // here would read as "this task has no subtasks", which is a different and wrong answer.
+        setError(e instanceof ApiError ? e.message : "Could not load subtasks");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, projectId, taskId, progress.total]);
+
+  if (progress.total === 0) return null;
+
+  return (
+    <Section label="Subtasks" count={progress.total}>
+      <p className="text-muted-foreground mb-2 text-xs tabular-nums">
+        {progress.done} of {progress.total} done
+      </p>
+      {error ? (
+        <Empty>{error}</Empty>
+      ) : rows === null ? (
+        <Empty>Loading…</Empty>
+      ) : (
+        <ul className="space-y-1.5">
+          {rows.map((s) => {
+            const done = s.status === "done" || s.status === "closed";
+            const who = s.assigneeId ? userMap[s.assigneeId]?.name : null;
+            return (
+              <li
+                key={s.id}
+                className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+              >
+                {done ? (
+                  <CheckCircle2 className="text-success size-4 shrink-0" />
+                ) : (
+                  <Circle className="text-muted-foreground size-4 shrink-0" />
+                )}
+                <span className={cn("min-w-0 flex-1 truncate", done && "text-muted-foreground line-through")}>
+                  {s.title}
+                </span>
+                <span className="text-muted-foreground shrink-0 text-xs">
+                  {TASK_STATUS_META[s.status]?.label ?? s.status}
+                  {who ? ` · ${who}` : ""}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Section>
+  );
 }
 
 export function ViewTaskDialog({
@@ -234,6 +350,14 @@ export function ViewTaskDialog({
                 <Empty>No description</Empty>
               )}
             </Section>
+
+            <SubtasksSection
+              projectId={projectId}
+              taskId={task.id}
+              progress={task.subtaskProgress}
+              open={open}
+              userMap={userMap}
+            />
 
             {/* Review sign-off */}
             {task.review ? (
