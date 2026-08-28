@@ -376,12 +376,19 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-white/90 ring-1 ring-white/10">
-                {project.key}
-              </span>
-              <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[0.7rem] text-white/70 ring-1 ring-white/10">
-                ID: {project.id}
-              </span>
+              {/* The short key is the project's human name-tag ("WP"). It is optional, so render
+                  it only when there is one — an empty chip reads as a rendering fault.
+
+                  The raw id (`p-01M1114XQHT0BK3ZCVV9DK09X4`) used to sit beside it. That is
+                  storage plumbing: a ULID nobody types, quotes, or searches for, taking the most
+                  prominent position on the page and pushing the actual name down. Nothing in the
+                  product asks a person for it — the URL already carries it for anyone who needs to
+                  share a link. */}
+              {project.key ? (
+                <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wide text-white/90 ring-1 ring-white/10">
+                  {project.key}
+                </span>
+              ) : null}
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/90 ring-1 ring-white/10">
                 <span className="size-1.5 rounded-full bg-white/75" />
                 {status.label}
@@ -708,8 +715,10 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   <StatusBadge tone={status.tone} label={status.label} />
                 </DialogTitle>
                 <DialogDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <Mono>{project.key}</Mono>
-                  <Mono>{project.id}</Mono>
+                  {/* Key only — the raw id was here too, for the same non-reason as in the page
+                      header above. `key` is optional, so an absent one renders nothing rather than
+                      an empty chip. */}
+                  {project.key ? <Mono>{project.key}</Mono> : null}
                   {project.department ? <span>· {project.department}</span> : null}
                 </DialogDescription>
               </div>
