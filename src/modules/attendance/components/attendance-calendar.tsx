@@ -19,6 +19,7 @@ import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { MONTH_NAMES, WEEKDAY_LABELS, monthMatrix, type DayCell } from "../lib/calendar";
 import { useWorkdays } from "@/hooks/use-working-hours";
+import { useOrgStartDate } from "@/hooks/use-org-start";
 import { useOrgHolidays, type HolidayIndex } from "@/hooks/use-org-holidays";
 import { HolidayBadge } from "@/components/shared/holiday-badge";
 import type { ApiDayResponse, ApiDaySummary } from "../services/attendance.service";
@@ -45,10 +46,16 @@ function exportMonthCsv(
   month: number,
   weeks: DayCell[][],
   days: Map<string, ApiDayResponse>,
+  orgStart: string | null,
 ) {
   const rows = weeks
     .flat()
-    .filter((c) => c.inMonth && c.isWorkday)
+    .filter(
+      (c) =>
+        c.inMonth &&
+        c.isWorkday &&
+        !(orgStart !== null && isoOf(c.year, c.month, c.day) < orgStart),
+    )
     .map((c) => {
       const s = days.get(isoOf(c.year, c.month, c.day))?.summary;
       return {
@@ -84,6 +91,9 @@ export function AttendanceCalendar({
   const view = { year: selected.year, month: selected.month };
   const workdays = useWorkdays();
   const holidays = useOrgHolidays();
+  // Days before the org existed have no roster to attend — block them out (hatched, like weekends)
+  // instead of rendering the backend's all-absent fallback as an alarming "0% attended".
+  const orgStart = useOrgStartDate();
   const weeks = useMemo(
     () => monthMatrix(view.year, view.month, workdays),
     [view.year, view.month, workdays],
@@ -114,7 +124,7 @@ export function AttendanceCalendar({
           {loading ? <span className="ml-2 text-xs text-muted-foreground">loading…</span> : null}
         </div>
 
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportMonthCsv(view.year, view.month, weeks, days)}>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportMonthCsv(view.year, view.month, weeks, days, orgStart)}>
           <Download className="size-4" /> Download
         </Button>
       </CardHeader>
@@ -128,7 +138,7 @@ export function AttendanceCalendar({
 
         <div className="grid grid-cols-7 gap-1.5">
           {weeks.flat().map((cell, i) => (
-            <DayCellView key={i} cell={cell} selected={selected} onSelect={onSelect} days={days} loading={loading} holidays={holidays} />
+            <DayCellView key={i} cell={cell} selected={selected} onSelect={onSelect} days={days} loading={loading} holidays={holidays} orgStart={orgStart} />
           ))}
         </div>
 
@@ -168,6 +178,7 @@ function DayCellView({
   days,
   loading,
   holidays,
+  orgStart,
 }: {
   cell: DayCell;
   selected: AttendanceDate;
@@ -175,21 +186,33 @@ function DayCellView({
   days: Map<string, ApiDayResponse>;
   loading: boolean;
   holidays: HolidayIndex;
+  /** The org's first day (`YYYY-MM-DD`), or null when unknown — see {@link useOrgStartDate}. */
+  orgStart: string | null;
 }) {
   const iso = isoOf(cell.year, cell.month, cell.day);
   const holidayName = cell.inMonth ? holidays.nameFor(iso) : undefined;
+  // A day before the org's first day never had a roster — no attendance can exist for it, so it is
+  // blocked out exactly like a weekend rather than shown as an all-absent "0%". ISO date strings
+  // compare lexicographically.
+  const beforeOrgStart = orgStart !== null && iso < orgStart;
 
-  // Weekends and off-days: hatched, no data by design. A holiday landing on one is still labelled.
-  if (!cell.isWorkday) {
+  // Weekends, off-days, and pre-launch days: hatched, no data by design. A holiday landing on one is
+  // still labelled.
+  if (!cell.isWorkday || beforeOrgStart) {
+    const title = beforeOrgStart
+      ? `${cell.day}: before the organization was created`
+      : holidayName
+        ? `Holiday: ${holidayName}`
+        : undefined;
     return (
       <div
         className={cn("wp-hatch flex min-h-[4.25rem] flex-col gap-1 rounded-xl p-2", !cell.inMonth && "opacity-50")}
-        title={holidayName ? `Holiday: ${holidayName}` : undefined}
+        title={title}
       >
         <span className={cn("text-xs font-semibold leading-none tabular-nums", cell.inMonth ? "text-muted-foreground" : "text-muted-foreground/50")}>
           {cell.day}
         </span>
-        {holidayName ? <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" /> : null}
+        {!beforeOrgStart && holidayName ? <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" /> : null}
       </div>
     );
   }
