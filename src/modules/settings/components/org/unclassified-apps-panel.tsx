@@ -16,7 +16,7 @@
  * artifact is the rule — which is what keeps every score reproducible (`docs/AI.md` §1).
  */
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { Sparkles, RefreshCw, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader } from "@/components/shared/loader";
@@ -45,10 +45,17 @@ const fmtHours = (sec: number) => {
 export function UnclassifiedAppsPanel({
   canManage,
   onAdd,
+  onAddMany,
 }: {
   canManage: boolean;
-  /** Append a rule to the draft the editor is holding. The parent owns saving. */
+  /** Append one rule to the draft the editor is holding. The parent owns saving. */
   onAdd: (app: string, category: RuleCategoryName) => void;
+  /**
+   * Append **several** rules in one update. Needed for "accept all": the per-row `onAdd` reads the
+   * editor's render-time `apps` snapshot, so calling it in a loop would stale-close and keep only the
+   * last rule — the parent folds the whole batch into a single write instead.
+   */
+  onAddMany: (rules: { app: string; category: RuleCategoryName }[]) => void;
 }) {
   const [apps, setApps] = useState<UnclassifiedApp[]>([]);
   const [totalSeen, setTotalSeen] = useState(0);
@@ -92,10 +99,27 @@ export function UnclassifiedAppsPanel({
   useEffect(() => load(false), [load]);
 
   const visible = apps.filter((a) => !done.has(a.app));
+  // Rows that carry a model suggestion — the ones "accept all" would apply in one click.
+  const suggested = visible.filter(
+    (a): a is UnclassifiedApp & { suggested_category: RuleCategoryName } =>
+      Boolean(a.suggested_category),
+  );
 
   function add(a: UnclassifiedApp, category: RuleCategoryName) {
     onAdd(a.app, category);
     setDone((cur) => new Set(cur).add(a.app));
+  }
+
+  // Apply every visible suggestion at once — still a single deliberate human action, just not one
+  // click per app. Rows with no suggestion are left for a manual decision.
+  function acceptAllSuggestions() {
+    if (suggested.length === 0) return;
+    onAddMany(suggested.map((a) => ({ app: a.app, category: a.suggested_category })));
+    setDone((cur) => {
+      const next = new Set(cur);
+      suggested.forEach((a) => next.add(a.app));
+      return next;
+    });
   }
 
   if (loading) {
@@ -141,15 +165,25 @@ export function UnclassifiedAppsPanel({
           </p>
         </div>
         {canManage ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => load(true)}
-            disabled={suggesting}
-          >
-            <Sparkles className="size-3.5" />
-            {suggesting ? "Asking…" : "Suggest categories"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Accept every suggestion in one action. Only shown once suggestions exist — otherwise
+                the primary action here is still "Suggest categories". */}
+            {suggested.length > 0 ? (
+              <Button size="sm" onClick={acceptAllSuggestions}>
+                <Check className="size-3.5" />
+                Accept all {suggested.length}
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => load(true)}
+              disabled={suggesting}
+            >
+              <Sparkles className="size-3.5" />
+              {suggesting ? "Asking…" : "Suggest categories"}
+            </Button>
+          </div>
         ) : null}
       </div>
 

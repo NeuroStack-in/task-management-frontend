@@ -46,6 +46,25 @@ import type {
   UrlRule,
 } from "../../use-org-rules";
 
+/**
+ * Add/overwrite one app rule, returning a new list. **Upsert, never append** — the unclassified
+ * panel's list is a snapshot, so a rule may already exist by the time it's applied; appending blind
+ * produced duplicate React keys and unreachable rules (matching is first-match-wins). Process names
+ * are lowercased to match `addApp`. Folding several through this in turn is how "accept all" applies
+ * a batch in one write.
+ */
+function upsertRule(
+  apps: AppRule[],
+  app: string,
+  category: RuleCategory,
+): AppRule[] {
+  const proc = app.trim().toLowerCase();
+  const at = apps.findIndex((a) => a.process_name.trim().toLowerCase() === proc);
+  return at >= 0
+    ? apps.map((a, i) => (i === at ? { ...a, category } : a))
+    : [...apps, { display_name: app, process_name: proc, category, tracked: true }];
+}
+
 const CATEGORIES: RuleCategory[] = ["productive", "neutral", "distracting"];
 const CATEGORY_LABEL: Record<RuleCategory, string> = {
   productive: "Productive",
@@ -241,17 +260,16 @@ function AppsPanel({
         {showUnclassified ? (
           <UnclassifiedAppsPanel
             canManage={canManage}
-            onAdd={(app, category) => {
-              // **Upsert, never append** — the panel's list is a snapshot; a rule may exist by the
-              // time it's clicked. Appending blind produced duplicate React keys and unreachable
-              // rules (matching is first-match-wins). Process names are lowercased to match `addApp`.
-              const proc = app.trim().toLowerCase();
-              const at = apps.findIndex((a) => a.process_name.trim().toLowerCase() === proc);
-              onApps(
-                at >= 0
-                  ? apps.map((a, i) => (i === at ? { ...a, category } : a))
-                  : [...apps, { display_name: app, process_name: proc, category, tracked: true }],
+            onAdd={(app, category) => onApps(upsertRule(apps, app, category))}
+            onAddMany={(rules) => {
+              // Fold the whole batch into ONE new array before a single `onApps`. Calling `onAdd`
+              // per rule would each read this same render's `apps` snapshot and clobber the previous,
+              // keeping only the last — so "accept all" would add exactly one rule.
+              const next = rules.reduce(
+                (acc, r) => upsertRule(acc, r.app, r.category),
+                apps,
               );
+              onApps(next);
             }}
           />
         ) : null}
