@@ -35,8 +35,16 @@ export interface TimesheetSession {
   id: string;
   /** What the person typed in the agent ("what are you working on?"). Empty when they typed nothing. */
   description: string;
-  /** The task id; the title is not resolvable for another user's tasks, so this is the fallback label. */
+  /** The task id. Kept for keying; the label to show is {@link taskTitle}. */
   taskId: string;
+  /**
+   * The task's title, resolved by the server.
+   *
+   * Empty when the task was deleted, or when the backend predates the field. It used to be
+   * unresolvable here at all: an admin reading someone else's day has no list of *their* tasks to
+   * join against, which is why this is served rather than looked up.
+   */
+  taskTitle: string;
   /** Local `HH:MM`. */
   start: string;
   /** Epoch ms the session began — what a **running** row ticks from (`useRunningSeconds`).

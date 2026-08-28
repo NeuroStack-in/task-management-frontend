@@ -167,7 +167,9 @@ function toRow(
   const running = e.end === undefined;
   return {
     id: e.session_id,
-    task: titles.get(e.task_id)?.trim() || null,
+    // Server first: it resolves the title even for a task this caller cannot list. The local map
+    // stays as the fallback for a backend that predates `task_title`.
+    task: e.task_title?.trim() || titles.get(e.task_id)?.trim() || null,
     description: e.description?.trim() || "",
     project: projectOf(e.project_id, names),
     start: clockOf(e.start),

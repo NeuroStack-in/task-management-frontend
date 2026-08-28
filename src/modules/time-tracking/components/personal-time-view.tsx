@@ -290,15 +290,16 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                       rows.map((e) => (
                         <TableRow key={e.id}>
                           <TableCell className="pl-6">
-                            {/* Two distinct facts, stacked rather than competing for one label: the
-                            **description** is what the person typed and is the thing they recognise,
-                            so it leads; the **task** is the assignment it was booked against and is
-                            optional (a project-only session has none). Showing whichever happened to
-                            be present made one row read "New One" and the next "Api testing", which
-                            looks like inconsistent data rather than two different fields. */}
+                            {/* Two distinct facts, stacked rather than competing for one label — but
+                            the **task** leads now, not the description. The task is what the work
+                            *is*; the description is what was said about it. With the description on
+                            top, a day read as rows of free text with the actual task nowhere on
+                            screen, and the TASK column was named after the one thing it wasn't
+                            showing. A project-only session still has no task, so the description
+                            remains the fallback. */}
                             <div className="flex items-center gap-2">
                               <span className="font-medium">
-                                {e.description || e.task || "No description"}
+                                {e.task || e.description || "No description"}
                               </span>
                               {e.billable ? (
                                 <Badge variant="secondary">Billable</Badge>
@@ -312,9 +313,9 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                               ) : null}
                             </div>
                             {/* Only when it adds something the line above doesn't already say. */}
-                            {e.task && e.description ? (
+                            {e.task && e.description && e.description !== e.task ? (
                               <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                                {e.task}
+                                {e.description}
                               </span>
                             ) : null}
                           </TableCell>

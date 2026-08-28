@@ -184,17 +184,48 @@ function groupByLabel(entries: TimesheetDayEntry[]): [string, TimesheetDayEntry[
 /**
  * One session: what was worked on, when, for how long.
  *
- * The label falls back description → task id → "Untitled session". A task *title* is deliberately not
- * attempted: task titles resolve from the caller's own task list, which does not cover another
- * employee's tasks, so an admin would see blanks or — worse — the wrong name. The typed description
- * is what the person actually wrote, and is the honest label.
+ * The label is the **task**, falling back to the description and then "Untitled session".
+ *
+ * It used to be the description, and the reason was real: task titles resolved from the caller's
+ * own task list, which does not cover another employee's tasks, so an admin would have seen blanks
+ * or the wrong name. The server now resolves the title itself (`EntryRow.task_title`, one batch
+ * read per day), which removes that constraint — an admin gets the right name for a task they
+ * could never have listed. The description keeps its place on the line below.
  */
+/**
+ * How a session ended, in words — or "" for the ordinary case.
+ *
+ * `user` is deliberately silent: someone pressing Stop is what is supposed to happen, and labelling
+ * it would put a badge on nearly every row and drown the ones that matter. Anything unrecognised is
+ * passed through rather than dropped, so a reason added server-side still says something here.
+ */
+function stopReasonLabel(reason: string | undefined): string {
+  if (!reason || reason === "user") return "";
+  const known: Record<string, string> = {
+    idle: "ended when idle",
+    logout: "ended at sign-out",
+    shutdown: "ended by shutdown",
+    abandoned: "ended without a stop",
+    superseded: "replaced by a newer session",
+  };
+  return known[reason] ?? `ended: ${reason}`;
+}
+
 function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
   const s = entry.session!;
   // Ticks only while this session is running; `null` starts no interval at all.
   const liveSec = useRunningSeconds(s.running ? s.startMs : null);
-  // Never fall back to the raw `taskId` — a task id is opaque; an empty description reads as untitled.
-  const label = s.description || "Untitled session";
+  // **The task names the row; the description details it.**
+  //
+  // This was the description — the sentence typed into "what are you working on?" — so a day read
+  // as rows of free text with the actual task nowhere on screen. The task is what the work *is*;
+  // the note is what was said about it, and it moves to the line below.
+  //
+  // Never fall back to the raw `taskId`: an id is opaque, and "Untitled session" at least says
+  // what it means.
+  const label = s.taskTitle || s.description || "Untitled session";
+  // Only when it adds something the line above does not already say.
+  const detail = s.taskTitle && s.description && s.description !== s.taskTitle ? s.description : "";
   return (
     <li className="flex items-start justify-between gap-3 text-sm">
       <span className="min-w-0 flex-1">
@@ -203,16 +234,20 @@ function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
             breaks a single unbroken token (a pasted URL, a long ID), which is what was pushing the
             panel wider than the dialog and producing a horizontal scrollbar. */}
         <span className="block font-medium break-words">{label}</span>
+        {detail ? (
+          <span className="text-muted-foreground mt-0.5 block text-xs break-words">{detail}</span>
+        ) : null}
         <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
           <span className="font-mono tabular-nums">
             {s.start} – {s.end ?? "now"}
           </span>
           {s.billable ? <span className="text-success">Billable</span> : null}
           {s.running ? <span className="text-primary font-medium">Running</span> : null}
-          {/* Surfaced because it explains a session the person did not stop themselves — an
-              abandoned or superseded one was closed by the server, not by them. */}
-          {s.stopReason && s.stopReason !== "user" ? (
-            <span className="text-warning">{s.stopReason}</span>
+          {/* Surfaced because it explains a session the person did not stop themselves. Rendered as
+              a sentence, not the raw enum: "shutdown" on its own reads as a category label and had
+              to be guessed at; "ended by shutdown" says what happened to the session. */}
+          {stopReasonLabel(s.stopReason) ? (
+            <span className="text-warning">{stopReasonLabel(s.stopReason)}</span>
           ) : null}
           {s.taskInvalid ? <span className="text-warning">task removed</span> : null}
         </span>

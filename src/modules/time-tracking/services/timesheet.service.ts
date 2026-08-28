@@ -33,6 +33,13 @@ export interface ApiEntryRow {
   /** `YYYY-MM-DD` — the session's **start** day. A session crossing midnight is not split. */
   date: string;
   task_id: string;
+  /**
+   * The task's title, resolved server-side (one batch read per day).
+   *
+   * Optional: absent on a task since deleted, and absent entirely until the backend carrying it is
+   * deployed — so every reader must fall back rather than render an empty label.
+   */
+  task_title?: string;
   project_id: string;
   description?: string;
   /** Epoch ms. */
