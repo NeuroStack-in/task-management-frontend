@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader } from "@/components/shared/loader";
 import { MyTasksCard } from "./my-tasks-card";
 import { useMyWork } from "../use-my-work";
+import { useWeekTracked } from "../use-week-tracked";
 import { useMyAttendance, ymd } from "@/modules/attendance/use-my-attendance";
 import { useIsSurfaceOn } from "@/hooks/use-features";
 import { useAssistantPageContext } from "@/stores/page-context.store";
@@ -61,9 +62,16 @@ export function PersonalDashboard() {
   const att = useMyAttendance(week[0].key, week[6].key);
 
   const attRows = week.map((w) => ({ ...w, record: att.recordFor(w.y, w.m, w.day) }));
-  const weekHours =
-    Math.round(attRows.reduce((sum, w) => sum + (w.record?.hours ?? 0), 0) * 10) / 10;
   const daysPresent = attRows.filter((w) => w.record?.status === "present").length;
+
+  // Logged timer time across the window, **including the session running right now**.
+  //
+  // This used to sum the attendance records above, whose `hours` come from `worked_minutes` — a
+  // figure the nightly close stamps. Today therefore contributed nothing however long the timer had
+  // been running, so someone three hours into a session saw this tile sitting unchanged next to a
+  // live timer counting up: two numbers about the same work, disagreeing on screen.
+  const tracked = useWeekTracked(week[0].key, week[6].key);
+  const weekHours = Math.round((tracked.totalSec / 3600) * 10) / 10;
 
   // Publish the viewer's own at-a-glance figures to the assistant.
   useAssistantPageContext({
@@ -98,10 +106,14 @@ export function PersonalDashboard() {
         <MeetingHoursCard />
         <StatCard
           label="Hours this week"
-          value={mounted ? weekHours.toFixed(1) : "—"}
+          // "—" until the range has actually been read: a confident 0.0 next to a running timer is
+          // worse than an obvious blank.
+          value={mounted && tracked.loaded ? weekHours.toFixed(1) : "—"}
           icon={Clock}
-          hint="from attendance"
-          href="/attendance"
+          hint="logged on the timer"
+          // Points at the timesheet now, not attendance — that is where this number comes from, and
+          // sending someone to a page that shows a different figure is how the two get mistrusted.
+          href="/time-tracking"
         />
         {showProjects && (
           <>
