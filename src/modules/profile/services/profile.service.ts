@@ -55,6 +55,11 @@ export interface ApiMyFullProfile {
   title?: string;
   department_id?: string;
   team_id?: string;
+  /** Department/team **display names**, resolved server-side from the ids — so a self-viewing
+   *  Employee sees them without the org-wide `GET /v1/departments`/`/v1/teams` they can't read.
+   *  Absent when unassigned. Prefer these over resolving the id client-side. */
+  department_name?: string;
+  team_name?: string;
   /** Epoch ms the account was created — the honest "member since". */
   created_at?: number;
   /** `YYYY-MM-DD`, self-set. */

@@ -286,12 +286,15 @@ function RichProfile({
     let alive = true;
     const deptId = profile?.department_id;
     const teamId = profile?.team_id;
-    if (deptId) {
+    // Only resolve client-side when the server didn't already provide the name — an Employee viewing
+    // their own profile 403s on `GET /v1/departments`, so calling it when `department_name` is present
+    // is both wasteful and pointless.
+    if (deptId && !profile?.department_name) {
       departmentMap()
         .then((m) => alive && setDeptName(m.get(deptId) ?? ""))
         .catch(() => {});
     } else setDeptName("");
-    if (teamId) {
+    if (teamId && !profile?.team_name) {
       teamMap()
         .then((m) => alive && setTeamName(m.get(teamId) ?? ""))
         .catch(() => {});
@@ -299,7 +302,7 @@ function RichProfile({
     return () => {
       alive = false;
     };
-  }, [profile?.department_id, profile?.team_id]);
+  }, [profile?.department_id, profile?.team_id, profile?.department_name, profile?.team_name]);
 
   const stats = useMyStats();
 
@@ -478,9 +481,11 @@ function RichProfile({
   const dash = (v: string | undefined | null) => v?.trim() || "—";
   const empId = dash(profile?.emp_id);
   const jobTitle = profile?.title ?? user.jobTitle;
-  // Names, never the raw `department_id`/`team_id`. `user.*` (from the token) is already a name.
-  const department = deptName || user.department;
-  const team = teamName || user.team;
+  // Names, never the raw `department_id`/`team_id`. Prefer the server-resolved names (which work
+  // for a self-viewing Employee, who can't read the org-wide department/team lists); fall back to
+  // the client-side `departmentMap()` resolution, then the token's already-a-name `user.*`.
+  const department = profile?.department_name || deptName || user.department;
+  const team = profile?.team_name || teamName || user.team;
 
   const contact: DetailRow[] = [
     { icon: Mail, label: "Email", value: user.email },
