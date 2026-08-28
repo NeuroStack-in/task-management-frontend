@@ -268,14 +268,17 @@ export function ActivityTab() {
         neutral_sec_total: number;
         distracting_sec_total: number;
       },
-      avgScore: number,
+      // Nullable: a period where nobody cleared the server's 30-minute volume floor has no
+      // meaningful mean, but it still has a roster. Collapsing the whole object for want of an
+      // average is what made "Not reporting" read 0 while seven agents sat there not reporting.
+      avgScore: number | null,
       coverage: { label: string; value: string },
     ) => {
       const catTotal =
         r.productive_sec_total + r.neutral_sec_total + r.distracting_sec_total;
       return {
         coverage,
-        avgScore: Math.round(avgScore),
+        avgScore: avgScore === null ? null : Math.round(avgScore),
         activeSec: r.active_sec_total,
         productiveSec: r.productive_sec_total,
         neutralSec: r.neutral_sec_total,
@@ -289,7 +292,11 @@ export function ActivityTab() {
 
     if (granularity === "daily") {
       const r = org.data?.rollup;
-      if (!r || r.avg_score === null) return null;
+      // `avg_score` is null whenever `scored_people` is 0 — the server withholds a mean it cannot
+      // compute. That says nothing about `total_people`, which is still a real roster, so bailing
+      // here reported "0 reported, 0 not reporting" for an org with seven enrolled agents: a
+      // denominator of zero, presented as a coverage measurement.
+      if (!r) return null;
       return build(r, r.avg_score, {
         label: "People scored",
         value: `${r.scored_people}/${r.total_people}`,
@@ -297,7 +304,9 @@ export function ActivityTab() {
     }
 
     // Weekly / monthly: aggregate the same per-day rollups that already feed the trend chart.
-    const days = range.points.filter((p) => p.rollup && p.score !== null);
+    // Every day that HAS a rollup, scored or not — a day with agents reporting under the floor
+    // is a day with coverage to report. `scoredDays` below keeps the average honest.
+    const days = range.points.filter((p) => p.rollup);
     if (days.length === 0) return null;
 
     const sum = days.reduce(
@@ -324,11 +333,18 @@ export function ActivityTab() {
     );
     // Mean of the scored days — the same mean-of-means the trend chart plots, so the tile and the
     // chart above it can never tell different stories.
-    const avg = days.reduce((s, p) => s + (p.score ?? 0), 0) / days.length;
+    // Averaged over the days that actually produced a score, never over the days that merely
+    // had a rollup — dividing by the wider set would drag the mean toward zero with days the
+    // server deliberately declined to score.
+    const scoredDays = days.filter((p) => p.score !== null);
+    const avg =
+      scoredDays.length === 0
+        ? null
+        : scoredDays.reduce((s, p) => s + (p.score ?? 0), 0) / scoredDays.length;
     return build(sum, avg, {
       // "Days scored", not "People scored": we have per-day counts, not identities.
       label: "Days scored",
-      value: `${days.length}/${range.points.length}`,
+      value: `${scoredDays.length}/${range.points.length}`,
     });
   }, [granularity, org.data, range.points]);
 
@@ -343,7 +359,14 @@ export function ActivityTab() {
     if (!stats) return [];
     return [
       { label: stats.coverage.label, value: stats.coverage.value },
-      { label: "Team avg score", value: `${stats.avgScore}`, hint: "/ 100" },
+      stats.avgScore === null
+        ? {
+            label: "Team avg score",
+            value: "—",
+            // Distinct from "no data": days were reported, they were just too thin to score.
+            hint: "too little activity",
+          }
+        : { label: "Team avg score", value: `${stats.avgScore}`, hint: "/ 100" },
       // "Active **time**" — this is `active_sec` (hours with input detected, the opposite of idle).
       // Bare "Active" sat next to people-counts and read as a headcount.
       { label: "Active time", value: fmtHours(stats.activeSec) },
