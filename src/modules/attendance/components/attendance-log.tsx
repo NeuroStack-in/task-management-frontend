@@ -13,6 +13,7 @@
  * module, so it stays exported here unchanged.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNow } from "@/hooks/use-now";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import { ArrowDown, ArrowUp, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
@@ -90,6 +91,21 @@ const fmtTime = (ms?: number) =>
     : "—";
 /** Worked minutes → one-decimal hours, or `—`. */
 const fmtHours = (mins?: number) => (mins && mins > 0 ? (mins / 60).toFixed(1) : "—");
+/**
+ * Live worked hours for a row. A single-session running row ticks from `clockIn` — which is then the
+ * open session's own start, so `now − clockIn` is exact (no closed time to double-count, no break to
+ * overstate). Any other row shows its settled worked minutes; `—` when there's nothing.
+ */
+const fmtRowHours = (
+  r: { running?: boolean; entryCount?: number; clockIn?: number; workedMinutes?: number },
+  now: number,
+): string => {
+  if (r.running && r.entryCount === 1 && typeof r.clockIn === "number") {
+    const h = Math.max(0, (now - r.clockIn) / 3_600_000);
+    return h > 0 ? h.toFixed(1) : "—";
+  }
+  return fmtHours(r.workedMinutes);
+};
 
 /**
  * Anchor for deep links into this section — the dashboard's employee KPI cards land here.
@@ -125,6 +141,8 @@ export function AttendanceLog({
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
+  // Ticks the running rows' live hours (see fmtRowHours). Table-wide, so one interval, not per-row.
+  const now = useNow();
   // Today's roster leads with whoever is working right now — that is the question the live view is
   // open to answer, and alphabetical order buries it (four In-now people scattered through seven
   // Out rows). Name stays the tiebreak, and the column headers still re-sort on demand. A past day
@@ -438,7 +456,7 @@ export function AttendanceLog({
                               )}
                             </TableCell>
                             <TableCell className="tabular-nums text-muted-foreground">
-                              {fmtHours(r.workedMinutes)}
+                              {fmtRowHours(r, now)}
                             </TableCell>
                           </>
                         )}

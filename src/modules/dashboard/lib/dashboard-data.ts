@@ -313,6 +313,18 @@ export interface DashboardData {
    */
   newHiresTracked: boolean;
   /**
+   * Inputs for the **live** "Hours Tracked" KPI: `closedSec` is the settled tracked time from the
+   * org rollup; `runningStarts` are the epoch-ms starts of currently-open sessions we can tick
+   * exactly (single-session days); `includesToday` gates whether the running time belongs to the
+   * selected window. The view adds `now − start` for each start via `useNow`, so the number accrues
+   * in real time without a refetch.
+   */
+  hoursLive: {
+    closedSec: number;
+    runningStarts: number[];
+    includesToday: boolean;
+  };
+  /**
    * How many of the trackable team actually produced a score, for the best-covered day in the
    * window. The productivity score divides by `team`, so this is what makes a low number readable:
    * "4% · 1 of 14 reporting" is thin coverage, not a collapsed workforce.

@@ -302,13 +302,29 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             // `present` = has clocked in at all today (a live signal — the attendance *verdict* only
             // exists after the nightly close), so the Attendance donut has something truthful to show
             // for the Today range instead of a blank "resolved tomorrow".
-            (d) => ({ running: d.running === true, present: Boolean(d.clock_in) }),
-            () => ({ running: false, present: false }),
+            (d) => ({
+              running: d.running === true,
+              present: Boolean(d.clock_in),
+              // A running session we can tick live: only when today is a SINGLE session, so `clock_in`
+              // IS the open session's own start. Then `now − start` is exact — there is no closed time
+              // to double-count (`tracked_sec` is 0 for such a user) and no earlier break to overstate.
+              liveStart:
+                d.running === true && d.entry_count === 1 && typeof d.clock_in === "number"
+                  ? d.clock_in
+                  : null,
+            }),
+            () => ({ running: false, present: false, liveStart: null as number | null }),
           ),
         );
         const workingNow = todayStatus.filter((s) => s.running).length;
         const notWorkingNow = timerHolders.length - workingNow;
         const presentToday = todayStatus.filter((s) => s.present).length;
+        // Starts of the running sessions the KPI can accrue in real time (see `liveStart`). Only
+        // added when the selected window actually contains today.
+        const runningStarts = todayStatus
+          .map((s) => s.liveStart)
+          .filter((v): v is number => v !== null);
+        const rangeIncludesToday = days.includes(todayForTimers);
 
         // Per-day monitoring reads — bounded + skip-on-fail. A day with no agent data just contributes
         // nothing (nulls), never a seeded number.
@@ -434,7 +450,20 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const productivityValue = scoredPersonDays
           ? Math.round(scoreSum / scoredPersonDays)
           : 0;
-        const hoursTracked = Math.round(trackedSecTotal / 3600);
+        // Snapshot of live-running seconds at fetch time, so the KPI is already correct before the
+        // first `useNow` tick and the assistant reads a truthful figure. The view re-derives this
+        // live from `hoursLive` on an interval. `Date.now()` here is in the data effect, not a render
+        // path — no hydration concern.
+        const runningSnapSec = rangeIncludesToday
+          ? runningStarts.reduce((s, st) => s + Math.max(0, (Date.now() - st) / 1000), 0)
+          : 0;
+        const hoursTrackedSec = trackedSecTotal + runningSnapSec;
+        // One decimal below 10h so a live-accruing morning (0.4h) isn't floored to "0h"; whole hours
+        // above, where a tenth is noise.
+        const hoursTracked =
+          hoursTrackedSec >= 36000
+            ? Math.round(hoursTrackedSec / 3600)
+            : Math.round((hoursTrackedSec / 3600) * 10) / 10;
 
         // ── Productivity trend (the chart): a real multi-day line. A single "today" point is not a
         // trend, so when the selected range is one day, draw a rolling 7-day window fetched just for
@@ -767,6 +796,11 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           attendanceCounts: latestCounts,
           attendanceResolvedDays,
           newHiresTracked,
+          hoursLive: {
+            closedSec: trackedSecTotal,
+            runningStarts,
+            includesToday: rangeIncludesToday,
+          },
           productivityCoverage: {
             scored: coverageScored,
             team: coverageTeam,

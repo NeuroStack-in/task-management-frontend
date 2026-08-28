@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { StatCard } from "@/components/shared/stat-card";
 import { UpgradeStatCard } from "@/components/shared/upgrade-stat-card";
 import { useIsFeatureAllowed } from "@/hooks/use-features";
+import { useNow } from "@/hooks/use-now";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { PageHeader } from "@/components/shared/page-header";
@@ -91,6 +92,8 @@ function OrgDashboard() {
   // buried today's numbers in a week's average. The LLD does not fix a page-level default (§3 is
   // layout persistence; `date-range` there is per-widget config), so this is a product choice.
   const isFeatureAllowed = useIsFeatureAllowed();
+  // Ticks every ~30s so "Hours Tracked" accrues live while timers run (see useNow / data.hoursLive).
+  const now = useNow();
   const [range, setRange] = useState<DashboardRange>("today");
   const [team, setTeam] = useState("all");
   const [start, setStart] = useState("");
@@ -204,6 +207,22 @@ function OrgDashboard() {
 
   const { kpis, rangeLabel } = data;
 
+  // Live "Hours Tracked": settled tracked time + elapsed of each currently-running session, ticking
+  // via `useNow`. Shown to a tenth of an hour below 10h so a live morning reads "0.4h", not a
+  // floored "0h"; whole hours above, where a tenth is noise.
+  const liveHoursSec =
+    data.hoursLive.closedSec +
+    (data.hoursLive.includesToday
+      ? data.hoursLive.runningStarts.reduce(
+          (s, st) => s + Math.max(0, (now - st) / 1000),
+          0,
+        )
+      : 0);
+  const liveHours = liveHoursSec / 3600;
+  const liveHoursText = (
+    liveHours >= 10 ? Math.round(liveHours) : Math.round(liveHours * 10) / 10
+  ).toLocaleString();
+
   return (
     <div className="space-y-4">
       <DashboardControls
@@ -304,7 +323,7 @@ function OrgDashboard() {
             ) : (
               <StatCard
                 label="Hours Tracked"
-                value={`${kpis.hours.value.toLocaleString()}h`}
+                value={`${liveHoursText}h`}
                 icon={Clock}
                 hint="logged today"
                 href="/time-tracking"
@@ -338,7 +357,7 @@ function OrgDashboard() {
             ) : (
               <StatCard
                 label="Hours Tracked"
-                value={`${kpis.hours.value.toLocaleString()}h`}
+                value={`${liveHoursText}h`}
                 icon={Clock}
                 hint={rangeLabel}
                 href="/time-tracking"

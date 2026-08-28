@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useNow } from "@/hooks/use-now";
 import {
   ChevronLeft,
   ChevronRight,
@@ -92,6 +93,22 @@ function fmtHM(hours: number): string {
   return `${h}:${m.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Extra hours from sessions still **running** in a day's entries — the live top-up over the settled
+ * `days[i]`, so a cell (and every total derived from it) ticks in real time. Person rows carry the
+ * session on each entry; project rows don't, so those stay at their settled hours.
+ */
+function runningHours(entries: TimesheetDayEntry[] | undefined, now: number): number {
+  if (!entries) return 0;
+  let sec = 0;
+  for (const e of entries) {
+    if (e.session?.running && typeof e.session.startMs === "number") {
+      sec += Math.max(0, (now - e.session.startMs) / 1000);
+    }
+  }
+  return sec / 3600;
+}
+
 /* ------------------------------ component ------------------------------- */
 
 export function TimesheetGrid({
@@ -116,6 +133,8 @@ export function TimesheetGrid({
   const [query, setQuery] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const holidays = useOrgHolidays();
+  // Ticks the running sessions' live top-up (see runningHours) so open timers accrue in the grid.
+  const now = useNow();
   const [selection, setSelection] = useState<
     | { rowId: string; kind: "day"; dayIndex: number }
     | { rowId: string; kind: "week" }
@@ -173,13 +192,20 @@ export function TimesheetGrid({
     });
 
     return matched
+      // Sort by the SETTLED total so a live-accruing timer doesn't reshuffle rows every tick.
+      .slice()
+      .sort(
+        (a, b) =>
+          b.days.reduce((s, h) => s + h, 0) - a.days.reduce((s, h) => s + h, 0),
+      )
       .map((r) => {
-        // Real per-day hours; the total is their sum, not a separately-carried number.
-        const total = Math.round(r.days.reduce((s, h) => s + h, 0) * 100) / 100;
-        return { ...r, total };
-      })
-      .sort((a, b) => b.total - a.total);
-  }, [baseRows, query, deptFilter]);
+        // Per-day hours = settled `days[i]` + the live top-up of any session still running that day.
+        // The total is their sum, not a separately-carried number, so every derived total is live too.
+        const days = r.days.map((h, i) => h + runningHours(r.dayEntries[i], now));
+        const total = Math.round(days.reduce((s, h) => s + h, 0) * 100) / 100;
+        return { ...r, days, total };
+      });
+  }, [baseRows, query, deptFilter, now]);
 
   const hasFilters = deptFilter !== "all" || query.trim() !== "";
   const clearFilters = () => {

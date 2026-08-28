@@ -66,6 +66,9 @@ export interface OversightRow {
   workedMinutes?: number;
   /** A timer is on right now (clocked in, no clock-out). */
   running?: boolean;
+  /** Number of timer sessions today — lets a single-session running row tick live from `clockIn`
+   *  (which is then the open session's own start) without over-counting a break. */
+  entryCount?: number;
   /** An approved leave request covers this date (`day`/`today` mode). */
   onLeave?: boolean;
   /**
@@ -212,6 +215,7 @@ async function enrichClock(
       clockOut: d.clock_out,
       workedMinutes: d.worked_minutes,
       running: d.running,
+      entryCount: d.entry_count,
       onLeave: d.on_leave,
       ...(deriveStatus ? { status: d.running ? "in" : "out" } : {}),
     };
