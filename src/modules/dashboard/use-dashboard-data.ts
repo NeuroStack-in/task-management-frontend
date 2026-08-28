@@ -345,10 +345,21 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             const scopedShots = grid
               ? grid.shots.filter((s) => inScopeUser(s.user_id))
               : [];
-            const shots = scopedShots.length;
-            const shotsTruncated = grid
-              ? Boolean(grid.cursor) || grid.shots.length >= SHOT_PAGE
-              : false;
+            // Prefer the server's EXACT day total (a `Select=COUNT`) when we're org-wide — so the
+            // tile shows "247", not a "200+" page floor. The total is org-wide, so a department
+            // filter can't use it (it would over-count); that case keeps the page-length floor,
+            // which is at least honest about being one.
+            const exactTotal =
+              team === "all" && grid && typeof grid.total === "number"
+                ? grid.total
+                : null;
+            const shots = exactTotal ?? scopedShots.length;
+            const shotsTruncated =
+              exactTotal !== null
+                ? false
+                : grid
+                  ? Boolean(grid.cursor) || grid.shots.length >= SHOT_PAGE
+                  : false;
             // One pass over the day's in-scope frames: the activity-heatmap bucket, review flags,
             // the productive/neutral/distracting split, and who was captured — all from data
             // already fetched, no extra request.

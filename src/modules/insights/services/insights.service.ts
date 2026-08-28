@@ -387,6 +387,9 @@ export interface ScreenshotGrid {
   date: string;
   shots: ShotRow[];
   cursor?: string;
+  /** Exact frame count for the day's partition (server `Select=COUNT`), so a caller can show the
+   *  real total instead of a page-length floor. Present only on the first page (no `cursor`). */
+  total?: number;
 }
 
 export function getScreenshots(
