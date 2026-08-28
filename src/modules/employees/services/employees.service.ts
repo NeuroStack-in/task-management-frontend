@@ -31,6 +31,9 @@ export interface ApiEmployee {
   /** On the **bench** — still an employee, but excluded from Attendance + Time-Tracking. Absent (not
    * `true`) for everyone who isn't benched, which keeps it additive for existing orgs. */
   benched?: boolean;
+  /** Join date (epoch ms), enriched from the base user item. Powers the dashboard "New Hires" count.
+   * Absent for legacy rows minted before join dates were recorded. */
+  joined_at?: number;
   /** `active` | `deactivated`. */
   status: string;
   department_id: string;

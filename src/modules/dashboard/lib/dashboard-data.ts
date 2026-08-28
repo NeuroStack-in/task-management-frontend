@@ -307,11 +307,22 @@ export interface DashboardData {
    */
   attendanceResolvedDays: number;
   /**
+   * Whether any roster member has a join date (`joined_at`). `false` only for a legacy org where no
+   * one has one — there the New Hires tile shows the honest "—" instead of a confident "0". When
+   * true, `kpis.newHires.value` is the real count of people who joined within the selected period.
+   */
+  newHiresTracked: boolean;
+  /**
    * How many of the trackable team actually produced a score, for the best-covered day in the
    * window. The productivity score divides by `team`, so this is what makes a low number readable:
    * "4% · 1 of 14 reporting" is thin coverage, not a collapsed workforce.
+   *
+   * `reported` is how many produced a summary AT ALL, scored or not. A day under the 30-minute
+   * volume floor (MIN_ACTIVE_SEC_TO_SCORE, server-side) has `totals` but no `breakdown` — the
+   * score is withheld as unreliable, not missing. Without this the tile called that "no agent
+   * reported", which describes a fleet that isn'''t running rather than one that barely worked.
    */
-  productivityCoverage: { scored: number; team: number };
+  productivityCoverage: { scored: number; team: number; reported: number };
   statusCounts: HeadcountCounts;
   /**
    * Directory headcount — **employment status**, not "working right now".

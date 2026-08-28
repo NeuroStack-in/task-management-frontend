@@ -404,6 +404,11 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         let trackedSecTotal = 0;
         let coverageScored = 0;
         let coverageTeam = 0;
+        // People who DID report, whether or not the day cleared the volume floor. `breakdown` is
+        // withheld below 30 minutes of active time (MIN_ACTIVE_SEC_TO_SCORE) while `totals` is
+        // always set, so this is the only way to tell "no agent running" from "agent running, too
+        // little activity to score" — two states the tile used to describe with one sentence.
+        let coverageReported = 0;
         for (const b of bundles) {
           const people = (b.activity?.people ?? []).filter(
             (p) => inScopeDept(p.department_id) && trackableIds.has(p.user_id),
@@ -415,6 +420,10 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           // into distinct people across a window.
           coverageScored = Math.max(coverageScored, scored.length);
           coverageTeam = Math.max(coverageTeam, people.length);
+          coverageReported = Math.max(
+            coverageReported,
+            people.filter((p) => p.totals).length,
+          );
           // "Hours Tracked" is the **logged timer time** (`tracked_sec`, from the TIME# sessions) —
           // what the label and the /time-tracking link mean. It is present even for a contributor
           // with no summary yet, and it is NOT `active_sec` (input activity): a timer left running
@@ -696,6 +705,22 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           trend: [],
         });
 
+        // New hires = roster members whose join date (epoch ms) falls within the selected period,
+        // scoped to the department filter. The directory now carries `joined_at` (enriched from the
+        // base user item), so this is real instead of the old hardcoded 0. `newHiresTracked` stays
+        // false only for a legacy org where no one has a join date — there the tile still shows the
+        // honest "—", never a confident "0".
+        const daySet = new Set(days);
+        const localDay = (ms: number) =>
+          `${new Date(ms).getFullYear()}-${String(new Date(ms).getMonth() + 1).padStart(2, "0")}-${String(new Date(ms).getDate()).padStart(2, "0")}`;
+        const newHiresTracked = roster.some((e) => typeof e.joined_at === "number");
+        const newHiresCount = roster.filter(
+          (e) =>
+            inScopeUser(e.user_id) &&
+            typeof e.joined_at === "number" &&
+            daySet.has(localDay(e.joined_at)),
+        ).length;
+
         const built: DashboardData = {
           range,
           team,
@@ -725,7 +750,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             timers: flat(workingNow),
             hours: flat(hoursTracked),
             attendance: flat(attendanceRate),
-            newHires: flat(0), // no join date in the directory → the view renders "—", not this 0.
+            newHires: flat(newHiresCount),
           },
           productivityTrend: trendPoints,
           productivityScoreTrend,
@@ -741,7 +766,12 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           heatmap, // weekday × 2-hour intensity from screenshot capture density (empty if none).
           attendanceCounts: latestCounts,
           attendanceResolvedDays,
-          productivityCoverage: { scored: coverageScored, team: coverageTeam },
+          newHiresTracked,
+          productivityCoverage: {
+            scored: coverageScored,
+            team: coverageTeam,
+            reported: coverageReported,
+          },
           statusCounts,
           activeCount,
           inactiveCount,

@@ -258,8 +258,16 @@ function OrgDashboard() {
           }
           icon={Gauge}
           hint={
+            // Three states, not two. A score of "—" used to always read "no agent reported",
+            // which is false whenever an agent IS running but the day fell under the 30-minute
+            // volume floor (MIN_ACTIVE_SEC_TO_SCORE) — the score is withheld as unreliable, not
+            // missing. Saying "no agent reported" there sends people to check installs and
+            // enrolment for a fleet that is working, which is the most expensive kind of wrong
+            // copy: it describes a different problem confidently.
             data.productivityCoverage.scored === 0
-              ? `no agent reported · ${rangeLabel}`
+              ? data.productivityCoverage.reported > 0
+                ? `${data.productivityCoverage.reported} reporting, too little activity to score · ${rangeLabel}`
+                : `no agent reported · ${rangeLabel}`
               : `${data.productivityCoverage.scored} of ${data.productivityCoverage.team} reporting · ${rangeLabel}`
           }
           trend={kpis.productivity.trend}
@@ -345,13 +353,14 @@ function OrgDashboard() {
               }
               href="/attendance"
             />
-            {/* No join-date field exists in the directory yet, so this is unmeasurable — show the
-                absence (—), never a confident "0" that reads as "nobody was hired". */}
+            {/* Join dates now ride the directory list, so this is a real count of people who joined
+                within the selected window. Only a legacy org with no join dates on record falls back
+                to the honest "—" — never a confident "0" that reads as "nobody was hired". */}
             <StatCard
               label="New Hires"
-              value="—"
+              value={data.newHiresTracked ? kpis.newHires.value.toLocaleString() : "—"}
               icon={UserPlus}
-              hint="join date not tracked yet"
+              hint={data.newHiresTracked ? rangeLabel : "join date not tracked yet"}
               href="/employees"
             />
           </>
