@@ -219,7 +219,7 @@ export function EmployeesView() {
   const router = useRouter();
   // Real backend directory (server-scoped by `employees:read`). No client scope filter, no session
   // overlays — the server is the roster.
-  const { employees, loading, error, reload, bench } = useEmployees();
+  const { employees, loading, error, reload, bench, anyAgentReported } = useEmployees();
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
@@ -421,9 +421,13 @@ export function EmployeesView() {
           value={pct(liveStats.avgProductivity)}
           icon={GaugeIcon}
           hint={
-            liveStats.avgProductivity === null
-              ? "no agent activity in the last 30 days"
-              : "30-day average of reporting employees"
+            liveStats.avgProductivity !== null
+              ? "30-day average of reporting employees"
+              : anyAgentReported
+                // Agents ARE reporting; no day cleared the server's 30-minute scoring floor. Saying
+                // "no agent activity" here sent people to check installs on a working fleet.
+                ? "agents reporting, but no day met the scoring minimum"
+                : "no agent activity in the last 30 days"
           }
         />
         <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />

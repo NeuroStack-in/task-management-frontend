@@ -130,9 +130,14 @@ function OrgDashboard() {
             : []),
           {
             label: "Productivity score",
+            // Same three states as the tile above — this line is the exported/copied summary, and
+            // it stating "no agent reported" while the tile says "2 reporting" would be worse than
+            // either being wrong alone.
             value:
               data.productivityCoverage.scored === 0
-                ? "no agent reported"
+                ? data.productivityCoverage.reported > 0
+                  ? `no score (${data.productivityCoverage.reported} reporting, too little activity)`
+                  : "no agent reported"
                 : `${data.kpis.productivity.value}% (${data.productivityCoverage.scored} of ${data.productivityCoverage.team} reporting)`,
           },
           ...(range === "today"

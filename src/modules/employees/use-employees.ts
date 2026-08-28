@@ -56,14 +56,23 @@ function recentDays(): string[] {
  * 403 (or any failure) must leave the roster rendering with "—" rather than break the page — the
  * directory is the point of this screen, the score is an enrichment.
  */
-async function scoresByUser(): Promise<Map<string, number>> {
+async function scoresByUser(): Promise<{
+  scores: Map<string, number>;
+  /** True if ANY person reported activity in the window, scored or not. */
+  anyReported: boolean;
+}> {
   const days = await mapWithConcurrency(recentDays(), SCORE_FANOUT, (date) =>
     getOrgActivity(date).catch(() => null),
   );
   const sum = new Map<string, { total: number; days: number }>();
+  let anyReported = false;
   for (const day of days) {
     for (const p of day?.people ?? []) {
-      // `breakdown` is absent when that person had no summary that day — a gap, never a zero.
+      // `totals` means the agent reported. `breakdown` means the day ALSO cleared the server's
+      // 30-minute volume floor. Two different facts: a person can report all month and never
+      // clear the floor, and calling that "no agent activity" sends someone to debug a working
+      // install.
+      if (p.totals) anyReported = true;
       if (!p.breakdown) continue;
       const acc = sum.get(p.user_id) ?? { total: 0, days: 0 };
       acc.total += p.breakdown.score;
@@ -71,9 +80,12 @@ async function scoresByUser(): Promise<Map<string, number>> {
       sum.set(p.user_id, acc);
     }
   }
-  return new Map(
-    [...sum.entries()].map(([id, a]) => [id, Math.round(a.total / a.days)]),
-  );
+  return {
+    scores: new Map(
+      [...sum.entries()].map(([id, a]) => [id, Math.round(a.total / a.days)]),
+    ),
+    anyReported,
+  };
 }
 
 /** The row shape the view renders. `productivityScore: null` = no scored day in the window. */
@@ -109,6 +121,14 @@ export interface EmployeesData {
   reactivate: (id: string) => Promise<void>;
   /** Put an employee on / take them off the bench. Optimistic — the row flips immediately. */
   bench: (id: string, benched: boolean) => Promise<void>;
+  /**
+   * Did ANY agent report activity in the 30-day window, scored or not?
+   *
+   * `productivityScore` is null both when nobody ran an agent and when everyone did but no day
+   * cleared the server's 30-minute scoring floor. Those need different copy: the first is a fleet
+   * problem, the second is not a problem at all.
+   */
+  anyAgentReported: boolean;
 }
 
 /**
@@ -127,6 +147,9 @@ function mapStatus(s: string): EmployeeRow["status"] {
 
 export function useEmployees(): EmployeesData {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  // Whether ANY agent reported activity in the window, scored or not — the difference
+  // between "nobody is running the agent" and "everyone is, below the scoring floor".
+  const [anyAgentReported, setAnyAgentReported] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -189,8 +212,16 @@ export function useEmployees(): EmployeesData {
             /* decorative — initials are a correct fallback */
           });
 
-        const scores = await scoresByUser().catch(() => new Map<string, number>());
-        if (!live || scores.size === 0) return;
+        const { scores, anyReported } = await scoresByUser().catch(() => ({
+          scores: new Map<string, number>(),
+          anyReported: false,
+        }));
+        if (!live) return;
+        // `anyReported` is recorded even when nothing scored — that is precisely the case the
+        // roster used to describe as "no agent activity in the last 30 days" while agents were
+        // reporting daily.
+        setAnyAgentReported(anyReported);
+        if (scores.size === 0) return;
         setEmployees((prev) =>
           prev.map((r) => ({ ...r, productivityScore: scores.get(r.id) ?? null })),
         );
@@ -234,7 +265,7 @@ export function useEmployees(): EmployeesData {
     }
   }, []);
 
-  return { employees, loading, error, reload, deactivate, reactivate, bench };
+  return { employees, loading, error, reload, deactivate, reactivate, bench, anyAgentReported };
 }
 
 function messageOf(e: unknown): string {
