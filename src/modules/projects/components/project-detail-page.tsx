@@ -23,7 +23,7 @@ import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_
 import { canDeleteTask, canReviewTask, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
-import { MemberStack, Segmented, StatusBadge } from "./parts";
+import { Segmented, StatusBadge } from "./parts";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { TaskReviewDialog } from "./task-review-dialog";
 import { TaskFormDialog } from "./task-form-dialog";
@@ -511,8 +511,12 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             </div>
             <div className="my-3 flex items-center gap-2">
               <span className="bg-border h-px flex-1" />
+              {/* What closed and blocked actually share: neither can be worked on. Closed is
+                  finished and signed off; blocked is waiting on something else. "Not in the
+                  total" described the arithmetic rather than the state, leaving the reader to
+                  work out *why* they were excluded. */}
               <span className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-                Not in the total
+                Not workable
               </span>
               <span className="bg-border h-px flex-1" />
             </div>
@@ -538,8 +542,31 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             </span>
             <span className="text-muted-foreground text-sm">members</span>
           </div>
-          <div className="mt-auto flex items-center justify-between gap-2 pt-5">
-            <MemberStack members={teamOf(project.memberIds, userMap)} max={6} />
+          {/* A count and a row of faces left most of this card empty once the Tasks card beside
+              it grew — and "Team details" showing no detail was the odder half of that. The first
+              few members are named here; the rest stay behind "View more", which is what that
+              control was always for. */}
+          <ul className="mt-4 space-y-2">
+            {teamOf(project.memberIds, userMap)
+              .slice(0, 4)
+              .map((u) => (
+                <li key={u.id} className="flex items-center gap-2">
+                  <UserAvatar userId={u.id} name={u.name} size="sm" className="size-6" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{u.name}</span>
+                  {u.id === project.leadUserId ? (
+                    <span className="text-muted-foreground shrink-0 text-[10px] font-medium tracking-wide uppercase">
+                      Lead
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+          </ul>
+          <div className="mt-auto flex items-center justify-between gap-2 pt-4">
+            <span className="text-muted-foreground text-xs">
+              {project.memberIds.length > 4
+                ? `+${project.memberIds.length - 4} more`
+                : ""}
+            </span>
             <button
               type="button"
               onClick={() => setTeamOpen(true)}
