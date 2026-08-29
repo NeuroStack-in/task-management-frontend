@@ -338,10 +338,24 @@ export async function requestPasswordReset(email: string): Promise<void> {
         const code = (err as { code?: string })?.code ?? "";
         // Don't reveal whether the account exists.
         if (code === "UserNotFoundException") return resolve();
-        if (code === "LimitExceededException")
+        // `LimitExceededException` covers TWO unrelated failures, and they need different
+        // answers. One is this user knocking too often — waiting genuinely fixes it. The other is
+        // the POOL's daily email allowance being spent, which is an outage: no amount of waiting
+        // by this person helps, every other user is equally stuck, and only an operator can clear
+        // it. Collapsing them told someone locked out by a quota to "wait a bit" — advice they
+        // could follow all day without success, while nothing surfaced the real fault to us.
+        // Cognito distinguishes them in the message text even though the code is shared.
+        if (code === "LimitExceededException") {
+          const quota = /daily|limit for the operation|email limit/i.test(err.message ?? "");
           return reject(
-            new AuthError("Too many attempts. Wait a bit, then try again.", "state"),
+            new AuthError(
+              quota
+                ? "We can't send reset emails right now — the mail service has hit its limit for today. This is on us, not you: please contact your administrator."
+                : "Too many attempts. Wait a few minutes, then try again.",
+              "state",
+            ),
           );
+        }
         reject(new AuthError("Couldn't start the reset. Please try again.", "state"));
       },
     });
