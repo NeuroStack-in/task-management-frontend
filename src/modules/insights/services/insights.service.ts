@@ -671,17 +671,36 @@ export interface LocationSummary {
   generated_at: number;
 }
 
-/** `GET /v1/insights/locations/summary?date=` — needs `activity:view` + `ai:view`. */
-export function getLocationSummary(date: string): Promise<LocationSummary> {
+export interface LocationSummaryArgs {
+  date: string;
+  /** Department id, or `all` for the whole org. The board filters by this; so must the narrative. */
+  department?: string;
+  /** The department's display name, so the narrative can say "the Engineering department". */
+  label?: string;
+}
+
+function locationSummaryQuery({ date, department, label }: LocationSummaryArgs): string {
+  const q = new URLSearchParams({ date });
+  // Omitted rather than sent as "all" when absent: the server defaults to the whole org, and an
+  // empty `label` would otherwise reach the prompt as a blank department name.
+  if (department) q.set("department", department);
+  if (label) q.set("label", label);
+  return q.toString();
+}
+
+/** `GET /v1/insights/locations/summary?date=&department=` — needs `activity:view` + `ai:view`. */
+export function getLocationSummary(args: LocationSummaryArgs): Promise<LocationSummary> {
   return apiFetch<LocationSummary>(
-    `/v1/insights/locations/summary?date=${encodeURIComponent(date)}`,
+    `/v1/insights/locations/summary?${locationSummaryQuery(args)}`,
   );
 }
 
-/** `POST /v1/insights/locations/summary/regenerate?date=` — re-run the model, re-cache. */
-export function regenerateLocationSummary(date: string): Promise<LocationSummary> {
+/** `POST /v1/insights/locations/summary/regenerate?…` — re-run the model, re-cache. */
+export function regenerateLocationSummary(
+  args: LocationSummaryArgs,
+): Promise<LocationSummary> {
   return apiFetch<LocationSummary>(
-    `/v1/insights/locations/summary/regenerate?date=${encodeURIComponent(date)}`,
+    `/v1/insights/locations/summary/regenerate?${locationSummaryQuery(args)}`,
     { method: "POST" },
   );
 }

@@ -12,13 +12,7 @@
  * workday, height = that day's attendance rate — because the shape over time is the actual signal.
  */
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { DepartmentFilter } from "@/components/shared/department-filter";
 import { DatePicker } from "@/components/ui/date-picker";
 import { DeltaPill } from "@/components/shared/delta-pill";
 import { cn } from "@/lib/utils";
@@ -155,22 +149,12 @@ export function AttendanceOverview({
                 }}
               />
 
-              <Select value={dept} onValueChange={(v) => onDeptChange(v as string)}>
-                <SelectTrigger className="h-8 w-[10.5rem]" aria-label="Department">
-                  <SelectValue>
-                    {(v) =>
-                      v == null || v === "all" ? "All departments" : String(v)
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {departments.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d === "all" ? "All departments" : d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DepartmentFilter
+                value={dept}
+                onChange={onDeptChange}
+                options={departments.map((d) => ({ value: d, label: d }))}
+                ariaLabel="Filter attendance by department"
+              />
             </div>
 
             {/* Custom range pickers — reserve their row even when hidden, so the card doesn't jump. */}

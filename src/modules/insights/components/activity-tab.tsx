@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { Activity, ChevronDown } from "lucide-react";
-import { DatePicker } from "@/components/ui/date-picker";
+import { PeriodFilter, type Granularity } from "@/components/shared/period-filter";
 import {
   Card,
   CardContent,
@@ -59,14 +59,6 @@ import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
  *  • App & website breakdown — no per-app endpoint, so both lists are an honest "waiting on the
  *    agent" note; the section and toggle stay.
  */
-
-type Granularity = "daily" | "weekly" | "monthly";
-
-const GRANULARITIES: { key: Granularity; label: string }[] = [
-  { key: "daily", label: "Daily" },
-  { key: "weekly", label: "Weekly" },
-  { key: "monthly", label: "Monthly" },
-];
 
 const CHART_TITLE: Record<Granularity, string> = {
   daily: "Activity by hour",
@@ -400,35 +392,15 @@ export function ActivityTab() {
 
   return (
     <div className="space-y-4">
-      {/* Range filter: granularity + specific date */}
-      <div className="bg-card shadow-soft flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-2.5">
-        <div className="bg-background flex rounded-full border p-0.5">
-          {GRANULARITIES.map((g) => (
-            <button
-              key={g.key}
-              type="button"
-              onClick={() => setGranularity(g.key)}
-              className={cn(
-                "rounded-full px-3.5 py-1 text-sm font-medium transition-colors",
-                granularity === g.key
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
-        <label className="text-muted-foreground flex items-center gap-2 text-sm">
-          Date
-          <DatePicker
-            value={date}
-            max={today}
-            onChange={setDate}
-            className="w-[10.5rem]"
-          />
-        </label>
-      </div>
+      {/* Range filter: granularity + anchor date. Shared with every other period surface — see
+          `PeriodFilter`; the pills and the date were duplicated per page before. */}
+      <PeriodFilter
+        granularity={granularity}
+        onGranularityChange={setGranularity}
+        date={date}
+        onDateChange={setDate}
+        max={today}
+      />
 
       {/* **One** AI summary, not two. This banner used to be an org-wide narrative with a second,
           near-identical department card underneath it — two models describing the same period on

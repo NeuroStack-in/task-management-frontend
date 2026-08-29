@@ -1,18 +1,12 @@
 "use client";
 
-import { Users2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { DepartmentFilter } from "@/components/shared/department-filter";
 import {
   RANGE_OPTIONS,
   type DashboardRange,
   type TeamOption,
 } from "@/modules/dashboard/lib/dashboard-data";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/format";
@@ -104,28 +98,13 @@ export function DashboardControls({
             cannot filter by team at all (workforce::directory_list::data) — this axis has always
             been the department. Saying "team" made a working filter look broken to anyone who
             expected their team in the list. */}
-        <Select value={team} onValueChange={(v) => onTeamChange(v as string)}>
-          <SelectTrigger aria-label="Filter by department" className="h-9 w-52 gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <Users2 className="size-4 shrink-0 text-muted-foreground" />
-              <SelectValue className="truncate whitespace-nowrap">
-                {(value) =>
-                  value === "all" || value == null
-                    ? "All departments"
-                    : (teams.find((t) => t.id === value)?.label ?? String(value))
-                }
-              </SelectValue>
-            </div>
-          </SelectTrigger>
-          <SelectContent className="min-w-44">
-            <SelectItem value="all">All departments</SelectItem>
-            {teams.map((t) => (
-              <SelectItem key={t.id} value={t.id}>
-                {t.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <DepartmentFilter
+          value={team}
+          onChange={onTeamChange}
+          options={teams.map((t) => ({ value: t.id, label: t.label }))}
+          ariaLabel="Filter by department"
+          className="w-52"
+        />
       </div>
     </div>
   );

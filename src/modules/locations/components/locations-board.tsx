@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { DepartmentFilter } from "@/components/shared/department-filter";
 import { AlertTriangle, ChevronLeft, ChevronRight, MapPin, MapPinOff, Navigation, Search, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -251,6 +252,8 @@ function LocationsBoard({
         ? `${locatedCount} of ${scoped.length} employees located on ${label}; ${onSiteCount} on-site, ${offSiteCount} off-site.`
         : `${locatedCount} of ${scoped.length} employees located on ${label}. Set an office location to see on-site vs off-site.`;
 
+  /** The department's display name for the narrative — undefined for the org-wide view. */
+  const deptAiLabel = dept === "all" ? undefined : deptLabel(dept);
   const [aiNarrative, setAiNarrative] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -260,20 +263,27 @@ function LocationsBoard({
     let live = true;
     setAiLoading(true);
     setAiNarrative(null);
-    getLocationSummary(date)
+      // Re-fetches on a department change as well as a date change: the board's counts already
+      // follow the filter, and the narrative used to describe the whole org beside them.
+      getLocationSummary({ date, department: dept, label: deptAiLabel })
       .then((s) => live && setAiNarrative(s.narrative))
       .catch(() => live && setAiNarrative(null))
       .finally(() => live && setAiLoading(false));
     return () => {
       live = false;
     };
-  }, [date]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [date, dept, deptAiLabel]);
 
   async function regenerateAi() {
     if (regenerating || !date) return;
     setRegenerating(true);
     try {
-      const s = await regenerateLocationSummary(date);
+      const s = await regenerateLocationSummary({
+        date,
+        department: dept,
+        label: deptAiLabel,
+      });
       setAiNarrative(s.narrative);
     } catch {
       /* keep what's on screen — a failed re-run must not blank the card */
@@ -413,25 +423,12 @@ function LocationsBoard({
                 </Button>
               </div>
 
-              <Select value={dept} onValueChange={(v) => setDept(v as string)}>
-                <SelectTrigger className="h-8 w-44" aria-label="Department">
-                  <SelectValue>
-                    {(v) =>
-                      v == null || v === "all"
-                        ? "All departments"
-                        : deptLabel(String(v))
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  <SelectItem value="all">All departments</SelectItem>
-                  {departments.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {deptLabel(d)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DepartmentFilter
+                value={dept}
+                onChange={setDept}
+                options={departments.map((d) => ({ value: d, label: d }))}
+                ariaLabel="Filter locations by department"
+              />
 
               <Select
                 value={status}

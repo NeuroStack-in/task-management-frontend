@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import { jsPDF } from "jspdf";
@@ -444,14 +445,13 @@ export function EmployeesView() {
             className="pl-9"
           />
         </div>
-        <FilterDropdown
-          label="Dept"
+        {/* The one control that exists on nearly every page uses the shared component. Status and
+            Role stay on the local `FilterDropdown` — that is this page's own vocabulary. */}
+        <DepartmentFilter
           value={dept}
           onChange={resetPage(setDept)}
-          options={[
-            { value: "all", label: "All departments" },
-            ...deptOptions.map((d) => ({ value: d, label: d })),
-          ]}
+          options={deptOptions.map((d) => ({ value: d, label: d }))}
+          ariaLabel="Filter employees by department"
         />
         <FilterDropdown
           label="Status"

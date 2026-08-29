@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import {
   Camera,
@@ -22,13 +23,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DatePicker, TimePicker } from "@/components/ui/date-picker";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -476,25 +470,12 @@ export function ScreenshotsTab() {
 
         {departments.length > 0 ? (
           <Field label="Department">
-            <Select value={dept} onValueChange={(v) => setDept(v as string)}>
-              <SelectTrigger className="h-8 w-48" aria-label="Department">
-                <SelectValue>
-                  {(v) =>
-                    v == null || v === ALL_DEPTS
-                      ? "All departments"
-                      : deptLabel(String(v))
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                <SelectItem value={ALL_DEPTS}>All departments</SelectItem>
-                {departments.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {deptLabel(d)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DepartmentFilter
+              value={dept}
+              onChange={setDept}
+              options={[...deptNames].map(([id, name]) => ({ value: id, label: name }))}
+              ariaLabel="Filter screenshots by department"
+            />
           </Field>
         ) : null}
 

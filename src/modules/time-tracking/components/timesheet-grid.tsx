@@ -1,28 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useNow } from "@/hooks/use-now";
-import {
-  ChevronLeft,
-  ChevronRight,
-  FolderKanban,
-  Search,
-  UserRound,
-  Users2,
-  X,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, FolderKanban, Search, UserRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MAX_WEEKS_BACK } from "../use-weekly-hours";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Card } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import type {
   ProjectTimesheet,
@@ -325,29 +311,12 @@ export function TimesheetGrid({
               />
             </div>
             {/* Team (department) filter */}
-            <Select value={deptFilter} onValueChange={(v) => setDeptFilter(v as string)}>
-              <SelectTrigger
-                aria-label="Filter by department"
-                className="h-9 w-full gap-2 sm:w-44"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <Users2 className="text-muted-foreground size-4 shrink-0" />
-                  <SelectValue>
-                    {(value) =>
-                      value === "all" || value == null ? "All departments" : String(value)
-                    }
-                  </SelectValue>
-                </div>
-              </SelectTrigger>
-              <SelectContent className="min-w-44">
-                <SelectItem value="all">All departments</SelectItem>
-                {departments.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DepartmentFilter
+              value={deptFilter}
+              onChange={setDeptFilter}
+              options={departments.map((d) => ({ value: d, label: d }))}
+              ariaLabel="Filter timesheet by department"
+            />
             <div className="relative sm:w-56">
               <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
               <Input
