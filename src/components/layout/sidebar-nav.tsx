@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, PanelLeftClose, LogOut, Search, LifeBuoy } from "lucide-react";
+import { Activity, Building2, LifeBuoy, LogOut, PanelLeftClose, Search } from "lucide-react";
 import { usePermissions } from "@/hooks/use-permissions";
 import {
   usePlatformAdmin,
@@ -27,6 +27,8 @@ const OPS_GROUP: NavGroup = {
   label: "Platform",
   items: [
     { label: "Support desk", href: "/ops/support", icon: LifeBuoy, permission: null },
+    // Approving here is what creates an organization — until an operator does, no tenant exists.
+    { label: "Org requests", href: "/ops/org-requests", icon: Building2, permission: null },
   ],
 };
 

@@ -76,3 +76,68 @@ export function setOpsStatus(t: string, u: string, id: string, status: OpsStatus
     body: JSON.stringify({ status }),
   });
 }
+
+/* ─────────────────────────── Organization requests ─────────────────────────── */
+
+/**
+ * One row of the org-creation review queue (identity `org_requests`).
+ *
+ * The applicant's email is **verified** — established by the pre-sign-up trigger before the request
+ * could exist — which is the whole basis on which an operator decides.
+ */
+export interface OpsOrgRequest {
+  id: string;
+  status: "pending" | "approved" | "rejected";
+  org_name: string;
+  /** The proposed workspace slug. Claimed at approval, never at request — see `slug_conflict`. */
+  slug: string;
+  owner_email: string;
+  owner_name: string;
+  requested_at: number;
+  timezone?: string;
+  industry?: string;
+  size?: string;
+  /**
+   * Another pending request wants this same slug.
+   *
+   * Both will pass review; only the first *approved* gets the name, and the second fails at
+   * approval rather than silently taking a mutated one. Surfaced so the operator picks the order
+   * deliberately instead of discovering it as an error.
+   */
+  slug_conflict?: boolean;
+  decided_at?: number;
+  decided_by?: string;
+  reason?: string;
+  /** The org this became. Only on an approved request. */
+  tenant_id?: string;
+}
+
+/** `GET /v1/ops/org-requests?status=` — the queue for one status. */
+export function listOrgRequests(
+  status: "pending" | "approved" | "rejected" = "pending",
+): Promise<{ requests: OpsOrgRequest[] }> {
+  const q = new URLSearchParams({ status });
+  return apiFetch<{ requests: OpsOrgRequest[] }>(`/v1/ops/org-requests?${q}`);
+}
+
+/**
+ * `POST /v1/ops/org-requests/{id}/approve` — creates the organization.
+ *
+ * The org is built first and the request marked approved only once that has fully succeeded, so a
+ * failure here leaves the request pending and retryable rather than "approved" with nothing behind
+ * it. A rejected promise means nothing was created.
+ */
+export function approveOrgRequest(id: string): Promise<{ tenant_id: string; slug: string }> {
+  return apiFetch<{ tenant_id: string; slug: string }>(
+    `/v1/ops/org-requests/${encodeURIComponent(id)}/approve`,
+    { method: "POST" },
+  );
+}
+
+/** `POST /v1/ops/org-requests/{id}/reject` — the reason is shown to the applicant verbatim. */
+export function rejectOrgRequest(id: string, reason: string): Promise<unknown> {
+  return apiFetch<unknown>(`/v1/ops/org-requests/${encodeURIComponent(id)}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}

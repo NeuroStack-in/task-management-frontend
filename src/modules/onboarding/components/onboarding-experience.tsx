@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Activity } from "lucide-react";
@@ -8,6 +8,8 @@ import { useAuthStore } from "@/stores/auth.store";
 import { Loader } from "@/components/shared/loader";
 import { OnboardingWizard } from "./onboarding-wizard";
 import { OnboardingProvision } from "./onboarding-provision";
+import { OrgRequestLoading, OrgRequestStatus } from "./org-request-status";
+import { getMyOrgRequest, type MyOrgRequest } from "../services/onboarding.service";
 
 /**
  * Guards the standalone /onboarding route. It's reached right after sign-up (the
@@ -46,7 +48,43 @@ export function OnboardingExperience() {
         </div>
         <span className="text-lg font-semibold tracking-tight">WorkPulse</span>
       </Link>
-      {hasOrg ? <OnboardingWizard /> : <OnboardingProvision />}
+      {hasOrg ? <OnboardingWizard /> : <NoOrgFlow />}
     </div>
   );
+}
+
+/**
+ * The org-less branch: ask, wait, or come back to a decision.
+ *
+ * Org creation is reviewed by WorkPulse staff, so "no org" is no longer one state — it is three,
+ * and which one the applicant is in can only be answered by the server. Rendering the form before
+ * that answer arrives is what would let someone submit twice.
+ *
+ *   no request  → the form
+ *   pending     → the waiting screen
+ *   decided     → approved (refresh + enter) or rejected (reason + reapply)
+ */
+function NoOrgFlow() {
+  const [request, setRequest] = useState<MyOrgRequest | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getMyOrgRequest()
+      .then((r) => setRequest(r))
+      // A failed lookup falls through to the form rather than blocking: the server rejects a second
+      // request with `request_already_open`, so the worst case is a clear error, not a duplicate.
+      .catch(() => setRequest(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(load, [load]);
+
+  if (loading) return <OrgRequestLoading />;
+  if (request) {
+    // Re-applying clears the local view and shows the form again; the server released the
+    // one-per-email claim when it rejected, so a new submission is accepted.
+    return <OrgRequestStatus request={request} onReapply={() => setRequest(null)} />;
+  }
+  return <OnboardingProvision onSubmitted={load} />;
 }

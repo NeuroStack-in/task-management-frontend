@@ -9,19 +9,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/stores/auth.store";
 import { ApiError } from "@/lib/api";
-import { provisionMyOrg } from "../services/onboarding.service";
+import { requestOrg } from "../services/onboarding.service";
 
 const SIZES = ["1–10", "11–50", "51–200", "201–500", "500+"];
 
 /**
- * Shown to a signed-in user who has **no organization yet** — the "Continue with Google" self-signup
- * path. Names their organization, provisions it (they become Owner), then force-refreshes the token
- * so the new claims take effect and drops them on the dashboard.
+ * Shown to a signed-in user who has **no organization yet** — the "Continue with Google" path.
+ *
+ * This used to create the org outright. It now **submits a request**: WorkPulse staff review who is
+ * asking, and the organization is built only on approval. Nothing is created here — no tenant, no
+ * workspace name reserved, no seat.
+ *
+ * On success the caller is handed to `onSubmitted`, which parks them on the waiting screen. There is
+ * no `refreshClaims()` and no redirect to the dashboard, because there is nothing yet to enter.
  */
-export function OnboardingProvision() {
-  const router = useRouter();
+export function OnboardingProvision({ onSubmitted }: { onSubmitted: () => void }) {
   const user = useAuthStore((s) => s.user);
-  const refreshClaims = useAuthStore((s) => s.refreshClaims);
 
   const [orgName, setOrgName] = useState("");
   const [industry, setIndustry] = useState("");
@@ -40,20 +43,21 @@ export function OnboardingProvision() {
       } catch {
         timezone = undefined;
       }
-      await provisionMyOrg({
+      await requestOrg({
         org_name: name,
         owner_name: user?.name || undefined,
         industry: industry.trim() || undefined,
         size: size || undefined,
         timezone,
       });
-      // The server stamped custom:orgId/roleId; the cached token predates it — re-mint so the owner
-      // claims are live, then enter the app.
-      await refreshClaims();
-      router.replace("/dashboard");
+      // No token refresh and no redirect: the org does not exist yet. The parent swaps in the
+      // waiting screen, which is the only truthful next state.
+      onSubmitted();
     } catch (err) {
       toast.error(
-        err instanceof ApiError ? err.message : "Couldn't create your organization. Please try again.",
+        err instanceof ApiError
+          ? err.message
+          : "Couldn't submit your request. Please try again.",
       );
       setBusy(false);
     }
@@ -63,17 +67,18 @@ export function OnboardingProvision() {
     <div className="bg-card shadow-soft w-full max-w-md rounded-2xl border p-8">
       <div className="mb-6 space-y-1.5">
         <h1 className="font-heading text-2xl font-semibold tracking-tight">
-          Name your organization
+          Request your organization
         </h1>
         <p className="text-muted-foreground text-sm">
           {user?.email ? (
             <>
               You&apos;re signed in as{" "}
-              <span className="text-foreground font-medium">{user.email}</span>. Set up your
-              workspace to get started — you can change any of this later in Settings.
+              <span className="text-foreground font-medium">{user.email}</span>. Tell us about your
+              workspace — a member of the WorkPulse team reviews each request before the
+              organization is created.
             </>
           ) : (
-            "Set up your workspace to get started — you can change any of this later in Settings."
+            "Tell us about your workspace — a member of the WorkPulse team reviews each request before the organization is created."
           )}
         </p>
       </div>
