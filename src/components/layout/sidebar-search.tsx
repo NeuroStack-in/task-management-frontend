@@ -3,20 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderKanban, Search, X, type LucideIcon } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/stores/ui.store";
 import { isNavItemVisible } from "@/lib/rbac";
 import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
 import { isPathModeHidden } from "@/constants/features";
-import {
-  INSIGHTS_TABS,
-  ADMIN_SECTIONS,
-  ACCOUNT_SECTIONS,
-  SETTINGS_SUBSECTIONS,
-} from "@/constants/navigation";
+import { INSIGHTS_TABS, ADMIN_SECTIONS, ACCOUNT_SECTIONS, SETTINGS_SUBSECTIONS } from "@/constants/navigation";
 import { searchAll, type SearchResults } from "@/lib/search";
-import { initials } from "@/lib/format";
+
 import { scrollToHashAfterNav } from "@/lib/scroll-to-hash";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +23,8 @@ interface Result {
   icon?: LucideIcon;
   /** Present (even if undefined) on people rows so they render an avatar rather than an icon. */
   isPerson?: boolean;
+  /** Set with `isPerson`, so the result can show their photo rather than initials. */
+  personId?: string;
   href: string;
 }
 
@@ -114,6 +111,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           label: h.label,
           group: "People",
           isPerson: true,
+          personId: h.id,
           href: `/employees/${h.id}`,
         })),
       );
@@ -295,11 +293,12 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
                     )}
                   >
                     {r.isPerson ? (
-                      <Avatar className="size-7 shrink-0">
-                        <AvatarFallback className="text-[10px]">
-                          {initials(r.label)}
-                        </AvatarFallback>
-                      </Avatar>
+                      <UserAvatar
+                        userId={r.personId ?? ""}
+                        name={r.label}
+                        className="size-7 shrink-0"
+                        fallbackClassName="text-[10px]"
+                      />
                     ) : Icon ? (
                       <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-feature-tint text-primary">
                         <Icon className="size-4" />

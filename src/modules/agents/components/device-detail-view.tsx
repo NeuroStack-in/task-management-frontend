@@ -11,9 +11,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Loader } from "@/components/shared/loader";
-import { initials, monogramGradient } from "@/lib/format";
 import { ApiError } from "@/lib/api";
 import {
   getEmployeeProfile,
@@ -139,14 +138,15 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
               {owner ? (
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <Avatar className="size-11">
-                      <AvatarFallback
-                        className="text-sm font-semibold text-white"
-                        style={{ background: monogramGradient(owner.name) }}
-                      >
-                        {initials(owner.name)}
-                      </AvatarFallback>
-                    </Avatar>
+                    {/* `UserAvatar`, so an uploaded photo shows here as it does elsewhere. The monogram
+                        gradient was a nice fallback but it was the ONLY thing this could ever render —
+                        `UserAvatar` keeps initials for anyone without a photo. */}
+                    <UserAvatar
+                      userId={owner.user_id}
+                      name={owner.name}
+                      className="size-11"
+                      fallbackClassName="text-sm font-semibold"
+                    />
                     <div className="min-w-0">
                       <p className="truncate font-medium">{owner.name}</p>
                       <p className="truncate text-xs text-muted-foreground">

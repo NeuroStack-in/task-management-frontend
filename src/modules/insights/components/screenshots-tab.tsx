@@ -3,33 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useAssistantPageContext } from "@/stores/page-context.store";
-import {
-  Camera,
-  ChevronLeft,
-  ChevronRight,
-  EyeOff,
-  Flag,
-  Loader2,
-  Search,
-  ShieldOff,
-  Sparkles,
-  Trash2,
-  Users,
-  X,
-} from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Camera, ChevronLeft, ChevronRight, EyeOff, Flag, Loader2, Search, ShieldOff, Sparkles, Trash2, Users, X } from "lucide-react";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DatePicker, TimePicker } from "@/components/ui/date-picker";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { useDataScope } from "@/hooks/use-data-scope";
@@ -37,19 +18,11 @@ import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
 import { getTrackingPolicy } from "@/modules/agents/services/fleet.service";
-import { initials, personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
+import { personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { useScreenshots } from "../use-screenshots";
-import {
-  getScreenshotReport,
-  getScreenshotDeptSummary,
-  regenerateScreenshotDeptSummary,
-  runScreenshotReports,
-  type ScreenshotDeptSummary,
-  type ScreenshotReport,
-  type ShotRow,
-} from "../services/insights.service";
+import { getScreenshotReport, getScreenshotDeptSummary, regenerateScreenshotDeptSummary, runScreenshotReports, type ScreenshotDeptSummary, type ScreenshotReport, type ShotRow } from "../services/insights.service";
 import { AiReportCard } from "./ai-report-card";
 
 /**
@@ -561,6 +534,7 @@ export function ScreenshotsTab() {
               return (
                 <EmployeeCard
                   key={g.userId}
+                  userId={g.userId}
                   name={personName(emp?.name, OUT_OF_SCOPE)}
                   dept={deptId ? deptLabel(deptId) : "—"}
                   cover={cover}
@@ -609,6 +583,7 @@ export function ScreenshotsTab() {
  * placeholder rather than an image.
  */
 function EmployeeCard({
+  userId,
   name,
   dept,
   cover,
@@ -616,6 +591,8 @@ function EmployeeCard({
   flaggedCount,
   onOpen,
 }: {
+  /** Whose shots these are — so the card shows their photo, not just initials. */
+  userId: string;
   name: string;
   dept: string;
   cover: ShotRow;
@@ -668,9 +645,12 @@ function EmployeeCard({
       </div>
 
       <div className="flex items-center gap-2 px-3 py-2.5">
-        <Avatar>
-          <AvatarFallback className="text-[10px]">{initials(name)}</AvatarFallback>
-        </Avatar>
+        <UserAvatar
+          userId={userId}
+          name={name}
+          className="size-9"
+          fallbackClassName="text-[10px]"
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{name}</p>
           <p className="truncate text-xs text-muted-foreground">{dept}</p>
@@ -1202,9 +1182,12 @@ function EmployeeCaptures({
       </Button>
 
       <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-card px-5 py-4 shadow-soft">
-        <Avatar className="size-12">
-          <AvatarFallback>{initials(name)}</AvatarFallback>
-        </Avatar>
+        <UserAvatar
+          userId={userId}
+          name={name}
+          className="size-11"
+          fallbackClassName="text-sm"
+        />
         <div className="min-w-0 flex-1">
           <h2 className="font-heading text-lg font-semibold">{name}</h2>
           <p className="text-sm text-muted-foreground">

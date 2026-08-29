@@ -11,10 +11,9 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { UserAvatar } from "@/components/shared/user-avatar"
 import { EmptyState } from "@/components/shared/empty-state"
 import { Loader } from "@/components/shared/loader"
-import { initials } from "@/lib/format"
 import { useSecurityEvents } from "../use-security-events"
 
 const PAGE_SIZE = 8
@@ -77,11 +76,12 @@ export function SecurityEventsFeed() {
             <ol className="divide-y divide-border/60">
               {shown.map((e) => (
                 <li key={e.key} className="flex items-center gap-3 py-2.5">
-                  <Avatar className="size-8 shrink-0">
-                    <AvatarFallback className="text-[10px]">
-                      {initials(e.actorName)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar
+                    userId={e.actorId}
+                    name={e.actorName}
+                    className="size-8 shrink-0"
+                    fallbackClassName="text-[10px]"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm">
                       <span className="font-medium">{e.actorName}</span>{" "}

@@ -21,24 +21,13 @@ import { Crown, Plus, ShieldMinus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
-import { initials } from "@/lib/format";
-import {
-  listOwners,
-  grantOwner,
-  revokeOwner,
-  type OrgOwner,
-} from "../services/org.service";
+
+import { listOwners, grantOwner, revokeOwner, type OrgOwner } from "../services/org.service";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import { useEmployees } from "@/modules/employees/use-employees";
 
@@ -163,9 +152,12 @@ export function OrgOwnersCard() {
           <ul className="divide-y divide-border">
             {owners.map((o) => (
               <li key={o.user_id} className="flex items-center gap-3 py-3">
-                <Avatar className="size-8">
-                  <AvatarFallback className="text-xs">{initials(o.name)}</AvatarFallback>
-                </Avatar>
+                <UserAvatar
+                  userId={o.user_id}
+                  name={o.name}
+                  className="size-9"
+                  fallbackClassName="text-xs"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
                     {o.name}
