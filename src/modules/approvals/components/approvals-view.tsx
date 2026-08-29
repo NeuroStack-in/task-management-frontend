@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { CalendarOff, Check, ClipboardCheck, X, TriangleAlert } from "lucide-react";
+import { CalendarOff, Check, ClipboardCheck, Paperclip, TriangleAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import { getLeaveDocumentUrl } from "@/modules/leave/services/leave.service";
 import { DocumentList } from "@/components/shared/document-list";
@@ -199,12 +199,16 @@ export function ApprovalsView() {
             <Table className="min-w-[860px] table-fixed [&_td]:px-4 [&_th]:px-4">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[22%]">Requester</TableHead>
-                  <TableHead className="w-[13%]">Type</TableHead>
-                  <TableHead className="w-[26%]">Summary</TableHead>
-                  <TableHead className="w-[11%]">Duration</TableHead>
-                  <TableHead className="w-[12%]">Submitted</TableHead>
-                  <TableHead className="w-[10%]">Status</TableHead>
+                  {/* Same shape as the employee's "My requests": Request / Reason / Documents /
+                      Status, with Requester in front because this queue spans people. Type, dates
+                      and duration were three columns answering one question, and Duration at 11%
+                      could not hold "Permission · 1.5h · 10:30 am to 12:00 pm" — it ran under the
+                      Submitted column. Stacked in one cell it fits and reads in order. */}
+                  <TableHead className="w-[20%]">Requester</TableHead>
+                  <TableHead className="w-[26%]">Request</TableHead>
+                  <TableHead className="w-[22%]">Reason</TableHead>
+                  <TableHead className="w-[12%]">Documents</TableHead>
+                  <TableHead className="w-[12%]">Status</TableHead>
                   {showActions ? (
                     <TableHead className="w-[8%] text-right">Actions</TableHead>
                   ) : null}
@@ -228,25 +232,51 @@ export function ApprovalsView() {
                         <span className="truncate font-medium">{req.requesterName}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="gap-1">
-                        <CalendarOff className="size-3" />
-                        {req.typeName}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <span className="block truncate">{fmtRange(req.from, req.to)}</span>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs font-medium tabular-nums">
-                      {requestLabel(req)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {fmtSubmitted(req.createdAt)}
-                    </TableCell>
-                    <TableCell>
+                      {/* Type, when, and how long — one question, one cell. */}
+                      <TableCell className="align-top">
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className="gap-1">
+                            <CalendarOff className="size-3" />
+                            {req.typeName}
+                          </Badge>
+                        </div>
+                        <p className="text-muted-foreground mt-1 text-sm">
+                          {fmtRange(req.from, req.to)}
+                          {" · "}
+                          {requestValue(req)}
+                        </p>
+                        {permissionWindow(req) ? (
+                          <p className="text-muted-foreground text-sm">{permissionWindow(req)}</p>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground align-top">
+                        <span className="line-clamp-2" title={req.reason ?? undefined}>
+                          {req.reason ?? "—"}
+                        </span>
+                      </TableCell>
+                      {/* A count, not the filename: the full list (with view/download) is in the dialog this
+                          row opens, and a name like
+                          "How-the-Productivity-Score-Is-Calculated.pdf" swallowed the row. */}
+                      <TableCell className="text-muted-foreground align-top">
+                        {req.attachments.length ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 text-sm"
+                            title={req.attachments.map((a) => a.filename).join(", ")}
+                          >
+                            <Paperclip className="size-3.5" />
+                            {req.attachments.length} file{req.attachments.length === 1 ? "" : "s"}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                    <TableCell className="align-top">
                       <Badge className={cn("border-0 capitalize", STATUS_BADGE[req.status] ?? "bg-muted")}>
                         {req.status}
                       </Badge>
+                      <p className="text-muted-foreground mt-1 text-xs tabular-nums">
+                        Sent {fmtSubmitted(req.createdAt)}
+                      </p>
                     </TableCell>
                     {showActions ? (
                       <TableCell className="text-right">

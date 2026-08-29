@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plane, CalendarPlus, X, TriangleAlert } from "lucide-react";
+import { CalendarPlus, Paperclip, Plane, TriangleAlert, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card } from "@/components/ui/card";
@@ -22,7 +22,7 @@ import { useLeave } from "../use-leave";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
-import { DocumentList } from "@/components/shared/document-list";
+import { LeaveDetailDialog } from "./leave-detail-dialog";
 import { useAuthStore } from "@/stores/auth.store";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { getLeaveDocumentUrl } from "../services/leave.service";
@@ -100,6 +100,8 @@ function EmployeeLeaveView() {
   const leave = useLeave();
   const { balances, requests, types, typeName, loading, error, submit, cancel } = leave;
   const [open, setOpen] = useState(false);
+  /** The request whose detail dialog is open — the requester's counterpart to the approver's. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   // Only active types are requestable — the server rejects an archived `type_id` anyway.
   const requestableTypes = types.filter((t) => t.active !== false);
 
@@ -118,6 +120,8 @@ function EmployeeLeaveView() {
       { label: "Leave types available", value: String(requestableTypes.length) },
     ],
   });
+
+  const selected = requests.find((r) => r.request_id === selectedId) ?? null;
 
   const handleCancel = async (id: string) => {
     try {
@@ -236,7 +240,11 @@ function EmployeeLeaveView() {
                   cls: "bg-muted text-muted-foreground",
                 };
                 return (
-                  <TableRow key={r.request_id}>
+                  <TableRow
+                    key={r.request_id}
+                    onClick={() => setSelectedId(r.request_id)}
+                    className="cursor-pointer"
+                  >
                       {/* Type, when, and how long — one question, one cell. */}
                       <TableCell className="pl-5 align-top">
                         <p className="font-medium">{typeName(r.type_id)}</p>
@@ -255,16 +263,20 @@ function EmployeeLeaveView() {
                           {r.reason ?? "—"}
                         </span>
                       </TableCell>
-                    <TableCell className="min-w-[13rem]">
+                    {/* A count, not the filename. The full list — with view and download — is in the dialog
+                        this row opens; a name like
+                        "How-the-Productivity-Score-Is-Calculated.pdf" swallowed the row. */}
+                    <TableCell className="text-muted-foreground align-top">
                       {r.attachments?.length ? (
-                        <DocumentList
-                          documents={r.attachments}
-                          resolveUrl={(id) =>
-                            getLeaveDocumentUrl(myUserId, r.request_id, id).then((x) => x.url)
-                          }
-                        />
+                        <span
+                          className="inline-flex items-center gap-1.5 text-sm"
+                          title={r.attachments.map((a) => a.filename).join(", ")}
+                        >
+                          <Paperclip className="size-3.5" />
+                          {r.attachments.length} file{r.attachments.length === 1 ? "" : "s"}
+                        </span>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        "—"
                       )}
                     </TableCell>
                       {/* The verdict and when it was asked for: also one question. */}
@@ -296,6 +308,48 @@ function EmployeeLeaveView() {
       </Card>
 
 
+
+      {/* The same dialog the approver sees. The person who wrote the request could previously only
+          read a truncated row of it — the reason clipped, the documents by name only. Footer differs
+          (withdraw vs approve/reject); nothing else does. */}
+      <LeaveDetailDialog
+        open={selected !== null}
+        onOpenChange={(o) => !o && setSelectedId(null)}
+        detail={
+          selected
+            ? {
+                typeName: typeName(selected.type_id),
+                status: (STATUS_META[selected.status]?.label ?? selected.status),
+                statusClass: STATUS_META[selected.status]?.cls ?? "bg-muted",
+                submittedLabel: `Submitted ${fmtSubmitted(selected.created_at)}`,
+                dateLabel: fmtRange(selected.from, selected.to),
+                valueLabel:
+                  (selected.permission_minutes ?? 0) > 0
+                    ? `${selected.permission_minutes! / 60}h`
+                    : `${selected.days} day${selected.days === 1 ? "" : "s"}`,
+                fromTime: selected.from_time,
+                toTime: selected.to_time,
+                reason: selected.reason ?? undefined,
+                attachments: selected.attachments ?? [],
+                resolveUrl: (id) =>
+                  getLeaveDocumentUrl(myUserId, selected.request_id, id).then((x) => x.url),
+              }
+            : null
+        }
+        footer={
+          selected?.status === "pending" ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                void handleCancel(selected.request_id);
+                setSelectedId(null);
+              }}
+            >
+              <X className="size-4" /> Withdraw request
+            </Button>
+          ) : null
+        }
+      />
 
       <RequestLeaveDialog
         open={open}
