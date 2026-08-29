@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import type { LucideIcon } from "lucide-react";
-import { Copy, Download, ScrollText, Search, X } from "lucide-react";
+import { Copy, Download, MonitorSmartphone, ScrollText, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   Select,
@@ -13,7 +14,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Sheet,
   SheetClose,
@@ -26,7 +26,7 @@ import { TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/tab
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { initials } from "@/lib/format";
+import {  } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { AUDIT_CATEGORIES, type AuditCategory } from "@/modules/audit/lib/categories";
 import { useAudit, type AuditEntry } from "../use-audit";
@@ -270,11 +270,21 @@ export function AuditLogs() {
                   </td>
                   <td className="py-3 pl-6 lg:pl-2">
                     <div className="flex items-center gap-2.5">
-                      <Avatar className="size-7">
-                        <AvatarFallback className="text-[10px]">
-                          {initials(e.actorName)}
-                        </AvatarFallback>
-                      </Avatar>
+                      {/* A device actor gets a monitor glyph, not person-initials — an agent is not somebody,
+                          and "KH" over a hostname would read as a colleague who does not exist. People get
+                          `UserAvatar` so an uploaded photo shows here as it does everywhere else. */}
+                      {e.actorIsDevice ? (
+                        <span className="bg-muted text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-full">
+                          <MonitorSmartphone className="size-3.5" />
+                        </span>
+                      ) : (
+                        <UserAvatar
+                          userId={e.actorId}
+                          name={e.actorName}
+                          className="size-7"
+                          fallbackClassName="text-[10px]"
+                        />
+                      )}
                       <span className="font-medium">{e.actorName}</span>
                     </div>
                   </td>
@@ -341,11 +351,19 @@ export function AuditLogs() {
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <DetailSection title="Performed by">
                   <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 p-3">
-                    <Avatar className="size-9 shrink-0">
-                      <AvatarFallback className="text-xs">
-                        {initials(selected.actorName)}
-                      </AvatarFallback>
-                    </Avatar>
+                    {/* Matches the row: device glyph for an agent, real avatar for a person. */}
+                    {selected.actorIsDevice ? (
+                      <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full">
+                        <MonitorSmartphone className="size-4" />
+                      </span>
+                    ) : (
+                      <UserAvatar
+                        userId={selected.actorId}
+                        name={selected.actorName}
+                        className="size-9 shrink-0"
+                        fallbackClassName="text-xs"
+                      />
+                    )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{selected.actorName}</p>
                       <p className="truncate font-mono text-xs text-muted-foreground">

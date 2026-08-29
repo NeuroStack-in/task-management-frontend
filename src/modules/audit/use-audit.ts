@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth.store";
 import { listEmployees } from "@/modules/employees/services/employees.service";
+import { listFleet } from "@/modules/agents/services/fleet.service";
 import { listAudit, type ApiAuditRow } from "./services/audit.service";
 
 export interface AuditEntry {
@@ -19,6 +20,8 @@ export interface AuditEntry {
   timestamp: string;
   actorId: string;
   actorName: string;
+  /** The actor is an agent on a device, not a person. */
+  actorIsDevice: boolean;
   category: string;
   action: string;
   target: string | null;
@@ -51,14 +54,24 @@ export function useAudit(): AuditState {
 
     (async () => {
       try {
-        const [rows, roster] = await Promise.all([
+        // The fleet is fetched too because **not every actor is a person.** An agent-side event
+        // (`monitoring.capture_now.captured`) is stamped with the DEVICE's id, which will never
+        // be in the employee roster — so the row fell back to a raw UUID with a meaningless
+        // avatar. Best-effort: without fleet access the human actors still resolve.
+        const [rows, roster, fleet] = await Promise.all([
           listAudit(),
           listEmployees().catch(() => []),
+          listFleet().catch(() => ({ devices: [] })),
         ]);
         if (!live) return;
         const names = new Map<string, string>();
         for (const e of roster) names.set(e.user_id, e.name);
         if (currentUser?.id && currentUser.name) names.set(currentUser.id, currentUser.name);
+        // A device id resolves to "<hostname> · agent" — that machine's agent is what acted, and
+        // saying so is both true and useful. Kept out of `names` so a device can never be taken
+        // for a person by anything else reading that map.
+        const devices = new Map<string, string>();
+        for (const d of fleet.devices ?? []) devices.set(d.agent_id, `${d.hostname} · agent`);
 
         setEntries(
           rows.map((r: ApiAuditRow) => ({
@@ -66,7 +79,8 @@ export function useAudit(): AuditState {
             ts: r.ts,
             timestamp: fmt(r.ts),
             actorId: r.actor,
-            actorName: names.get(r.actor) ?? shortId(r.actor),
+            actorName: names.get(r.actor) ?? devices.get(r.actor) ?? shortId(r.actor),
+            actorIsDevice: !names.has(r.actor) && devices.has(r.actor),
             category: r.category,
             action: r.action,
             target: r.target ?? null,

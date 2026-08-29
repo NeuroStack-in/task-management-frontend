@@ -288,9 +288,11 @@ export function AttendanceLog({
         r.running ? "running" : fmtTime(r.clockOut),
         fmtHours(r.workedMinutes),
       ];
+      // `perm` on BOTH shapes — the header carries a Permission column for each, and writing it
+      // on only one silently shifted every column after it in the other.
       return isToday
-        ? [...base, r.todayStatus ? TODAY_STATUS_META[r.todayStatus].label : "—", ...tail]
-        : [...base, ...tail];
+        ? [...base, r.todayStatus ? TODAY_STATUS_META[r.todayStatus].label : "—", perm, ...tail]
+        : [...base, perm, ...tail];
     });
     const csv = Papa.unparse({ fields, data });
     const slug = label.replace(/[^a-z0-9]+/gi, "-").toLowerCase();

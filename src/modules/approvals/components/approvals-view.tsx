@@ -50,29 +50,6 @@ function fmt12(hhmm: string): string {
   return `${hour}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-/**
- * What the approver reads instead of a fraction.
- *
- * `days` is fractional now (a 2-hour permission is `0.25`), and "0.25 days" is not something anyone
- * can act on. A permission shows its hours and its window; a full day shows days.
- */
-function requestLabel(r: {
-  days: number;
-  permissionMinutes?: number;
-  fromTime?: string;
-  toTime?: string;
-}): string {
-  const mins = r.permissionMinutes ?? 0;
-  if (mins > 0) {
-    const h = mins / 60;
-    const hours = `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
-    const window =
-      r.fromTime && r.toTime ? ` · ${fmt12(r.fromTime)} to ${fmt12(r.toTime)}` : "";
-    return `Permission · ${hours}${window}`;
-  }
-  return `${r.days} day${r.days === 1 ? "" : "s"}`;
-}
-
 /** The big figure in the dialog. The window is prose on the line beneath, not crammed in here. */
 function requestValue(r: { days: number; permissionMinutes?: number }): string {
   const mins = r.permissionMinutes ?? 0;

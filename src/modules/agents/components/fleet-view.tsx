@@ -15,10 +15,10 @@ import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { useDirectory } from "@/hooks/use-directory";
-import { initials } from "@/lib/format";
+import {  } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -229,9 +229,15 @@ function DeviceRow({
             owner has been stamped at all. */}
         {ownerName ? (
           <div className="flex items-center gap-2">
-            <Avatar className="size-7">
-              <AvatarFallback className="text-[10px]">{initials(ownerName)}</AvatarFallback>
-            </Avatar>
+            {/* `UserAvatar`, not a bare fallback: this rendered initials for everyone, including
+                people who had uploaded a photo. The id is already resolved here — the branch below
+                uses it — so there was nothing extra to look up. */}
+            <UserAvatar
+              userId={effectiveUserId(d) ?? ""}
+              name={ownerName}
+              className="size-7"
+              fallbackClassName="text-[10px]"
+            />
             <span className="truncate">{ownerName}</span>
           </div>
         ) : effectiveUserId(d) ? (
