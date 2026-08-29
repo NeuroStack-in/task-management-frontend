@@ -10,7 +10,7 @@
  * failed) renders a neutral state rather than indexing into `undefined`.
  */
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -122,38 +122,64 @@ export function AttendanceCalendar({
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-        <div className="flex items-center gap-1">
+      {/* The whole header toggles, and it says what it is. Collapsed, this used to read
+          "‹ August 2026 ›" — a month with no noun and no hint that anything opened. The month
+          navigation moved into the body with the grid it steps through: arrows that change a
+          month you cannot see are just a puzzle. */}
+      <CardHeader
+        className="cursor-pointer select-none"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="bg-feature-tint text-primary flex size-8 items-center justify-center rounded-full">
+              <CalendarDays className="size-4" />
+            </span>
+            <div>
+              <CardTitle>Attendance calendar</CardTitle>
+              <p className="text-muted-foreground text-sm">
+                {open
+                  ? `${MONTH_NAMES[view.month]} ${view.year} · pick a day to load its roster`
+                  : "Open to see the month, day by day"}
+              </p>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-label={open ? "Hide the month calendar" : "Show the month calendar"}
-            className="text-muted-foreground hover:text-foreground mr-1 transition-colors"
+            className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronDown className={cn("size-5 transition-transform", open && "rotate-180")} />
           </button>
-          <Button variant="ghost" size="icon" className="size-8" aria-label="Previous month" onClick={() => step(-1)}>
-            <ChevronLeft className="size-4" />
-          </Button>
-          <CardTitle className="min-w-[10rem] text-center">
-            {MONTH_NAMES[view.month]} {view.year}
-          </CardTitle>
-          <Button variant="ghost" size="icon" className="size-8" aria-label="Next month" onClick={() => step(1)}>
-            <ChevronRight className="size-4" />
-          </Button>
-          {loading ? <span className="ml-2 text-xs text-muted-foreground">loading…</span> : null}
         </div>
-
-        {open ? (
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportMonthCsv(view.year, view.month, weeks, days, orgStart)}>
-            <Download className="size-4" /> Download
-          </Button>
-        ) : null}
       </CardHeader>
 
       {open ? (
       <CardContent className="space-y-3">
+          {/* Month navigation lives with the grid it steps through, not in a header that is often
+              collapsed. `stopPropagation` because the header is the toggle and this sits inside
+              the card — a click on "next month" must not also close the calendar. */}
+          <div
+            className="flex items-center justify-between gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" className="size-8" aria-label="Previous month" onClick={() => step(-1)}>
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className="min-w-[10rem] text-center text-sm font-semibold">
+                {MONTH_NAMES[view.month]} {view.year}
+              </span>
+              <Button variant="ghost" size="icon" className="size-8" aria-label="Next month" onClick={() => step(1)}>
+                <ChevronRight className="size-4" />
+              </Button>
+              {loading ? <span className="text-muted-foreground ml-2 text-xs">loading…</span> : null}
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportMonthCsv(view.year, view.month, weeks, days, orgStart)}>
+              <Download className="size-4" /> Download
+            </Button>
+          </div>
         <div className="grid grid-cols-7 gap-1.5">
           {WEEKDAY_LABELS.map((d) => (
             <div key={d} className="text-center text-xs font-medium text-muted-foreground">{d}</div>
