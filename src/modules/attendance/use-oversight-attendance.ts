@@ -225,6 +225,7 @@ async function enrichClock(
       running: d.running,
       entryCount: d.entry_count,
       onLeave: d.on_leave,
+      permissionMinutes: d.permission_minutes,
       ...(deriveStatus ? { status: d.running ? "in" : "out" } : {}),
     };
   });

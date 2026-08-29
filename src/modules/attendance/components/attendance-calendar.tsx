@@ -9,8 +9,8 @@
  * selection. Each cell is guarded — a day with no summary (weekend, today-still-open, or a fetch that
  * failed) renders a neutral state rather than indexing into `undefined`.
  */
-import { useMemo } from "react";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -88,6 +88,18 @@ export function AttendanceCalendar({
   days: Map<string, ApiDayResponse>;
   loading: boolean;
 }) {
+  /**
+   * Collapsed by default, matching `UpcomingLeave` below it.
+   *
+   * The month grid is the tallest thing on the page and answers a question — "how has the month
+   * gone" — that is asked far less often than "who is out today", which the tiles and roster answer.
+   * Leaving it open pushed the roster below the fold on every visit.
+   *
+   * The month fetch is upstream (`useMonthAttendance` in the view) and is unchanged: collapsing is a
+   * display choice, not a data one, so the calendar is instant when opened and the month's numbers
+   * stay available to anything else that reads them.
+   */
+  const [open, setOpen] = useState(false);
   const view = { year: selected.year, month: selected.month };
   const workdays = useWorkdays();
   const holidays = useOrgHolidays();
@@ -112,6 +124,15 @@ export function AttendanceCalendar({
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-label={open ? "Hide the month calendar" : "Show the month calendar"}
+            className="text-muted-foreground hover:text-foreground mr-1 transition-colors"
+          >
+            <ChevronDown className={cn("size-5 transition-transform", open && "rotate-180")} />
+          </button>
           <Button variant="ghost" size="icon" className="size-8" aria-label="Previous month" onClick={() => step(-1)}>
             <ChevronLeft className="size-4" />
           </Button>
@@ -124,11 +145,14 @@ export function AttendanceCalendar({
           {loading ? <span className="ml-2 text-xs text-muted-foreground">loading…</span> : null}
         </div>
 
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportMonthCsv(view.year, view.month, weeks, days, orgStart)}>
-          <Download className="size-4" /> Download
-        </Button>
+        {open ? (
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportMonthCsv(view.year, view.month, weeks, days, orgStart)}>
+            <Download className="size-4" /> Download
+          </Button>
+        ) : null}
       </CardHeader>
 
+      {open ? (
       <CardContent className="space-y-3">
         <div className="grid grid-cols-7 gap-1.5">
           {WEEKDAY_LABELS.map((d) => (
@@ -167,6 +191,7 @@ export function AttendanceCalendar({
           <span className="text-xs text-muted-foreground">Select a day to view its roster below ↓</span>
         </div>
       </CardContent>
+    ) : null}
     </Card>
   );
 }

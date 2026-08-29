@@ -218,14 +218,15 @@ function EmployeeLeaveView() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-5">Type</TableHead>
-                <TableHead>Dates</TableHead>
-                <TableHead>Days</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead>Documents</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead className="pr-5">Action</TableHead>
+                {/* Five columns, not eight. Type/Dates/Days answered one question — "what was
+                    asked for" — across three narrow columns, and Status/Submitted split another,
+                    which pushed the table past its container into a horizontal scroll. Facts read
+                    together are stacked in one cell instead. */}
+                <TableHead className="w-[30%] pl-5">Request</TableHead>
+                <TableHead className="w-[26%]">Reason</TableHead>
+                <TableHead className="w-[22%]">Documents</TableHead>
+                <TableHead className="w-[14%]">Status</TableHead>
+                <TableHead className="w-[8%] pr-5 text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -236,20 +237,24 @@ function EmployeeLeaveView() {
                 };
                 return (
                   <TableRow key={r.request_id}>
-                    <TableCell className="pl-5 font-medium">{typeName(r.type_id)}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {fmtRange(r.from, r.to)}
-                    </TableCell>
-                    <TableCell className="tabular-nums">
-                      {/* A permission shows its window; "0.25" alone means nothing to the
-                          person who asked for two hours off. */}
-                      {(r.permission_minutes ?? 0) > 0
-                        ? `${r.from_time ?? ""}–${r.to_time ?? ""}`
-                        : r.days}
-                    </TableCell>
-                    <TableCell className="max-w-[16rem] truncate text-muted-foreground">
-                      {r.reason ?? "—"}
-                    </TableCell>
+                      {/* Type, when, and how long — one question, one cell. */}
+                      <TableCell className="pl-5 align-top">
+                        <p className="font-medium">{typeName(r.type_id)}</p>
+                        <p className="text-muted-foreground text-sm">
+                          {fmtRange(r.from, r.to)}
+                          {" · "}
+                          {/* A permission shows its window; "0.25 days" means nothing to the
+                              person who asked for two hours off. */}
+                          {(r.permission_minutes ?? 0) > 0
+                            ? `${r.from_time ?? ""}–${r.to_time ?? ""}`
+                            : `${r.days} day${r.days === 1 ? "" : "s"}`}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground align-top">
+                        <span className="line-clamp-2" title={r.reason ?? undefined}>
+                          {r.reason ?? "—"}
+                        </span>
+                      </TableCell>
                     <TableCell className="min-w-[13rem]">
                       {r.attachments?.length ? (
                         <DocumentList
@@ -262,13 +267,14 @@ function EmployeeLeaveView() {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <Badge className={cn("font-medium", meta.cls)}>{meta.label}</Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground tabular-nums">
-                      {fmtSubmitted(r.created_at)}
-                    </TableCell>
-                    <TableCell className="pr-5">
+                      {/* The verdict and when it was asked for: also one question. */}
+                      <TableCell className="align-top">
+                        <Badge className={cn("font-medium", meta.cls)}>{meta.label}</Badge>
+                        <p className="text-muted-foreground mt-1 text-xs tabular-nums">
+                          Sent {fmtSubmitted(r.created_at)}
+                        </p>
+                      </TableCell>
+                    <TableCell className="pr-5 text-right align-top">
                       {r.status === "pending" ? (
                         <Button
                           variant="ghost"

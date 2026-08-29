@@ -343,9 +343,16 @@ function ApprovalDialog({
                 <p className="truncate text-sm text-muted-foreground">
                   {fmtRange(req.from, req.to)}
                 </p>
+                {/* The one thing an approver of a permission actually decides on: which hours the
+                    person will be away. "0.25 days" said none of it. */}
+                {permissionWindow(req) ? (
+                  <p className="text-foreground truncate text-sm">
+                    Requested permission from {permissionWindow(req)}
+                  </p>
+                ) : null}
               </div>
               <span className="font-mono text-lg font-semibold tabular-nums">
-                {requestLabel(req)}
+                {requestValue(req)}
               </span>
             </div>
 
