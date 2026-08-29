@@ -124,6 +124,10 @@ type SortKey = "name" | "rate" | "status";
  * orthogonal to the status column — a person can be Present and on permission at the same time.
  */
 const PERMISSION = "__permission";
+// The `__` prefix keeps it from colliding with any real status the server may add. The cost is that
+// it is not a label: `statusMeta` falls back to `label: s` for values it does not know — correct for
+// an unrecognised server status, but it printed "__permission · 1" on the chip. Every render path
+// must special-case it *before* `statusMeta`; there is only one, just below.
 
 /** `90` → `1h 30m`, `45` → `45m`. Minutes are what the server stores; hours are what people say. */
 function formatPermission(minutes: number): string {
@@ -350,7 +354,12 @@ export function AttendanceLog({
                     : "bg-muted text-muted-foreground hover:text-foreground",
                 )}
               >
-                {s === "all" ? "All" : statusMeta(s).label} · {statusCounts[s] ?? 0}
+                {s === "all"
+                  ? "All"
+                  : s === PERMISSION
+                    ? "On permission"
+                    : statusMeta(s).label}{" "}
+                · {statusCounts[s] ?? 0}
               </button>
             ))}
           </div>
