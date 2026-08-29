@@ -38,7 +38,9 @@ export interface TimesheetSession {
   /** The task id. Kept for keying; the label to show is {@link taskTitle}. */
   taskId: string;
   /**
-   * The task's title, resolved by the server.
+   * The work's title — `Task · Subtask` when the session ran against a subtask, else the task.
+   *
+   * Resolved by the server.
    *
    * Empty when the task was deleted, or when the backend predates the field. It used to be
    * unresolvable here at all: an admin reading someone else's day has no list of *their* tasks to

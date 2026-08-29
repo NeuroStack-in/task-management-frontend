@@ -32,13 +32,7 @@ import {
   type Task,
   type TaskStatus,
 } from "../types";
-import {
-  isTaskOverdue,
-  projectStats,
-  selectablePeople,
-  toneDot,
-  type UserMini,
-} from "../lib";
+import { isTaskOverdue, projectStats, selectablePeople, taskTotals, toneDot, type UserMini } from "../lib";
 import { useProjectsData } from "../use-projects-data";
 import { ProjectCard } from "./project-card";
 import { ProjectsList } from "./projects-list";
@@ -92,10 +86,11 @@ export function ProjectsView() {
     const map: Record<string, { done: number; total: number }> = {};
     for (const p of projects) {
       const list = tasksByProject.get(p.id) ?? [];
-      map[p.id] = {
-        done: list.filter((t) => t.status === "done").length,
-        total: list.length,
-      };
+      // This pair sits directly under the card's progress bar and captions it, so it uses the
+      // **progress** numbers, not the "what's left" ones: closed counts as completed, blocked is
+      // out of the denominator. Showing "0 / 1 done" beneath a 67% bar would read as a bug.
+      const { completed, deliverable } = taskTotals(list);
+      map[p.id] = { done: completed, total: deliverable };
     }
     return map;
   }, [projects, tasksByProject]);

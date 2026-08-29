@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canDeleteTask, canReviewTask, toAssignees } from "./lib";
+import { canDeleteTask, canReviewTask, deriveProjectKey, taskTotals, toAssignees } from "./lib";
 
 /**
  * The delete rule, as an executable statement. It mirrors `projects::delete_task` on the server —
@@ -103,5 +103,97 @@ describe("toAssignees", () => {
   it("reads a genuinely unassigned task as empty", () => {
     expect(toAssignees({})).toEqual([]);
     expect(toAssignees({ assignees: [] })).toEqual([]);
+  });
+});
+
+describe("taskTotals", () => {
+  const t = (status: string) => ({ status }) as never;
+
+  it("excludes closed and blocked from the total", () => {
+    // The board that prompted this: 0 todo, 1 in progress, 0 in review, 0 done, 2 closed, 2 blocked.
+    const r = taskTotals([
+      t("in_progress"),
+      t("closed"),
+      t("closed"),
+      t("blocked"),
+      t("blocked"),
+    ]);
+    expect(r.total).toBe(1);
+    expect(r.open).toBe(1);
+    expect(r.done).toBe(0);
+    expect(r.closed).toBe(2);
+    expect(r.blocked).toBe(2);
+  });
+
+  it("keeps total === done + open, so the card cannot contradict itself", () => {
+    const r = taskTotals([t("todo"), t("in_review"), t("done"), t("closed"), t("blocked")]);
+    expect(r.total).toBe(r.done + r.open);
+  });
+
+  it("counts nothing as live work when everything is closed or blocked", () => {
+    const r = taskTotals([t("closed"), t("blocked")]);
+    expect(r.total).toBe(0);
+  });
+});
+
+describe("deriveProjectKey", () => {
+  it("keeps the keys the existing projects already show", () => {
+    expect(deriveProjectKey("Atlas Migration")).toBe("AM");
+    expect(deriveProjectKey("SDE Main Project")).toBe("SM");
+    expect(deriveProjectKey("Gen AI Intern Project")).toBe("GA");
+    expect(deriveProjectKey("UI/UX Intern Project")).toBe("UI");
+  });
+
+  it("never produces a key the server would reject", () => {
+    // The server's rule: 2–8 ASCII letters or digits. These names all used to break creation.
+    const names = ["A", "A/B", "日本語", "#1 Project", "  ", "!!!", "Q", "x"];
+    for (const n of names) {
+      const k = deriveProjectKey(n);
+      expect(k).toMatch(/^[A-Z0-9]{2,8}$/);
+    }
+  });
+
+  it("falls back to PRJ when a name has nothing usable in it", () => {
+    expect(deriveProjectKey("日本語")).toBe("PRJ");
+    expect(deriveProjectKey("!!!")).toBe("PRJ");
+  });
+
+  it("pads a single usable character rather than failing", () => {
+    expect(deriveProjectKey("A")).toBe("APR");
+  });
+});
+
+describe("taskTotals — progress vs what's left", () => {
+  const t = (status: string) => ({ status }) as never;
+
+  it("counts closed as completed for progress, but not in the total", () => {
+    // The board from the screenshots: 1 in progress, 2 closed, 2 blocked.
+    const r = taskTotals([
+      t("in_progress"),
+      t("closed"),
+      t("closed"),
+      t("blocked"),
+      t("blocked"),
+    ]);
+    expect(r.total).toBe(1); // what's left to do
+    expect(r.completed).toBe(2); // 2 closed
+    expect(r.deliverable).toBe(3); // 2 closed + 1 in progress; blocked excluded
+    expect(Math.round((r.completed / r.deliverable) * 100)).toBe(67);
+  });
+
+  it("approving work never lowers progress — the bug this exists to prevent", () => {
+    const beforeReview = taskTotals([t("done")]);
+    const afterReview = taskTotals([t("closed")]);
+    const pct = (r: ReturnType<typeof taskTotals>) =>
+      r.deliverable ? Math.round((r.completed / r.deliverable) * 100) : 0;
+    expect(pct(beforeReview)).toBe(100);
+    expect(pct(afterReview)).toBe(100); // was 0% before this rule
+  });
+
+  it("a fully signed-off project reads 100%, not 0%", () => {
+    const r = taskTotals([t("closed"), t("closed"), t("closed")]);
+    expect(r.total).toBe(0);
+    expect(r.completed).toBe(3);
+    expect(Math.round((r.completed / r.deliverable) * 100)).toBe(100);
   });
 });

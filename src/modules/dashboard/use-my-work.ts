@@ -15,6 +15,7 @@ import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { useAuthStore } from "@/stores/auth.store";
+import { useCurrentRole, usePermissions } from "@/hooks/use-permissions";
 import { isOpenTaskStatus } from "@/modules/projects/types";
 import {
   listMyTasks,
@@ -52,6 +53,12 @@ export interface MyWork {
 
 export function useMyWork(): MyWork {
   const userId = useAuthStore((s) => s.user?.id ?? "");
+  // Mirrors the server's discriminator exactly (`list_projects::is_oversight`): org **scope** and
+  // the bit, not the bit alone — Employee holds `projects:view` too, as the "may open Projects"
+  // gate, so branching on it by itself would treat every contributor as an oversight reader.
+  const role = useCurrentRole();
+  const { can } = usePermissions();
+  const seesWholeOrg = (role?.scope ?? "org") === "org" && can("projects:view");
   const [openTasks, setOpenTasks] = useState<MyTask[]>([]);
   const [doneCount, setDoneCount] = useState(0);
   const [myProjects, setMyProjects] = useState<MyProject[]>([]);
@@ -102,11 +109,26 @@ export function useMyWork(): MyWork {
         );
         setDoneCount(done);
 
-        // My projects: managed ∪ projects I have tasks in.
+        // **My projects — the server has usually already answered this.**
+        //
+        // `GET /v1/projects` branches on the caller's reach (projects::list_projects): an org-scoped
+        // reader with `projects:view` gets the whole organisation (`list_all`); everyone else gets
+        // `list_mine`, which reads a real `MEMBER#` row per project and so *is* the membership list.
+        //
+        // This used to re-filter that answer down to "projects I manage, or have a task in", which
+        // silently dropped every project someone belongs to but has no task in — the dashboard said
+        // 3 while the Projects page, showing the same endpoint unfiltered, said 5. For a contributor
+        // the right answer is simply what came back.
+        //
+        // An org-scoped reader is the one case where the list is *not* membership — it is the whole
+        // org — so the narrower heuristic stays for them rather than labelling every project in the
+        // company as one they belong to.
         const taskProjectIds = new Set(tasks.map((t) => t.project_id));
-        const mine = projects.filter(
-          (p) => p.manager_user_id === userId || taskProjectIds.has(p.id),
-        );
+        const mine = seesWholeOrg
+          ? projects.filter(
+              (p) => p.manager_user_id === userId || taskProjectIds.has(p.id),
+            )
+          : projects;
         setMyProjects(
           mine.map((p) => ({ id: p.id, name: p.name, key: p.key ?? null, status: p.status })),
         );
@@ -120,7 +142,7 @@ export function useMyWork(): MyWork {
     return () => {
       live = false;
     };
-  }, [userId, nonce, isBackground]);
+  }, [userId, nonce, isBackground, seesWholeOrg]);
 
   return { openTasks, doneCount, myProjects, loading, error, reload };
 }

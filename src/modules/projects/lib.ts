@@ -208,6 +208,90 @@ export function isTaskOverdue(t: Task): boolean {
   return daysUntil(t.dueDate) < 0;
 }
 
+/**
+ * The board's headline numbers, counted one way so no two cards can disagree.
+ *
+ * **`total` is live work: it excludes `closed` and `blocked`.** A closed task is finished and
+ * signed off — it has left the queue. A blocked one cannot be worked until something else moves, so
+ * counting it as outstanding overstates what the team can actually pick up. Both are still shown,
+ * on their own card, because "how much is parked" is a real question — just not the same question
+ * as "how much is left".
+ *
+ * `total === done + open` always holds, which is what makes the card readable at a glance.
+ */
+export interface TaskTotals {
+  /** Live work: todo + in progress + in review + done. Excludes closed and blocked. */
+  total: number;
+  /** Finished by the assignee, not yet signed off. */
+  done: number;
+  /** todo + in progress + in review. */
+  open: number;
+  /** Signed off by a reviewer — finished and out of the queue. */
+  closed: number;
+  /** Waiting on something else; cannot be picked up. */
+  blocked: number;
+  /**
+   * Finished work for **progress only**: `done + closed`.
+   *
+   * Closed counts here even though it is absent from `total`, and the two answer different
+   * questions on purpose. `total` is *what is left to do*, so signed-off work has left it. Progress
+   * is *how much of the work is finished*, and a task a reviewer approved is the most finished a
+   * task can be. Counting it only in `total` made approving work push a project's percentage down —
+   * a one-task project went 100% → 0% the moment it was signed off.
+   */
+  completed: number;
+  /**
+   * The denominator for progress: `completed + open` — everything except blocked.
+   *
+   * Blocked work is excluded because it cannot be advanced by the team; leaving it in would hold a
+   * project's percentage down for a reason nobody on it can act on.
+   */
+  deliverable: number;
+}
+
+export function taskTotals(tasks: Pick<Task, "status">[]): TaskTotals {
+  const c = taskCounts(tasks as Task[]);
+  const open = c.todo + c.in_progress + c.in_review;
+  const completed = c.done + c.closed;
+  return {
+    total: open + c.done,
+    done: c.done,
+    open,
+    closed: c.closed,
+    blocked: c.blocked,
+    completed,
+    deliverable: completed + open,
+  };
+}
+
+/**
+ * A project's short badge key, derived from its name — e.g. "Atlas Migration" → "AM".
+ *
+ * **This must never be able to fail.** There is no key field in the create form: the key is derived
+ * silently, and the server requires 2–8 ASCII letters or digits. The old derivation took initials
+ * *before* stripping punctuation, so a perfectly reasonable name could produce a key the API
+ * rejected — and the user, who never typed a key, got "Key must be 2–8 letters or digits" with
+ * nothing on screen to correct. Creating a project would simply refuse:
+ *
+ * - `"A/B Testing"`   → `"A/"` — a slash is not alphanumeric
+ * - `"Q1"`            → `"Q1"` fine, but `"Q"` alone → one character
+ * - `"日本語"`         → nothing usable at all
+ *
+ * So: strip to what the server accepts **first**, then take initials, then guarantee the length.
+ * The key is a cosmetic badge; it must never be the reason a project cannot be created.
+ */
+export function deriveProjectKey(name: string): string {
+  const words = name
+    .split(/\s+/)
+    .map((w) => w.replace(/[^A-Za-z0-9]/g, ""))
+    .filter(Boolean);
+  const initials = words.length >= 2 ? words[0][0] + words[1][0] : "";
+  const base = (initials || words[0] || "").slice(0, 8).toUpperCase();
+  // One usable character, or none: pad rather than fail. "PRJ" is the last resort for a name with
+  // no ASCII alphanumerics in it at all.
+  return base.length >= 2 ? base : `${base}PRJ`.slice(0, 3).toUpperCase();
+}
+
 /** Counts per task status for one project's tasks. */
 export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
   const counts: Record<TaskStatus, number> = {

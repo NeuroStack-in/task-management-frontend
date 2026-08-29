@@ -92,7 +92,9 @@ export function ProjectCard({
           <p className="text-muted-foreground">Tasks</p>
           <p className="mt-0.5 font-medium tabular-nums">
             {doneCount}
-            <span className="text-muted-foreground"> / {totalCount} done</span>
+            {/* "completed", not "done": a signed-off (closed) task counts here, and `done` is a
+                status of its own — using its name for a broader idea is how the two got confused. */}
+            <span className="text-muted-foreground"> / {totalCount} completed</span>
           </p>
         </div>
         <div className="text-right">

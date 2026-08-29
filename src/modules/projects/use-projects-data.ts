@@ -29,7 +29,7 @@ import {
 } from "./services/projects.service";
 import type { NewTask, TaskPatch } from "./services/projects.service";
 import type { Project, ProjectStatus, Task, TaskPriority, TaskStatus } from "./types";
-import { membersToUserMap, toAssignees, type UserMini } from "./lib";
+import { deriveProjectKey, membersToUserMap, toAssignees, type UserMini } from "./lib";
 import type { ProjectFormValues } from "@/modules/projects/forms";
 
 /**
@@ -179,7 +179,7 @@ export function useProjectsData(): ProjectsData {
         start_date: todayIso(),
         end_date: v.dueDate || undefined,
         manager_user_id: manager,
-        key: deriveKey(v.name),
+        key: deriveProjectKey(v.name),
         ...(v.department ? { department: v.department } : {}),
       });
       // The manager is a member already (created with the project). Add the rest, best-effort — a
@@ -266,14 +266,6 @@ function todayIso(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-/** "Atlas Migration" → "AM"; mirrors the old store's derivation so cards keep a key badge. */
-function deriveKey(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  const base =
-    words.length >= 2 ? words[0][0] + words[1][0] : (words[0] ?? "PR").slice(0, 3);
-  return base.toUpperCase().slice(0, 4) || "PRJ";
 }
 
 function messageOf(e: unknown): string {

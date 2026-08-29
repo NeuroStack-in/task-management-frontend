@@ -40,6 +40,15 @@ export interface ApiEntryRow {
    * deployed — so every reader must fall back rather than render an empty label.
    */
   task_title?: string;
+  /** The subtask the session ran against, when one was picked. */
+  subtask_id?: string;
+  /**
+   * The subtask's title, resolved server-side in the same batch as {@link task_title}.
+   *
+   * Absent when the session targeted the task itself — so a reader shows `Task · Subtask` only when
+   * this is present, never a dangling separator.
+   */
+  subtask_title?: string;
   project_id: string;
   description?: string;
   /** Epoch ms. */

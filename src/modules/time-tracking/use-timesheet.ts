@@ -159,6 +159,20 @@ export function useTimesheet(day?: string): TimesheetState {
   return { ...state, loading, error, reload };
 }
 
+/**
+ * What to call the work: `Task · Subtask`, the task alone, or null when neither resolves.
+ *
+ * The server resolves both titles (it can name a task this caller could never list). The local map
+ * remains a fallback for a backend that predates `task_title`; it has no subtask equivalent, which
+ * is fine — the separator only appears when there is something to put after it.
+ */
+function taskLabel(e: ApiEntryRow, titles: Map<string, string>): string | null {
+  const task = e.task_title?.trim() || titles.get(e.task_id)?.trim() || "";
+  const sub = e.subtask_title?.trim() || "";
+  if (task && sub) return `${task} · ${sub}`;
+  return task || null;
+}
+
 function toRow(
   e: ApiEntryRow,
   names: Map<string, string>,
@@ -169,7 +183,9 @@ function toRow(
     id: e.session_id,
     // Server first: it resolves the title even for a task this caller cannot list. The local map
     // stays as the fallback for a backend that predates `task_title`.
-    task: e.task_title?.trim() || titles.get(e.task_id)?.trim() || null,
+    // `Task · Subtask` when the session ran against a subtask — the desktop app lets you point the
+    // clock at one, and a timesheet that only ever says the parent hides which part was worked on.
+    task: taskLabel(e, titles),
     description: e.description?.trim() || "",
     project: projectOf(e.project_id, names),
     start: clockOf(e.start),

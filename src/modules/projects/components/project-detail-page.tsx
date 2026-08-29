@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, ListChecks, Pencil, Plus, Star, Trash2, Users, AlertTriangle } from "lucide-react";
+import { AlertTriangle, Archive, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, ListChecks, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { DndContext, PointerSensor, closestCorners, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -20,7 +20,7 @@ import type { ProjectFormValues } from "@/modules/projects/forms";
 import type { TaskFormValues } from "@/modules/projects/forms";
 import { useProjectDetail } from "../use-project-detail";
 import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
-import { canDeleteTask, canReviewTask, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, taskCounts, toneDot, toneSoft, type UserMini } from "../lib";
+import { canDeleteTask, canReviewTask, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
 import { MemberStack, Segmented, StatusBadge } from "./parts";
@@ -114,7 +114,6 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     return orgPeople.filter((u) => ids.has(u.id));
   }, [orgPeople, project?.memberIds]);
 
-  const counts = useMemo(() => taskCounts(tasks), [tasks]);
 
   if (loading && !project) {
     return (
@@ -159,8 +158,10 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const daysLeft = daysUntil(project.dueDate);
   const lead = userMap[project.leadUserId];
   const manager = project.managerId ? userMap[project.managerId] : null;
-  const completed = counts.done;
-  const pending = tasks.length - counts.done;
+  // One source for every headline number on this page — see `taskTotals`. `pending` used to be
+  // `tasks.length - done`, which counted closed and blocked tasks as outstanding work: a project
+  // with everything signed off still read "5 open".
+  const totals = taskTotals(tasks);
 
   const dayWord = (n: number) => (n === 1 ? "day" : "days");
   const deadlineText =
@@ -466,13 +467,21 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           {/* Gauge and caption share ONE source — the live board (done / total tasks) — so the
               percentage and the "N of M" can never disagree. (The aggregator's cached
               `project.progress` can lag the board, which made the gauge look wrong.) */}
+          {/* Progress counts **closed as completed** — see `TaskTotals.completed`. Its denominator
+              is therefore not the Tasks card's total, and the caption says "completed" rather than
+              "done" so the two cards are visibly answering different questions: this one is how
+              much of the work is finished, that one is how much is left. */}
           <Gauge
-            value={tasks.length ? Math.round((completed / tasks.length) * 100) : 0}
+            value={
+              totals.deliverable
+                ? Math.round((totals.completed / totals.deliverable) * 100)
+                : 0
+            }
             label="of work done"
             size={172}
           />
           <p className="text-muted-foreground mt-1 text-xs">
-            {completed} of {tasks.length} tasks done
+            {totals.completed} of {totals.deliverable} tasks completed
           </p>
         </div>
 
@@ -487,13 +496,37 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           </div>
           <div className="mt-5 flex items-baseline gap-2">
             <span className="font-display text-3xl font-semibold tabular-nums">
-              {tasks.length}
+              {totals.total}
             </span>
             <span className="text-muted-foreground text-sm">total</span>
           </div>
           <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
-            <TaskStat label="Done" value={completed} dot="bg-primary" />
-            <TaskStat label="Open" value={pending} dot="bg-muted-foreground/40" />
+            <TaskStat label="Done" value={totals.done} dot="bg-primary" />
+            <TaskStat label="Open" value={totals.open} dot="bg-muted-foreground/40" />
+          </div>
+        </div>
+
+        {/* Parked work — finished-and-signed-off, and can't-be-started. Neither is outstanding, so
+            neither belongs in the total above; both are worth seeing, so they get their own card
+            rather than being silently dropped from the page. */}
+        <div className="bg-card flex flex-col rounded-2xl border p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Not in progress
+            </p>
+            <span className="bg-feature-tint text-primary flex size-8 items-center justify-center rounded-full">
+              <Archive className="size-4" />
+            </span>
+          </div>
+          <div className="mt-5 flex items-baseline gap-2">
+            <span className="font-display text-3xl font-semibold tabular-nums">
+              {totals.closed + totals.blocked}
+            </span>
+            <span className="text-muted-foreground text-sm">not counted above</span>
+          </div>
+          <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
+            <TaskStat label="Closed" value={totals.closed} dot="bg-success" />
+            <TaskStat label="Blocked" value={totals.blocked} dot="bg-warning" />
           </div>
         </div>
 

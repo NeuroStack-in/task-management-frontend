@@ -8,6 +8,7 @@ import {
 import {
   formatDate,
   taskCounts,
+  taskTotals,
   type UserMini,
 } from "./lib";
 
@@ -29,7 +30,14 @@ export async function generateProjectReportPdf(
   let y = 56;
 
   const counts = taskCounts(tasks);
-  const done = counts.done;
+  // The same numbers the project page shows — see `taskTotals`. This line used to read
+  // `${project.progress}% (${counts.done} of ${tasks.length} tasks done)`, which mixed three
+  // different definitions: a server percentage that counts signed-off work, a `done`-only count,
+  // and a total that included closed and blocked. On a real board it printed "67% (0 of 5)".
+  const totals = taskTotals(tasks);
+  const progressPct = totals.deliverable
+    ? Math.round((totals.completed / totals.deliverable) * 100)
+    : 0;
   const lead = userMap[project.leadUserId]?.name ?? "—";
   const manager = project.managerId
     ? (userMap[project.managerId]?.name ?? "—")
@@ -82,7 +90,11 @@ export async function generateProjectReportPdf(
   kv("Lead", lead);
   kv("Manager", manager);
   kv("Timeline", `${formatDate(project.startDate)} – ${formatDate(project.dueDate)}`);
-  kv("Progress", `${project.progress}%  (${done} of ${tasks.length} tasks done)`);
+  kv(
+    "Progress",
+    `${progressPct}%  (${totals.completed} of ${totals.deliverable} tasks completed)`,
+  );
+  kv("Remaining", `${totals.open} open of ${totals.total} live tasks`);
   kv("Team size", `${project.memberIds.length} members`);
   line(4);
   rule();
