@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Archive, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, ListChecks, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, ListChecks, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { DndContext, PointerSensor, closestCorners, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -485,6 +485,10 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           </p>
         </div>
 
+        {/* One card, two questions. The headline is what is LEFT — closed and blocked are not in
+            it — so the four figures below deliberately do not sum to it. The rule is stated on the
+            divider rather than left to be inferred: without it "1 total" above "0 · 1 · 2 · 2"
+            reads as an arithmetic bug, which is exactly how the split card was misread before. */}
         <div className="bg-card flex flex-col rounded-2xl border p-5">
           <div className="flex items-center justify-between">
             <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
@@ -498,35 +502,24 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             <span className="font-display text-3xl font-semibold tabular-nums">
               {totals.total}
             </span>
-            <span className="text-muted-foreground text-sm">total</span>
+            <span className="text-muted-foreground text-sm">still to do</span>
           </div>
-          <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
-            <TaskStat label="Done" value={totals.done} dot="bg-primary" />
-            <TaskStat label="Open" value={totals.open} dot="bg-muted-foreground/40" />
-          </div>
-        </div>
-
-        {/* Parked work — finished-and-signed-off, and can't-be-started. Neither is outstanding, so
-            neither belongs in the total above; both are worth seeing, so they get their own card
-            rather than being silently dropped from the page. */}
-        <div className="bg-card flex flex-col rounded-2xl border p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              Not in progress
-            </p>
-            <span className="bg-feature-tint text-primary flex size-8 items-center justify-center rounded-full">
-              <Archive className="size-4" />
-            </span>
-          </div>
-          <div className="mt-5 flex items-baseline gap-2">
-            <span className="font-display text-3xl font-semibold tabular-nums">
-              {totals.closed + totals.blocked}
-            </span>
-            <span className="text-muted-foreground text-sm">not counted above</span>
-          </div>
-          <div className="mt-auto grid grid-cols-2 gap-3 pt-5">
-            <TaskStat label="Closed" value={totals.closed} dot="bg-success" />
-            <TaskStat label="Blocked" value={totals.blocked} dot="bg-warning" />
+          <div className="mt-auto pt-5">
+            <div className="grid grid-cols-2 gap-3">
+              <TaskStat label="Done" value={totals.done} dot="bg-primary" />
+              <TaskStat label="Open" value={totals.open} dot="bg-muted-foreground/40" />
+            </div>
+            <div className="my-3 flex items-center gap-2">
+              <span className="bg-border h-px flex-1" />
+              <span className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                Not in the total
+              </span>
+              <span className="bg-border h-px flex-1" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <TaskStat label="Closed" value={totals.closed} dot="bg-success" />
+              <TaskStat label="Blocked" value={totals.blocked} dot="bg-warning" />
+            </div>
           </div>
         </div>
 
