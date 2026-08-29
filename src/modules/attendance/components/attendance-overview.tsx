@@ -112,9 +112,10 @@ export function AttendanceOverview({
                 {loading ? "—" : `${rate}%`}
               </span>
               <span className="text-xs text-muted-foreground">
-                {/* Today's figure is a live "who's clocked in right now" snapshot, not a full-day
-                    attendance rate (that only exists once the nightly close stamps verdicts). */}
-                {range === "today" ? "Clocked in now" : "Attendance rate"}
+                {/* Today counts everyone who has clocked in at all, not who happens to be running a
+                    timer at this instant — see `use-oversight-attendance`. Still not the closed verdict
+                    (the nightly close adds partial), hence its own wording. */}
+                {range === "today" ? "Clocked in today" : "Attendance rate"}
               </span>
             </div>
           </div>

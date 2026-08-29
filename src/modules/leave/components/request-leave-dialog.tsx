@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import { ApiError } from "@/lib/api";
 import { uploadFileToPresignedUrl } from "@/lib/upload";
 import {
@@ -402,13 +402,37 @@ export function RequestLeaveDialog({
 
           {/* The permission window. Shown only in permission mode, so a full-day request never has
               to look at time fields it will ignore. */}
+          {/* The app's own picker, not `<input type="time">`: the native control rendered the OS
+              spinner — its own typeface, its own palette, a scroll list that ignored the dialog.
+              `stepMinutes={15}` keeps a usable granularity; the native input allowed five-minute
+              steps, so half-hours would have been a regression. */}
           {isPermission ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="From" error={errors.fromTime?.message}>
-                <Input type="time" step={300} {...register("fromTime")} />
+                <Controller
+                  control={control}
+                  name="fromTime"
+                  render={({ field }) => (
+                    <TimePicker
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      stepMinutes={15}
+                    />
+                  )}
+                />
               </Field>
               <Field label="To" error={errors.toTime?.message}>
-                <Input type="time" step={300} {...register("toTime")} />
+                <Controller
+                  control={control}
+                  name="toTime"
+                  render={({ field }) => (
+                    <TimePicker
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      stepMinutes={15}
+                    />
+                  )}
+                />
               </Field>
             </div>
           ) : null}

@@ -144,6 +144,13 @@ export interface ApiUserDayDetail {
   /** An approved leave request covers this date — true even before the close cron runs, so the live
    *  "today" roster can show "On leave" on a day with no resolved status yet. */
   on_leave: boolean;
+  /**
+   * Minutes of approved **partial-day** leave ("permission") for this date, else 0.
+   *
+   * Orthogonal to `status` and to `on_leave`: someone can be present and on permission at once.
+   * The server credits these minutes toward presence rather than making the day an absence.
+   */
+  permission_minutes: number;
   /** Epoch **ms** of the first timer start. Absent = didn't clock in. */
   clock_in?: number;
   /** Epoch **ms** of the last session's stop. Absent while a session is still running. */

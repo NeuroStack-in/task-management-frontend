@@ -72,6 +72,14 @@ export interface OversightRow {
   /** An approved leave request covers this date (`day`/`today` mode). */
   onLeave?: boolean;
   /**
+   * Minutes of approved partial-day leave ("permission") on this date, else 0/undefined.
+   *
+   * **Not a status.** Someone on permission still worked the rest of the day, so this rides
+   * alongside `status`/`todayStatus` rather than replacing either — the same separation the server
+   * keeps between `permission_minutes` and `on_leave`.
+   */
+  permissionMinutes?: number;
+  /**
    * `today` mode only — a live attendance read derived here, since today has no closed verdict:
    *  - `leave`   — an approved leave covers today
    *  - `absent`  — no approved leave and no timer session (didn't clock in)
@@ -512,8 +520,19 @@ export function useOversightAttendance({
             ...r,
             todayStatus: classifyToday(r, lateThreshold),
           }));
-          // Counted after enrichment, so the headline figure agrees with the roster beneath it.
-          const present = rows.filter((r) => r.status === "in").length;
+          // **Attended today, not clocked in right now.**
+          //
+          // This counted `status === "in"` — a timer running at this instant — so the moment someone
+          // stopped for the day the org's attendance fell back toward 0%. A person who worked
+          // 10:38-13:46 read as Absent beside their own log row showing them Late: the same page
+          // contradicting itself.
+          //
+          // `todayStatus` is the live verdict derived just above, and `late` still means they clocked
+          // in. Both count as present — which is what every other range means by the word, and what
+          // the roster underneath already showed.
+          const present = rows.filter(
+            (r) => r.todayStatus === "present" || r.todayStatus === "late",
+          ).length;
           setState({
             // `partial: 0` — this is the LIVE today branch, derived from in/out presence. Partial is a
             // verdict the nightly close assigns; it does not exist before then. `leave`, though, IS

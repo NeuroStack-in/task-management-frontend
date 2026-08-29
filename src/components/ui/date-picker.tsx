@@ -158,25 +158,35 @@ export function DatePicker({
 
 // Full 24h in half-hour steps — a filter clipped to office hours can't select an evening
 // screenshot (the agent captures whenever a timer runs, not 9-to-5).
-const TIMES = (() => {
+/** Every `step` minutes across the day. 30 is the default the screenshot/location pickers use. */
+function timesEvery(step: number): string[] {
   const out: string[] = [];
-  for (let h = 0; h <= 23; h++) {
-    for (const m of [0, 30]) out.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+  for (let m = 0; m < 24 * 60; m += step) {
+    out.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
   }
   return out;
-})();
+}
+const TIMES = timesEvery(30);
 
 export function TimePicker({
   value,
   onChange,
   placeholder = "--:--",
   className,
+  /**
+   * Minutes between options. Defaults to 30 — the granularity the browse-a-day pickers want.
+   * A leave permission passes 15: the native input it replaced allowed five-minute precision, and
+   * dropping to half-hours would have made "14:15 to 15:45" unrequestable.
+   */
+  stepMinutes = 30,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  stepMinutes?: number;
 }) {
+  const times = stepMinutes === 30 ? TIMES : timesEvery(stepMinutes);
   // Same portal treatment as DatePicker — it appears in the same dialogs and was clipped the same way.
   const { open, setOpen, toggle, triggerRef, panelRef, pos } =
     useAnchoredPopup(TIME_W, TIME_H);
@@ -212,7 +222,7 @@ export function TimePicker({
           </button>
           <ScrollArea className="h-48">
             <div className="space-y-0.5 pr-2">
-              {TIMES.map((t) => (
+              {times.map((t) => (
                 <button
                   key={t}
                   type="button"

@@ -119,6 +119,20 @@ export const ATTENDANCE_LOG_ANCHOR = "attendance-log";
 const PAGE_SIZE = 10;
 type SortKey = "name" | "rate" | "status";
 
+/**
+ * The "on permission" filter's value. A sentinel rather than a status string, because permission is
+ * orthogonal to the status column — a person can be Present and on permission at the same time.
+ */
+const PERMISSION = "__permission";
+
+/** `90` → `1h 30m`, `45` → `45m`. Minutes are what the server stores; hours are what people say. */
+function formatPermission(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
 export function AttendanceLog({
   rows,
   mode,
@@ -185,12 +199,18 @@ export function AttendanceLog({
     const seen = new Set<string>();
     for (const r of rows) if (r.status) seen.add(r.status);
     const order = ["present", "partial", "leave", "absent", "non_workday", "in", "out"];
-    return ["all", ...order.filter((s) => seen.has(s))];
+    const opts = ["all", ...order.filter((s) => seen.has(s))];
+    // **Permission is not a status.** Someone on a few hours' approved leave still worked the rest
+    // of the day, so it cannot be one of the mutually-exclusive values above without hiding them
+    // from Present. It rides alongside as its own filter, offered only when the day has one.
+    if (rows.some((r) => (r.permissionMinutes ?? 0) > 0)) opts.push(PERMISSION);
+    return opts;
   }, [rows, isRange]);
 
   const statusCounts = useMemo(() => {
     const base: Record<string, number> = { all: rows.length };
     for (const r of rows) if (r.status) base[r.status] = (base[r.status] ?? 0) + 1;
+    base[PERMISSION] = rows.filter((r) => (r.permissionMinutes ?? 0) > 0).length;
     return base;
   }, [rows]);
 
@@ -198,7 +218,10 @@ export function AttendanceLog({
     const q = query.trim().toLowerCase();
     const out = rows.filter(
       (r) =>
-        (status === "all" || r.status === status) &&
+        (status === "all" ||
+          (status === PERMISSION
+            ? (r.permissionMinutes ?? 0) > 0
+            : r.status === status)) &&
         (q === "" || r.name.toLowerCase().includes(q)),
     );
     const dir = sort.dir === "asc" ? 1 : -1;
@@ -229,13 +252,33 @@ export function AttendanceLog({
     const fields = isRange
       ? ["Employee", "Department", "Days present", "Days counted", "Rate %"]
       : isToday
-        ? ["Employee", "Department", "Status", "Attendance", "Clock in", "Clock out", "Hours"]
-        : ["Employee", "Department", "Status", "Clock in", "Clock out", "Hours"];
+        ? [
+            "Employee",
+            "Department",
+            "Status",
+            "Attendance",
+            "Permission",
+            "Clock in",
+            "Clock out",
+            "Hours",
+          ]
+        : [
+            "Employee",
+            "Department",
+            "Status",
+            "Permission",
+            "Clock in",
+            "Clock out",
+            "Hours",
+          ];
     const data = filtered.map((r) => {
       if (isRange) {
         return [r.name, r.dept, r.daysPresent ?? 0, r.daysCounted ?? 0, r.rate ?? 0];
       }
       const base = [r.name, r.dept, statusMeta(r.status ?? "").label];
+      // Same column on both single-day shapes — the badge is on the Status cell, which both render.
+      const perm =
+        (r.permissionMinutes ?? 0) > 0 ? formatPermission(r.permissionMinutes ?? 0) : "—";
       const tail = [
         fmtTime(r.clockIn),
         r.running ? "running" : fmtTime(r.clockOut),
@@ -424,6 +467,22 @@ export function AttendanceLog({
                               ) : (
                                 <span className="text-muted-foreground">—</span>
                               )}
+                              {/* Rides ALONGSIDE the status, never instead of it: a permission is a few approved hours
+                                  away, so the person is still Present/Late for the day. Made it a second badge rather
+                                  than a status value for the same reason the filter is a sentinel — replacing the
+                                  verdict would hide the very thing this column exists to show.
+                              
+                                  On the STATUS cell, not the Attendance one: Attendance only renders today, and a
+                                  permission on a past day is just as worth seeing. */}
+                              {(r.permissionMinutes ?? 0) > 0 ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-primary border-primary/30 ml-1.5 font-medium"
+                                  title={`Approved permission: ${formatPermission(r.permissionMinutes ?? 0)}`}
+                                >
+                                  Permission {formatPermission(r.permissionMinutes ?? 0)}
+                                </Badge>
+                              ) : null}
                             </TableCell>
                             {isToday && (
                               <TableCell>
