@@ -157,13 +157,11 @@ export function AttendanceCalendar({
 
       {open ? (
       <CardContent className="space-y-3">
-          {/* Month navigation lives with the grid it steps through, not in a header that is often
-              collapsed. `stopPropagation` because the header is the toggle and this sits inside
-              the card — a click on "next month" must not also close the calendar. */}
-          <div
-            className="flex items-center justify-between gap-3"
-            onClick={(e) => e.stopPropagation()}
-          >
+          {/* Month navigation lives with the grid it steps through, not in a header that is
+              usually collapsed — arrows that step a month you cannot see are a puzzle, and
+              Download exported a view that was not on screen. No `stopPropagation` needed: the
+              toggle is on `CardHeader` and this is its sibling, so a click never reaches it. */}
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="icon" className="size-8" aria-label="Previous month" onClick={() => step(-1)}>
                 <ChevronLeft className="size-4" />
