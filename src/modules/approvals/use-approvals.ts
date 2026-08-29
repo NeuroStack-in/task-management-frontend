@@ -31,6 +31,15 @@ export interface ApprovalItem {
   from: string;
   to: string;
   days: number;
+  /**
+   * Minutes of permission; 0/absent for a full day. Carried so the approver reads
+   * "Permission · 2h · 10:30–12:30" instead of "0.25 days" — `requestLabel` needs all three, and
+   * dropping them here made it silently fall through to the fraction.
+   */
+  permissionMinutes?: number;
+  /** `HH:MM` window, present only for a permission. */
+  fromTime?: string;
+  toTime?: string;
   reason?: string;
   status: string;
   createdAt?: number;

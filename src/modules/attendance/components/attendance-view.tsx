@@ -29,6 +29,7 @@ import { PersonalAttendanceView } from "./personal-attendance-view";
 import { AttendanceOverview } from "./attendance-overview";
 import { AttendanceCalendar } from "./attendance-calendar";
 import { AttendanceLog } from "./attendance-log";
+import { UpcomingLeave } from "./upcoming-leave";
 import { PeopleAttentionCard } from "@/modules/insights/components/people-attention";
 
 export function AttendanceView() {
@@ -173,6 +174,11 @@ function OversightAttendance() {
         label={data.label}
         note={data.note}
       />
+
+      {/* After the roster, before "who do I chase": the roster answers who is out today, this
+          answers who will be. Collapsed by default so it costs no request until asked for — it
+          reads the approvals queue, which the day's view does not otherwise need. */}
+      <UpcomingLeave />
 
       {/* Last on the page, deliberately. It is the follow-up *after* reading the day — the numbers,
           then the calendar, then the roster, and only then "who do I chase". Above the roster it

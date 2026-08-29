@@ -41,6 +41,15 @@ const fmtSubmitted = (ms?: number) => {
   const d = new Date(ms);
   return `${SHORT_MONTH[d.getMonth()]} ${d.getDate()}`;
 };
+/** `14:30` → `2:30 pm`. The stored form is 24h; the sentence an approver reads is not. */
+function fmt12(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
+  const period = h < 12 ? "am" : "pm";
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 /**
  * What the approver reads instead of a fraction.
  *
@@ -49,19 +58,39 @@ const fmtSubmitted = (ms?: number) => {
  */
 function requestLabel(r: {
   days: number;
-  permission_minutes?: number;
-  from_time?: string;
-  to_time?: string;
+  permissionMinutes?: number;
+  fromTime?: string;
+  toTime?: string;
 }): string {
-  const mins = r.permission_minutes ?? 0;
+  const mins = r.permissionMinutes ?? 0;
   if (mins > 0) {
     const h = mins / 60;
     const hours = `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
     const window =
-      r.from_time && r.to_time ? ` · ${r.from_time}–${r.to_time}` : "";
+      r.fromTime && r.toTime ? ` · ${fmt12(r.fromTime)} to ${fmt12(r.toTime)}` : "";
     return `Permission · ${hours}${window}`;
   }
   return `${r.days} day${r.days === 1 ? "" : "s"}`;
+}
+
+/** The big figure in the dialog. The window is prose on the line beneath, not crammed in here. */
+function requestValue(r: { days: number; permissionMinutes?: number }): string {
+  const mins = r.permissionMinutes ?? 0;
+  if (mins > 0) {
+    const h = mins / 60;
+    return `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
+  }
+  return `${r.days} day${r.days === 1 ? "" : "s"}`;
+}
+
+/** "10:30 am to 12:30 pm" — what the approver is actually being asked to allow. */
+function permissionWindow(r: {
+  permissionMinutes?: number;
+  fromTime?: string;
+  toTime?: string;
+}): string | null {
+  if ((r.permissionMinutes ?? 0) <= 0 || !r.fromTime || !r.toTime) return null;
+  return `${fmt12(r.fromTime)} to ${fmt12(r.toTime)}`;
 }
 
 type Filter = "pending" | "approved" | "rejected" | "all";
