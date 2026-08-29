@@ -144,7 +144,11 @@ function DayDetail({ view }: { view: Extract<ActivityView, { kind: "day" }> }) {
                     {formatHours(group.reduce((t, e) => t + e.hours, 0))}
                   </span>
                 </div>
-                <ul className="space-y-2">
+                {/* A rule between sessions, not just a gap. Each session is three stacked lines
+                    (task, note, times) and `space-y-2` put less air between two sessions than a
+                    single session had inside it — so five sessions read as one wall of text. The
+                    divider is what says where one ends. */}
+                <ul className="divide-border/70 divide-y">
                   {group.map((e) => (
                     <SessionRow key={e.session!.id} entry={e} />
                   ))}
@@ -227,7 +231,7 @@ function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
   // Only when it adds something the line above does not already say.
   const detail = s.taskTitle && s.description && s.description !== s.taskTitle ? s.description : "";
   return (
-    <li className="flex items-start justify-between gap-3 text-sm">
+    <li className="flex items-start justify-between gap-3 py-2.5 text-sm first:pt-1 last:pb-0">
       <span className="min-w-0 flex-1">
         {/* Wraps rather than truncating: a typed description is the whole point of the row, and an
             ellipsis hides exactly the part someone opened the dialog to read. `break-words` also
@@ -256,9 +260,12 @@ function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
           time. True of the stored total, but useless on screen: the row someone is watching is the
           one that should be moving. `useRunningSeconds` recomputes from the session's own start
           stamp each second, so it climbs between the 30 s polls and self-corrects after a sleep. */}
+      {/* Fixed width, right-aligned, so the durations form a column. `tabular-nums` lines the
+          digits up but not the "h"/"m" around them, so "6m" and "1h 42m" still sat at
+          different x-positions and the eye could not scan down them. */}
       <span
         className={cn(
-          "shrink-0 font-mono text-xs tabular-nums",
+          "min-w-[4.5rem] shrink-0 text-right font-mono text-xs tabular-nums",
           s.running ? "text-primary font-medium" : "text-muted-foreground",
         )}
       >
@@ -354,7 +361,9 @@ function EntryRow({ entry }: { entry: TimesheetDayEntry }) {
   return (
     <li className="flex items-center justify-between gap-3 text-sm">
       <span className="min-w-0 truncate font-medium">{entry.label}</span>
-      <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
+      {/* Same column width as `SessionRow` — both lists appear in this one dialog. No divider here:
+          these are single-line rows, so the gap alone already separates them. */}
+      <span className="text-muted-foreground min-w-[4.5rem] shrink-0 text-right font-mono text-xs tabular-nums">
         {entry.hours > 0 ? formatHours(entry.hours) : "—"}
       </span>
     </li>
