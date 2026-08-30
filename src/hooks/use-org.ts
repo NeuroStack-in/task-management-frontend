@@ -12,7 +12,7 @@ import { useAuthStore } from "@/stores/auth.store";
  * (consistent with the "same data across logins" stance). Returns `null` until it loads (or if the
  * caller has no session yet), so the header degrades to just the product name.
  */
-let cache: { tenant: string; name: string } | null = null;
+let cache: { tenant: string; name: string; slug: string } | null = null;
 
 export function useOrgName(): string | null {
   const tenant = useAuthStore((s) => s.user?.organizationId ?? null);
@@ -30,7 +30,7 @@ export function useOrgName(): string | null {
     getOrg()
       .then((o) => {
         if (!live) return;
-        cache = { tenant, name: o.name };
+        cache = { tenant, name: o.name, slug: o.slug };
         setName(o.name);
       })
       .catch(() => {
@@ -42,4 +42,45 @@ export function useOrgName(): string | null {
   }, [tenant]);
 
   return name;
+}
+
+/**
+ * The org's **workspace slug** (`GET /v1/org`) — the string the destructive confirmations ask the
+ * owner to re-type.
+ *
+ * It exists because those dialogs demanded something the product never showed anywhere. The slug is
+ * not the org's name and not guessable from it: `provision_my_org` builds it as
+ * `<name>-<last 6 of the tenant id>`, so an owner asked to "type your workspace slug" had no way to
+ * learn it and simply could not close or export their organization.
+ *
+ * Shares the same tenant-keyed cache as {@link useOrgName} — one `GET /v1/org` serves both.
+ */
+export function useOrgSlug(): string | null {
+  const tenant = useAuthStore((s) => s.user?.organizationId ?? null);
+  const [slug, setSlug] = useState<string | null>(
+    cache && cache.tenant === tenant ? cache.slug : null,
+  );
+
+  useEffect(() => {
+    if (!tenant) return;
+    if (cache && cache.tenant === tenant) {
+      setSlug(cache.slug);
+      return;
+    }
+    let live = true;
+    getOrg()
+      .then((o) => {
+        if (!live) return;
+        cache = { tenant, name: o.name, slug: o.slug };
+        setSlug(o.slug);
+      })
+      .catch(() => {
+        // Falls back to the dialog's plain prompt; the server still validates what is typed.
+      });
+    return () => {
+      live = false;
+    };
+  }, [tenant]);
+
+  return slug;
 }

@@ -37,6 +37,7 @@ import {
 } from "@/modules/settings/services/org.service";
 import { buildZip } from "@/lib/zip";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { useOrgSlug } from "@/hooks/use-org";
 
 /**
  * Ownership & lifecycle — the real backend (`identity` context, LLD §14).
@@ -90,8 +91,19 @@ function reportError(e: unknown, fallback: string) {
 
 /**
  * A confirm dialog that requires the user to type their workspace **slug** before the action fires.
- * We have no read endpoint for the slug, so we can't validate it locally — the server does, and a
- * mismatch surfaces as a 400. The button only guards against an empty entry.
+ *
+ * **It shows the slug.** The dialog used to demand a string the product displayed nowhere: the slug
+ * is not the org's name and is not derivable from it (`<name>-<last 6 of the tenant id>`), so an
+ * owner asked to "type your workspace slug" had no way to learn it and simply could not close or
+ * export their organization. Typing something reasonable — the org name — just returned "that
+ * didn't match", with no hint where to find the right value.
+ *
+ * Showing it does not weaken the confirmation. The point of typing a slug is to make the action
+ * **deliberate**, not to test recall — the same reason GitHub prints the repository name above the
+ * box it asks you to type it into. A gate nobody can pass is not a safety feature.
+ *
+ * The server still validates: a mismatch surfaces as a 400. The button guards against an empty
+ * entry, and against a value that plainly differs from the slug we fetched.
  */
 function ConfirmSlugDialog({
   open,
@@ -113,6 +125,7 @@ function ConfirmSlugDialog({
   onConfirm: (slug: string) => void;
 }) {
   const [value, setValue] = useState("");
+  const slug = useOrgSlug();
 
   function close(next: boolean) {
     if (!next) setValue("");
@@ -128,10 +141,20 @@ function ConfirmSlugDialog({
         </DialogHeader>
         <div className="space-y-1.5">
           <Label>Workspace slug</Label>
+          {/* Rendered selectable rather than as a copy button: the owner is being asked to type it
+              on purpose, and a one-click copy would turn a deliberate act back into a reflex. */}
+          {slug ? (
+            <p className="text-muted-foreground text-xs">
+              Your workspace slug is{" "}
+              <code className="text-foreground bg-muted rounded px-1 py-0.5 font-mono select-all">
+                {slug}
+              </code>
+            </p>
+          ) : null}
           <Input
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="your-workspace-slug"
+            placeholder={slug ?? "your-workspace-slug"}
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}

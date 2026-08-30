@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
@@ -31,7 +30,6 @@ export function OrgRequestStatus({
   request: MyOrgRequest;
   onReapply: () => void;
 }) {
-  const router = useRouter();
   const refreshClaims = useAuthStore((s) => s.refreshClaims);
   const [current, setCurrent] = useState<MyOrgRequest>(request);
   const [entering, setEntering] = useState(false);
@@ -57,18 +55,25 @@ export function OrgRequestStatus({
     };
   }, [current.status]);
 
-  // Approved: mint a token that knows about the org, then enter. Runs on arrival as well as on a
-  // poll that flips the status, because the applicant is usually away when the decision lands and
-  // comes back to an already-approved request.
+  // Approved: mint a token that knows about the org.
+  //
+  // **No redirect.** This screen already lives at /onboarding, whose parent renders the setup
+  // wizard once `hasOrg` is true — so refreshing the claims is the whole handover, and the wizard
+  // appears in place. Navigating to /dashboard here skipped it entirely: the org was created and
+  // the owner was dropped into an empty product with none of the setup the wizard exists to do.
+  //
+  // Runs on arrival as well as on a poll that flips the status, because the applicant is usually
+  // away when the decision lands and comes back to an already-approved request.
   const enter = useCallback(async () => {
     setEntering(true);
     try {
       await refreshClaims();
-      router.replace("/dashboard");
+      // Deliberately nothing after this. `hasOrg` flips in the auth store, the parent swaps this
+      // component for the wizard, and `entering` stays true only until that unmount.
     } catch {
       setEntering(false);
     }
-  }, [refreshClaims, router]);
+  }, [refreshClaims]);
 
   useEffect(() => {
     if (current.status === "approved") void enter();
@@ -79,7 +84,7 @@ export function OrgRequestStatus({
       <Card
         icon={<CheckCircle2 className="text-success size-6" />}
         title={`${current.org_name} is ready`}
-        body="Your organization has been approved. Setting up your workspace…"
+        body="Your organization has been approved. Opening your workspace setup…"
       >
         <div className="text-muted-foreground flex items-center gap-2 text-sm">
           {entering ? <Loader2 className="size-4 animate-spin" /> : null}
