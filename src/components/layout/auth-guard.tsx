@@ -13,6 +13,8 @@ import {
 } from "@/hooks/use-features";
 import { featureForPath, isPathModeHidden } from "@/constants/features";
 import { canAccessPath } from "@/lib/rbac";
+import { getDeviceId, deviceLabel } from "@/lib/device";
+import { heartbeatSession } from "@/modules/security/services/security.service";
 import { useIsOpsOnly } from "@/modules/ops/use-platform-admin";
 import { FeatureGateNotice } from "@/components/shared/feature-gate-notice";
 import { Loader } from "@/components/shared/loader";
@@ -67,6 +69,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       router.replace("/ops/support");
     }
   }, [hydrated, isAuthenticated, opsOnly, isOpsRoute, router]);
+
+  // Record THIS browser as a session — one row per device, keyed by a stable localStorage id
+  // (lib/device.ts) — so Security → Sessions lists real devices instead of a fresh "Web session" on
+  // every hourly token refresh. Fires once the session is real (signed in, has an org); best-effort,
+  // so a failure never touches rendering.
+  useEffect(() => {
+    if (!(hydrated && isAuthenticated && hasOrg)) return;
+    const id = getDeviceId();
+    if (!id) return; // SSR, or storage blocked in a private window — skip silently
+    void heartbeatSession(id, deviceLabel()).catch(() => {});
+  }, [hydrated, isAuthenticated, hasOrg]);
 
   if (!hydrated || !isAuthenticated) {
     return <Loader label="Loading your workspace…" />;

@@ -37,6 +37,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { MfaCard } from "@/modules/settings/components/mfa-card"
 import { PasswordCard } from "@/modules/settings/components/password-card"
 import { usePermissions } from "@/hooks/use-permissions"
+import { useDeviceId } from "@/hooks/use-device-id"
 import { resetMfaDevice } from "../services/security.service"
 import { useSessions } from "../use-sessions"
 import { SecurityEventsFeed } from "./security-events-feed"
@@ -125,6 +126,11 @@ export function SecurityCenter() {
   // Real sessions (GET /v1/me/sessions) + the real employee roster for the MFA-reset picker.
   const { sessions, loading: sessionsLoading, error: sessionsError, reload: reloadSessions } =
     useSessions()
+  // "This device" is the row matching THIS browser's stable id; fall back to the newest when it
+  // isn't among them yet (heartbeat not landed / storage blocked) so the badge always marks a row.
+  const deviceId = useDeviceId()
+  const currentIdx = deviceId ? sessions.findIndex((s) => s.session_id === deviceId) : -1
+  const thisDeviceIdx = currentIdx >= 0 ? currentIdx : 0
   const [roster, setRoster] = useState<{ id: string; name: string }[]>([])
 
   // Roster for the MFA-reset picker loads only when an admin opens the dialog.
@@ -305,8 +311,8 @@ export function SecurityCenter() {
         <CardHeader>
           <CardTitle>Active Sessions</CardTitle>
           <CardDescription>
-            Sessions signed in to your account. Device and location aren&apos;t recorded, and
-            per-session sign-out isn&apos;t available yet.
+            Devices signed in to your account. Location isn&apos;t recorded, and per-session
+            sign-out isn&apos;t available yet.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2.5">
@@ -335,10 +341,10 @@ export function SecurityCenter() {
                   </span>
                   <div className="min-w-0">
                     <p className="flex items-center gap-2 text-sm font-medium">
-                      Web session
-                      {i === 0 ? (
+                      {s.user_agent || "Web session"}
+                      {i === thisDeviceIdx ? (
                         <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
-                          Most recent
+                          This device
                         </span>
                       ) : null}
                     </p>

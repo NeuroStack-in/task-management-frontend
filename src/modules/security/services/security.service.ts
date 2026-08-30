@@ -21,11 +21,26 @@ export interface ApiSession {
   session_id: string;
   /** Epoch ms; may be absent for a session that never refreshed. */
   last_seen: number | null;
+  /** Friendly device label ("Chrome on Windows") when the client reported one; else absent. */
+  user_agent?: string | null;
 }
 
 export async function listMySessions(): Promise<ApiSession[]> {
   const data = await apiFetch<ApiSession[] | { sessions: ApiSession[] }>("/v1/me/sessions");
   return Array.isArray(data) ? data : (data?.sessions ?? []);
+}
+
+/**
+ * `PUT /v1/me/sessions` — record/refresh **this browser's** session, keyed by its stable `device_id`
+ * (see `lib/device.ts`). One row per browser: repeated calls (sign-in, app open, token refresh) bump
+ * `last_seen` instead of duplicating. Best-effort — a failure must never block the app, so callers
+ * swallow it.
+ */
+export async function heartbeatSession(deviceId: string, label?: string): Promise<void> {
+  await apiFetch("/v1/me/sessions", {
+    method: "PUT",
+    body: JSON.stringify({ device_id: deviceId, label }),
+  });
 }
 
 /**

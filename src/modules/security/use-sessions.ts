@@ -3,9 +3,11 @@
 /**
  * Your signed-in sessions from the live backend (`GET /v1/me/sessions`, identity context).
  *
- * The row is lean by necessity — `{session_id, last_seen}` only. Cognito exposes no device / IP /
- * location without its paid advanced-security tier, so those columns are honestly absent rather than
- * invented, and there is no per-session revoke endpoint (§15). An empty list is the honest failure:
+ * One row **per device**, keyed by the browser's stable id and written by the client heartbeat
+ * (`heartbeatSession`, fired from `AuthGuard`) — so refreshing a token no longer spawns a new "Web
+ * session." The row carries `{session_id, last_seen, user_agent?}`: `user_agent` is the friendly
+ * label the client derived ("Chrome on Windows"); IP/location stay absent (Cognito's paid tier only),
+ * never invented, and there is no per-session revoke yet (§15). An empty list is the honest failure:
  * we never fall back to demo devices on a real account.
  */
 import { useCallback, useEffect, useState } from "react";

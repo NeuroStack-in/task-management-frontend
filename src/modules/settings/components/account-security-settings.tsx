@@ -4,6 +4,7 @@ import { Laptop } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useDeviceId } from "@/hooks/use-device-id";
 import { useSessions } from "@/modules/security/use-sessions";
 import { MfaCard } from "./mfa-card";
 import { PasswordCard } from "./password-card";
@@ -45,6 +46,13 @@ export function AccountSecuritySettings() {
     loading: sessionsLoading,
     error: sessionsError,
   } = useSessions();
+
+  // "This device" is the row whose id matches THIS browser's stable device id. Fall back to the
+  // newest row when the id isn't among them yet (its heartbeat hasn't landed, or storage is blocked)
+  // so the badge always marks something sensible rather than vanishing.
+  const deviceId = useDeviceId();
+  const currentIdx = deviceId ? sessions.findIndex((s) => s.session_id === deviceId) : -1;
+  const thisDeviceIdx = currentIdx >= 0 ? currentIdx : 0;
 
   return (
     <div className="space-y-6">
@@ -99,8 +107,8 @@ export function AccountSecuritySettings() {
                       </span>
                       <div>
                         <p className="flex items-center gap-2 text-sm font-medium">
-                          Web session
-                          {i === 0 ? (
+                          {s.user_agent || "Web session"}
+                          {i === thisDeviceIdx ? (
                             <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
                               This device
                             </span>
