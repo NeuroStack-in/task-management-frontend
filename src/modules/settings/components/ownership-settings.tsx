@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Lock,
-  TriangleAlert,
-  Download,
-  Loader2,
-  ShieldOff,
-  FolderX,
-  ReceiptText,
-} from "lucide-react";
+import { Download, FolderX, Loader2, Lock, ReceiptText, RotateCcw, ShieldOff, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { OrgOwnersCard } from "./org-owners-card";
@@ -51,15 +43,31 @@ import { useOrgSlug } from "@/hooks/use-org";
  * caller in a single irreversible step — was a sharper tool for the same job.
  */
 
-/** What closing removes — shown before the owner commits. */
+/**
+ * What closing does — shown before the owner commits.
+ *
+ * These have to be exact. This list is the last thing read before an irreversible action, so a
+ * sentence that overstates what happens is worse here than anywhere else in the product.
+ *
+ * It used to open with "Every member immediately loses access to the organization", which was wrong
+ * twice over: the **owner keeps theirs** (deliberately — `on_org_closing` skips owners so someone
+ * can still reopen or let the purge run), and "immediately" overstates it for everyone else.
+ * Closing disables each non-owner's Cognito login, which stops the next sign-in; it does not revoke
+ * a token already issued, and there is no request-time check for a closing org. With a 15-minute ID
+ * token, a member already signed in keeps working for up to that long.
+ */
 const CONSEQUENCES = [
   {
     icon: ShieldOff,
-    text: "Every member immediately loses access to the organization.",
+    text: "Employees and admins can no longer sign in, and anyone still signed in is locked out within 15 minutes. You keep your own access.",
   },
   {
     icon: FolderX,
     text: "All projects, tasks, time entries, reports, and activity history are scheduled for deletion.",
+  },
+  {
+    icon: RotateCcw,
+    text: "You have 30 days to reopen the organization. After that the data is purged permanently.",
   },
   {
     icon: ReceiptText,
@@ -380,8 +388,10 @@ export function OwnershipSettings() {
               Close this organization
             </h3>
             <p className="text-sm text-muted-foreground">
-              Close the organization and schedule its data for deletion. This can
-              be reversed only during the grace period before purge.
+              {/* Name the window. "the grace period" is only meaningful to someone who already
+                  knows how long it is, which is nobody reading this for the first time. */}
+              Close the organization and schedule its data for deletion. You can
+              reopen it within 30 days; after that the data is gone for good.
             </p>
           </div>
         </div>
