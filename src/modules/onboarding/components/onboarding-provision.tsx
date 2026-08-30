@@ -132,10 +132,13 @@ export function OnboardingProvision({ onSubmitted }: { onSubmitted: () => void }
         <Button type="submit" className="w-full" disabled={!orgName.trim() || busy}>
           {busy ? (
             <>
-              <Loader2 className="size-4 animate-spin" /> Creating your workspace…
+              <Loader2 className="size-4 animate-spin" /> Sending your request…
             </>
           ) : (
-            "Create organization"
+            // Not "Create organization": this button no longer creates one. Saying it does sets
+            // the expectation that a workspace appears on click, which then makes the waiting
+            // screen read as a failure rather than the intended next step.
+            "Submit request"
           )}
         </Button>
       </form>
