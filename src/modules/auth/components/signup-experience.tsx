@@ -32,6 +32,7 @@ import { useAuthStore } from "@/stores/auth.store";
 // `createOrg` and `slugify` live in `lib/api` on this branch, not in a per-module service — the
 // signup contract is kept beside the other public identity calls (`lookupInvite`, `acceptInvite`).
 import { ApiError, createOrg, empPrefixCandidates, slugify } from "@/lib/api";
+import { requestOrg } from "@/modules/onboarding/services/onboarding.service";
 import {
   COUNTRIES,
   COUNTRY_CURRENCY,
@@ -67,15 +68,39 @@ const LAST = STEP_LABELS.length - 1;
 /** `CURRENCIES` are display strings like `"USD — US Dollar"`; the server wants the code. */
 const codeOf = (s: string) => s.split("—")[0]?.trim() || undefined;
 
-export function SignupExperience() {
+/**
+ * @param authenticated Render for a caller who has **already signed in** and has no organization —
+ *   the "Continue with Google" returnee. Step 1 (Account) is skipped, because Google has already
+ *   established who they are and there is no password to set; the remaining steps run unchanged,
+ *   and the flow ends by submitting an org **request** for staff approval rather than creating an
+ *   organization outright.
+ * @param onSubmitted Called once the request lands, so the host can swap in the waiting screen.
+ */
+export function SignupExperience({
+  authenticated = false,
+  onSubmitted,
+}: {
+  authenticated?: boolean;
+  onSubmitted?: () => void;
+} = {}) {
   const router = useRouter();
   const params = useSearchParams();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const hydrated = useAuthStore((s) => s.hydrated);
+  const user = useAuthStore((s) => s.user);
   /** Used to sign the new owner in immediately after the org is created. */
   const login = useAuthStore((s) => s.login);
 
-  const [step, setStep] = useState(0);
+  /**
+   * The first step this flow shows. Account is index 0, so the signed-in variant starts at 1.
+   *
+   * Everything else derives from this rather than hard-coding `0`: the Back button's floor, the
+   * progress indicator, and whether the social buttons are offered. A stray `0` left behind would
+   * let a Google returnee walk back into an account form asking them to choose a password.
+   */
+  const FIRST = authenticated ? 1 : 0;
+
+  const [step, setStep] = useState(FIRST);
   const [submitting, setSubmitting] = useState(false);
 
   const [acct, setAcct] = useState({ name: "", email: "", password: "", confirm: "" });
@@ -101,10 +126,26 @@ export function SignupExperience() {
   const summaryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // In the signed-in variant this redirect is exactly backwards: being authenticated is the
+    // precondition, not a reason to leave. It still guards the public flow, where an already
+    // signed-in visitor has no business filling in a signup form.
+    if (authenticated) return;
     if (hydrated && isAuthenticated) {
       router.replace(safeLandingPath(currentRoleSnapshot(), params.get("from")));
     }
-  }, [hydrated, isAuthenticated, params, router]);
+  }, [authenticated, hydrated, isAuthenticated, params, router]);
+
+  // Seed the account details Google already established. They are never shown as a form — step 1
+  // is skipped — but the later steps read them: `profile.fullName` falls back to the account name,
+  // and the request is attributed to this email.
+  useEffect(() => {
+    if (!authenticated || !user) return;
+    setAcct((a) => ({
+      ...a,
+      name: a.name || user.name || "",
+      email: a.email || user.email || "",
+    }));
+  }, [authenticated, user]);
 
   /* ---------------- validation, per step ---------------- */
 
@@ -164,7 +205,7 @@ export function SignupExperience() {
   const goBack = () => {
     setSubmitted(false);
     setErrors({});
-    setStep((s) => Math.max(0, s - 1));
+    setStep((s) => Math.max(FIRST, s - 1));
   };
 
   /* ---------------- commit ---------------- */
@@ -179,6 +220,41 @@ export function SignupExperience() {
     }
 
     setSubmitting(true);
+
+    // The signed-in variant creates nothing: it submits a request that WorkPulse staff approve.
+    //
+    // Every field the wizard collected is carried through — `POST /v1/org/requests` stores them and
+    // replays them into the org at approval — so the applicant fills this in once and none of it is
+    // quietly dropped between asking and the workspace being built. No account block: the identity
+    // came from Google, and no `slug`/`emp_id_prefix`, both of which are derived and claimed
+    // server-side at approval rather than reserved by a request that may never be granted.
+    if (authenticated) {
+      try {
+        await requestOrg({
+          org_name: org.name.trim(),
+          owner_name: (profile.fullName || acct.name).trim() || undefined,
+          industry: org.industry || undefined,
+          size: org.size || undefined,
+          website: org.website.trim() || undefined,
+          country: region.country || undefined,
+          currency: codeOf(region.currency),
+          timezone:
+            region.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
+          job_title: profile.jobTitle.trim() || undefined,
+          department: profile.department.trim() || undefined,
+          location: profile.location.trim() || undefined,
+          phone: profile.phone.trim() || undefined,
+        });
+        onSubmitted?.();
+      } catch (e) {
+        setSubmitting(false);
+        toast.error(
+          e instanceof ApiError ? e.message : "Couldn't submit your request. Please try again.",
+        );
+      }
+      return;
+    }
+
     try {
       const created = await createOrg({
         org: {
@@ -259,7 +335,9 @@ export function SignupExperience() {
   const previewSlug = slugify(org.slug || org.name);
 
   const HEADINGS: [string, string][] = [
-    ["Create your workspace", "You'll be the owner — you can invite your team next."],
+    authenticated
+      ? ["Request your workspace", "A member of the WorkPulse team reviews each request."]
+      : ["Create your workspace", "You'll be the owner — you can invite your team next."],
     ["About your organization", "This names your workspace and its web address."],
     ["Region & localization", "How WorkPulse formats time and currency for your teams."],
     ["Your profile", "How your team sees you. Everything here is editable later."],
@@ -274,7 +352,9 @@ export function SignupExperience() {
         copy="Free while in beta, no card required. Create your workspace, invite your team, and have time and attendance running the same afternoon."
       >
         <AuthHeading title={HEADINGS[step][0]} subtitle={HEADINGS[step][1]} />
-        <AuthSteps steps={STEP_LABELS} current={step} />
+        {/* Drop the skipped step from the indicator entirely rather than showing it greyed: a
+            "Step 2 of 5" that can never reach step 1 reads as something the user failed to do. */}
+        <AuthSteps steps={STEP_LABELS.slice(FIRST)} current={step - FIRST} />
 
         {submitted ? <AuthErrorSummary errors={summary} summaryRef={summaryRef} /> : null}
 
@@ -610,7 +690,7 @@ export function SignupExperience() {
           ) : null}
 
           <div className="m-authactions">
-            {step > 0 ? (
+            {step > FIRST ? (
               <button type="button" onClick={goBack} className="m-btn m-btn-ghost" disabled={submitting}>
                 <ArrowLeft className="size-4" /> Back
               </button>
@@ -618,10 +698,15 @@ export function SignupExperience() {
             <button type="submit" className="m-btn m-btn-primary flex-1" disabled={submitting}>
               {submitting ? (
                 <>
-                  <Loader2 className="m-spin size-4" /> Creating…
+                  <Loader2 className="m-spin size-4" />{" "}
+                  {authenticated ? "Sending your request…" : "Creating…"}
                 </>
               ) : step === LAST ? (
-                "Create workspace"
+                authenticated ? (
+                  "Submit request"
+                ) : (
+                  "Create workspace"
+                )
               ) : (
                 "Continue"
               )}
@@ -631,7 +716,7 @@ export function SignupExperience() {
 
         {/* SSO below the primary action, and only on the first step — once the flow has started,
             switching identity method would discard everything entered so far. */}
-        {step === 0 ? (
+        {step === 0 && !authenticated ? (
           <>
             <div className="m-authdiv">or</div>
             {/* Inline social sign-in (no modal). On signup these route to sign-IN via Google/Microsoft

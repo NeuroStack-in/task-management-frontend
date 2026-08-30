@@ -13,6 +13,22 @@ export interface ProvisionOrgInput {
   timezone?: string;
   industry?: string;
   size?: string;
+  /**
+   * The rest of what the signup wizard collects.
+   *
+   * Mirrors the server's `ProvisionOrgRequest` / `SubmitRequest`, which store these on the request
+   * and replay them into `bootstrap_org` at approval. They exist so the wizard's region and profile
+   * steps land somewhere real — collecting four steps and posting three fields would discard most
+   * of what the applicant typed.
+   */
+  website?: string;
+  country?: string;
+  /** Currency **code**, not the picker's display string. */
+  currency?: string;
+  job_title?: string;
+  department?: string;
+  location?: string;
+  phone?: string;
 }
 
 export interface ProvisionOrgResult {

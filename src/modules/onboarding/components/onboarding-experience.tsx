@@ -7,7 +7,7 @@ import { Activity } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { Loader } from "@/components/shared/loader";
 import { OnboardingWizard } from "./onboarding-wizard";
-import { OnboardingProvision } from "./onboarding-provision";
+import { SignupExperience } from "@/modules/auth/components/signup-experience";
 import { OrgRequestLoading, OrgRequestStatus } from "./org-request-status";
 import { getMyOrgRequest, type MyOrgRequest } from "../services/onboarding.service";
 
@@ -86,5 +86,11 @@ function NoOrgFlow() {
     // one-per-email claim when it rejected, so a new submission is accepted.
     return <OrgRequestStatus request={request} onReapply={() => setRequest(null)} />;
   }
-  return <OnboardingProvision onSubmitted={load} />;
+  // The full signup wizard minus its account step — Google already established who they are, and
+  // there is no password to set. Steps 2-5 run unchanged and end in a request for approval.
+  //
+  // Deliberately the same component the public flow uses rather than a second, smaller form: a
+  // parallel "quick" version would drift from it, and the fields it skipped would be ones the org
+  // simply never gets.
+  return <SignupExperience authenticated onSubmitted={load} />;
 }
