@@ -40,6 +40,7 @@ import { useTrackingMode } from "@/hooks/use-features";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import { HolidayBadge } from "@/components/shared/holiday-badge";
+import { useRunningSeconds } from "@/hooks/use-live-refresh";
 import { useTimesheet } from "../use-timesheet";
 import { TimesheetHistory } from "./timesheet-history";
 import { TimerHero } from "./timer-hero";
@@ -60,24 +61,45 @@ import { PayrollWidget } from "./payroll-widget";
  * something to paper over; the table below shows only what the backend actually has.
  */
 export function PersonalTimeView({ canExport }: { canExport: boolean }) {
-  const { rows, totalSec, billableSec, running, loading, error, reload } = useTimesheet();
+  const { rows, totalSec: settledSec, billableSec, running, loading, error, reload } =
+    useTimesheet();
+
+  // ── One definition of "today", and it ticks ─────────────────────────────────────────────────
+  //
+  // `useTimesheet`'s `totalSec` is **settled** time: a running session contributes nothing until it
+  // ends. Reading it as the day's total is why this page showed 1:50:30 while the dashboard showed
+  // 2.4h — same data, two different questions, no way for a reader to tell which was wrong.
+  //
+  // The day's total is settled + the open session's elapsed, everywhere. Derived from the running
+  // row's own start stamp on a local 1 Hz re-render — the same mechanism as every other live clock
+  // in the app. Nothing polls per second.
+  // The open session, if any, comes straight from the server's timesheet — the row with no end.
+  // The web only *shows* it (LLD §4); the desktop agent owns start/stop.
+  const runningRow = rows.find((r) => r.running) ?? null;
+  const liveSec = useRunningSeconds(runningRow ? runningRow.startMs : null);
+  const totalSec = settledSec + liveSec;
   // Machine-mode orgs track laptop uptime, not projects: no task/project/billable, and the timer is a
   // background service (§8 Ph5). The web still only *mirrors* — start/stop lives on the device.
   const isMachine = useTrackingMode() === "machine";
 
   const dayStats = useMemo(
     () => ({
-      billable: formatHours(billableSec / 3600),
-      longest: formatDuration(rows.reduce((m, e) => Math.max(m, e.durationSec), 0)),
+      // Billable counts the open session too when it is billable — it is being worked now, and a
+      // "billable today" that ignores the current session understates the day all day.
+      billable: formatHours(
+        (billableSec + (runningRow?.billable ? liveSec : 0)) / 3600,
+      ),
+      // The running session can be the longest one; it was excluded because its `durationSec` is 0
+      // until it ends, so a day whose longest stretch was still in progress reported the second
+      // longest.
+      longest: formatDuration(
+        Math.max(rows.reduce((m, e) => Math.max(m, e.durationSec), 0), liveSec),
+      ),
       projects: String(new Set(rows.map((e) => e.project)).size),
       tasks: String(new Set(rows.map((e) => e.task)).size),
     }),
-    [rows, billableSec],
+    [rows, billableSec, liveSec, runningRow],
   );
-
-  // The open session, if any, comes straight from the server's timesheet — the row with no end.
-  // The web only *shows* it (LLD §4); the desktop agent owns start/stop.
-  const runningRow = rows.find((r) => r.running) ?? null;
 
   const holidays = useOrgHolidays();
 
@@ -125,14 +147,14 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
           ? {
               Start: e.start,
               End: e.end ?? "",
-              Duration: e.running ? "" : formatDuration(e.durationSec),
+              Duration: formatDuration(e.running ? liveSec : e.durationSec),
             }
           : {
               Task: e.task,
               Project: e.project,
               Start: e.start,
               End: e.end ?? "",
-              Duration: e.running ? "" : formatDuration(e.durationSec),
+              Duration: formatDuration(e.running ? liveSec : e.durationSec),
               Billable: e.billable ? "Yes" : "No",
             },
       ),
@@ -328,7 +350,12 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                           <TableCell className="text-center font-mono tabular-nums">
                             {/* A running session has no duration yet — not a zero-length one. */}
                             {e.running ? (
-                              <span className="text-muted-foreground">Running</span>
+                              // The elapsed time, ticking — not the word "Running". The row is
+                              // the only thing on the page that changes while you watch it, and a
+                              // static label made the day's most current row its least informative.
+                              <span className="text-primary font-medium tabular-nums">
+                                {formatDuration(liveSec)}
+                              </span>
                             ) : (
                               formatDuration(e.durationSec)
                             )}

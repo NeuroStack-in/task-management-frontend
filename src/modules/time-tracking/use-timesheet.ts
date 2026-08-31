@@ -127,7 +127,14 @@ export function useTimesheet(day?: string): TimesheetState {
           totalSec: today.total_secs,
           billableSec: today.billable_secs,
           running: today.running,
-          rows: today.entries.map((e) => toRow(e, names, titles)),
+          // **Chronological.** The server returns entries in its own key order, which put the
+          // day's sessions on screen as 12:01, 11:37, 13:02, 14:22, 14:03 — a list nobody can read
+          // down. Sorted here, once, so every consumer of this hook agrees on the order rather
+          // than each sorting (or not) for itself. Ascending, so the running session — the one
+          // that started most recently — sits last, where the day is still being written.
+          rows: today.entries
+            .map((e) => toRow(e, names, titles))
+            .sort((a, b) => a.startMs - b.startMs),
         });
         if (background) setError(null); // a good background refresh clears a stale error banner
       } catch (e) {
