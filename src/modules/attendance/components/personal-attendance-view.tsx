@@ -30,6 +30,7 @@ import {
   ymd,
   type MyAttendanceRange,
 } from "../use-my-attendance";
+import { formatHours, formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<
@@ -201,7 +202,7 @@ export function PersonalAttendanceView() {
       { label: "Absent", value: String(summary.absent) },
       { label: "On leave", value: String(summary.leave) },
       { label: "Late arrivals", value: String(summary.late) },
-      { label: "Hours (month)", value: `${summary.hours}h` },
+      { label: "Hours (month)", value: formatHours(summary.hours) },
     ],
   });
 
@@ -463,7 +464,7 @@ export function PersonalAttendanceView() {
                         className="flex items-center gap-2"
                         title={
                           r.hours > 0
-                            ? `${r.hours.toFixed(1)}h of a ${(expectedMin / 60).toFixed(1)}h day`
+                            ? `${formatHours(r.hours)} of a ${formatMinutes(expectedMin)} day`
                             : undefined
                         }
                       >
@@ -490,7 +491,7 @@ export function PersonalAttendanceView() {
                       {/* Hours come from attendance (worked_minutes) and exist without clock
                           punches — so this is gated on hours, not on `logged`. */}
                       {r.hours > 0 ? (
-                        <span className="font-medium">{r.hours.toFixed(1)}h</span>
+                        <span className="font-medium">{formatHours(r.hours)}</span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
@@ -556,7 +557,7 @@ function PersonalDayCell({
       )}
       title={
         rec
-          ? `${cell.day}: ${meta!.label}${rec.late ? " (late)" : ""} · ${rec.hours.toFixed(1)}h${holidayName ? ` · Holiday: ${holidayName}` : ""}`
+          ? `${cell.day}: ${meta!.label}${rec.late ? " (late)" : ""} · ${formatHours(rec.hours)}${holidayName ? ` · Holiday: ${holidayName}` : ""}`
           : holidayName
             ? `${cell.day} · Holiday: ${holidayName}`
             : `${cell.day}`
@@ -580,7 +581,11 @@ function PersonalDayCell({
         <div className="flex items-end justify-between gap-1">
           <span
             className={cn(
-              "text-[10px] font-medium leading-tight",
+              // `min-w-0 truncate`: the figure beside this is `shrink-0` and got wider when the
+              // product settled on one duration notation (`6.8h` → `06:48:00`). In a narrow month
+              // cell the status word is the half that should give, and it gives by truncating
+              // rather than by pushing the hours out of the cell.
+              "min-w-0 truncate text-[10px] font-medium leading-tight",
               dayStatusTextColor(rec.status, rec.late),
             )}
           >
@@ -588,7 +593,7 @@ function PersonalDayCell({
           </span>
           {rec.hours > 0 ? (
             <span className="shrink-0 text-[11px] font-medium tabular-nums text-foreground/70">
-              {rec.hours.toFixed(1)}h
+              {formatHours(rec.hours)}
             </span>
           ) : null}
         </div>

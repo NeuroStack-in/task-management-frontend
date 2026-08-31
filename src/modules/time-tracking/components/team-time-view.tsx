@@ -3,6 +3,7 @@
 import { Clock, BadgeDollarSign, Activity } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { useAssistantPageContext } from "@/stores/page-context.store";
+import { formatHours } from "@/lib/format";
 import { TimesheetGrid } from "./timesheet-grid";
 import type { Period } from "../use-team-timesheet";
 import type { DailyHours, ProjectTimesheet, TeamMemberTime } from "../types";
@@ -39,7 +40,7 @@ export function TeamTimeView({
   useAssistantPageContext({
     facts: [
       { label: "Week", value: weekLabel },
-      { label: "Team hours", value: `${Math.round(teamHours).toLocaleString()}h` },
+      { label: "Team hours", value: formatHours(teamHours) },
       { label: "Billable", value: `${billablePct}%` },
       { label: "Avg activity", value: `${avgActivity}%` },
       { label: "Team members", value: String(rows.length) },
@@ -55,7 +56,7 @@ export function TeamTimeView({
             Billable/Activity cards were fabricated and are dropped — the values are real. */}
         <StatCard
           label="Team hours"
-          value={`${Math.round(teamHours).toLocaleString()}h`}
+          value={formatHours(teamHours)}
           icon={Clock}
           // The card totals whichever week the grid is showing, so it must not claim "this week"
           // once you page back — that read as a live figure for a historical range.

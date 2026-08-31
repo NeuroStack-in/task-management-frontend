@@ -106,10 +106,12 @@ export interface DailyHours {
   billable: number;
 }
 
-/** Hours (decimal) → "6h 12m". */
-export function formatHours(hours: number): string {
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
+/**
+ * Re-exported so this module's components can keep importing it from `../types`.
+ *
+ * This was a second, byte-identical copy of the `lib/format` original. Two copies meant the
+ * notation change had to be made twice to be true, and a duration rendered through this one
+ * disagreed with the identical duration rendered through the other — the exact confusion the
+ * single notation exists to remove. There is one implementation now.
+ */
+export { formatHours } from "@/lib/format";

@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { formatMinutes } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -129,12 +130,9 @@ const PERMISSION = "__permission";
 // an unrecognised server status, but it printed "__permission · 1" on the chip. Every render path
 // must special-case it *before* `statusMeta`; there is only one, just below.
 
-/** `90` → `1h 30m`, `45` → `45m`. Minutes are what the server stores; hours are what people say. */
+/** `90` → `01:30:00`. Minutes are what the server stores; `HH:MM:SS` is what the product speaks. */
 function formatPermission(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (!h) return `${m}m`;
-  return m ? `${h}h ${m}m` : `${h}h`;
+  return formatMinutes(minutes);
 }
 
 export function AttendanceLog({

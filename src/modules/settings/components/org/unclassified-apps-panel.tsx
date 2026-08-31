@@ -20,6 +20,7 @@ import { Sparkles, RefreshCw, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader } from "@/components/shared/loader";
+import { formatDuration } from "@/lib/format";
 import { ApiError } from "@/lib/api";
 import {
   getUnclassifiedApps,
@@ -35,12 +36,7 @@ const CATEGORY_STYLE: Record<RuleCategoryName, string> = {
   distracting: "bg-destructive/12 text-destructive",
 };
 
-const fmtHours = (sec: number) => {
-  const h = sec / 3600;
-  if (h >= 10) return `${Math.round(h)}h`;
-  if (h >= 1) return `${h.toFixed(1)}h`;
-  return `${Math.max(1, Math.round(sec / 60))}m`;
-};
+const fmtHours = (sec: number) => formatDuration(sec);
 
 export function UnclassifiedAppsPanel({
   canManage,

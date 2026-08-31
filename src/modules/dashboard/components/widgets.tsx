@@ -6,7 +6,7 @@ import { CalendarClock, CreditCard, Camera, ArrowUpRight, Trophy, BellRing, Tria
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkline } from "@/components/shared/sparkline";
-import { todayIso } from "@/lib/format";
+import { formatDuration, todayIso } from "@/lib/format";
 import { useRunningSeconds } from "@/hooks/use-live-refresh";
 import { cn } from "@/lib/utils";
 import type { LiveTimer, Performer } from "@/modules/dashboard/lib/dashboard-data";
@@ -122,13 +122,8 @@ export function TopEmployeesWidget({ people }: { people: Performer[] }) {
 
 /* -------------------------- Working now (live timers) -------------------------- */
 
-/** `H:MM:SS` — a live elapsed clock, so the seconds visibly tick between the 30 s data polls. */
-function liveClock(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-}
+/** A live elapsed clock, so the seconds visibly tick between the 30 s data polls. */
+const liveClock = formatDuration;
 
 /**
  * One running-timer row. The clock is the employee's **whole day so far** — today's completed

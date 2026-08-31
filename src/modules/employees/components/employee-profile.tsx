@@ -85,7 +85,7 @@ import {
 } from "../services/employees.service";
 import { EmployeeRecapCard } from "./employee-recap-card";
 import { EmployeeAppUsageCard } from "./employee-app-usage-card";
-import { isoDay } from "@/lib/format";
+import { formatHours, isoDay } from "@/lib/format";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
 import { EmployeeManageMenu } from "./employee-manage-menu";
 
@@ -647,7 +647,7 @@ function HoursTooltip({
       <div className="text-muted-foreground mb-1 font-medium">{row.label}</div>
       <div className="flex items-center gap-2">
         <span className="size-2 shrink-0 rounded-full" style={{ background: meta.color }} aria-hidden />
-        <span className="tabular-nums">{row.hours}h worked</span>
+        <span className="tabular-nums">{formatHours(row.hours)} worked</span>
         <span className="text-muted-foreground">· {meta.label}</span>
       </div>
     </div>

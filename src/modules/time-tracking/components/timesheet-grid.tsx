@@ -16,6 +16,7 @@ import type {
   TimesheetDayEntry,
   TimesheetStatus,
 } from "../types";
+import { formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Period } from "../use-team-timesheet";
 import { ActivityDialog, type ActivityView } from "./timesheet-detail";
@@ -86,13 +87,9 @@ function parseIso(iso: string): { y: number; m: number; d: number } {
   return { y, m: m - 1, d };
 }
 
-/** Decimal hours → "H:MM" (or em dash for zero). */
+/** Decimal hours → `HH:MM:SS` (or em dash for zero — an untracked cell is blank, not `00:00:00`). */
 function fmtHM(hours: number): string {
-  if (hours <= 0) return "—";
-  const totalMin = Math.round(hours * 60);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}:${m.toString().padStart(2, "0")}`;
+  return hours <= 0 ? "—" : formatHours(hours);
 }
 
 /**

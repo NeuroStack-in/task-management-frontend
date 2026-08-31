@@ -168,7 +168,7 @@ export function WeeklyHoursChart() {
                 <Tooltip
                   cursor={{ fill: "var(--muted)" }}
                   formatter={(value: number, name) => [
-                    `${value}h`,
+                    formatHours(value),
                     name === "billable" ? "Billable" : "Other",
                   ]}
                   contentStyle={{

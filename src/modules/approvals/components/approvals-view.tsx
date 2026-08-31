@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useApprovals, type ApprovalItem } from "../use-approvals";
+import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
@@ -53,10 +54,7 @@ function fmt12(hhmm: string): string {
 /** The big figure in the dialog. The window is prose on the line beneath, not crammed in here. */
 function requestValue(r: { days: number; permissionMinutes?: number }): string {
   const mins = r.permissionMinutes ?? 0;
-  if (mins > 0) {
-    const h = mins / 60;
-    return `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
-  }
+  if (mins > 0) return formatMinutes(mins);
   return `${r.days} day${r.days === 1 ? "" : "s"}`;
 }
 

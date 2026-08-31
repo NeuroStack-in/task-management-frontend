@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useLeave } from "../use-leave";
+import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
@@ -325,7 +326,7 @@ function EmployeeLeaveView() {
                 dateLabel: fmtRange(selected.from, selected.to),
                 valueLabel:
                   (selected.permission_minutes ?? 0) > 0
-                    ? `${selected.permission_minutes! / 60}h`
+                    ? formatMinutes(selected.permission_minutes!)
                     : `${selected.days} day${selected.days === 1 ? "" : "s"}`,
                 fromTime: selected.from_time,
                 toTime: selected.to_time,

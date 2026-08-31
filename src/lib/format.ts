@@ -84,11 +84,18 @@ export function monogramGradient(seed: string): string {
   return `linear-gradient(${angle}deg, hsl(${h} 66% 56%), hsl(${h2} 70% 44%))`;
 }
 
-/** Seconds → HH:MM:SS. */
+/**
+ * Seconds → `HH:MM:SS`. **The one duration notation in the product** — see `formatHours`.
+ *
+ * Rounds and floors at zero before splitting, because callers now include `formatHours`, which
+ * arrives via a float multiply (`6.8 * 3600` is `24480.000000000004`). Without that, a fractional
+ * remainder renders as `06:48:0.000000004`.
+ */
 export function formatDuration(totalSeconds: number): string {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
+  const total = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
@@ -121,10 +128,29 @@ export function timeAgo(ts: number): string {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
-/** Hours (decimal) → "6h 12m". */
+/**
+ * Decimal hours → `HH:MM:SS`.
+ *
+ * ## Why this is not "6h 48m" any more
+ *
+ * The product reports the same elapsed time on several surfaces at once — a running timer, the day
+ * it belongs to, the week that contains it — and it used to say each in whichever notation that
+ * surface preferred. A card showing a live `02:28:05` above a `2.5h` total was reporting **one**
+ * number twice, but `2:28` reads like "2.28", so the two looked like they disagreed. They never did;
+ * the card was speaking two languages. One notation everywhere removes the question.
+ *
+ * `HH:MM:SS` is the one that survives, because it is the only one a *ticking* clock can also use.
+ *
+ * Most callers hold hours at minute precision (the server sends decimal hours), so the seconds place
+ * is usually `00`. That is fine and deliberate — a stable column width is worth more here than
+ * suppressing a field, and dropping it on some values would reintroduce exactly the two-notation
+ * problem this exists to end.
+ */
 export function formatHours(hours: number): string {
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  return formatDuration(hours * 3600);
+}
+
+/** Minutes → `HH:MM:SS`. The same notation, for the callers that count in minutes. */
+export function formatMinutes(minutes: number): string {
+  return formatDuration(minutes * 60);
 }

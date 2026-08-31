@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
+import { formatMinutes } from "@/lib/format";
 import { invalidateWorkingHours } from "@/hooks/use-working-hours";
 import {
   getWorkingHours,
@@ -97,11 +98,7 @@ export function expectedMinutes(d: {
   return Math.max(60, end - start - Math.max(0, d.break_minutes || 0));
 }
 
-const fmtDuration = (mins: number) => {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-};
+const fmtDuration = (mins: number) => formatMinutes(mins);
 
 function messageOf(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;

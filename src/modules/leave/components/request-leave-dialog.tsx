@@ -9,6 +9,7 @@ import { CalendarPlus, Paperclip, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -442,9 +443,7 @@ export function RequestLeaveDialog({
           {isPermission && permissionMinutes > 0 ? (
             <p className="text-sm text-muted-foreground">
               <span className="font-medium text-foreground">
-                {permissionMinutes >= 60
-                  ? `${+(permissionMinutes / 60).toFixed(2)}h`
-                  : `${permissionMinutes}m`}
+                {formatMinutes(permissionMinutes)}
               </span>{" "}
               of permission &mdash; deducts{" "}
               <span className="font-medium text-foreground">

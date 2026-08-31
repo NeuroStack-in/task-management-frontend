@@ -24,6 +24,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ActiveInactiveRing } from "@/modules/dashboard/components/insight-widgets";
+import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DepartmentScoreFocus } from "./department-score-focus";
 import { useOrgActivity } from "../use-activity";
@@ -82,17 +83,9 @@ const CATEGORIES = [
   { key: "distracting", label: "Distracting", color: "var(--destructive)" },
 ] as const;
 
-const fmtHours = (sec: number): string => {
-  const h = sec / 3600;
-  return `${h.toFixed(h >= 10 ? 0 : 1)}h`;
-};
+const fmtHours = (sec: number): string => formatDuration(sec);
 
-const formatMinutes = (min: number): string => {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-};
+const formatMinutes = (min: number): string => formatDuration(min * 60);
 
 // ── date helpers ──────────────────────────────────────────────────────────────
 function isoOf(d: Date): string {

@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
+import { formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 import { useAssistantStore } from "@/stores/assistant.store";
@@ -105,8 +106,8 @@ export function ReportsExperimental() {
           { label: "Report", value: "AI daily executive report" },
           { label: "Org avg score", value: m.avg_score === null ? "no data" : `${m.avg_score}%` },
           { label: "People scored", value: `${m.scored_people} of ${m.total_people}` },
-          { label: "Active hours", value: `${m.active_hours_total}h` },
-          { label: "Productive hours", value: `${m.productive_hours_total}h` },
+          { label: "Active hours", value: formatHours(m.active_hours_total) },
+          { label: "Productive hours", value: formatHours(m.productive_hours_total) },
           ...(topPerformer
             ? [{ label: "Top performer", value: `${topPerformer.name} (${topPerformer.score}%)` }]
             : []),
@@ -356,7 +357,7 @@ function AiBriefing({
 
 /* --------------------------- health score card ---------------------------- */
 
-const hrs = (h: number) => `${h.toFixed(1)}h`;
+const hrs = (h: number) => formatHours(h);
 
 function HealthScoreCard({
   report,

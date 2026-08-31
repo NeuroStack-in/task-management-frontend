@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AppWindow } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
+import { formatMinutes } from "@/lib/format";
 import {
   getUserAppUsage,
   type AppUsage,
@@ -21,12 +22,15 @@ import {
  */
 const TRACKING_SINCE = "2026-08-27";
 
-/** Seconds → "6h 12m" / "48m". Whole minutes: a second-precision figure implies a precision the
- *  sampling does not have. */
+/**
+ * Seconds → `HH:MM:SS`, rounded to the whole minute first.
+ *
+ * The rounding stays: app time is sampled, so a second-precision figure would imply a precision the
+ * sampling does not have. Only the notation changed — the seconds place reads `00` here, and that
+ * is the honest answer rather than an invented one.
+ */
 function dur(seconds: number): string {
-  const m = Math.round(seconds / 60);
-  const h = Math.floor(m / 60);
-  return h === 0 ? `${m}m` : `${h}h ${m % 60}m`;
+  return formatMinutes(Math.round(seconds / 60));
 }
 
 /** The org's classification, as a tone. Never derived here — the server sends the category. */

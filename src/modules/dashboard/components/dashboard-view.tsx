@@ -9,6 +9,7 @@ import {
   CalendarCheck,
   UserPlus,
 } from "lucide-react";
+import { formatDuration, formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatCard } from "@/components/shared/stat-card";
 import { UpgradeStatCard } from "@/components/shared/upgrade-stat-card";
@@ -151,7 +152,7 @@ function OrgDashboard() {
                 },
                 {
                   label: "Hours tracked today",
-                  value: `${data.kpis.hours.value.toLocaleString()}h`,
+                  value: formatHours(data.kpis.hours.value),
                 },
                 {
                   label: "Screenshots today",
@@ -161,7 +162,7 @@ function OrgDashboard() {
             : [
                 {
                   label: "Hours tracked",
-                  value: `${data.kpis.hours.value.toLocaleString()}h`,
+                  value: formatHours(data.kpis.hours.value),
                 },
                 {
                   label: "Attendance rate",
@@ -208,8 +209,9 @@ function OrgDashboard() {
   const { kpis, rangeLabel } = data;
 
   // Live "Hours Tracked": settled tracked time + elapsed of each currently-running session, ticking
-  // via `useNow`. Shown to a tenth of an hour below 10h so a live morning reads "0.4h", not a
-  // floored "0h"; whole hours above, where a tenth is noise.
+  // via `useNow`. Rendered `HH:MM:SS` like every other duration in the product — which also retires
+  // the tenth-of-an-hour rounding this used to need so that a live morning read "0.4h" and not a
+  // floored "0h". A clock has no such floor: it reads `00:24:31` from the first minute.
   const liveHoursSec =
     data.hoursLive.closedSec +
     (data.hoursLive.includesToday
@@ -218,10 +220,7 @@ function OrgDashboard() {
           0,
         )
       : 0);
-  const liveHours = liveHoursSec / 3600;
-  const liveHoursText = (
-    liveHours >= 10 ? Math.round(liveHours) : Math.round(liveHours * 10) / 10
-  ).toLocaleString();
+  const liveHoursText = formatDuration(liveHoursSec);
 
   return (
     <div className="space-y-4">
@@ -323,7 +322,7 @@ function OrgDashboard() {
             ) : (
               <StatCard
                 label="Hours Tracked"
-                value={`${liveHoursText}h`}
+                value={liveHoursText}
                 icon={Clock}
                 hint="logged today"
                 href="/time-tracking"
@@ -357,7 +356,7 @@ function OrgDashboard() {
             ) : (
               <StatCard
                 label="Hours Tracked"
-                value={`${liveHoursText}h`}
+                value={liveHoursText}
                 icon={Clock}
                 hint={rangeLabel}
                 href="/time-tracking"

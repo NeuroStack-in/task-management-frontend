@@ -21,6 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { TrendPoint } from "@/modules/dashboard/lib/dashboard-data";
+import { formatHours } from "@/lib/format";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
 /**
@@ -42,7 +43,7 @@ const CATEGORIES = [
   { key: "unclassifiedH", name: "Unclassified", color: "var(--muted-foreground)", faded: true },
 ] as const;
 
-const fmtHours = (h: number) => `${h % 1 === 0 ? h : h.toFixed(1)} h`;
+const fmtHours = (h: number) => formatHours(h);
 
 /** Custom tooltip: total hours + per-category (zeros hidden) + coverage — the honest full picture. */
 function MixTooltip({
@@ -59,7 +60,7 @@ function MixTooltip({
     <div className="bg-popover text-popover-foreground border-border rounded-[var(--radius)] border p-2.5 text-xs shadow-md">
       <div className="mb-1.5 flex items-baseline justify-between gap-4">
         <span className="text-muted-foreground font-medium">{row?.label}</span>
-        <span className="font-semibold">{fmtHours(Math.round(total * 10) / 10)} active</span>
+        <span className="font-semibold">{fmtHours(total)} active</span>
       </div>
       <ul className="space-y-1">
         {payload

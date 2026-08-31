@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CalendarClock } from "lucide-react";
+import { formatHours } from "@/lib/format";
 import { StatCard } from "@/components/shared/stat-card";
 import { getCalendarSummary } from "@/modules/integrations/services/integrations.service";
 import { localDateOf } from "@/lib/local-day";
@@ -53,7 +54,7 @@ export function MeetingHoursCard() {
   return (
     <StatCard
       label="In meetings today"
-      value={hours === null ? "—" : `${hours.toFixed(1)}h`}
+      value={hours === null ? "—" : formatHours(hours)}
       icon={CalendarClock}
       hint="from Google Calendar"
       href="/settings/integrations"

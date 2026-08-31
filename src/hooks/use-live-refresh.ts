@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePoll } from "@/hooks/use-poll";
+import { formatDuration } from "@/lib/format";
 
 /** How often a live surface re-fetches. */
 export const LIVE_REFRESH_MS = 30_000;
@@ -98,15 +99,12 @@ export function useRunningSeconds(startMs: number | null): number {
 }
 
 /**
- * `H:MM` for a duration in seconds — the timesheet grid's format (`3:42`).
+ * Seconds → `HH:MM:SS`. Kept as a name because callers import it from here; the implementation is
+ * `lib/format`'s, which every other duration in the product also goes through.
  *
- * Separate from `formatHours` in `lib/format`, which renders a decimal ("3.7h"). A timesheet cell
- * shows clock time, and rounding 3h42m to "3.7h" in a column people reconcile against payroll is
- * how a minute goes missing.
+ * It used to render `H:MM`, on the reasoning that a timesheet cell wants clock time rather than a
+ * rounded decimal. That half was right — the rounding it avoided is how a minute goes missing in a
+ * column people reconcile against payroll. What it got wrong was inventing a *third* notation to do
+ * it in: `1:50` beside a running `2:28:05` and a `2.5h` total read as three different numbers.
  */
-export function formatHMS(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return `${h}:${String(m).padStart(2, "0")}`;
-}
+export const formatHMS = formatDuration;

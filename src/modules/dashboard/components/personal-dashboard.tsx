@@ -20,6 +20,7 @@ import { useWeekTracked } from "../use-week-tracked";
 import { useMyAttendance, ymd, type DayRecord } from "@/modules/attendance/use-my-attendance";
 import { useIsSurfaceOn } from "@/hooks/use-features";
 import { useAssistantPageContext } from "@/stores/page-context.store";
+import { formatDuration, formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useWorkingHours } from "@/hooks/use-working-hours";
 import { usePoll } from "@/hooks/use-poll";
@@ -52,20 +53,6 @@ const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 type LiveStatus = DayRecord["status"] | "in_progress" | "tracked_today";
 type LiveRecord = Omit<DayRecord, "status"> & { status: LiveStatus };
 
-/**
- * `H:MM:SS` for a day still in progress.
- *
- * Seconds are the point: a running row has to visibly move, or it reads as stale beside the timer
- * tile. Finished days keep the decimal-hours form — nobody needs the second a Tuesday ended, and a
- * column of `6:47:12` would be harder to compare than `6.8h`.
- */
-function liveClock(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-}
 export function PersonalDashboard() {
   const { openTasks, doneCount, myProjects, loading } = useMyWork();
   const isSurfaceOn = useIsSurfaceOn();
@@ -179,8 +166,6 @@ export function PersonalDashboard() {
   );
   const daysPresent = attRowsLive.filter((w) => w.record?.status === "present").length;
 
-  const weekHours = Math.round((tracked.totalSec / 3600) * 10) / 10;
-
   // Publish the viewer's own at-a-glance figures to the assistant.
   useAssistantPageContext({
     facts: [
@@ -192,7 +177,7 @@ export function PersonalDashboard() {
           ]
         : []),
       ...(showTimer
-        ? [{ label: "Hours (last 7 days)", value: `${weekHours}h` }]
+        ? [{ label: "Hours (last 7 days)", value: formatDuration(tracked.totalSec) }]
         : []),
       { label: "Days present this week", value: String(daysPresent) },
     ],
@@ -216,7 +201,7 @@ export function PersonalDashboard() {
           label="Hours this week"
           // "—" until the range has actually been read: a confident 0.0 next to a running timer is
           // worse than an obvious blank.
-          value={mounted && tracked.loaded ? weekHours.toFixed(1) : "—"}
+          value={mounted && tracked.loaded ? formatDuration(tracked.totalSec) : "—"}
           icon={Clock}
           hint="logged on the timer"
           // Points at the timesheet now, not attendance — that is where this number comes from, and
@@ -283,15 +268,13 @@ export function PersonalDashboard() {
                         w.record?.status === "in_progress" && "text-primary font-medium",
                       )}
                     >
-                      {/* A running day shows a CLOCK, not rounded hours.
-                          `0.5h` is technically live — the seconds behind it tick — but it only
-                          changes on screen every six minutes, which reads as frozen next to a timer
-                          that is visibly running. `H:MM:SS` moves every second, so the row and the
-                          timer agree at a glance. */}
+                      {/* Running and finished days read in the same notation; only the colour
+                          above separates them. A running row still moves every second — it is fed
+                          `todaySec`, which ticks — while a settled day holds still on its own. */}
                       {w.record?.status === "in_progress"
-                        ? liveClock(todaySec)
+                        ? formatDuration(todaySec)
                         : w.record && w.record.hours > 0
-                          ? `${w.record.hours.toFixed(1)}h`
+                          ? formatHours(w.record.hours)
                           : "—"}
                     </span>
                   </div>
@@ -318,11 +301,7 @@ export function PersonalDashboard() {
                 tracked.running && "text-primary",
               )}
             >
-              {!mounted
-                ? "—"
-                : tracked.running
-                  ? `${liveClock(tracked.totalSec)} total`
-                  : `${weekHours}h total`}
+              {!mounted ? "—" : `${formatDuration(tracked.totalSec)} total`}
             </span>
           </div>
         </Card>
