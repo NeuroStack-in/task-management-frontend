@@ -57,6 +57,7 @@ import { foldToWeeks } from "./lib/dashboard-data";
 import type {
   DashboardData,
   DashboardFilters,
+  LiveTimer,
   Performer,
   ScoreTrendPoint,
   TeamOption,
@@ -303,6 +304,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             // exists after the nightly close), so the Attendance donut has something truthful to show
             // for the Today range instead of a blank "resolved tomorrow".
             (d) => ({
+              employee: e,
               running: d.running === true,
               present: Boolean(d.clock_in),
               // A running session we can tick live: only when today is a SINGLE session, so `clock_in`
@@ -313,10 +315,30 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
                   ? d.clock_in
                   : null,
             }),
-            () => ({ running: false, present: false, liveStart: null as number | null }),
+            () => ({
+              employee: e,
+              running: false,
+              present: false,
+              liveStart: null as number | null,
+            }),
           ),
         );
         const workingNow = todayStatus.filter((s) => s.running).length;
+        // The per-employee "who is tracking right now" list the Working-now widget renders and ticks
+        // live. Longest-running first (earliest start), the not-precisely-tickable rows last.
+        const liveTimers: LiveTimer[] = todayStatus
+          .filter((s) => s.running)
+          .map((s) => ({
+            userId: s.employee.user_id,
+            name: s.employee.name,
+            department: deptLabel(s.employee.department_id),
+            liveStart: s.liveStart,
+          }))
+          .sort((a, b) => {
+            if (a.liveStart === null) return b.liveStart === null ? 0 : 1;
+            if (b.liveStart === null) return -1;
+            return a.liveStart - b.liveStart;
+          });
         const notWorkingNow = timerHolders.length - workingNow;
         const presentToday = todayStatus.filter((s) => s.present).length;
         // Starts of the running sessions the KPI can accrue in real time (see `liveStart`). Only
@@ -802,6 +824,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           screenshotsFlagged,
           screenshotsSplit,
           topPerformers,
+          liveTimers,
           billing: billingBlock,
           heatmap, // weekday × 2-hour intensity from screenshot capture density (empty if none).
           attendanceCounts: latestCounts,

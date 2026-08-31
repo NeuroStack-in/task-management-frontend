@@ -11,6 +11,7 @@ import {
 } from "./components/insight-widgets";
 import {
   TopEmployeesWidget,
+  LiveTimersWidget,
   ScreenshotsWidget,
   AlertsDeadlinesWidget,
   UpcomingTasksWidget,
@@ -66,6 +67,10 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   org_attendance: {
     span: 1,
     render: (d) => <AttendanceDonut counts={d.attendanceCounts} />,
+  },
+  "org_attendance.live_timers": {
+    span: 1,
+    render: (d) => <LiveTimersWidget timers={d.liveTimers} />,
   },
   "org_activity.active_ring": {
     span: 1,

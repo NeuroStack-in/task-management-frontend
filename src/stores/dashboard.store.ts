@@ -23,6 +23,9 @@ export type WidgetType =
   | "org_activity.heatmap"
   | "team_activity"
   | "org_attendance"
+  // A variant of the org_attendance catalog entry (so the server accepts it and it inherits the
+  // attendance:view perm + attendance feature) — the live "who's tracking right now" board.
+  | "org_attendance.live_timers"
   | "org_activity.active_ring"
   | "reports.headcount"
   | "org_activity.screenshots"
@@ -73,9 +76,9 @@ export interface DashboardWidget {
 }
 
 /**
- * Default layout (left→right): AI summary, Attendance, Department comparison — then the exec snapshot.
- * The first six are single-width tiles (two clean rows of three); the rest ship hidden and are opt-in via
- * Customize. The grid picks its own column count to stay gap-free, so the exact span total isn't
+ * Default layout (left→right): AI summary, Attendance, Working now, Department comparison — then the
+ * exec snapshot. The first seven are single-width visible tiles; the rest ship hidden and are opt-in
+ * via Customize. The grid picks its own column count to stay gap-free, so the exact span total isn't
  * load-bearing.
  */
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
@@ -84,17 +87,18 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   // the starting order for a fresh/reset layout.
   { id: "attention_list.ai_summary", title: "AI summary", type: "attention_list.ai_summary", position: 0, visible: true },
   { id: "org_attendance", title: "Attendance", type: "org_attendance", position: 1, visible: true },
-  { id: "team_activity", title: "Department comparison", type: "team_activity", position: 2, visible: true },
-  { id: "org_activity.top_performers", title: "Top performers", type: "org_activity.top_performers", position: 3, visible: true },
-  { id: "org_activity.screenshots", title: "Screenshots", type: "org_activity.screenshots", position: 4, visible: true },
-  { id: "attention_list.alerts", title: "Needs attention", type: "attention_list.alerts", position: 5, visible: true },
-  { id: "org_activity.active_ring", title: "Active vs inactive", type: "org_activity.active_ring", position: 6, visible: false },
-  { id: "org_activity.trends", title: "Where time went", type: "org_activity.trends", position: 7, visible: false },
-  { id: "org_activity.score_trend", title: "Productivity trends", type: "org_activity.score_trend", position: 8, visible: false },
-  { id: "reports.upcoming_tasks", title: "Upcoming tasks", type: "reports.upcoming_tasks", position: 9, visible: false },
-  { id: "org_activity.heatmap", title: "Activity heatmap", type: "org_activity.heatmap", position: 10, visible: false },
-  { id: "reports.headcount", title: "Headcount by status", type: "reports.headcount", position: 11, visible: false },
-  { id: "payroll_summary", title: "Billing overview", type: "payroll_summary", position: 12, visible: false },
+  { id: "org_attendance.live_timers", title: "Working now", type: "org_attendance.live_timers", position: 2, visible: true },
+  { id: "team_activity", title: "Department comparison", type: "team_activity", position: 3, visible: true },
+  { id: "org_activity.top_performers", title: "Top performers", type: "org_activity.top_performers", position: 4, visible: true },
+  { id: "org_activity.screenshots", title: "Screenshots", type: "org_activity.screenshots", position: 5, visible: true },
+  { id: "attention_list.alerts", title: "Needs attention", type: "attention_list.alerts", position: 6, visible: true },
+  { id: "org_activity.active_ring", title: "Active vs inactive", type: "org_activity.active_ring", position: 7, visible: false },
+  { id: "org_activity.trends", title: "Where time went", type: "org_activity.trends", position: 8, visible: false },
+  { id: "org_activity.score_trend", title: "Productivity trends", type: "org_activity.score_trend", position: 9, visible: false },
+  { id: "reports.upcoming_tasks", title: "Upcoming tasks", type: "reports.upcoming_tasks", position: 10, visible: false },
+  { id: "org_activity.heatmap", title: "Activity heatmap", type: "org_activity.heatmap", position: 11, visible: false },
+  { id: "reports.headcount", title: "Headcount by status", type: "reports.headcount", position: 12, visible: false },
+  { id: "payroll_summary", title: "Billing overview", type: "payroll_summary", position: 13, visible: false },
 ];
 
 const KNOWN_TYPES = new Set<string>(DEFAULT_WIDGETS.map((w) => w.type));
@@ -139,8 +143,10 @@ export const useDashboardStore = create<DashboardState>()(
       name: "wp-dashboard",
       // v13: the widget set moved to the preview grid. v14: frontend widget ids converged on the
       // wp-contracts catalog ids (`attendance` → `org_attendance`, `heatmap` → `org_activity.heatmap`,
-      // …) — v13 layouts are renamed in place so the user's order/visibility survives.
-      version: 14,
+      // …) — v13 layouts are renamed in place so the user's order/visibility survives. v15: the
+      // "Working now" live-timers widget was added — the migrate appends it (hidden) to existing
+      // layouts, so it shows up in Customize without disturbing a saved order.
+      version: 15,
       migrate: (persisted, version) => {
         if (version < 13) return { widgets: DEFAULT_WIDGETS } as DashboardState;
 

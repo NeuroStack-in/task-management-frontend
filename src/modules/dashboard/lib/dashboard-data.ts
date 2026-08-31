@@ -241,6 +241,21 @@ export interface Performer {
   avatarUrl?: string;
 }
 
+/**
+ * One employee with a **running timer right now**, for the "Working now" live widget.
+ *
+ * `liveStart` is the epoch-ms start the row's clock ticks from — present only when today is a
+ * **single open session**, so `now − start` is exact. `null` when they're running but across several
+ * sessions today (the current segment's own start isn't exposed org-wide); the widget then shows
+ * "Tracking" without a precise elapsed rather than an overstated one.
+ */
+export interface LiveTimer {
+  userId: string;
+  name: string;
+  department: string;
+  liveStart: number | null;
+}
+
 export interface DashboardData {
   range: DashboardRange;
   team: string;
@@ -295,6 +310,12 @@ export interface DashboardData {
    */
   screenshotsSplit: { productive: number; neutral: number; distracting: number };
   topPerformers: Performer[];
+  /**
+   * Employees whose timer is running **right now**, longest-running first. Drives the "Working now"
+   * widget, which ticks each row live from `liveStart`. Empty when nobody is tracking (or no agent
+   * has reported today) — an honest empty state, never a seeded list.
+   */
+  liveTimers: LiveTimer[];
   billing: { plan: string; seatsUsed: number; seatsTotal: number };
   heatmap: number[][];
   attendanceCounts: Record<AttendanceStatus, number>;

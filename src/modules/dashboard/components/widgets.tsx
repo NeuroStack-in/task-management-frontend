@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, CreditCard, Camera, ArrowUpRight, Trophy, BellRing, TriangleAlert, FolderKanban, CheckSquare } from "lucide-react";
+import { CalendarClock, CreditCard, Camera, ArrowUpRight, Trophy, BellRing, TriangleAlert, FolderKanban, CheckSquare, Clock } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkline } from "@/components/shared/sparkline";
 import { todayIso } from "@/lib/format";
+import { useRunningSeconds } from "@/hooks/use-live-refresh";
 import { cn } from "@/lib/utils";
-import type { Performer } from "@/modules/dashboard/lib/dashboard-data";
+import type { LiveTimer, Performer } from "@/modules/dashboard/lib/dashboard-data";
 import { getAttention, type AttentionRow } from "@/modules/insights/services/insights.service";
 import { getDayOversight, type ApiDayUser } from "@/modules/attendance/services/attendance.service";
 import { listAllEmployees } from "@/modules/employees/services/employees.service";
@@ -114,6 +115,79 @@ export function TopEmployeesWidget({ people }: { people: Performer[] }) {
           ))
         )}
         <ViewAllLink href="/employees" label="All employees" />
+      </CardContent>
+    </Card>
+  );
+}
+
+/* -------------------------- Working now (live timers) -------------------------- */
+
+/** `H:MM:SS` — a live elapsed clock, so the seconds visibly tick between the 30 s data polls. */
+function liveClock(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * One running-timer row. Each row owns a `useRunningSeconds` clock derived from the session's own
+ * start stamp, so it ticks up smoothly without refetching. A row we can't tick precisely (the
+ * employee is on their 2nd+ session today, so the current segment's start isn't known org-wide)
+ * shows a plain "Tracking" pill rather than an overstated time.
+ */
+function LiveTimerRow({ t }: { t: LiveTimer }) {
+  const elapsed = useRunningSeconds(t.liveStart);
+  return (
+    <div className="flex items-center gap-3">
+      <UserAvatar userId={t.userId} name={t.name} className="size-9" fallbackClassName="text-xs" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{t.name}</p>
+        <p className="truncate text-xs text-muted-foreground">{t.department || "—"}</p>
+      </div>
+      {t.liveStart !== null ? (
+        <span className="flex items-center gap-1.5 font-mono text-sm font-medium tabular-nums text-primary">
+          <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-success" />
+          {liveClock(elapsed)}
+        </span>
+      ) : (
+        <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
+          Tracking
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * **Working now** — today's live timers across the org. Reads the same running/`clock_in` signal the
+ * KPI strip's "Working now" tile uses (per-user `getUserDay`), and ticks each running row live. Empty
+ * until an agent reports; never a seeded list. Links out to the full timesheets page.
+ */
+export function LiveTimersWidget({ timers }: { timers: LiveTimer[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Working now</CardTitle>
+        <CardDescription>
+          Employees with a timer running right now &mdash; today&apos;s live timesheet
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {timers.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+            <span className="flex size-10 items-center justify-center rounded-md bg-muted">
+              <Clock className="size-5 text-muted-foreground" />
+            </span>
+            <p className="text-sm font-medium">No one is tracking right now</p>
+            <p className="max-w-xs text-xs text-muted-foreground">
+              Running timers appear here live as employees start work in the WorkPulse app.
+            </p>
+          </div>
+        ) : (
+          timers.map((t) => <LiveTimerRow key={t.userId} t={t} />)
+        )}
+        <ViewAllLink href="/time-tracking" label="View timesheets" />
       </CardContent>
     </Card>
   );
