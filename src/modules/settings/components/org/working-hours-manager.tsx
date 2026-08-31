@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TimePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -238,22 +239,30 @@ export function WorkingHoursManager() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="wh-start">Day starts</Label>
-                <Input
+                <TimePicker
                   id="wh-start"
-                  type="time"
                   value={draft.work_start}
+                  onChange={(v) => set("work_start", v)}
                   disabled={!canManage || saving}
-                  onChange={(e) => set("work_start", e.target.value)}
+                  stepMinutes={5}
+                  // A working day must have a start: "Any time" would write an empty string into a
+                  // setting the attendance close reads on every tenant, every night.
+                  clearable={false}
+                  className="w-full"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="wh-end">Day ends</Label>
-                <Input
+                <TimePicker
                   id="wh-end"
-                  type="time"
                   value={draft.work_end}
+                  onChange={(v) => set("work_end", v)}
                   disabled={!canManage || saving}
-                  onChange={(e) => set("work_end", e.target.value)}
+                  stepMinutes={5}
+                  // A working day must have a start: "Any time" would write an empty string into a
+                  // setting the attendance close reads on every tenant, every night.
+                  clearable={false}
+                  className="w-full"
                 />
               </div>
               <div className="space-y-1.5">
@@ -273,12 +282,16 @@ export function WorkingHoursManager() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="wh-late">Late after</Label>
-                <Input
+                <TimePicker
                   id="wh-late"
-                  type="time"
                   value={draft.late_threshold}
+                  onChange={(v) => set("late_threshold", v)}
                   disabled={!canManage || saving}
-                  onChange={(e) => set("late_threshold", e.target.value)}
+                  stepMinutes={5}
+                  // A working day must have a start: "Any time" would write an empty string into a
+                  // setting the attendance close reads on every tenant, every night.
+                  clearable={false}
+                  className="w-full"
                 />
                 <p className="text-muted-foreground text-xs">
                   A first session after this marks the day late.
