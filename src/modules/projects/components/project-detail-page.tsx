@@ -29,6 +29,7 @@ import { TaskReviewDialog } from "./task-review-dialog";
 import { TaskFormDialog } from "./task-form-dialog";
 import { ViewTaskDialog } from "./view-task-dialog";
 import { generateProjectReportPdf } from "../report";
+import { ProjectTimeByMember } from "./project-time-by-member";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
 interface ProjectDetailPageProps {
@@ -644,6 +645,14 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           />
         )}
       </section>
+
+      {/* Who put how many hours into this project — the project × person cross-tab. Self-fetching and
+          gated to viewers who can read team time; renders nothing for anyone else. */}
+      <ProjectTimeByMember
+        projectId={project.id}
+        memberIds={project.memberIds}
+        userMap={userMap}
+      />
 
       {/* Project edit dialog */}
       <ProjectFormDialog
