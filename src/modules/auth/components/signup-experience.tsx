@@ -56,6 +56,7 @@ import {
   AuthSwitch,
   passwordMeetsPolicy,
 } from "./auth-frame";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { safeLandingPath } from "@/lib/rbac";
 
@@ -601,12 +602,23 @@ export function SignupExperience({
               <AuthField
                 id="me-phone"
                 label="Work phone"
-                type="tel"
                 value={profile.phone}
                 onChange={(v) => setProfile((s) => ({ ...s, phone: v }))}
                 hint="Optional"
-                autoComplete="tel"
-                inputMode="tel"
+                // The country picker replaces the plain input. It borrows this page's own control
+                // styling (`m-authinput`) rather than the app tokens it uses elsewhere — the auth
+                // pages are a separate system, and a 2.25rem token-styled box beside these 2.75rem
+                // fields reads as a rendering fault rather than a different control.
+                control={
+                  <PhoneInput
+                    id="me-phone"
+                    value={profile.phone}
+                    onChange={(v) => setProfile((s) => ({ ...s, phone: v }))}
+                    className="w-full"
+                    triggerClassName="m-authinput h-11 w-auto rounded-r-none border-r-0"
+                    inputClassName="m-authinput h-11 rounded-l-none"
+                  />
+                }
               />
             </>
           ) : null}

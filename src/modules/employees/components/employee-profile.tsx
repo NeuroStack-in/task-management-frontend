@@ -43,6 +43,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
@@ -554,10 +555,9 @@ function EditEmployeeDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Phone</Label>
-            <Input
-              type="tel"
+            <PhoneInput
               value={form.phone}
-              onChange={(e) => setField("phone")(e.target.value)}
+              onChange={(v) => setField("phone")(v)}
             />
           </div>
         </div>

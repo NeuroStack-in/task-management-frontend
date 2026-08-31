@@ -51,6 +51,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -782,11 +783,7 @@ function RichProfile({
               <Input type="email" value={form.email} disabled />
             </DialogField>
             <DialogField label="Contact number">
-              <Input
-                type="tel"
-                value={form.phone}
-                onChange={(e) => set("phone")(e.target.value)}
-              />
+              <PhoneInput value={form.phone} onChange={set("phone")} />
             </DialogField>
             <DialogField label="Date of birth">
               <DatePicker

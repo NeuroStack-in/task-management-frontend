@@ -260,10 +260,18 @@ export function AuthField({
   disabled,
   trailing,
   inputRef,
+  control,
   ...rest
 }: {
   id: string;
   label: string;
+  /**
+   * Replaces the `<input>` entirely, keeping the label, hint and error plumbing.
+   *
+   * For fields that are not a single text box — the phone field is a country picker plus a number.
+   * Everything a screen reader needs still comes from here; only the control changes.
+   */
+  control?: React.ReactNode;
   type?: string;
   value: string;
   onChange: (v: string) => void;
@@ -309,6 +317,7 @@ export function AuthField({
         </p>
       ) : null}
       <div className="m-afield__wrap">
+        {control ?? (
         <input
           id={id}
           name={id}
@@ -326,6 +335,7 @@ export function AuthField({
           className={`m-authinput${trailing ? " m-authinput--withtoggle" : ""}`}
           {...rest}
         />
+        )}
         {trailing}
       </div>
     </div>
