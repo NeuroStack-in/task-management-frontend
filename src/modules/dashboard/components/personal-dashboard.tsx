@@ -305,7 +305,25 @@ export function PersonalDashboard() {
                   to match the rows above it. */}
               {mounted ? `${daysPresent}/${attRowsLive.length} days present` : "—"}
             </span>
-            <span className="font-medium tabular-nums">{mounted ? `${weekHours}h total` : "—"}</span>
+            {/* **Same notation as the rows above it.** While a session is open the running row
+                shows a clock (`2:28:05`) and this showed `2.5h` — the same number, and they agree,
+                but `2:28` reads like "2.28" so `2.5h` looks like a different figure sitting right
+                underneath it. One notation at a time removes the question.
+
+                Once nothing is running there is no ticking row to match, and decimal hours are the
+                easier form to compare across weeks — so it goes back to `2.5h`. */}
+            <span
+              className={cn(
+                "font-medium tabular-nums",
+                tracked.running && "text-primary",
+              )}
+            >
+              {!mounted
+                ? "—"
+                : tracked.running
+                  ? `${liveClock(tracked.totalSec)} total`
+                  : `${weekHours}h total`}
+            </span>
           </div>
         </Card>
 
