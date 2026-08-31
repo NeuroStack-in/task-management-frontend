@@ -131,13 +131,14 @@ function liveClock(totalSeconds: number): string {
 }
 
 /**
- * One running-timer row. Each row owns a `useRunningSeconds` clock derived from the session's own
- * start stamp, so it ticks up smoothly without refetching. A row we can't tick precisely (the
- * employee is on their 2nd+ session today, so the current segment's start isn't known org-wide)
- * shows a plain "Tracking" pill rather than an overstated time.
+ * One running-timer row. The clock is the employee's **whole day so far** — today's completed
+ * tracked time (`completedSec`) plus the live elapsed of their currently-open session, which ticks up
+ * each second from the session's own start (`useRunningSeconds`). So it climbs smoothly between the
+ * 30 s data polls and reads as total time worked today, not just the current sitting.
  */
 function LiveTimerRow({ t }: { t: LiveTimer }) {
-  const elapsed = useRunningSeconds(t.liveStart);
+  const liveSession = useRunningSeconds(t.liveStart);
+  const totalToday = t.completedSec + liveSession;
   return (
     <div className="flex items-center gap-3">
       <UserAvatar userId={t.userId} name={t.name} className="size-9" fallbackClassName="text-xs" />
@@ -145,16 +146,10 @@ function LiveTimerRow({ t }: { t: LiveTimer }) {
         <p className="truncate text-sm font-medium">{t.name}</p>
         <p className="truncate text-xs text-muted-foreground">{t.department || "—"}</p>
       </div>
-      {t.liveStart !== null ? (
-        <span className="flex items-center gap-1.5 font-mono text-sm font-medium tabular-nums text-primary">
-          <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-success" />
-          {liveClock(elapsed)}
-        </span>
-      ) : (
-        <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
-          Tracking
-        </span>
-      )}
+      <span className="flex items-center gap-1.5 font-mono text-sm font-medium tabular-nums text-primary">
+        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-success" />
+        {liveClock(totalToday)}
+      </span>
     </div>
   );
 }

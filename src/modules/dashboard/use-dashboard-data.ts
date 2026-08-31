@@ -307,6 +307,10 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               employee: e,
               running: d.running === true,
               present: Boolean(d.clock_in),
+              // Today's completed tracked time (the running session excluded — user_day's
+              // worked_minutes is the finished-sessions sum for an open day). The widget adds the
+              // live running elapsed on top so each row reads as the whole day's time.
+              completedSec: (typeof d.worked_minutes === "number" ? d.worked_minutes : 0) * 60,
               // The start a live "elapsed" clock ticks from. Prefer `running_since` — the OPEN
               // session's own start — so it's exact for *anyone* running, including after a break and
               // a restart. Fall back to `clock_in` only for a single-session day (where the two are
@@ -324,6 +328,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               employee: e,
               running: false,
               present: false,
+              completedSec: 0,
               liveStart: null as number | null,
             }),
           ),
@@ -337,6 +342,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             userId: s.employee.user_id,
             name: s.employee.name,
             department: deptLabel(s.employee.department_id),
+            completedSec: s.completedSec,
             liveStart: s.liveStart,
           }))
           .sort((a, b) => {

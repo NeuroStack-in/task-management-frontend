@@ -253,6 +253,9 @@ export interface LiveTimer {
   userId: string;
   name: string;
   department: string;
+  /** Today's **completed** tracked seconds (finished sessions; the running one excluded). The widget
+   *  adds the live running-session elapsed to this so the row shows the whole day's time, ticking. */
+  completedSec: number;
   liveStart: number | null;
 }
 
