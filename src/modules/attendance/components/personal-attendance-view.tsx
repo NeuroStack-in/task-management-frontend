@@ -21,6 +21,7 @@ import {
 } from "../lib/calendar";
 import { LogDatePicker } from "./attendance-log";
 import { useWorkdays, useWorkingHours } from "@/hooks/use-working-hours";
+import { useMyStartDate } from "@/hooks/use-org-start";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import { HolidayBadge } from "@/components/shared/holiday-badge";
 import { isWorkday } from "@/lib/workdays";
@@ -125,6 +126,10 @@ export function PersonalAttendanceView() {
 
   const workdays = useWorkdays();
   const holidays = useOrgHolidays();
+  // Days before this person joined have no attendance to report — block them out (hatched, like a
+  // weekend) rather than leaving an empty workday that reads as a day they failed to turn up for.
+  // Their own join date, not the org's: someone who started in August was not absent in March.
+  const myStart = useMyStartDate();
   // The expected working day the day-completion bar fills toward (the org's declared hours).
   const expectedMin = expectedDayMinutes(useWorkingHours());
   const weeks = useMemo(
@@ -158,6 +163,9 @@ export function PersonalAttendanceView() {
     for (const cell of weeks.flat()) {
       if (!cell.isWorkday) continue;
       if (isFutureDate(cell.year, cell.month, cell.day)) continue;
+      // Blocked-out days are outside the expected set, exactly like a weekend — counting them would
+      // put days the person had not joined for into the denominator and drag the month's rate down.
+      if (myStart !== null && ymd(cell.year, cell.month, cell.day) < myStart) continue;
       // Real data now: `null` = the close cron hasn't resolved this day yet. An unresolved workday
       // is genuinely unknown, so it counts toward nothing until the cron stamps it.
       const rec = monthData.recordFor(cell.year, cell.month, cell.day);
@@ -356,6 +364,9 @@ export function PersonalAttendanceView() {
                 key={i}
                 cell={cell}
                 recordFor={monthData.recordFor}
+                beforeStart={
+                  myStart !== null && ymd(cell.year, cell.month, cell.day) < myStart
+                }
                 holidayName={
                   cell.inMonth ? holidays.nameFor(ymd(cell.year, cell.month, cell.day)) : undefined
                 }
@@ -499,24 +510,33 @@ function PersonalDayCell({
   cell,
   recordFor,
   holidayName,
+  beforeStart = false,
 }: {
   cell: DayCell;
   recordFor: MyAttendanceRange["recordFor"];
   holidayName?: string;
+  /** Before this person joined: hatched and unlabelled, like a weekend. */
+  beforeStart?: boolean;
 }) {
-  if (!cell.isWorkday) {
+  if (!cell.isWorkday || beforeStart) {
     return (
       <div
         className={cn(
           "wp-hatch flex min-h-[3.5rem] flex-col gap-1 rounded-xl p-2",
           !cell.inMonth && "opacity-50",
         )}
-        title={holidayName ? `Holiday: ${holidayName}` : undefined}
+        title={
+          beforeStart
+            ? `${cell.day}: before you joined`
+            : holidayName
+              ? `Holiday: ${holidayName}`
+              : undefined
+        }
       >
         <span className="text-xs font-semibold leading-none tabular-nums text-muted-foreground/70">
           {cell.day}
         </span>
-        {holidayName ? (
+        {!beforeStart && holidayName ? (
           <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" />
         ) : null}
       </div>

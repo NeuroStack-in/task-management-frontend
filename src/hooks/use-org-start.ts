@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { listAllEmployees } from "@/modules/employees/services/employees.service";
+import { getMyProfile } from "@/modules/profile/services/profile.service";
 import { useAuthStore } from "@/stores/auth.store";
 
 /**
@@ -58,6 +59,55 @@ export function useOrgStartDate(): string | null {
       live = false;
     };
   }, [tenant]);
+
+  return start;
+}
+
+/**
+ * **My own first day** — when the signed-in person joined, as a local `YYYY-MM-DD`.
+ *
+ * The org-wide {@link useOrgStartDate} is the wrong floor for one person's calendar: someone who
+ * joined in August has no attendance for a March the org was already running, and rendering those
+ * days as blank workdays invites the same misreading the org calendar was fixed for — an empty
+ * grid that looks like a record of absence rather than a record that does not exist.
+ *
+ * Sourced from `GET /v1/me/profile`, **not** the roster. `listAllEmployees` needs oversight
+ * permissions a plain Employee does not have, and this view is theirs above all — reading it from
+ * the roster would leave the block-out silently not working for exactly the people who see this
+ * page most. `created_at` there already falls back to `joined_at` server-side.
+ *
+ * `null` while loading, on failure, or when the org never recorded a date: the calendar then keeps
+ * its prior behaviour and blocks nothing, which is the safe direction to be wrong in.
+ */
+let meCache: { user: string; start: string | null } | null = null;
+
+export function useMyStartDate(): string | null {
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const [start, setStart] = useState<string | null>(
+    meCache && meCache.user === userId ? meCache.start : null,
+  );
+
+  useEffect(() => {
+    if (!userId) return;
+    if (meCache && meCache.user === userId) {
+      setStart(meCache.start);
+      return;
+    }
+    let live = true;
+    getMyProfile()
+      .then((p) => {
+        if (!live) return;
+        const next = typeof p.created_at === "number" ? localIso(p.created_at) : null;
+        meCache = { user: userId, start: next };
+        setStart(next);
+      })
+      .catch(() => {
+        // Leave `null` — block nothing, as before.
+      });
+    return () => {
+      live = false;
+    };
+  }, [userId]);
 
   return start;
 }
