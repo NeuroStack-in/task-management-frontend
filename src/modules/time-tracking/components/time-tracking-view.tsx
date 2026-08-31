@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useDataScope } from "@/hooks/use-data-scope";
 import { cn } from "@/lib/utils";
-import { useTeamTimesheet } from "../use-team-timesheet";
+import { useTeamTimesheet, type Period } from "../use-team-timesheet";
 import { PersonalTimeView } from "./personal-time-view";
 import { TeamTimeView } from "./team-time-view";
 
@@ -41,6 +41,9 @@ export function TimeTrackingView() {
   // Which week the team grid is showing: 0 = this week, -1 = last week, … Lives here because the
   // fan-out hook is called here; the grid's stepper drives it.
   const [weekOffset, setWeekOffset] = useState(0);
+  // Week or month. Switching resets the offset to 0: "three back" means three *weeks* in one and
+  // three *months* in the other, so carrying it across would silently jump the range by months.
+  const [period, setPeriod] = useState<Period>("week");
 
   // Only fetch the team roll-up when the caller can actually see it — a pure employee never fans out.
   const {
@@ -52,7 +55,7 @@ export function TimeTrackingView() {
     loading,
     error,
     forbidden,
-  } = useTeamTimesheet(canManageTeam, weekOffset);
+  } = useTeamTimesheet(canManageTeam, weekOffset, period);
 
   // Team leads only see their own team's timesheets; org roles see everyone.
   const scopedTeamRows = teamRows.filter((r) => inScope(r.id));
@@ -132,6 +135,11 @@ export function TimeTrackingView() {
             dates={dates}
             weekLabel={weekLabel}
             weekOffset={weekOffset}
+            period={period}
+            onPeriodChange={(p) => {
+              setPeriod(p);
+              setWeekOffset(0);
+            }}
             onWeekOffsetChange={setWeekOffset}
           />
         )

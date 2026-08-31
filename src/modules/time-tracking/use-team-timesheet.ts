@@ -101,6 +101,46 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
  * Mon–Sun of the week `offset` weeks from the one containing `now` (local).
  * `0` = this week, `-1` = last week. Returns the 7 iso dates + from/to.
  */
+/**
+ * Which span the grid is showing.
+ *
+ * Both resolve to the same shape — a contiguous list of local iso dates — so everything downstream
+ * (the fan-out, the per-day arrays, the totals) is indifferent to which one is selected. Only the
+ * range's construction and its label differ.
+ */
+export type Period = "week" | "month";
+
+/**
+ * The calendar month `offset` months back, as the same `{from, to, dates}` a week produces.
+ *
+ * Built from `setMonth(month + offset, 1)` rather than by adding days, so it lands on real month
+ * boundaries — 28, 29, 30 and 31-day months all come out right, and February in a leap year needs
+ * no special case.
+ *
+ * The server caps a timesheet range at 92 days, so a single month is comfortably inside it.
+ */
+function monthOf(
+  now: Date,
+  offset = 0,
+): {
+  from: string;
+  to: string;
+  dates: string[];
+} {
+  const first = new Date(now);
+  first.setDate(1); // before changing the month: the 31st would otherwise skid into the next one
+  first.setMonth(first.getMonth() + offset);
+  first.setHours(0, 0, 0, 0);
+  // Day 0 of the following month is the last day of this one — the trick that avoids a length table.
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+  const dates = Array.from({ length: last.getDate() }, (_, i) => {
+    const d = new Date(first);
+    d.setDate(1 + i);
+    return isoLocal(d);
+  });
+  return { from: dates[0], to: dates[dates.length - 1], dates };
+}
+
 function weekOf(
   now: Date,
   offset = 0,
@@ -121,14 +161,19 @@ function weekOf(
   return { from: dates[0], to: dates[6], dates };
 }
 
-/** "Jun 23 – 29, 2026" from the week's first/last iso date (`YYYY-MM-DD`). */
+/**
+ * "Jun 23 – 29, 2026" from a range's first/last iso date (`YYYY-MM-DD`).
+ *
+ * Reads the **last element**, not `dates[6]`: a month is 28-31 dates, and indexing the seventh
+ * would have labelled every month as its first week while the grid showed the whole thing.
+ */
 function weekLabelOf(dates: string[]): string {
   const parse = (iso: string) => {
     const [y, m, d] = iso.split("-").map(Number);
     return { y, m: m - 1, d };
   };
   const a = parse(dates[0]);
-  const b = parse(dates[6]);
+  const b = parse(dates[dates.length - 1]);
   const m0 = MONTHS[a.m];
   const m1 = MONTHS[b.m];
   return a.m === b.m
@@ -172,7 +217,11 @@ const EMPTY_WEEK: DailyHours[] = DAY_LABELS.map((day) => ({
  *   re-runs the whole fan-out for that week — the per-user endpoints take an arbitrary `from`/`to`,
  *   so no week is privileged, but a step back costs one round of (employees × 2) requests.
  */
-export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimesheet {
+export function useTeamTimesheet(
+  enabled: boolean,
+  offset = 0,
+  period: Period = "week",
+): TeamTimesheet {
   const [data, setData] = useState<{
     fetched: Fetched[];
     depts: Map<string, string>;
@@ -186,7 +235,13 @@ export function useTeamTimesheet(enabled: boolean, weekOffset = 0): TeamTimeshee
   // week is derived from that fixed anchor plus the caller's offset, so paging back never re-reads
   // the clock — a session open across midnight keeps a stable notion of which week is "this" one.
   const anchor = useRef(new Date());
-  const week = useMemo(() => weekOf(anchor.current, weekOffset), [weekOffset]);
+  const week = useMemo(
+    () =>
+      period === "month"
+        ? monthOf(anchor.current, offset)
+        : weekOf(anchor.current, offset),
+    [offset, period],
+  );
 
   useEffect(() => {
     if (!enabled) {

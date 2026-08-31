@@ -4,6 +4,7 @@ import { Clock, BadgeDollarSign, Activity } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { TimesheetGrid } from "./timesheet-grid";
+import type { Period } from "../use-team-timesheet";
 import type { DailyHours, ProjectTimesheet, TeamMemberTime } from "../types";
 
 export function TeamTimeView({
@@ -14,6 +15,8 @@ export function TeamTimeView({
   weekLabel,
   weekOffset,
   onWeekOffsetChange,
+  period,
+  onPeriodChange,
 }: {
   rows: TeamMemberTime[];
   projectRows: ProjectTimesheet[];
@@ -22,6 +25,8 @@ export function TeamTimeView({
   weekLabel: string;
   weekOffset: number;
   onWeekOffsetChange: (offset: number) => void;
+  period: Period;
+  onPeriodChange: (p: Period) => void;
 }) {
   const teamHours = weekly.reduce((s, d) => s + d.hours, 0);
   const teamBillable = weekly.reduce((s, d) => s + d.billable, 0);
@@ -54,7 +59,11 @@ export function TeamTimeView({
           icon={Clock}
           // The card totals whichever week the grid is showing, so it must not claim "this week"
           // once you page back — that read as a live figure for a historical range.
-          hint={weekOffset === 0 ? "this week" : weekLabel}
+          // Names the span it is actually totalling. It said "this week" regardless, so a month
+          // view would have labelled a month's hours as a week's.
+          hint={
+            weekOffset === 0 ? (period === "month" ? "this month" : "this week") : weekLabel
+          }
           trend={weekly.map((d) => d.hours)}
           featured
         />
@@ -69,6 +78,8 @@ export function TeamTimeView({
         weekLabel={weekLabel}
         weekOffset={weekOffset}
         onWeekOffsetChange={onWeekOffsetChange}
+        period={period}
+        onPeriodChange={onPeriodChange}
       />
     </div>
   );

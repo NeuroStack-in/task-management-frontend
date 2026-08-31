@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useNow } from "@/hooks/use-now";
-import { ChevronLeft, ChevronRight, FolderKanban, Search, UserRound, X } from "lucide-react";
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, FolderKanban, Search, UserRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MAX_WEEKS_BACK } from "../use-weekly-hours";
@@ -17,6 +17,7 @@ import type {
   TimesheetStatus,
 } from "../types";
 import { cn } from "@/lib/utils";
+import type { Period } from "../use-team-timesheet";
 import { ActivityDialog, type ActivityView } from "./timesheet-detail";
 
 const MONTHS = [
@@ -34,6 +35,21 @@ const MONTHS = [
   "Dec",
 ];
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+/**
+ * The header for one column.
+ *
+ * A week shows the weekday, because seven of them are recognisable at a glance and the date below
+ * disambiguates. A month cannot: thirty "MON/TUE/WED" repeats tell you nothing about *which*
+ * Tuesday, so the weekday letter moves to the small line and the day number leads.
+ */
+function columnHeading(iso: string, period: Period): { top: string; sub: string } {
+  const [, , d] = iso.split("-").map(Number);
+  const dow = (new Date(`${iso}T00:00:00`).getDay() + 6) % 7; // Mon = 0
+  return period === "month"
+    ? { top: String(d), sub: DAY_LABELS[dow][0] }
+    : { top: DAY_LABELS[dow], sub: String(d) };
+}
 const DAY_FULL = [
   "Monday",
   "Tuesday",
@@ -104,16 +120,25 @@ export function TimesheetGrid({
   weekLabel,
   weekOffset,
   onWeekOffsetChange,
+  period,
+  onPeriodChange,
 }: {
   personRows: TeamMemberTime[];
   projectRows: ProjectTimesheet[];
-  /** The 7 iso dates (Mon→Sun) the rows' `days`/`dayEntries` align to. */
+  /**
+   * The iso dates the rows' `days`/`dayEntries` align to — 7 for a week, 28-31 for a month.
+   *
+   * Everything derives from this array's length rather than assuming seven, which is what lets one
+   * grid render both spans.
+   */
   dates: string[];
-  /** Human range for the selected week, from the hook. */
+  /** Human range for the selected period, from the hook. */
   weekLabel: string;
-  /** 0 = this week, −1 = last week, … */
+  /** 0 = this week/month, −1 = the previous one, … */
   weekOffset: number;
   onWeekOffsetChange: (offset: number) => void;
+  period: Period;
+  onPeriodChange: (p: Period) => void;
 }) {
   const [group, setGroup] = useState<GroupBy>("person");
   const [query, setQuery] = useState("");
@@ -252,7 +277,7 @@ export function TimesheetGrid({
               variant="outline"
               size="icon"
               className="size-8 shrink-0"
-              aria-label="Previous week"
+              aria-label={period === "month" ? "Previous month" : "Previous week"}
               onClick={() =>
                 onWeekOffsetChange(Math.max(-MAX_WEEKS_BACK, weekOffset - 1))
               }
@@ -264,11 +289,12 @@ export function TimesheetGrid({
                 without it the right arrow would shift sideways every time you page. */}
             <div className="min-w-[10.5rem] text-center leading-tight">
               <p className="font-heading text-base font-semibold">
-                {weekOffset === 0
-                  ? "This Week"
-                  : weekOffset === -1
-                    ? "Last Week"
-                    : `${-weekOffset} weeks ago`}
+                {(() => {
+                  const unit = period === "month" ? "Month" : "Week";
+                  if (weekOffset === 0) return `This ${unit}`;
+                  if (weekOffset === -1) return `Last ${unit}`;
+                  return `${-weekOffset} ${unit.toLowerCase()}s ago`;
+                })()}
               </p>
               <p className="text-muted-foreground text-xs">{weekRange}</p>
             </div>
@@ -276,7 +302,7 @@ export function TimesheetGrid({
               variant="outline"
               size="icon"
               className="size-8 shrink-0"
-              aria-label="Next week"
+              aria-label={period === "month" ? "Next month" : "Next week"}
               onClick={() => onWeekOffsetChange(Math.min(0, weekOffset + 1))}
               disabled={weekOffset === 0}
             >
@@ -296,6 +322,23 @@ export function TimesheetGrid({
 
           {/* Filter + search */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {/* Week / month. Sits before the grouping toggle because it changes what the columns
+                ARE, where "by employee / by project" only changes what the rows are — the wider
+                choice reads first. */}
+            <div className="bg-card shadow-soft inline-flex items-center gap-0.5 rounded-full border p-0.5">
+              <FilterTab
+                active={period === "week"}
+                onClick={() => onPeriodChange("week")}
+                icon={CalendarDays}
+                label="Week"
+              />
+              <FilterTab
+                active={period === "month"}
+                onClick={() => onPeriodChange("month")}
+                icon={CalendarRange}
+                label="Month"
+              />
+            </div>
             <div className="bg-card shadow-soft inline-flex items-center gap-0.5 rounded-full border p-0.5">
               <FilterTab
                 active={group === "person"}
@@ -362,26 +405,41 @@ export function TimesheetGrid({
 
       {/* Grid */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
+        {/* A month is 28-31 day columns, which cannot fit a laptop viewport — the wrapper above
+              scrolls horizontally and the Employee column is sticky, so who a row belongs to stays
+              visible while you scroll the dates. */}
+          <table
+            className={cn(
+              "w-full border-collapse text-sm",
+              period === "month" ? "min-w-[1500px]" : "min-w-[760px]",
+            )}
+          >
           <thead>
             <tr className="bg-muted/30 border-b">
               <th className="bg-muted/30 text-muted-foreground sticky left-0 z-10 px-4 py-2.5 text-left align-middle text-xs font-semibold tracking-wide uppercase">
                 {group === "person" ? "Employee" : "Project"}
               </th>
-              {DAY_LABELS.map((d, i) => {
-                const holidayName = dates[i] ? holidays.nameFor(dates[i]) : undefined;
+              {/* Driven by `dates`, not a fixed weekday list — a week is 7 of these and a month is
+                  28-31. `key` is the iso date rather than the label: two Mondays in a month would
+                  otherwise collide on the same key. */}
+              {dates.map((iso, i) => {
+                const holidayName = holidays.nameFor(iso);
+                const heading = columnHeading(iso, period);
+                // Weekend shading follows the real weekday. Index ≥ 5 only means Sat/Sun in a
+                // Monday-aligned week; a month starting on a Thursday would have shaded Tue/Wed.
+                const dow = (new Date(`${iso}T00:00:00`).getDay() + 6) % 7;
                 return (
                   <th
-                    key={d}
+                    key={iso}
                     className={cn(
                       "text-muted-foreground px-2 py-2.5 text-center align-middle text-xs font-semibold tracking-wide",
-                      i >= 5 && "bg-muted/50",
+                      dow >= 5 && "bg-muted/50",
                     )}
                     title={holidayName ? `Holiday: ${holidayName}` : undefined}
                   >
-                    <span className="block">{d}</span>
+                    <span className="block tabular-nums">{heading.top}</span>
                     <span className="text-muted-foreground/70 block text-[0.7rem] font-normal tabular-nums">
-                      {parseIso(dates[i]).d}
+                      {heading.sub}
                     </span>
                     {holidayName ? (
                       <span className="text-primary mt-0.5 block text-[0.6rem] font-medium normal-case">
