@@ -225,10 +225,12 @@ export function TimesheetGrid({
   };
 
   const colTotals = useMemo(() => {
-    const totals = [0, 0, 0, 0, 0, 0, 0];
+    // One slot per day column — `dates.length` (7 for a week, 28–31 for a month), not a hardcoded 7,
+    // or a month's columns 8+ summed into `undefined` and the footer read "NaN:NaN".
+    const totals = new Array(dates.length).fill(0) as number[];
     for (const r of rows) r.days.forEach((h, i) => (totals[i] += h));
     return totals;
-  }, [rows]);
+  }, [rows, dates.length]);
   const grandTotal = colTotals.reduce((s, h) => s + h, 0);
 
   // Resolve the open drill-down (day or week) from the current rows.
@@ -250,7 +252,9 @@ export function TimesheetGrid({
         kind: "day",
         hours: row.days[selection.dayIndex],
         entries: row.dayEntries[selection.dayIndex] ?? [],
-        dateLabel: `${DAY_FULL[selection.dayIndex]}, ${MONTHS[d.m]} ${d.d}`,
+        // Weekday from the actual date, not `dayIndex` — the index is a weekday only for a week; in a
+        // month it's the day-of-month (0..30), which would read the wrong name (or `undefined`).
+        dateLabel: `${DAY_FULL[(new Date(d.y, d.m, d.d).getDay() + 6) % 7]}, ${MONTHS[d.m]} ${d.d}`,
       };
     }
     return {
@@ -422,7 +426,7 @@ export function TimesheetGrid({
               {/* Driven by `dates`, not a fixed weekday list — a week is 7 of these and a month is
                   28-31. `key` is the iso date rather than the label: two Mondays in a month would
                   otherwise collide on the same key. */}
-              {dates.map((iso, i) => {
+              {dates.map((iso) => {
                 const holidayName = holidays.nameFor(iso);
                 const heading = columnHeading(iso, period);
                 // Weekend shading follows the real weekday. Index ≥ 5 only means Sat/Sun in a
@@ -459,7 +463,7 @@ export function TimesheetGrid({
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={dates.length + 2}
                   className="text-muted-foreground px-4 py-12 text-center text-sm"
                 >
                   {/* An empty grid means "nobody tracked time" far more often than "your search

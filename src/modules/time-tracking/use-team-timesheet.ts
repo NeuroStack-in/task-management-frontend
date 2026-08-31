@@ -361,10 +361,13 @@ export function useTeamTimesheet(
         const status: TimesheetStatus =
           daysScored > 0 && trackedHrs > 0 && activity < 50 ? "flagged" : "on-track";
 
-        // Real per-day hours + entries, aligned Mon→Sun to `dates`.
-        const days = new Array(7).fill(0) as number[];
+        // Real per-day hours + entries, aligned to `dates` — **7 for a week, 28–31 for a month**.
+        // Sizing these to a hardcoded 7 crashed the whole page the moment Month was selected: a
+        // month's `di` reaches 30, and `dayEntries[di].push(...)` on a 7-slot array is
+        // `undefined.push` — thrown inside this memo, so the route error boundary caught it.
+        const days = new Array(dates.length).fill(0) as number[];
         const dayEntries: TimesheetDayEntry[][] = Array.from(
-          { length: 7 },
+          { length: dates.length },
           () => [] as TimesheetDayEntry[],
         );
         for (const day of grid.days) {
@@ -444,8 +447,10 @@ export function useTeamTimesheet(
       secs: 0,
       users: new Set(),
       deptCounts: new Map(),
-      days: new Array(7).fill(0) as number[],
-      dayEntries: Array.from({ length: 7 }, () => [] as TimesheetDayEntry[]),
+      // Sized to `dates` (7 or 28–31), not a hardcoded 7 — the project grouping hit the same
+      // `dayEntries[di].push` crash on Month as the per-employee rows above.
+      days: new Array(dates.length).fill(0) as number[],
+      dayEntries: Array.from({ length: dates.length }, () => [] as TimesheetDayEntry[]),
     });
     const byProject = new Map<string, Agg>();
     for (const { emp, grid } of fetched) {
