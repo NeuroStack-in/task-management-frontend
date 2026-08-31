@@ -34,7 +34,7 @@ export interface AgentPlatform {
  *
  *  `useAgentRelease` prefers {@link AGENT_MANIFEST_URL} precisely because this constant has gone
  *  stale before; it survives only for the offline case. */
-export const AGENT_RELEASE_VERSION = "0.1.20";
+export const AGENT_RELEASE_VERSION = "0.1.22";
 
 // ── Published installer URLs ──────────────────────────────────────────────────
 // The desktop repo is PRIVATE, so its GitHub release assets can't be fetched anonymously. The
