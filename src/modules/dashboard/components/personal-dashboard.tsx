@@ -17,7 +17,7 @@ import { Loader } from "@/components/shared/loader";
 import { MyTasksCard } from "./my-tasks-card";
 import { useMyWork } from "../use-my-work";
 import { useWeekTracked } from "../use-week-tracked";
-import { useMyAttendance, ymd } from "@/modules/attendance/use-my-attendance";
+import { useMyAttendance, ymd, type DayRecord } from "@/modules/attendance/use-my-attendance";
 import { useIsSurfaceOn } from "@/hooks/use-features";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,11 @@ const ATTENDANCE: Record<string, { dot: string; label: string }> = {
   leave: { dot: "bg-primary", label: "On leave" },
   absent: { dot: "bg-destructive", label: "Absent" },
   non_workday: { dot: "bg-muted-foreground/40", label: "Non-working day" },
+  // Not a stored status. Today has no attendance record until the nightly close stamps one, so a
+  // day being worked right now would otherwise read "No record" while its timer runs. This says
+  // what is actually known: work is happening, and the verdict is not in yet.
+  in_progress: { dot: "bg-success animate-pulse", label: "Working now" },
+  tracked_today: { dot: "bg-success", label: "Tracked today" },
 };
 const attMeta = (s: string) => ATTENDANCE[s] ?? { dot: "bg-muted-foreground/40", label: s };
 
@@ -76,6 +81,11 @@ export function PersonalDashboard() {
     });
   }, []);
   const att = useMyAttendance(week[0].key, week[6].key);
+  // Today's own sessions, for the row the nightly close has not written yet. The same hook as the
+  // week total above, over a one-day range — one implementation, so the two can never disagree
+  // about what "tracked" means.
+  const todayKeyRef = ymd(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  const todayTracked = useWeekTracked(todayKeyRef, todayKeyRef);
 
   // Keep the card live. Attendance changes while someone is working — a clock-in flips "No record"
   // to Present, and today's hours climb — so a card rendered once at page load goes stale in front
@@ -104,7 +114,37 @@ export function PersonalDashboard() {
       const iso = w.jsDay === 0 ? 7 : w.jsDay;
       return workdays.includes(iso as (typeof workdays)[number]);
     });
-  const daysPresent = attRows.filter((w) => w.record?.status === "present").length;
+  // **Today has no attendance record until the nightly close runs**, so it arrives here as "No
+  // record" even while a timer is running against it. The truth for today lives in the TIME#
+  // sessions, which `useTimesheet` already reads for the timer tile above — so fill the gap from
+  // there rather than showing a worked day as blank.
+  //
+  // Deliberately NOT guessing `present` vs `partial`: that verdict depends on the org's
+  // `min_present_minutes` and is the close's to make. Claiming it here would mean the card
+  // disagreeing with the record tomorrow morning. "Working now" / "Tracked today" says exactly what
+  // is known — hours were logged, the day is not judged yet.
+  const todayKey = todayKeyRef;
+  const todaySec = todayTracked.totalSec;
+  const attRowsLive = attRows.map((w) =>
+    w.key === todayKey && !w.record && todaySec > 0
+      ? {
+          ...w,
+          // A full `DayRecord`, not a partial cast: the status is a synthetic one the server never
+          // stores, but everything else the row renders must still be present and honest. No clock
+          // in/out — the sessions are known, the attendance verdict is not.
+          record: {
+            status: (todayTracked.running
+              ? "in_progress"
+              : "tracked_today") as DayRecord["status"],
+            late: false,
+            hours: Math.round((todaySec / 3600) * 10) / 10,
+            clockIn: "",
+            clockOut: "",
+          },
+        }
+      : w,
+  );
+  const daysPresent = attRowsLive.filter((w) => w.record?.status === "present").length;
 
   // Logged timer time across the window, **including the session running right now**.
   //
@@ -197,7 +237,7 @@ export function PersonalDashboard() {
             {!mounted ? (
               <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
             ) : (
-              attRows.map((w) => {
+              attRowsLive.map((w) => {
                 const meta = w.record ? attMeta(w.record.status) : null;
                 return (
                   <div key={w.key} className="flex items-center gap-3 text-sm">
@@ -221,7 +261,7 @@ export function PersonalDashboard() {
             <span className="text-muted-foreground">
               {/* Out of the working days actually shown, not a hard-coded 7 — the denominator has
                   to match the rows above it. */}
-              {mounted ? `${daysPresent}/${attRows.length} days present` : "—"}
+              {mounted ? `${daysPresent}/${attRowsLive.length} days present` : "—"}
             </span>
             <span className="font-medium tabular-nums">{mounted ? `${weekHours}h total` : "—"}</span>
           </div>

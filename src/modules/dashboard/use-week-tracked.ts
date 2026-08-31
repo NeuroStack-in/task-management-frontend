@@ -59,6 +59,13 @@ export function useWeekTracked(from: string, to: string) {
   return {
     /** Whole-range seconds: everything closed, plus the session still open. */
     totalSec: closedSec + liveSec,
+    /**
+     * Is a session open right now?
+     *
+     * Exposed so a caller can distinguish "working" from "worked" — the personal dashboard needs it
+     * to label today's row, which has no attendance record until the nightly close writes one.
+     */
+    running: running !== null,
     /** True once the range has been read at least once — for showing "—" instead of a false 0. */
     loaded,
     reload,
