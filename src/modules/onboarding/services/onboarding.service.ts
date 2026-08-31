@@ -26,6 +26,12 @@ export interface ProvisionOrgInput {
   /** Currency **code**, not the picker's display string. */
   currency?: string;
   job_title?: string;
+  /** `YYYY-MM-DD`, and `on-site` | `hybrid` | `remote` — the profile facts the signup wizard
+   *  now requires, so a new account starts complete rather than showing "—" until someone
+   *  goes looking for Settings. Validated server-side by `identity::shared::profile`. */
+  date_of_birth?: string;
+  work_mode?: string;
+
   department?: string;
   location?: string;
   phone?: string;

@@ -248,6 +248,10 @@ export interface AcceptInviteBody {
   job_title?: string;
   phone?: string;
   location?: string;
+  /** `YYYY-MM-DD`, and `on-site` | `hybrid` | `remote`. Collected on the accept form so a new
+   *  joiner's record is complete on day one; validated by `identity::shared::profile`. */
+  date_of_birth?: string;
+  work_mode?: string;
 }
 
 export interface AcceptInviteResult {
@@ -291,6 +295,9 @@ export interface CreateOrgBody {
     department?: string;
     location?: string;
     phone?: string;
+    /** `YYYY-MM-DD`, and `on-site` | `hybrid` | `remote` — see the invite payload. */
+    date_of_birth?: string;
+    work_mode?: string;
   };
   /** `free` | `starter` | `enterprise` (the server validates it). */
   plan: string;

@@ -57,6 +57,8 @@ import {
   passwordMeetsPolicy,
 } from "./auth-frame";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { todayIso } from "@/lib/format";
 import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { safeLandingPath } from "@/lib/rbac";
 
@@ -115,6 +117,8 @@ export function SignupExperience({
     department: "",
     location: "",
     phone: "",
+    dateOfBirth: "",
+    workMode: "",
   });
   const [billing, setBilling] = useState<"monthly" | "annual">("annual");
   const [plan, setPlan] = useState("free");
@@ -173,7 +177,19 @@ export function SignupExperience({
       if (!region.currency) e["org-currency"] = "Choose your billing currency";
     }
     if (s === 3) {
+      // **Every field on this step is required**, which it was not before: job title was the
+      // only check and the rest were marked "Optional". The result is visible on any profile card
+      // in the product — contact number, date of birth, work mode all reading "—", because nobody
+      // returns to Settings to fill in what they were told they could skip. Asking once, here, is
+      // the only moment the answer is cheap.
       if (!profile.jobTitle.trim()) e["me-title"] = "Enter your job title";
+      if (!profile.location.trim()) e["me-location"] = "Enter your work location";
+      // Digits only: `PhoneInput` emits `+<dial><national>`, so a country picked with no number
+      // typed leaves a bare `+91` — present, and not a phone number.
+      if (profile.phone.replace(/[^\d]/g, "").length < 6)
+        e["me-phone"] = "Enter your contact number";
+      if (!profile.dateOfBirth) e["me-dob"] = "Enter your date of birth";
+      if (!profile.workMode) e["me-workmode"] = "Choose how you work";
     }
     if (s === 4) {
       if (!plan) e["org-plan"] = "Choose a plan";
@@ -245,6 +261,8 @@ export function SignupExperience({
           department: profile.department.trim() || undefined,
           location: profile.location.trim() || undefined,
           phone: profile.phone.trim() || undefined,
+          date_of_birth: profile.dateOfBirth || undefined,
+          work_mode: profile.workMode || undefined,
         });
         onSubmitted?.();
       } catch (e) {
@@ -281,6 +299,8 @@ export function SignupExperience({
           department: profile.department.trim() || undefined,
           location: profile.location.trim() || undefined,
           phone: profile.phone.trim() || undefined,
+          date_of_birth: profile.dateOfBirth || undefined,
+          work_mode: profile.workMode || undefined,
         },
         plan,
       });
@@ -595,16 +615,22 @@ export function SignupExperience({
                   id="me-location"
                   label="Work location"
                   value={profile.location}
-                  onChange={(v) => setProfile((s) => ({ ...s, location: v }))}
-                  hint="Optional"
+                  onChange={(v) => {
+                    setProfile((s) => ({ ...s, location: v }));
+                    clear("me-location");
+                  }}
+                  error={errors["me-location"]}
                 />
               </div>
               <AuthField
                 id="me-phone"
-                label="Work phone"
+                label="Contact number"
                 value={profile.phone}
-                onChange={(v) => setProfile((s) => ({ ...s, phone: v }))}
-                hint="Optional"
+                onChange={(v) => {
+                  setProfile((s) => ({ ...s, phone: v }));
+                  clear("me-phone");
+                }}
+                error={errors["me-phone"]}
                 // The country picker replaces the plain input. It borrows this page's own control
                 // styling (`m-authinput`) rather than the app tokens it uses elsewhere — the auth
                 // pages are a separate system, and a 2.25rem token-styled box beside these 2.75rem
@@ -613,13 +639,69 @@ export function SignupExperience({
                   <PhoneInput
                     id="me-phone"
                     value={profile.phone}
-                    onChange={(v) => setProfile((s) => ({ ...s, phone: v }))}
+                    onChange={(v) => {
+                      setProfile((s) => ({ ...s, phone: v }));
+                      clear("me-phone");
+                    }}
                     className="w-full"
                     triggerClassName="m-authinput h-11 w-auto rounded-r-none border-r-0"
                     inputClassName="m-authinput h-11 rounded-l-none"
                   />
                 }
               />
+              <div className="m-arow">
+                <AuthField
+                  id="me-dob"
+                  label="Date of birth"
+                  value={profile.dateOfBirth}
+                  onChange={(v) => {
+                    setProfile((s) => ({ ...s, dateOfBirth: v }));
+                    clear("me-dob");
+                  }}
+                  error={errors["me-dob"]}
+                  control={
+                    <DatePicker
+                      value={profile.dateOfBirth}
+                      onChange={(v) => {
+                        setProfile((s) => ({ ...s, dateOfBirth: v }));
+                        clear("me-dob");
+                      }}
+                      // Nobody signing up was born after today, and 1900 is the floor the server
+                      // enforces — offering years it will reject is a round trip to learn nothing.
+                      max={todayIso()}
+                      min="1900-01-01"
+                      className="m-authinput h-11 w-full"
+                    />
+                  }
+                />
+                <AuthField
+                  id="me-workmode"
+                  label="Work mode"
+                  value={profile.workMode}
+                  onChange={(v) => {
+                    setProfile((s) => ({ ...s, workMode: v }));
+                    clear("me-workmode");
+                  }}
+                  error={errors["me-workmode"]}
+                  control={
+                    <select
+                      id="me-workmode"
+                      value={profile.workMode}
+                      onChange={(e) => {
+                        setProfile((s) => ({ ...s, workMode: e.target.value }));
+                        clear("me-workmode");
+                      }}
+                      className="m-authinput"
+                    >
+                      <option value="">Select…</option>
+                      {/* The exact strings `shared::profile::WORK_MODES` accepts. */}
+                      <option value="on-site">On-site</option>
+                      <option value="hybrid">Hybrid</option>
+                      <option value="remote">Remote</option>
+                    </select>
+                  }
+                />
+              </div>
             </>
           ) : null}
 

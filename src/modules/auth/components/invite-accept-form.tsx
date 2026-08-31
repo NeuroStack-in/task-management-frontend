@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { todayIso } from "@/lib/format";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
@@ -33,8 +36,22 @@ const schema = z
       if (m) ctx.addIssue({ code: z.ZodIssueCode.custom, message: m });
     }),
     confirm: z.string(),
-    phone: z.string().trim().optional(),
-    location: z.string().trim().optional(),
+    // **Required, where they used to be optional.** The profile card shows contact number, date
+    // of birth, location and work mode; a joiner told these were optional supplies none of them,
+    // and nobody goes back to Settings to finish a record they were never asked to complete. This
+    // is the one moment the answer costs a few seconds.
+    //
+    // The phone rule counts DIGITS: `PhoneInput` emits `+<dial><national>`, so picking a country
+    // and typing nothing leaves a bare `+91` — non-empty, and not a phone number.
+    phone: z
+      .string()
+      .trim()
+      .refine((v) => v.replace(/[^\d]/g, "").length >= 6, "Enter your contact number"),
+    location: z.string().trim().min(1, "Enter your location"),
+    dateOfBirth: z.string().trim().min(1, "Enter your date of birth"),
+    workMode: z.enum(["on-site", "hybrid", "remote"], {
+      message: "Choose how you work",
+    }),
   })
   .refine((d) => d.password === d.confirm, {
     message: "Passwords don't match.",
@@ -93,6 +110,8 @@ export function InviteAcceptForm() {
       confirm: "",
       phone: "",
       location: "",
+      dateOfBirth: "",
+      workMode: undefined,
     },
   });
 
@@ -138,6 +157,8 @@ export function InviteAcceptForm() {
         // 2026-07-22) — the server ignores an invitee-typed title, so the form doesn't ask.
         phone: values.phone?.trim() || undefined,
         location: values.location?.trim() || undefined,
+        date_of_birth: values.dateOfBirth || undefined,
+        work_mode: values.workMode,
       });
 
       // Account exists now. Try to sign them straight in; if that hiccups, send them to /login —
@@ -299,12 +320,20 @@ export function InviteAcceptForm() {
             render={({ field }) => (
               <AuthField
                 id="iv-phone"
-                label="Phone (optional)"
-                autoComplete="tel"
-                inputMode="tel"
+                label="Contact number"
+                error={errors.phone?.message}
                 value={field.value ?? ""}
                 onChange={field.onChange}
-                onBlur={field.onBlur}
+                control={
+                  <PhoneInput
+                    id="iv-phone"
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                    className="w-full"
+                    triggerClassName="m-authinput h-11 w-auto rounded-r-none border-r-0"
+                    inputClassName="m-authinput h-11 rounded-l-none"
+                  />
+                }
               />
             )}
           />
@@ -314,10 +343,63 @@ export function InviteAcceptForm() {
             render={({ field }) => (
               <AuthField
                 id="iv-location"
-                label="Location (optional)"
+                label="Location"
+                error={errors.location?.message}
                 value={field.value ?? ""}
                 onChange={field.onChange}
                 onBlur={field.onBlur}
+              />
+            )}
+          />
+        </div>
+
+        <div className="m-arow">
+          <Controller
+            control={control}
+            name="dateOfBirth"
+            render={({ field }) => (
+              <AuthField
+                id="iv-dob"
+                label="Date of birth"
+                error={errors.dateOfBirth?.message}
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                control={
+                  <DatePicker
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                    max={todayIso()}
+                    min="1900-01-01"
+                    className="m-authinput h-11 w-full"
+                  />
+                }
+              />
+            )}
+          />
+          <Controller
+            control={control}
+            name="workMode"
+            render={({ field }) => (
+              <AuthField
+                id="iv-workmode"
+                label="Work mode"
+                error={errors.workMode?.message}
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                control={
+                  <select
+                    id="iv-workmode"
+                    value={field.value ?? ""}
+                    onChange={(e) => field.onChange(e.target.value)}
+                    className="m-authinput"
+                  >
+                    <option value="">Select…</option>
+                    {/* Exactly `shared::profile::WORK_MODES`. */}
+                    <option value="on-site">On-site</option>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="remote">Remote</option>
+                  </select>
+                }
               />
             )}
           />
