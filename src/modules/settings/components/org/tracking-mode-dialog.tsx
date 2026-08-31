@@ -13,7 +13,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { TRACKING_MODE_META, type TrackingMode } from "@/lib/tracking-mode";
+import {
+  TRACKING_MODE_META,
+  isSelectableTrackingMode,
+  type TrackingMode,
+} from "@/lib/tracking-mode";
 
 /**
  * The mode-change confirm dialog (MANAGED-AGENT.md §4.3). Base UI has no `RadioGroup`, so the choices
@@ -62,8 +66,9 @@ export function TrackingModeDialog({
         <DialogHeader>
           <DialogTitle>Change how this organization tracks work</DialogTitle>
           <DialogDescription>
-            Both agents are fully supported. Nothing you&apos;ve already
-            recorded is deleted — switching back restores every hidden surface.
+            Machine-based tracking is coming soon; for now, projects &amp; task
+            time is the available mode. Nothing you&apos;ve already recorded is
+            deleted — switching modes only shows or hides surfaces.
           </DialogDescription>
         </DialogHeader>
 
@@ -71,12 +76,21 @@ export function TrackingModeDialog({
           {modes.map((m) => {
             const meta = TRACKING_MODE_META[m];
             const selected = choice === m;
+            // Not-yet-available modes (the managed Windows service isn't deployed) are shown but
+            // can't be picked. The org's *current* mode is always selectable — it's already in
+            // effect, and locking someone out of switching back would be worse than the gate.
+            const disabled = !isSelectableTrackingMode(m) && m !== current;
             return (
               <label
                 key={m}
                 className={cn(
-                  "flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors",
-                  selected ? "border-primary bg-primary/5" : "border-border",
+                  "flex gap-3 rounded-lg border p-3 transition-colors",
+                  disabled
+                    ? "cursor-not-allowed border-border opacity-55"
+                    : "cursor-pointer",
+                  !disabled && selected
+                    ? "border-primary bg-primary/5"
+                    : "border-border",
                 )}
               >
                 <input
@@ -84,7 +98,8 @@ export function TrackingModeDialog({
                   name="tracking-mode"
                   className="mt-1 accent-primary"
                   checked={selected}
-                  onChange={() => setChoice(m)}
+                  disabled={disabled}
+                  onChange={() => !disabled && setChoice(m)}
                 />
                 <span className="space-y-1">
                   <span className="flex items-center gap-2 text-sm font-medium">
@@ -92,6 +107,11 @@ export function TrackingModeDialog({
                     {m === current && (
                       <span className="text-xs font-normal text-muted-foreground">
                         (current)
+                      </span>
+                    )}
+                    {disabled && (
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        Coming soon
                       </span>
                     )}
                   </span>

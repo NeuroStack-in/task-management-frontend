@@ -13,6 +13,21 @@
 export const TRACKING_MODES = ["project", "machine", "both"] as const;
 export type TrackingMode = (typeof TRACKING_MODES)[number];
 
+/**
+ * Modes an org may currently **choose** in the UI.
+ *
+ * `machine` and `both` are built, but the managed Windows service isn't deployed yet, so the pickers
+ * show them **disabled** rather than letting an org select a mode nothing can fulfil. This is the one
+ * place the gate lives — re-enable a mode by adding it back here, and every picker follows. It does
+ * **not** touch how an existing mode is read/displayed (`trackingModeOf`), only what's selectable.
+ */
+export const SELECTABLE_TRACKING_MODES: readonly TrackingMode[] = ["project"];
+
+/** Whether an org may pick this mode right now (see {@link SELECTABLE_TRACKING_MODES}). */
+export function isSelectableTrackingMode(m: TrackingMode): boolean {
+  return SELECTABLE_TRACKING_MODES.includes(m);
+}
+
 export interface TrackingModeInfo {
   /** The label shown on the mode chip/card. */
   label: string;
