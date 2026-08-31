@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useNow } from "@/hooks/use-now";
-import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, FolderKanban, Search, UserRound, X } from "lucide-react";
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, FolderKanban, Search, UserRound, X } from "lucide-react";
+import Papa from "papaparse";
+import { toast } from "sonner";
+import { downloadBlob } from "@/lib/download";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MAX_WEEKS_BACK } from "../use-weekly-hours";
@@ -36,6 +39,22 @@ const MONTHS = [
   "Dec",
 ];
 const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+/**
+ * The pinned first column.
+ *
+ * **The background has to be opaque.** `sticky` does not remove a cell from the flow — the day
+ * columns scroll *underneath* it — so a translucent fill lets them show through, and the header read
+ * "EMPLOYEE" with `1 2 3 4 5 6 7 8 9` printed across it. The header and footer rows are tinted
+ * (`bg-muted/30` and `/40` over the card), so the pinned cell cannot simply reuse that class; it
+ * needs the *composited* colour as a solid. `color-mix` computes exactly that, which keeps the cell
+ * indistinguishable from its row while remaining opaque.
+ *
+ * `border-r` is what makes it read as pinned rather than as a column that happens to be first.
+ */
+const STICKY_COL = "sticky left-0 z-10 border-r";
+const STICKY_HEAD = "bg-[color-mix(in_oklab,var(--muted)_30%,var(--card))]";
+const STICKY_FOOT = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--card))]";
 
 /**
  * The header for one column.
@@ -216,6 +235,55 @@ export function TimesheetGrid({
   }, [baseRows, query, deptFilter, now]);
 
   const hasFilters = deptFilter !== "all" || query.trim() !== "";
+
+  /**
+   * Download the grid as CSV — **exactly what is on screen**, not a fresh server query.
+   *
+   * That means the current period, grouping, department filter and search all carry into the file.
+   * A download that quietly ignored the filters would hand you a different report from the one you
+   * were looking at when you pressed the button, which is the worse surprise.
+   *
+   * Durations are `HH:MM:SS`, matching the grid — a file that said `6.8` beside a screen showing
+   * `06:48:00` would reintroduce exactly the two-notation confusion the product just removed. Empty
+   * days are written as `00:00:00` rather than the grid's em dash, because a spreadsheet has to be
+   * able to sum the column and `—` is not a number.
+   */
+  const exportCsv = () => {
+    const label = group === "person" ? "Employee" : "Project";
+    const fields = [
+      label,
+      group === "person" ? "Department" : "Details",
+      // ISO plus the weekday: the date sorts and is unambiguous, the weekday is what makes a
+      // 31-column row readable without counting across.
+      ...dates.map((iso) => `${iso} (${DAY_LABELS[(new Date(`${iso}T00:00:00`).getDay() + 6) % 7]})`),
+      "Total",
+    ];
+    const data: string[][] = rows.map((r) => [
+      r.name,
+      r.subtitle,
+      ...r.days.map((h) => formatHours(h)),
+      formatHours(r.total),
+    ]);
+    // The totals row is part of the report, not chrome — a reader reconciling the file against the
+    // screen needs the same bottom line.
+    if (rows.length > 0) {
+      data.push([
+        "Total time",
+        "",
+        ...colTotals.map((h) => formatHours(h)),
+        formatHours(grandTotal),
+      ]);
+    }
+    const slug = weekRange.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    downloadBlob(
+      new Blob([Papa.unparse({ fields, data })], { type: "text/csv;charset=utf-8;" }),
+      `timesheet-${group === "person" ? "employees" : "projects"}-${slug}.csv`,
+    );
+    toast.success(`${period === "month" ? "Month" : "Week"} exported`, {
+      description: `${weekRange} · ${rows.length} ${group === "person" ? "people" : "projects"}${hasFilters ? " (filtered)" : ""}`,
+    });
+  };
+
   const clearFilters = () => {
     setDeptFilter("all");
     setQuery("");
@@ -340,6 +408,21 @@ export function TimesheetGrid({
                 label="Month"
               />
             </div>
+            {/* Sits beside the period toggle because that toggle decides WHAT gets downloaded —
+                pressing Month then Download is one gesture with an obvious result. Disabled on an
+                empty grid rather than hidden, so the control does not appear and vanish as filters
+                change. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 rounded-full"
+              onClick={exportCsv}
+              disabled={rows.length === 0}
+              title={`Download this ${period === "month" ? "month" : "week"} as CSV`}
+            >
+              <Download className="size-4" />
+              Download
+            </Button>
             <div className="bg-card shadow-soft inline-flex items-center gap-0.5 rounded-full border p-0.5">
               <FilterTab
                 active={group === "person"}
@@ -417,7 +500,13 @@ export function TimesheetGrid({
           >
           <thead>
             <tr className="bg-muted/30 border-b">
-              <th className="bg-muted/30 text-muted-foreground sticky left-0 z-10 px-4 py-2.5 text-left align-middle text-xs font-semibold tracking-wide uppercase">
+              <th
+                className={cn(
+                  STICKY_COL,
+                  STICKY_HEAD,
+                  "text-muted-foreground px-4 py-2.5 text-left align-middle text-xs font-semibold tracking-wide uppercase",
+                )}
+              >
                 {group === "person" ? "Employee" : "Project"}
               </th>
               {/* Driven by `dates`, not a fixed weekday list — a week is 7 of these and a month is
@@ -477,10 +566,19 @@ export function TimesheetGrid({
               rows.map((r) => (
                 <tr
                   key={r.id}
-                  className="hover:bg-muted/30 border-b transition-colors last:border-b-0"
+                  // `group`: the pinned cell is opaque, so it cannot inherit the row's hover tint
+                  // the way the scrolling cells do — it has to repaint itself to the same composited
+                  // colour, or the row lights up everywhere except the name you are pointing at.
+                  className="group hover:bg-muted/30 border-b transition-colors last:border-b-0"
                 >
                   {/* Entity */}
-                  <td className="bg-card sticky left-0 z-10 px-4 py-2.5">
+                  <td
+                  className={cn(
+                    STICKY_COL,
+                    "bg-card px-4 py-2.5 transition-colors",
+                    "group-hover:bg-[color-mix(in_oklab,var(--muted)_30%,var(--card))]",
+                  )}
+                >
                     <div className="flex items-center gap-2.5">
                       {r.isProject ? (
                         <span className="bg-feature-tint text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
@@ -558,7 +656,13 @@ export function TimesheetGrid({
           {rows.length > 0 ? (
             <tfoot>
               <tr className="bg-muted/40 border-t-2 font-semibold">
-                <td className="bg-muted/40 sticky left-0 z-10 px-4 py-3 align-middle text-xs tracking-wide uppercase">
+                <td
+                  className={cn(
+                    STICKY_COL,
+                    STICKY_FOOT,
+                    "px-4 py-3 align-middle text-xs tracking-wide uppercase",
+                  )}
+                >
                   Total time
                 </td>
                 {colTotals.map((h, i) => (
