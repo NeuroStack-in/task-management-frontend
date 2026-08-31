@@ -40,6 +40,32 @@ const ATTENDANCE: Record<string, { dot: string; label: string }> = {
 const attMeta = (s: string) => ATTENDANCE[s] ?? { dot: "bg-muted-foreground/40", label: s };
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * The card's own status set: the server's, plus two the server never stores.
+ *
+ * Today has no attendance record until the nightly close writes one, so its row is synthesised from
+ * live sessions. Widening the type here — rather than casting a synthetic value into
+ * `AttendanceStatus` — is what lets the renderer branch on them and keeps the compiler able to see
+ * that they are not real attendance verdicts.
+ */
+type LiveStatus = DayRecord["status"] | "in_progress" | "tracked_today";
+type LiveRecord = Omit<DayRecord, "status"> & { status: LiveStatus };
+
+/**
+ * `H:MM:SS` for a day still in progress.
+ *
+ * Seconds are the point: a running row has to visibly move, or it reads as stale beside the timer
+ * tile. Finished days keep the decimal-hours form — nobody needs the second a Tuesday ended, and a
+ * column of `6:47:12` would be harder to compare than `6.8h`.
+ */
+function liveClock(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
 export function PersonalDashboard() {
   const { openTasks, doneCount, myProjects, loading } = useMyWork();
   const isSurfaceOn = useIsSurfaceOn();
@@ -81,11 +107,15 @@ export function PersonalDashboard() {
     });
   }, []);
   const att = useMyAttendance(week[0].key, week[6].key);
-  // Today's own sessions, for the row the nightly close has not written yet. The same hook as the
-  // week total above, over a one-day range — one implementation, so the two can never disagree
-  // about what "tracked" means.
+  // Logged timer time across the window, **including the session running right now**.
+  //
+  // This used to sum the attendance records above, whose `hours` come from `worked_minutes` — a
+  // figure the nightly close stamps. Today therefore contributed nothing however long the timer had
+  // been running, so someone three hours into a session saw this tile sitting unchanged next to a
+  // live timer counting up: two numbers about the same work, disagreeing on screen.
+  const tracked = useWeekTracked(week[0].key, week[6].key);
+
   const todayKeyRef = ymd(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
-  const todayTracked = useWeekTracked(todayKeyRef, todayKeyRef);
 
   // Keep the card live. Attendance changes while someone is working — a clock-in flips "No record"
   // to Present, and today's hours climb — so a card rendered once at page load goes stale in front
@@ -123,9 +153,14 @@ export function PersonalDashboard() {
   // `min_present_minutes` and is the close's to make. Claiming it here would mean the card
   // disagreeing with the record tomorrow morning. "Working now" / "Tracked today" says exactly what
   // is known — hours were logged, the day is not judged yet.
+  // Today's seconds and whether a session is open, from the SAME hook instance that totals the
+  // week — it already reads today's sheet for its live top-up. A second instance over a one-day
+  // range would have polled the same endpoint twice for the same answer.
   const todayKey = todayKeyRef;
-  const todaySec = todayTracked.totalSec;
-  const attRowsLive = attRows.map((w) =>
+  const todaySec = tracked.todaySec;
+  const attRowsLive: Array<Omit<(typeof attRows)[number], "record"> & {
+    record: LiveRecord | null;
+  }> = attRows.map((w) =>
     w.key === todayKey && !w.record && todaySec > 0
       ? {
           ...w,
@@ -133,26 +168,17 @@ export function PersonalDashboard() {
           // stores, but everything else the row renders must still be present and honest. No clock
           // in/out — the sessions are known, the attendance verdict is not.
           record: {
-            status: (todayTracked.running
-              ? "in_progress"
-              : "tracked_today") as DayRecord["status"],
+            status: tracked.running ? "in_progress" : "tracked_today",
             late: false,
             hours: Math.round((todaySec / 3600) * 10) / 10,
             clockIn: "",
             clockOut: "",
-          },
+          } satisfies LiveRecord,
         }
       : w,
   );
   const daysPresent = attRowsLive.filter((w) => w.record?.status === "present").length;
 
-  // Logged timer time across the window, **including the session running right now**.
-  //
-  // This used to sum the attendance records above, whose `hours` come from `worked_minutes` — a
-  // figure the nightly close stamps. Today therefore contributed nothing however long the timer had
-  // been running, so someone three hours into a session saw this tile sitting unchanged next to a
-  // live timer counting up: two numbers about the same work, disagreeing on screen.
-  const tracked = useWeekTracked(week[0].key, week[6].key);
   const weekHours = Math.round((tracked.totalSec / 3600) * 10) / 10;
 
   // Publish the viewer's own at-a-glance figures to the assistant.
@@ -249,8 +275,24 @@ export function PersonalDashboard() {
                       )}
                     />
                     <span className="flex-1 text-muted-foreground">{meta?.label ?? "No record"}</span>
-                    <span className="shrink-0 tabular-nums">
-                      {w.record && w.record.hours > 0 ? `${w.record.hours.toFixed(1)}h` : "—"}
+                    <span
+                      className={cn(
+                        "shrink-0 tabular-nums",
+                        // The running row is the one thing on this card that changes while you
+                        // watch it, so it is the one thing that should look like it.
+                        w.record?.status === "in_progress" && "text-primary font-medium",
+                      )}
+                    >
+                      {/* A running day shows a CLOCK, not rounded hours.
+                          `0.5h` is technically live — the seconds behind it tick — but it only
+                          changes on screen every six minutes, which reads as frozen next to a timer
+                          that is visibly running. `H:MM:SS` moves every second, so the row and the
+                          timer agree at a glance. */}
+                      {w.record?.status === "in_progress"
+                        ? liveClock(todaySec)
+                        : w.record && w.record.hours > 0
+                          ? `${w.record.hours.toFixed(1)}h`
+                          : "—"}
                     </span>
                   </div>
                 );

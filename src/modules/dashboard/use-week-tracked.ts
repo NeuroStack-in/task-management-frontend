@@ -30,7 +30,7 @@ export function useWeekTracked(from: string, to: string) {
 
   // Today's sheet is already polled for the timer tile; reuse it rather than opening a second
   // stream for the same fact. `running` is the open session, if any.
-  const { rows, reload } = useTimesheet();
+  const { rows, totalSec: todayClosedSec, reload } = useTimesheet();
   const running = rows.find((r) => r.running) ?? null;
   const liveSec = useRunningSeconds(running ? running.startMs : null);
 
@@ -66,6 +66,18 @@ export function useWeekTracked(from: string, to: string) {
      * to label today's row, which has no attendance record until the nightly close writes one.
      */
     running: running !== null,
+    /**
+     * **Today** on its own: settled seconds plus the open session's elapsed.
+     *
+     * This hook already reads today's sheet for the live top-up, so exposing it costs nothing —
+     * and it saves the caller mounting a second copy of this hook over a one-day range, which
+     * would mean two `useTimesheet` instances polling the same endpoint every 30 s for the same
+     * answer.
+     *
+     * `liveSec` is derived from the running session's start stamp and re-rendered once a second
+     * locally. Nothing here polls per second.
+     */
+    todaySec: todayClosedSec + liveSec,
     /** True once the range has been read at least once — for showing "—" instead of a false 0. */
     loaded,
     reload,
