@@ -57,7 +57,8 @@ describe("canDeleteTask", () => {
  */
 describe("canReviewTask with several assignees", () => {
   const shared = {
-    status: "done" as const,
+    // `in_review` is the reviewable state since `closed` was retired on 2026-08-31.
+    status: "in_review" as const,
     assignees: [
       { userId: "u-a", assignedBy: "u-lead", assignedAt: 1 },
       { userId: "u-b", assignedBy: "u-lead", assignedAt: 2 },
@@ -74,7 +75,15 @@ describe("canReviewTask with several assignees", () => {
   });
 
   it("lets anyone review an unassigned task", () => {
-    expect(canReviewTask({ status: "done", assignees: [] }, "lead", "u-a")).toBe(true);
+    expect(canReviewTask({ status: "in_review", assignees: [] }, "lead", "u-a")).toBe(true);
+  });
+
+  it("reviews from `in_review`, not `done` — `done` is the outcome, not the queue", () => {
+    const t = (status: string) => ({ status, assignees: [] }) as never;
+    expect(canReviewTask(t("in_review"), "lead", "u-lead")).toBe(true);
+    // Already signed off: there is nothing left to approve.
+    expect(canReviewTask(t("done"), "lead", "u-lead")).toBe(false);
+    expect(canReviewTask(t("in_progress"), "lead", "u-lead")).toBe(false);
   });
 });
 
@@ -109,29 +118,28 @@ describe("toAssignees", () => {
 describe("taskTotals", () => {
   const t = (status: string) => ({ status }) as never;
 
-  it("excludes closed and blocked from the total", () => {
-    // The board that prompted this: 0 todo, 1 in progress, 0 in review, 0 done, 2 closed, 2 blocked.
+  it("excludes done and blocked from the total", () => {
+    // `closed` was retired 2026-08-31; `done` is the signed-off state and plays its part here.
     const r = taskTotals([
       t("in_progress"),
-      t("closed"),
-      t("closed"),
+      t("done"),
+      t("done"),
       t("blocked"),
       t("blocked"),
     ]);
     expect(r.total).toBe(1);
     expect(r.open).toBe(1);
-    expect(r.done).toBe(0);
-    expect(r.closed).toBe(2);
+    expect(r.done).toBe(2);
     expect(r.blocked).toBe(2);
   });
 
-  it("keeps total === done + open, so the card cannot contradict itself", () => {
-    const r = taskTotals([t("todo"), t("in_review"), t("done"), t("closed"), t("blocked")]);
-    expect(r.total).toBe(r.done + r.open);
+  it("keeps total === open, so the card cannot contradict itself", () => {
+    const r = taskTotals([t("todo"), t("in_review"), t("done"), t("blocked")]);
+    expect(r.total).toBe(r.open);
   });
 
-  it("counts nothing as live work when everything is closed or blocked", () => {
-    const r = taskTotals([t("closed"), t("blocked")]);
+  it("counts nothing as live work when everything is done or blocked", () => {
+    const r = taskTotals([t("done"), t("blocked")]);
     expect(r.total).toBe(0);
   });
 });
@@ -166,32 +174,33 @@ describe("deriveProjectKey", () => {
 describe("taskTotals — progress vs what's left", () => {
   const t = (status: string) => ({ status }) as never;
 
-  it("counts closed as completed for progress, but not in the total", () => {
-    // The board from the screenshots: 1 in progress, 2 closed, 2 blocked.
+  it("counts done as completed for progress, but not in the total", () => {
+    // 1 in progress, 2 signed off, 2 blocked.
     const r = taskTotals([
       t("in_progress"),
-      t("closed"),
-      t("closed"),
+      t("done"),
+      t("done"),
       t("blocked"),
       t("blocked"),
     ]);
     expect(r.total).toBe(1); // what's left to do
-    expect(r.completed).toBe(2); // 2 closed
-    expect(r.deliverable).toBe(3); // 2 closed + 1 in progress; blocked excluded
+    expect(r.completed).toBe(2); // 2 signed off
+    expect(r.deliverable).toBe(3); // 2 done + 1 in progress; blocked excluded
     expect(Math.round((r.completed / r.deliverable) * 100)).toBe(67);
   });
 
-  it("approving work never lowers progress — the bug this exists to prevent", () => {
-    const beforeReview = taskTotals([t("done")]);
-    const afterReview = taskTotals([t("closed")]);
+  it("signing off work never lowers progress — the bug this exists to prevent", () => {
+    // Before: waiting on a reviewer. After: they signed it off.
+    const beforeReview = taskTotals([t("in_review")]);
+    const afterReview = taskTotals([t("done")]);
     const pct = (r: ReturnType<typeof taskTotals>) =>
       r.deliverable ? Math.round((r.completed / r.deliverable) * 100) : 0;
-    expect(pct(beforeReview)).toBe(100);
-    expect(pct(afterReview)).toBe(100); // was 0% before this rule
+    expect(pct(beforeReview)).toBe(0); // not finished until someone says so
+    expect(pct(afterReview)).toBe(100);
   });
 
   it("a fully signed-off project reads 100%, not 0%", () => {
-    const r = taskTotals([t("closed"), t("closed"), t("closed")]);
+    const r = taskTotals([t("done"), t("done"), t("done")]);
     expect(r.total).toBe(0);
     expect(r.completed).toBe(3);
     expect(Math.round((r.completed / r.deliverable) * 100)).toBe(100);

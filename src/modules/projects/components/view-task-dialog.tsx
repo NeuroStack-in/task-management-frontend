@@ -205,7 +205,7 @@ function SubtasksSection({
       ) : (
         <ul className="space-y-1.5">
           {rows.map((s) => {
-            const done = s.status === "done" || s.status === "closed";
+            const done = s.status === "done";
             const who = s.assigneeId ? userMap[s.assigneeId]?.name : null;
             return (
               <li

@@ -220,14 +220,12 @@ export function isTaskOverdue(t: Task): boolean {
  * `total === done + open` always holds, which is what makes the card readable at a glance.
  */
 export interface TaskTotals {
-  /** Live work: todo + in progress + in review + done. Excludes closed and blocked. */
+  /** Live work: todo + in progress + in review. Excludes done and blocked. */
   total: number;
-  /** Finished by the assignee, not yet signed off. */
+  /** Signed off by a reviewer — finished and out of the queue. */
   done: number;
   /** todo + in progress + in review. */
   open: number;
-  /** Signed off by a reviewer — finished and out of the queue. */
-  closed: number;
   /** Waiting on something else; cannot be picked up. */
   blocked: number;
   /**
@@ -252,12 +250,13 @@ export interface TaskTotals {
 export function taskTotals(tasks: Pick<Task, "status">[]): TaskTotals {
   const c = taskCounts(tasks as Task[]);
   const open = c.todo + c.in_progress + c.in_review;
-  const completed = c.done + c.closed;
+  // `done` is the only completed state since `closed` was retired, so it plays the role `closed`
+  // used to: it leaves `total` (what is still to do) but counts toward `completed`.
+  const completed = c.done;
   return {
-    total: open + c.done,
+    total: open,
     done: c.done,
     open,
-    closed: c.closed,
     blocked: c.blocked,
     completed,
     deliverable: completed + open,
@@ -299,7 +298,6 @@ export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
     in_progress: 0,
     in_review: 0,
     done: 0,
-    closed: 0,
     blocked: 0,
   };
   for (const t of tasks) counts[t.status] += 1;
@@ -333,18 +331,39 @@ export function canDeleteTask(
  * Mirrors the server's `can_review_task()` — Manager|Lead, which org admins and owners resolve
  * into — plus the two row-level rules the role cannot express:
  *
- * - only a task that is **done** is awaiting review; anything else has nothing to approve;
+ * - only a task that is **in review** is awaiting review; anything else has nothing to approve.
+ *   (This was `done` until 2026-08-31, when `closed` was retired and `done` became the signed-off
+ *   state. The column named *In review* is now the one where reviewing happens, which is what
+ *   everyone expected it to mean in the first place.);
  * - **never your own task**, even as a Lead. Reviewing your own work is the thing review exists to
  *   prevent, so unlike deletion there is no "your own" fallback.
  *
  * The server enforces all three. This exists so the button is absent rather than present-and-403.
  */
+/**
+ * May this person move a task INTO `done`?
+ *
+ * `done` stopped being "the assignee says it's finished" on 2026-08-31 and became the signed-off
+ * state, so it is the one column an assignee must not be able to reach for their own work. Every
+ * other column stays draggable by whoever may manage the task.
+ *
+ * Mirrors the server's `update_task` gate (`can_review_task`), which is the real boundary — this
+ * exists so the card refuses the drop instead of bouncing off a 403.
+ */
+export function canSetTaskStatus(
+  next: TaskStatus,
+  authority: string,
+): boolean {
+  if (next !== "done") return true;
+  return authority === "manager" || authority === "lead";
+}
+
 export function canReviewTask(
   task: Pick<Task, "status" | "assignees">,
   authority: string,
   currentUserId: string | null | undefined,
 ): boolean {
-  if (task.status !== "done") return false;
+  if (task.status !== "in_review") return false;
   if (authority !== "manager" && authority !== "lead") return false;
   // *Any* assignee, not just the first: with several people on a task, checking only the one the
   // card happens to show would let the second one approve work they did.

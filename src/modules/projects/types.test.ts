@@ -20,9 +20,11 @@ describe("isOpenTaskStatus", () => {
     }
   });
 
-  it("treats both finished states as closed out — done AND closed", () => {
+  it("treats done as finished, and in_review as still open", () => {
+    // `closed` was retired 2026-08-31: `done` is the signed-off state, and `in_review` is the one
+    // waiting on a person — so it is emphatically NOT finished, however complete the work looks.
     expect(isOpenTaskStatus("done")).toBe(false);
-    expect(isOpenTaskStatus("closed")).toBe(false);
+    expect(isOpenTaskStatus("in_review")).toBe(true);
   });
 
   it("keeps an unrecognised status visible rather than dropping it", () => {
@@ -39,10 +41,15 @@ describe("isOpenTaskStatus", () => {
 });
 
 describe("task status catalog", () => {
-  it("never offers `closed` as something a person can set by hand", () => {
-    // Only `review_task` may set it — offering it in a form or as a drop target would let an
-    // assignee approve their own work.
+  it("has retired `closed` from the board entirely", () => {
+    expect(TASK_STATUS_ORDER).not.toContain("closed");
     expect(TASK_STATUS_SETTABLE).not.toContain("closed");
-    expect(TASK_STATUS_ORDER).toContain("closed");
+  });
+
+  it("offers every remaining column, because who may set `done` is a fact about the person", () => {
+    // `done` IS settable — by a Manager or Lead. That is `canSetTaskStatus`, not a list: encoding
+    // it here would have to answer "settable by whom", which a catalog cannot.
+    expect(TASK_STATUS_SETTABLE).toEqual([...TASK_STATUS_ORDER]);
+    expect(TASK_STATUS_SETTABLE).toContain("done");
   });
 });

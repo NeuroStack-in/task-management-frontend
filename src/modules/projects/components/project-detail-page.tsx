@@ -20,7 +20,7 @@ import type { ProjectFormValues } from "@/modules/projects/forms";
 import type { TaskFormValues } from "@/modules/projects/forms";
 import { useProjectDetail } from "../use-project-detail";
 import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
-import { canDeleteTask, canReviewTask, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
+import { canDeleteTask, canReviewTask, canSetTaskStatus, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
 import { Segmented, StatusBadge } from "./parts";
@@ -278,10 +278,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     ? {
         title: editingTask.title,
         description: editingTask.description,
-        // A closed task has no editable "closed" option — the form only offers the settable
-        // statuses. Showing `done` is the honest neighbour: it is the state the review moved it
-        // out of, and reopening by saving is a deliberate act rather than an accident of the form.
-        status: editingTask.status === "closed" ? ("done" as const) : editingTask.status,
+        status: editingTask.status,
         assigneeIds: editingTask.assignees.map((a) => a.userId),
         priority: editingTask.priority,
         dueDate: editingTask.dueDate?.slice(0, 10) ?? "",
@@ -309,9 +306,16 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     if (!over) return;
     const target = over.id as TaskStatus;
     const moved = tasks.find((t) => t.id === active.id);
-    if (moved && moved.status !== target && TASK_STATUS_SETTABLE.includes(target)) {
-      moveTask(moved.id, target);
+    if (!moved || moved.status === target || !TASK_STATUS_SETTABLE.includes(target)) return;
+    // `done` is sign-off: refuse the drop here rather than letting the server 403 it, and say why.
+    // Everything else a task-manager may drag freely.
+    if (!canSetTaskStatus(target, authority)) {
+      toast.error("Only a lead or manager can mark a task done", {
+        description: "Move it to In review and a reviewer will sign it off.",
+      });
+      return;
     }
+    moveTask(moved.id, target);
   };
 
   return (
@@ -521,7 +525,6 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               <span className="bg-border h-px flex-1" />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <TaskStat label="Closed" value={totals.closed} dot="bg-success" />
               <TaskStat label="Blocked" value={totals.blocked} dot="bg-warning" />
             </div>
           </div>
@@ -617,11 +620,9 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   col={col}
                   tasks={tasks.filter((t) => t.status === col)}
                   userMap={userMap}
-                  // No "add" on Closed: a task cannot be created already signed off, and the
+                  // No "add" on Done: a task cannot be created already signed off, and the
                   // column exists to show what has been reviewed, not to collect new work.
-                  onAdd={
-                    col === "closed" ? undefined : () => openCreateTask(col)
-                  }
+                  onAdd={col === "done" ? undefined : () => openCreateTask(col)}
                   onView={setViewingTask}
                   onEdit={openEditTask}
                   onDelete={setTaskToDelete}
@@ -1113,8 +1114,7 @@ function TaskListView({
     in_progress: 1,
     in_review: 2,
     done: 3,
-    closed: 4,
-    blocked: 5,
+    blocked: 4,
   };
   const sorted = [...tasks].sort((a, b) => {
     if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];

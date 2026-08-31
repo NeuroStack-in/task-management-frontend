@@ -45,26 +45,28 @@ export type TaskStatus =
   | "todo"
   | "in_progress"
   | "in_review"
-  | "done"
   /**
    * Reviewed and signed off — the terminal state.
    *
-   * `done` is the assignee's claim that the work is finished; `closed` is someone with authority
-   * over the project agreeing, with a rating. Only the review endpoint can set it, so nothing here
-   * should offer it as a drag target or a status option.
+   * Until 2026-08-31 this meant only "the assignee says it's finished", and a separate `closed`
+   * carried the sign-off. Two terminal columns made the board confusing and put the review action
+   * somewhere other than the column called *In review*. Now `done` IS the sign-off: reaching it
+   * takes a Manager or Lead, and the ordinary route is reviewing an `in_review` task.
    */
-  | "closed"
+  | "done"
   | "blocked";
 
 /**
- * A status a person may actually set — everything except `closed`.
+ * A status a person may set.
  *
- * Used by the create/edit form and the drag handler, so the "you cannot set this by hand" rule is
- * enforced by the compiler rather than remembered.
+ * Every column is now reachable by hand — but not by everyone: `done` is sign-off and needs a
+ * Manager or Lead, which is a fact about the CALLER, not about the status, so the type can no
+ * longer express it. `canSetTaskStatus` in `lib.ts` is the runtime gate, and the server enforces
+ * it regardless.
  */
-export type SettableTaskStatus = Exclude<TaskStatus, "closed">;
+export type SettableTaskStatus = TaskStatus;
 
-/** A task's sign-off, present only on a `closed` task. */
+/** A task's sign-off, present only on a reviewed (`done`) task. */
 export interface TaskReview {
   reviewed_by: string;
   /** Resolved and stored server-side at review time, so it survives the reviewer leaving. */
@@ -194,7 +196,6 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
   in_progress: { label: "In progress", tone: "primary" },
   in_review: { label: "In review", tone: "warning" },
   done: { label: "Done", tone: "success" },
-  closed: { label: "Closed", tone: "success" },
   blocked: { label: "Blocked", tone: "warning" },
 };
 
@@ -204,31 +205,29 @@ export const TASK_STATUS_ORDER: TaskStatus[] = [
   "in_progress",
   "in_review",
   "done",
-  "closed",
   "blocked",
 ];
 
 /**
  * Statuses a person may drag a card into, or pick in a form.
  *
- * `closed` is deliberately absent: it is set by reviewing the task, never by moving it. Offering it
- * as a drop target would let the assignee mark their own work approved, which is the thing the
- * review step exists to prevent — and the server would refuse it anyway.
+ * Every column is listed, because which ones a given person may set depends on who they are:
+ * `done` is sign-off and needs a Manager or Lead. That check is `canSetTaskStatus` in `lib.ts` —
+ * a list of names cannot express it, and pretending otherwise is how `closed` ended up both
+ * un-settable and unreachable from the column named for reviewing it.
  */
-export const TASK_STATUS_SETTABLE: TaskStatus[] = TASK_STATUS_ORDER.filter(
-  (s) => s !== "closed",
-);
+export const TASK_STATUS_SETTABLE: TaskStatus[] = [...TASK_STATUS_ORDER];
 
 /**
  * The statuses that mean the work is finished — mirrors `TaskStatus::is_open` in
  * `backend/crates/projects/src/shared/task.rs`.
  *
- * `closed` belongs here as much as `done`. It is the terminal state a task reaches once a
- * Manager/Lead signs it off through `POST /v1/projects/{id}/tasks/{task_id}/review`, and the
- * dashboard used to test `status !== "done"` in two places — so every reviewed task counted as open
- * work forever, inflating the Open Tasks tile and re-appearing under upcoming deadlines.
+ * One entry since `closed` was retired on 2026-08-31. Kept as a list rather than inlined as
+ * `s === "done"` precisely because the dashboard once tested `status !== "done"` in two places and
+ * every reviewed task counted as open work forever — the tile inflated and finished tasks kept
+ * reappearing under upcoming deadlines. A named constant is where that stays fixed.
  */
-export const FINISHED_TASK_STATUSES: readonly TaskStatus[] = ["done", "closed"];
+export const FINISHED_TASK_STATUSES: readonly TaskStatus[] = ["done"];
 
 /**
  * Does this status still need someone's attention? The inverse of {@link FINISHED_TASK_STATUSES}.
