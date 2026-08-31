@@ -307,13 +307,18 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               employee: e,
               running: d.running === true,
               present: Boolean(d.clock_in),
-              // A running session we can tick live: only when today is a SINGLE session, so `clock_in`
-              // IS the open session's own start. Then `now − start` is exact — there is no closed time
-              // to double-count (`tracked_sec` is 0 for such a user) and no earlier break to overstate.
-              liveStart:
-                d.running === true && d.entry_count === 1 && typeof d.clock_in === "number"
-                  ? d.clock_in
-                  : null,
+              // The start a live "elapsed" clock ticks from. Prefer `running_since` — the OPEN
+              // session's own start — so it's exact for *anyone* running, including after a break and
+              // a restart. Fall back to `clock_in` only for a single-session day (where the two are
+              // the same) so an older server still ticks; otherwise null (can't tick without
+              // overstating by the earlier session + break).
+              liveStart: !d.running
+                ? null
+                : typeof d.running_since === "number"
+                  ? d.running_since
+                  : d.entry_count === 1 && typeof d.clock_in === "number"
+                    ? d.clock_in
+                    : null,
             }),
             () => ({
               employee: e,

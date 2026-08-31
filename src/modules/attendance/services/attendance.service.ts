@@ -158,6 +158,13 @@ export interface ApiUserDayDetail {
   worked_minutes: number;
   /** A session is open (clocked in, not yet out) — clock_out is deliberately absent. */
   running: boolean;
+  /**
+   * Epoch **ms** the **currently open** session started (present only while `running`). Unlike
+   * `clock_in` (the day's first start), this is the open session's own start, so a live "elapsed"
+   * clock counts from it correctly even after a break + restart. Absent from an older server — the
+   * caller falls back to `clock_in` for a single-session day.
+   */
+  running_since?: number;
   entry_count: number;
 }
 
