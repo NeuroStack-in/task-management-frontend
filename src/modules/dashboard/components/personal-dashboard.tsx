@@ -21,6 +21,9 @@ import { useMyAttendance, ymd } from "@/modules/attendance/use-my-attendance";
 import { useIsSurfaceOn } from "@/hooks/use-features";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { cn } from "@/lib/utils";
+import { useWorkingHours } from "@/hooks/use-working-hours";
+import { usePoll } from "@/hooks/use-poll";
+import { LIVE_REFRESH_MS } from "@/hooks/use-live-refresh";
 
 const ATTENDANCE: Record<string, { dot: string; label: string }> = {
   present: { dot: "bg-success", label: "Present" },
@@ -46,22 +49,61 @@ export function PersonalDashboard() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const week = useMemo(() => {
+    // **The calendar week, Monday→Sunday** — not a trailing 7 days ending today.
+    //
+    // It used to be `base.getDate() - (6 - i)`, which put today last and started the list six days
+    // earlier. On a Monday that rendered Tue, Wed, Thu, Fri, Sat, Sun, Mon — and, worse than the odd
+    // order, the total under a "This week" heading was almost entirely LAST week's hours. A heading
+    // that names a period has to sum that period.
+    //
+    // Monday-first matches the team timesheet grid, so the two never disagree about which days
+    // belong to a week.
     const base = new Date();
+    const monday = new Date(base);
+    monday.setDate(base.getDate() - ((base.getDay() + 6) % 7)); // Sunday (0) → back 6, not forward 1
     return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(base);
-      d.setDate(base.getDate() - (6 - i));
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
       return {
         key: ymd(d.getFullYear(), d.getMonth(), d.getDate()),
         y: d.getFullYear(),
         m: d.getMonth(),
         day: d.getDate(),
         label: SHORT_DAY[d.getDay()],
+        /** Raw JS weekday (0=Sun), for matching the org's `workdays` config. */
+        jsDay: d.getDay(),
       };
     });
   }, []);
   const att = useMyAttendance(week[0].key, week[6].key);
 
-  const attRows = week.map((w) => ({ ...w, record: att.recordFor(w.y, w.m, w.day) }));
+  // Keep the card live. Attendance changes while someone is working — a clock-in flips "No record"
+  // to Present, and today's hours climb — so a card rendered once at page load goes stale in front
+  // of whoever is looking at it, and the number beside a running timer stops matching it.
+  //
+  // `usePoll` is the sanctioned primitive: it pauses while the tab is hidden and re-fetches on
+  // return, so a dashboard left open overnight does not spend the night polling. `reload` refreshes
+  // in place rather than showing a spinner, which is what makes a 30-second cadence unobtrusive.
+  usePoll(att.reload, LIVE_REFRESH_MS);
+
+  // **Working days only.** A weekend row that says "Non-working day" is a line telling you nothing
+  // happened on a day nothing was meant to happen — two of seven rows spent saying so.
+  //
+  // Driven by the org's configured `workdays`, not by a weekend assumption: an org that works
+  // Sunday-to-Thursday gets its own days, and the same config decides `non_workday` server-side, so
+  // the card and the attendance record can never disagree about which days count.
+  //
+  // Falls back to showing everything until the config loads, rather than briefly hiding real rows.
+  const workdays = useWorkingHours()?.workdays ?? null;
+  const attRows = week
+    .map((w) => ({ ...w, record: att.recordFor(w.y, w.m, w.day) }))
+    .filter((w) => {
+      if (w.record?.status === "non_workday") return false;
+      if (!workdays) return true;
+      // `IsoWeekday` is 1=Mon…7=Sun; JS `getDay()` is 0=Sun.
+      const iso = w.jsDay === 0 ? 7 : w.jsDay;
+      return workdays.includes(iso as (typeof workdays)[number]);
+    });
   const daysPresent = attRows.filter((w) => w.record?.status === "present").length;
 
   // Logged timer time across the window, **including the session running right now**.
@@ -86,7 +128,7 @@ export function PersonalDashboard() {
       ...(showTimer
         ? [{ label: "Hours (last 7 days)", value: `${weekHours}h` }]
         : []),
-      { label: "Days present (last 7)", value: String(daysPresent) },
+      { label: "Days present this week", value: String(daysPresent) },
     ],
   });
 
@@ -177,7 +219,9 @@ export function PersonalDashboard() {
           </div>
           <div className="flex items-center justify-between border-t border-border px-5 py-3 text-sm">
             <span className="text-muted-foreground">
-              {mounted ? `${daysPresent}/7 days present` : "—"}
+              {/* Out of the working days actually shown, not a hard-coded 7 — the denominator has
+                  to match the rows above it. */}
+              {mounted ? `${daysPresent}/${attRows.length} days present` : "—"}
             </span>
             <span className="font-medium tabular-nums">{mounted ? `${weekHours}h total` : "—"}</span>
           </div>
