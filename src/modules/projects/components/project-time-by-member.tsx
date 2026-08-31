@@ -43,7 +43,9 @@ interface MemberTime {
  *
  * Fans out the per-user timesheet read (bounded at 4, skip-on-fail so one 403 doesn't blank the
  * panel) and sums only the entries whose `project_id` is this project. Reading another person's
- * timesheet needs `TimeReadTeam`, so this renders **only** for a viewer who can see Time Tracking;
+ * timesheet needs `TimeReadTeam`, so this renders **only** for a viewer who can read
+ * other people's time — an Employee sees no card at all, rather than an empty one they have no way
+ * to fill;
  * everyone else gets nothing (the server wouldn't serve them anyway).
  */
 export function ProjectTimeByMember({
@@ -56,7 +58,19 @@ export function ProjectTimeByMember({
   userMap: Record<string, UserMini>;
 }) {
   const { can } = usePermissions();
-  const allowed = can("time-tracking:view");
+  // **The bit the SERVER enforces, not the one that sounds right.**
+  //
+  // This was `time-tracking:view`, which an Employee holds — it is what lets them open their own
+  // Time Tracking page (bit 30, `TimeReadSelf`). But every row here comes from
+  // `GET /v1/timesheet/user/{id}`, which opens with `auth.require(Permission::TimeReadTeam)` before
+  // it even looks at whose timesheet was asked for. So an Employee got the card, all the fan-out
+  // reads 403'd — including the one for their own id — and the `.catch` below turned each refusal
+  // into zero seconds. The panel then said "No time tracked yet" about a project with 27 entries
+  // against it, telling the viewer to go and do the thing they had already done.
+  //
+  // `time-tracking:manage` is what bits 31/32 (`TimeReadTeam`/`TimeReadOrg`) light in
+  // `lib/permission-bits.ts`, so the boundary is now the same on both sides.
+  const allowed = can("time-tracking:manage");
 
   const [period, setPeriod] = useState<Period>("month");
   // `null` = loading; an array = loaded (possibly empty).
@@ -84,8 +98,11 @@ export function ProjectTimeByMember({
           }
           return { userId: uid, seconds };
         })
-        // A member whose timesheet we can't read (403), or a failed read, simply contributes
-        // nothing rather than failing the whole panel.
+        // A member whose timesheet we can't read, or a failed read, contributes nothing rather
+        // than failing the whole panel. This is a per-member fallback and is only sound as one:
+        // when the CALLER cannot read team time at all, every read fails and the sum is a uniform
+        // zero indistinguishable from an idle project. The `allowed` gate above is what keeps that
+        // case from reaching here.
         .catch(() => ({ userId: uid, seconds: 0 })),
     ).then((results) => {
       if (live) setRows([...results].sort((a, b) => b.seconds - a.seconds));
