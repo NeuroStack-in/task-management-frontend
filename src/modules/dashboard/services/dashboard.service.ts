@@ -122,7 +122,6 @@ export function widgetPermission(type: WidgetType): PermissionId | null {
  * `payroll_summary` is deliberately absent (no feature key exists for payroll).
  */
 const WIDGET_FEATURE_OVERRIDE: Partial<Record<WidgetType, FeatureKey>> = {
-  "org_activity.screenshots": "monitoring.screenshots", // not the catalog's monitoring.activity
   "reports.upcoming_tasks": "projects", // it lists tasks, not reports
   "attention_list.ai_summary": "ai.insights",
 };

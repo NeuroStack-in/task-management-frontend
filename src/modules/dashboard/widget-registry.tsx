@@ -12,7 +12,6 @@ import {
 import {
   TopEmployeesWidget,
   LiveTimersWidget,
-  ScreenshotsWidget,
   AlertsDeadlinesWidget,
   UpcomingTasksWidget,
   BillingWidget,
@@ -89,19 +88,6 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   "reports.headcount": {
     span: 1,
     render: (d) => <HeadcountStatus counts={d.statusCounts} />,
-  },
-  "org_activity.screenshots": {
-    span: 1,
-    render: (d) => (
-      <ScreenshotsWidget
-        count={d.screenshotCount}
-        trend={d.screenshotsTrend}
-        partial={d.screenshotCountPartial}
-        coverage={d.screenshotsCoverage}
-        flagged={d.screenshotsFlagged}
-        split={d.screenshotsSplit}
-      />
-    ),
   },
   "org_activity.top_performers": {
     span: 1,

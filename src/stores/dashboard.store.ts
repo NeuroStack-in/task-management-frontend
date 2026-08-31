@@ -28,7 +28,6 @@ export type WidgetType =
   | "org_attendance.live_timers"
   | "org_activity.active_ring"
   | "reports.headcount"
-  | "org_activity.screenshots"
   | "org_activity.top_performers"
   | "attention_list.ai_summary"
   | "payroll_summary"
@@ -57,7 +56,6 @@ export const LEGACY_WIDGET_TYPE: Record<string, WidgetType> = {
   "active-inactive": "org_activity.active_ring",
   "productivity-trends": "org_activity.trends",
   heatmap: "org_activity.heatmap",
-  screenshots: "org_activity.screenshots",
   "top-employees": "org_activity.top_performers",
   "ai-summary": "attention_list.ai_summary",
   "alerts-deadlines": "attention_list.alerts",
@@ -90,8 +88,7 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "org_attendance.live_timers", title: "Working now", type: "org_attendance.live_timers", position: 2, visible: true },
   { id: "team_activity", title: "Department comparison", type: "team_activity", position: 3, visible: true },
   { id: "org_activity.top_performers", title: "Top performers", type: "org_activity.top_performers", position: 4, visible: true },
-  { id: "org_activity.screenshots", title: "Screenshots", type: "org_activity.screenshots", position: 5, visible: true },
-  { id: "attention_list.alerts", title: "Needs attention", type: "attention_list.alerts", position: 6, visible: true },
+  { id: "attention_list.alerts", title: "Needs attention", type: "attention_list.alerts", position: 5, visible: true },
   { id: "org_activity.active_ring", title: "Active vs inactive", type: "org_activity.active_ring", position: 7, visible: false },
   { id: "org_activity.trends", title: "Where time went", type: "org_activity.trends", position: 8, visible: false },
   { id: "org_activity.score_trend", title: "Productivity trends", type: "org_activity.score_trend", position: 9, visible: false },
@@ -145,8 +142,10 @@ export const useDashboardStore = create<DashboardState>()(
       // wp-contracts catalog ids (`attendance` → `org_attendance`, `heatmap` → `org_activity.heatmap`,
       // …) — v13 layouts are renamed in place so the user's order/visibility survives. v15: the
       // "Working now" live-timers widget was added — the migrate appends it (hidden) to existing
-      // layouts, so it shows up in Customize without disturbing a saved order.
-      version: 15,
+      // layouts, so it shows up in Customize without disturbing a saved order. v16: the Screenshots
+      // widget was removed — the migrate drops it (it's no longer a KNOWN_TYPE), so it leaves saved
+      // Customize lists cleanly instead of lingering as a dead toggle.
+      version: 16,
       migrate: (persisted, version) => {
         if (version < 13) return { widgets: DEFAULT_WIDGETS } as DashboardState;
 
