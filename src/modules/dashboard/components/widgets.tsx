@@ -170,7 +170,7 @@ export function LiveTimersWidget({ timers }: { timers: LiveTimer[] }) {
       <CardHeader>
         <CardTitle>Working now</CardTitle>
         <CardDescription>
-          Employees with a timer running right now &mdash; today&apos;s live timesheet
+          Everyone tracking right now &mdash; total time worked today, ticking live
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
