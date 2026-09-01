@@ -57,6 +57,37 @@ const STICKY_HEAD = "bg-[color-mix(in_oklab,var(--muted)_30%,var(--card))]";
 const STICKY_FOOT = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--card))]";
 
 /**
+ * Per-day column width for a month, and the two columns that aren't days.
+ *
+ * The month table used to ask for `min-w-[1500px]`, which is **below its own min-content width**:
+ * 31 day columns plus Employee and Total cannot fit 1500px when an `HH:MM:SS` cell needs ~66px and
+ * that budget allots it ~37. Auto table layout therefore ignored the request and collapsed every
+ * column onto its content, leaving no gutter at all — which is what made a month read as one
+ * undifferentiated block of digits.
+ *
+ * **The notation is deliberately not the lever.** `lib/format.formatHours` documents `HH:MM:SS` as
+ * the product's single duration notation, and says in as many words that dropping the seconds place
+ * on some surface is the exact confusion it exists to end. So the columns are given the width the
+ * format actually needs instead of the format being trimmed to fit the columns.
+ *
+ * Deriving the width from `dates.length` rather than hardcoding it keeps a 28-day February and a
+ * 31-day March at the *same* column width; a fixed `min-w` would have stretched the short month.
+ */
+const MONTH_DAY_COL_PX = 88;
+const MONTH_FIXED_COLS_PX = 380;
+
+/**
+ * A hairline between day columns — **month only**.
+ *
+ * Width alone does not finish the job: thirty-one columns of monospaced digits with nothing between
+ * them still make the reader bin the numbers into columns by eye. A week's seven columns are far
+ * enough apart to need no help, so this stays off there rather than adding chrome that view doesn't
+ * benefit from. `border-collapse` merges this with the sticky column's `border-r`, so the first day
+ * column gets one line, not two.
+ */
+const MONTH_DIVIDER = "border-l";
+
+/**
  * The header for one column.
  *
  * A week shows the weekday, because seven of them are recognisable at a glance and the date below
@@ -289,6 +320,20 @@ export function TimesheetGrid({
     setQuery("");
   };
 
+  /**
+   * Which columns are Sat/Sun, **by their real date**.
+   *
+   * The header already derived this correctly; the body cells and the totals footer did not — they
+   * shaded on `i >= 5`, the raw column index. That is Sat/Sun only in a Monday-aligned week. In a
+   * month it is whatever days 6 and 7 happen to be, so the header shaded one pair of columns while
+   * the rows underneath shaded a different pair, and the stripe stopped meaning "weekend" at all.
+   * One array, read by all three, is what keeps them from drifting apart again.
+   */
+  const weekendCols = useMemo(
+    () => dates.map((iso) => (new Date(`${iso}T00:00:00`).getDay() + 6) % 7 >= 5),
+    [dates],
+  );
+
   const colTotals = useMemo(() => {
     // One slot per day column — `dates.length` (7 for a week, 28–31 for a month), not a hardcoded 7,
     // or a month's columns 8+ summed into `undefined` and the footer read "NaN:NaN".
@@ -341,7 +386,9 @@ export function TimesheetGrid({
               current week — a future week has no records and would only ever render dashes. */}
           {/* The week label sits BETWEEN the arrows, so the control reads as one stepper rather
               than two buttons with a caption beside them. */}
-          <div className="flex items-center gap-2">
+          {/* `shrink-0`: the stepper is the one thing here that must not compress. Everything that
+              gives when the toolbar runs out of room is in the filter group, which wraps. */}
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               variant="outline"
               size="icon"
@@ -389,12 +436,24 @@ export function TimesheetGrid({
             ) : null}
           </div>
 
-          {/* Filter + search */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            {/* Week / month. Sits before the grouping toggle because it changes what the columns
-                ARE, where "by employee / by project" only changes what the rows are — the wider
-                choice reads first. */}
-            <div className="bg-card shadow-soft inline-flex items-center gap-0.5 rounded-full border p-0.5">
+          {/* Filters, then the action.
+
+              **The order is the reading order.** Left to right the controls go from "what is on
+              screen" to "what to do with it": the period decides what the COLUMNS are, the grouping
+              decides what the ROWS are, department and search narrow those rows, and Download acts
+              on whatever the four before it produced. Download used to sit second — between the two
+              toggles — which split a pair that belongs together and put an action in the middle of
+              a set of view controls.
+
+              **`flex-wrap` and `shrink-0` are load-bearing, not cosmetic.** This was one
+              non-wrapping line about 1000px wide inside a card with `overflow-hidden`, and flexbox
+              is free to shrink items below their content width: it broke "By employee" onto two
+              lines and pushed the search box past the card's right edge, where the card clipped it
+              — a control the user could not see or reach. Wrapping costs a second row on a narrow
+              viewport; not wrapping cost the control itself. */}
+          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
+            {/* 1 · Period — changes what the columns ARE, so it reads first. */}
+            <div className="bg-card shadow-soft inline-flex shrink-0 items-center gap-0.5 rounded-full border p-0.5">
               <FilterTab
                 active={period === "week"}
                 onClick={() => onPeriodChange("week")}
@@ -408,22 +467,10 @@ export function TimesheetGrid({
                 label="Month"
               />
             </div>
-            {/* Sits beside the period toggle because that toggle decides WHAT gets downloaded —
-                pressing Month then Download is one gesture with an obvious result. Disabled on an
-                empty grid rather than hidden, so the control does not appear and vanish as filters
-                change. */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 shrink-0 rounded-full"
-              onClick={exportCsv}
-              disabled={rows.length === 0}
-              title={`Download this ${period === "month" ? "month" : "week"} as CSV`}
-            >
-              <Download className="size-4" />
-              Download
-            </Button>
-            <div className="bg-card shadow-soft inline-flex items-center gap-0.5 rounded-full border p-0.5">
+            {/* 2 · Grouping — changes what the rows are. Now adjacent to the period toggle: the two
+                pills are the same control shape doing the same kind of job, and reading them as a
+                pair is most of what makes the toolbar scannable. */}
+            <div className="bg-card shadow-soft inline-flex shrink-0 items-center gap-0.5 rounded-full border p-0.5">
               <FilterTab
                 active={group === "person"}
                 onClick={() => setGroup("person")}
@@ -437,14 +484,17 @@ export function TimesheetGrid({
                 label="By project"
               />
             </div>
-            {/* Team (department) filter */}
+            {/* 3 · Department — the first of the two narrowing filters. */}
             <DepartmentFilter
               value={deptFilter}
               onChange={setDeptFilter}
               options={departments.map((d) => ({ value: d, label: d }))}
               ariaLabel="Filter timesheet by department"
+              className="shrink-0"
             />
-            <div className="relative sm:w-56">
+            {/* 4 · Search — narrows further, so it follows the coarser filter. Full width on a
+                phone (where it gets its own row) and a fixed 14rem from `sm` up, never shrunk. */}
+            <div className="relative w-full sm:w-56 sm:shrink-0">
               <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
               <Input
                 value={query}
@@ -457,6 +507,20 @@ export function TimesheetGrid({
                 className="pl-8"
               />
             </div>
+            {/* 5 · Download — the only action here, and it exports exactly the grid the four
+                controls above just described. Last for that reason. Disabled on an empty grid
+                rather than hidden, so it does not appear and vanish as filters change. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 rounded-full"
+              onClick={exportCsv}
+              disabled={rows.length === 0}
+              title={`Download this ${period === "month" ? "month" : "week"} as CSV`}
+            >
+              <Download className="size-4" />
+              Download
+            </Button>
           </div>
         </div>
 
@@ -495,8 +559,16 @@ export function TimesheetGrid({
           <table
             className={cn(
               "w-full border-collapse text-sm",
-              period === "month" ? "min-w-[1500px]" : "min-w-[760px]",
+              period === "week" && "min-w-[760px]",
             )}
+            // Month only, and computed rather than a class — see MONTH_DAY_COL_PX.
+            style={
+              period === "month"
+                ? {
+                    minWidth: `${dates.length * MONTH_DAY_COL_PX + MONTH_FIXED_COLS_PX}px`,
+                  }
+                : undefined
+            }
           >
           <thead>
             <tr className="bg-muted/30 border-b">
@@ -512,18 +584,18 @@ export function TimesheetGrid({
               {/* Driven by `dates`, not a fixed weekday list — a week is 7 of these and a month is
                   28-31. `key` is the iso date rather than the label: two Mondays in a month would
                   otherwise collide on the same key. */}
-              {dates.map((iso) => {
+              {dates.map((iso, i) => {
                 const holidayName = holidays.nameFor(iso);
                 const heading = columnHeading(iso, period);
-                // Weekend shading follows the real weekday. Index ≥ 5 only means Sat/Sun in a
-                // Monday-aligned week; a month starting on a Thursday would have shaded Tue/Wed.
-                const dow = (new Date(`${iso}T00:00:00`).getDay() + 6) % 7;
                 return (
                   <th
                     key={iso}
                     className={cn(
                       "text-muted-foreground px-2 py-2.5 text-center align-middle text-xs font-semibold tracking-wide",
-                      dow >= 5 && "bg-muted/50",
+                      period === "month" && MONTH_DIVIDER,
+                      // Weekend shading follows the real weekday, shared with the body and the
+                      // footer so all three stripe the same columns.
+                      weekendCols[i] && "bg-muted/50",
                     )}
                     title={holidayName ? `Holiday: ${holidayName}` : undefined}
                   >
@@ -614,7 +686,11 @@ export function TimesheetGrid({
                   {r.days.map((h, i) => (
                     <td
                       key={i}
-                      className={cn("p-0 text-center", i >= 5 && "bg-muted/20")}
+                      className={cn(
+                        "p-0 text-center",
+                        period === "month" && MONTH_DIVIDER,
+                        weekendCols[i] && "bg-muted/20",
+                      )}
                     >
                       <button
                         type="button"
@@ -670,7 +746,8 @@ export function TimesheetGrid({
                     key={i}
                     className={cn(
                       "px-2 py-3 text-center align-middle font-mono tabular-nums",
-                      i >= 5 && "bg-muted/50",
+                      period === "month" && MONTH_DIVIDER,
+                      weekendCols[i] && "bg-muted/50",
                     )}
                   >
                     {fmtHM(h)}
@@ -722,7 +799,11 @@ function FilterTab({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+        // `whitespace-nowrap` + `shrink-0`: a two-word label ("By employee") is the first thing a
+        // squeezed flex row breaks, and a pill toggle that silently becomes two lines tall drags
+        // the whole toolbar's height with it. The label is short enough that wrapping it is never
+        // the right answer — wrap the toolbar instead.
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:text-foreground",
