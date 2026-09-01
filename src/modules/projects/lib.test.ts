@@ -293,7 +293,7 @@ describe("weighted progress", () => {
     // The case that prompted this: a board sitting entirely in review used to read 0%, because
     // nothing was signed off. It had visibly moved for a fortnight.
     expect(taskTotals([t("in_review")]).progressPct).toBe(75);
-    expect(taskTotals([t("in_progress")]).progressPct).toBe(50);
+    expect(taskTotals([t("in_progress")]).progressPct).toBe(25);
     expect(taskTotals([t("todo"), t("done")]).progressPct).toBe(50);
   });
 
@@ -322,7 +322,7 @@ describe("weighted progress", () => {
   it("uses the weights the server mirrors", () => {
     expect(STATUS_WEIGHT).toEqual({
       todo: 0,
-      in_progress: 50,
+      in_progress: 25,
       in_review: 75,
       done: 100,
     });
