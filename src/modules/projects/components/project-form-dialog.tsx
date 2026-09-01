@@ -229,6 +229,12 @@ export function ProjectFormDialog({
                 )}
               />
             </Field>
+            {/* **Read-only when editing.** Handing a project over is `transfer_manager` in the
+                design — a distinct, audited action — and that route was never built: there is no
+                way to change `manager_user_id` after creation, and the membership routes refuse to
+                mint or move a manager on purpose. Left editable, this control did exactly what the
+                lead picker did before it was fixed: accepted a change, reported success, and moved
+                nothing. Disabled says the true thing until the endpoint exists. */}
             <Field label="Project manager" error={errors.managerId?.message}>
               <Controller
                 control={control}
@@ -240,9 +246,15 @@ export function ProjectFormDialog({
                     onChange={field.onChange}
                     placeholder="Select manager"
                     invalid={!!errors.managerId}
+                    disabled={isEdit}
                   />
                 )}
               />
+              {isEdit ? (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Set when the project was created. Transferring a project isn’t available yet.
+                </p>
+              ) : null}
             </Field>
           </div>
 
@@ -579,19 +591,29 @@ function PersonSelect({
   onChange,
   placeholder,
   invalid,
+  disabled,
 }: {
   users: UserMini[];
   value: string;
   onChange: (id: string) => void;
   placeholder: string;
   invalid?: boolean;
+  /** Renders the current person but refuses the change — see the manager field. */
+  disabled?: boolean;
 }) {
   return (
     <Select
       value={value || null}
       onValueChange={(v) => onChange(v as string)}
+      disabled={disabled}
     >
-      <SelectTrigger className={cn("w-full", invalid && "border-destructive")}>
+      <SelectTrigger
+        className={cn(
+          "w-full",
+          invalid && "border-destructive",
+          disabled && "cursor-not-allowed opacity-60",
+        )}
+      >
         <SelectValue placeholder={placeholder}>
           {(v) => {
             const u = users.find((x) => x.id === v);

@@ -148,6 +148,16 @@ export function useProjectDetail(id: string): ProjectDetailData {
       // PATCH succeeded, the toast said "saved", and the member the admin just added was never
       // written — the edit silently lost half of itself.
       await syncMembers(id, project?.memberIds ?? [], v.memberIds, project?.managerId);
+      // **Then the lead role** — after membership, because promoting somebody the same save just
+      // added has to find them already a member. `addMember` is an upsert server-side
+      // (`SET project_role`, `added_at = if_not_exists`), so this promotes without resetting when
+      // they joined.
+      //
+      // The dialog collected this field and threw it away: `ProjectPatch` has no lead, and neither
+      // does the server's `UpdateProjectRequest`, so the PATCH returned 200 and nothing moved. The
+      // comment above `syncMembers` describes the same bug being fixed once already for members;
+      // this is the half that was left.
+      await syncLead(id, project?.leadUserId ?? "", v.leadUserId, project?.managerId);
       reload();
     },
     [id, project, reload],
@@ -240,7 +250,15 @@ function toProject(d: Awaited<ReturnType<typeof getProject>>): Project {
     billable: d.billable,
     progress: d.kpi?.completion_pct ?? 0,
     velocity: d.kpi?.velocity?.length ? d.kpi.velocity : [],
-    leadUserId: d.manager_user_id,
+    // **The lead is the member holding `project_role === "lead"`, not the manager.**
+    //
+    // This was `d.manager_user_id`, so every surface that says "Lead" was showing the *manager* —
+    // which is why the detail panel listed the same person as both, and why the member badge put
+    // "Lead" on the manager while the actual lead read "Member". Setting the lead in the Edit
+    // dialog then looked like it did nothing, because nothing about the lead was ever read from
+    // the lead. `""` when the project has none, which is a real state — a project can run with
+    // just a manager.
+    leadUserId: d.members.find((m) => m.project_role === "lead")?.user_id ?? "",
     managerId: d.manager_user_id || undefined,
     memberIds: d.members.map((m) => m.user_id),
     department: d.department ?? "",
@@ -284,6 +302,38 @@ async function syncMembers(
       failed === total
         ? "The project was saved but its members weren't updated. You may not have permission to manage this project's team."
         : `The project was saved, but ${failed} of ${total} team changes failed. Reopen the dialog to check.`,
+    );
+  }
+}
+
+/**
+ * Make `next` the project's lead, and stand the previous one down.
+ *
+ * Two people can hold `lead` in the data model (LLD §5 allows N), but the dialog offers a single
+ * "Project lead", so leaving the old one promoted would make the field lie the moment it was used:
+ * the picker would show one name over a project with two leads.
+ *
+ * **The manager is never demoted.** Their `project_role` is `manager`, which outranks lead, and the
+ * membership routes refuse to mint or move a manager anyway — attempting it would 400 and turn a
+ * successful edit into a failed one. It is also how the manager keeps administering the project
+ * when they happen to be the outgoing lead.
+ */
+async function syncLead(
+  projectId: string,
+  current: string,
+  next: string,
+  managerId?: string,
+): Promise<void> {
+  if (next === current) return;
+  try {
+    if (next) await addMember(projectId, next, "lead");
+    // Demote only a real predecessor, and never the manager.
+    if (current && current !== managerId && current !== next) {
+      await addMember(projectId, current, "member");
+    }
+  } catch {
+    throw new Error(
+      "The project was saved, but the lead wasn't changed. You may not have permission to manage this project's team.",
     );
   }
 }

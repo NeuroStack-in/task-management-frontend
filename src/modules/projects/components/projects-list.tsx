@@ -107,7 +107,10 @@ export function ProjectsList({
                 </div>
 
                 {items.map((p) => {
-                  const lead = userMap[p.leadUserId];
+                  // The manager, not the lead: the list endpoint carries no membership, so the
+                  // lead is unknown here. Showing the person we actually have beats showing the
+                  // manager under the lead's name.
+                  const lead = p.managerId ? userMap[p.managerId] : undefined;
                   const members = p.memberIds
                     .map((id) => userMap[id])
                     .filter(Boolean) as UserMini[];
@@ -128,7 +131,7 @@ export function ProjectsList({
                       <div className="flex min-w-0 items-center gap-3">
                         {lead ? (
                           <UserAvatar
-                            userId={p.leadUserId}
+                            userId={p.managerId ?? ""}
                             name={lead.name}
                             size="sm"
                             className="shrink-0"

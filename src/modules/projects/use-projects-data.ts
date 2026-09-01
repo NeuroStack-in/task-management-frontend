@@ -253,7 +253,11 @@ function toProject(d: Awaited<ReturnType<typeof getProject>>): Project {
     // KPIs from the Streams aggregator; 0/[] until it has run for a brand-new project.
     progress: d.kpi?.completion_pct ?? 0,
     velocity: d.kpi?.velocity?.length ? d.kpi.velocity : [],
-    leadUserId: d.manager_user_id,
+    // **Empty on purpose.** `GET /v1/projects` returns `manager_user_id` and no membership, so the
+    // list cannot know the lead without a query per project. It used to alias the manager here,
+    // which is what made "Lead" mean "manager" across the app. The row shows `managerId` instead —
+    // the person it actually has. See `use-project-detail`, where the real lead is resolvable.
+    leadUserId: "",
     managerId: d.manager_user_id || undefined,
     memberIds: d.members.map((m) => m.user_id),
     department: d.department ?? "",
