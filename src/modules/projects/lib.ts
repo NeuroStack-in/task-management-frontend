@@ -245,7 +245,38 @@ export interface TaskTotals {
    * project's percentage down for a reason nobody on it can act on.
    */
   deliverable: number;
+  /**
+   * Progress 0–100, **weighted by how far each task has got** rather than counting only the
+   * finished ones.
+   *
+   * A project of three tasks all in review used to read 0%: nothing was signed off, so nothing
+   * counted, and a board that had visibly moved for a fortnight showed no movement at all. Under
+   * {@link STATUS_WEIGHT} the same board reads 75% — which is what the columns are already saying.
+   *
+   * Blocked work is excluded from the denominator entirely, not scored zero: it cannot be advanced
+   * by the team, so holding the percentage down for it punishes people for something they cannot
+   * act on. A project where everything is blocked has no meaningful progress and reads 0.
+   */
+  progressPct: number;
 }
+
+/**
+ * How far each column counts toward progress, out of 100.
+ *
+ * **Mirrors `STATUS_WEIGHT` in `backend/crates/projects/src/features/kpi/data.rs`.** The server
+ * computes the same number for the dashboard; if these two drift, the same project shows two
+ * different percentages on two screens and neither is obviously wrong.
+ *
+ * The middle values are a judgement, and the judgement is that review is nearly there: work in
+ * review is finished as far as its author is concerned and waiting on someone else, which is much
+ * closer to done than to started. `blocked` has no weight because it never reaches the sum.
+ */
+export const STATUS_WEIGHT: Record<Exclude<TaskStatus, "blocked">, number> = {
+  todo: 0,
+  in_progress: 50,
+  in_review: 75,
+  done: 100,
+};
 
 export function taskTotals(tasks: Pick<Task, "status">[]): TaskTotals {
   const c = taskCounts(tasks as Task[]);
@@ -253,13 +284,23 @@ export function taskTotals(tasks: Pick<Task, "status">[]): TaskTotals {
   // `done` is the only completed state since `closed` was retired, so it plays the role `closed`
   // used to: it leaves `total` (what is still to do) but counts toward `completed`.
   const completed = c.done;
+  const deliverable = completed + open;
+  // Weighted, not counted. Every non-blocked task contributes its column's weight, so moving a card
+  // forward moves the number — which is the whole reason a board has columns between the ends.
+  const earned =
+    c.todo * STATUS_WEIGHT.todo +
+    c.in_progress * STATUS_WEIGHT.in_progress +
+    c.in_review * STATUS_WEIGHT.in_review +
+    c.done * STATUS_WEIGHT.done;
   return {
     total: open,
     done: c.done,
     open,
     blocked: c.blocked,
     completed,
-    deliverable: completed + open,
+    deliverable,
+    // Round to nearest — 2 of 3 done reads 67%, not 66%.
+    progressPct: deliverable ? Math.round(earned / deliverable) : 0,
   };
 }
 

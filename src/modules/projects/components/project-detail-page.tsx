@@ -497,17 +497,13 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               is therefore not the Tasks card's total, and the caption says "completed" rather than
               "done" so the two cards are visibly answering different questions: this one is how
               much of the work is finished, that one is how much is left. */}
-          <Gauge
-            value={
-              totals.deliverable
-                ? Math.round((totals.completed / totals.deliverable) * 100)
-                : 0
-            }
-            label="of work done"
-            size={172}
-          />
+          <Gauge value={totals.progressPct} label="of work done" size={172} />
+          {/* "Signed off", not "completed". The gauge above is WEIGHTED — a task in review counts
+              75% — so a board can honestly read 75% with nothing signed off yet. Captioning that
+              with "0 of 1 tasks completed" would look like one of the two numbers was broken; they
+              are answering different questions and the wording now says which. */}
           <p className="text-muted-foreground mt-1 text-xs">
-            {totals.completed} of {totals.deliverable} tasks completed
+            {totals.completed} of {totals.deliverable} tasks signed off
           </p>
         </div>
 

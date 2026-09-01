@@ -86,9 +86,11 @@ export function ProjectsView() {
     const map: Record<string, { done: number; total: number }> = {};
     for (const p of projects) {
       const list = tasksByProject.get(p.id) ?? [];
-      // This pair sits directly under the card's progress bar and captions it, so it uses the
-      // **progress** numbers, not the "what's left" ones: closed counts as completed, blocked is
-      // out of the denominator. Showing "0 / 1 done" beneath a 67% bar would read as a bug.
+      // This pair sits under the card's progress bar, which is the SERVER's weighted
+      // `completion_pct` — a task in review counts 75%, so the bar can read 75% with nothing signed
+      // off. The pair therefore counts signed-off work against everything deliverable (blocked is
+      // out of the denominator, being unadvanceable), and the label beside it says "signed off"
+      // rather than "done" so the two are visibly answering different questions.
       const { completed, deliverable } = taskTotals(list);
       map[p.id] = { done: completed, total: deliverable };
     }

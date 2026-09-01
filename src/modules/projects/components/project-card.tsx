@@ -92,9 +92,11 @@ export function ProjectCard({
           <p className="text-muted-foreground">Tasks</p>
           <p className="mt-0.5 font-medium tabular-nums">
             {doneCount}
-            {/* "completed", not "done": a signed-off (closed) task counts here, and `done` is a
-                status of its own — using its name for a broader idea is how the two got confused. */}
-            <span className="text-muted-foreground"> / {totalCount} completed</span>
+            {/* "signed off", not "completed". The bar above is WEIGHTED — a task in review counts
+                75% — so it can read 75% while nothing has been signed off. Calling this pair
+                "completed" beside that bar makes one of the two look broken; they answer different
+                questions, and the label is where that gets said. */}
+            <span className="text-muted-foreground"> / {totalCount} signed off</span>
           </p>
         </div>
         <div className="text-right">

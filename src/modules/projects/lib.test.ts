@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, deriveProjectKey, taskTotals, toAssignees } from "./lib";
+import { STATUS_WEIGHT, canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, deriveProjectKey, taskTotals, toAssignees } from "./lib";
 import type { TaskStatus } from "./types";
 
 /**
@@ -278,5 +278,53 @@ describe("taskTotals — progress vs what's left", () => {
     expect(r.total).toBe(0);
     expect(r.completed).toBe(3);
     expect(Math.round((r.completed / r.deliverable) * 100)).toBe(100);
+  });
+});
+
+describe("weighted progress", () => {
+  const t = (status: string) => ({ status }) as never;
+
+  it("scores the ends at 0 and 100", () => {
+    expect(taskTotals([t("todo")]).progressPct).toBe(0);
+    expect(taskTotals([t("done")]).progressPct).toBe(100);
+  });
+
+  it("credits work that has moved but is not finished", () => {
+    // The case that prompted this: a board sitting entirely in review used to read 0%, because
+    // nothing was signed off. It had visibly moved for a fortnight.
+    expect(taskTotals([t("in_review")]).progressPct).toBe(75);
+    expect(taskTotals([t("in_progress")]).progressPct).toBe(50);
+    expect(taskTotals([t("todo"), t("done")]).progressPct).toBe(50);
+  });
+
+  it("leaves blocked work out of the denominator rather than scoring it zero", () => {
+    // Blocked cannot be advanced by the team, so counting it would mark them down for something
+    // they cannot act on. One done + one blocked is 100%, not 50%.
+    expect(taskTotals([t("done"), t("blocked")]).progressPct).toBe(100);
+    // ...and a project that is nothing but blocked has no progress to report.
+    expect(taskTotals([t("blocked"), t("blocked")]).progressPct).toBe(0);
+  });
+
+  it("rounds to nearest, so 2 of 3 done reads 67", () => {
+    expect(taskTotals([t("done"), t("done"), t("todo")]).progressPct).toBe(67);
+  });
+
+  it("is empty-safe", () => {
+    expect(taskTotals([]).progressPct).toBe(0);
+  });
+
+  /**
+   * The weights are duplicated in `backend/crates/projects/src/features/kpi/data.rs`, because the
+   * server computes the same percentage for the project card's bar. This pins the numbers so a
+   * change here is a visibly deliberate act that has to be mirrored, rather than a quiet edit that
+   * makes one screen disagree with another.
+   */
+  it("uses the weights the server mirrors", () => {
+    expect(STATUS_WEIGHT).toEqual({
+      todo: 0,
+      in_progress: 50,
+      in_review: 75,
+      done: 100,
+    });
   });
 });

@@ -35,9 +35,7 @@ export async function generateProjectReportPdf(
   // different definitions: a server percentage that counts signed-off work, a `done`-only count,
   // and a total that included closed and blocked. On a real board it printed "67% (0 of 5)".
   const totals = taskTotals(tasks);
-  const progressPct = totals.deliverable
-    ? Math.round((totals.completed / totals.deliverable) * 100)
-    : 0;
+  const progressPct = totals.progressPct;
   const lead = userMap[project.leadUserId]?.name ?? "—";
   const manager = project.managerId
     ? (userMap[project.managerId]?.name ?? "—")
