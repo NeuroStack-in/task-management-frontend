@@ -163,6 +163,28 @@ export async function updateProject(id: string, body: ProjectPatch): Promise<voi
 }
 
 /**
+ * `POST /v1/projects/{id}/transfer-manager` — hand the project to another member.
+ *
+ * Its own route because membership cannot express it: `POST /members` refuses the `manager` role
+ * outright, since a project has exactly one and it is a property of the project rather than of a
+ * membership row. The server promotes the new manager, repoints `manager_user_id`, and stands the
+ * previous manager down, in that order.
+ *
+ * **They must already be on the project** — the server rejects a stranger rather than adding them,
+ * so save membership first. Idempotent: transferring to the current manager is a no-op 200, which
+ * is what lets the Edit dialog send this on every save.
+ */
+export async function transferProjectManager(
+  projectId: string,
+  userId: string,
+): Promise<void> {
+  await apiFetch(`/v1/projects/${encodeURIComponent(projectId)}/transfer-manager`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+/**
  * `DELETE /v1/projects/{id}` — the project and all its children, server-side.
  *
  * The caller must navigate away rather than re-reading: the project no longer exists, so a reload

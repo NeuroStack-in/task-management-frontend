@@ -229,12 +229,11 @@ export function ProjectFormDialog({
                 )}
               />
             </Field>
-            {/* **Read-only when editing.** Handing a project over is `transfer_manager` in the
-                design — a distinct, audited action — and that route was never built: there is no
-                way to change `manager_user_id` after creation, and the membership routes refuse to
-                mint or move a manager on purpose. Left editable, this control did exactly what the
-                lead picker did before it was fixed: accepted a change, reported success, and moved
-                nothing. Disabled says the true thing until the endpoint exists. */}
+            {/* Editable again: `POST /v1/projects/{id}/transfer-manager` exists as of 2026-09-01.
+                It was disabled for exactly one commit, because until that route was built this
+                control did what the lead picker did — accepted a change, reported success, and
+                moved nothing. A picker that cannot perform its edit should say so rather than
+                pretend. */}
             <Field label="Project manager" error={errors.managerId?.message}>
               <Controller
                 control={control}
@@ -246,13 +245,12 @@ export function ProjectFormDialog({
                     onChange={field.onChange}
                     placeholder="Select manager"
                     invalid={!!errors.managerId}
-                    disabled={isEdit}
                   />
                 )}
               />
               {isEdit ? (
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Set when the project was created. Transferring a project isn’t available yet.
+                  They must already be on the team. The current manager becomes a member.
                 </p>
               ) : null}
             </Field>

@@ -15,6 +15,7 @@ import {
   getProject,
   getBoard,
   updateProject as apiUpdateProject,
+  transferProjectManager,
   deleteProject as apiDeleteProject,
   directoryUserMap,
   createTask as apiCreateTask,
@@ -157,7 +158,12 @@ export function useProjectDetail(id: string): ProjectDetailData {
       // does the server's `UpdateProjectRequest`, so the PATCH returned 200 and nothing moved. The
       // comment above `syncMembers` describes the same bug being fixed once already for members;
       // this is the half that was left.
-      await syncLead(id, project?.leadUserId ?? "", v.leadUserId, project?.managerId);
+      // **The manager last**, and after membership for the same reason the lead is: the server
+      // refuses to hand a project to somebody who is not on it yet. Ordering it after `syncLead`
+      // also means a promotion-then-handover in one save ends with the roles the server derives,
+      // not the ones this client guessed.
+      await syncManager(id, project?.managerId ?? "", v.managerId ?? "");
+      await syncLead(id, project?.leadUserId ?? "", v.leadUserId, v.managerId || project?.managerId);
       reload();
     },
     [id, project, reload],
@@ -302,6 +308,31 @@ async function syncMembers(
       failed === total
         ? "The project was saved but its members weren't updated. You may not have permission to manage this project's team."
         : `The project was saved, but ${failed} of ${total} team changes failed. Reopen the dialog to check.`,
+    );
+  }
+}
+
+/**
+ * Hand the project over, when the picker actually changed it.
+ *
+ * Guarded on a real change rather than sent every time: the route is idempotent, but a no-op round
+ * trip on every save is a request that can only fail. A failure is surfaced rather than swallowed —
+ * the caller shows "saved", and a silent refusal here is precisely the bug this dialog has already
+ * had twice.
+ */
+async function syncManager(
+  projectId: string,
+  current: string,
+  next: string,
+): Promise<void> {
+  if (!next || next === current) return;
+  try {
+    await transferProjectManager(projectId, next);
+  } catch (e) {
+    throw new Error(
+      e instanceof ApiError && e.status === 400
+        ? "The project was saved, but the manager wasn't changed — add them to the team first."
+        : "The project was saved, but the manager wasn't changed. Only the current manager or an admin can transfer a project.",
     );
   }
 }
