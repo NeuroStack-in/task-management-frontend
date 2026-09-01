@@ -365,59 +365,64 @@ export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
  * action that will actually work, rather than one that fails on click or is hidden when it wouldn't.
  */
 /**
- * Where an **assignee** may put their own card.
+ * Where **any project member** may put a card — the working columns.
  *
- * The working columns, and nothing terminal. `done` is a verdict on the work and `blocked` is a
- * claim that it cannot proceed — both are the lead's call, not the author's. Letting someone mark
- * their own work finished is the thing review exists to prevent, and letting them mark it blocked
- * is the quieter version of the same problem: work parks itself and no one is asked why.
+ * These three are a shared account of where the work actually is, so anyone on the project keeps
+ * them honest. It used to take being the card's assignee: a member watching a teammate's finished
+ * work sit in `in_progress` had to go and find that teammate, and "I picked this up" needed a
+ * reassignment before it could be said. Owner decision, 2026-09-01.
  */
-export const ASSIGNEE_TARGETS: readonly TaskStatus[] = [
+export const MEMBER_TARGETS: readonly TaskStatus[] = [
   "todo",
   "in_progress",
   "in_review",
 ];
 
 /**
- * Where a **reviewer** may put someone else's reviewed card. Three verdicts:
+ * The two columns that need a **Manager or Lead**, on anyone's card including their own.
  *
- * - `done` — satisfied, signed off;
- * - `blocked` — cannot proceed, and now visibly so;
- * - `todo` — **not satisfied**: the task goes back to the start of the board to be picked up again.
- *   Sending it back to `in_progress` would leave it looking like work already under way; `todo` is
- *   the honest state for something that has to be redone, and it is where reassignment happens.
+ * Neither is a report of where the work is; both are judgements about it:
+ *
+ * - `done` — signed off. The fuller path is the review dialog, which also records who approved it
+ *   and what they rated it; dragging here reaches the same state with neither, which is why it
+ *   takes the same authority.
+ * - `blocked` — cannot proceed. It also removes the task from the progress denominator entirely,
+ *   so an assignee could otherwise park their own work where it stops counting against the project
+ *   and nobody is asked why.
+ *
+ * Mirrors the server's `TaskStatus::is_oversight_only` + `can_review_task`. `closed` is not here
+ * because it is retired: the server parses it onto `done` and rejects it by name on a PATCH.
  */
-export const REVIEWER_TARGETS: readonly TaskStatus[] = ["done", "blocked", "todo"];
+export const OVERSIGHT_TARGETS: readonly TaskStatus[] = ["done", "blocked"];
+
+/** Manager or Lead — the roles the server resolves `projects:manage` and ownership into. */
+function isReviewer(authority: string): boolean {
+  return authority === "manager" || authority === "lead";
+}
 
 /**
  * May this person move this task at all? (Is the card draggable?)
  *
- * - **An assignee** moves their own card between the working columns.
- * - **A Manager or Lead** may pick up someone else's card **only while it is in review** — the
- *   moment their judgement is actually being asked for. A colleague's `in_progress` card is not
- *   theirs to reposition.
+ * **Anyone on the project.** Only members can load a board — a non-member gets a 404 — so a
+ * resolved `authority` is itself proof of membership, and the target column decides the rest.
+ * A card that will not lift for a valid drop is worse than one that lifts and is refused, and the
+ * refusals now live entirely in {@link canMoveTaskTo}.
  *
- * A lead's *own* task is governed by the assignee rule, so they cannot sign it off themselves —
- * the same principle {@link canReviewTask} enforces. Another lead or the manager does that.
- *
- * **Any assignee counts, not just the first.** A task with several people on it shows one avatar;
- * checking only that one would stop the second assignee moving work that is genuinely theirs.
- *
- * A UX mirror, not the boundary — the server is the boundary. It exists so the card does not lift,
- * rather than sliding into a column and springing back when the refusal lands.
+ * A UX mirror, not the boundary — the server re-decides on every PATCH.
  */
 export function canMoveTask(
-  task: Pick<Task, "assignees" | "status">,
+  _task: Pick<Task, "assignees" | "status">,
   authority: string,
-  currentUserId: string | null | undefined,
+  _currentUserId: string | null | undefined,
 ): boolean {
-  if (isAssignee(task, currentUserId)) return true;
-  const reviewer = authority === "manager" || authority === "lead";
-  return reviewer && task.status === "in_review";
+  return authority !== "";
 }
 
 /**
  * May this person move this task into **this** column? The drop-time half of {@link canMoveTask}.
+ *
+ * The target decides, not the ownership of the card: the three working columns are open to every
+ * member, and {@link OVERSIGHT_TARGETS} needs a Manager or Lead.
  */
 export function canMoveTaskTo(
   task: Pick<Task, "assignees" | "status">,
@@ -426,9 +431,9 @@ export function canMoveTaskTo(
   target: TaskStatus,
 ): boolean {
   if (!canMoveTask(task, authority, currentUserId)) return false;
-  return isAssignee(task, currentUserId)
-    ? ASSIGNEE_TARGETS.includes(target)
-    : REVIEWER_TARGETS.includes(target);
+  return OVERSIGHT_TARGETS.includes(target)
+    ? isReviewer(authority)
+    : MEMBER_TARGETS.includes(target);
 }
 
 function isAssignee(

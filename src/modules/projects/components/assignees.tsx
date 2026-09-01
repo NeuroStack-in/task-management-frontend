@@ -161,7 +161,9 @@ export function AssigneePicker({
       >
         {chosen.length === 0 ? (
           <span className="flex items-center gap-2 text-muted-foreground">
-            <UserPlus className="size-4" /> Unassigned
+            {/* Not "Unassigned": that names a state a task can no longer be saved in, so it read
+                as a choice. This is a prompt for the one that has to be made. */}
+            <UserPlus className="size-4" /> Choose assignees
           </span>
         ) : (
           <span className="flex min-w-0 flex-1 items-center gap-2">

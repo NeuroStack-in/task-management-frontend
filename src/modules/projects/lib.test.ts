@@ -63,69 +63,65 @@ describe("canMoveTask / canMoveTaskTo", () => {
     assignees: ids.map(a),
   });
 
-  it("lets an assignee move their own card between the working columns", () => {
-    const mine = task("in_progress", "u-me");
-    expect(canMoveTask(mine, "member", "u-me")).toBe(true);
+  /**
+   * **The target column decides, not who owns the card** (owner decision, 2026-09-01).
+   *
+   * This block used to assert the opposite at every turn: a member could move only their own card,
+   * and a lead could pick up someone else's only while it sat in review. The board that produced
+   * was one nobody could keep tidy — a member looking at a teammate's finished work stuck in
+   * `in_progress` had to go and find that teammate, and "I've picked this up" needed a
+   * reassignment before it could be said.
+   */
+  it("lets any project member move any card between the working columns", () => {
+    const theirs = task("in_progress", "u-other");
+    expect(canMoveTask(theirs, "member", "u-me")).toBe(true);
     for (const to of ["todo", "in_progress", "in_review"] as TaskStatus[]) {
-      expect(canMoveTaskTo(mine, "member", "u-me", to), to).toBe(true);
+      expect(canMoveTaskTo(theirs, "member", "u-me", to), to).toBe(true);
     }
   });
 
-  it("stops an assignee closing or parking their own work", () => {
-    // Both are verdicts on the work, and neither is the author's to give: marking your own task
-    // done is what review exists to prevent, and marking it blocked parks it with nobody asked.
-    const mine = task("in_review", "u-me");
-    expect(canMoveTaskTo(mine, "member", "u-me", "done")).toBe(false);
-    expect(canMoveTaskTo(mine, "member", "u-me", "blocked")).toBe(false);
+  it("stops a member marking anything done or blocked — their own included", () => {
+    // Neither is a report of where the work is; both are judgements about it. Marking your own
+    // task done is what review exists to prevent, and marking it blocked parks it somewhere it
+    // stops counting against the project with nobody asked why.
+    for (const owner of ["u-me", "u-other"]) {
+      const t = task("in_review", owner);
+      expect(canMoveTaskTo(t, "member", "u-me", "done"), owner).toBe(false);
+      expect(canMoveTaskTo(t, "member", "u-me", "blocked"), owner).toBe(false);
+    }
   });
 
-  it("stops a LEAD signing off their own task too", () => {
-    // Being the reviewer does not make you your own reviewer.
-    const mine = task("in_review", "u-lead");
-    expect(canMoveTaskTo(mine, "lead", "u-lead", "done")).toBe(false);
-    expect(canMoveTaskTo(mine, "lead", "u-lead", "blocked")).toBe(false);
-    // They can still push their own work forward like anyone else.
-    expect(canMoveTaskTo(mine, "lead", "u-lead", "in_progress")).toBe(true);
-  });
-
-  it("counts EVERY assignee, not just the one the card shows", () => {
-    const shared = task("in_progress", "u-a", "u-b");
-    expect(canMoveTask(shared, "member", "u-a")).toBe(true);
-    expect(canMoveTask(shared, "member", "u-b")).toBe(true);
-    expect(canMoveTask(shared, "member", "u-c")).toBe(false);
-  });
-
-  it("does not let a member touch someone else's card at all", () => {
-    const theirs = task("in_review", "u-other");
-    expect(canMoveTask(theirs, "member", "u-me")).toBe(false);
-    expect(canMoveTaskTo(theirs, "member", "u-me", "done")).toBe(false);
-  });
-
-  it("lets a reviewer pick up someone else's card ONLY while it is in review", () => {
+  it("gives a lead and a manager both verdicts, on any card and in any column", () => {
     for (const role of ["lead", "manager"]) {
-      expect(canMoveTask(task("in_review", "u-other"), role, "u-me"), role).toBe(true);
-      // Not theirs to reposition before the judgement is asked for.
-      for (const s of ["todo", "in_progress", "done", "blocked"] as TaskStatus[]) {
-        expect(canMoveTask(task(s, "u-other"), role, "u-me"), `${role}/${s}`).toBe(false);
+      for (const from of ["todo", "in_progress", "in_review"] as TaskStatus[]) {
+        const t = task(from, "u-other");
+        expect(canMoveTaskTo(t, role, "u-me", "done"), `${role}/${from}`).toBe(true);
+        expect(canMoveTaskTo(t, role, "u-me", "blocked"), `${role}/${from}`).toBe(true);
       }
     }
   });
 
-  it("gives a reviewer three verdicts: done, blocked, or back to todo", () => {
-    const reviewed = task("in_review", "u-other");
-    expect(canMoveTaskTo(reviewed, "lead", "u-me", "done")).toBe(true);
-    expect(canMoveTaskTo(reviewed, "lead", "u-me", "blocked")).toBe(true);
-    // Not satisfied: it goes back to the start to be picked up again — which is where
-    // reassignment happens. `in_progress` is NOT a verdict: it would leave the task looking like
-    // work already under way when in fact it has to be redone.
-    expect(canMoveTaskTo(reviewed, "lead", "u-me", "todo")).toBe(true);
-    expect(canMoveTaskTo(reviewed, "lead", "u-me", "in_progress")).toBe(false);
+  /**
+   * **Mirroring the server exactly, including where it is looser than the review dialog.**
+   *
+   * `update_task` gates `done`/`blocked` on the role alone, so a lead dragging their own card there
+   * succeeds. Asserting otherwise would make the board refuse a drop the API accepts — a mirror
+   * that lies in the safe-looking direction is still a mirror that lies. "Never review your own
+   * work" is enforced where it carries a rating and a reviewer's name: `canReviewTask`, and the
+   * server's `review_task`.
+   */
+  it("does not re-litigate own-work review in the drag path", () => {
+    const mine = task("in_review", "u-lead");
+    expect(canMoveTaskTo(mine, "lead", "u-lead", "done")).toBe(true);
+    expect(canReviewTask(mine, "lead", "u-lead")).toBe(false);
   });
 
-  it("refuses an unassigned task and an unknown viewer", () => {
-    expect(canMoveTask(task("in_progress"), "member", "u-me")).toBe(false);
-    expect(canMoveTask(task("in_progress", "u-me"), "member", null)).toBe(false);
-    expect(canMoveTask(task("in_progress", "u-me"), "member", undefined)).toBe(false);
+  /** An unassigned legacy card is still movable — it is the state most in need of correcting. */
+  it("moves a card with nobody on it, and refuses a viewer with no project role", () => {
+    expect(canMoveTask(task("in_progress"), "member", "u-me")).toBe(true);
+    expect(canMoveTask(task("in_progress", "u-me"), "member", null)).toBe(true);
+    // No resolved authority means the board never loaded a role — not a member.
+    expect(canMoveTask(task("in_progress", "u-me"), "", "u-me")).toBe(false);
   });
 });
 

@@ -407,11 +407,12 @@ export function TaskFormDialog({
                   />
                 )}
               />
-              {/* Said out loud because it is no longer merely "nobody chose": leaving this empty
-                  publishes the task to the project, and someone would otherwise discover that by
-                  seeing their card in a colleague's desktop picker. */}
+              {/* This said "Leave empty to offer this task to everyone on the project" — the
+                  unclaimed-picker behaviour, retired on 2026-09-01 along with unassigned tasks
+                  themselves. It survived the invariant landing and was then instructing people to
+                  do the one thing the form now refuses. */}
               <p className="mt-1.5 text-xs text-muted-foreground">
-                Leave empty to offer this task to everyone on the project.
+                Pick at least one person — a task always has someone on it.
               </p>
             </Field>
 
