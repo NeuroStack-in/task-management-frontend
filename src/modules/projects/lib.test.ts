@@ -63,12 +63,29 @@ describe("canMoveTask / canMoveTaskTo", () => {
     assignees: ids.map(a),
   });
 
-  it("lets an assignee move their own card anywhere", () => {
+  it("lets an assignee move their own card between the working columns", () => {
     const mine = task("in_progress", "u-me");
     expect(canMoveTask(mine, "member", "u-me")).toBe(true);
-    for (const to of ["todo", "in_review", "blocked"] as TaskStatus[]) {
+    for (const to of ["todo", "in_progress", "in_review"] as TaskStatus[]) {
       expect(canMoveTaskTo(mine, "member", "u-me", to), to).toBe(true);
     }
+  });
+
+  it("stops an assignee closing or parking their own work", () => {
+    // Both are verdicts on the work, and neither is the author's to give: marking your own task
+    // done is what review exists to prevent, and marking it blocked parks it with nobody asked.
+    const mine = task("in_review", "u-me");
+    expect(canMoveTaskTo(mine, "member", "u-me", "done")).toBe(false);
+    expect(canMoveTaskTo(mine, "member", "u-me", "blocked")).toBe(false);
+  });
+
+  it("stops a LEAD signing off their own task too", () => {
+    // Being the reviewer does not make you your own reviewer.
+    const mine = task("in_review", "u-lead");
+    expect(canMoveTaskTo(mine, "lead", "u-lead", "done")).toBe(false);
+    expect(canMoveTaskTo(mine, "lead", "u-lead", "blocked")).toBe(false);
+    // They can still push their own work forward like anyone else.
+    expect(canMoveTaskTo(mine, "lead", "u-lead", "in_progress")).toBe(true);
   });
 
   it("counts EVERY assignee, not just the one the card shows", () => {
@@ -94,12 +111,14 @@ describe("canMoveTask / canMoveTaskTo", () => {
     }
   });
 
-  it("limits a reviewer to signing off or parking it", () => {
+  it("gives a reviewer three verdicts: done, blocked, or back to todo", () => {
     const reviewed = task("in_review", "u-other");
     expect(canMoveTaskTo(reviewed, "lead", "u-me", "done")).toBe(true);
     expect(canMoveTaskTo(reviewed, "lead", "u-me", "blocked")).toBe(true);
-    // Sending a colleague's finished work back is editing the record of what they did.
-    expect(canMoveTaskTo(reviewed, "lead", "u-me", "todo")).toBe(false);
+    // Not satisfied: it goes back to the start to be picked up again — which is where
+    // reassignment happens. `in_progress` is NOT a verdict: it would leave the task looking like
+    // work already under way when in fact it has to be redone.
+    expect(canMoveTaskTo(reviewed, "lead", "u-me", "todo")).toBe(true);
     expect(canMoveTaskTo(reviewed, "lead", "u-me", "in_progress")).toBe(false);
   });
 

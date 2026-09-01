@@ -20,7 +20,7 @@ import type { ProjectFormValues } from "@/modules/projects/forms";
 import type { TaskFormValues } from "@/modules/projects/forms";
 import { useProjectDetail } from "../use-project-detail";
 import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
-import { canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, canSetTaskStatus, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
+import { canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
 import { Segmented, StatusBadge } from "./parts";
@@ -317,23 +317,24 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     if (!canMoveTaskTo(moved, authority, currentUserId, target)) {
       // Two different refusals, because they are two different rules and one message for both
       // would be wrong half the time.
+      // Three different refusals. One message for all of them would be wrong twice.
       const mine = moved.assignees.some((a) => a.userId === currentUserId);
+      const terminal = target === "done" || target === "blocked";
       toast.error(
-        mine ? "That task belongs to someone else" : "Reviewers move reviewed work only",
+        mine && terminal
+          ? "Only a lead or manager can close a task"
+          : mine
+            ? "That column isn't yours to use"
+            : "That task belongs to someone else",
         {
-          description: mine
-            ? "You can move tasks you're assigned to."
-            : "A task in review can be signed off as Done or parked as Blocked — anything else is the assignee's to move.",
+          description:
+            mine && terminal
+              ? "Move it to In review — a lead signs it off as Done, or parks it as Blocked."
+              : mine
+                ? "You can move your own work between To do, In progress and In review."
+                : "A reviewer can take a task that's In review; otherwise it's the assignee's to move.",
         },
       );
-      return;
-    }
-    // `done` is sign-off: refuse the drop here rather than letting the server 403 it, and say why.
-    // Everything else a task-manager may drag freely.
-    if (!canSetTaskStatus(target, authority)) {
-      toast.error("Only a lead or manager can mark a task done", {
-        description: "Move it to In review and a reviewer will sign it off.",
-      });
       return;
     }
     moveTask(moved.id, target);
