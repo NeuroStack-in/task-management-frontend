@@ -316,6 +316,67 @@ export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
  * This is UX, not security — the server re-decides on every DELETE. It exists so the card shows an
  * action that will actually work, rather than one that fails on click or is hidden when it wouldn't.
  */
+/**
+ * The columns a reviewer may move **someone else's** task into.
+ *
+ * Sign-off (`done`) and parking work that cannot proceed (`blocked`) are the two judgements a lead
+ * makes about a finished piece. Everything else — dragging a colleague's card back to `todo`,
+ * "helpfully" advancing it to `in_progress` — is editing the record of their work, and a status is
+ * a claim about what they did.
+ */
+export const REVIEWER_TARGETS: readonly TaskStatus[] = ["done", "blocked"];
+
+/**
+ * May this person move this task at all? (Is the card draggable?)
+ *
+ * Two ways to qualify, and they are different powers:
+ *
+ * - **An assignee** moves their own card through the board. Any column: it is their work, and
+ *   describing its state is the point of the board. (`done` is still gated separately by
+ *   {@link canSetTaskStatus} — sign-off is not something you award yourself.)
+ * - **A Manager or Lead** may pick up someone else's card **only while it is in review** — the
+ *   moment their judgement is actually being asked for. A colleague's `in_progress` card is not
+ *   theirs to reposition.
+ *
+ * **Any assignee counts, not just the first.** A task with several people on it shows one avatar;
+ * checking only that one would stop the second assignee moving work that is genuinely theirs.
+ *
+ * A UX mirror, not the boundary — the server refuses regardless. It exists so the card does not
+ * lift, rather than sliding into a column and springing back when the 403 lands.
+ */
+export function canMoveTask(
+  task: Pick<Task, "assignees" | "status">,
+  authority: string,
+  currentUserId: string | null | undefined,
+): boolean {
+  const mine = Boolean(
+    currentUserId && task.assignees.some((a) => a.userId === currentUserId),
+  );
+  if (mine) return true;
+  const reviewer = authority === "manager" || authority === "lead";
+  return reviewer && task.status === "in_review";
+}
+
+/**
+ * May this person move this task into **this** column?
+ *
+ * The drop-time half of {@link canMoveTask}. A reviewer holding someone else's reviewed card may
+ * put it down in exactly two places; an assignee moving their own is bounded only by the sign-off
+ * rule, which is checked separately so its message can say what it is.
+ */
+export function canMoveTaskTo(
+  task: Pick<Task, "assignees" | "status">,
+  authority: string,
+  currentUserId: string | null | undefined,
+  target: TaskStatus,
+): boolean {
+  if (!canMoveTask(task, authority, currentUserId)) return false;
+  const mine = Boolean(
+    currentUserId && task.assignees.some((a) => a.userId === currentUserId),
+  );
+  return mine || REVIEWER_TARGETS.includes(target);
+}
+
 export function canDeleteTask(
   task: Pick<Task, "createdBy">,
   authority: string,

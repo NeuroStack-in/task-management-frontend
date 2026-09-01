@@ -20,7 +20,7 @@ import type { ProjectFormValues } from "@/modules/projects/forms";
 import type { TaskFormValues } from "@/modules/projects/forms";
 import { useProjectDetail } from "../use-project-detail";
 import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
-import { canDeleteTask, canReviewTask, canSetTaskStatus, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
+import { canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, canSetTaskStatus, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
 import { Segmented, StatusBadge } from "./parts";
@@ -81,6 +81,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const canDelete = (t: Task) => canDeleteTask(t, authority, currentUserId);
   /** Mirrors the server: Manager|Lead, only on a `done` task, never your own. */
   const canReview = (t: Task) => canReviewTask(t, authority, currentUserId);
+  const canMove = (t: Task) => canMoveTask(t, authority, currentUserId);
   const [reviewTarget, setReviewTarget] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
@@ -308,6 +309,25 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     const target = over.id as TaskStatus;
     const moved = tasks.find((t) => t.id === active.id);
     if (!moved || moved.status === target || !TASK_STATUS_SETTABLE.includes(target)) return;
+    // **Someone else's card.** The server refuses this (`update_task`: not an assignee and no
+    // `can_move_any_task` ⇒ 403), and without the check here the card slid into the new column and
+    // sprang back a moment later with a toast — the move looked like it worked, then undid itself.
+    // The card is also not draggable at all (see `TaskCard`); this is the backstop for a drop that
+    // begins before the roster loads.
+    if (!canMoveTaskTo(moved, authority, currentUserId, target)) {
+      // Two different refusals, because they are two different rules and one message for both
+      // would be wrong half the time.
+      const mine = moved.assignees.some((a) => a.userId === currentUserId);
+      toast.error(
+        mine ? "That task belongs to someone else" : "Reviewers move reviewed work only",
+        {
+          description: mine
+            ? "You can move tasks you're assigned to."
+            : "A task in review can be signed off as Done or parked as Blocked — anything else is the assignee's to move.",
+        },
+      );
+      return;
+    }
     // `done` is sign-off: refuse the drop here rather than letting the server 403 it, and say why.
     // Everything else a task-manager may drag freely.
     if (!canSetTaskStatus(target, authority)) {
@@ -629,6 +649,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   onDelete={setTaskToDelete}
                   canDelete={canDelete}
                   canReview={canReview}
+                  canMove={canMove}
                   onReview={setReviewTarget}
                 />
               ))}
@@ -932,6 +953,7 @@ function KanbanColumn({
   onDelete,
   canDelete,
   canReview,
+  canMove,
   onReview,
 }: {
   col: TaskStatus;
@@ -944,6 +966,8 @@ function KanbanColumn({
   onDelete: (t: Task) => void;
   canDelete: (t: Task) => boolean;
   canReview: (t: Task) => boolean;
+  /** False ⇒ the card does not lift: it is someone else's, and the server would refuse the move. */
+  canMove: (t: Task) => boolean;
   onReview: (t: Task) => void;
 }) {
   const meta = TASK_STATUS_META[col];
@@ -984,6 +1008,7 @@ function KanbanColumn({
               onEdit={onEdit}
               onDelete={canDelete(t) ? onDelete : undefined}
               onReview={canReview(t) ? onReview : undefined}
+              draggable={canMove(t)}
             />
           ))}
         </ul>
@@ -999,6 +1024,7 @@ function TaskCard({
   onView,
   onEdit,
   onDelete,
+  draggable = true,
 }: {
   task: Task;
   userMap: Record<string, UserMini>;
@@ -1009,9 +1035,16 @@ function TaskCard({
   onDelete?: (t: Task) => void;
   /** Present only when this person may sign this task off — absent hides the action entirely. */
   onReview?: (t: Task) => void;
+  /** False for a task assigned to someone else: the card is inert rather than rejected on drop. */
+  draggable?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
+    // Not draggable when it is not yours to move. dnd-kit then never starts a drag, so the card
+    // cannot slide into a column the server will reject — which is what used to happen: the move
+    // rendered, then reverted when the 403 arrived, and the board looked broken rather than
+    // governed. `cursor-default` is the visible half of the same fact.
+    disabled: !draggable,
   });
   const style = transform
     ? {
@@ -1027,7 +1060,9 @@ function TaskCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "group/task bg-card relative cursor-grab touch-none rounded-xl border p-3 active:cursor-grabbing",
+        "group/task bg-card relative touch-none rounded-xl border p-3",
+        // A grab cursor on a card that cannot be grabbed is a promise the board does not keep.
+        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
         isDragging && "ring-primary/30 shadow-xl ring-2",
       )}
     >

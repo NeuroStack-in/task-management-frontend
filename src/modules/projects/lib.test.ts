@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { canDeleteTask, canReviewTask, deriveProjectKey, taskTotals, toAssignees } from "./lib";
+import { canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, deriveProjectKey, taskTotals, toAssignees } from "./lib";
+import type { TaskStatus } from "./types";
 
 /**
  * The delete rule, as an executable statement. It mirrors `projects::delete_task` on the server —
@@ -55,6 +56,60 @@ describe("canDeleteTask", () => {
  * rule against the full assignment set, so a UI that offered the button to the second assignee
  * would only produce a `cannot_review_own_task` conflict.
  */
+describe("canMoveTask / canMoveTaskTo", () => {
+  const a = (id: string) => ({ userId: id, assignedBy: "u-lead", assignedAt: 1 });
+  const task = (status: TaskStatus, ...ids: string[]) => ({
+    status,
+    assignees: ids.map(a),
+  });
+
+  it("lets an assignee move their own card anywhere", () => {
+    const mine = task("in_progress", "u-me");
+    expect(canMoveTask(mine, "member", "u-me")).toBe(true);
+    for (const to of ["todo", "in_review", "blocked"] as TaskStatus[]) {
+      expect(canMoveTaskTo(mine, "member", "u-me", to), to).toBe(true);
+    }
+  });
+
+  it("counts EVERY assignee, not just the one the card shows", () => {
+    const shared = task("in_progress", "u-a", "u-b");
+    expect(canMoveTask(shared, "member", "u-a")).toBe(true);
+    expect(canMoveTask(shared, "member", "u-b")).toBe(true);
+    expect(canMoveTask(shared, "member", "u-c")).toBe(false);
+  });
+
+  it("does not let a member touch someone else's card at all", () => {
+    const theirs = task("in_review", "u-other");
+    expect(canMoveTask(theirs, "member", "u-me")).toBe(false);
+    expect(canMoveTaskTo(theirs, "member", "u-me", "done")).toBe(false);
+  });
+
+  it("lets a reviewer pick up someone else's card ONLY while it is in review", () => {
+    for (const role of ["lead", "manager"]) {
+      expect(canMoveTask(task("in_review", "u-other"), role, "u-me"), role).toBe(true);
+      // Not theirs to reposition before the judgement is asked for.
+      for (const s of ["todo", "in_progress", "done", "blocked"] as TaskStatus[]) {
+        expect(canMoveTask(task(s, "u-other"), role, "u-me"), `${role}/${s}`).toBe(false);
+      }
+    }
+  });
+
+  it("limits a reviewer to signing off or parking it", () => {
+    const reviewed = task("in_review", "u-other");
+    expect(canMoveTaskTo(reviewed, "lead", "u-me", "done")).toBe(true);
+    expect(canMoveTaskTo(reviewed, "lead", "u-me", "blocked")).toBe(true);
+    // Sending a colleague's finished work back is editing the record of what they did.
+    expect(canMoveTaskTo(reviewed, "lead", "u-me", "todo")).toBe(false);
+    expect(canMoveTaskTo(reviewed, "lead", "u-me", "in_progress")).toBe(false);
+  });
+
+  it("refuses an unassigned task and an unknown viewer", () => {
+    expect(canMoveTask(task("in_progress"), "member", "u-me")).toBe(false);
+    expect(canMoveTask(task("in_progress", "u-me"), "member", null)).toBe(false);
+    expect(canMoveTask(task("in_progress", "u-me"), "member", undefined)).toBe(false);
+  });
+});
+
 describe("canReviewTask with several assignees", () => {
   const shared = {
     // `in_review` is the reviewable state since `closed` was retired on 2026-08-31.
