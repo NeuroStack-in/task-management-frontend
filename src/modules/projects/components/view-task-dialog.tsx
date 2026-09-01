@@ -298,7 +298,11 @@ export function ViewTaskDialog({
           <div className="min-h-0 flex-1 divide-y overflow-y-auto">
             <Section label={task.assignees.length > 1 ? "Assignees" : "Assignee"}>
               {task.assignees.length === 0 ? (
-                <Empty>Unassigned — anyone on this project can pick it up</Empty>
+                // Only a task predating the 2026-09-01 invariant, or one whose last assignee left
+                // a project with no manager to inherit it, can be here — new ones cannot be
+                // created. The old copy promised "anyone can pick it up", which was the unclaimed
+                // picker; that is retired, so it now says who can actually act.
+                <Empty>Unassigned — a lead or manager needs to assign it</Empty>
               ) : (
                 <ul className="space-y-2.5">
                   {task.assignees.map((a) => {

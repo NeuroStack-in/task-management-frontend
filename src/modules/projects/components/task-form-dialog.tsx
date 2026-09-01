@@ -51,7 +51,10 @@ const schema = z.object({
   // reviewing the task, not by editing it. A form that offered it would let the assignee mark their
   // own work approved — and the server would refuse the write anyway.
   status: z.enum(["todo", "in_progress", "in_review", "done", "blocked"]),
-  assigneeIds: z.array(z.string()),
+  // **At least one assignee** (owner decision, 2026-09-01). Unassigned tasks are refused by the
+  // server (`assignment::require_someone`); catching it here means the message lands on the field
+  // rather than as a toast after a round-trip that was never going to succeed.
+  assigneeIds: z.array(z.string()).min(1, "Assign this task to at least one person"),
   priority: z.enum(["low", "medium", "high"]),
   dueDate: z.string(),
   estimateHours: z.coerce.number().min(0, "Must be ≥ 0").max(400),

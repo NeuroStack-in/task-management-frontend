@@ -70,9 +70,18 @@ describe("ViewTaskDialog", () => {
    * Unassigned is a real state now — the task is offered to the whole project — so it gets a
    * sentence, not a blank.
    */
-  it("explains an unassigned task rather than leaving the field empty", () => {
+  /**
+   * A task with nobody on it can no longer be *created* (owner decision, 2026-09-01), but the panel
+   * still has to render one: rows predating the invariant, and the one departure case where a last
+   * assignee leaves a project whose manager cannot inherit. The copy used to offer it to "anyone on
+   * this project", which was the unclaimed picker — retired with the state itself — so it now names
+   * who can actually act on it.
+   */
+  it("explains an unassigned legacy task rather than leaving the field empty", () => {
     show(task({ assignees: [] }));
-    expect(screen.getByText(/anyone on this project can pick it up/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/a lead or manager needs to assign it/),
+    ).toBeInTheDocument();
   });
 
   /**

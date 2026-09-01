@@ -267,18 +267,21 @@ export interface TaskTotals {
  * computes the same number for the dashboard; if these two drift, the same project shows two
  * different percentages on two screens and neither is obviously wrong.
  *
- * The middle values are a judgement, and the gap between them is the point (owner decision,
- * 2026-09-01). Picking a task up is a small step — 25 — because most of the work is still ahead of
- * it. Reaching review is a large one — 75 — because the work is finished as far as its author is
- * concerned and now waits on somebody else. An even 25/50/75 ladder would have implied that
- * starting and finishing are equally significant, which is not how a board actually moves.
+ * The middle values are a judgement (owner decision, revised 2026-09-01 from 25/75). Starting a
+ * task books **35** — a third of the way, because getting a card moving is more than a token step
+ * even though most of the work is still ahead. Reaching review books **90**: the work is finished
+ * as far as its author is concerned and the only thing left is somebody else's sign-off, so the
+ * remaining ten points measure the review, not the work.
+ *
+ * The owner asked for 30–40 on in-progress; **35 is the midpoint**, and it is a one-line change
+ * here and in the server mirror if a different point in that range is wanted.
  *
  * `blocked` has no weight because it never reaches the sum — it is excluded from the denominator.
  */
 export const STATUS_WEIGHT: Record<Exclude<TaskStatus, "blocked">, number> = {
   todo: 0,
-  in_progress: 25,
-  in_review: 75,
+  in_progress: 35,
+  in_review: 90,
   done: 100,
 };
 

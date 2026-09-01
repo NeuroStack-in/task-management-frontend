@@ -31,7 +31,8 @@ export interface TaskFormValues {
   title: string;
   description: string;
   status: TaskStatus;
-  /** Everyone to put on the task; empty means unassigned, which is a choice the form can make. */
+  /** Everyone to put on the task. **At least one** — empty is refused by the form and the server
+   *  (owner decision, 2026-09-01); unassigned is no longer a state a task can be created in. */
   assigneeIds: string[];
   priority: TaskPriority;
   dueDate: string | null;
