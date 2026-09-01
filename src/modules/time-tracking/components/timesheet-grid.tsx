@@ -195,7 +195,7 @@ export function TimesheetGrid({
   const now = useNow();
   const [selection, setSelection] = useState<
     | { rowId: string; kind: "day"; dayIndex: number }
-    | { rowId: string; kind: "week" }
+    | { rowId: string; kind: "range" }
     | null
   >(null);
 
@@ -343,7 +343,7 @@ export function TimesheetGrid({
   }, [rows, dates.length]);
   const grandTotal = colTotals.reduce((s, h) => s + h, 0);
 
-  // Resolve the open drill-down (day or week) from the current rows.
+  // Resolve the open drill-down (a single day, or the whole range) from the current rows.
   const activeView: ActivityView | null = (() => {
     if (!selection) return null;
     const row = rows.find((r) => r.id === selection.rowId);
@@ -369,8 +369,12 @@ export function TimesheetGrid({
     }
     return {
       ...base,
-      kind: "week",
-      weekRange,
+      kind: "range",
+      rangeLabel: weekRange,
+      // The dialog derives every weekday, weekend tint and hover label from these dates rather
+      // than from the array index — the index is a weekday only in a Monday-aligned week.
+      period,
+      dates,
       days: row.days,
       entriesByDay: row.dayEntries,
     };
@@ -716,8 +720,8 @@ export function TimesheetGrid({
                   <td className="p-0 text-center">
                     <button
                       type="button"
-                      onClick={() => setSelection({ rowId: r.id, kind: "week" })}
-                      title="View weekly activity"
+                      onClick={() => setSelection({ rowId: r.id, kind: "range" })}
+                      title={`View ${period === "month" ? "monthly" : "weekly"} activity`}
                       className="hover:bg-primary/10 hover:text-primary w-full px-3 py-2.5 text-center font-mono font-semibold tabular-nums transition-colors"
                     >
                       {fmtHM(r.total)}

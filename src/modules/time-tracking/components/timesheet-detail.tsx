@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { formatHours, type TimesheetDayEntry, type TimesheetStatus } from "../types";
+import type { Period } from "../use-team-timesheet";
 import { formatHMS, useRunningSeconds } from "@/hooks/use-live-refresh";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,31 @@ const STATUS_META: Record<TimesheetStatus, { label: string; className: string }>
 };
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** `YYYY-MM-DD` → weekday index with **Monday = 0**, matching `DAY_LABELS`. */
+function weekdayIndex(iso: string): number {
+  return (new Date(`${iso}T00:00:00`).getDay() + 6) % 7;
+}
+
+/** `YYYY-MM-DD` → `Wed, Aug 5` — the hover label on a bar. */
+function barTitle(iso: string): string {
+  const [, m, d] = iso.split("-").map(Number);
+  return `${DAY_LABELS[weekdayIndex(iso)]}, ${MONTHS[m - 1]} ${d}`;
+}
 
 /* ----------------------------- view model -----------------------------
  *
@@ -41,16 +67,35 @@ export type ActivityView =
       entries: TimesheetDayEntry[];
     }
   | {
-      kind: "week";
+      /**
+       * The whole selected range — a **week or a month**.
+       *
+       * Named `range`, not `week`, because it was called `week` while already being opened for a
+       * month, and the name is what licensed the bugs: `days[]` was documented "Mon→Sun" and the
+       * chart read `DAY_LABELS[i]`, which is `undefined` from the eighth bar on. A month opened
+       * this dialog and got seven weekday names followed by twenty-four blanks.
+       */
+      kind: "range";
       rowId: string;
       name: string;
       subtitle: string;
       isProject: boolean;
       status: TimesheetStatus;
-      weekRange: string;
-      /** Real hours per weekday, Mon→Sun. */
+      /** Human label for the range, e.g. `Aug 1 – 31, 2026`. */
+      rangeLabel: string;
+      /** Which span this is — decides the wording and how the chart is laid out. */
+      period: Period;
+      /**
+       * The iso dates `days`/`entriesByDay` align to — 7 for a week, 28-31 for a month.
+       *
+       * Carried rather than inferred: the bars' weekday, weekend shading and hover labels are all
+       * facts about the **date**, and deriving them from the array index is only correct for a
+       * Monday-aligned week.
+       */
+      dates: string[];
+      /** Real hours per day, aligned to `dates`. */
       days: number[];
-      /** Real entries per weekday, Mon→Sun. */
+      /** Real entries per day, aligned to `dates`. */
       entriesByDay: TimesheetDayEntry[][];
     };
 
@@ -75,10 +120,19 @@ export function ActivityDialog({
   onClose: () => void;
 }) {
   const meta = view ? STATUS_META[view.status] : null;
+  const isMonth = view?.kind === "range" && view.period === "month";
 
   return (
     <Dialog open={!!view} onOpenChange={(o) => (!o ? onClose() : undefined)}>
-      <DialogContent className="max-h-[85vh] gap-0 overflow-x-hidden overflow-y-auto p-0 sm:max-w-lg">
+      <DialogContent
+        className={cn(
+          "max-h-[85vh] gap-0 overflow-x-hidden overflow-y-auto p-0",
+          // A month needs the extra width: 31 bars in the 512px `lg` dialog leave ~7px each once
+          // the gaps are paid for, which is a hairline, not a bar. Everything else keeps `lg` —
+          // widening a seven-bar chart would only stretch it.
+          isMonth ? "sm:max-w-2xl" : "sm:max-w-lg",
+        )}
+      >
         {view ? (
           <>
             <DialogHeader className="border-b p-5 pr-12 text-left">
@@ -90,7 +144,9 @@ export function ActivityDialog({
                 <span className="text-muted-foreground text-xs">
                   {view.kind === "day"
                     ? `Daily time · ${view.dateLabel}`
-                    : `Weekly time · ${view.weekRange}`}
+                    : // Said "Weekly time" over a month's range, so the dialog contradicted the
+                      // date beside it.
+                      `${view.period === "month" ? "Monthly" : "Weekly"} time · ${view.rangeLabel}`}
                 </span>
               </div>
               <DialogTitle className="mt-1 text-lg">{view.name}</DialogTitle>
@@ -101,7 +157,7 @@ export function ActivityDialog({
               {view.kind === "day" ? (
                 <DayDetail view={view} />
               ) : (
-                <WeekDetail view={view} />
+                <RangeDetail view={view} />
               )}
             </div>
           </>
@@ -275,39 +331,89 @@ function SessionRow({ entry }: { entry: TimesheetDayEntry }) {
   );
 }
 
-function WeekDetail({ view }: { view: Extract<ActivityView, { kind: "week" }> }) {
+/**
+ * The whole selected range: hours per day, the total, and what the time went to.
+ *
+ * ## Why a month is laid out differently from a week
+ *
+ * The two spans differ by more than a count, so the same seven-bar layout cannot serve both.
+ *
+ * - **The per-bar duration label has to go.** `05:18:00` is ~60px of text that cannot shrink, and
+ *   thirty-one of them are ~1,860px wide. That is what pushed the chart past the dialog and let
+ *   `overflow-x-hidden` clip it — the bars were never sized wrong, the *labels* were unshrinkable.
+ *   In a month the value moves to the bar's hover title; in a week all seven still fit and stay.
+ * - **The axis becomes a scale, not a name per bar.** Thirty-one weekday names are unreadable and
+ *   tell you nothing about *which* Tuesday — the same reasoning the grid's `columnHeading` already
+ *   applies to its column headers. A month ticks the 1st and every 5th day; a week names all seven.
+ * - **Weekends are shaded**, because the only way to read a 31-bar chart is to find the weekly
+ *   rhythm in it. The tint is on the empty track, not the bar, so it groups the bars without
+ *   implying that weekend work counts for less.
+ *
+ * Every one of those is derived from `dates[i]`, never from `i`. The index is a weekday only in a
+ * Monday-aligned week, which is exactly the assumption that broke this dialog for a month.
+ */
+function RangeDetail({ view }: { view: Extract<ActivityView, { kind: "range" }> }) {
   const total = Math.round(view.days.reduce((s, h) => s + h, 0) * 100) / 100;
   const max = Math.max(...view.days, 1);
   const entries = rollUp(view.entriesByDay.flat());
+  const isMonth = view.period === "month";
+  const span = isMonth ? "month" : "week";
 
   return (
     <>
-      {/* Real hours per day, Mon→Sun. */}
       <Section title="Hours per day">
-        <div className="flex items-end justify-between gap-2 pt-1">
-          {view.days.map((h, i) => (
-            <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
-              <span className="text-muted-foreground text-[0.7rem] tabular-nums">
-                {h > 0 ? formatHours(h) : "—"}
-              </span>
-              <div className="bg-muted flex h-24 w-full max-w-9 flex-col justify-end overflow-hidden rounded-md">
-                {h > 0 ? (
-                  <div
-                    className="bg-primary w-full"
-                    style={{ height: `${(h / max) * 100}%` }}
-                    title={`${DAY_LABELS[i]} · ${formatHours(h)}`}
-                  />
+        <div className={cn("flex items-end pt-1", isMonth ? "gap-[3px]" : "justify-between gap-2")}>
+          {view.days.map((h, i) => {
+            const iso = view.dates[i];
+            // `dates` and `days` are built together and always align; the guard is for the one
+            // frame where a period switch has swapped one but not the other.
+            const dow = iso ? weekdayIndex(iso) : i;
+            const dayOfMonth = iso ? Number(iso.slice(8, 10)) : i + 1;
+            // Ticks read as a scale: the 1st, then every 5th. Labelling all 31 produces a picket
+            // fence at this width, and labelling none leaves the bars unanchored to a date.
+            const tick = isMonth
+              ? dayOfMonth === 1 || dayOfMonth % 5 === 0
+                ? String(dayOfMonth)
+                : ""
+              : DAY_LABELS[dow];
+            return (
+              <div
+                key={iso ?? i}
+                className="flex min-w-0 flex-1 flex-col items-center gap-1.5"
+              >
+                {!isMonth ? (
+                  <span className="text-muted-foreground text-[0.7rem] tabular-nums">
+                    {h > 0 ? formatHours(h) : "—"}
+                  </span>
                 ) : null}
+                <div
+                  className={cn(
+                    "flex h-24 w-full flex-col justify-end overflow-hidden rounded-md",
+                    isMonth ? "max-w-6" : "max-w-9",
+                    dow >= 5 ? "bg-muted-foreground/20" : "bg-muted",
+                  )}
+                  // On the track, so a day with no hours is still hoverable — "nothing on the 9th"
+                  // is an answer, and a bar of zero height cannot be pointed at.
+                  title={iso ? `${barTitle(iso)} · ${h > 0 ? formatHours(h) : "no time tracked"}` : undefined}
+                >
+                  {h > 0 ? (
+                    <div className="bg-primary w-full" style={{ height: `${(h / max) * 100}%` }} />
+                  ) : null}
+                </div>
+                <span className="text-muted-foreground h-3 text-[0.7rem] tabular-nums">
+                  {tick}
+                </span>
               </div>
-              <span className="text-muted-foreground text-[0.7rem]">{DAY_LABELS[i]}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Section>
 
       <Tile icon={Clock} label="Total tracked" value={formatHours(total)} />
 
-      <Section title={view.isProject ? "Contributors this week" : "Projects this week"}>
+      <Section
+        title={`${view.isProject ? "Contributors" : "Projects"} this ${span}`}
+      >
         {entries.length > 0 ? (
           <ul className="space-y-2.5">
             {entries.map((e, i) => (
@@ -316,7 +422,7 @@ function WeekDetail({ view }: { view: Extract<ActivityView, { kind: "week" }> })
           </ul>
         ) : (
           <p className="text-muted-foreground text-sm">
-            No entries with a recorded duration this week.
+            No entries with a recorded duration this {span}.
           </p>
         )}
       </Section>
