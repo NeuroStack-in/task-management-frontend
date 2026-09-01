@@ -8,6 +8,7 @@ import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
 import { ChatBot } from "./chat-bot";
 import { ProductTour } from "./product-tour";
+import { FirstRunGate } from "@/modules/onboarding/components/first-run-gate";
 import { cn } from "@/lib/utils";
 
 /**
@@ -58,6 +59,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       {/* Mounted in the shell, not on the Help page: a tour's later steps live on other routes, by
           which point the Help page has unmounted and would take the tour with it. */}
       <ProductTour />
+      {/* Renders nothing unless this account's profile is missing a required field. */}
+      <FirstRunGate />
     </div>
   );
 }
