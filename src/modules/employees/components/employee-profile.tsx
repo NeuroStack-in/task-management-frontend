@@ -88,6 +88,7 @@ import { EmployeeAppUsageCard } from "./employee-app-usage-card";
 import { formatHours, isoDay } from "@/lib/format";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
 import { EmployeeManageMenu } from "./employee-manage-menu";
+import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
 
 const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   active: "bg-success/12 text-success",
@@ -762,6 +763,11 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
               <MapPin className="size-4" /> Location
             </Button>
           ) : null}
+          {/* Ask this person's device for a screenshot now. Resolves the person → device from the
+              fleet itself and self-hides for anyone without `agents:manage` + `screenshots:view`,
+              so no extra permission wiring is needed here — the same button the Screenshots page
+              uses. */}
+          <CaptureNowButton userId={data.id} />
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
               <Download className="size-4" /> Download

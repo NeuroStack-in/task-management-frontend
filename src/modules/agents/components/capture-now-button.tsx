@@ -10,11 +10,11 @@
  *     wants a fresh frame, so the device is resolved from the fleet here rather than making the
  *     user go find it.
  *
- * **The response only means "asked."** The device holds the final veto — it refuses during a
- * privacy pause, without consent, when no timer is running, or on an excepted window — so this
- * never claims a capture happened. The real outcome arrives on the push rail as `capture_result`
- * and is toasted then. If the socket is down the toast simply never comes; the audit log still
- * records both the request and the device's answer.
+ * **The response only means "asked."** The real outcome — captured, or a technical failure —
+ * arrives on the push rail as `capture_result` and is toasted then. (Older agents could also refuse
+ * on privacy grounds; the current agent captures on demand, but the reason map below still renders
+ * any legacy refusal correctly.) If the socket is down the toast simply never comes; the audit log
+ * still records both the request and the device's answer.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
@@ -152,8 +152,7 @@ export function CaptureNowButton({
     try {
       await captureNow(targetId);
       toast.success("Capture requested", {
-        description:
-          "The device decides — it declines during a privacy pause or when no timer is running.",
+        description: "The device will capture and upload it — it appears here shortly.",
       });
       onRequested?.();
     } catch (e) {
