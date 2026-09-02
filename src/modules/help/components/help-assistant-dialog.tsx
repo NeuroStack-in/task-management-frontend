@@ -91,13 +91,19 @@ export function HelpAssistantDialog({
     try {
       // `history` is the state *before* this turn — it is the conversation, not the message.
       // No `page`: see the module note. `"help"` is the surface request.
-      const reply = await sendAssistantMessage(
+      const answer = await sendAssistantMessage(
         trimmed,
         messages.map((m) => ({ role: m.role, content: m.text })),
         undefined,
         "help",
       );
-      setMessages((m) => [...m, { id: idRef.current++, role: "assistant", text: reply }]);
+      // No provenance chips here, and there never will be: the Help surface is handed an empty tool
+      // belt server-side, so it answers from product knowledge and reads nobody's data. An empty
+      // `answer.sources` is the correct, permanent state rather than something not wired up yet.
+      setMessages((m) => [
+        ...m,
+        { id: idRef.current++, role: "assistant", text: answer.reply },
+      ]);
     } catch (e) {
       const text =
         e instanceof ApiError && e.status === 403

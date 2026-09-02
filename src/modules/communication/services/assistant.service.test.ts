@@ -29,7 +29,7 @@ function today(): string {
 describe("assistant.service route contract", () => {
   it("sendAssistantMessage POSTs the message body and unwraps res.reply", async () => {
     mock.mockResolvedValueOnce({ reply: "hi" });
-    const reply = await sendAssistantMessage("hello");
+    const answer = await sendAssistantMessage("hello");
     expect(mock).toHaveBeenCalledWith("/v1/assistant/messages", {
       method: "POST",
       // `surface` defaults to "chat" — the floating assistant. The server narrows it to
@@ -43,7 +43,21 @@ describe("assistant.service route contract", () => {
         client_date: today(),
       }),
     });
-    expect(reply).toBe("hi");
+    expect(answer.reply).toBe("hi");
+    // A server that sends no `sources` (an older build, the Help surface, or a turn that called no
+    // tool) must yield an empty list rather than `undefined` — the panel maps over it directly.
+    expect(answer.sources).toEqual([]);
+  });
+
+  it("carries provenance through when the server sends it", async () => {
+    mock.mockResolvedValueOnce({
+      reply: "8 present",
+      sources: [{ label: "Attendance", date: "2026-08-31", scope: "the organisation" }],
+    });
+    const answer = await sendAssistantMessage("what was attendance yesterday");
+    expect(answer.sources).toEqual([
+      { label: "Attendance", date: "2026-08-31", scope: "the organisation" },
+    ]);
   });
 
   it("sendAssistantMessage replays the conversation so far", async () => {

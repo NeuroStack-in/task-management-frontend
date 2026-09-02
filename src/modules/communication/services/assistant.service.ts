@@ -10,6 +10,30 @@ import { localDateOf } from "@/lib/local-day";
 
 interface MessageReply {
   reply: string;
+  sources?: AssistantSource[];
+}
+
+/**
+ * One lookup an answer was built from. Mirrors `assistant::…::provenance::Source`.
+ *
+ * **The server decides this, not the model.** The system prompt forbids the assistant naming a
+ * tool in its prose — an earlier draft asked for a figure's source and got
+ * "(Source: member_day_summary)" — so provenance travels beside the text as data the UI renders.
+ * That also means it cannot be omitted or invented by the model.
+ */
+export interface AssistantSource {
+  /** Human label, e.g. "Attendance". Never a tool identifier. */
+  label: string;
+  /** The day or range actually read. Absent for a lookup with no date. */
+  date?: string;
+  /** Whose data — a person's name, or a phrase like "the organisation". */
+  scope?: string;
+}
+
+/** A reply and what stands behind it. */
+export interface AssistantAnswer {
+  reply: string;
+  sources: AssistantSource[];
 }
 
 /**
@@ -78,7 +102,7 @@ export async function sendAssistantMessage(
   history: AssistantTurn[] = [],
   page?: AssistantPage,
   surface: AssistantSurface = "chat",
-): Promise<string> {
+): Promise<AssistantAnswer> {
   // What "today" means to the person typing.
   //
   // The server used to derive this itself, in UTC, so for a UTC+05:30 org every question asked
@@ -101,7 +125,7 @@ export async function sendAssistantMessage(
         : { message, history, surface, client_date },
     ),
   });
-  return res.reply;
+  return { reply: res.reply, sources: res.sources ?? [] };
 }
 
 /**

@@ -9,7 +9,10 @@ import { useAssistantStore } from "@/stores/assistant.store";
 import { useIsFeatureOn, useIsPageOn } from "@/hooks/use-features";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
-import { sendAssistantMessage } from "@/modules/communication/services/assistant.service";
+import {
+  sendAssistantMessage,
+  type AssistantSource,
+} from "@/modules/communication/services/assistant.service";
 import { navItemForPath } from "@/constants/navigation";
 import { usePublishedPageContext } from "@/stores/page-context.store";
 import { cn } from "@/lib/utils";
@@ -26,6 +29,15 @@ interface Message {
   id: number;
   role: "user" | "assistant";
   text: string;
+  /**
+   * What the answer was read from — the server's own record of which lookups ran, over which day
+   * and for whom. Absent on the greeting, on an error, and whenever no lookup happened.
+   *
+   * Rendered as chips rather than folded into the text on purpose: the assistant is forbidden from
+   * naming a tool in its prose, so this is the only honest way to show it, and it cannot be
+   * omitted or invented by the model.
+   */
+  sources?: AssistantSource[];
 }
 
 /** Floating-button geometry + persisted position. */
@@ -147,12 +159,20 @@ export function ChatBot() {
       // server-side — so the conversation so far is replayed with each turn, or a follow-up
       // reaches the model with no question attached to it). `messages` here is deliberately the
       // state *before* this turn was appended: it is the history, not the message.
-      const reply = await sendAssistantMessage(
+      const answer = await sendAssistantMessage(
         trimmed,
         messages.map((m) => ({ role: m.role, content: m.text })),
         page,
       );
-      setMessages((m) => [...m, { id: idRef.current++, role: "assistant", text: reply }]);
+      setMessages((m) => [
+        ...m,
+        {
+          id: idRef.current++,
+          role: "assistant",
+          text: answer.reply,
+          sources: answer.sources,
+        },
+      ]);
     } catch (e) {
       const text =
         e instanceof ApiError && e.status === 403
@@ -369,6 +389,22 @@ export function ChatBot() {
                       literal text they typed — running it through a renderer would silently
                       reformat their own words back at them. */}
                   {m.role === "user" ? m.text : <Markdown>{m.text}</Markdown>}
+                  {/* What it read. Deliberately quiet — this is a footnote a reader checks when a
+                      figure surprises them, not a headline. The most likely wrong answer left is
+                      one that is right about the wrong day, and this is what makes that visible
+                      instead of indistinguishable from a correct one. */}
+                  {m.sources?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1 border-t pt-1.5">
+                      {m.sources.map((src, i) => (
+                        <span
+                          key={i}
+                          className="bg-background/60 text-muted-foreground rounded px-1.5 py-0.5 text-[0.7rem] leading-tight"
+                        >
+                          {[src.label, src.date, src.scope].filter(Boolean).join(" · ")}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ))}
               {pending ? (
