@@ -15,6 +15,7 @@ import { useState } from "react";
 import { PartyPopper } from "lucide-react";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { Button } from "@/components/ui/button";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
@@ -110,6 +111,16 @@ function OversightAttendance() {
           live.loading
             ? "Today · presence loading…"
             : `Today · ${livePct}% of the team clocked in`
+        }
+        actions={
+          <RefreshButton
+            onRefresh={() => {
+              data.reload();
+              live.reload();
+              month.reload();
+            }}
+            refreshing={data.loading || live.loading || month.loading}
+          />
         }
       />
 

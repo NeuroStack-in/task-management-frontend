@@ -19,7 +19,7 @@
  * Nothing here is fabricated: `late` is always 0 (the oversight index carries no per-person late flag
  * — LLD §7), and today's "in/out" is genuine live presence, not a guess.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getDayOversight, getUserDay } from "./services/attendance.service";
 import {
   listEmployees,
@@ -136,6 +136,8 @@ export interface OversightAttendance {
   error: string | null;
   /** Non-fatal degradation (e.g. today's live presence unavailable). */
   note: string | null;
+  /** Manual refetch of the active range (for a Refresh button). Does not start a poll. */
+  reload: () => void;
 }
 
 const EMPTY_COUNTS: OversightCounts = {
@@ -395,6 +397,11 @@ export function useOversightAttendance({
   const [dir, setDir] = useState<Map<string, DirEntry> | null>(null);
   const [departments, setDepartments] = useState<string[]>(["all"]);
   const [dirError, setDirError] = useState<string | null>(null);
+  // Manual refetch for a Refresh button. A bare counter, deliberately **not** `useLiveRefresh`: this
+  // adds an on-demand refresh without also starting a 30 s poll on a page that never polled (which
+  // would quietly add request load). The value is a dep of the fetch effect below.
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     let live = true;
@@ -685,7 +692,7 @@ export function useOversightAttendance({
     return () => {
       live = false;
     };
-  }, [dir, range, dept, dayList, todayIso, workdays, lateThreshold]);
+  }, [dir, range, dept, dayList, todayIso, workdays, lateThreshold, nonce]);
 
   return {
     counts: state.counts,
@@ -698,5 +705,6 @@ export function useOversightAttendance({
     loading: state.loading && !dirError,
     error: state.error ?? dirError,
     note: state.note,
+    reload,
   };
 }

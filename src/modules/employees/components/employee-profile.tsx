@@ -89,6 +89,7 @@ import { formatHours, isoDay } from "@/lib/format";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
 import { EmployeeManageMenu } from "./employee-manage-menu";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
+import { RefreshButton } from "@/components/shared/refresh-button";
 
 const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   active: "bg-success/12 text-success",
@@ -616,7 +617,7 @@ export function EmployeeProfile({ id }: { id: string }) {
     );
   }
 
-  return <ProfileView data={data} reload={reload} />;
+  return <ProfileView data={data} reload={reload} refreshing={loading} />;
 }
 
 /* ============================ presentational view (verbatim preview) ============================ */
@@ -663,7 +664,16 @@ function HoursTooltip({
 const APP_USAGE_TO = isoDay(new Date());
 const APP_USAGE_FROM = isoDay(new Date(Date.now() - 13 * 86_400_000));
 
-function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () => void }) {
+function ProfileView({
+  data,
+  reload,
+  refreshing,
+}: {
+  data: EmployeeProfileData;
+  reload: () => void;
+  /** True while a refetch is in flight — spins the refresh button. */
+  refreshing?: boolean;
+}) {
   const router = useRouter();
   const { can } = usePermissions();
   const canManage = can("employees:manage");
@@ -763,6 +773,8 @@ function ProfileView({ data, reload }: { data: EmployeeProfileData; reload: () =
               <MapPin className="size-4" /> Location
             </Button>
           ) : null}
+          {/* Refetch this profile in place — the page stays put instead of a full reload. */}
+          <RefreshButton onRefresh={reload} refreshing={refreshing} />
           {/* Ask this person's device for a screenshot now. Resolves the person → device from the
               fleet itself and self-hides for anyone without `agents:manage` + `screenshots:view`,
               so no extra permission wiring is needed here — the same button the Screenshots page

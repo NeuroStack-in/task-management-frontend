@@ -24,7 +24,7 @@
  * (0), and a row is only `flagged` when we have **real** activity below 50 on someone who tracked
  * time — never as a side effect of missing agent data.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   listEmployees,
   departmentMap,
@@ -202,6 +202,8 @@ export interface TeamTimesheet {
   error: string | null;
   /** True specifically when the caller lacks team-time access (403). */
   forbidden: boolean;
+  /** Manual refetch of the current week's fan-out (for a Refresh button). Does not start a poll. */
+  reload: () => void;
 }
 
 const EMPTY_WEEK: DailyHours[] = DAY_LABELS.map((day) => ({
@@ -230,6 +232,9 @@ export function useTeamTimesheet(
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
+  // Manual refetch of the current week's fan-out (for a Refresh button). A bare counter, not a poll.
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   // "Today" is resolved once, client-side (avoids SSR drift + keeps the range stable). The visible
   // week is derived from that fixed anchor plus the caller's offset, so paging back never re-reads
@@ -326,7 +331,7 @@ export function useTeamTimesheet(
     return () => {
       live = false;
     };
-  }, [enabled, week]);
+  }, [enabled, week, nonce]);
 
   const derived = useMemo(() => {
     if (!data) {
@@ -512,5 +517,5 @@ export function useTeamTimesheet(
     return { dates: d, weekLabel: weekLabelOf(d) };
   }, [week]);
 
-  return { ...derived, dates, weekLabel, loading, error, forbidden };
+  return { ...derived, dates, weekLabel, loading, error, forbidden, reload };
 }

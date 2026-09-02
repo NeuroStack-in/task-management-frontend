@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Wallet, Banknote, Receipt, Plus, CheckCircle2, MonitorSmartphone } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
@@ -135,6 +136,7 @@ export function PayrollView() {
             ? `${periodLabel(selected.period)} · ${selected.status}`
             : "Pay runs and deductions."
         }
+        actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
       {/* Selected run totals */}

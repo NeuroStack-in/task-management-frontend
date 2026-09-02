@@ -232,6 +232,7 @@ function OrgDashboard() {
         teams={teams}
         lastUpdated={lastUpdated}
         loading={loading}
+        onRefresh={reload}
         start={start}
         end={end}
         onStartChange={setStart}

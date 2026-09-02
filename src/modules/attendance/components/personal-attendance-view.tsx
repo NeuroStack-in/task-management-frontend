@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, CalendarCheck, Clock, CalendarOff, Plane } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -268,6 +269,15 @@ export function PersonalAttendanceView() {
       <PageHeader
         title="My attendance"
         description="Your own attendance and time off — computed from your synced activity, only you can see this."
+        actions={
+          <RefreshButton
+            onRefresh={() => {
+              monthData.reload();
+              recentData.reload();
+            }}
+            refreshing={monthData.loading || recentData.loading}
+          />
+        }
       />
 
       {monthData.error ? (

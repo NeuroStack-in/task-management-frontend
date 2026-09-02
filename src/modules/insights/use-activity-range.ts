@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getOrgActivity, type OrgActivity } from "./services/insights.service";
 
 /**
@@ -21,6 +21,8 @@ export interface RangePoint {
 export interface RangeState {
   points: RangePoint[];
   loading: boolean;
+  /** Manual refetch of the whole range (for a Refresh button). */
+  reload: () => void;
 }
 
 /**
@@ -60,6 +62,8 @@ async function fanOut(dates: string[]): Promise<RangePoint[]> {
 export function useOrgActivityRange(dates: string[]): RangeState {
   const [points, setPoints] = useState<RangePoint[]>([]);
   const [loading, setLoading] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
   const key = dates.join(",");
 
   useEffect(() => {
@@ -82,7 +86,7 @@ export function useOrgActivityRange(dates: string[]): RangeState {
     };
     // `key` captures the date list identity; `dates` itself is a fresh array each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, nonce]);
 
-  return { points, loading };
+  return { points, loading, reload };
 }

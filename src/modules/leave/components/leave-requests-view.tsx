@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { CalendarPlus, Paperclip, Plane, TriangleAlert, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -138,6 +139,7 @@ function EmployeeLeaveView() {
       <PageHeader
         title="Leave"
         description="Request time off and track the status of your leave."
+        actions={<RefreshButton onRefresh={leave.reload} refreshing={loading} />}
       />
 
       {error ? (

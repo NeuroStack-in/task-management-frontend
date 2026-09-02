@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getScreenshots, type ShotRow } from "./services/insights.service";
 // Shared with the dashboard heatmap, which had the same UTC-partition/local-hour mismatch.
 import { localDateOf, utcDatesFor } from "@/lib/local-day";
@@ -49,6 +49,8 @@ export interface HourlyActivityState {
   truncated: boolean;
   loading: boolean;
   error: string | null;
+  /** Manual refetch of the day's curve (for a Refresh button). */
+  reload: () => void;
 }
 
 /** Page size and budget: a day of captures for a small org, without storming the endpoint. */
@@ -101,13 +103,15 @@ export function bucketByHour(
 }
 
 export function useHourlyActivity(date: string): HourlyActivityState {
-  const [state, setState] = useState<HourlyActivityState>({
+  const [state, setState] = useState<Omit<HourlyActivityState, "reload">>({
     hours: EMPTY_HOURS,
     captures: 0,
     truncated: false,
     loading: false,
     error: null,
   });
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     if (!date) {
@@ -167,7 +171,7 @@ export function useHourlyActivity(date: string): HourlyActivityState {
     return () => {
       live = false;
     };
-  }, [date]);
+  }, [date, nonce]);
 
-  return state;
+  return { ...state, reload };
 }

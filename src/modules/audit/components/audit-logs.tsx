@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/sheet";
 import { TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import {  } from "@/lib/format";
@@ -167,6 +168,7 @@ export function AuditLogs() {
       <PageHeader
         title="Audit Logs"
         description="A record of user actions, permission changes, and settings updates across WorkPulse."
+        actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
       {/* Filter toolbar */}

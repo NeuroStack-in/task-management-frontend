@@ -9,6 +9,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ export function TimeTrackingView() {
     loading,
     error,
     forbidden,
+    reload,
   } = useTeamTimesheet(canManageTeam, weekOffset, period);
 
   // Team leads only see their own team's timesheets; org roles see everyone.
@@ -73,20 +75,29 @@ export function TimeTrackingView() {
         title="Time Tracking"
         description={description}
         actions={
-          showToggle ? (
-            <div className="bg-card shadow-soft flex rounded-full border p-0.5">
-              <ToggleButton
-                active={view === "personal"}
-                onClick={() => setView("personal")}
-                icon={UserRound}
-                label="My time"
-              />
-              <ToggleButton
-                active={view === "team"}
-                onClick={() => setView("team")}
-                icon={Users}
-                label="Team"
-              />
+          view === "team" || showToggle ? (
+            <div className="flex items-center gap-2">
+              {/* Refetch the team roll-up in place. Personal view carries its own refresh inside
+                  PersonalTimeView, whose hook owns that data. */}
+              {view === "team" ? (
+                <RefreshButton onRefresh={reload} refreshing={loading} />
+              ) : null}
+              {showToggle ? (
+                <div className="bg-card shadow-soft flex rounded-full border p-0.5">
+                  <ToggleButton
+                    active={view === "personal"}
+                    onClick={() => setView("personal")}
+                    icon={UserRound}
+                    label="My time"
+                  />
+                  <ToggleButton
+                    active={view === "team"}
+                    onClick={() => setView("team")}
+                    icon={Users}
+                    label="Team"
+                  />
+                </div>
+              ) : null}
             </div>
           ) : undefined
         }
@@ -105,11 +116,7 @@ export function TimeTrackingView() {
             title="Couldn't load team timesheets"
             description={error}
             action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.location.reload()}
-              >
+              <Button variant="outline" size="sm" onClick={reload}>
                 Retry
               </Button>
             }

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { getLeaveDocumentUrl } from "@/modules/leave/services/leave.service";
 import { DocumentList } from "@/components/shared/document-list";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -124,6 +125,7 @@ export function ApprovalsView() {
       <PageHeader
         title="Approvals"
         description={`${counts.pending ?? 0} pending · review and decide time-off requests`}
+        actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
       {error ? (

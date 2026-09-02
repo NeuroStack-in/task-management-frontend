@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import {
   Area,
@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { DepartmentScoreFocus } from "./department-score-focus";
 import { useOrgActivity } from "../use-activity";
 import { useOrgActivityRange } from "../use-activity-range";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { useHourlyActivity } from "../use-hourly-activity";
 import { getAppUsage, type UsageRow } from "../services/insights.service";
 import {
@@ -387,13 +388,25 @@ export function ActivityTab() {
     <div className="space-y-4">
       {/* Range filter: granularity + anchor date. Shared with every other period surface — see
           `PeriodFilter`; the pills and the date were duplicated per page before. */}
-      <PeriodFilter
-        granularity={granularity}
-        onGranularityChange={setGranularity}
-        date={date}
-        onDateChange={setDate}
-        max={today}
-      />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PeriodFilter
+          granularity={granularity}
+          onGranularityChange={setGranularity}
+          date={date}
+          onDateChange={setDate}
+          max={today}
+        />
+        {/* Refetch every panel on this tab in place — no page reload. */}
+        <RefreshButton
+          onRefresh={() => {
+            org.reload();
+            hourly.reload();
+            range.reload();
+            usage.reload();
+          }}
+          refreshing={org.loading || hourly.loading || range.loading || usage.loading}
+        />
+      </div>
 
       {/* **One** AI summary, not two. This banner used to be an org-wide narrative with a second,
           near-identical department card underneath it — two models describing the same period on
@@ -766,6 +779,8 @@ function useAppUsage(range: { from: string; to: string } | null) {
     loading: boolean;
     truncated: boolean;
   }>({ apps: [], sites: [], loading: false, truncated: false });
+  const [nonce, setNonce] = useState(0);
+  const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     if (!range) {
@@ -800,9 +815,9 @@ function useAppUsage(range: { from: string; to: string } | null) {
     return () => {
       alive = false;
     };
-  }, [range?.from, range?.to]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [range?.from, range?.to, nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return state;
+  return { ...state, reload };
 }
 
 interface UsageItem {

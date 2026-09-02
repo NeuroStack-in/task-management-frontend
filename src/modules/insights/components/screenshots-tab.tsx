@@ -17,6 +17,7 @@ import { useDataScope } from "@/hooks/use-data-scope";
 import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { getTrackingPolicy } from "@/modules/agents/services/fleet.service";
 import { personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -359,6 +360,8 @@ export function ScreenshotsTab() {
         nameOf={nameOf}
         onBack={() => setOpenUser(null)}
         onCaptured={reload}
+        onRefresh={reload}
+        refreshing={loading}
       />
     );
   }
@@ -470,6 +473,11 @@ export function ScreenshotsTab() {
             ))}
           </div>
         </fieldset>
+
+        {/* Pull the latest captures without a page reload — the grid refetches in place. */}
+        <div className="ml-auto flex items-center self-end">
+          <RefreshButton onRefresh={reload} refreshing={loading} />
+        </div>
       </div>
 
       {/* Stated once, plainly, rather than only when someone stumbles onto a deleted day. */}
@@ -1108,6 +1116,8 @@ function EmployeeCaptures({
   nameOf,
   onBack,
   onCaptured,
+  onRefresh,
+  refreshing,
 }: {
   /** Whose captures these are — the target for an on-demand capture (device resolved from it). */
   userId: string;
@@ -1120,6 +1130,10 @@ function EmployeeCaptures({
   onBack: () => void;
   /** Refetch the day's grid once the device confirms a capture landed. */
   onCaptured: () => void;
+  /** Manual refetch of this person's day — refreshes the grid in place instead of a page reload. */
+  onRefresh: () => void;
+  /** True while that refetch is in flight, so the button can spin. */
+  refreshing?: boolean;
 }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -1203,6 +1217,9 @@ function EmployeeCaptures({
             value={flaggedCount}
             tone={flaggedCount > 0 ? "text-destructive" : undefined}
           />
+          {/* Pull this person's latest frames without reloading the page — the grid refetches in
+              place while the header and filters stay put. */}
+          <RefreshButton onRefresh={onRefresh} refreshing={refreshing} />
           {/* On-demand capture belongs here rather than only on the device page: this is where
               someone is already looking at a person's frames and wants a current one. The device
               is resolved from the user inside the button. */}

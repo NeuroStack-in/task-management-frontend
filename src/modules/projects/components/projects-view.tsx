@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -246,6 +247,7 @@ export function ProjectsView() {
       <PageHeader
         title="Projects"
         description="Your projects — status, progress, and delivery at a glance."
+        actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
       {/* KPI stat band */}

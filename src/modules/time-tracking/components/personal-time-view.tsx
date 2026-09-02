@@ -45,6 +45,7 @@ import { useTimesheet } from "../use-timesheet";
 import { TimesheetHistory } from "./timesheet-history";
 import { TimerHero } from "./timer-hero";
 import { WeeklyHoursChart } from "./weekly-hours-chart";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { PayrollWidget } from "./payroll-widget";
 
 /**
@@ -216,14 +217,18 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
             {todayHoliday ? <HolidayBadge name={todayHoliday} /> : null}
           </CardDescription>
           <CardAction>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportCsv}
-              disabled={!canExport || loading || rows.length === 0}
-            >
-              <Download className="size-4" /> Download CSV
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Refetch today's timesheet in place — no page reload. */}
+              <RefreshButton onRefresh={reload} refreshing={loading} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportCsv}
+                disabled={!canExport || loading || rows.length === 0}
+              >
+                <Download className="size-4" /> Download CSV
+              </Button>
+            </div>
           </CardAction>
         </CardHeader>
         <CardContent className="space-y-5">

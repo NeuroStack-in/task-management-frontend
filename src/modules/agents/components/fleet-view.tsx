@@ -11,6 +11,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
@@ -363,6 +364,7 @@ export function FleetView() {
       <PageHeader
         title="Device agents"
         description="Machines running the WorkPulse desktop agent, with live connectivity."
+        actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

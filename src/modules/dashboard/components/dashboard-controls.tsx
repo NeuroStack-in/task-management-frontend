@@ -2,6 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
+import { RefreshButton } from "@/components/shared/refresh-button";
 import {
   RANGE_OPTIONS,
   type DashboardRange,
@@ -19,6 +20,7 @@ export function DashboardControls({
   teams,
   lastUpdated,
   loading = false,
+  onRefresh,
   start,
   end,
   onStartChange,
@@ -33,6 +35,9 @@ export function DashboardControls({
   lastUpdated: string;
   /** A refetch is in flight (e.g. the range just changed) — shown as "Updating…" so it isn't silent. */
   loading?: boolean;
+  /** Manual refetch. The board stays on screen (the full loader only shows before first data), so
+   *  this refreshes the numbers in place rather than reloading the page. */
+  onRefresh?: () => void;
   start: string;
   end: string;
   onStartChange: (v: string) => void;
@@ -94,6 +99,9 @@ export function DashboardControls({
             `Updated ${lastUpdated || "just now"}`
           )}
         </span>
+        {onRefresh ? (
+          <RefreshButton onRefresh={onRefresh} refreshing={loading} variant="ghost" />
+        ) : null}
         {/* Departments, not teams. `team_id` is not in the Directory GSI projection, so the server
             cannot filter by team at all (workforce::directory_list::data) — this axis has always
             been the department. Saying "team" made a working filter look broken to anyone who
