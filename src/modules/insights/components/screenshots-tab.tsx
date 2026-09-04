@@ -18,6 +18,7 @@ import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
 import { RefreshButton } from "@/components/shared/refresh-button";
+import { PageActions } from "@/components/shared/page-actions";
 import { getTrackingPolicy } from "@/modules/agents/services/fleet.service";
 import { personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -474,10 +475,11 @@ export function ScreenshotsTab() {
           </div>
         </fieldset>
 
-        {/* Pull the latest captures without a page reload — the grid refetches in place. */}
-        <div className="ml-auto flex items-center self-end">
+        {/* Pull the latest captures without a page reload — the grid refetches in place. Lifted into
+            the top-navbar action slot so Refresh sits where it does on every other page. */}
+        <PageActions>
           <RefreshButton onRefresh={reload} refreshing={loading} />
-        </div>
+        </PageActions>
       </div>
 
       {/* Stated once, plainly, rather than only when someone stumbles onto a deleted day. */}

@@ -30,6 +30,7 @@ import { DepartmentScoreFocus } from "./department-score-focus";
 import { useOrgActivity } from "../use-activity";
 import { useOrgActivityRange } from "../use-activity-range";
 import { RefreshButton } from "@/components/shared/refresh-button";
+import { PageActions } from "@/components/shared/page-actions";
 import { useHourlyActivity } from "../use-hourly-activity";
 import { getAppUsage, type UsageRow } from "../services/insights.service";
 import {
@@ -396,16 +397,19 @@ export function ActivityTab() {
           onDateChange={setDate}
           max={today}
         />
-        {/* Refetch every panel on this tab in place — no page reload. */}
-        <RefreshButton
-          onRefresh={() => {
-            org.reload();
-            hourly.reload();
-            range.reload();
-            usage.reload();
-          }}
-          refreshing={org.loading || hourly.loading || range.loading || usage.loading}
-        />
+        {/* Refetch every panel on this tab in place — no page reload. Placed in the top-navbar
+            action slot (via PageActions) so Refresh sits in the same spot as every other page. */}
+        <PageActions>
+          <RefreshButton
+            onRefresh={() => {
+              org.reload();
+              hourly.reload();
+              range.reload();
+              usage.reload();
+            }}
+            refreshing={org.loading || hourly.loading || range.loading || usage.loading}
+          />
+        </PageActions>
       </div>
 
       {/* **One** AI summary, not two. This banner used to be an org-wide narrative with a second,

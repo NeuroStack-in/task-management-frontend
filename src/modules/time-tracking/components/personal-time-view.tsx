@@ -46,6 +46,7 @@ import { TimesheetHistory } from "./timesheet-history";
 import { TimerHero } from "./timer-hero";
 import { WeeklyHoursChart } from "./weekly-hours-chart";
 import { RefreshButton } from "@/components/shared/refresh-button";
+import { PageActions } from "@/components/shared/page-actions";
 import { PayrollWidget } from "./payroll-widget";
 
 /**
@@ -217,9 +218,12 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
             {todayHoliday ? <HolidayBadge name={todayHoliday} /> : null}
           </CardDescription>
           <CardAction>
-            <div className="flex items-center gap-2">
-              {/* Refetch today's timesheet in place — no page reload. */}
+            {/* Refetch today's timesheet in place — no page reload. Refresh goes to the top-navbar
+                action slot (the app-wide fixed spot); the page-specific export stays on the card. */}
+            <PageActions>
               <RefreshButton onRefresh={reload} refreshing={loading} />
+            </PageActions>
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"

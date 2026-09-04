@@ -90,6 +90,7 @@ import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-pr
 import { EmployeeManageMenu } from "./employee-manage-menu";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
 import { RefreshButton } from "@/components/shared/refresh-button";
+import { PageActions } from "@/components/shared/page-actions";
 
 const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   active: "bg-success/12 text-success",
@@ -773,8 +774,12 @@ function ProfileView({
               <MapPin className="size-4" /> Location
             </Button>
           ) : null}
-          {/* Refetch this profile in place — the page stays put instead of a full reload. */}
-          <RefreshButton onRefresh={reload} refreshing={refreshing} />
+          {/* Refetch this profile in place — the page stays put instead of a full reload. Refresh
+              sits in the top-navbar action slot (the app-wide fixed spot); the profile-specific
+              actions below stay in this bar. */}
+          <PageActions>
+            <RefreshButton onRefresh={reload} refreshing={refreshing} />
+          </PageActions>
           {/* Ask this person's device for a screenshot now. Resolves the person → device from the
               fleet itself and self-hides for anyone without `agents:manage` + `screenshots:view`,
               so no extra permission wiring is needed here — the same button the Screenshots page

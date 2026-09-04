@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { RefreshButton } from "@/components/shared/refresh-button";
+import { PageActions } from "@/components/shared/page-actions";
 import {
   RANGE_OPTIONS,
   type DashboardRange,
@@ -99,8 +100,12 @@ export function DashboardControls({
             `Updated ${lastUpdated || "just now"}`
           )}
         </span>
+        {/* Refresh lives in the top-navbar action slot — the app-wide fixed spot — not in this
+            in-page controls row. The "Updated …" status and the department filter stay here. */}
         {onRefresh ? (
-          <RefreshButton onRefresh={onRefresh} refreshing={loading} variant="ghost" />
+          <PageActions>
+            <RefreshButton onRefresh={onRefresh} refreshing={loading} />
+          </PageActions>
         ) : null}
         {/* Departments, not teams. `team_id` is not in the Directory GSI projection, so the server
             cannot filter by team at all (workforce::directory_list::data) — this axis has always
