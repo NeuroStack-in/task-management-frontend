@@ -79,7 +79,11 @@ export function AttendanceOverview({
   // reading of it. This used to fold partial into `present` here while the calendar folded it into
   // absent, so the same day read 38% on this card and 31% there. `late` is always 0 from oversight.
   const total = counts.total || 1;
-  const attendedCount = attended(counts) + counts.late;
+  // `attended()` only — NOT `+ counts.late`. Oversight hard-wires `late` to 0 (the index carries no
+  // per-person late flag), so adding it was inert here, but it is the same shape as the bug that
+  // printed "25/20" on the personal calendar: late is a qualifier ON an attended day, never an extra
+  // day. Left as it was, it would have started double-counting the moment `late` was populated.
+  const attendedCount = attended(counts);
   const leave = counts.leave;
   const absent = Math.max(0, total - attendedCount - leave);
 

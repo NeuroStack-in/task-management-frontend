@@ -20,6 +20,7 @@ import {
   type DayStatus,
   type DayCell,
 } from "../lib/calendar";
+import { attendanceRate } from "../lib/attended";
 import { LogDatePicker } from "./attendance-log";
 import { useWorkdays, useWorkingHours } from "@/hooks/use-working-hours";
 import { useMyStartDate } from "@/hooks/use-org-start";
@@ -184,10 +185,14 @@ export function PersonalAttendanceView() {
     return acc;
   }, [weeks, monthData]);
 
-  // `present` already includes late arrivals — the old `present + late` double-counted them.
-  const rate = summary.workdays
-    ? Math.round((summary.present / summary.workdays) * 100)
-    : 0;
+  // One definition of "attended" for every surface (`lib/attended`): present + partial over the
+  // counted days. This used to be `present / workdays`, which silently dropped partial days from the
+  // numerator while keeping them in the denominator — so an employee with partial days saw a LOWER
+  // rate on their own page than their manager saw for the same month on the roster. That divergence
+  // is the exact thing `lib/attended` was written to end (it records a day reading 38% on one
+  // surface and 31% on another), so this reads the shared helper rather than restating it.
+  // `late` is deliberately absent: it already sits inside `present`.
+  const rate = attendanceRate(summary, summary.workdays);
 
   // Publish the viewer's own attendance summary (for the month on screen) to the assistant, plus the
   // selected day so a date-scoped question lands on the day the user is looking at.
