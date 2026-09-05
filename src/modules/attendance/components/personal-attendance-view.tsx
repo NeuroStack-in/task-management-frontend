@@ -300,7 +300,13 @@ export function PersonalAttendanceView() {
         />
         <StatCard
           label="Days present"
-          value={`${summary.present + summary.late}/${summary.workdays}`}
+          // `present` ALREADY includes late arrivals — the server sends a late day as
+          // `status: "present"` with `late: true`, and the summary loop counts it in both buckets,
+          // so `late` is a SUBSET of `present`, never a sibling. Adding them double-counted every
+          // late day and could print more present days than the month has workdays ("25/20"). The
+          // rate below was corrected for exactly this; this card was missed. `late` stays as the
+          // hint, which is what it is: a qualifier on some of these days, not extra days.
+          value={`${summary.present}/${summary.workdays}`}
           icon={CalendarCheck}
           hint={`${summary.late} late`}
         />
