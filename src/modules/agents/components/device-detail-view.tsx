@@ -20,7 +20,6 @@ import {
 } from "@/modules/employees/services/employees.service";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getDevice, type ApiDevice } from "../services/fleet.service";
-import { CaptureNowButton } from "./capture-now-button";
 import { ReleaseDeviceButton } from "./release-device-button";
 import { connMeta, lastSeen, Info, Meter } from "./fleet-view";
 import { cn } from "@/lib/utils";
@@ -118,9 +117,6 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
           </Badge>
           {device.state === "deactivated" && (
             <Badge className="bg-destructive/10 font-medium text-destructive">Deactivated</Badge>
-          )}
-          {device.state !== "deactivated" && (
-            <CaptureNowButton agentId={agentId} tone="onFeature" />
           )}
         </div>
       </section>

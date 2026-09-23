@@ -16,7 +16,7 @@
  * any legacy refusal correctly.) If the socket is down the toast simply never comes; the audit log
  * still records both the request and the device's answer.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,23 @@ import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { captureNow, listFleet, type ApiDevice } from "../services/fleet.service";
 import { effectiveUserId } from "../lib/presence";
+
+/**
+ * How long to wait for the device's `capture_result` before saying it never answered.
+ *
+ * Generous on purpose: a real capture round-trips in 1-2 s (server audit shows request → captured
+ * in 1-2 s), so twenty seconds only fires when the command genuinely went nowhere.
+ */
+const ANSWER_TIMEOUT_MS = 20_000;
+
+/**
+ * After the device confirms a capture the image is in S3 within a second — but its row is written
+ * by the **ingest fold of the agent's next batch**, and the batch interval *is* the org's
+ * screenshot cadence (1-10 min). So "captured" and "visible in the grid" are different moments, and
+ * the button keeps refetching until the frame lands rather than leaving a stale page behind.
+ */
+const LANDING_POLL_MS = 10_000;
+const LANDING_WINDOW_MS = 4 * 60_000;
 
 /**
  * Why a device can't be asked right now. `null` = it can. Kept as prose because it goes straight
@@ -44,6 +61,7 @@ export function CaptureNowButton({
   userId,
   onRequested,
   onCaptured,
+  hasShot,
   size = "sm",
   tone = "default",
 }: {
@@ -53,8 +71,14 @@ export function CaptureNowButton({
   userId?: string;
   /** Fired once the request is accepted by the server (not by the device). */
   onRequested?: () => void;
-  /** Fired when the device confirms a capture — the caller can refetch the grid. */
+  /** Fired when the device confirms a capture — the caller refetches the grid. Called repeatedly
+   *  while the frame is still landing, so the page updates the moment its row is written. */
   onCaptured?: () => void;
+  /**
+   * Does the caller's list already contain this shot? Lets the poll stop the instant the frame
+   * appears instead of running its whole window. Without it the button polls to the timeout.
+   */
+  hasShot?: (shotId: string) => boolean;
   size?: "sm" | "default";
   /**
    * Where the button sits. `onFeature` is for the saturated `bg-feature` hero on device detail:
@@ -68,8 +92,22 @@ export function CaptureNowButton({
   const allowed = can("agents:manage") && can("screenshots:view");
 
   const [device, setDevice] = useState<ApiDevice | null>(null);
+  /** Pending "no answer" timer — cleared by the ack, by the next request, and on unmount. */
+  const waitingRef = useRef<number | undefined>(undefined);
+  /** Interval + deadline for the "waiting for the frame to land" poll. */
+  const pollRef = useRef<number | undefined>(undefined);
+  const hasShotRef = useRef(hasShot);
+  hasShotRef.current = hasShot;
+  const onCapturedRef = useRef(onCaptured);
+  onCapturedRef.current = onCaptured;
   const [resolving, setResolving] = useState(false);
-  const [busy, setBusy] = useState(false);
+  /**
+   * What the operator is waiting for, so the button can say it:
+   *   `requesting` — the HTTP call; `capturing` — sent, waiting for the device's answer;
+   *   `landing` — the device captured, waiting for the frame to reach the grid.
+   */
+  const [phase, setPhase] = useState<"idle" | "requesting" | "capturing" | "landing">("idle");
+  const busy = phase !== "idle";
 
   // Resolve person → device. Only when we weren't handed an agent id, and only for someone who
   // may act on it, so the fleet read isn't spent for a viewer who'd see a disabled button anyway.
@@ -101,6 +139,40 @@ export function CaptureNowButton({
   const targetId = agentId ?? device?.agent_id ?? null;
   const blocked = agentId ? null : blockedReason(device, resolving);
 
+  /**
+   * Refetch until the captured frame is actually in the caller's list.
+   *
+   * The grid is the page's source of truth, so the button drives the caller's own reload rather
+   * than inventing a row: when `hasShot` reports the frame, the poll stops; otherwise it runs to
+   * `LANDING_WINDOW_MS` and says plainly that the device hasn't uploaded it yet.
+   */
+  const startLandingPoll = useCallback((shotId?: string) => {
+    setPhase("landing");
+    window.clearInterval(pollRef.current);
+    const deadline = Date.now() + LANDING_WINDOW_MS;
+    const tick = () => {
+      onCapturedRef.current?.();
+      const landed = shotId ? hasShotRef.current?.(shotId) : false;
+      if (landed) {
+        window.clearInterval(pollRef.current);
+        setPhase("idle");
+        toast.success("Screenshot added", { description: "The new frame is on this page." });
+        return;
+      }
+      if (Date.now() >= deadline) {
+        window.clearInterval(pollRef.current);
+        setPhase("idle");
+        toast.info("Still uploading", {
+          description:
+            "The device captured it, but hasn't uploaded it yet — it arrives with the agent's " +
+            "next batch. Refresh in a minute.",
+        });
+      }
+    };
+    tick();
+    pollRef.current = window.setInterval(tick, LANDING_POLL_MS);
+  }, []);
+
   // The device's answer comes back as a push addressed to whoever asked. Subscribing is the whole
   // point of the rail — without it a refusal would be indistinguishable from a slow capture.
   useEffect(() => {
@@ -114,14 +186,18 @@ export function CaptureNowButton({
             agent_id?: string;
             accepted?: boolean;
             reason?: string;
+            screenshot_id?: string;
           } | null;
           if (!m || m.kind !== "capture_result" || m.agent_id !== targetId) return;
+          // The device answered — whatever it said, it is listening.
+          window.clearTimeout(waitingRef.current);
           if (m.accepted) {
             toast.success("Screenshot captured", {
-              description: "It appears here as soon as the device uploads it.",
+              description: "Waiting for the device to upload it…",
             });
-            onCaptured?.();
+            startLandingPoll(m.screenshot_id);
           } else {
+            setPhase("idle");
             // The agent owns this vocabulary and may add reasons faster than this UI learns them,
             // so an unknown one degrades to an honest sentence rather than a wrong one.
             const REASONS: Record<string, string> = {
@@ -143,22 +219,41 @@ export function CaptureNowButton({
         });
       })
       .catch(() => {});
-    return () => stop?.();
+    return () => {
+      window.clearTimeout(waitingRef.current);
+      window.clearInterval(pollRef.current);
+      stop?.();
+    };
   }, [allowed, targetId, onCaptured]);
 
   const request = useCallback(async () => {
     if (!targetId) return;
-    setBusy(true);
+    window.clearInterval(pollRef.current);
+    setPhase("requesting");
     try {
       await captureNow(targetId);
+      setPhase("capturing");
       toast.success("Capture requested", {
         description: "The device will capture and upload it — it appears here shortly.",
       });
       onRequested?.();
+      // 202 means "published to the device's topic", not "the device heard it". The command is
+      // fire-and-forget over MQTT: an agent that never completed IoT enrolment, or is offline on
+      // the push rail, is subscribed to nothing and the command is dropped in silence. Without
+      // this the UI reports success every time and the operator clicks again, and again.
+      window.clearTimeout(waitingRef.current);
+      waitingRef.current = window.setTimeout(() => {
+        setPhase("idle");
+        toast.warning("No answer from the device", {
+          description:
+            "The request was sent but the device hasn't responded. It may be offline or not " +
+            "connected for push commands — clicking again won't help.",
+          duration: 8000,
+        });
+      }, ANSWER_TIMEOUT_MS);
     } catch (e) {
+      setPhase("idle");
       toast.error(e instanceof ApiError ? e.message : "Couldn't request a capture.");
-    } finally {
-      setBusy(false);
     }
   }, [targetId, onRequested]);
 
@@ -194,7 +289,13 @@ export function CaptureNowButton({
       )}
     >
       {busy ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
-      {busy ? "Requesting…" : "Capture now"}
+      {phase === "requesting"
+        ? "Requesting…"
+        : phase === "capturing"
+          ? "Capturing…"
+          : phase === "landing"
+            ? "Uploading…"
+            : "Capture now"}
     </Button>
   );
 }

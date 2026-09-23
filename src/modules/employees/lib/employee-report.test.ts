@@ -331,6 +331,7 @@ describe("history walking", () => {
     expect(leave.getOrgBalances).toHaveBeenCalledTimes(2);
     expect(r.leave.ok && r.leave.data.length).toBe(2);
     // Newest year first.
-    expect(r.leave.ok && Number(r.leave.data[0].year)).toBeGreaterThan(Number(r.leave.data[1].year));
+    if (!r.leave.ok) throw new Error(r.leave.reason);
+    expect(Number(r.leave.data[0].year)).toBeGreaterThan(Number(r.leave.data[1].year));
   });
 });
