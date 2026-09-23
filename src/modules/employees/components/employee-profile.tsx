@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday } from "@/lib/workdays";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
-import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -18,6 +17,7 @@ import {
   BarChart2,
   Pencil,
   ShieldCheck,
+  Loader2,
   Users,
 } from "lucide-react";
 import {
@@ -87,6 +87,11 @@ import { EmployeeRecapCard } from "./employee-recap-card";
 import { EmployeeAppUsageCard } from "./employee-app-usage-card";
 import { formatHours, isoDay } from "@/lib/format";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
+import { collectEmployeeReport } from "../lib/employee-report-data";
+import {
+  renderEmployeeReportPdf,
+  reportFileName,
+} from "../lib/employee-report-pdf";
 import { EmployeeManageMenu } from "./employee-manage-menu";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
 import { RefreshButton } from "@/components/shared/refresh-button";
@@ -233,73 +238,6 @@ function exportEmployeeCsv(d: EmployeeProfileData) {
     `${fileCode(d.empCode)}-report.csv`,
   );
   toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.csv` });
-}
-
-function exportEmployeePdf(d: EmployeeProfileData) {
-  const activeCount = d.projects.filter((p) => p.active).length;
-  const doc = new jsPDF();
-  let y = 18;
-  doc.setFontSize(18);
-  doc.text(d.name, 14, y);
-  doc.setFontSize(10);
-  doc.setTextColor(120);
-  y += 6;
-  doc.text(`${d.jobTitle} · ${d.department} · ${d.empCode}`, 14, y);
-
-  const section = (title: string) => {
-    y += 10;
-    doc.setTextColor(20);
-    doc.setFontSize(13);
-    doc.text(title, 14, y);
-    doc.setDrawColor(210);
-    doc.line(14, y + 2, 196, y + 2);
-    y += 8;
-    doc.setFontSize(10);
-  };
-  const kv = (k: string, v: string) => {
-    doc.setTextColor(120);
-    doc.text(k, 14, y);
-    doc.setTextColor(20);
-    doc.text(v, 60, y);
-    y += 6;
-  };
-
-  section("Profile");
-  kv("Role", d.roleName);
-  kv("Status", d.status);
-  kv("Email", d.email);
-  kv("Phone", d.phone);
-  kv("Date of birth", d.dob);
-  kv("Hire date", d.hireDate);
-  kv("Address", `${d.address}, ${d.cityState}, ${d.country} ${d.postcode}`);
-
-  section("Performance");
-  kv("Productivity", d.productivityScore == null ? "—" : `${d.productivityScore}%`);
-  kv("Avg. completion", `${d.avgCompletion}%`);
-  kv("Total tasks", String(d.totalTasks));
-  kv("Projects", `${d.projects.length} (${activeCount} active)`);
-
-  section("Projects");
-  if (d.projects.length === 0) {
-    doc.text("No projects.", 14, y);
-  } else {
-    for (const p of d.projects) {
-      doc.setTextColor(20);
-      doc.text(`${p.key}  ${p.name}${p.active ? "  (active)" : ""}`, 14, y);
-      doc.text(`${p.progress}%`, 196, y, { align: "right" });
-      y += 6;
-      if (y > 282) {
-        doc.addPage();
-        y = 18;
-      }
-    }
-  }
-
-  doc.setFontSize(8);
-  doc.setTextColor(150);
-  doc.text("WorkPulse · employee report", 14, 292);
-  doc.save(`${fileCode(d.empCode)}-report.pdf`);
-  toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.pdf` });
 }
 
 /**
@@ -678,6 +616,37 @@ function ProfileView({
   const router = useRouter();
   const { can } = usePermissions();
   const canManage = can("employees:manage");
+  // The PDF is built on demand, so the click has to say so: the trigger becomes "Preparing PDF…"
+  // and the toast names the step being fetched. Without it the gap between click and file (a
+  // dozen reads, several seconds on a busy profile) reads as a dead button and invites a re-click.
+  const [preparingPdf, setPreparingPdf] = useState(false);
+  const downloadPdf = useCallback(async () => {
+    setPreparingPdf(true);
+    const toastId = toast.loading("Preparing PDF…", {
+      description: "Collecting this employee's latest records",
+    });
+    try {
+      // Fetched now, not reused from this page's state: an exported file carries a timestamp and
+      // gets forwarded, so it must reflect the data at the moment of the request.
+      const report = await collectEmployeeReport(data.id, (p) =>
+        toast.loading("Preparing PDF…", {
+          id: toastId,
+          description: `Fetching ${p.label} (${p.done + 1}/${p.total + 1})`,
+        }),
+      );
+      const doc = renderEmployeeReportPdf(report);
+      const name = reportFileName(report);
+      doc.save(name);
+      toast.success("Report downloaded", { id: toastId, description: name });
+    } catch (e) {
+      toast.error("Could not build the report", {
+        id: toastId,
+        description: e instanceof ApiError ? e.message : "Please try again.",
+      });
+    } finally {
+      setPreparingPdf(false);
+    }
+  }, [data.id]);
   const canViewLocations = can("locations:view");
   // Separate from `activity:view` on purpose — see the card's own note. The server is the
   // real gate; this keeps a 403 card off a page the viewer is otherwise entitled to.
@@ -786,15 +755,25 @@ function ProfileView({
               uses. */}
           <CaptureNowButton userId={data.id} />
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-              <Download className="size-4" /> Download
+            <DropdownMenuTrigger
+              render={<Button variant="outline" size="sm" disabled={preparingPdf} />}
+            >
+              {preparingPdf ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Preparing PDF…
+                </>
+              ) : (
+                <>
+                  <Download className="size-4" /> Download
+                </>
+              )}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => exportEmployeePdf(data)}>
-                <FileText className="size-4" /> PDF
+              <DropdownMenuItem disabled={preparingPdf} onClick={downloadPdf}>
+                <FileText className="size-4" /> PDF — full report
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => exportEmployeeCsv(data)}>
-                <Sheet className="size-4" /> CSV
+                <Sheet className="size-4" /> CSV — summary
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
