@@ -16,7 +16,7 @@
 import { jsPDF } from "jspdf";
 import { PALETTES } from "@/lib/palette";
 import { formatHours, isUuid } from "@/lib/format";
-import type { EmployeeReportData, Section } from "./employee-report-data";
+import type { AppTotal, EmployeeReportData, Section } from "./employee-report-data";
 import { SCORE_WINDOW } from "./employee-report-data";
 
 // ── page geometry (A4 portrait, mm) ──
@@ -55,11 +55,11 @@ const clock = (ms?: number) =>
   ms == null
     ? dash
     : new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const dayLabel = (iso: string) => {
+const fullDay = (iso: string) => {
   const d = new Date(`${iso}T00:00:00`);
   return Number.isNaN(d.getTime())
     ? iso
-    : d.toLocaleDateString([], { day: "2-digit", month: "short" });
+    : d.toLocaleDateString([], { day: "2-digit", month: "short", year: "2-digit" });
 };
 const title = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : dash);
 
@@ -266,32 +266,54 @@ function unavailable<T>(doc: Doc, s: Section<T>): s is { ok: false; reason: stri
 }
 
 export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
-  const stamp = r.generatedAt.toLocaleString([], {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const stamp = r.generatedAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
   const doc = new Doc(r.profile.name || "Employee", `Generated ${stamp}`);
   const empId = r.profile.emp_id && !isUuid(r.profile.emp_id) ? r.profile.emp_id : dash;
+  const period = `${r.history.from} → ${r.history.to}`;
+  const span =
+    r.history.days >= 365
+      ? `${(r.history.days / 365).toFixed(1)} years`
+      : `${r.history.days} days`;
 
   // ── headline numbers ──
-  const scored = r.activity.ok ? r.activity.data.trend : null;
+  const trend = r.activity.ok ? r.activity.data.trend : null;
+  const recentAvg = r.activity.ok ? r.activity.data.recentAvg : null;
   const worked = r.timesheet.ok ? r.timesheet.data.total_secs : null;
   const billable = r.timesheet.ok ? r.timesheet.data.billable_secs : null;
   const daysWorked = r.timesheet.ok
     ? r.timesheet.data.days.filter((d) => d.total_secs > 0).length
     : null;
-  const projectCount = r.projects.ok ? r.projects.data.length : null;
 
   doc.cards([
     {
       label: `Productivity · ${SCORE_WINDOW}d`,
-      value: pct(scored?.avg_score ?? null),
-      hint: scored ? `${scored.days_scored} scored days` : "no agent data",
+      value: pct(recentAvg),
+      hint: trend ? `${trend.days_scored} scored days all-time` : "no agent data",
     },
-    { label: `Hours · ${r.window.days}d`, value: hrs(worked), hint: daysWorked == null ? "" : `${daysWorked} days worked` },
-    { label: "Billable", value: hrs(billable), hint: worked && billable ? `${Math.round((billable / worked) * 100)}% of time` : "" },
-    { label: "Projects", value: projectCount == null ? dash : String(projectCount) },
+    {
+      label: "Hours · all time",
+      value: hrs(worked),
+      hint: daysWorked == null ? "" : `${daysWorked} days worked`,
+    },
+    {
+      label: "Billable",
+      value: hrs(billable),
+      hint: worked && billable ? `${Math.round((billable / worked) * 100)}% of time` : "",
+    },
+    {
+      label: "Projects",
+      value: r.projects.ok ? String(r.projects.data.length) : dash,
+      hint: r.projects.ok
+        ? `${r.projects.data.filter((p) => p.project.status === "active").length} active`
+        : "",
+    },
   ]);
+  doc.note(
+    `Complete history: ${period} (${span}) — ` +
+      (r.history.anchoredOnJoinDate
+        ? "from this employee's join date to today."
+        : "no join date on record, so the walk starts three years back."),
+  );
 
   // ── identity ──
   doc.section("Profile", `Employee ID ${empId}`);
@@ -305,10 +327,7 @@ export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
     ["Department", r.departmentName],
     ["Team", r.teamName],
     ["Status", title(r.profile.status)],
-    [
-      "Joined",
-      r.profile.joined_at ? new Date(r.profile.joined_at).toLocaleDateString() : dash,
-    ],
+    ["Joined", r.profile.joined_at ? new Date(r.profile.joined_at).toLocaleDateString() : dash],
     ["Location", r.profile.location || dash],
     ["User ID", r.profile.user_id],
   ]);
@@ -324,31 +343,76 @@ export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
       ["Sessions", String(t.entry_count)],
       ["Status", t.on_leave ? "On leave" : t.running ? "Working" : t.status ? title(t.status) : "Open"],
       ["Late", t.late ? "Yes" : "No"],
-      [
-        "Permission",
-        t.permission_minutes ? `${t.permission_minutes} min approved` : dash,
-      ],
+      ["Permission", t.permission_minutes ? `${t.permission_minutes} min approved` : dash],
       ["", ""],
     ]);
   }
 
-  // ── attendance & hours, day by day ──
-  doc.section("Attendance and hours", `${r.window.from} → ${r.window.to}`);
-  if (!unavailable(doc, r.timesheet)) {
-    const days = [...r.timesheet.data.days].sort((a, b) => b.date.localeCompare(a.date));
-    const scoreByDay = new Map(
-      r.activity.ok ? r.activity.data.days.map((d) => [d.date, d]) : [],
-    );
+  // ── month-by-month rollup: the shape of a long history at a glance ──
+  if (r.timesheet.ok || r.activity.ok) {
+    doc.section("Month by month", period);
+    const months = new Map<
+      string,
+      { worked: number; billable: number; days: number; score: number; scored: number }
+    >();
+    const bucket = (key: string) =>
+      months.get(key) ?? { worked: 0, billable: 0, days: 0, score: 0, scored: 0 };
+    if (r.timesheet.ok) {
+      for (const d of r.timesheet.data.days) {
+        const m = bucket(d.date.slice(0, 7));
+        m.worked += d.total_secs;
+        m.billable += d.billable_secs;
+        if (d.total_secs > 0) m.days += 1;
+        months.set(d.date.slice(0, 7), m);
+      }
+    }
+    if (r.activity.ok) {
+      for (const d of r.activity.data.days) {
+        const s = (d as unknown as { score?: number }).score;
+        if (s == null) continue;
+        const m = bucket(d.date.slice(0, 7));
+        m.score += s;
+        m.scored += 1;
+        months.set(d.date.slice(0, 7), m);
+      }
+    }
     doc.table(
       [
-        { header: "Date", width: 24 },
+        { header: "Month", width: 38 },
+        { header: "Days worked", width: 28, align: "right" },
+        { header: "Hours", width: 26, align: "right" },
+        { header: "Billable", width: 26, align: "right" },
+        { header: "Days scored", width: 28, align: "right" },
+        { header: "Avg score", width: 26, align: "right" },
+      ],
+      [...months.entries()]
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([month, m]) => [
+          new Date(`${month}-01T00:00:00`).toLocaleDateString([], { month: "long", year: "numeric" }),
+          m.days || dash,
+          m.worked ? hrs(m.worked) : dash,
+          m.billable ? hrs(m.billable) : dash,
+          m.scored || dash,
+          m.scored ? `${Math.round(m.score / m.scored)}%` : dash,
+        ]),
+    );
+  }
+
+  // ── attendance & hours, every recorded day ──
+  doc.section("Attendance and hours", `every recorded day · ${period}`);
+  if (!unavailable(doc, r.timesheet)) {
+    const days = [...r.timesheet.data.days].sort((a, b) => b.date.localeCompare(a.date));
+    const scoreByDay = new Map(r.activity.ok ? r.activity.data.days.map((d) => [d.date, d]) : []);
+    doc.table(
+      [
+        { header: "Date", width: 26 },
         { header: "Sessions", width: 20, align: "right" },
         { header: "First in", width: 20, align: "right" },
         { header: "Last out", width: 20, align: "right" },
         { header: "Worked", width: 24, align: "right" },
-        { header: "Billable", width: 24, align: "right" },
-        { header: "Score", width: 18, align: "right" },
-        { header: "Top project", width: 32 },
+        { header: "Billable", width: 22, align: "right" },
+        { header: "Score", width: 16, align: "right" },
+        { header: "Top project", width: 34 },
       ],
       days.map((d) => {
         const starts = d.entries.map((e) => e.start).filter(Boolean);
@@ -360,7 +424,7 @@ export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
         const top = [...byProject.entries()].sort((a, b) => b[1] - a[1])[0];
         const score = scoreByDay.get(d.date) as { score?: number } | undefined;
         return [
-          dayLabel(d.date),
+          fullDay(d.date),
           d.entries.length,
           starts.length ? clock(Math.min(...starts)) : dash,
           ends.length ? clock(Math.max(...ends)) : dash,
@@ -370,28 +434,28 @@ export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
           top ? projectName(r, top[0]) : dash,
         ];
       }),
-      { maxRows: 62 },
     );
   }
 
-  // ── time entries ──
-  doc.section("Time entries", "most recent first");
+  // ── every time entry ever recorded ──
+  doc.section("Time entries", "every session, most recent first");
   if (r.timesheet.ok) {
     const entries = r.timesheet.data.days
       .flatMap((d) => d.entries.map((e) => ({ ...e, day: d.date })))
       .sort((a, b) => b.start - a.start);
+    doc.note(`${entries.length} sessions recorded.`);
     doc.table(
       [
-        { header: "Date", width: 22 },
+        { header: "Date", width: 24 },
         { header: "Start", width: 16, align: "right" },
         { header: "End", width: 16, align: "right" },
-        { header: "Duration", width: 22, align: "right" },
-        { header: "Project", width: 34 },
+        { header: "Duration", width: 20, align: "right" },
+        { header: "Project", width: 32 },
         { header: "Task / description", width: 62 },
-        { header: "Billable", width: 20, align: "right" },
+        { header: "Billable", width: 12, align: "right" },
       ],
       entries.map((e) => [
-        dayLabel(e.day),
+        fullDay(e.day),
         clock(e.start),
         e.end ? clock(e.end) : "running",
         hrs(e.duration_secs),
@@ -401,90 +465,54 @@ export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
           (e.task_invalid ? "task removed" : dash),
         e.billable ? "Yes" : "No",
       ]),
-      { maxRows: 120 },
     );
   }
 
-  // ── productivity ──
-  doc.section("Productivity", `scored days in the last ${r.window.days} days`);
+  // ── productivity, every scored day ──
+  doc.section("Productivity", `every scored day · ${period}`);
   if (!unavailable(doc, r.activity)) {
     const a = r.activity.data;
     doc.pairs([
-      ["Average score", pct(a.trend.avg_score)],
+      [`Average · last ${SCORE_WINDOW}d`, pct(a.recentAvg)],
+      ["Average · all time", pct(a.trend.avg_score)],
       ["Days scored", String(a.trend.days_scored)],
-      ["Best day", a.trend.best ? `${dayLabel(a.trend.best.date)} · ${Math.round(a.trend.best.score)}%` : dash],
-      ["Weakest day", a.trend.worst ? `${dayLabel(a.trend.worst.date)} · ${Math.round(a.trend.worst.score)}%` : dash],
       ["Org baseline", pct(a.trend.baseline)],
-      ["", ""],
+      ["Best day", a.trend.best ? `${fullDay(a.trend.best.date)} · ${Math.round(a.trend.best.score)}%` : dash],
+      ["Weakest day", a.trend.worst ? `${fullDay(a.trend.worst.date)} · ${Math.round(a.trend.worst.score)}%` : dash],
     ]);
-    const rows = [...a.days].sort((x, y) => y.date.localeCompare(x.date));
     doc.table(
       [
-        { header: "Date", width: 24 },
-        { header: "Score", width: 20, align: "right" },
-        { header: "Active", width: 24, align: "right" },
-        { header: "Productive", width: 26, align: "right" },
-        { header: "Neutral", width: 24, align: "right" },
-        { header: "Distracting", width: 26, align: "right" },
-        { header: "Idle", width: 24, align: "right" },
+        { header: "Date", width: 26 },
+        { header: "Score", width: 18, align: "right" },
+        { header: "Active", width: 22, align: "right" },
+        { header: "Productive", width: 24, align: "right" },
+        { header: "Neutral", width: 22, align: "right" },
+        { header: "Distracting", width: 24, align: "right" },
+        { header: "Worked", width: 22, align: "right" },
+        { header: "Attendance", width: 24 },
       ],
-      rows.map((d) => {
-        const x = d as unknown as Record<string, number | undefined>;
-        return [
-          dayLabel(d.date),
-          x.score == null ? dash : `${Math.round(x.score)}%`,
-          hrs(x.active_sec),
-          hrs(x.productive_sec),
-          hrs(x.neutral_sec),
-          hrs(x.distracting_sec),
-          hrs(x.idle_sec),
-        ];
-      }),
-      { maxRows: 45 },
-    );
-  }
-
-  // ── 6-month trend, by month ──
-  if (r.trend.ok && r.trend.data.days.length > 0) {
-    doc.section("Six-month trend", "average score per month");
-    const byMonth = new Map<string, { sum: number; n: number; hours: number }>();
-    for (const d of r.trend.data.days) {
-      const x = d as unknown as Record<string, number | undefined>;
-      const key = d.date.slice(0, 7);
-      const m = byMonth.get(key) ?? { sum: 0, n: 0, hours: 0 };
-      if (x.score != null) {
-        m.sum += x.score;
-        m.n += 1;
-      }
-      m.hours += (x.active_sec ?? 0) / 3600;
-      byMonth.set(key, m);
-    }
-    doc.table(
-      [
-        { header: "Month", width: 30 },
-        { header: "Days scored", width: 30, align: "right" },
-        { header: "Average score", width: 34, align: "right" },
-        { header: "Active hours", width: 34, align: "right" },
-      ],
-      [...byMonth.entries()]
-        .sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([month, m]) => [
-          new Date(`${month}-01T00:00:00`).toLocaleDateString([], { month: "long", year: "numeric" }),
-          m.n,
-          m.n ? `${Math.round(m.sum / m.n)}%` : dash,
-          m.hours ? formatHours(m.hours) : dash,
-        ]),
+      [...a.days]
+        .sort((x, y) => y.date.localeCompare(x.date))
+        .map((d) => {
+          const x = d as unknown as Record<string, number | string | undefined>;
+          return [
+            fullDay(d.date),
+            x.score == null ? dash : `${Math.round(Number(x.score))}%`,
+            hrs(Number(x.active_sec ?? 0) || null),
+            hrs(Number(x.productive_sec ?? 0) || null),
+            hrs(Number(x.neutral_sec ?? 0) || null),
+            hrs(Number(x.distracting_sec ?? 0) || null),
+            x.worked_minutes ? formatHours(Number(x.worked_minutes) / 60) : dash,
+            x.attendance ? title(String(x.attendance)) : dash,
+          ];
+        }),
     );
   }
 
   // ── apps & sites ──
-  doc.section("Applications and websites", `${r.window.from} → ${r.window.to}`);
+  doc.section("Applications and websites", `all time · ${period}`);
   if (!unavailable(doc, r.apps)) {
-    const a = r.apps.data;
-    const rows = [
-      ...a.apps.map((x) => ({ ...x, kind: "App" })),
-      ...a.sites.map((x) => ({ ...x, kind: "Website" })),
-    ].sort((x, y) => y.seconds - x.seconds);
+    const rows: AppTotal[] = r.apps.data.rows;
     const total = rows.reduce((s, x) => s + x.seconds, 0);
     doc.table(
       [
@@ -501,9 +529,13 @@ export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
         hrs(x.seconds),
         total ? `${Math.round((x.seconds / total) * 100)}%` : dash,
       ]),
-      { maxRows: 30 },
     );
-    if (a.truncated) doc.note("The server capped this ranking — it is a top-N, not the whole period.");
+    if (r.apps.data.truncated) {
+      doc.note(
+        "The server returns the top 15 apps and sites per 62-day window; a long tail of rarely-used " +
+          "apps in some windows is therefore not listed.",
+      );
+    }
     doc.note(
       "Per-person app rows exist from 2026-08-27 onward; an empty list for an earlier range means not recorded, not unused.",
     );
@@ -542,34 +574,38 @@ export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
     }
   }
 
-  // ── leave ──
-  doc.section("Leave balances", new Date().getFullYear().toString());
+  // ── leave, every year on record ──
+  doc.section("Leave balances", "every year on record");
   if (!unavailable(doc, r.leave)) {
-    doc.table(
-      [
-        { header: "Leave type", width: 62 },
-        { header: "Paid", width: 20 },
-        { header: "Allowance", width: 28, align: "right" },
-        { header: "Used", width: 24, align: "right" },
-        { header: "Remaining", width: 28, align: "right" },
-        { header: "Adjusted", width: 20, align: "right" },
-      ],
-      r.leave.data.map((b) => [
-        b.name,
-        b.paid ? "Paid" : "Unpaid",
-        b.seeded ? b.allowance : dash,
-        b.used,
-        b.seeded ? b.remaining : dash,
-        b.adjusted ? "Yes" : "No",
-      ]),
-    );
-    if (r.leave.data.some((b) => !b.seeded)) {
+    for (const ledger of r.leave.data) {
+      doc.note(`Year ${ledger.year}`);
+      doc.table(
+        [
+          { header: "Leave type", width: 62 },
+          { header: "Paid", width: 20 },
+          { header: "Allowance", width: 28, align: "right" },
+          { header: "Used", width: 24, align: "right" },
+          { header: "Remaining", width: 28, align: "right" },
+          { header: "Adjusted", width: 20, align: "right" },
+        ],
+        ledger.balances.map((b) => [
+          b.name,
+          b.paid ? "Paid" : "Unpaid",
+          b.seeded ? b.allowance : dash,
+          b.used,
+          b.seeded ? b.remaining : dash,
+          b.adjusted ? "Yes" : "No",
+        ]),
+      );
+    }
+    if (r.leave.data.some((l) => l.balances.some((b) => !b.seeded))) {
       doc.note("A type shown as — predates this employee's ledger: never granted, not zero.");
     }
   }
 
   doc.finish(
-    `WorkPulse · ${r.profile.name} · generated ${stamp} · productivity is the mean of scored days in the last ${SCORE_WINDOW} days`,
+    `WorkPulse · ${r.profile.name} · generated ${stamp} · full history ${period} · ` +
+      `headline productivity is the mean of scored days in the last ${SCORE_WINDOW} days`,
   );
   return doc.d;
 }

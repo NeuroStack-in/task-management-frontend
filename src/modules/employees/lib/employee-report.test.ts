@@ -24,7 +24,7 @@ vi.mock("@/modules/leave/services/leave.service", () => leave);
 vi.mock("@/modules/projects/services/projects.service", () => projects);
 vi.mock("@/modules/roles/services/roles.service", () => roles);
 
-import { collectEmployeeReport } from "./employee-report-data";
+import { chunks, collectEmployeeReport } from "./employee-report-data";
 import { renderEmployeeReportPdf, reportFileName } from "./employee-report-pdf";
 
 const PROFILE = {
@@ -151,7 +151,7 @@ describe("collectEmployeeReport", () => {
     expect(r.teamName).toBe("Platform");
     expect(r.roleName).toBe("Employee");
     expect(r.timesheet.ok && r.timesheet.data.total_secs).toBe(7200);
-    expect(r.leave.ok && r.leave.data[0].name).toBe("Annual");
+    expect(r.leave.ok && r.leave.data[0].balances[0].name).toBe("Annual");
     expect(r.projects.ok && r.projects.data[0].detail?.kpi?.total_tasks).toBe(10);
     expect(steps).toContain("profile");
     expect(steps.at(-1)).toBe("building the PDF");
@@ -220,5 +220,117 @@ describe("renderEmployeeReportPdf", () => {
     });
     const r = await collectEmployeeReport("u1");
     expect(reportFileName(r)).toMatch(/^Dana-Whitfield-report-/);
+  });
+});
+
+describe("history walking", () => {
+  it("splits a long range into windows that respect each server cap", () => {
+    // 92 days is the timesheet cap; a 365-day year needs four windows, contiguous and non-overlapping.
+    const year = chunks("2026-01-01", "2026-12-31", 92);
+    expect(year.length).toBe(4);
+    expect(year[0]).toEqual({ from: "2026-01-01", to: "2026-04-02" });
+    expect(year.at(-1)?.to).toBe("2026-12-31");
+    for (const [a, b] of year.slice(0, -1).map((w, i) => [w, year[i + 1]] as const)) {
+      expect(new Date(b.from).getTime() - new Date(a.to).getTime()).toBe(86_400_000);
+    }
+  });
+
+  it("returns a single window when the range already fits", () => {
+    expect(chunks("2026-09-01", "2026-09-10", 92)).toEqual([
+      { from: "2026-09-01", to: "2026-09-10" },
+    ]);
+  });
+
+  /** The whole point of the rewrite: history starts the day the person joined. */
+  it("walks from the join date, asking the server for every window", async () => {
+    const joined = new Date();
+    joined.setDate(joined.getDate() - 200);
+    employees.getEmployeeProfile.mockResolvedValue({ ...PROFILE, joined_at: joined.getTime() });
+
+    const r = await collectEmployeeReport("u1");
+
+    expect(r.history.anchoredOnJoinDate).toBe(true);
+    expect(r.history.days).toBeGreaterThanOrEqual(200);
+    // 200 days ÷ 92 = 3 timesheet windows, ÷ 62 = 4 app windows.
+    expect(timesheet.getUserTimesheet).toHaveBeenCalledTimes(3);
+    expect(insights.getUserAppUsage).toHaveBeenCalledTimes(4);
+  });
+
+  it("merges chunks: days are deduped and totals re-summed across windows", async () => {
+    const joined = new Date();
+    joined.setDate(joined.getDate() - 120);
+    employees.getEmployeeProfile.mockResolvedValue({ ...PROFILE, joined_at: joined.getTime() });
+    let n = 0;
+    timesheet.getUserTimesheet.mockImplementation(async () => {
+      n += 1;
+      return {
+        from: "x",
+        to: "y",
+        total_secs: 3600,
+        billable_secs: 1800,
+        days: [{ date: `2026-0${n}-01`, total_secs: 3600, billable_secs: 1800, entries: [] }],
+      };
+    });
+
+    const r = await collectEmployeeReport("u1");
+
+    expect(r.timesheet.ok && r.timesheet.data.days.length).toBe(2);
+    expect(r.timesheet.ok && r.timesheet.data.total_secs).toBe(7200);
+  });
+
+  it("sums one app's time across every window instead of keeping the last", async () => {
+    const joined = new Date();
+    joined.setDate(joined.getDate() - 120);
+    employees.getEmployeeProfile.mockResolvedValue({ ...PROFILE, joined_at: joined.getTime() });
+    insights.getUserAppUsage.mockResolvedValue({
+      from: "x",
+      to: "y",
+      apps: [{ name: "VS Code", seconds: 1000, category: "productive" }],
+      sites: [{ name: "github.com", seconds: 500, category: "productive" }],
+      truncated: true,
+    });
+
+    const r = await collectEmployeeReport("u1");
+
+    const vscode = r.apps.ok && r.apps.data.rows.find((x) => x.name === "VS Code");
+    expect(vscode && vscode.seconds).toBe(2000); // two windows × 1000
+    expect(r.apps.ok && r.apps.data.rows.find((x) => x.kind === "Website")?.name).toBe("github.com");
+    expect(r.apps.ok && r.apps.data.truncated).toBe(true);
+  });
+
+  it("recomputes the trend over the whole history, not per window", async () => {
+    const joined = new Date();
+    joined.setDate(joined.getDate() - 400);
+    employees.getEmployeeProfile.mockResolvedValue({ ...PROFILE, joined_at: joined.getTime() });
+    let n = 0;
+    insights.getUserActivity.mockImplementation(async () => {
+      n += 1;
+      return {
+        from: "x",
+        to: "y",
+        days: [{ date: `2026-0${n}-15`, score: n === 1 ? 40 : 80, active_sec: 3600 }],
+        trend: { days_scored: 1, avg_score: n === 1 ? 40 : 80, best: null, worst: null, baseline: 55 },
+      };
+    });
+
+    const r = await collectEmployeeReport("u1");
+
+    expect(r.activity.ok && r.activity.data.trend.days_scored).toBe(2);
+    expect(r.activity.ok && r.activity.data.trend.avg_score).toBe(60); // (40 + 80) / 2
+    expect(r.activity.ok && r.activity.data.trend.best?.score).toBe(80);
+    expect(r.activity.ok && r.activity.data.trend.worst?.score).toBe(40);
+  });
+
+  it("collects a leave ledger for every calendar year on record", async () => {
+    const joined = new Date();
+    joined.setFullYear(joined.getFullYear() - 1);
+    employees.getEmployeeProfile.mockResolvedValue({ ...PROFILE, joined_at: joined.getTime() });
+
+    const r = await collectEmployeeReport("u1");
+
+    expect(leave.getOrgBalances).toHaveBeenCalledTimes(2);
+    expect(r.leave.ok && r.leave.data.length).toBe(2);
+    // Newest year first.
+    expect(r.leave.ok && Number(r.leave.data[0].year)).toBeGreaterThan(Number(r.leave.data[1].year));
   });
 });
