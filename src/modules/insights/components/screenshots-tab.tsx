@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { Camera, ChevronLeft, ChevronRight, EyeOff, Flag, Loader2, Search, ShieldOff, Sparkles, Trash2, Users, X } from "lucide-react";
@@ -151,6 +152,17 @@ export function ScreenshotsTab() {
    * on the frames that existed when they were clicked.
    */
   const [openUser, setOpenUser] = useState<string | null>(null);
+  // Deep link from an employee profile (`?emp=<id>`, the same shape the Location button uses):
+  // land straight on that person's day rather than the whole-org gallery. Applied once — after
+  // that the operator's own navigation owns the selection.
+  const searchParams = useSearchParams();
+  const deepLinkedUser = searchParams.get("emp");
+  const appliedDeepLink = useRef(false);
+  useEffect(() => {
+    if (!deepLinkedUser || appliedDeepLink.current) return;
+    appliedDeepLink.current = true;
+    setOpenUser(deepLinkedUser);
+  }, [deepLinkedUser]);
 
   // Department-scoped AI narrative of the day's screen activity, judged for the department's role.
   // The backend generates it once per day's frame count and caches it; regenerate forces a fresh one.
@@ -1225,7 +1237,11 @@ function EmployeeCaptures({
           {/* On-demand capture belongs here rather than only on the device page: this is where
               someone is already looking at a person's frames and wants a current one. The device
               is resolved from the user inside the button. */}
-          <CaptureNowButton userId={userId} onCaptured={onCaptured} />
+          <CaptureNowButton
+            userId={userId}
+            onCaptured={onCaptured}
+            hasShot={(id) => allCaptures.some((c) => c.monitors.some((m) => m.shot_id === id))}
+          />
         </div>
       </div>
 

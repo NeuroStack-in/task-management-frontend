@@ -17,6 +17,7 @@ import {
   BarChart2,
   Pencil,
   ShieldCheck,
+  Camera,
   Loader2,
   Users,
 } from "lucide-react";
@@ -93,7 +94,6 @@ import {
   reportFileName,
 } from "../lib/employee-report-pdf";
 import { EmployeeManageMenu } from "./employee-manage-menu";
-import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { PageActions } from "@/components/shared/page-actions";
 
@@ -648,6 +648,7 @@ function ProfileView({
     }
   }, [data.id]);
   const canViewLocations = can("locations:view");
+  const canViewScreenshots = can("screenshots:view");
   // Separate from `activity:view` on purpose — see the card's own note. The server is the
   // real gate; this keeps a 403 card off a page the viewer is otherwise entitled to.
   const canSeeAppUsage = can("activity:apps:person");
@@ -749,11 +750,19 @@ function ProfileView({
           <PageActions>
             <RefreshButton onRefresh={reload} refreshing={refreshing} />
           </PageActions>
-          {/* Ask this person's device for a screenshot now. Resolves the person → device from the
-              fleet itself and self-hides for anyone without `agents:manage` + `screenshots:view`,
-              so no extra permission wiring is needed here — the same button the Screenshots page
-              uses. */}
-          <CaptureNowButton userId={data.id} />
+          {/* Screenshots live on their own page, and so does "Capture now" — one button, in the
+              place that shows the result. This mirrors the Location button above: the profile
+              points at the surface, it doesn't duplicate it. */}
+          {canViewScreenshots ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/insights/screenshots?emp=${data.id}`)}
+              title="View this employee's screenshots"
+            >
+              <Camera className="size-4" /> Screenshots
+            </Button>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger
               render={<Button variant="outline" size="sm" disabled={preparingPdf} />}
