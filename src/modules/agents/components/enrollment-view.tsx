@@ -201,7 +201,11 @@ export function EnrollmentView() {
                 }}
               >
                 <SelectTrigger id="enrol-employee">
-                  <SelectValue placeholder={dirLoading ? "Loading…" : "Pick an employee"} />
+                  {/* Base UI renders the *value* unless given a render function, and the value here
+                      is the user id — so the trigger showed a raw uuid instead of the person. */}
+                  <SelectValue placeholder={dirLoading ? "Loading…" : "Pick an employee"}>
+                    {(v) => (v ? nameOf(String(v)) : null)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {employees.map((e) => (
