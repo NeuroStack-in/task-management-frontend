@@ -9,13 +9,28 @@
  * is once and only once, mirroring the backend's returned-once discipline — reload the page and the
  * code is gone, because only its hash was ever stored.
  *
+ * The **uninstall passcode** lives on the same page and behaves the opposite way on purpose: one
+ * value per org, shown whenever asked for, because it is needed to *remove* an agent months later.
+ * It is folded into the install command, since the MSI can only store it on the way in.
+ *
  * Hidden entirely in `project` mode (the server 409s a mint anyway) — offering a button that cannot
  * succeed is a dead end.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Check, Copy, KeyRound, Loader2, Trash2, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -36,19 +51,40 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useTrackingMode } from "@/hooks/use-features";
 import { personName } from "@/lib/format";
 import {
+  getUninstallPasscode,
   listEnrollmentCodes,
   mintEnrollmentCode,
   revokeEnrollmentCode,
+  rotateUninstallPasscode,
   type MintedCode,
   type PendingCode,
+  type UninstallPasscode,
 } from "../services/fleet.service";
 
 /** The MSI filename the download link + install command reference. Kept in one place. */
 const MSI_NAME = "WorkPulseAgentService_x64.msi";
 
-/** Build the paste-ready install command. The code carries the tenant, so nothing else is needed. */
-function installCommand(code: string): string {
-  return `msiexec /i ${MSI_NAME} /qn ENROLLTOKEN=${code}`;
+/**
+ * Build the paste-ready install command. The code carries the tenant, so nothing else is needed.
+ *
+ * The passcode is passed **at install time or not at all**: the MSI writes it to the machine on the
+ * way in, and that stored copy is what a later `msiexec /x` is checked against. A device installed
+ * without it can be removed by anyone with local admin and no passcode, so it is folded into the one
+ * command a technician copies rather than left as a second step they might skip.
+ */
+function installCommand(code: string, passcode?: string): string {
+  const pass = passcode ? ` UNINSTALLPASSCODE=${passcode}` : "";
+  return `msiexec /i ${MSI_NAME} /qn ENROLLTOKEN=${code}${pass}`;
+}
+
+/** What IT runs to take the agent off a machine. */
+function uninstallCommand(passcode: string): string {
+  return `msiexec /x ${MSI_NAME} UNINSTALLPASSCODE=${passcode}`;
+}
+
+/** Same shape, no characters — so the field's length reads as real without exposing it. */
+function masked(passcode: string): string {
+  return passcode.replace(/[^-]/g, "•");
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -90,6 +126,14 @@ export function EnrollmentView() {
   const [codes, setCodes] = useState<PendingCode[]>([]);
   const [codesLoading, setCodesLoading] = useState(true);
 
+  /** The org's uninstall passcode. `null` while loading or if the read failed (see `passFailed`). */
+  const [pass, setPass] = useState<UninstallPasscode | null>(null);
+  const [passFailed, setPassFailed] = useState(false);
+  const [passShown, setPassShown] = useState(false);
+  /** Rotation is two-step: it invalidates nothing already installed, but it is still a decision. */
+  const [rotateArmed, setRotateArmed] = useState(false);
+  const [rotating, setRotating] = useState(false);
+
   const canManage = can("agents:manage");
 
   // Employees who already have a pending code — so the picker can flag them rather than let IT mint
@@ -117,6 +161,30 @@ export function EnrollmentView() {
   useEffect(() => {
     if (canManage) reloadCodes();
   }, [canManage, reloadCodes]);
+
+  // The GET mints the passcode if the org hasn't one yet, so this is also what creates it — there is
+  // deliberately no "generate" button for a value that must simply always exist.
+  useEffect(() => {
+    if (!canManage) return;
+    getUninstallPasscode()
+      .then(setPass)
+      .catch(() => setPassFailed(true));
+  }, [canManage]);
+
+  const rotate = useCallback(() => {
+    setRotating(true);
+    rotateUninstallPasscode()
+      .then((p) => {
+        setPass(p);
+        setPassShown(true);
+        setRotateArmed(false);
+        toast.success("Passcode rotated", {
+          description: "Devices already installed keep the passcode they were installed with.",
+        });
+      })
+      .catch((e) => toast.error("Couldn't rotate the passcode", { description: friendlyError(e) }))
+      .finally(() => setRotating(false));
+  }, []);
 
   const mint = useCallback(() => {
     if (!userId) return;
@@ -259,19 +327,125 @@ export function EnrollmentView() {
                 <Label>Install command</Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 break-all rounded bg-background px-3 py-2 font-mono text-xs">
-                    {installCommand(minted.code)}
+                    {installCommand(minted.code, pass?.passcode)}
                   </code>
-                  <CopyButton text={installCommand(minted.code)} label="Copy install command" />
+                  <CopyButton
+                    text={installCommand(minted.code, pass?.passcode)}
+                    label="Copy install command"
+                  />
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Run this on {nameOf(minted.user_id)}&apos;s computer as an administrator. The code
                   expires in a few hours and works once.
+                  {pass
+                    ? " It also sets the uninstall passcode below, so the agent can't be removed without it."
+                    : " The uninstall passcode couldn't be loaded, so this install won't be protected against removal."}
                 </p>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* The uninstall passcode. One per org, unlike the per-employee code above: it is needed
+          *later*, to remove an agent, often by someone who wasn't there for the install — so it is
+          readable as often as required rather than revealed once. */}
+      <div className="space-y-2">
+        <h2 className="text-sm font-medium text-muted-foreground">Uninstall passcode</h2>
+        <Card>
+          <CardContent className="space-y-4 p-5">
+            <p className="flex items-start gap-2 text-sm text-muted-foreground">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+              <span>
+                The agent hides itself from Add/Remove Programs, and this passcode is what stops it
+                being uninstalled by anyone with local admin. It is the same for every device in this
+                organization, and it is included in the install command above.
+              </span>
+            </p>
+
+            {passFailed ? (
+              <p className="text-sm text-muted-foreground">
+                Couldn&apos;t load the passcode. Reload the page — until it loads, installs made from
+                this page won&apos;t be protected against removal.
+              </p>
+            ) : !pass ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Loading…
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 break-all rounded bg-muted px-3 py-2 font-mono text-sm tracking-wider">
+                    {passShown ? pass.passcode : masked(pass.passcode)}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPassShown((s) => !s)}
+                    aria-label={passShown ? "Hide passcode" : "Show passcode"}
+                  >
+                    {passShown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    {passShown ? "Hide" : "Show"}
+                  </Button>
+                  <CopyButton text={pass.passcode} label="Copy uninstall passcode" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Uninstall command</Label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 break-all rounded bg-background px-3 py-2 font-mono text-xs">
+                      {uninstallCommand(passShown ? pass.passcode : masked(pass.passcode))}
+                    </code>
+                    <CopyButton
+                      text={uninstallCommand(pass.passcode)}
+                      label="Copy uninstall command"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Run as an administrator on the device. Without the passcode the removal is
+                    refused.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+                  {rotateArmed ? (
+                    <>
+                      <Button variant="destructive" size="sm" onClick={rotate} disabled={rotating}>
+                        {rotating ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-4" />
+                        )}
+                        Yes, rotate it
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setRotateArmed(false)}>
+                        Cancel
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        Devices already installed keep the old passcode — you will need both until
+                        they are replaced. Anyone holding an install command copied before now will
+                        also still be using the old one.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => setRotateArmed(true)}>
+                        <RefreshCw className="size-4" /> Rotate
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        {pass.rotated_by
+                          ? `Rotated by ${nameOf(pass.rotated_by)} on ${new Date(pass.rotated_at).toLocaleDateString()}.`
+                          : `Created on ${new Date(pass.rotated_at).toLocaleDateString()}.`}{" "}
+                        Rotating affects new installs only.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Pending worklist — codes issued but not yet installed. */}
       <div className="space-y-2">

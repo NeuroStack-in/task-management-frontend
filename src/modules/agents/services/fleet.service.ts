@@ -250,6 +250,36 @@ export async function revokeEnrollmentCode(codeId: string): Promise<void> {
 }
 
 /**
+ * Mirrors `fleet::uninstall_passcode::UninstallPasscode`. The mirror image of `MintedCode`: one
+ * value per **org**, readable as often as needed, because removing an agent happens long after it
+ * was installed and usually by someone who wasn't there for the install.
+ */
+export interface UninstallPasscode {
+  /** Typed into `msiexec /x … UNINSTALLPASSCODE=<this>`. */
+  passcode: string;
+  /** Epoch **ms** of the last rotation, or of creation for one never rotated. */
+  rotated_at: number;
+  /** Who last rotated it — empty for the passcode created on first read. */
+  rotated_by: string;
+}
+
+/** `GET /v1/fleet/uninstall-passcode` — the org's passcode, minted server-side on first read. */
+export function getUninstallPasscode(): Promise<UninstallPasscode> {
+  return apiFetch<UninstallPasscode>("/v1/fleet/uninstall-passcode");
+}
+
+/**
+ * `POST /v1/fleet/uninstall-passcode/rotate` — replace it. **Devices already installed keep the
+ * passcode they were installed with**, so rotating protects future installs only; the UI says so
+ * rather than leaving IT to discover it at a desk.
+ */
+export function rotateUninstallPasscode(): Promise<UninstallPasscode> {
+  return apiFetch<UninstallPasscode>("/v1/fleet/uninstall-passcode/rotate", {
+    method: "POST",
+  });
+}
+
+/**
  * `POST /v1/fleet/{id}/release` — free the employee's 1:1 claim, revoke the credential, clear the
  * assignment. The agent stops on its next batch; the employee can then be assigned a replacement.
  * History stays on the employee's record.
