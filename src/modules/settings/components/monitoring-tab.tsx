@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/shared/page-header"
 import { Loader } from "@/components/shared/loader"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
+import { useTrackingMode } from "@/hooks/use-features"
 import { ApiError } from "@/lib/api"
 import {
   getTrackingPolicy,
@@ -63,7 +64,15 @@ type PolicyForm = {
    */
   silent: boolean
   auto_update: boolean
+  /** Managed agent: minutes of no input before the logon session auto-ends. */
+  idleMinutes: number
 }
+
+/** The agent's shipped default, in minutes — what an org that never set one keeps. */
+const IDLE_DEFAULT_MINUTES = 45
+/** Server range is 60 … 28800 seconds; expressed here in whole minutes. */
+const IDLE_MIN_MINUTES = 1
+const IDLE_MAX_MINUTES = 480
 
 const EMPTY: PolicyForm = {
   cadence: "off",
@@ -72,6 +81,7 @@ const EMPTY: PolicyForm = {
   retention_days: 30,
   silent: false,
   auto_update: true,
+  idleMinutes: IDLE_DEFAULT_MINUTES,
 }
 
 const CADENCE_OPTIONS: { value: CadenceChoice; label: string }[] = [
@@ -81,6 +91,15 @@ const CADENCE_OPTIONS: { value: CadenceChoice; label: string }[] = [
   { value: "min10", label: "Every 10 minutes" },
   { value: "custom", label: "Custom…" },
 ]
+
+/**
+ * Wire seconds → whole minutes for the stepper. An absent value means the server predates the
+ * field, so the agent is still running its built-in 45 minutes — show that, not 0.
+ */
+function secsToMinutes(secs: number | undefined): number {
+  if (secs == null) return IDLE_DEFAULT_MINUTES
+  return Math.min(IDLE_MAX_MINUTES, Math.max(IDLE_MIN_MINUTES, Math.round(secs / 60)))
+}
 
 /** Wire cadence → form fields. A `{ custom: n }` object becomes the `"custom"` choice + its minutes. */
 function cadenceToForm(c: TrackingCadence): { cadence: CadenceChoice; customMinutes: number } {
@@ -132,6 +151,9 @@ export function MonitoringTab() {
   // because Owner and Admin hold both, but it read the wrong bit: a role with one and not the other
   // saw controls that 403, or read-only controls it was entitled to use.
   const canManage = can("monitoring:manage")
+  // The idle window only applies to the managed Windows service, so the card is hidden for
+  // `project` orgs rather than shown as a setting that changes nothing.
+  const trackingMode = useTrackingMode()
 
   const {
     control,
@@ -171,6 +193,7 @@ export function MonitoringTab() {
           retention_days: cfg.tracking.retention_days,
           silent: cfg.tracking.silent,
           auto_update: cfg.tracking.auto_update,
+          idleMinutes: secsToMinutes(cfg.tracking.idle_end_secs),
         },
         cfg.tracking.version,
       )
@@ -195,6 +218,7 @@ export function MonitoringTab() {
         retention_days: values.retention_days,
         silent: values.silent,
         auto_update: values.auto_update,
+        idle_end_secs: Math.round(values.idleMinutes) * 60,
         expected_version: version,
       })
       seed(
@@ -204,6 +228,7 @@ export function MonitoringTab() {
           retention_days: next.retention_days,
           silent: next.silent,
           auto_update: next.auto_update,
+          idleMinutes: secsToMinutes(next.idle_end_secs),
         },
         next.version,
       )
@@ -348,6 +373,44 @@ export function MonitoringTab() {
               </SettingRow>
             </CardContent>
           </Card>
+
+          {/* ── Machine tracking (managed Windows service) ──
+              Only shown to orgs that actually run it: the interactive app's timer is started and
+              stopped by the employee, so an idle window would mean nothing there. */}
+          {trackingMode !== "project" && (
+            <Card id="machine" className="scroll-mt-24 shadow-none">
+              <CardHeader>
+                <CardTitle>Machine tracking</CardTitle>
+                <CardDescription>
+                  How the background Windows service counts a day. It starts at Windows sign-in and
+                  stops at sign-out, shutdown or sleep; this is how long it waits before stopping
+                  when nobody is using the machine.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-0 pb-2">
+                <SettingRow
+                  label="Stop after inactivity"
+                  description="With no keyboard or mouse input for this long, the session ends — counted back to the last activity, so idle time is never billed. It starts again by itself on the next key press or mouse move."
+                  disabled={!canManage}
+                >
+                  <Controller
+                    control={control}
+                    name="idleMinutes"
+                    render={({ field }) => (
+                      <NumericStepper
+                        value={field.value}
+                        min={IDLE_MIN_MINUTES}
+                        max={IDLE_MAX_MINUTES}
+                        suffix="min"
+                        disabled={!canManage}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  />
+                </SettingRow>
+              </CardContent>
+            </Card>
+          )}
 
           {/* ── Agent updates ── */}
           <Card id="updates" data-tour="settings:updates" className="scroll-mt-24 shadow-none">

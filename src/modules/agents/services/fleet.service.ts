@@ -91,6 +91,14 @@ export interface TrackingPolicy {
   silent: boolean;
   /** Let agents self-update to the latest released version. */
   auto_update: boolean;
+  /**
+   * **Managed agent only** — seconds without keyboard or mouse input before the logon session
+   * auto-ends, backdated to the last input. 60 … 28800 (1 minute … 8 hours).
+   *
+   * The interactive app ignores it: an employee starts and stops that timer themselves. Optional on
+   * the type because a server from before the field simply omits it.
+   */
+  idle_end_secs?: number;
 }
 
 /**
@@ -135,6 +143,11 @@ export interface UpdateCaptureGateInput {
 
 /** The exact write payload for `PUT /v1/fleet/update-policy`. */
 export interface UpdateTrackingPolicyInput {
+  /**
+   * Managed agent: seconds of no input before the logon session auto-ends (60 … 28800). Optional so
+   * a caller that doesn't manage it leaves the stored value alone — the server defaults it.
+   */
+  idle_end_secs?: number;
   cadence: TrackingCadence;
   blur_level: number;
   retention_days: number;

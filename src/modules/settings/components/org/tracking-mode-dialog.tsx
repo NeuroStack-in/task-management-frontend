@@ -66,9 +66,10 @@ export function TrackingModeDialog({
         <DialogHeader>
           <DialogTitle>Change how this organization tracks work</DialogTitle>
           <DialogDescription>
-            Machine-based tracking is coming soon; for now, projects &amp; task
-            time is the available mode. Nothing you&apos;ve already recorded is
-            deleted — switching modes only shows or hides surfaces.
+            Nothing you&apos;ve already recorded is deleted — switching modes
+            only shows or hides surfaces. Machine uptime needs the WorkPulse
+            Windows service installed on each computer it covers, using an
+            enrolment key from Agents.
           </DialogDescription>
         </DialogHeader>
 
