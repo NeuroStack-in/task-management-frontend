@@ -425,6 +425,15 @@ export function createInvite(body: {
   department_id: string;
   title: string;
   team_id?: string;
+  /**
+   * Whether the server emails the invite. **Omitted means yes** — the server defaults it to `true`,
+   * so every existing caller is unchanged.
+   *
+   * Pass `false` only when the caller distributes the code itself: with no email sent, the response
+   * is the single place `token` and `otp` ever exist, and discarding it creates invites nobody can
+   * use. The bulk importer passes it alongside writing the spreadsheet, in that order.
+   */
+  notify?: boolean;
 }): Promise<ApiInviteCreated> {
   return apiFetch<ApiInviteCreated>("/v1/employees/invites", {
     method: "POST",

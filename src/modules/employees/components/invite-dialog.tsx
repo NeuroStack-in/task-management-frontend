@@ -284,10 +284,20 @@ export function InviteDialog({
   }
 
   /**
-   * Send a batch of prepared invite bodies, reporting each one's outcome.
+   * Create a batch of invites, reporting each one's outcome.
    *
-   * The invite email is sent server-side (Resend, via the notifications rail); the link and one-time
-   * password stay secret — the invitee is the only one who ever sees them.
+   * `withHandout` picks which of the two buttons ran, and it changes **how the code reaches the
+   * person** — the two are alternatives, not additions:
+   *
+   * - `false` — the server emails each invite (Resend, via the notifications rail). The code stays
+   *   between the server and the invitee; nobody else ever sees it.
+   * - `true` — no email is sent (`notify: false`), and the codes are written to a spreadsheet for
+   *   the admin to hand out. Right for a bulk import distributing over chat or on paper, and it
+   *   spends none of the email provider's daily quota.
+   *
+   * The second mode puts the whole batch's usability in one file: with no email, that spreadsheet is
+   * the only place the codes exist. So a failed download there is a genuine problem, not an
+   * inconvenience, and is reported as one.
    *
    * Bounded concurrency, not `Promise.all`: firing two hundred POSTs at once bursts the Lambda into
    * throttling, and writes are never retried (lib/api), so a throttled invite would simply be lost.
@@ -301,7 +311,9 @@ export function InviteDialog({
     const created: HandoutRow[] = [];
     const results = await mapWithConcurrency(bodies, 4, async (body) => {
       try {
-        const invite = await createInvite(body);
+        const invite = await createInvite(
+          withHandout ? { ...body, notify: false } : body,
+        );
         // Held onto because this response is the **only** time `token` and `otp` exist: the server
         // stores hashes and can never reproduce them. Losing them here means the invite can only be
         // revoked and re-issued, so they are captured before anything else can go wrong.
@@ -327,12 +339,14 @@ export function InviteDialog({
       try {
         await downloadInviteHandout(created, window.location.origin, tenantId);
       } catch {
-        toast.warning(
-          "The invites were created, but the code sheet couldn't be downloaded",
+        // No email was sent on this path, so a lost file means invites nobody can ever use. Said
+        // plainly, and left on screen long enough to read, because the remedy is an action.
+        toast.error(
+          `${created.length} ${created.length === 1 ? "invite was" : "invites were"} created, but the code sheet couldn't be downloaded`,
           {
             description:
-              "The codes cannot be shown again — revoke these invites and re-issue them if the recipients don't get their email.",
-            duration: 15000,
+              "No email was sent on this path, so these codes are now lost. Revoke these invites in the Invited list and issue them again.",
+            duration: 30000,
           },
         );
       }
@@ -374,7 +388,7 @@ export function InviteDialog({
     if (sent) {
       toast.success(sent === 1 ? "1 invite sent" : `${sent} invites sent`, {
         description: withHandout
-          ? "They'll each get an email with their link and code, and the spreadsheet of codes has downloaded — it is the only copy."
+          ? "No emails were sent — the downloaded spreadsheet holds every code and join link, and is the only copy."
           : "They'll each get an email with their link and code.",
       });
       onCreated?.();
@@ -452,7 +466,7 @@ export function InviteDialog({
           : `${sent} invites sent`,
         {
           description: withHandout
-            ? "They'll each get an email with their link and code, and the spreadsheet of codes has downloaded — it is the only copy."
+            ? "No emails were sent — the downloaded spreadsheet holds every code and join link, and is the only copy."
             : "They'll each get an email with their link and code.",
         },
       );
@@ -479,7 +493,10 @@ export function InviteDialog({
     onOpenChange(false);
   }
 
-  /** Both footer buttons refuse under the same conditions — they differ only in the file. */
+  /** How many this run would invite, whichever input is in use — both buttons count the same set. */
+  const totalToInvite = mode === "file" ? (resolved?.ready.length ?? 0) : count;
+
+  /** Both footer buttons refuse under the same conditions — they differ only in how codes travel. */
   const cannotSubmit =
     submitting ||
     !roles.length ||
@@ -846,27 +863,30 @@ export function InviteDialog({
             Cancel
           </Button>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-            {/* Both buttons create the invites and both send the emails — the server does that on
-                every create, and there is no flag to suppress it. The only difference is whether the
-                codes are also written to a spreadsheet you can hand out yourself. That matters when
-                email is the weak link: a provider quota, a bounce, or a recipient who never looks. */}
+            {/* Both buttons create the same invites. They differ in **how the code reaches the
+                person**, which is why they are alternatives rather than one button with an extra:
+                email it, or download it and hand it out. Naming both in the labels is what stops
+                someone pressing the spreadsheet one and then waiting for an email that is never
+                coming. */}
             <Button
               variant="outline"
               onClick={() => submit(true)}
               disabled={cannotSubmit}
-              title="Creates the invites, sends the emails, and downloads a spreadsheet of the codes and join links"
+              title="Creates the invites WITHOUT emailing them, and downloads a spreadsheet of the codes and join links to hand out yourself"
             >
               <Download className="size-4" />
-              {submitting && handoutRun ? "Working…" : "Invite + download codes"}
+              {submitting && handoutRun
+                ? `Preparing ${progress} of ${totalToInvite}…`
+                : "Create + download Excel"}
             </Button>
             <Button onClick={() => submit(false)} disabled={cannotSubmit}>
-              {(() => {
-                const total = mode === "file" ? (resolved?.ready.length ?? 0) : count;
-                if (submitting) {
-                  return total > 1 ? `Inviting ${progress} of ${total}…` : "Creating…";
-                }
-                return total > 1 ? `Invite ${total} people` : "Create invite";
-              })()}
+              {submitting && !handoutRun
+                ? totalToInvite > 1
+                  ? `Inviting ${progress} of ${totalToInvite}…`
+                  : "Sending…"
+                : totalToInvite > 1
+                  ? `Email ${totalToInvite} invites`
+                  : "Send invite"}
             </Button>
           </div>
         </DialogFooter>
