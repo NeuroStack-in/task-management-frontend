@@ -130,14 +130,18 @@ export async function downloadInviteHandout(
   // caution on a tab nobody opens protects nobody. It sits in row 1 so it is the first thing read.
   const table = handoutTable(rows, base, tenantId, opts);
 
+  // The warning sits in one cell, padded with empties to the sheet's width — **not** a `span`ned
+  // merge. A row of one merged cell above rows of six is the kind of shape Excel rejects outright,
+  // and its way of rejecting a workbook is to open a blank grid rather than say anything. Real
+  // recipients then see an empty file, which is indistinguishable from "the export is broken" and,
+  // on the no-email path, means the codes are simply gone. A plain cell renders everywhere.
   const notice = [
     {
       value:
         "Each row below is a working invite — anyone with the code and link can join as that person until it is used or expires. Share it the way you would a password.",
       fontWeight: "bold" as const,
-      wrap: true,
-      span: table.headers.length,
     },
+    ...Array.from({ length: table.headers.length - 1 }, () => ({ value: "" })),
   ];
   const header = table.headers.map((value) => ({ value, fontWeight: "bold" as const }));
   const body = table.rows.map((row) => row.map((value) => ({ value })));

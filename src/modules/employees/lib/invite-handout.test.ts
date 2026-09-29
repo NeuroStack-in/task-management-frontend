@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { handoutTable, joinLink } from "./invite-handout";
 import type { ApiInviteCreated } from "../services/employees.service";
@@ -154,5 +154,46 @@ describe("handoutTable", () => {
     );
     const row = rows[0];
     expect(row[0]).toBe("");
+  });
+});
+
+/**
+ * The workbook Excel actually has to open.
+ *
+ * This exists because a shipped version of it opened as a blank grid. The warning row was a single
+ * cell carrying `span`, sitting above rows of six — valid enough for a lenient reader, which is why
+ * a round-trip test passed and the bug shipped anyway, and rejected by Excel, whose way of rejecting
+ * a workbook is to show nothing rather than say anything.
+ *
+ * On the no-email path that is not cosmetic: the sheet is the only copy of the codes, so a file
+ * Excel will not render loses them outright. Parseable and openable are different claims, and only
+ * the second one matters here.
+ */
+describe("downloadInviteHandout: the shape Excel must accept", () => {
+  it("emits uniform-width rows matching the column count, with no merged cells", async () => {
+    const captured: { data: unknown[][]; opts: { columns: unknown[] } }[] = [];
+    vi.doMock("write-excel-file/browser", () => ({
+      default: (data: unknown[][], opts: { columns: unknown[] }) => {
+        captured.push({ data, opts });
+        return { toFile: async () => {} };
+      },
+    }));
+    vi.resetModules();
+    const { downloadInviteHandout } = await import("./invite-handout");
+
+    for (const withName of [true, false]) {
+      captured.length = 0;
+      await downloadInviteHandout(
+        [{ invite: invite(), name: "Priya" }, { invite: invite({ invite_id: "b" }) }],
+        "https://x.test",
+        "t",
+        { withName },
+      );
+      const { data, opts } = captured[0];
+      const widths = data.map((r) => r.length);
+      expect(new Set(widths).size, `ragged rows: ${widths.join(",")}`).toBe(1);
+      expect(widths[0]).toBe(opts.columns.length);
+      expect(JSON.stringify(data)).not.toContain("span");
+    }
   });
 });

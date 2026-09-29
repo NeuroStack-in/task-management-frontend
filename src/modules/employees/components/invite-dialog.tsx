@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Download, FileUp, X } from "lucide-react";
+import { Download, FileSpreadsheet, FileUp, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -131,6 +131,8 @@ export function InviteDialog({
   const tenantId = useAuthStore((s) => s.user?.organizationId ?? "");
   /** Which button started the run in flight, so only that one shows its own busy label. */
   const [handoutRun, setHandoutRun] = useState(false);
+  /** Highlights the drop zone while a file is over it — without it, nothing says the drop will land. */
+  const [dragging, setDragging] = useState(false);
 
   // Parsed on every keystroke: the chips below the box are the honest answer to "who am I about to
   // invite", which a raw textarea can't give.
@@ -274,6 +276,7 @@ export function InviteDialog({
     setFailures([]);
     setFile(null);
     setHandoutRun(false);
+    setDragging(false);
     setMode("paste");
     if (fileInput.current) fileInput.current.value = "";
   }
@@ -594,15 +597,49 @@ export function InviteDialog({
                 className="sr-only"
                 onChange={(e) => onFile(e.target.files?.[0])}
               />
+              {/* A drop target, not just a button. Dragging a spreadsheet onto a dialog is the
+                  reflex, and a file input alone silently ignores it — the file lands on the page,
+                  the browser navigates away from the app, and the work in the dialog is lost. */}
+              <div
+                role="button"
+                tabIndex={submitting ? -1 : 0}
+                aria-label="Choose a CSV or Excel file, or drop one here"
+                onClick={() => !submitting && fileInput.current?.click()}
+                onKeyDown={(e) => {
+                  if (submitting) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    fileInput.current?.click();
+                  }
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (!submitting) setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  if (!submitting) onFile(e.dataTransfer.files?.[0]);
+                }}
+                className={`flex cursor-pointer flex-col items-center gap-1 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
+                  dragging
+                    ? "border-primary bg-primary/5"
+                    : "border-input hover:border-muted-foreground/40 hover:bg-muted/40"
+                } ${submitting ? "pointer-events-none opacity-50" : ""}`}
+              >
+                <FileUp className="text-muted-foreground size-5" />
+                <span className="text-sm font-medium">
+                  {dragging
+                    ? "Drop it here"
+                    : file
+                      ? "Drop another file, or click to choose"
+                      : "Drop a CSV or Excel file here, or click to choose"}
+                </span>
+                <span className="text-muted-foreground text-xs">.csv · .xlsx</span>
+              </div>
+
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => fileInput.current?.click()}
-                  disabled={submitting}
-                >
-                  <FileUp className="size-4" />{" "}
-                  {file ? "Choose another file" : "Choose file"}
-                </Button>
                 <span className="text-muted-foreground text-sm">Template:</span>
                 <Button
                   variant="ghost"
@@ -642,17 +679,42 @@ export function InviteDialog({
               ) : null}
 
               {file && !file.fatal && resolved ? (
-                <div className="space-y-2 rounded-lg border p-3">
-                  <p className="text-sm">
-                    <span className="font-medium">{file.fileName}</span> —{" "}
-                    {resolved.ready.length} ready
-                    {resolved.problems.length
-                      ? `, ${resolved.problems.length} need attention`
-                      : ""}
-                    {file.duplicates
-                      ? `, ${file.duplicates} duplicate${file.duplicates === 1 ? "" : "s"} ignored`
-                      : ""}
-                  </p>
+                <div className="border-primary/30 bg-primary/5 space-y-2 rounded-lg border p-3">
+                  {/* Loud enough to answer "did it take my file?" at a glance. The quiet one-line
+                      version of this read as decoration and got missed. */}
+                  <div className="flex items-start gap-2.5">
+                    <FileSpreadsheet className="text-primary mt-0.5 size-5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{file.fileName}</p>
+                      <p className="text-muted-foreground text-xs">
+                        <span className="text-foreground font-medium">
+                          {resolved.ready.length} ready to invite
+                        </span>
+                        {resolved.problems.length
+                          ? ` · ${resolved.problems.length} need attention`
+                          : ""}
+                        {file.errors.length
+                          ? ` · ${file.errors.length} row${file.errors.length === 1 ? "" : "s"} skipped`
+                          : ""}
+                        {file.duplicates
+                          ? ` · ${file.duplicates} duplicate${file.duplicates === 1 ? "" : "s"} ignored`
+                          : ""}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFile(null);
+                        setFailures([]);
+                        if (fileInput.current) fileInput.current.value = "";
+                      }}
+                      disabled={submitting}
+                      aria-label="Remove this file"
+                      className="text-muted-foreground hover:text-foreground rounded-full p-0.5 transition-colors disabled:pointer-events-none"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
 
                   {resolved.ready.length > MAX_IMPORT_ROWS ? (
                     <p className="text-destructive text-xs font-medium">
