@@ -500,6 +500,36 @@ export function InviteDialog({
   /** How many this run would invite, whichever input is in use — both buttons count the same set. */
   const totalToInvite = mode === "file" ? (resolved?.ready.length ?? 0) : count;
 
+  /**
+   * Which pickers a loaded file still needs, so each one can say whether it is doing anything.
+   *
+   * The pickers are fallbacks: a file supplying a column for every row makes the matching picker
+   * dead. Leaving it looking the same as a live one is what makes the dialog read as "why am I being
+   * asked for this when it is in my file" — so the label answers that instead of the user having to.
+   *
+   * A field is "needed" when **any** row lacks it, because one blank cell in two hundred is still a
+   * row that will be refused without the fallback.
+   */
+  const fileNeeds = useMemo(() => {
+    const rows = mode === "file" ? (file?.rows ?? []) : [];
+    if (rows.length === 0) return null;
+    return {
+      role: rows.some((r) => !r.role),
+      department: rows.some((r) => !r.department),
+      title: rows.some((r) => !r.title),
+    };
+  }, [file, mode]);
+
+  /** The parenthetical after a fallback field's label. */
+  const fallbackHint = (needed: boolean | undefined) => {
+    if (mode !== "file") return null;
+    const text =
+      needed === false
+        ? "every row has its own — not used"
+        : "for rows without this column";
+    return <span className="text-muted-foreground font-normal">({text})</span>;
+  };
+
   /** Both footer buttons refuse under the same conditions — they differ only in how codes travel. */
   const cannotSubmit =
     submitting ||
@@ -600,8 +630,9 @@ export function InviteDialog({
                 A <strong>.csv</strong> or <strong>.xlsx</strong> with an{" "}
                 <strong>email</strong> column. Add <em>role</em>, <em>department</em>,{" "}
                 <em>team</em> or <em>title</em> columns to set them per person — anything
-                a row leaves blank uses the selections below. A name column is ignored:
-                each invitee enters their own name when they sign up.
+                a row leaves blank uses the selections below. A <em>name</em> column
+                labels each person in the downloaded code sheet; it isn&apos;t sent, since
+                invitees enter their own name when they sign up.
               </p>
 
               {file?.fatal ? (
@@ -758,14 +789,7 @@ export function InviteDialog({
             </div>
           )}
           <div className="space-y-1.5">
-            <Label>
-              Role{" "}
-              {mode === "file" ? (
-                <span className="text-muted-foreground font-normal">
-                  (for rows without a role column)
-                </span>
-              ) : null}
-            </Label>
+            <Label>Role {fallbackHint(fileNeeds?.role)}</Label>
             {/* Base UI's Select.Value renders the RAW value (the id) in the trigger unless the
                 root gets an `items` value→label map — hence these on every id-valued select. */}
             <Select
@@ -789,7 +813,7 @@ export function InviteDialog({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label>Department</Label>
+              <Label>Department {fallbackHint(fileNeeds?.department)}</Label>
               <Select
                 value={departmentId || null}
                 items={Object.fromEntries(departments.map((d) => [d.id, d.name]))}
@@ -818,7 +842,14 @@ export function InviteDialog({
             </div>
             <div className="space-y-1.5">
               <Label>
-                Team <span className="text-muted-foreground font-normal">(optional)</span>
+                Team{" "}
+                {mode === "file" ? (
+                  <span className="text-muted-foreground font-normal">
+                    (for rows without this column)
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground font-normal">(optional)</span>
+                )}
               </Label>
               <Select
                 value={teamId || null}
@@ -841,14 +872,7 @@ export function InviteDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="inv-title">
-              Job title{" "}
-              {mode === "file" ? (
-                <span className="text-muted-foreground font-normal">
-                  (for rows without a title column)
-                </span>
-              ) : null}
-            </Label>
+            <Label htmlFor="inv-title">Job title {fallbackHint(fileNeeds?.title)}</Label>
             <Input
               id="inv-title"
               value={title}
