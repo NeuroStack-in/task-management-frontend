@@ -22,11 +22,12 @@ import { cell, readSheet, resolveColumns } from "./spreadsheet";
  * and of a name like "Engineering" into a department id, belongs to the dialog that holds the org
  * lists — this parser deals only in what the file literally said.
  *
- * ## `name` is read and ignored, on purpose
+ * ## `name` is kept, but never sent
  * Real HR exports lead with a name column, and an importer that rejected the file for containing one
- * would send people back to the spreadsheet to delete it. But an invite has no name: the invitee
- * types their own at signup, and `CreateInviteRequest` has no field for it. So the column is
- * tolerated and dropped, rather than silently implying it will be used.
+ * would send people back to the spreadsheet to delete it. An invite still has no name — the invitee
+ * types their own at signup, and `CreateInviteRequest` has no field for it — so nothing here reaches
+ * the server. It is carried only to label each person in the handout file the import produces: a
+ * list of 500 codes against bare addresses is far harder to distribute than one with names on it.
  *
  * Row numbers are **1-based and count the header**, matching what the spreadsheet shows — the whole
  * point of a row number is that someone can go and look at that row.
@@ -40,6 +41,15 @@ export interface InviteFileRow {
   department?: string;
   team?: string;
   title?: string;
+  /**
+   * The person's name, kept **only** to label them in the handout file the import produces.
+   *
+   * It is deliberately not sent to the server: `CreateInviteRequest` has no name field, and the
+   * invitee types their own at signup. But an export listing 500 codes against bare email addresses
+   * is far harder to hand out than one that names each person, so the column is carried this far
+   * and no further.
+   */
+  name?: string;
 }
 
 /** A row that could not be used, with the line to look at. */
@@ -152,10 +162,12 @@ export async function parseInviteFile(file: File): Promise<ParsedInviteFile> {
     const department = cell(raw, columns.department);
     const team = cell(raw, columns.team);
     const title = cell(raw, columns.title);
+    const name = cell(raw, columns.name);
     if (role) row.role = role;
     if (department) row.department = department;
     if (team) row.team = team;
     if (title) row.title = title;
+    if (name) row.name = name;
     rows.push(row);
   });
 

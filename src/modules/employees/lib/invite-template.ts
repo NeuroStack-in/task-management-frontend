@@ -13,16 +13,29 @@ import { downloadBlob } from "@/lib/download";
  * uploading — the single most likely way to use a template — cannot invite the samples by accident.
  */
 
-/** Columns, in the order they appear in the file. `email` first because it is the only required one. */
-export const INVITE_TEMPLATE_COLUMNS = ["email", "role", "department", "team", "title"] as const;
+/**
+ * Columns, in the order they appear in the file. `email` first because it is the only required one.
+ *
+ * `name` earns its place despite never being sent to the server: it labels each person in the
+ * handout the import downloads, and a sheet of 500 codes against bare addresses is far harder to
+ * distribute than one with names on it.
+ */
+export const INVITE_TEMPLATE_COLUMNS = [
+  "email",
+  "name",
+  "role",
+  "department",
+  "team",
+  "title",
+] as const;
 
 /**
  * Sample rows. The addresses are deliberately `@example.com` — reserved by RFC 2606 precisely so
  * they can never reach a real mailbox, and the marker the importer uses to reject them.
  */
 export const INVITE_TEMPLATE_EXAMPLES: readonly string[][] = [
-  ["priya.nair@example.com", "Employee", "Engineering", "Platform", "Backend Engineer"],
-  ["sam.okoro@example.com", "Manager", "Support", "", "Support Lead"],
+  ["priya.nair@example.com", "Priya Nair", "Employee", "Engineering", "Platform", "Backend Engineer"],
+  ["sam.okoro@example.com", "Sam Okoro", "Manager", "Support", "", "Support Lead"],
 ];
 
 /** The CSV form. Plain text, so it is built here rather than through a library. */
@@ -57,6 +70,13 @@ export async function downloadInviteXlsxTemplate(): Promise<void> {
   // is what actually triggers the download.
   await writeXlsxFile([header, ...rows], {
     // Wide enough that an email address is readable without dragging the column out first.
-    columns: [{ width: 32 }, { width: 16 }, { width: 20 }, { width: 16 }, { width: 24 }],
+    columns: [
+      { width: 32 },
+      { width: 24 },
+      { width: 16 },
+      { width: 20 },
+      { width: 16 },
+      { width: 24 },
+    ],
   }).toFile("invite-template.xlsx");
 }

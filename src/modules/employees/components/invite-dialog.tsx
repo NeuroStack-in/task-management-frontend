@@ -34,6 +34,8 @@ import {
   downloadInviteCsvTemplate,
   downloadInviteXlsxTemplate,
 } from "../lib/invite-template";
+import { downloadInviteHandout, type HandoutRow } from "../lib/invite-handout";
+import { useAuthStore } from "@/stores/auth.store";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
   createInvite,
@@ -123,6 +125,8 @@ export function InviteDialog({
   const [mode, setMode] = useState<"paste" | "file">("paste");
   const [file, setFile] = useState<(ParsedInviteFile & { fileName: string }) | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  /** Needed for the join links in the handout — the accept URL is tenant-scoped. */
+  const tenantId = useAuthStore((s) => s.user?.organizationId ?? "");
 
   // Parsed on every keystroke: the chips below the box are the honest answer to "who am I about to
   // invite", which a raw textarea can't give.
@@ -279,10 +283,15 @@ export function InviteDialog({
    * throttling, and writes are never retried (lib/api), so a throttled invite would simply be lost.
    * Four at a time keeps a bulk run flat and quick. One bad address never abandons the rest.
    */
-  async function runInvites(bodies: ResolvedInvite[]) {
+  async function runInvites(bodies: ResolvedInvite[], nameOf?: (email: string) => string | undefined) {
+    const created: HandoutRow[] = [];
     const results = await mapWithConcurrency(bodies, 4, async (body) => {
       try {
-        await createInvite(body);
+        const invite = await createInvite(body);
+        // Held onto because this response is the **only** time `token` and `otp` exist: the server
+        // stores hashes and can never reproduce them. Losing them here means the invite can only be
+        // revoked and re-issued, so they are captured before anything else can go wrong.
+        created.push({ invite, name: nameOf?.(body.email) });
         return { email: body.email, ok: true as const };
       } catch (e) {
         return {
@@ -295,6 +304,22 @@ export function InviteDialog({
       }
     });
     const failed = results.filter((r) => !r.ok) as { email: string; reason: string }[];
+
+    // Write the handout before anything can close the dialog. Partial runs still produce a file —
+    // the invites that succeeded are real, and their codes are just as unrecoverable as a clean
+    // run's. A failure to build the file must not look like a failure to invite, hence the warning
+    // naming what actually happened.
+    if (created.length > 0) {
+      try {
+        await downloadInviteHandout(created, window.location.origin, tenantId);
+      } catch {
+        toast.warning("The invites were created, but the code sheet couldn't be downloaded", {
+          description:
+            "The codes cannot be shown again — revoke these invites and re-issue them if the recipients don't get their email.",
+          duration: 15000,
+        });
+      }
+    }
     return { failed, sent: results.length - failed.length };
   }
 
@@ -320,11 +345,17 @@ export function InviteDialog({
     setFailures([]);
     setProgress(0);
 
-    const { failed, sent } = await runInvites(resolved.ready);
+    // The file's own name column, looked up per address, so the handout names each person rather
+    // than listing 500 bare addresses against 500 codes.
+    const nameByEmail = new Map(
+      (file?.rows ?? []).map((r) => [r.email, r.name] as const),
+    );
+    const { failed, sent } = await runInvites(resolved.ready, (email) => nameByEmail.get(email));
 
     if (sent) {
       toast.success(sent === 1 ? "1 invite sent" : `${sent} invites sent`, {
-        description: "They'll each get an email with a link and a one-time password.",
+        description:
+          "They'll each get an email with their link and code. A spreadsheet of the codes has also been downloaded — it is the only copy.",
       });
       onCreated?.();
     }
@@ -395,7 +426,10 @@ export function InviteDialog({
         sent === 1
           ? `Invite sent to ${parsed.emails.find((e) => !failed.some((f) => f.email === e))}`
           : `${sent} invites sent`,
-        { description: "They'll each get an email with a link and a one-time password." },
+        {
+          description:
+            "They'll each get an email with their link and code. A spreadsheet of the codes has also been downloaded — it is the only copy.",
+        },
       );
       onCreated?.();
     }

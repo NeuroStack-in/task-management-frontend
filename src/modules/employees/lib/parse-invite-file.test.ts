@@ -25,13 +25,28 @@ describe("parseInviteFile", () => {
    * the parser fails only after someone has typed two hundred rows into it.
    */
   it("resolves every column the template ships with", async () => {
-    const filled = INVITE_CSV_TEMPLATE.split("\n")[0] + "\na@acme.test,Employee,Eng,Core,Dev\n";
+    const filled =
+      INVITE_CSV_TEMPLATE.split("\n")[0] + "\na@acme.test,Ada L,Employee,Eng,Core,Dev\n";
     const out = await parseInviteFile(csvFile(filled));
     expect(out.fatal).toBeUndefined();
     expect(out.rows).toEqual([
-      { email: "a@acme.test", role: "Employee", department: "Eng", team: "Core", title: "Dev" },
+      {
+        email: "a@acme.test",
+        name: "Ada L",
+        role: "Employee",
+        department: "Eng",
+        team: "Core",
+        title: "Dev",
+      },
     ]);
-    expect(INVITE_TEMPLATE_COLUMNS).toEqual(["email", "role", "department", "team", "title"]);
+    expect(INVITE_TEMPLATE_COLUMNS).toEqual([
+      "email",
+      "name",
+      "role",
+      "department",
+      "team",
+      "title",
+    ]);
   });
 
   /**
@@ -80,10 +95,16 @@ describe("parseInviteFile", () => {
     expect(out.rows[0].role).toBeUndefined();
   });
 
-  /** An invite has no name field — the invitee types their own at signup. */
-  it("tolerates a name column and drops it", async () => {
+  /**
+   * An invite has no name field — the invitee types their own at signup — so this never reaches the
+   * server. It is kept to label each person in the handout the import downloads.
+   */
+  it("keeps a name column for the handout, without making it required", async () => {
     const out = await parseInviteFile(csvFile("name,email\nPriya Nair,priya@acme.test\n"));
-    expect(out.rows).toEqual([{ email: "priya@acme.test" }]);
+    expect(out.rows).toEqual([{ email: "priya@acme.test", name: "Priya Nair" }]);
+
+    const noName = await parseInviteFile(csvFile("email\nsam@acme.test\n"));
+    expect(noName.rows).toEqual([{ email: "sam@acme.test" }]);
   });
 
   it("ignores columns it doesn't recognise rather than rejecting the file", async () => {
@@ -203,6 +224,7 @@ describe("template round trip", () => {
         INVITE_TEMPLATE_COLUMNS.map((value) => ({ value })),
         [
           { value: "real@acme.test" },
+          { value: "Ada Lovelace" },
           { value: "Employee" },
           { value: "Engineering" },
           { value: "Platform" },
@@ -223,6 +245,7 @@ describe("template round trip", () => {
     expect(out.rows).toEqual([
       {
         email: "real@acme.test",
+        name: "Ada Lovelace",
         role: "Employee",
         department: "Engineering",
         team: "Platform",
