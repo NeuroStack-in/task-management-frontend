@@ -149,6 +149,18 @@ export function AssigneePicker({
     // clients that only understand one, so "who is this mainly for" stays the order they picked.
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
 
+  /**
+   * Select everyone currently listed — which is the *filtered* set, not the whole directory.
+   *
+   * Two things follow from that, and both are deliberate. It appends rather than replaces, so a
+   * search then "select all" adds to who was already picked instead of silently dropping them. And
+   * because the list is filtered, the label says so: "Select all 4" while searching is a different
+   * promise from "Select all", and a control that claims the wider one would assign people the
+   * person never saw.
+   */
+  const unselectedShown = filtered.filter((m) => !value.includes(m.id));
+  const selectAllShown = () => onChange([...value, ...unselectedShown.map((m) => m.id)]);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -197,15 +209,26 @@ export function AssigneePicker({
             is not a container for the interactive Clear button. */}
         <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs font-medium">
           <span>Assignees</span>
-          {value.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="font-normal text-muted-foreground hover:text-foreground"
-            >
-              Clear
-            </button>
-          ) : null}
+          <span className="flex items-center gap-3">
+            {unselectedShown.length > 0 && filtered.length > 1 ? (
+              <button
+                type="button"
+                onClick={selectAllShown}
+                className="font-normal text-muted-foreground hover:text-foreground"
+              >
+                {query.trim() ? `Select all ${filtered.length}` : "Select all"}
+              </button>
+            ) : null}
+            {value.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="font-normal text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            ) : null}
+          </span>
         </div>
 
         {searchable ? (

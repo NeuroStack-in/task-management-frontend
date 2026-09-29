@@ -456,6 +456,21 @@ function MemberMultiSelect({
     onChange([...next]);
   };
 
+  /**
+   * Add everyone the list is currently showing.
+   *
+   * It unions with what is already picked rather than replacing it — the same rule the filter obeys
+   * ("narrows what is listed, never what is selected"). Replacing would turn a view control into a
+   * data-loss control, which is exactly what that rule exists to prevent.
+   *
+   * Paired with the team filter this is the useful shape: pick a team, add all of it — the same
+   * outcome as `AddFromTeam` beside it, reached from the directory the person is already looking at.
+   */
+  const unselectedShown = filtered.filter((u) => !selected.has(u.id));
+  const selectAllShown = () => onChange([...value, ...unselectedShown.map((u) => u.id)]);
+  /** True when a filter is on, so the control can promise only what it will actually do. */
+  const narrowed = Boolean(q) || Boolean(inTeam);
+
   const chosen = value
     .map((id) => users.find((u) => u.id === id))
     .filter(Boolean) as UserMini[];
@@ -517,6 +532,38 @@ function MemberMultiSelect({
           </div>
         ) : null}
       </div>
+
+      {/* Bulk actions. Only while there is more than one person to act on — a "select all" over a
+          single row is noise, and over an empty list is a control that can only disappoint. */}
+      {!loadingTeam && filtered.length > 1 ? (
+        <div className="flex items-center justify-between gap-2 border-b border-input px-2.5 py-1.5 text-xs">
+          <span className="text-muted-foreground">
+            {filtered.length} {filtered.length === 1 ? "person" : "people"}
+            {narrowed ? " shown" : ""}
+            {value.length ? ` · ${value.length} selected` : ""}
+          </span>
+          <span className="flex items-center gap-3">
+            {unselectedShown.length > 0 ? (
+              <button
+                type="button"
+                onClick={selectAllShown}
+                className="font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {narrowed ? `Select all ${filtered.length} shown` : "Select all"}
+              </button>
+            ) : null}
+            {value.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Clear all
+              </button>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
 
       {/* Directory list */}
       <ul className="max-h-44 overflow-y-auto p-1">
