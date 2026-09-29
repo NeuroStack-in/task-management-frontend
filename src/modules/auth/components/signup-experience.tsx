@@ -813,7 +813,7 @@ export function SignupExperience({
         {step === 0 && !authenticated ? (
           <>
             <div className="m-authdiv">or</div>
-            {/* Inline social sign-in (no modal). On signup these route to sign-IN via Google/Microsoft
+            {/* Inline social sign-in (no modal). On signup these route to sign-IN via Google
                 — social is invited-users-only, so it joins an existing org rather than creating a
                 workspace here; the backend accepts or rejects. */}
             <SsoProviderButtons

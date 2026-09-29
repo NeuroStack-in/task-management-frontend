@@ -61,7 +61,8 @@ async function sha256(input: string): Promise<ArrayBuffer> {
 
 /**
  * Begin an SSO sign-in: mint a PKCE verifier + state, stash them for the callback, and redirect the
- * browser to the Hosted UI pinned to `idpName` (`Google` | `Microsoft` | a per-org `org-<id>` name).
+ * browser to the Hosted UI pinned to `idpName` (`Google`, the only social provider, or a per-org
+ * `org-<id>` name).
  * Never resolves — it navigates away.
  */
 export async function beginSso(idpName: string): Promise<void> {

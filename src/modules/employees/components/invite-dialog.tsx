@@ -123,10 +123,14 @@ export function InviteDialog({
   /** Which input the admin is using. The two paths differ in kind, not just in looks: a paste gives
    *  everyone the same role/department/title, a file gives each row its own. */
   const [mode, setMode] = useState<"paste" | "file">("paste");
-  const [file, setFile] = useState<(ParsedInviteFile & { fileName: string }) | null>(null);
+  const [file, setFile] = useState<(ParsedInviteFile & { fileName: string }) | null>(
+    null,
+  );
   const fileInput = useRef<HTMLInputElement>(null);
   /** Needed for the join links in the handout — the accept URL is tenant-scoped. */
   const tenantId = useAuthStore((s) => s.user?.organizationId ?? "");
+  /** Which button started the run in flight, so only that one shows its own busy label. */
+  const [handoutRun, setHandoutRun] = useState(false);
 
   // Parsed on every keystroke: the chips below the box are the honest answer to "who am I about to
   // invite", which a raw textarea can't give.
@@ -228,7 +232,10 @@ export function InviteDialog({
       }
       const rowTitle = row.title || title.trim();
       if (!rowTitle) {
-        problems.push({ email: row.email, reason: "No job title — add a title column or one below" });
+        problems.push({
+          email: row.email,
+          reason: "No job title — add a title column or one below",
+        });
         continue;
       }
       ready.push({
@@ -246,7 +253,9 @@ export function InviteDialog({
   const onFile = useCallback((chosen: File | undefined) => {
     if (!chosen) return;
     if (chosen.size > MAX_FILE_BYTES) {
-      toast.error("That file is too large", { description: "Imports are limited to 2 MB." });
+      toast.error("That file is too large", {
+        description: "Imports are limited to 2 MB.",
+      });
       return;
     }
     setFailures([]);
@@ -264,6 +273,7 @@ export function InviteDialog({
     setProgress(0);
     setFailures([]);
     setFile(null);
+    setHandoutRun(false);
     setMode("paste");
     if (fileInput.current) fileInput.current.value = "";
   }
@@ -283,7 +293,11 @@ export function InviteDialog({
    * throttling, and writes are never retried (lib/api), so a throttled invite would simply be lost.
    * Four at a time keeps a bulk run flat and quick. One bad address never abandons the rest.
    */
-  async function runInvites(bodies: ResolvedInvite[], nameOf?: (email: string) => string | undefined) {
+  async function runInvites(
+    bodies: ResolvedInvite[],
+    withHandout: boolean,
+    nameOf?: (email: string) => string | undefined,
+  ) {
     const created: HandoutRow[] = [];
     const results = await mapWithConcurrency(bodies, 4, async (body) => {
       try {
@@ -309,22 +323,25 @@ export function InviteDialog({
     // the invites that succeeded are real, and their codes are just as unrecoverable as a clean
     // run's. A failure to build the file must not look like a failure to invite, hence the warning
     // naming what actually happened.
-    if (created.length > 0) {
+    if (withHandout && created.length > 0) {
       try {
         await downloadInviteHandout(created, window.location.origin, tenantId);
       } catch {
-        toast.warning("The invites were created, but the code sheet couldn't be downloaded", {
-          description:
-            "The codes cannot be shown again — revoke these invites and re-issue them if the recipients don't get their email.",
-          duration: 15000,
-        });
+        toast.warning(
+          "The invites were created, but the code sheet couldn't be downloaded",
+          {
+            description:
+              "The codes cannot be shown again — revoke these invites and re-issue them if the recipients don't get their email.",
+            duration: 15000,
+          },
+        );
       }
     }
     return { failed, sent: results.length - failed.length };
   }
 
   /** The file path: every row carries its own role, department, team and title. */
-  async function submitFile() {
+  async function submitFile(withHandout: boolean) {
     if (!resolved) return;
     if (!resolved.ready.length) {
       toast.error(
@@ -350,12 +367,15 @@ export function InviteDialog({
     const nameByEmail = new Map(
       (file?.rows ?? []).map((r) => [r.email, r.name] as const),
     );
-    const { failed, sent } = await runInvites(resolved.ready, (email) => nameByEmail.get(email));
+    const { failed, sent } = await runInvites(resolved.ready, withHandout, (email) =>
+      nameByEmail.get(email),
+    );
 
     if (sent) {
       toast.success(sent === 1 ? "1 invite sent" : `${sent} invites sent`, {
-        description:
-          "They'll each get an email with their link and code. A spreadsheet of the codes has also been downloaded — it is the only copy.",
+        description: withHandout
+          ? "They'll each get an email with their link and code, and the spreadsheet of codes has downloaded — it is the only copy."
+          : "They'll each get an email with their link and code.",
       });
       onCreated?.();
     }
@@ -368,7 +388,9 @@ export function InviteDialog({
       setSubmitting(false);
       setProgress(0);
       toast.error(
-        failed.length === 1 ? "1 invite couldn't be created" : `${failed.length} invites couldn't be created`,
+        failed.length === 1
+          ? "1 invite couldn't be created"
+          : `${failed.length} invites couldn't be created`,
         { description: "The reason for each is listed below." },
       );
       return;
@@ -378,8 +400,9 @@ export function InviteDialog({
     onOpenChange(false);
   }
 
-  async function submit() {
-    if (mode === "file") return submitFile();
+  async function submit(withHandout = false) {
+    setHandoutRun(withHandout);
+    if (mode === "file") return submitFile(withHandout);
     if (!count) {
       toast.error(
         parsed.invalid.length
@@ -419,6 +442,7 @@ export function InviteDialog({
         title: title.trim(),
         ...(teamId ? { team_id: teamId } : {}),
       })),
+      withHandout,
     );
 
     if (sent) {
@@ -427,8 +451,9 @@ export function InviteDialog({
           ? `Invite sent to ${parsed.emails.find((e) => !failed.some((f) => f.email === e))}`
           : `${sent} invites sent`,
         {
-          description:
-            "They'll each get an email with their link and code. A spreadsheet of the codes has also been downloaded — it is the only copy.",
+          description: withHandout
+            ? "They'll each get an email with their link and code, and the spreadsheet of codes has downloaded — it is the only copy."
+            : "They'll each get an email with their link and code.",
         },
       );
       onCreated?.();
@@ -454,6 +479,14 @@ export function InviteDialog({
     onOpenChange(false);
   }
 
+  /** Both footer buttons refuse under the same conditions — they differ only in the file. */
+  const cannotSubmit =
+    submitting ||
+    !roles.length ||
+    (mode === "paste"
+      ? overBy > 0
+      : !resolved?.ready.length || resolved.ready.length > MAX_IMPORT_ROWS);
+
   return (
     <Dialog
       open={open}
@@ -478,7 +511,7 @@ export function InviteDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="flex gap-1 rounded-lg bg-muted p-1">
+          <div className="bg-muted flex gap-1 rounded-lg p-1">
             {(
               [
                 ["paste", "Paste emails"],
@@ -516,10 +549,15 @@ export function InviteDialog({
                   onClick={() => fileInput.current?.click()}
                   disabled={submitting}
                 >
-                  <FileUp className="size-4" /> {file ? "Choose another file" : "Choose file"}
+                  <FileUp className="size-4" />{" "}
+                  {file ? "Choose another file" : "Choose file"}
                 </Button>
-                <span className="text-sm text-muted-foreground">Template:</span>
-                <Button variant="ghost" onClick={downloadInviteCsvTemplate} disabled={submitting}>
+                <span className="text-muted-foreground text-sm">Template:</span>
+                <Button
+                  variant="ghost"
+                  onClick={downloadInviteCsvTemplate}
+                  disabled={submitting}
+                >
                   <Download className="size-4" /> CSV
                 </Button>
                 <Button
@@ -537,16 +575,16 @@ export function InviteDialog({
                 </Button>
               </div>
 
-              <p className="text-xs text-muted-foreground">
-                A <strong>.csv</strong> or <strong>.xlsx</strong> with an <strong>email</strong>{" "}
-                column. Add <em>role</em>, <em>department</em>, <em>team</em> or <em>title</em>{" "}
-                columns to set them per person — anything a row leaves blank uses the selections
-                below. A name column is ignored: each invitee enters their own name when they sign
-                up.
+              <p className="text-muted-foreground text-xs">
+                A <strong>.csv</strong> or <strong>.xlsx</strong> with an{" "}
+                <strong>email</strong> column. Add <em>role</em>, <em>department</em>,{" "}
+                <em>team</em> or <em>title</em> columns to set them per person — anything
+                a row leaves blank uses the selections below. A name column is ignored:
+                each invitee enters their own name when they sign up.
               </p>
 
               {file?.fatal ? (
-                <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                <p className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm">
                   {file.fatal}
                 </p>
               ) : null}
@@ -556,23 +594,26 @@ export function InviteDialog({
                   <p className="text-sm">
                     <span className="font-medium">{file.fileName}</span> —{" "}
                     {resolved.ready.length} ready
-                    {resolved.problems.length ? `, ${resolved.problems.length} need attention` : ""}
+                    {resolved.problems.length
+                      ? `, ${resolved.problems.length} need attention`
+                      : ""}
                     {file.duplicates
                       ? `, ${file.duplicates} duplicate${file.duplicates === 1 ? "" : "s"} ignored`
                       : ""}
                   </p>
 
                   {resolved.ready.length > MAX_IMPORT_ROWS ? (
-                    <p className="text-xs font-medium text-destructive">
+                    <p className="text-destructive text-xs font-medium">
                       That&apos;s {resolved.ready.length - MAX_IMPORT_ROWS} over the{" "}
-                      {MAX_IMPORT_ROWS}-row limit. Split the file — nothing is dropped for you.
+                      {MAX_IMPORT_ROWS}-row limit. Split the file — nothing is dropped for
+                      you.
                     </p>
                   ) : null}
 
                   {/* Rows the file itself couldn't produce: a bad address, a missing header. The
                       line number is what makes this actionable — it matches the spreadsheet. */}
                   {file.errors.length ? (
-                    <ul className="space-y-0.5 text-xs text-warning">
+                    <ul className="text-warning space-y-0.5 text-xs">
                       {file.errors.slice(0, 6).map((e) => (
                         <li key={e.line}>
                           Row {e.line} — {e.reason}
@@ -586,7 +627,7 @@ export function InviteDialog({
 
                   {/* Rows that parsed but name something this org doesn't have. */}
                   {resolved.problems.length ? (
-                    <ul className="space-y-0.5 text-xs text-destructive">
+                    <ul className="text-destructive space-y-0.5 text-xs">
                       {resolved.problems.slice(0, 6).map((p) => (
                         <li key={p.email}>
                           <span className="font-medium">{p.email}</span> — {p.reason}
@@ -601,7 +642,7 @@ export function InviteDialog({
               ) : null}
 
               {failures.length ? (
-                <ul className="space-y-1 text-xs text-destructive">
+                <ul className="text-destructive space-y-1 text-xs">
                   {failures.map((f) => (
                     <li key={f.email}>
                       <span className="font-medium">{f.email}</span> — {f.reason}
@@ -611,92 +652,95 @@ export function InviteDialog({
               ) : null}
             </div>
           ) : (
-          <div className="space-y-1.5">
-            <div className="flex items-baseline justify-between gap-3">
-              <Label htmlFor="inv-email">Work emails</Label>
+            <div className="space-y-1.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <Label htmlFor="inv-email">Work emails</Label>
+                {count ? (
+                  <span
+                    className={
+                      overBy
+                        ? "text-destructive text-xs font-medium"
+                        : "text-muted-foreground text-xs"
+                    }
+                  >
+                    {count} {count === 1 ? "person" : "people"}
+                    {overBy ? ` · ${MAX_INVITES} max` : ""}
+                    {parsed.duplicates
+                      ? ` · ${parsed.duplicates} duplicate${parsed.duplicates === 1 ? "" : "s"} ignored`
+                      : ""}
+                  </span>
+                ) : null}
+              </div>
+              <Textarea
+                id="inv-email"
+                rows={3}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={"jordan@acme.test, sam@acme.test\nor paste a whole list"}
+                className="min-h-20"
+              />
+              <p className="text-muted-foreground text-xs">
+                Invite one person or up to {MAX_INVITES} at a time — separate addresses
+                with commas, spaces or new lines. Everyone here gets the same role,
+                department, team and title.
+              </p>
+
+              {overBy ? (
+                <p className="text-destructive text-xs font-medium">
+                  That&apos;s {overBy} too many. Remove{" "}
+                  {overBy === 1 ? "one address" : `${overBy} addresses`} and send the rest
+                  as a second batch — nothing is dropped for you.
+                </p>
+              ) : null}
+
+              {/* What we actually parsed. A textarea alone can't tell you that a stray character split
+                an address in two, and finding that out from a failed invite is too late. */}
               {count ? (
-                <span
-                  className={
-                    overBy ? "text-xs font-medium text-destructive" : "text-xs text-muted-foreground"
-                  }
-                >
-                  {count} {count === 1 ? "person" : "people"}
-                  {overBy ? ` · ${MAX_INVITES} max` : ""}
-                  {parsed.duplicates
-                    ? ` · ${parsed.duplicates} duplicate${parsed.duplicates === 1 ? "" : "s"} ignored`
-                    : ""}
-                </span>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {parsed.emails.map((address) => (
+                    <span
+                      key={address}
+                      className="bg-muted inline-flex max-w-full items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs"
+                    >
+                      <span className="truncate">{address}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeEmail(address)}
+                        disabled={submitting}
+                        aria-label={`Remove ${address}`}
+                        className="text-muted-foreground hover:bg-background hover:text-foreground rounded-full p-0.5 transition-colors disabled:pointer-events-none"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              {parsed.invalid.length ? (
+                <p className="text-warning pt-1 text-xs">
+                  Not an email address, so {parsed.invalid.length === 1 ? "it" : "they"}{" "}
+                  won&apos;t be invited: {parsed.invalid.slice(0, 5).join(", ")}
+                  {parsed.invalid.length > 5 ? ` +${parsed.invalid.length - 5} more` : ""}
+                </p>
+              ) : null}
+
+              {failures.length ? (
+                <ul className="text-destructive space-y-1 pt-1 text-xs">
+                  {failures.map((f) => (
+                    <li key={f.email}>
+                      <span className="font-medium">{f.email}</span> — {f.reason}
+                    </li>
+                  ))}
+                </ul>
               ) : null}
             </div>
-            <Textarea
-              id="inv-email"
-              rows={3}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={"jordan@acme.test, sam@acme.test\nor paste a whole list"}
-              className="min-h-20"
-            />
-            <p className="text-xs text-muted-foreground">
-              Invite one person or up to {MAX_INVITES} at a time — separate addresses with commas,
-              spaces or new lines. Everyone here gets the same role, department, team and title.
-            </p>
-
-            {overBy ? (
-              <p className="text-xs font-medium text-destructive">
-                That&apos;s {overBy} too many. Remove{" "}
-                {overBy === 1 ? "one address" : `${overBy} addresses`} and send the rest as a second
-                batch — nothing is dropped for you.
-              </p>
-            ) : null}
-
-            {/* What we actually parsed. A textarea alone can't tell you that a stray character split
-                an address in two, and finding that out from a failed invite is too late. */}
-            {count ? (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {parsed.emails.map((address) => (
-                  <span
-                    key={address}
-                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-muted py-0.5 pr-1 pl-2.5 text-xs"
-                  >
-                    <span className="truncate">{address}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeEmail(address)}
-                      disabled={submitting}
-                      aria-label={`Remove ${address}`}
-                      className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:pointer-events-none"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : null}
-
-            {parsed.invalid.length ? (
-              <p className="pt-1 text-xs text-warning">
-                Not an email address, so {parsed.invalid.length === 1 ? "it" : "they"} won&apos;t be
-                invited: {parsed.invalid.slice(0, 5).join(", ")}
-                {parsed.invalid.length > 5 ? ` +${parsed.invalid.length - 5} more` : ""}
-              </p>
-            ) : null}
-
-            {failures.length ? (
-              <ul className="space-y-1 pt-1 text-xs text-destructive">
-                {failures.map((f) => (
-                  <li key={f.email}>
-                    <span className="font-medium">{f.email}</span> — {f.reason}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
           )}
           <div className="space-y-1.5">
             <Label>
               Role{" "}
               {mode === "file" ? (
-                <span className="font-normal text-muted-foreground">
+                <span className="text-muted-foreground font-normal">
                   (for rows without a role column)
                 </span>
               ) : null}
@@ -709,7 +753,9 @@ export function InviteDialog({
               items={Object.fromEntries(roles.map((r) => [r.id, r.name]))}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder={roles.length ? "Select a role" : "Loading roles…"} />
+                <SelectValue
+                  placeholder={roles.length ? "Select a role" : "Loading roles…"}
+                />
               </SelectTrigger>
               <SelectContent>
                 {roles.map((r) => (
@@ -736,7 +782,9 @@ export function InviteDialog({
                 }}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder={departments.length ? "Select" : "No departments yet"} />
+                  <SelectValue
+                    placeholder={departments.length ? "Select" : "No departments yet"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {departments.map((d) => (
@@ -749,7 +797,7 @@ export function InviteDialog({
             </div>
             <div className="space-y-1.5">
               <Label>
-                Team <span className="font-normal text-muted-foreground">(optional)</span>
+                Team <span className="text-muted-foreground font-normal">(optional)</span>
               </Label>
               <Select
                 value={teamId || null}
@@ -757,7 +805,9 @@ export function InviteDialog({
                 items={Object.fromEntries(teamOptions.map((t) => [t.id, t.name]))}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder={teamOptions.length ? "Select" : "No teams to pick"} />
+                  <SelectValue
+                    placeholder={teamOptions.length ? "Select" : "No teams to pick"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {teamOptions.map((t) => (
@@ -773,7 +823,7 @@ export function InviteDialog({
             <Label htmlFor="inv-title">
               Job title{" "}
               {mode === "file" ? (
-                <span className="font-normal text-muted-foreground">
+                <span className="text-muted-foreground font-normal">
                   (for rows without a title column)
                 </span>
               ) : null}
@@ -787,28 +837,38 @@ export function InviteDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="sm:justify-between">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+          >
             Cancel
           </Button>
-          <Button
-            onClick={submit}
-            disabled={
-              submitting ||
-              !roles.length ||
-              (mode === "paste"
-                ? overBy > 0
-                : !resolved?.ready.length || resolved.ready.length > MAX_IMPORT_ROWS)
-            }
-          >
-            {(() => {
-              const total = mode === "file" ? (resolved?.ready.length ?? 0) : count;
-              if (submitting) {
-                return total > 1 ? `Inviting ${progress} of ${total}…` : "Creating…";
-              }
-              return total > 1 ? `Invite ${total} people` : "Create invite";
-            })()}
-          </Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            {/* Both buttons create the invites and both send the emails — the server does that on
+                every create, and there is no flag to suppress it. The only difference is whether the
+                codes are also written to a spreadsheet you can hand out yourself. That matters when
+                email is the weak link: a provider quota, a bounce, or a recipient who never looks. */}
+            <Button
+              variant="outline"
+              onClick={() => submit(true)}
+              disabled={cannotSubmit}
+              title="Creates the invites, sends the emails, and downloads a spreadsheet of the codes and join links"
+            >
+              <Download className="size-4" />
+              {submitting && handoutRun ? "Working…" : "Invite + download codes"}
+            </Button>
+            <Button onClick={() => submit(false)} disabled={cannotSubmit}>
+              {(() => {
+                const total = mode === "file" ? (resolved?.ready.length ?? 0) : count;
+                if (submitting) {
+                  return total > 1 ? `Inviting ${progress} of ${total}…` : "Creating…";
+                }
+                return total > 1 ? `Invite ${total} people` : "Create invite";
+              })()}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

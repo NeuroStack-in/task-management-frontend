@@ -18,7 +18,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { GoogleIcon, MicrosoftIcon } from "@/modules/marketing/brand-icons";
+import { GoogleIcon } from "@/modules/marketing/brand-icons";
 import {
   slugify as serverSlugify,
   empPrefixCandidates,
@@ -337,16 +337,16 @@ export function MSelect({
 
 /* -------------------------- SSO account picker ------------------------ */
 
+/** Google is the only social provider (owner decision, 2026-09-30) — hence no provider branching. */
 export function SsoPickerModal({
   provider,
   onClose,
   onPicked,
 }: {
-  provider: "google" | "microsoft" | null;
+  provider: "google" | null;
   onClose: () => void;
   onPicked: () => void;
 }) {
-  const isGoogle = provider === "google";
   const accounts = [
     { name: "Alex Morgan", email: "alex@acme.com", initials: "AM" },
     { name: "Sam Rivera", email: "sam@acme.com", initials: "SR" },
@@ -355,10 +355,8 @@ export function SsoPickerModal({
     <MModal open={!!provider} onClose={onClose} maxW="max-w-sm">
       <div className="p-7">
         <div className="flex items-center gap-2">
-          {isGoogle ? <GoogleIcon className="size-5" /> : <MicrosoftIcon className="size-5" />}
-          <span className="text-sm font-medium">
-            {isGoogle ? "Sign in with Google" : "Sign in with Microsoft"}
-          </span>
+          <GoogleIcon className="size-5" />
+          <span className="text-sm font-medium">Sign in with Google</span>
         </div>
         <h2 className="m-display mt-4 text-xl font-semibold">Choose an account</h2>
         <p className="text-sm" style={{ color: "var(--m-muted)" }}>

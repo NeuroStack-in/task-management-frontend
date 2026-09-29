@@ -26,24 +26,20 @@ function GoogleIcon() {
   );
 }
 
-function MicrosoftIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
-      <path fill="#F25022" d="M3 3h8.5v8.5H3z" />
-      <path fill="#7FBA00" d="M12.5 3H21v8.5h-8.5z" />
-      <path fill="#00A4EF" d="M3 12.5h8.5V21H3z" />
-      <path fill="#FFB900" d="M12.5 12.5H21V21h-8.5z" />
-    </svg>
-  );
-}
-
+/**
+ * **Google is the only social provider** (owner decision, 2026-09-30). Microsoft was offered beside
+ * it and was removed rather than left disabled — a provider button that cannot complete is worse
+ * than its absence, because someone picks it, fails, and concludes their account is broken.
+ */
 export function SsoButtons({ verb = "Continue" }: { verb?: string }) {
   const notify = (provider: string) =>
     toast.info(`${provider} sign-in is simulated in this demo.`);
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-2">
+      {/* Single column now there is one provider: a half-width lone button reads as a pair with
+          something missing. */}
+      <div className="grid gap-2">
         <Button
           type="button"
           variant="outline"
@@ -51,14 +47,6 @@ export function SsoButtons({ verb = "Continue" }: { verb?: string }) {
           onClick={() => notify("Google")}
         >
           <GoogleIcon /> {verb} with Google
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full gap-2"
-          onClick={() => notify("Microsoft")}
-        >
-          <MicrosoftIcon /> {verb} with Microsoft
         </Button>
       </div>
       <div className="flex items-center gap-3">

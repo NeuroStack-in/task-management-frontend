@@ -450,13 +450,13 @@ export const PRODUCT_CONTENT: Record<string, ProductPageData> = {
     eyebrow: "Security & Compliance",
     icon: ShieldCheck,
     title: "Enterprise security and compliance, built in — not bolted on.",
-    lede: "Google and Microsoft sign-in, granular RBAC, immutable audit logs, configurable data residency, and AES-256 / TLS 1.3 encryption — backed by SOC 2 Type II.",
+    lede: "Google sign-in, granular RBAC, immutable audit logs, configurable data residency, and AES-256 / TLS 1.3 encryption — backed by SOC 2 Type II.",
     problem: {
       heading: "Security review shouldn't be where deals go to die.",
       body: "Enterprise buyers need audit trails, residency, and least-privilege access before they sign. WorkPulse ships these as first-class capabilities your security team can verify.",
     },
     capabilities: [
-      { icon: KeyRound, title: "Google & Microsoft sign-in", body: "One-click sign-in with your Google Workspace or Microsoft account, on top of email and password." },
+      { icon: KeyRound, title: "Google sign-in", body: "One-click sign-in with your Google Workspace account, on top of email and password." },
       { icon: RefreshCw, title: "Granular RBAC", body: "Role-based permissions down to the action — grant least privilege per team and person." },
       { icon: Lock, title: "MFA & session policies", body: "Enforce multi-factor auth, session timeouts, and device-level controls." },
       { icon: ScrollText, title: "Immutable audit logs", body: "Every action, permission change, and login captured in a tamper-evident trail." },
@@ -466,13 +466,13 @@ export const PRODUCT_CONTENT: Record<string, ProductPageData> = {
     how: {
       heading: "Defense in depth, end to end.",
       steps: [
-        { title: "Authenticate", body: "Users sign in with Google, Microsoft, or email — with enforced MFA; access maps to least-privilege roles." },
+        { title: "Authenticate", body: "Users sign in with Google or email — with enforced MFA; access maps to least-privilege roles." },
         { title: "Authorize & log", body: "RBAC governs every action; the immutable audit log records it all." },
         { title: "Govern", body: "Set residency, retention, and DPA terms; agents and remote sessions stay approval-gated." },
       ],
     },
     specs: [
-      { label: "Sign-in", value: "Google · Microsoft · Email" },
+      { label: "Sign-in", value: "Google · Email" },
       { label: "Access", value: "Role-based (RBAC)" },
       { label: "Encryption", value: "AES-256 · TLS 1.3" },
       { label: "Audit", value: "Immutable · exportable" },
@@ -481,7 +481,7 @@ export const PRODUCT_CONTENT: Record<string, ProductPageData> = {
     ],
     related: ["workforce", "integrations", "activity-monitoring"],
     faqs: [
-      { q: "How do users sign in?", a: "With email and password, or one click via Google or Microsoft. Multi-factor authentication can be enforced org-wide." },
+      { q: "How do users sign in?", a: "With email and password, or one click via Google. Multi-factor authentication can be enforced org-wide." },
       { q: "Where is data stored?", a: "You choose a data-residency region; data is encrypted at rest (AES-256) and in transit (TLS 1.3)." },
       { q: "Can we get an audit trail and DPA?", a: "Yes — an immutable, exportable audit log plus a signed DPA are available on the Max plan." },
     ],

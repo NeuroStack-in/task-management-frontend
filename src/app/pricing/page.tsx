@@ -60,7 +60,7 @@ const COMPARISON: { label: string; values: [string | boolean, string | boolean, 
   { label: "Attendance & payroll", values: [false, true, true] },
   { label: "Reports & exports", values: ["Basic", true, true] },
   { label: "AI insights & anomaly detection", values: [false, false, true] },
-  { label: "Google & Microsoft sign-in", values: [true, true, true] },
+  { label: "Google sign-in", values: [true, true, true] },
   { label: "Audit logs, DPA & data residency", values: [false, false, true] },
   { label: "Support", values: ["Community", "Priority", "Dedicated CSM"] },
 ];
