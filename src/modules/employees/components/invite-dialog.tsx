@@ -44,17 +44,21 @@ import {
 } from "../services/employees.service";
 
 /**
- * Most addresses one bulk invite may carry.
+ * Most addresses one bulk invite may carry. **Raised from 50 to 100 by the owner, 2026-09-29.**
  *
- * Not a technical ceiling — nothing breaks at 51. It bounds the failure modes a single run can
- * produce: at four requests in flight a larger batch is a long run with no resumability, and closing
- * the tab halfway leaves the rest unsent with no record of which. Fifty is also the point past which
- * a paste is usually a mistake — a whole spreadsheet column rather than a team.
+ * Not a technical ceiling — nothing breaks at 101, and the server imposes no limit of its own. It
+ * bounds the failure modes a single run can produce: the addresses are sent as one POST each, four
+ * in flight, and writes are never retried (`lib/api`), so closing the tab part-way leaves the rest
+ * unsent with no record on screen of which.
+ *
+ * One paste of 100 is therefore still 100 requests — "one invite" from where the admin stands, not
+ * from the server's. A hundred of them takes a visible half-minute, which the button counts out
+ * (`Inviting 40 of 100…`) so a long run doesn't read as a hung one.
  *
  * The dialog **refuses** above this rather than truncating: silently dropping people from a paste
  * is worse than making someone split it, because nothing on screen would say who was left out.
  */
-const MAX_INVITES = 50;
+const MAX_INVITES = 100;
 
 /**
  * Most rows one imported file may carry. **Raised from 200 to 500 by the owner, 2026-09-29.**
