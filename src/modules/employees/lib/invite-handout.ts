@@ -42,15 +42,24 @@ export function joinLink(base: string, tenantId: string, invite: ApiInviteCreate
   return `${base.replace(/\/$/, "")}/invite/accept?${q.toString()}`;
 }
 
-/** Columns, in the order they appear. */
-const COLUMNS = [
-  "Employee ID",
-  "Name",
-  "Email",
-  "Invite code",
-  "Join link",
-  "Expires",
-] as const;
+/**
+ * Columns, in the order they appear. `Name` is **conditional** — see [`handoutTable`].
+ *
+ * Widths are paired with the headers here rather than listed separately at the call site, because the
+ * two must drop the same entry when Name is absent; keeping them apart is how a sheet ends up with
+ * its columns one place out.
+ */
+const COLUMNS: readonly { header: string; width: number }[] = [
+  { header: "Employee ID", width: 16 },
+  { header: "Name", width: 24 },
+  { header: "Email", width: 32 },
+  { header: "Invite code", width: 16 },
+  { header: "Join link", width: 72 },
+  { header: "Expires", width: 22 },
+];
+
+/** Index of the conditional column, so the header and the row build stay in step. */
+const NAME_COLUMN = 1;
 
 /** `expires_at` is epoch **seconds** on this DTO, unlike most timestamps in the app. */
 function expiryText(epochSeconds: number): string {
@@ -58,20 +67,48 @@ function expiryText(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleString();
 }
 
-/** The rows as plain values — pure, so the shape is unit-testable without touching a workbook. */
-export function handoutRows(
+/**
+ * Headers and rows together — pure, so the shape is unit-testable without touching a workbook.
+ *
+ * **`withName` decides whether the `Name` column exists at all.** The caller passes it from which
+ * input was used, not from whether names happen to be present: an import has a name column, a paste
+ * does not. Deciding per-batch from the data instead would mean a file whose name cells were all
+ * blank produced a differently-shaped sheet from the same button — two files to reconcile where an
+ * admin expected one.
+ *
+ * Headers and rows are returned from one function so they cannot disagree: build them separately and
+ * the day Name is dropped from one and not the other, every value after it reads under the wrong
+ * heading — a code in the email column is the kind of mistake nobody spots until it has been sent.
+ */
+export function handoutTable(
   rows: HandoutRow[],
   base: string,
   tenantId: string,
-): string[][] {
-  return rows.map(({ invite, name }) => [
-    invite.emp_id ?? "",
-    name ?? "",
-    invite.email,
-    invite.otp,
-    joinLink(base, tenantId, invite),
-    expiryText(invite.expires_at),
-  ]);
+  { withName }: { withName: boolean },
+): { headers: string[]; rows: string[][] } {
+  const keep = <T,>(cells: T[]): T[] =>
+    withName ? cells : cells.filter((_, i) => i !== NAME_COLUMN);
+
+  return {
+    headers: keep(COLUMNS.map((c) => c.header)),
+    rows: rows.map(({ invite, name }) =>
+      keep([
+        invite.emp_id ?? "",
+        name ?? "",
+        invite.email,
+        invite.otp,
+        joinLink(base, tenantId, invite),
+        expiryText(invite.expires_at),
+      ]),
+    ),
+  };
+}
+
+/** Column widths matching whatever [`handoutTable`] decided to include. */
+function widthsFor(headers: string[]): { width: number }[] {
+  return headers.map((h) => ({
+    width: COLUMNS.find((c) => c.header === h)?.width ?? 20,
+  }));
 }
 
 /**
@@ -84,28 +121,29 @@ export async function downloadInviteHandout(
   rows: HandoutRow[],
   base: string,
   tenantId: string,
+  opts: { withName: boolean },
 ): Promise<void> {
   if (rows.length === 0) return;
   const writeXlsxFile = (await import("write-excel-file/browser")).default;
 
   // A warning line above the header, not a separate "read me" sheet: this file gets forwarded, and a
   // caution on a tab nobody opens protects nobody. It sits in row 1 so it is the first thing read.
+  const table = handoutTable(rows, base, tenantId, opts);
+
   const notice = [
     {
       value:
         "Each row below is a working invite — anyone with the code and link can join as that person until it is used or expires. Share it the way you would a password.",
       fontWeight: "bold" as const,
       wrap: true,
-      span: COLUMNS.length,
+      span: table.headers.length,
     },
   ];
-  const header = COLUMNS.map((value) => ({ value, fontWeight: "bold" as const }));
-  const body = handoutRows(rows, base, tenantId).map((row) =>
-    row.map((value) => ({ value })),
-  );
+  const header = table.headers.map((value) => ({ value, fontWeight: "bold" as const }));
+  const body = table.rows.map((row) => row.map((value) => ({ value })));
 
   const stamp = new Date().toISOString().slice(0, 10);
   await writeXlsxFile([notice, header, ...body], {
-    columns: [{ width: 16 }, { width: 24 }, { width: 32 }, { width: 16 }, { width: 72 }, { width: 22 }],
+    columns: widthsFor(table.headers),
   }).toFile(`workpulse-invites-${stamp}.xlsx`);
 }

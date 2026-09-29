@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { handoutRows, joinLink } from "./invite-handout";
+import { handoutTable, joinLink } from "./invite-handout";
 import type { ApiInviteCreated } from "../services/employees.service";
 
 function invite(over: Partial<ApiInviteCreated> = {}): ApiInviteCreated {
@@ -45,13 +45,22 @@ describe("joinLink", () => {
   });
 });
 
-describe("handoutRows", () => {
+describe("handoutTable", () => {
   it("lays out the columns an admin hands round", () => {
-    const rows = handoutRows(
+    const { headers, rows } = handoutTable(
       [{ invite: invite(), name: "Priya Nair" }],
       "https://app.example.com",
       "t-1",
+      { withName: true },
     );
+    expect(headers).toEqual([
+      "Employee ID",
+      "Name",
+      "Email",
+      "Invite code",
+      "Join link",
+      "Expires",
+    ]);
     expect(rows).toEqual([
       [
         "INF-004",
@@ -64,10 +73,58 @@ describe("handoutRows", () => {
     ]);
   });
 
-  /** A pasted list carries addresses only — the name cell is blank, never "undefined". */
-  it("leaves the name blank when the run had no names to work from", () => {
-    const [row] = handoutRows([{ invite: invite() }], "https://x.test", "t-1");
-    expect(row[1]).toBe("");
+  /**
+   * A pasted run carries addresses only, so a Name column would be empty in every row — noise in the
+   * one file someone has to read across while handing codes out.
+   */
+  it("omits the Name column entirely when no row has a name", () => {
+    const { headers, rows } = handoutTable([{ invite: invite() }], "https://x.test", "t-1", { withName: false });
+    expect(headers).toEqual(["Employee ID", "Email", "Invite code", "Join link", "Expires"]);
+    expect(headers).not.toContain("Name");
+    expect(rows[0]).toEqual([
+      "INF-004",
+      "priya@acme.test",
+      "483927",
+      "https://x.test/invite/accept?tenant_id=t-1&invite_id=inv-1&token=tok-abc",
+      new Date(1_790_000_000 * 1000).toLocaleString(),
+    ]);
+  });
+
+  /** A blank-but-present name is still no name; whitespace must not resurrect the column. */
+  it("treats a whitespace-only name as absent", () => {
+    const { headers } = handoutTable([{ invite: invite(), name: "Priya" }], "https://x.test", "t", {
+      withName: false,
+    });
+    expect(headers).not.toContain("Name");
+  });
+
+  /** One named person in a mixed batch keeps the column for everyone — dropping it would lose data. */
+  it("keeps the Name column when only some rows have one", () => {
+    const { headers, rows } = handoutTable(
+      [
+        { invite: invite({ invite_id: "a" }), name: "Priya" },
+        { invite: invite({ invite_id: "b" }) },
+      ],
+      "https://x.test",
+      "t",
+      { withName: true },
+    );
+    expect(headers).toContain("Name");
+    expect(rows[0][1]).toBe("Priya");
+    expect(rows[1][1]).toBe("");
+  });
+
+  /** Headers and rows must always have the same width, or every value reads under the wrong heading. */
+  it("returns rows exactly as wide as the headers, either way", () => {
+    for (const batch of [
+      [{ invite: invite(), name: "Priya" }],
+      [{ invite: invite() }],
+    ]) {
+      for (const withName of [true, false]) {
+        const { headers, rows } = handoutTable(batch, "https://x.test", "t", { withName });
+        for (const row of rows) expect(row).toHaveLength(headers.length);
+      }
+    }
   });
 
   /**
@@ -75,17 +132,27 @@ describe("handoutRows", () => {
    * Reading it as ms would print a date in 1970 and quietly tell people their invite had expired.
    */
   it("reads the expiry as seconds, not milliseconds", () => {
-    const [row] = handoutRows([{ invite: invite({ expires_at: 1_790_000_000 }) }], "https://x.test", "t");
-    expect(row[5]).toBe(new Date(1_790_000_000_000).toLocaleString());
-    expect(row[5]).not.toContain("1970");
+    const { headers, rows } = handoutTable(
+      [{ invite: invite({ expires_at: 1_790_000_000 }) }],
+      "https://x.test",
+      "t",
+      { withName: false },
+    );
+    // Indexed by header, not by a literal position: this batch has no name, so the column is
+    // dropped and every index after it shifts. Hard-coding 5 here passed only by luck before.
+    const expires = rows[0][headers.indexOf("Expires")];
+    expect(expires).toBe(new Date(1_790_000_000_000).toLocaleString());
+    expect(expires).not.toContain("1970");
   });
 
   it("handles an absent employee id without printing undefined", () => {
-    const [row] = handoutRows(
+    const { rows } = handoutTable(
       [{ invite: { ...invite(), emp_id: undefined as unknown as string } }],
       "https://x.test",
       "t",
+      { withName: false },
     );
+    const row = rows[0];
     expect(row[0]).toBe("");
   });
 });

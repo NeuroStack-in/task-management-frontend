@@ -337,7 +337,11 @@ export function InviteDialog({
     // naming what actually happened.
     if (withHandout && created.length > 0) {
       try {
-        await downloadInviteHandout(created, window.location.origin, tenantId);
+        // The imported sheet has a Name column because the file supplies one; a pasted run has no
+        // names to put in it, so the column is left out rather than shipped empty in every row.
+        await downloadInviteHandout(created, window.location.origin, tenantId, {
+          withName: mode === "file",
+        });
       } catch {
         // No email was sent on this path, so a lost file means invites nobody can ever use. Said
         // plainly, and left on screen long enough to read, because the remedy is an action.
