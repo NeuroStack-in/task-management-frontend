@@ -57,15 +57,27 @@ import {
 const MAX_INVITES = 50;
 
 /**
- * Most rows one imported file may carry.
+ * Most rows one imported file may carry. **Raised from 200 to 500 by the owner, 2026-09-29.**
  *
  * Higher than the paste ceiling because the inputs differ in kind: fifty pasted addresses is usually
- * a mistake, whereas a two-hundred-row export is the ordinary case — that is the whole reason to
- * import a file rather than paste. The resumability concern behind [`MAX_INVITES`] still applies, so
- * this is bounded rather than unlimited, and the run reports every failure with its address so a
- * second attempt sends exactly what is missing.
+ * a mistake, whereas a several-hundred-row export is the ordinary case — that is the whole reason to
+ * import a file rather than paste.
+ *
+ * It is still bounded, and the reason is worth keeping in view: **the run is not resumable.** Each
+ * row is its own POST, and writes are never retried (`lib/api`), so a closed tab or a dropped
+ * connection at row 300 leaves the remaining 200 unsent with nothing on screen naming them. The cap
+ * bounds how much damage that does; it is not a capacity limit, and nothing below it imposes one —
+ * the server has no cap at all.
+ *
+ * ⚠️ **Email delivery is the lower ceiling now, and it is not enforced here.** Invites are sent
+ * through Resend (`notifications::shared::resend`), whose plan carries its own daily quota — 100/day
+ * on the free tier. Past it Resend returns 429, the send falls back to SES, SES is sandboxed, and
+ * the mail is dropped while the invite is still created and reported as sent. A 500-row import on a
+ * small plan therefore creates 500 valid invites that not everyone receives. Making the run
+ * resumable, and surfacing per-invite delivery failures, is what would let this number stop
+ * mattering.
  */
-const MAX_IMPORT_ROWS = 200;
+const MAX_IMPORT_ROWS = 500;
 
 /** How many bytes of spreadsheet to accept. A file much larger than this is not a staff list. */
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
