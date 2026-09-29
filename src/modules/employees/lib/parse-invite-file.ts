@@ -74,6 +74,23 @@ const HEADER_ALIASES = {
 
 type Field = keyof typeof HEADER_ALIASES;
 
+/**
+ * Domains RFC 2606 reserves for documentation. They can never receive mail, so an invite to one is
+ * always a mistake — and in practice it is one specific mistake: the template's own sample rows,
+ * left in place while real people were typed underneath them. Rejecting them by name turns the most
+ * likely way to misuse a template into a message that says exactly what to do.
+ *
+ * Only the three reserved *second-level* domains. The `.test` TLD is reserved too, but this app uses
+ * `acme.test` for its own demo data and placeholders, so refusing it would reject addresses the
+ * product itself suggests.
+ */
+const SAMPLE_DOMAINS = ["example.com", "example.net", "example.org"];
+
+function isSampleAddress(email: string): boolean {
+  const domain = email.split("@")[1] ?? "";
+  return SAMPLE_DOMAINS.includes(domain);
+}
+
 export async function parseInviteFile(file: File): Promise<ParsedInviteFile> {
   const empty: ParsedInviteFile = { rows: [], errors: [], duplicates: 0 };
 
@@ -120,6 +137,10 @@ export async function parseInviteFile(file: File): Promise<ParsedInviteFile> {
       errors.push({ line, reason: email ? `Invalid email: ${email}` : "No email" });
       return;
     }
+    if (isSampleAddress(email)) {
+      errors.push({ line, reason: "Example row from the template — delete it before importing" });
+      return;
+    }
     if (seen.has(email)) {
       duplicates++;
       return;
@@ -162,8 +183,3 @@ export function matchByName<T extends { id: string; name: string }>(
   return options.find((o) => o.name.trim().toLowerCase() === wanted);
 }
 
-/** A ready-to-download template, so nobody has to guess the column names. */
-export const INVITE_CSV_TEMPLATE =
-  "email,role,department,team,title\n" +
-  "priya.nair@example.com,Employee,Engineering,Platform,Backend Engineer\n" +
-  "sam.okoro@example.com,Manager,Support,,Support Lead\n";

@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  INVITE_CSV_TEMPLATE,
-  matchByName,
-  parseInviteFile,
-  type ParsedInviteFile,
-} from "./parse-invite-file";
+import { matchByName, parseInviteFile, type ParsedInviteFile } from "./parse-invite-file";
+import { INVITE_CSV_TEMPLATE, INVITE_TEMPLATE_COLUMNS } from "./invite-template";
 
 /** A `File` the parser will route to the CSV reader. */
 function csvFile(content: string, name = "invites.csv"): File {
@@ -24,25 +20,39 @@ function stubXlsx(matrix: unknown[][]) {
 }
 
 describe("parseInviteFile", () => {
-  it("reads the documented template, which is the file people will actually start from", async () => {
-    const out = await parseInviteFile(csvFile(INVITE_CSV_TEMPLATE));
+  /**
+   * The template's headers must be the ones the importer resolves. A template that doesn't match
+   * the parser fails only after someone has typed two hundred rows into it.
+   */
+  it("resolves every column the template ships with", async () => {
+    const filled = INVITE_CSV_TEMPLATE.split("\n")[0] + "\na@acme.test,Employee,Eng,Core,Dev\n";
+    const out = await parseInviteFile(csvFile(filled));
     expect(out.fatal).toBeUndefined();
-    expect(out.errors).toEqual([]);
     expect(out.rows).toEqual([
-      {
-        email: "priya.nair@example.com",
-        role: "Employee",
-        department: "Engineering",
-        team: "Platform",
-        title: "Backend Engineer",
-      },
-      {
-        email: "sam.okoro@example.com",
-        role: "Manager",
-        department: "Support",
-        title: "Support Lead",
-      },
+      { email: "a@acme.test", role: "Employee", department: "Eng", team: "Core", title: "Dev" },
     ]);
+    expect(INVITE_TEMPLATE_COLUMNS).toEqual(["email", "role", "department", "team", "title"]);
+  });
+
+  /**
+   * Filling in underneath the samples and uploading is the most likely way to use a template, and
+   * it must not invite the samples. `example.com` is reserved by RFC 2606 and can never receive
+   * mail, so an invite to one is always a mistake worth naming.
+   */
+  it("refuses the template's own example rows instead of inviting them", async () => {
+    const out = await parseInviteFile(csvFile(INVITE_CSV_TEMPLATE + "real@acme.test,,,,\n"));
+    expect(out.rows.map((r) => r.email)).toEqual(["real@acme.test"]);
+    expect(out.errors).toEqual([
+      { line: 2, reason: "Example row from the template — delete it before importing" },
+      { line: 3, reason: "Example row from the template — delete it before importing" },
+    ]);
+  });
+
+  /** `.test` is reserved too, but the product uses `acme.test` in its own placeholders. */
+  it("still accepts the acme.test addresses the app itself suggests", async () => {
+    const out = await parseInviteFile(csvFile("email\njordan@acme.test\n"));
+    expect(out.rows).toEqual([{ email: "jordan@acme.test" }]);
+    expect(out.errors).toEqual([]);
   });
 
   it("accepts a file of nothing but addresses — the dialog supplies the rest", async () => {
@@ -172,6 +182,53 @@ describe("parseInviteFile — .xlsx", () => {
     const out = await parse(new File([""], "broken.xlsx"));
     expect(out.fatal).toMatch(/couldn't be read/i);
     expect(out.rows).toEqual([]);
+  });
+});
+
+/**
+ * The one test that covers what an admin actually does: download the template, fill it in, upload
+ * it. It uses the real writer and the real reader, so a change to either — or to the columns — fails
+ * here rather than in someone's hands.
+ */
+describe("template round trip", () => {
+  it("generates an .xlsx the importer reads back", async () => {
+    // The stubs above stay in the module registry and would intercept the reader's dynamic import,
+    // quietly turning this into a test of the stub. Drop them so the real library is exercised.
+    vi.doUnmock("read-excel-file/browser");
+    vi.resetModules();
+    const { parseInviteFile } = await import("./parse-invite-file");
+    const writeXlsxFile = (await import("write-excel-file/browser")).default;
+    const blob = await writeXlsxFile(
+      [
+        INVITE_TEMPLATE_COLUMNS.map((value) => ({ value })),
+        [
+          { value: "real@acme.test" },
+          { value: "Employee" },
+          { value: "Engineering" },
+          { value: "Platform" },
+          { value: "Backend Engineer" },
+        ],
+      ],
+      {},
+    ).toBlob();
+
+    const out = await parseInviteFile(
+      new File([blob], "invite-template.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+
+    expect(out.fatal).toBeUndefined();
+    expect(out.errors).toEqual([]);
+    expect(out.rows).toEqual([
+      {
+        email: "real@acme.test",
+        role: "Employee",
+        department: "Engineering",
+        team: "Platform",
+        title: "Backend Engineer",
+      },
+    ]);
   });
 });
 

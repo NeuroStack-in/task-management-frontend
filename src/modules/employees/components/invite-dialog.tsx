@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { FileUp, X } from "lucide-react";
+import { Download, FileUp, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -23,15 +23,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { friendlyError } from "@/lib/errors";
-import { downloadBlob } from "@/lib/download";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { parseEmails } from "../lib/parse-emails";
 import {
-  INVITE_CSV_TEMPLATE,
   matchByName,
   parseInviteFile,
   type ParsedInviteFile,
 } from "../lib/parse-invite-file";
+import {
+  downloadInviteCsvTemplate,
+  downloadInviteXlsxTemplate,
+} from "../lib/invite-template";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
   createInvite,
@@ -466,17 +468,22 @@ export function InviteDialog({
                 >
                   <FileUp className="size-4" /> {file ? "Choose another file" : "Choose file"}
                 </Button>
+                <span className="text-sm text-muted-foreground">Template:</span>
+                <Button variant="ghost" onClick={downloadInviteCsvTemplate} disabled={submitting}>
+                  <Download className="size-4" /> CSV
+                </Button>
                 <Button
                   variant="ghost"
                   onClick={() =>
-                    downloadBlob(
-                      new Blob([INVITE_CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" }),
-                      "invite-template.csv",
+                    downloadInviteXlsxTemplate().catch(() =>
+                      toast.error("Couldn't build the Excel template", {
+                        description: "Download the CSV one instead — it opens in Excel.",
+                      }),
                     )
                   }
                   disabled={submitting}
                 >
-                  Download template
+                  <Download className="size-4" /> Excel
                 </Button>
               </div>
 

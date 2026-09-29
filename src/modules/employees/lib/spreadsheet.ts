@@ -85,11 +85,22 @@ export async function readSheet(file: File): Promise<SheetData> {
  */
 async function fileText(file: File): Promise<string> {
   if (typeof file.text === "function") return file.text();
-  return new Promise<string>((resolve, reject) => {
+  return read(file, (reader) => reader.readAsText(file)) as Promise<string>;
+}
+
+/** A file's bytes, without assuming `Blob.arrayBuffer()`. Same reasoning as [`fileText`]. */
+async function fileBuffer(file: File): Promise<ArrayBuffer> {
+  if (typeof file.arrayBuffer === "function") return file.arrayBuffer();
+  return read(file, (reader) => reader.readAsArrayBuffer(file)) as Promise<ArrayBuffer>;
+}
+
+/** The `FileReader` promise wrapper both fallbacks share. */
+function read(file: File, start: (reader: FileReader) => void): Promise<string | ArrayBuffer> {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onload = () => resolve(reader.result ?? "");
     reader.onerror = () => reject(reader.error ?? new Error("file read failed"));
-    reader.readAsText(file);
+    start(reader);
   });
 }
 
@@ -101,7 +112,11 @@ async function readXlsx(file: File): Promise<SheetData> {
   // `readSheet`, not the default export: since v9 the default reads and returns *every* sheet in the
   // workbook, and an import only ever looks at the first. Reading one sheet skips parsing the rest.
   const { readSheet: readFirstSheet } = await import("read-excel-file/browser");
-  const matrix = await readFirstSheet(file);
+  // Hand it an ArrayBuffer rather than the File. The reader accepts either, but reading the bytes
+  // out of the File itself relies on `Blob.arrayBuffer`/`Blob.stream`, which is the same gap as
+  // `Blob.text` — absent in jsdom, and historically in Safari. Reading them here keeps one code
+  // path that works everywhere, and makes the importer testable against a real generated workbook.
+  const matrix = await readFirstSheet(await fileBuffer(file));
   if (matrix.length === 0) return { headers: [], rows: [] };
 
   const headers = (matrix[0] ?? []).map((h) => text(h).trim());
