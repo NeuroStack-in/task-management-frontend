@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { FileUp, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -23,8 +23,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { friendlyError } from "@/lib/errors";
+import { downloadBlob } from "@/lib/download";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { parseEmails } from "../lib/parse-emails";
+import {
+  INVITE_CSV_TEMPLATE,
+  matchByName,
+  parseInviteFile,
+  type ParsedInviteFile,
+} from "../lib/parse-invite-file";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
   createInvite,
@@ -46,6 +53,29 @@ import {
  * is worse than making someone split it, because nothing on screen would say who was left out.
  */
 const MAX_INVITES = 50;
+
+/**
+ * Most rows one imported file may carry.
+ *
+ * Higher than the paste ceiling because the inputs differ in kind: fifty pasted addresses is usually
+ * a mistake, whereas a two-hundred-row export is the ordinary case — that is the whole reason to
+ * import a file rather than paste. The resumability concern behind [`MAX_INVITES`] still applies, so
+ * this is bounded rather than unlimited, and the run reports every failure with its address so a
+ * second attempt sends exactly what is missing.
+ */
+const MAX_IMPORT_ROWS = 200;
+
+/** How many bytes of spreadsheet to accept. A file much larger than this is not a staff list. */
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+/** The body `POST /v1/employees/invites` wants, once names from the file are resolved to ids. */
+interface ResolvedInvite {
+  email: string;
+  role_id: string;
+  department_id: string;
+  team_id?: string;
+  title: string;
+}
 
 export function InviteDialog({
   open,
@@ -70,6 +100,11 @@ export function InviteDialog({
   const [progress, setProgress] = useState(0);
   /** Per-address failures from the last run, kept on screen so they can be fixed and retried. */
   const [failures, setFailures] = useState<{ email: string; reason: string }[]>([]);
+  /** Which input the admin is using. The two paths differ in kind, not just in looks: a paste gives
+   *  everyone the same role/department/title, a file gives each row its own. */
+  const [mode, setMode] = useState<"paste" | "file">("paste");
+  const [file, setFile] = useState<(ParsedInviteFile & { fileName: string }) | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   // Parsed on every keystroke: the chips below the box are the honest answer to "who am I about to
   // invite", which a raw textarea can't give.
@@ -110,6 +145,94 @@ export function InviteDialog({
     ? teams.filter((t) => t.department_id === departmentId)
     : teams;
 
+  /**
+   * Turn the file's rows into request bodies, or into a reason the row can't be sent.
+   *
+   * Two rules decide everything here. **A row's own value wins**, so a file that names a department
+   * per person means what it says. **A field the row leaves blank falls back to the picker below**,
+   * which is what makes a one-column file of addresses a valid import and stops an admin having to
+   * repeat "Engineering" two hundred times.
+   *
+   * Nothing is guessed. A department the org doesn't have is refused by name rather than quietly
+   * swapped for the default — importing someone into the wrong department is discovered weeks later,
+   * if ever, and is far more expensive than being told to fix a cell now.
+   */
+  const resolved = useMemo(() => {
+    if (!file) return null;
+    const ready: ResolvedInvite[] = [];
+    const problems: { email: string; reason: string }[] = [];
+
+    for (const row of file.rows) {
+      const role = row.role
+        ? matchByName(row.role, roles)
+        : roles.find((r) => r.id === roleId);
+      if (!role) {
+        problems.push({
+          email: row.email,
+          reason: row.role ? `No role named "${row.role}"` : "No role — pick one below",
+        });
+        continue;
+      }
+      const department = row.department
+        ? matchByName(row.department, departments)
+        : departments.find((d) => d.id === departmentId);
+      if (!department) {
+        problems.push({
+          email: row.email,
+          reason: row.department
+            ? `No department named "${row.department}"`
+            : "No department — pick one below",
+        });
+        continue;
+      }
+      // A named team that doesn't resolve is an error, never a silent omission: the row asked for a
+      // team, and inviting the person with none would look like it worked.
+      let team = row.team ? matchByName(row.team, teams) : undefined;
+      if (row.team && !team) {
+        problems.push({ email: row.email, reason: `No team named "${row.team}"` });
+        continue;
+      }
+      if (team && team.department_id !== department.id) {
+        problems.push({
+          email: row.email,
+          reason: `Team "${team.name}" isn't in ${department.name}`,
+        });
+        continue;
+      }
+      // Only inherit the picked team when the row named no department of its own — a team from the
+      // picker belongs to the picked department and would be wrong under a different one.
+      if (!row.team && !row.department && teamId) {
+        team = teams.find((t) => t.id === teamId);
+      }
+      const rowTitle = row.title || title.trim();
+      if (!rowTitle) {
+        problems.push({ email: row.email, reason: "No job title — add a title column or one below" });
+        continue;
+      }
+      ready.push({
+        email: row.email,
+        role_id: role.id,
+        department_id: department.id,
+        title: rowTitle,
+        ...(team ? { team_id: team.id } : {}),
+      });
+    }
+    return { ready, problems };
+  }, [file, roles, departments, teams, roleId, departmentId, teamId, title]);
+
+  /** Read + parse a chosen file. Parsing is async because the XLSX reader is loaded on demand. */
+  const onFile = useCallback((chosen: File | undefined) => {
+    if (!chosen) return;
+    if (chosen.size > MAX_FILE_BYTES) {
+      toast.error("That file is too large", { description: "Imports are limited to 2 MB." });
+      return;
+    }
+    setFailures([]);
+    parseInviteFile(chosen)
+      .then((parsedFile) => setFile({ ...parsedFile, fileName: chosen.name }))
+      .catch(() => toast.error("Couldn't read that file"));
+  }, []);
+
   function reset() {
     setEmail("");
     setDepartmentId("");
@@ -118,6 +241,9 @@ export function InviteDialog({
     setSubmitting(false);
     setProgress(0);
     setFailures([]);
+    setFile(null);
+    setMode("paste");
+    if (fileInput.current) fileInput.current.value = "";
   }
 
   /** Drop one address from the pending list — the chips are editable, not just a preview. */
@@ -125,7 +251,86 @@ export function InviteDialog({
     setEmail(parsed.emails.filter((e) => e !== target).join(", "));
   }
 
+  /**
+   * Send a batch of prepared invite bodies, reporting each one's outcome.
+   *
+   * The invite email is sent server-side (Resend, via the notifications rail); the link and one-time
+   * password stay secret — the invitee is the only one who ever sees them.
+   *
+   * Bounded concurrency, not `Promise.all`: firing two hundred POSTs at once bursts the Lambda into
+   * throttling, and writes are never retried (lib/api), so a throttled invite would simply be lost.
+   * Four at a time keeps a bulk run flat and quick. One bad address never abandons the rest.
+   */
+  async function runInvites(bodies: ResolvedInvite[]) {
+    const results = await mapWithConcurrency(bodies, 4, async (body) => {
+      try {
+        await createInvite(body);
+        return { email: body.email, ok: true as const };
+      } catch (e) {
+        return {
+          email: body.email,
+          ok: false as const,
+          reason: friendlyError(e, "Couldn't create this invite."),
+        };
+      } finally {
+        setProgress((n) => n + 1);
+      }
+    });
+    const failed = results.filter((r) => !r.ok) as { email: string; reason: string }[];
+    return { failed, sent: results.length - failed.length };
+  }
+
+  /** The file path: every row carries its own role, department, team and title. */
+  async function submitFile() {
+    if (!resolved) return;
+    if (!resolved.ready.length) {
+      toast.error(
+        resolved.problems.length
+          ? "No row in that file is ready to send. Fix the ones listed and try again."
+          : "That file has no rows to import.",
+      );
+      return;
+    }
+    if (resolved.ready.length > MAX_IMPORT_ROWS) {
+      toast.error(`Import up to ${MAX_IMPORT_ROWS} people at a time.`, {
+        description: "Split the file and send the rest as a second import.",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    setFailures([]);
+    setProgress(0);
+
+    const { failed, sent } = await runInvites(resolved.ready);
+
+    if (sent) {
+      toast.success(sent === 1 ? "1 invite sent" : `${sent} invites sent`, {
+        description: "They'll each get an email with a link and a one-time password.",
+      });
+      onCreated?.();
+    }
+
+    if (failed.length) {
+      // Keep the file on screen with only the failures listed. Re-pressing the button would resend
+      // the whole file, so the successes are named in the toast and the failures below it — the
+      // admin decides whether to fix the file or invite the remainder by paste.
+      setFailures(failed);
+      setSubmitting(false);
+      setProgress(0);
+      toast.error(
+        failed.length === 1 ? "1 invite couldn't be created" : `${failed.length} invites couldn't be created`,
+        { description: "The reason for each is listed below." },
+      );
+      return;
+    }
+
+    reset();
+    onOpenChange(false);
+  }
+
   async function submit() {
+    if (mode === "file") return submitFile();
     if (!count) {
       toast.error(
         parsed.invalid.length
@@ -157,43 +362,21 @@ export function InviteDialog({
     setFailures([]);
     setProgress(0);
 
-    // The invite email is sent server-side (Resend, via the notifications rail). The link and
-    // one-time password stay secret — the invitee is the only one who ever sees them.
-    //
-    // Bounded concurrency, not `Promise.all`: firing twenty POSTs at once bursts the Lambda into
-    // throttling, and writes are never retried (lib/api), so a throttled invite would simply be
-    // lost. Four at a time keeps a bulk run flat and quick.
-    const results = await mapWithConcurrency(parsed.emails, 4, async (address) => {
-      try {
-        await createInvite({
-          email: address,
-          role_id: roleId,
-          department_id: departmentId,
-          title: title.trim(),
-          ...(teamId ? { team_id: teamId } : {}),
-        });
-        return { email: address, ok: true as const };
-      } catch (e) {
-        // One bad address must not abandon the other nineteen — collect and report.
-        return {
-          email: address,
-          ok: false as const,
-          reason: friendlyError(e, "Couldn't create this invite."),
-        };
-      } finally {
-        setProgress((n) => n + 1);
-      }
-    });
-
-    const failed = results.filter((r) => !r.ok) as {
-      email: string;
-      reason: string;
-    }[];
-    const sent = results.length - failed.length;
+    const { failed, sent } = await runInvites(
+      parsed.emails.map((address) => ({
+        email: address,
+        role_id: roleId,
+        department_id: departmentId,
+        title: title.trim(),
+        ...(teamId ? { team_id: teamId } : {}),
+      })),
+    );
 
     if (sent) {
       toast.success(
-        sent === 1 ? `Invite sent to ${results.find((r) => r.ok)?.email}` : `${sent} invites sent`,
+        sent === 1
+          ? `Invite sent to ${parsed.emails.find((e) => !failed.some((f) => f.email === e))}`
+          : `${sent} invites sent`,
         { description: "They'll each get an email with a link and a one-time password." },
       );
       onCreated?.();
@@ -230,15 +413,147 @@ export function InviteDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {count > 1 ? `Invite ${count} employees` : "Invite employee"}
+            {(() => {
+              const total = mode === "file" ? (resolved?.ready.length ?? 0) : count;
+              return total > 1 ? `Invite ${total} employees` : "Invite employee";
+            })()}
           </DialogTitle>
           <DialogDescription>
-            Role, department, team and title are fixed by you — each invitee only fills in their
-            personal details.
+            {mode === "file"
+              ? "Each row can carry its own role, department, team and title — invitees only fill in their personal details."
+              : "Role, department, team and title are fixed by you — each invitee only fills in their personal details."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="flex gap-1 rounded-lg bg-muted p-1">
+            {(
+              [
+                ["paste", "Paste emails"],
+                ["file", "Import CSV or Excel"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                disabled={submitting}
+                className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:pointer-events-none ${
+                  mode === value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {mode === "file" ? (
+            <div className="space-y-3">
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="sr-only"
+                onChange={(e) => onFile(e.target.files?.[0])}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={submitting}
+                >
+                  <FileUp className="size-4" /> {file ? "Choose another file" : "Choose file"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    downloadBlob(
+                      new Blob([INVITE_CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" }),
+                      "invite-template.csv",
+                    )
+                  }
+                  disabled={submitting}
+                >
+                  Download template
+                </Button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                A <strong>.csv</strong> or <strong>.xlsx</strong> with an <strong>email</strong>{" "}
+                column. Add <em>role</em>, <em>department</em>, <em>team</em> or <em>title</em>{" "}
+                columns to set them per person — anything a row leaves blank uses the selections
+                below. A name column is ignored: each invitee enters their own name when they sign
+                up.
+              </p>
+
+              {file?.fatal ? (
+                <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                  {file.fatal}
+                </p>
+              ) : null}
+
+              {file && !file.fatal && resolved ? (
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="text-sm">
+                    <span className="font-medium">{file.fileName}</span> —{" "}
+                    {resolved.ready.length} ready
+                    {resolved.problems.length ? `, ${resolved.problems.length} need attention` : ""}
+                    {file.duplicates
+                      ? `, ${file.duplicates} duplicate${file.duplicates === 1 ? "" : "s"} ignored`
+                      : ""}
+                  </p>
+
+                  {resolved.ready.length > MAX_IMPORT_ROWS ? (
+                    <p className="text-xs font-medium text-destructive">
+                      That&apos;s {resolved.ready.length - MAX_IMPORT_ROWS} over the{" "}
+                      {MAX_IMPORT_ROWS}-row limit. Split the file — nothing is dropped for you.
+                    </p>
+                  ) : null}
+
+                  {/* Rows the file itself couldn't produce: a bad address, a missing header. The
+                      line number is what makes this actionable — it matches the spreadsheet. */}
+                  {file.errors.length ? (
+                    <ul className="space-y-0.5 text-xs text-warning">
+                      {file.errors.slice(0, 6).map((e) => (
+                        <li key={e.line}>
+                          Row {e.line} — {e.reason}
+                        </li>
+                      ))}
+                      {file.errors.length > 6 ? (
+                        <li>+{file.errors.length - 6} more rows with problems</li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+
+                  {/* Rows that parsed but name something this org doesn't have. */}
+                  {resolved.problems.length ? (
+                    <ul className="space-y-0.5 text-xs text-destructive">
+                      {resolved.problems.slice(0, 6).map((p) => (
+                        <li key={p.email}>
+                          <span className="font-medium">{p.email}</span> — {p.reason}
+                        </li>
+                      ))}
+                      {resolved.problems.length > 6 ? (
+                        <li>+{resolved.problems.length - 6} more</li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {failures.length ? (
+                <ul className="space-y-1 text-xs text-destructive">
+                  {failures.map((f) => (
+                    <li key={f.email}>
+                      <span className="font-medium">{f.email}</span> — {f.reason}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : (
           <div className="space-y-1.5">
             <div className="flex items-baseline justify-between gap-3">
               <Label htmlFor="inv-email">Work emails</Label>
@@ -319,8 +634,16 @@ export function InviteDialog({
               </ul>
             ) : null}
           </div>
+          )}
           <div className="space-y-1.5">
-            <Label>Role</Label>
+            <Label>
+              Role{" "}
+              {mode === "file" ? (
+                <span className="font-normal text-muted-foreground">
+                  (for rows without a role column)
+                </span>
+              ) : null}
+            </Label>
             {/* Base UI's Select.Value renders the RAW value (the id) in the trigger unless the
                 root gets an `items` value→label map — hence these on every id-valued select. */}
             <Select
@@ -390,7 +713,14 @@ export function InviteDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="inv-title">Job title</Label>
+            <Label htmlFor="inv-title">
+              Job title{" "}
+              {mode === "file" ? (
+                <span className="font-normal text-muted-foreground">
+                  (for rows without a title column)
+                </span>
+              ) : null}
+            </Label>
             <Input
               id="inv-title"
               value={title}
@@ -406,15 +736,21 @@ export function InviteDialog({
           </Button>
           <Button
             onClick={submit}
-            disabled={submitting || !roles.length || overBy > 0}
+            disabled={
+              submitting ||
+              !roles.length ||
+              (mode === "paste"
+                ? overBy > 0
+                : !resolved?.ready.length || resolved.ready.length > MAX_IMPORT_ROWS)
+            }
           >
-            {submitting
-              ? count > 1
-                ? `Inviting ${progress} of ${count}…`
-                : "Creating…"
-              : count > 1
-                ? `Invite ${count} people`
-                : "Create invite"}
+            {(() => {
+              const total = mode === "file" ? (resolved?.ready.length ?? 0) : count;
+              if (submitting) {
+                return total > 1 ? `Inviting ${progress} of ${total}…` : "Creating…";
+              }
+              return total > 1 ? `Invite ${total} people` : "Create invite";
+            })()}
           </Button>
         </DialogFooter>
       </DialogContent>

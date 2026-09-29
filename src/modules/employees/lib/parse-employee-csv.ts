@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import { isEmail } from "@/lib/validation";
+import { cell, resolveColumns } from "./spreadsheet";
 
 /**
  * Turn an uploaded CSV into monitored-employee rows (`POST /v1/employees`, MANAGED-AGENT.md §6.4).
@@ -58,31 +59,6 @@ const HEADER_ALIASES: Record<keyof CsvEmployeeRow, readonly string[]> = {
   title: ["title", "jobtitle", "designation", "role", "position"],
 };
 
-/** `"  Work Email "` → `"workemail"`. */
-function normalizeHeader(header: string): string {
-  return header.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-/** Map each field to the header string that carries it, or `undefined` if the file lacks it. */
-function resolveColumns(headers: string[]): Partial<Record<keyof CsvEmployeeRow, string>> {
-  const found: Partial<Record<keyof CsvEmployeeRow, string>> = {};
-  for (const header of headers) {
-    const key = normalizeHeader(header);
-    for (const [field, aliases] of Object.entries(HEADER_ALIASES) as [
-      keyof CsvEmployeeRow,
-      readonly string[],
-    ][]) {
-      if (found[field] === undefined && aliases.includes(key)) {
-        found[field] = header;
-      }
-    }
-  }
-  return found;
-}
-
-const cell = (row: Record<string, string>, header?: string): string =>
-  header ? (row[header] ?? "").trim() : "";
-
 export function parseEmployeeCsv(text: string): ParsedEmployeeCsv {
   const empty: ParsedEmployeeCsv = { rows: [], errors: [], duplicates: 0 };
 
@@ -97,7 +73,7 @@ export function parseEmployeeCsv(text: string): ParsedEmployeeCsv {
   });
 
   const headers = parsed.meta.fields ?? [];
-  const columns = resolveColumns(headers);
+  const columns = resolveColumns<keyof CsvEmployeeRow>(headers, HEADER_ALIASES);
 
   // Diagnose a missing header row specifically. Without this the first data line is read as the
   // header and every subsequent row fails validation against nonsense column names — a confusing
