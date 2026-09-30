@@ -549,7 +549,11 @@ export function InviteDialog({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      {/* The body scrolls, the header and footer do not. Without this the dialog grows past the
+          viewport on a laptop screen — the title clips off the top and the buttons sit below the
+          fold with no way to reach them, which is a dialog you cannot finish. `dvh` rather than
+          `vh` so a mobile browser's collapsing toolbar doesn't hide the footer either. */}
+      <DialogContent className="grid max-h-[90dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {(() => {
@@ -564,7 +568,8 @@ export function InviteDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        {/* `-mx-1 px-1` keeps focus rings from being clipped by the scroll container's edge. */}
+        <div className="-mx-1 space-y-4 overflow-y-auto px-1">
           <div className="bg-muted flex gap-1 rounded-lg p-1">
             {(
               [
@@ -622,13 +627,18 @@ export function InviteDialog({
                   setDragging(false);
                   if (!submitting) onFile(e.dataTransfer.files?.[0]);
                 }}
-                className={`flex cursor-pointer flex-col items-center gap-1 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors ${
+                className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed text-center transition-colors ${
+                  // Once a file is chosen the card below carries the detail, so this shrinks to a
+                  // single line — a tall target competing with its own result is what pushed the
+                  // footer off the screen.
+                  file ? "px-4 py-2.5" : "flex-col gap-1 px-4 py-5"
+                } ${
                   dragging
                     ? "border-primary bg-primary/5"
                     : "border-input hover:border-muted-foreground/40 hover:bg-muted/40"
                 } ${submitting ? "pointer-events-none opacity-50" : ""}`}
               >
-                <FileUp className="text-muted-foreground size-5" />
+                <FileUp className="text-muted-foreground size-4 shrink-0" />
                 <span className="text-sm font-medium">
                   {dragging
                     ? "Drop it here"
@@ -636,7 +646,9 @@ export function InviteDialog({
                       ? "Drop another file, or click to choose"
                       : "Drop a CSV or Excel file here, or click to choose"}
                 </span>
-                <span className="text-muted-foreground text-xs">.csv · .xlsx</span>
+                {file ? null : (
+                  <span className="text-muted-foreground text-xs">.csv · .xlsx</span>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -663,14 +675,18 @@ export function InviteDialog({
                 </Button>
               </div>
 
-              <p className="text-muted-foreground text-xs">
-                A <strong>.csv</strong> or <strong>.xlsx</strong> with an{" "}
-                <strong>email</strong> column. Add <em>role</em>, <em>department</em>,{" "}
-                <em>team</em> or <em>title</em> columns to set them per person — anything
-                a row leaves blank uses the selections below. A <em>name</em> column
-                labels each person in the downloaded code sheet; it isn&apos;t sent, since
-                invitees enter their own name when they sign up.
-              </p>
+              {/* Guidance for picking a file. Once one is loaded the card below answers the only
+                  remaining question, so this stands down rather than pushing the footer off-screen. */}
+              {file ? null : (
+                <p className="text-muted-foreground text-xs">
+                  A <strong>.csv</strong> or <strong>.xlsx</strong> with an{" "}
+                  <strong>email</strong> column. Add <em>role</em>, <em>department</em>,{" "}
+                  <em>team</em> or <em>title</em> columns to set them per person —
+                  anything a row leaves blank uses the selections below. A <em>name</em>{" "}
+                  column labels each person in the downloaded code sheet; it isn&apos;t
+                  sent, since invitees enter their own name when they sign up.
+                </p>
+              )}
 
               {file?.fatal ? (
                 <p className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border p-3 text-sm">
