@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useNow } from "@/hooks/use-now";
 import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, FolderKanban, Search, UserRound, X } from "lucide-react";
-import Papa from "papaparse";
 import { toast } from "sonner";
 import { downloadBlob } from "@/lib/download";
 import { Button } from "@/components/ui/button";
@@ -23,6 +22,7 @@ import { formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Period } from "../use-team-timesheet";
 import { ActivityDialog, type ActivityView } from "./timesheet-detail";
+import { toCsv } from "@/lib/csv";
 
 const MONTHS = [
   "Jan",
@@ -145,15 +145,21 @@ function fmtHM(hours: number): string {
 /**
  * Extra hours from sessions still **running** in a day's entries — the live top-up over the settled
  * `days[i]`, so a cell (and every total derived from it) ticks in real time. Person rows carry the
- * session on each entry; project rows don't, so those stay at their settled hours.
+ * session on each entry; project rows carry only its start (`runningSinceMs`) — both count, so the
+ * grand total no longer changes when the grid is regrouped. `billableOnly` counts just the billable
+ * sessions, for the team cards' billable share (a project row's entry carries no billable flag).
  */
-function runningHours(entries: TimesheetDayEntry[] | undefined, now: number): number {
+export function runningHours(
+  entries: TimesheetDayEntry[] | undefined,
+  now: number,
+  billableOnly = false,
+): number {
   if (!entries) return 0;
   let sec = 0;
   for (const e of entries) {
-    if (e.session?.running && typeof e.session.startMs === "number") {
-      sec += Math.max(0, (now - e.session.startMs) / 1000);
-    }
+    if (billableOnly && !e.session?.billable) continue;
+    const start = e.session?.running ? e.session.startMs : e.runningSinceMs;
+    if (typeof start === "number") sec += Math.max(0, (now - start) / 1000);
   }
   return sec / 3600;
 }
@@ -169,9 +175,17 @@ export function TimesheetGrid({
   onWeekOffsetChange,
   period,
   onPeriodChange,
+  updating = false,
 }: {
   personRows: TeamMemberTime[];
   projectRows: ProjectTimesheet[];
+  /**
+   * Another period is loading and these rows are still the previous one's. The grid stays mounted
+   * — replacing it with a loader reset the grouping, department filter and search on every week
+   * step (QA audit 2026-10-08, WP-200) — but Download is held, or it would export the old rows
+   * under the new period's name.
+   */
+  updating?: boolean;
   /**
    * The iso dates the rows' `days`/`dayEntries` align to — 7 for a week, 28-31 for a month.
    *
@@ -307,7 +321,7 @@ export function TimesheetGrid({
     }
     const slug = weekRange.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
     downloadBlob(
-      new Blob([Papa.unparse({ fields, data })], { type: "text/csv;charset=utf-8;" }),
+      new Blob([toCsv({ fields, data })], { type: "text/csv;charset=utf-8;" }),
       `timesheet-${group === "person" ? "employees" : "projects"}-${slug}.csv`,
     );
     toast.success(`${period === "month" ? "Month" : "Week"} exported`, {
@@ -508,6 +522,9 @@ export function TimesheetGrid({
                     ? "Search employees or ID…"
                     : "Search projects or ID…"
                 }
+                // A placeholder is not a label: it vanishes once typed into, and many screen readers
+                // do not announce it (QA audit 2026-10-08, WP-439).
+                aria-label={group === "person" ? "Search employees" : "Search projects"}
                 className="pl-8"
               />
             </div>
@@ -519,7 +536,7 @@ export function TimesheetGrid({
               size="sm"
               className="h-9 shrink-0 rounded-full"
               onClick={exportCsv}
-              disabled={rows.length === 0}
+              disabled={rows.length === 0 || updating}
               title={`Download this ${period === "month" ? "month" : "week"} as CSV`}
             >
               <Download className="size-4" />
@@ -604,7 +621,7 @@ export function TimesheetGrid({
                     title={holidayName ? `Holiday: ${holidayName}` : undefined}
                   >
                     <span className="block tabular-nums">{heading.top}</span>
-                    <span className="text-muted-foreground/70 block text-[0.7rem] font-normal tabular-nums">
+                    <span className="text-muted-foreground block text-[0.7rem] font-normal tabular-nums">
                       {heading.sub}
                     </span>
                     {holidayName ? (
@@ -802,6 +819,8 @@ function FilterTab({
     <button
       type="button"
       onClick={onClick}
+      // The active option is otherwise told apart by colour alone (QA audit 2026-10-08, WP-439).
+      aria-pressed={active}
       className={cn(
         // `whitespace-nowrap` + `shrink-0`: a two-word label ("By employee") is the first thing a
         // squeezed flex row breaks, and a pill toggle that silently becomes two lines tall drags

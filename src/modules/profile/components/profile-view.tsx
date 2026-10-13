@@ -29,7 +29,6 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
 import { initials, todayIso } from "@/lib/format";
 import { friendlyError } from "@/lib/errors";
-import { isWithinSize, MB } from "@/lib/validation";
 import { ApiError } from "@/lib/api";
 import {
   getAvatarUrl,
@@ -87,8 +86,18 @@ interface DetailRow {
 }
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 /** Epoch ms → "Jul 2026" — the honest "member since", from the account's real creation time. */
@@ -110,6 +119,9 @@ const WORK_MODES = [
   { value: "hybrid", label: "Hybrid" },
   { value: "remote", label: "Remote" },
 ] as const;
+
+/** The work-mode picker's "Not set" — Base UI's Select can't carry `""` as an item value. */
+const WORK_MODE_UNSET = "__none__";
 
 const workModeLabel = (v: string | undefined) =>
   WORK_MODES.find((m) => m.value === v)?.label ?? "—";
@@ -212,13 +224,7 @@ export function ProfileView() {
   //
   // Scope, not role name: a team-scoped Manager still tracks their own time and keeps both.
   const tracksTime = role?.scope !== "org";
-  return (
-    <RichProfile
-      user={user}
-      roleName={role?.name ?? "—"}
-      tracksTime={tracksTime}
-    />
-  );
+  return <RichProfile user={user} roleName={role?.name ?? "—"} tracksTime={tracksTime} />;
 }
 
 /* ──────────────────────────── Profile ──────────────────────────── */
@@ -264,8 +270,16 @@ function RichProfile({
   // member-since. This is the same `USER#` record the admin's Employees page reads, which is what
   // keeps the two screens agreeing. `null` until loaded; absent fields render "—".
   const [profile, setProfile] = useState<ApiMyFullProfile | null>(null);
+  /**
+   * The read failed. Said, with a retry: swallowed, every field read "—", indistinguishable from an
+   * empty profile — and a later save never showed, since the patch only applies to a loaded one
+   * (QA audit 2026-10-08, WP-524).
+   */
+  const [profileFailed, setProfileFailed] = useState(false);
+  const [profileAttempt, setProfileAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
+    setProfileFailed(false);
     getMyProfile()
       .then((p) => {
         if (!alive) return;
@@ -274,13 +288,14 @@ function RichProfile({
         if (p.name && p.name !== user.name) updateUser({ name: p.name });
       })
       .catch(() => {
-        /* identity rows fall back to token facts + "—" */
+        // Identity rows still fall back to token facts + "—", now under a notice that says why.
+        if (alive) setProfileFailed(true);
       });
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch once per mount
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch once per mount (and per retry)
+  }, [profileAttempt]);
 
   // Resolve the profile's department/team ids → names (best-effort; blank on miss, never the id).
   useEffect(() => {
@@ -303,7 +318,12 @@ function RichProfile({
     return () => {
       alive = false;
     };
-  }, [profile?.department_id, profile?.team_id, profile?.department_name, profile?.team_name]);
+  }, [
+    profile?.department_id,
+    profile?.team_id,
+    profile?.department_name,
+    profile?.team_name,
+  ]);
 
   const stats = useMyStats();
 
@@ -323,7 +343,6 @@ function RichProfile({
     };
   }, []);
 
-  const fileRef = useRef<HTMLInputElement>(null);
   // The edit dialog's own cropper. Separate from `uploadOpen` (the hero menu's) because the two
   // differ in what they do with the result: the hero uploads immediately, this one STAGES the file
   // so it lands with the rest of the form on Save. Sharing one flag would have quietly turned the
@@ -332,7 +351,13 @@ function RichProfile({
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   // Values shown when the edit dialog opened — the diff baseline, so only changes are PATCHed.
-  const baseline = useRef({ name: user.name, phone: "", location: "", dob: "", workMode: "" });
+  const baseline = useRef({
+    name: user.name,
+    phone: "",
+    location: "",
+    dob: "",
+    workMode: "",
+  });
   const [form, setForm] = useState({
     name: user.name,
     email: user.email,
@@ -346,8 +371,7 @@ function RichProfile({
   const [photo, setPhoto] = useState<{ file: File; preview: string } | null | undefined>(
     undefined,
   );
-  const set = (k: keyof typeof form) => (v: string) =>
-    setForm((s) => ({ ...s, [k]: v }));
+  const set = (k: keyof typeof form) => (v: string) => setForm((s) => ({ ...s, [k]: v }));
 
   const openEdit = () => {
     const phone = profile?.phone ?? "";
@@ -358,18 +382,6 @@ function RichProfile({
     setForm({ name: user.name, email: user.email, phone, location, dob, workMode });
     setPhoto(undefined);
     setEditOpen(true);
-  };
-  const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !file.type.startsWith("image/")) return;
-    if (!isWithinSize(file, 10 * MB)) {
-      toast.error("Image must be 10 MB or smaller.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => setPhoto({ file, preview: reader.result as string });
-    reader.readAsDataURL(file);
   };
   const save = async () => {
     const name = form.name.trim();
@@ -395,6 +407,9 @@ function RichProfile({
       try {
         const p = await updateMyProfile(body);
         updateUser({ name: p.name });
+        // Only what was sent (the PATCH echo carries name/phone/location; the other two are ours).
+        // Patching every field from the form blanked a stored date of birth and work mode on screen
+        // when the dialog had opened before the profile loaded and only the name changed (WP-524).
         setProfile((prev) =>
           prev
             ? {
@@ -402,16 +417,23 @@ function RichProfile({
                 name: p.name,
                 phone: p.phone,
                 location: p.location,
-                date_of_birth: dob || undefined,
-                work_mode: workMode || undefined,
+                ...("date_of_birth" in body
+                  ? { date_of_birth: body.date_of_birth || undefined }
+                  : {}),
+                ...("work_mode" in body
+                  ? { work_mode: body.work_mode || undefined }
+                  : {}),
               }
             : prev,
         );
+        // The profile never loaded: read it now, so the saved values show instead of "—".
+        if (!profile) setProfileAttempt((n) => n + 1);
         if (photo === null) updateUser({ avatarUrl: undefined });
         toast.success("Profile updated");
       } catch (e) {
         toast.error("Couldn't update profile", {
-          description: e instanceof ApiError ? e.message : "The server rejected the change.",
+          description:
+            e instanceof ApiError ? e.message : "The server rejected the change.",
         });
         setSaving(false);
         return; // keep the dialog open so nothing looks saved when it wasn't
@@ -447,12 +469,13 @@ function RichProfile({
   // Standalone upload dialog (hero dropdown) — same real flow, progress via toast.promise.
   const onUploadPhoto = (file: File) => {
     void toast.promise(
-      uploadAvatar(file).then((freshUrl) => updateUser({ avatarUrl: freshUrl ?? undefined })),
+      uploadAvatar(file).then((freshUrl) =>
+        updateUser({ avatarUrl: freshUrl ?? undefined }),
+      ),
       {
         loading: "Uploading photo…",
         success: "Profile photo updated",
-        error: (e: unknown) =>
-          friendlyError(e, "Couldn't upload the photo. Try again."),
+        error: (e: unknown) => friendlyError(e, "Couldn't upload the photo. Try again."),
       },
     );
   };
@@ -473,8 +496,7 @@ function RichProfile({
       {
         loading: "Removing photo…",
         success: "Profile photo removed",
-        error: (e: unknown) =>
-          friendlyError(e, "Couldn't remove the photo. Try again."),
+        error: (e: unknown) => friendlyError(e, "Couldn't remove the photo. Try again."),
       },
     );
   };
@@ -501,9 +523,7 @@ function RichProfile({
   ];
   const employment: DetailRow[] = [
     { icon: Hash, label: "Employee ID", value: empId },
-    ...(orgName
-      ? [{ icon: Building2, label: "Organization", value: orgName }]
-      : []),
+    ...(orgName ? [{ icon: Building2, label: "Organization", value: orgName }] : []),
     { icon: Briefcase, label: "Job title", value: dash(jobTitle) },
     { icon: Building2, label: "Department", value: dash(department) },
     { icon: UsersIcon, label: "Team", value: dash(team) },
@@ -525,9 +545,27 @@ function RichProfile({
         description="Your account, role, and personal productivity."
       />
 
+      {profileFailed ? (
+        <div
+          role="status"
+          className="border-warning/40 bg-warning/10 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-2.5 text-sm"
+        >
+          <span>
+            Your profile details couldn&apos;t be loaded, so fields below may show “—”.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setProfileAttempt((n) => n + 1)}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
       {/* Hero identity band */}
       <section
-        className="relative overflow-hidden rounded-2xl bg-feature p-6 text-feature-foreground shadow-soft animate-in fade-in slide-in-from-bottom-3 duration-500 sm:p-7"
+        className="bg-feature text-feature-foreground shadow-soft animate-in fade-in slide-in-from-bottom-3 relative overflow-hidden rounded-2xl p-6 duration-500 sm:p-7"
         style={{ animationFillMode: "backwards" }}
       >
         {/* Grid lines. The pattern is fixed rather than pickable: `BannerPatternPicker` was a
@@ -551,7 +589,12 @@ function RichProfile({
                 >
                   <Camera className="size-5 text-white drop-shadow" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent side="bottom" align="start" sideOffset={8} className="min-w-44">
+                <DropdownMenuContent
+                  side="bottom"
+                  align="start"
+                  sideOffset={8}
+                  className="min-w-44"
+                >
                   <DropdownMenuItem onClick={() => setUploadOpen(true)}>
                     <ImagePlus className="size-4" />
                     {user.avatarUrl ? "Replace photo" : "Upload photo"}
@@ -571,16 +614,18 @@ function RichProfile({
 
             <div className="min-w-0 space-y-2">
               <div>
-                <h2 className="font-display text-[1.7rem] font-semibold leading-tight tracking-tight">
+                <h2 className="font-display text-[1.7rem] leading-tight font-semibold tracking-tight">
                   {user.name}
                 </h2>
                 {subtitle ? (
-                  <p className="text-sm text-feature-foreground/80">{subtitle}</p>
+                  <p className="text-feature-foreground/80 text-sm">{subtitle}</p>
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className="border-white/20 bg-white/15 text-white">{roleName}</Badge>
-                <Badge className="border-white/20 bg-white/15 capitalize text-white">
+                <Badge className="border-white/20 bg-white/15 text-white">
+                  {roleName}
+                </Badge>
+                <Badge className="border-white/20 bg-white/15 text-white capitalize">
                   <span className="mr-1 inline-block size-1.5 rounded-full bg-white" />
                   {user.status}
                 </Badge>
@@ -592,14 +637,14 @@ function RichProfile({
               only ever read "—  no tracked time yet" — an empty statistic given hero billing, which
               reads as broken rather than inapplicable. Same rule as the attendance card below. */}
           {tracksTime ? (
-            <div className="shrink-0 rounded-xl bg-white/10 p-4 ring-1 ring-inset ring-white/15 backdrop-blur-sm sm:min-w-60">
-              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-feature-foreground/75">
+            <div className="shrink-0 rounded-xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-sm ring-inset sm:min-w-60">
+              <p className="text-feature-foreground/75 flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
                 <Clock className="size-3.5" /> Avg. hours / day
               </p>
-              <p className="mt-1 font-display text-4xl font-semibold leading-none tabular-nums">
+              <p className="font-display mt-1 text-4xl leading-none font-semibold tabular-nums">
                 {stats.avgHours ?? "—"}
               </p>
-              <p className="mt-1 text-xs text-feature-foreground/70">
+              <p className="text-feature-foreground/70 mt-1 text-xs">
                 {stats.avgHours ? "tracked, last 30 days" : "no tracked time yet"}
               </p>
             </div>
@@ -607,38 +652,37 @@ function RichProfile({
         </div>
       </section>
 
-      <div
-        className={cn(
-          "grid gap-5",
-          tracksTime && "lg:grid-cols-[1.6fr_1fr]",
-        )}
-      >
+      <div className={cn("grid gap-5", tracksTime && "lg:grid-cols-[1.6fr_1fr]")}>
         <Card
-          className="animate-in fade-in slide-in-from-bottom-3 p-6 duration-500 sm:p-7 [--card-spacing:--spacing(3)]"
-          style={{ animationDelay: "80ms", animationFillMode: "backwards" } as CSSProperties}
+          className="animate-in fade-in slide-in-from-bottom-3 p-6 duration-500 [--card-spacing:--spacing(3)] sm:p-7"
+          style={
+            { animationDelay: "80ms", animationFillMode: "backwards" } as CSSProperties
+          }
         >
           <div className="mb-5 flex items-center justify-between gap-3">
             <h3 className="font-heading text-base font-medium">Account details</h3>
             <div className="flex items-center gap-3">
-              <span className="font-mono text-xs text-muted-foreground">{empId}</span>
+              <span className="text-muted-foreground font-mono text-xs">{empId}</span>
               <Button variant="outline" size="sm" onClick={openEdit}>
                 <Pencil className="size-4" /> Edit profile
               </Button>
             </div>
           </div>
           <ManagerGroup label="Contact" rows={contact} />
-          <div className="my-5 h-px bg-border" />
+          <div className="bg-border my-5 h-px" />
           <ManagerGroup label="Employment" rows={employment} />
         </Card>
 
         {tracksTime ? (
           <Card
-            className="animate-in fade-in slide-in-from-bottom-3 flex flex-col gap-5 p-6 duration-500 sm:p-7 [--card-spacing:--spacing(3)]"
-            style={{ animationDelay: "160ms", animationFillMode: "backwards" } as CSSProperties}
+            className="animate-in fade-in slide-in-from-bottom-3 flex flex-col gap-5 p-6 duration-500 [--card-spacing:--spacing(3)] sm:p-7"
+            style={
+              { animationDelay: "160ms", animationFillMode: "backwards" } as CSSProperties
+            }
           >
             <div className="flex items-baseline justify-between">
               <h3 className="font-heading text-base font-medium">Attendance</h3>
-              <span className="text-xs text-muted-foreground">last 30 days</span>
+              <span className="text-muted-foreground text-xs">last 30 days</span>
             </div>
             {stats.attendance && stats.attendance.rate !== null ? (
               <>
@@ -670,8 +714,10 @@ function RichProfile({
                     },
                   ].map((s) => (
                     <div key={s.label} title={s.hint}>
-                      <p className={cn("text-lg font-semibold tabular-nums", s.text)}>{s.value}</p>
-                      <span className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                      <p className={cn("text-lg font-semibold tabular-nums", s.text)}>
+                        {s.value}
+                      </p>
+                      <span className="text-muted-foreground flex items-center justify-center gap-1.5 text-xs">
                         <span className={cn("size-1.5 rounded-full", s.tone)} />
                         {s.label}
                       </span>
@@ -680,12 +726,12 @@ function RichProfile({
                 </div>
               </>
             ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">
+              <p className="text-muted-foreground py-8 text-center text-sm">
                 No attendance recorded yet — days appear after the agent tracks your first
                 working day.
               </p>
             )}
-            <div className="h-px bg-border" />
+            <div className="bg-border h-px" />
             <div className="grid grid-cols-2 gap-3">
               <MiniStat
                 icon={Clock}
@@ -729,7 +775,7 @@ function RichProfile({
 
           {/* Photo */}
           <div className="flex items-center gap-4">
-            <Avatar className="size-16 ring-2 ring-border">
+            <Avatar className="ring-border size-16 ring-2">
               <AvatarImage src={previewSrc} alt="" />
               <AvatarFallback className="text-lg font-semibold">
                 {initials(form.name || user.name)}
@@ -760,18 +806,15 @@ function RichProfile({
                   </Button>
                 ) : null}
               </div>
-              <p className="text-xs text-muted-foreground">PNG, JPG or GIF, up to 10 MB.</p>
+              <p className="text-muted-foreground text-xs">
+                PNG, JPG or GIF, up to 10 MB.
+              </p>
             </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={onPickPhoto}
-            />
+            {/* No hidden file input here any more: nothing opened it, but it was still an invisible
+                tab stop that staged an un-cropped file (WP-524). The cropper above is the way in. */}
           </div>
 
-          <div className="h-px bg-border" />
+          <div className="bg-border h-px" />
 
           {/* Fields — exactly what `PATCH /v1/me/profile` accepts, all persisted server-side. */}
           <div className="grid gap-4 sm:grid-cols-2">
@@ -794,14 +837,30 @@ function RichProfile({
               />
             </DialogField>
             <DialogField label="Location">
-              <Input value={form.location} onChange={(e) => set("location")(e.target.value)} />
+              <Input
+                value={form.location}
+                onChange={(e) => set("location")(e.target.value)}
+              />
             </DialogField>
             <DialogField label="Work mode">
-              <Select value={form.workMode || undefined} onValueChange={(v) => set("workMode")(v as string)}>
+              {/* `items`, so the trigger shows "On-site" rather than the raw `on-site`; and a "Not
+                  set" option, so a work mode can be cleared ("" clears, per the PATCH contract) —
+                  once set, it couldn't be (WP-524). */}
+              <Select
+                value={form.workMode || WORK_MODE_UNSET}
+                onValueChange={(v) =>
+                  set("workMode")(v === WORK_MODE_UNSET ? "" : (v as string))
+                }
+                items={{
+                  [WORK_MODE_UNSET]: "Not set",
+                  ...Object.fromEntries(WORK_MODES.map((m) => [m.value, m.label])),
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select…" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={WORK_MODE_UNSET}>Not set</SelectItem>
                   {WORK_MODES.map((m) => (
                     <SelectItem key={m.value} value={m.value}>
                       {m.label}
@@ -813,7 +872,11 @@ function RichProfile({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
+            <Button
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              disabled={saving}
+            >
               Cancel
             </Button>
             <Button onClick={save} disabled={saving}>
@@ -832,8 +895,7 @@ function RichProfile({
         onRemove={() => setPhoto(null)}
         onApply={(file) => {
           const reader = new FileReader();
-          reader.onload = () =>
-            setPhoto({ file, preview: reader.result as string });
+          reader.onload = () => setPhoto({ file, preview: reader.result as string });
           reader.readAsDataURL(file);
         }}
       />
@@ -852,24 +914,29 @@ function RichProfile({
 function ManagerGroup({ label, rows }: { label: string; rows: DetailRow[] }) {
   return (
     <div>
-      <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+      <p className="text-muted-foreground mb-2.5 text-[11px] font-semibold tracking-[0.12em] uppercase">
         {label}
       </p>
+      {/* A `<dl>` may hold `<div>` groups whose **direct** children are `<dt>`/`<dd>`. The term and
+          value sat one `<div>` deeper beside a bare icon `<span>`, which screen readers and axe read
+          as a broken list (QA audit 2026-10-08, WP-116). The icon now lives inside the `<dt>`,
+          positioned where it always was, and is hidden from assistive tech. */}
       <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
         {rows.map((d) => (
           <div
             key={d.label}
-            className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50"
+            className="hover:bg-muted/50 relative -mx-2 min-w-0 rounded-lg py-2 pr-2 pl-14 transition-colors"
           >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
-              <d.icon className="size-4" />
-            </span>
-            <div className="min-w-0">
-              <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {d.label}
-              </dt>
-              <dd className="truncate text-sm font-medium text-foreground">{d.value}</dd>
-            </div>
+            <dt className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+              <span
+                aria-hidden="true"
+                className="bg-feature-tint text-primary absolute top-1/2 left-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-xl"
+              >
+                <d.icon className="size-4" />
+              </span>
+              {d.label}
+            </dt>
+            <dd className="text-foreground truncate text-sm font-medium">{d.value}</dd>
           </div>
         ))}
       </dl>
@@ -906,13 +973,15 @@ function MiniStat({
   hint: string;
 }) {
   return (
-    <div className="rounded-xl border bg-muted/30 p-3.5">
-      <div className="flex items-center gap-2 text-muted-foreground">
+    <div className="bg-muted/30 rounded-xl border p-3.5">
+      <div className="text-muted-foreground flex items-center gap-2">
         <Icon className="size-4" />
         <span className="truncate text-xs font-medium">{label}</span>
       </div>
-      <p className="mt-2 font-display text-2xl font-semibold tabular-nums leading-none">{value}</p>
-      <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>
+      <p className="font-display mt-2 text-2xl leading-none font-semibold tabular-nums">
+        {value}
+      </p>
+      <p className="text-muted-foreground mt-1.5 text-xs">{hint}</p>
     </div>
   );
 }

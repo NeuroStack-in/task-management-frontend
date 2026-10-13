@@ -36,7 +36,7 @@ interface OrgMetaState {
 // Module-scoped so simultaneous `load()` calls from both cards collapse into one request.
 let inflight: Promise<void> | null = null;
 
-export const useOrgMetaStore = create<OrgMetaState>((set, get) => ({
+export const useOrgMetaStore = create<OrgMetaState>((set) => ({
   view: null,
   version: undefined,
   status: "idle",
@@ -44,8 +44,15 @@ export const useOrgMetaStore = create<OrgMetaState>((set, get) => ({
 
   load: () => {
     if (inflight) return inflight;
-    // Keep "ready" (no loader flash) on a re-fetch; only the first load shows the loader.
-    set((s) => ({ status: s.view ? s.status : "loading", error: null }));
+    // Only the very first load shows the loader. A re-fetch — another card mounting, a retry — keeps
+    // whatever the page shows (data, the not-provisioned form, or the error) until the answer lands.
+    //
+    // It used to flip back to "loading" whenever `view` was null, which is also the state after a
+    // failed load. The tab swaps its cards for a spinner on "loading", so the card that asked was
+    // unmounted; it re-mounted when the answer came, asked again, and on any failed `GET /v1/org`
+    // that cycle never ended — ~450 requests a second against a stack capped at 10 concurrent
+    // Lambdas (QA audit 2026-10-08, WP-001).
+    set((s) => ({ status: s.status === "idle" ? "loading" : s.status }));
     inflight = (async () => {
       try {
         const view = await getOrg();

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { requestPasswordReset } from "@/modules/auth/services/auth.service";
+import { handOffEmail } from "@/modules/auth/email-handoff";
 import { friendlyError } from "@/lib/errors";
 
 const schema = z.object({ email: z.string().email("Enter a valid email address.") });
@@ -27,8 +28,9 @@ type FormValues = z.infer<typeof schema>;
 
 /**
  * Step 1 of the real Cognito reset flow: request a verification code by email. On success we hand
- * off to `/reset-password` (carrying the email) where the code + new password are entered — that
- * page calls `confirmPassword`. The two steps are separate routes so a refresh mid-flow is harmless.
+ * off to `/reset-password` (the email travels in `sessionStorage`) where the code + new password are
+ * entered — that page calls `confirmPassword`. The two steps are separate routes so a refresh
+ * mid-flow is harmless.
  */
 export function ForgotPasswordForm() {
   const router = useRouter();
@@ -50,7 +52,9 @@ export function ForgotPasswordForm() {
       toast.success("Check your email", {
         description: "If an account exists, we sent a reset code.",
       });
-      router.push(`/reset-password?email=${encodeURIComponent(values.email.trim().toLowerCase())}`);
+      // Not as `?email=`: an address in the URL lands in history and access logs (WP-390).
+      handOffEmail(values.email.trim().toLowerCase());
+      router.push("/reset-password");
     } catch (err) {
       toast.error("Couldn't send a reset code", {
         description: friendlyError(err, "Check the email address and try again."),
@@ -62,7 +66,11 @@ export function ForgotPasswordForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">Forgot password?</CardTitle>
+        {/* A real heading: the page's title was a styled div, so heading navigation found nothing
+            (QA audit 2026-10-08, WP-368). */}
+        <CardTitle className="text-xl">
+          <h1>Forgot password?</h1>
+        </CardTitle>
         <CardDescription>
           Enter your email and we&apos;ll send you a verification code to reset it.
         </CardDescription>

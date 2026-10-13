@@ -5,6 +5,7 @@
  * server edits the caller's own record (the `sub` from the token), never someone else's.
  */
 import { ApiError, apiFetch } from "@/lib/api";
+import { singleFlight } from "@/lib/single-flight";
 
 /**
  * Mirrors `identity::update_my_profile::dto::UpdateProfileRequest`. **Omitted fields are left
@@ -68,10 +69,13 @@ export interface ApiMyFullProfile {
   work_mode?: string;
 }
 
-/** `GET /v1/me/profile` — the caller's own stored profile. Self-service. */
-export function getMyProfile(): Promise<ApiMyFullProfile> {
-  return apiFetch<ApiMyFullProfile>("/v1/me/profile");
-}
+/**
+ * `GET /v1/me/profile` — the caller's own stored profile. Self-service. Concurrent callers share one
+ * request (four surfaces read it on a page load — WP-369); nothing is cached past it.
+ */
+export const getMyProfile: () => Promise<ApiMyFullProfile> = singleFlight(() =>
+  apiFetch<ApiMyFullProfile>("/v1/me/profile"),
+);
 
 /* ── Avatar (identity::avatar_upload) ─────────────────────────────────────────────────────────── */
 

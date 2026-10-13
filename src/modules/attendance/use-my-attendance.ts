@@ -26,6 +26,7 @@ import {
 export interface DayRecord {
   status: AttendanceStatus;
   late: boolean;
+  /** Worked hours, exactly `worked_minutes / 60` — format with `formatHours`, never round first. */
   hours: number;
   clockIn: string;
   clockOut: string;
@@ -44,6 +45,11 @@ function hhmm(ms?: number): string {
 export interface MyAttendanceRange {
   /** A day the cron has closed, or `null` for an unclosed/future/out-of-range day. */
   recordFor: (year: number, month0: number, day: number) => DayRecord | null;
+  /**
+   * The records on hand belong to the requested range. False until its first read lands — and after
+   * a range change or a failed read — so a caller can show "—" instead of zeros it doesn't have.
+   */
+  loaded: boolean;
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -51,7 +57,12 @@ export interface MyAttendanceRange {
 
 /** `from`/`to` are `YYYY-MM-DD` in the client's local calendar. */
 export function useMyAttendance(from: string, to: string): MyAttendanceRange {
-  const [byDate, setByDate] = useState<Map<string, ApiAttendanceDay>>(new Map());
+  // Kept with the range it was read for. On a month change the previous month's map used to be
+  // matched against the new grid until the new read landed (QA audit 2026-10-08, WP-483).
+  const [data, setData] = useState<{
+    key: string;
+    byDate: Map<string, ApiAttendanceDay>;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
@@ -65,7 +76,7 @@ export function useMyAttendance(from: string, to: string): MyAttendanceRange {
     getMyAttendance(from, to)
       .then((res) => {
         if (!live) return;
-        setByDate(new Map(res.days.map((d) => [d.date, d])));
+        setData({ key: `${from}|${to}`, byDate: new Map(res.days.map((d) => [d.date, d])) });
       })
       .catch((e) => {
         if (live) setError(messageOf(e));
@@ -79,14 +90,19 @@ export function useMyAttendance(from: string, to: string): MyAttendanceRange {
     };
   }, [from, to, nonce, isBackground]);
 
+  const byDate = data?.key === `${from}|${to}` ? data.byDate : null;
+
   const recordFor = useCallback(
     (y: number, m0: number, day: number): DayRecord | null => {
-      const hit = byDate.get(ymd(y, m0, day));
+      const hit = byDate?.get(ymd(y, m0, day));
       if (!hit) return null;
       return {
         status: hit.status,
         late: hit.late,
-        hours: Math.round((hit.worked_minutes / 60) * 10) / 10,
+        // Exact. It was rounded to a tenth of an hour and then printed to the second, so 407 minutes
+        // (06:47) read "06:48:00" and a month's total drifted by up to 3 minutes a day (QA audit
+        // 2026-10-08, WP-261).
+        hours: hit.worked_minutes / 60,
         // The working window — first timer start / last stop that day, enriched server-side onto the
         // attendance row. Rendered in the viewer's local time; empty when there were no sessions.
         clockIn: hhmm(hit.clock_in),
@@ -98,6 +114,7 @@ export function useMyAttendance(from: string, to: string): MyAttendanceRange {
 
   return {
     recordFor,
+    loaded: byDate !== null,
     loading,
     error,
     reload,
@@ -107,10 +124,6 @@ export function useMyAttendance(from: string, to: string): MyAttendanceRange {
 export function ymd(year: number, month0: number, day: number): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${year}-${p(month0 + 1)}-${p(day)}`;
-}
-
-export function daysInMonth(year: number, month0: number): number {
-  return new Date(year, month0 + 1, 0).getDate();
 }
 
 function messageOf(e: unknown): string {

@@ -27,15 +27,18 @@ import {
   X,
 } from "lucide-react";
 import { useDashboardStore, type DashboardWidget } from "@/stores/dashboard.store";
+import { useAuthStore } from "@/stores/auth.store";
 import { useDashboardLayoutSync } from "@/modules/dashboard/use-layout-sync";
 import {
+  holdsWidgetPermission,
+  widgetDataPermission,
   widgetFeature,
-  widgetPermission,
 } from "@/modules/dashboard/services/dashboard.service";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useIsSurfaceOn } from "@/hooks/use-features";
+import { isOwnerOf, useIsSurfaceOn } from "@/hooks/use-features";
 import { WIDGET_REGISTRY, type DashboardData } from "@/modules/dashboard/widget-registry";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -105,7 +108,11 @@ function SortableWidget({
         // `CardHeader` will therefore collide with these — and collide exactly when the person is
         // hovering, which is when both are wanted. Widget headers are title-only for that reason;
         // put a widget's own actions in its footer (see the AI summary card).
-        <div className="absolute right-3 top-3 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/widget:opacity-100">
+        //
+        // Revealed on hover — and on keyboard focus within the tile, and always on a touch screen.
+        // Hover alone left a keyboard user tabbing onto invisible buttons and a touch user with no
+        // way to reveal them at all (QA audit 2026-10-08, WP-439).
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/widget:opacity-100 group-focus-within/widget:opacity-100 pointer-coarse:opacity-100">
           <button
             type="button"
             aria-label="Drag to reorder"
@@ -126,15 +133,15 @@ function SortableWidget({
         </div>
       ) : null}
 
+      {/* The SAME element whether dragging or not — only its class changes. Swapping it for a
+          placeholder wrapper unmounted the widget when a drag started and remounted it on drop, so a
+          self-fetching widget lost its state and fetched again each time (QA audit 2026-10-08,
+          WP-201). */}
+      <div className={cn(FILL_CARD, isDragging && "invisible")}>{children}</div>
       {isDragging ? (
-        // Dashed drop-placeholder; the floating DragOverlay shows the widget.
-        <div className="relative h-full">
-          <div className={cn("invisible", FILL_CARD)}>{children}</div>
-          <div className="absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
-        </div>
-      ) : (
-        <div className={FILL_CARD}>{children}</div>
-      )}
+        // Dashed drop-placeholder over the hidden widget; the floating DragOverlay shows it moving.
+        <div className="pointer-events-none absolute inset-0 rounded-[1.4rem] border-2 border-dashed border-primary/40 bg-primary/[0.04]" />
+      ) : null}
     </div>
   );
 }
@@ -158,17 +165,22 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
 
   const { can } = usePermissions();
   const isSurfaceOn = useIsSurfaceOn();
+  const isOwner = useAuthStore(isOwnerOf);
+  const perm = useAuthStore((s) => s.user?.perm);
 
   const ordered = useMemo(
     () => [...widgets].sort((a, b) => a.position - b.position),
     [widgets],
   );
-  // A widget is *available* when the user holds its catalog permission AND the org has its feature on
-  // (and its tracking mode doesn't hide it — MANAGED-AGENT.md §8). Unavailable widgets join
-  // `blockedIds`, NOT dropped: filtering them out of the persisted layout would lose the owner's
-  // arrangement forever the moment the feature came back.
+  // A widget is *available* when the user holds its catalog permission — the server's exact bit,
+  // not the coarser frontend id (`holdsWidgetPermission`) — AND whatever its data needs beyond that
+  // (`widgetDataPermission`), AND the org has its feature on (and its tracking mode doesn't hide it
+  // — MANAGED-AGENT.md §8). Unavailable widgets join `blockedIds`, NOT dropped: filtering them out
+  // of the persisted layout would lose the owner's arrangement forever the moment the feature came
+  // back.
   const available = (w: (typeof ordered)[number]) => {
-    if (!can(widgetPermission(w.type))) return false;
+    if (!holdsWidgetPermission(w.type, { isOwner, perm }, can)) return false;
+    if (!can(widgetDataPermission(w.type))) return false;
     const feature = widgetFeature(w.type);
     return feature ? isSurfaceOn(feature) : true;
   };
@@ -289,8 +301,22 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
           </SortableContext>
           <DragOverlay>
             {activeWidget ? (
-              <div className="cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:[--card-spacing:--spacing(4)]!">
-                {WIDGET_REGISTRY[activeWidget.type]?.render(data)}
+              <div className="h-full cursor-grabbing rounded-[1.4rem] opacity-95 shadow-2xl ring-1 ring-primary/30 [&>*]:h-full [&>*]:[--card-spacing:--spacing(4)]!">
+                {WIDGET_REGISTRY[activeWidget.type]?.selfFetching ? (
+                  // A stand-in, not a second live copy: a widget that fetches its own data fetched
+                  // it again for the overlay — and the AI summary's read can start a model run
+                  // (QA audit 2026-10-08, WP-201).
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{activeWidget.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-muted-foreground text-xs">Drop it where it should go.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  WIDGET_REGISTRY[activeWidget.type]?.render(data)
+                )}
               </div>
             ) : null}
           </DragOverlay>

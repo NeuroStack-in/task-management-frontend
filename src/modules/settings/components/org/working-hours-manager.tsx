@@ -34,14 +34,15 @@ import { TimePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
 import { ApiError } from "@/lib/api";
 import { formatMinutes } from "@/lib/format";
 import { invalidateWorkingHours } from "@/hooks/use-working-hours";
 import {
-  getWorkingHours,
   updateWorkingHours,
   type OrgWorkingHours,
 } from "@/modules/settings/services/org.service";
+import { getWorkingHoursShared } from "../../lib/shared-reads";
 import { recomputeAttendance } from "@/modules/attendance/services/attendance.service";
 
 /** Local `YYYY-MM-DD` for a date `n` days before today — the recompute window is client-local. */
@@ -107,8 +108,9 @@ function messageOf(e: unknown, fallback: string): string {
 export function WorkingHoursManager() {
   const { can } = usePermissions();
   const canManage = can("settings:manage");
-  // The recompute is an attendance write (re-resolves everyone's past days), gated on its own perm.
-  const canRecompute = can("attendance:manage");
+  // The recompute is an attendance write (re-resolves everyone's past days), gated on its own perm:
+  // `AttendanceManage` (bit 36), not the team-read that `attendance:manage` stands for (WP-324).
+  const canRecompute = can("attendance:edit");
 
   const [saved, setSaved] = useState<OrgWorkingHours | null>(null);
   const [draft, setDraft] = useState<HoursDraft | null>(null);
@@ -121,7 +123,8 @@ export function WorkingHoursManager() {
     let live = true;
     setLoading(true);
     setError(null);
-    getWorkingHours()
+    // One read, shared with the Working days card that mounts beside this one (WP-539).
+    getWorkingHoursShared()
       .then((h) => {
         if (!live) return;
         setSaved(h);
@@ -146,6 +149,8 @@ export function WorkingHoursManager() {
       JSON.stringify(draft) !== JSON.stringify(draftOf(saved)),
     [draft, saved],
   );
+  // Its own Save, so its own guard: leaving with unsaved hours asks first (WP-347).
+  useUnsavedGuard(canManage && dirty);
 
   const expected = draft ? expectedMinutes(draft) : null;
   // Mirrored from the server so the reason is visible before the request, not after a 400.
@@ -316,9 +321,8 @@ export function WorkingHoursManager() {
             {invalidSpan ? (
               <p className="text-destructive flex items-start gap-2 text-sm">
                 <Clock className="mt-0.5 size-4 shrink-0" />
-                The day must end after it starts. Until this is valid, productivity is
-                measured against the default 8-hour day rather than what&apos;s entered
-                here.
+                The day must end after it starts. Until it does, this can&apos;t be saved and
+                the schedule saved before keeps applying.
               </p>
             ) : (
               <p className="text-muted-foreground flex items-start gap-2 text-xs">

@@ -3,24 +3,21 @@ import { describe, expect, it } from "vitest";
 import { CSV_TEMPLATE, parseEmployeeCsv } from "./parse-employee-csv";
 
 describe("parseEmployeeCsv", () => {
-  it("reads the documented template, which is the file people will actually start from", () => {
-    const out = parseEmployeeCsv(CSV_TEMPLATE);
+  /**
+   * WP-460 (QA audit 2026-10-08): this used to assert the template's two sample people parse as real
+   * rows — which is how they became real directory records when someone typed staff under them.
+   */
+  it("refuses the template's sample people, naming their lines", () => {
+    const out = parseEmployeeCsv(
+      `${CSV_TEMPLATE}Ada Lovelace,ada@acme.test,Engineering,,Analyst\n`,
+    );
     expect(out.fatal).toBeUndefined();
-    expect(out.errors).toEqual([]);
+    expect(out.errors).toEqual([
+      { line: 2, reason: "Example row from the template — delete it before importing" },
+      { line: 3, reason: "Example row from the template — delete it before importing" },
+    ]);
     expect(out.rows).toEqual([
-      {
-        name: "Priya Nair",
-        email: "priya.nair@example.com",
-        department: "Engineering",
-        team: "Platform",
-        title: "Backend Engineer",
-      },
-      {
-        name: "Sam Okoro",
-        email: "sam.okoro@example.com",
-        department: "Support",
-        title: "Support Specialist",
-      },
+      { name: "Ada Lovelace", email: "ada@acme.test", department: "Engineering", title: "Analyst" },
     ]);
   });
 

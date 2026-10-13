@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { LifeBuoy, Send, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -20,6 +20,7 @@ import {
   type OpsTicketRow,
   type OpsThread,
 } from "../services/ops.service";
+import { attachmentName } from "@/modules/help/services/support.service";
 
 const STATUSES: { value: OpsStatus; label: string }[] = [
   { value: "open", label: "Open" },
@@ -48,36 +49,81 @@ export function OpsSupportConsole() {
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Which list request is current. Clicking through the status tabs let a slow response land under
+   * the tab chosen after it — a slow "Open" list under "Closed" (QA audit 2026-10-08, WP-252).
+   */
+  const listSeq = useRef(0);
   const loadList = useCallback(() => {
+    const seq = ++listSeq.current;
     setListLoading(true);
     listOpsTickets(status)
-      .then((r) => setTickets(r.tickets))
-      .catch((e) => toast.error(e instanceof ApiError ? e.message : "Couldn't load the queue."))
-      .finally(() => setListLoading(false));
+      .then((r) => {
+        if (seq === listSeq.current) setTickets(r.tickets);
+      })
+      .catch((e) => {
+        if (seq === listSeq.current) {
+          toast.error(e instanceof ApiError ? e.message : "Couldn't load the queue.");
+        }
+      })
+      .finally(() => {
+        if (seq === listSeq.current) setListLoading(false);
+      });
   }, [status]);
 
   useEffect(() => {
     loadList();
+    threadSeq.current += 1; // a thread still loading belongs to the queue we just left
     setSelected(null);
     setThread(null);
   }, [loadList]);
 
+  // Which thread request is current. Loads used to land in whatever order the network chose, so a
+  // slow ticket A could overwrite a fast ticket B on screen while `selected` stayed B: the operator
+  // read org X's ticket and replied to org Y's requester (QA audit 2026-10-08, WP-067).
+  const threadSeq = useRef(0);
+
   const openThread = (row: OpsTicketRow) => {
+    const seq = ++threadSeq.current;
     setSelected(row);
     setThread(null);
     setThreadLoading(true);
     getOpsThread(row.tenant_id, row.user_id, row.ticket_id)
-      .then(setThread)
-      .catch((e) => toast.error(e instanceof ApiError ? e.message : "Couldn't load the ticket."))
-      .finally(() => setThreadLoading(false));
+      .then((t) => {
+        if (seq === threadSeq.current) setThread(t);
+      })
+      .catch((e) => {
+        if (seq === threadSeq.current) {
+          toast.error(e instanceof ApiError ? e.message : "Couldn't load the ticket.");
+        }
+      })
+      .finally(() => {
+        if (seq === threadSeq.current) setThreadLoading(false);
+      });
   };
 
+  /**
+   * The ticket a reply or status change goes to: **the one on screen**, read from the thread
+   * itself, and only when it is the selected one — never `selected` alone, which can name a ticket
+   * the operator is not looking at.
+   */
+  const target = (): OpsThread | null =>
+    thread && selected && thread.ticket_id === selected.ticket_id && thread.tenant_id === selected.tenant_id
+      ? thread
+      : null;
+
   const sendReply = async () => {
-    if (!selected || !reply.trim() || busy) return;
+    const t = target();
+    if (!t || !reply.trim() || busy) return;
+    const seq = threadSeq.current;
     setBusy(true);
     try {
-      setThread(await replyOpsTicket(selected.tenant_id, selected.user_id, selected.ticket_id, reply.trim()));
-      setReply("");
+      const next = await replyOpsTicket(t.tenant_id, t.user_id, t.ticket_id, reply.trim());
+      // The operator may have opened another ticket while this was in flight.
+      if (seq === threadSeq.current) {
+        setThread(next);
+        setReply("");
+      }
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Couldn't post the reply.");
     } finally {
@@ -86,11 +132,13 @@ export function OpsSupportConsole() {
   };
 
   const changeStatus = async (next: OpsStatus) => {
-    if (!selected || busy) return;
+    const t = target();
+    if (!t || busy) return;
+    const seq = threadSeq.current;
     setBusy(true);
     try {
-      const t = await setOpsStatus(selected.tenant_id, selected.user_id, selected.ticket_id, next);
-      setThread(t);
+      const updated = await setOpsStatus(t.tenant_id, t.user_id, t.ticket_id, next);
+      if (seq === threadSeq.current) setThread(updated);
       toast.success(`Ticket → ${next.replace("_", " ")}`);
       loadList(); // it may have left this status's queue
     } catch (e) {
@@ -199,9 +247,29 @@ export function OpsSupportConsole() {
                 ))}
               </div>
 
-              {/* Messages */}
+              {/* Messages — led by what the customer wrote when filing, which `messages` (replies
+                  only) never contained (WP-068). */}
               <div className="space-y-3 rounded-xl border border-border p-3">
-                {thread.messages.length === 0 ? (
+                {thread.description?.trim() ? (
+                  <div className="flex justify-start">
+                    <div className="bg-muted max-w-[80%] space-y-1 rounded-xl px-3 py-2 text-sm">
+                      <p className="text-[11px] font-medium opacity-70">
+                        Requester · {when(thread.created_at)}
+                      </p>
+                      <p className="whitespace-pre-wrap">{thread.description}</p>
+                      {thread.attachments.length > 0 ? (
+                        // Named, not linked: there is no operator read route for these yet. The files
+                        // also reach the support inbox with the filing email.
+                        <p className="text-muted-foreground text-xs">
+                          {thread.attachments.length} attachment
+                          {thread.attachments.length === 1 ? "" : "s"}:{" "}
+                          {thread.attachments.map(attachmentName).join(", ")}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {thread.messages.length === 0 && !thread.description?.trim() ? (
                   <p className="text-muted-foreground text-sm">No messages on this ticket.</p>
                 ) : (
                   thread.messages.map((m, i) => {

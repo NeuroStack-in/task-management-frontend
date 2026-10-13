@@ -41,12 +41,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const STRENGTH = ["Weak", "Fair", "Good", "Strong"];
-const STRENGTH_COLOR = [
-  "bg-destructive",
-  "bg-warning",
-  "bg-chart-2",
-  "bg-success",
-];
+const STRENGTH_COLOR = ["bg-destructive", "bg-warning", "bg-chart-2", "bg-success"];
 
 function scorePassword(pw: string): number {
   if (!pw) return 0;
@@ -89,12 +84,8 @@ export function RegisterForm() {
   return (
     <Card className="shadow-soft">
       <CardHeader>
-        <CardTitle className="font-heading text-2xl">
-          Create your account
-        </CardTitle>
-        <CardDescription>
-          Set up your WorkPulse workspace in minutes.
-        </CardDescription>
+        <CardTitle className="font-heading text-2xl">Create your account</CardTitle>
+        <CardDescription>Set up your WorkPulse workspace in minutes.</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
         <CardContent className="space-y-4">
@@ -105,16 +96,14 @@ export function RegisterForm() {
               <Label htmlFor="name">Full name</Label>
               <Input id="name" placeholder="Alex Morgan" {...register("name")} />
               {errors.name ? (
-                <p className="text-xs text-destructive">{errors.name.message}</p>
+                <p className="text-destructive text-xs">{errors.name.message}</p>
               ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="company">Organization</Label>
               <Input id="company" placeholder="Acme Inc." {...register("company")} />
               {errors.company ? (
-                <p className="text-xs text-destructive">
-                  {errors.company.message}
-                </p>
+                <p className="text-destructive text-xs">{errors.company.message}</p>
               ) : null}
             </div>
           </div>
@@ -129,7 +118,7 @@ export function RegisterForm() {
               {...register("email")}
             />
             {errors.email ? (
-              <p className="text-xs text-destructive">{errors.email.message}</p>
+              <p className="text-destructive text-xs">{errors.email.message}</p>
             ) : null}
           </div>
 
@@ -147,7 +136,7 @@ export function RegisterForm() {
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 transition-colors"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? (
@@ -170,15 +159,13 @@ export function RegisterForm() {
                     />
                   ))}
                 </div>
-                <span className="w-10 text-right text-[11px] text-muted-foreground">
+                <span className="text-muted-foreground w-10 text-right text-[11px]">
                   {STRENGTH[Math.max(0, score - 1)]}
                 </span>
               </div>
             ) : null}
             {errors.password ? (
-              <p className="text-xs text-destructive">
-                {errors.password.message}
-              </p>
+              <p className="text-destructive text-xs">{errors.password.message}</p>
             ) : null}
           </div>
 
@@ -196,11 +183,29 @@ export function RegisterForm() {
                 )}
               />
               <Label htmlFor="terms" className="text-sm font-normal">
-                I agree to the Terms of Service and Privacy Policy.
+                {/* Linked to the draft documents (QA audit WP-115) — this dev-only form asked agreement
+                    to texts that existed nowhere. */}
+                I agree to the{" "}
+                <Link
+                  href="/legal/terms"
+                  target="_blank"
+                  className="underline underline-offset-2"
+                >
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link
+                  href="/legal/privacy"
+                  target="_blank"
+                  className="underline underline-offset-2"
+                >
+                  Privacy Policy
+                </Link>
+                .
               </Label>
             </div>
             {errors.terms ? (
-              <p className="text-xs text-destructive">{errors.terms.message}</p>
+              <p className="text-destructive text-xs">{errors.terms.message}</p>
             ) : null}
           </div>
         </CardContent>
@@ -214,11 +219,11 @@ export function RegisterForm() {
               "Create account"
             )}
           </Button>
-          <p className="text-center text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-center text-xs">
             Already have an account?{" "}
             <Link
               href="/login"
-              className="font-medium text-primary underline-offset-2 hover:underline"
+              className="text-primary font-medium underline-offset-2 hover:underline"
             >
               Sign in
             </Link>

@@ -103,7 +103,10 @@ export function MfaForm() {
           <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-feature-tint text-primary">
             <ShieldCheck className="size-6" />
           </span>
-          <CardTitle className="text-xl">Verification expired</CardTitle>
+          {/* Real headings — these titles were styled divs (QA audit 2026-10-08, WP-368). */}
+          <CardTitle className="text-xl">
+            <h1>Verification expired</h1>
+          </CardTitle>
           <CardDescription>
             This page only works right after entering your password. Sign in
             again to get a new verification prompt.
@@ -128,7 +131,9 @@ export function MfaForm() {
         <span className="mb-1 flex size-12 items-center justify-center rounded-full bg-feature-tint text-primary">
           <ShieldCheck className="size-6" />
         </span>
-        <CardTitle className="text-xl">Multi-factor verification</CardTitle>
+        <CardTitle className="text-xl">
+          <h1>Multi-factor verification</h1>
+        </CardTitle>
         <CardDescription>
           Enter the 6-digit code from your authenticator app.
         </CardDescription>

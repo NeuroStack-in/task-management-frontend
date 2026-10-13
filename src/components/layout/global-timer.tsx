@@ -68,7 +68,14 @@ function RunningIndicator() {
     >
       <span className="size-2 shrink-0 animate-pulse rounded-full bg-success" />
       <span className="hidden max-w-[140px] truncate text-xs font-medium text-muted-foreground sm:inline">
-        {isMachine ? "Tracking" : running.task}
+        {/* `task` is null for a project-only session, which left a dot and a clock with no label
+            (QA audit 2026-10-08, WP-437) — fall back as the dashboard's timer tile does. */}
+        {isMachine
+          ? "Tracking"
+          : running.task ||
+            running.description ||
+            (running.project !== "—" ? running.project : "") ||
+            "Tracking"}
       </span>
       <span className="font-mono text-sm tabular-nums">{formatDuration(elapsedSec)}</span>
     </div>

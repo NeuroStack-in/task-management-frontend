@@ -38,6 +38,11 @@ interface Message {
   id: number;
   role: "user" | "assistant";
   text: string;
+  /**
+   * Not a turn of the conversation — the greeting, our own error sentences, and a question whose
+   * request failed — so never replayed to the model as history (QA audit 2026-10-08, WP-543).
+   */
+  local?: true;
 }
 
 const GREETING =
@@ -68,7 +73,7 @@ export function HelpAssistantDialog({
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { id: 0, role: "assistant", text: GREETING },
+    { id: 0, role: "assistant", text: GREETING, local: true },
   ]);
   const idRef = useRef(1);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -85,15 +90,16 @@ export function HelpAssistantDialog({
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || pending) return;
-    setMessages((m) => [...m, { id: idRef.current++, role: "user", text: trimmed }]);
+    const userId = idRef.current++;
+    setMessages((m) => [...m, { id: userId, role: "user", text: trimmed }]);
     setInput("");
     setPending(true);
     try {
-      // `history` is the state *before* this turn — it is the conversation, not the message.
-      // No `page`: see the module note. `"help"` is the surface request.
+      // `history` is the state *before* this turn — it is the conversation, not the message, and
+      // only its real turns. No `page`: see the module note. `"help"` is the surface request.
       const answer = await sendAssistantMessage(
         trimmed,
-        messages.map((m) => ({ role: m.role, content: m.text })),
+        messages.filter((m) => !m.local).map((m) => ({ role: m.role, content: m.text })),
         undefined,
         "help",
       );
@@ -109,7 +115,10 @@ export function HelpAssistantDialog({
         e instanceof ApiError && e.status === 403
           ? "You don't have access to the assistant."
           : "Sorry — I couldn't reach the assistant just now. Please try again.";
-      setMessages((m) => [...m, { id: idRef.current++, role: "assistant", text }]);
+      setMessages((m) => [
+        ...m.map((x) => (x.id === userId ? { ...x, local: true as const } : x)),
+        { id: idRef.current++, role: "assistant", text, local: true },
+      ]);
     } finally {
       setPending(false);
     }
@@ -131,7 +140,7 @@ export function HelpAssistantDialog({
 
   const clearChat = () => {
     if (pending) return;
-    setMessages([{ id: idRef.current++, role: "assistant", text: GREETING }]);
+    setMessages([{ id: idRef.current++, role: "assistant", text: GREETING, local: true }]);
     setInput("");
   };
 

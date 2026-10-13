@@ -4,6 +4,7 @@ export type * from "./user";
 export type NotificationType =
   | "task"
   | "approval"
+  | "security"
   | "productivity"
   | "billing"
   | "system";

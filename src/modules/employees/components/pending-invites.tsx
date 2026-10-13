@@ -44,12 +44,21 @@ import {
   type ApiInvite,
 } from "../services/employees.service";
 
+/**
+ * The most invites `GET /v1/employees/invites` returns (`list_invites::data`): one page, the
+ * **oldest** first-created, with no cursor. At this size the list may be missing the newest ones.
+ */
+const SERVER_LIST_CAP = 500;
+
 /** `pending` past its expiry is expired — the server expires lazily, so status alone under-reports. */
-type Derived = "pending" | "expired" | "revoked" | "accepted";
+type Derived = "pending" | "locked" | "expired" | "revoked" | "accepted";
 
 function derive(invite: ApiInvite, nowSecs: number): Derived {
   if (invite.status === "revoked") return "revoked";
   if (invite.status === "accepted") return "accepted";
+  // Five wrong codes lock an invite. It used to read "Awaiting acceptance" here while the server
+  // refused both Resend and Revoke on it; both now work on a locked invite (WP-048).
+  if (invite.status === "locked") return "locked";
   return invite.expires_at > 0 && invite.expires_at < nowSecs ? "expired" : "pending";
 }
 
@@ -58,6 +67,7 @@ const STATUS_META: Record<
   { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
 > = {
   pending: { label: "Awaiting acceptance", variant: "default" },
+  locked: { label: "Locked — too many wrong codes", variant: "destructive" },
   expired: { label: "Expired", variant: "outline" },
   revoked: { label: "Revoked", variant: "destructive" },
   accepted: { label: "Joined", variant: "secondary" },
@@ -156,7 +166,9 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
     roles.find((r) => r.id === id)?.name ?? (id ? UNKNOWN_ROLE : "");
   const deptName = (id: string) =>
     departments.find((d) => d.id === id)?.name ?? (id ? UNKNOWN_DEPARTMENT : "");
-  const outstanding = rows.filter((r) => r.state === "pending" || r.state === "expired").length;
+  const outstanding = rows.filter(
+    (r) => r.state === "pending" || r.state === "expired" || r.state === "locked",
+  ).length;
 
   return (
     <Card>
@@ -171,6 +183,15 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
               ? `${outstanding} ${outstanding === 1 ? "person hasn't" : "people haven't"} joined yet.`
               : "Everyone invited has joined."}
           </p>
+          {/* At the server's cap the newest invites can be the ones left out — a second import of
+              a large file lands exactly there — so the counts above are not the whole story
+              (QA audit 2026-10-08, WP-219). */}
+          {(invites?.length ?? 0) >= SERVER_LIST_CAP ? (
+            <p className="text-xs text-warning">
+              This list shows at most {SERVER_LIST_CAP} invites, oldest first-created, so the most
+              recent ones may be missing here. They still work: anyone holding one can still join.
+            </p>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="p-0">
@@ -190,9 +211,9 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
             <TableBody>
               {rows.map(({ invite, state }) => {
                 const meta = STATUS_META[state];
-                // Only an outstanding invite can be acted on — the server guards on `pending`, so
-                // offering Resend on a revoked row would just surface a 409.
-                const actionable = state === "pending" || state === "expired";
+                // Only an outstanding invite can be acted on — the server guards on `pending` or
+                // `locked` (Resend unlocks it), so offering Resend on a revoked row would just 409.
+                const actionable = state === "pending" || state === "expired" || state === "locked";
                 return (
                   <TableRow key={invite.invite_id}>
                     <TableCell className="font-medium">{invite.email}</TableCell>

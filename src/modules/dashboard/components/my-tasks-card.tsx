@@ -16,9 +16,10 @@
  * `useMyWork`, so both callers inherit it.
  */
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, ListChecks } from "lucide-react";
+import { ArrowRight, CheckCircle2, ListChecks, TriangleAlert } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { TASK_STATUS_META, type TaskStatus } from "@/modules/projects/types";
 import { cn } from "@/lib/utils";
 import { useMyWork, type MyTask } from "../use-my-work";
@@ -73,9 +74,17 @@ function dueUrgency(iso: string | null): "overdue" | "soon" | null {
 export function MyTasksCard({
   tasks,
   className,
+  error = null,
+  onRetry,
 }: {
   tasks: MyTask[];
   className?: string;
+  /**
+   * The task list could not be read. With no tasks on screen that is "we don't know", never "you're
+   * all caught up" — the card said the latter over a failed read (QA audit 2026-10-08, WP-198).
+   */
+  error?: string | null;
+  onRetry?: () => void;
 }) {
   return (
     <Card
@@ -91,7 +100,18 @@ export function MyTasksCard({
           View all <ArrowRight className="size-3.5" />
         </Link>
       </div>
-      {tasks.length === 0 ? (
+      {tasks.length === 0 && error ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center">
+          <TriangleAlert className="text-warning size-6" />
+          <p className="text-sm font-medium">Couldn&apos;t load your tasks</p>
+          <p className="text-muted-foreground text-xs">{error}</p>
+          {onRetry ? (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      ) : tasks.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 py-10 text-center">
           <CheckCircle2 className="text-success/70 size-6" />
           <p className="text-sm font-medium">You&apos;re all caught up</p>
@@ -200,6 +220,8 @@ export function MyTasksCard({
  * already makes.
  */
 export function MyTasksCardSelf({ className }: { className?: string }) {
-  const { openTasks } = useMyWork();
-  return <MyTasksCard tasks={openTasks} className={className} />;
+  const { openTasks, error, reload } = useMyWork();
+  return (
+    <MyTasksCard tasks={openTasks} className={className} error={error} onRetry={reload} />
+  );
 }

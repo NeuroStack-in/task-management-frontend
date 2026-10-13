@@ -21,12 +21,36 @@ const EDGE = 8;
  *   click inside the calendar would look "outside" and close it before the date registered.
  * - **Fixed coordinates go stale.** They're viewport-relative, so any scroll or resize while open
  *   would leave the panel behind. Both recompute the anchor.
+ * - **The keyboard has to be carried across.** A panel at the end of `<body>` is nowhere near the
+ *   trigger in tab order — inside a modal dialog Tab never reached it — and a plain `document`
+ *   Escape listener fired alongside the dialog's own, so dismissing the calendar closed the whole
+ *   dialog (QA audit 2026-10-08, WP-363). So focus moves into the panel when it opens (onto its
+ *   `[data-autofocus]` element, else the first control), Tab cycles inside it, Escape closes only
+ *   the popup — intercepted in the capture phase, before any dialog sees it — and focus returns to
+ *   the trigger when it closes.
  */
+/** Tab stops only — a roving `tabindex="-1"` cell (the calendar's other days) is not one. */
+const FOCUSABLE = [
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[href]",
+  "[tabindex]",
+]
+  .map((s) => `${s}:not([tabindex="-1"])`)
+  .join(", ");
+
+function focusablesIn(root: HTMLElement | null): HTMLElement[] {
+  return root ? Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)) : [];
+}
+
 export function useAnchoredPopup(width: number, height: number) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(false);
 
   const place = useCallback(() => {
     const el = triggerRef.current;
@@ -52,20 +76,68 @@ export function useAnchoredPopup(width: number, height: number) {
       if (triggerRef.current?.contains(t) || panelRef.current?.contains(t)) return;
       setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    // Capture phase on `window`, so this runs before any dialog's `document` listener — and stopping
+    // the event here means the dialog never sees an Escape that was meant for the popup on top of it.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (e.key === "Tab" && panelRef.current?.contains(document.activeElement)) {
+        const items = focusablesIn(panelRef.current);
+        if (!items.length) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
     // `true` (capture) so a scroll inside the dialog body reaches this — scroll does not bubble.
     const onMove = () => place();
     document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onMove, true);
     window.addEventListener("resize", onMove);
     return () => {
       document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("scroll", onMove, true);
       window.removeEventListener("resize", onMove);
     };
   }, [open, place]);
+
+  // Into the panel once it has mounted (it renders only when `pos` is set).
+  useEffect(() => {
+    if (!open || !pos) return;
+    const frame = requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel || panel.contains(document.activeElement)) return;
+      (panel.querySelector<HTMLElement>("[data-autofocus]") ?? focusablesIn(panel)[0])?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, pos]);
+
+  // Back to the trigger on close — when focus was in the panel that just unmounted (it lands on
+  // <body>), not when the user clicked into something else on purpose.
+  useEffect(() => {
+    if (open) {
+      wasOpen.current = true;
+      return;
+    }
+    if (!wasOpen.current) return;
+    wasOpen.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body || panelRef.current?.contains(active)) {
+      triggerRef.current?.querySelector<HTMLElement>("button")?.focus();
+    }
+  }, [open]);
 
   const toggle = () => {
     if (!open) place();

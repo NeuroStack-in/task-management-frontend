@@ -4,8 +4,8 @@
  * The employee directory, from the real backend.
  *
  * Maps the lean directory rows into the view's `EmployeeRow`, filling in department **names** from
- * the departments endpoint. Fields the directory genuinely doesn't serve degrade honestly rather
- * than being invented: email/role/team are blank, because they live on the full profile.
+ * the departments endpoint and role names from the roles catalog. Email and team are not on the
+ * directory list (they live on the full profile), so the rows don't pretend to carry them.
  *
  * **Productivity is joined in from `insights`, not left null.** The directory list is
  * GSI-projected and carries no score, so this hook used to hardcode `productivityScore: null` with
@@ -15,7 +15,7 @@
  * it. `GET /v1/insights/activity` serves exactly these numbers and the dashboard already consumes
  * it; this joins the same source by `user_id`.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { mapWithConcurrency } from "@/lib/concurrency";
@@ -25,13 +25,11 @@ import {
   SCORE_WINDOW_DAYS,
 } from "@/modules/insights/services/insights.service";
 import {
-  listAllEmployees,
-  departmentMap,
-  deactivateEmployee,
-  reactivateEmployee,
+  readRoster,
   setEmployeeBenched,
-  getEmployeeAvatarUrls,
+  UNASSIGNED_DEPT,
 } from "./services/employees.service";
+import { listRoles } from "@/modules/roles/services/roles.service";
 
 /** Small cap: a per-day fan-out is exactly the burst that trips the Lambda's 503 throttle. */
 const SCORE_FANOUT = 3;
@@ -52,17 +50,24 @@ function recentDays(): string[] {
 /**
  * `user_id → mean score` over the window, counting only days the person actually scored.
  *
- * Entirely best-effort. Reading activity needs a higher permission than viewing the directory, so a
- * 403 (or any failure) must leave the roster rendering with "—" rather than break the page — the
- * directory is the point of this screen, the score is an enrichment.
+ * Best-effort: a failed day must leave the roster rendering rather than break the page — the
+ * directory is the point of this screen, the score is an enrichment. But a failure is reported
+ * (`failed`), not passed off as a quiet month: "no agent activity in the last 30 days" used to be
+ * what a network blip read as (QA audit 2026-10-08, WP-229).
  */
 async function scoresByUser(): Promise<{
   scores: Map<string, number>;
   /** True if ANY person reported activity in the window, scored or not. */
   anyReported: boolean;
+  /** Some day's read failed, so the scores may be partial or missing. */
+  failed: boolean;
 }> {
+  let failed = false;
   const days = await mapWithConcurrency(recentDays(), SCORE_FANOUT, (date) =>
-    getOrgActivity(date).catch(() => null),
+    getOrgActivity(date).catch(() => {
+      failed = true;
+      return null;
+    }),
   );
   const sum = new Map<string, { total: number; days: number }>();
   let anyReported = false;
@@ -85,22 +90,30 @@ async function scoresByUser(): Promise<{
       [...sum.entries()].map(([id, a]) => [id, Math.round(a.total / a.days)]),
     ),
     anyReported,
+    failed,
   };
 }
 
-/** The row shape the view renders. `productivityScore: null` = no scored day in the window. */
+/**
+ * The row shape the view renders. `productivityScore: null` = no score (see `scoreStatus` for why).
+ *
+ * No `email` or `team`: the directory list carries neither, and the rows used to hold them as `""`,
+ * which the search box, the CSV export and a Status filter value all promised as data (QA audit
+ * 2026-10-08, WP-456). No `avatarUrl` either: the roster's photos come from the shared avatar store
+ * via `<UserAvatar>`, which batches every row, not just the first 50, and refreshes expired URLs
+ * (WP-231).
+ */
 export interface EmployeeRow {
   id: string;
   /** Human-facing employee id (e.g. `EMP-0001`); `null` for legacy rows that predate ids. */
   empId: string | null;
   name: string;
-  email: string;
-  avatarUrl?: string;
   roleName: string;
   jobTitle: string;
+  /** Department name; `""` for someone with no department (the server's `unassigned`). */
   department: string;
-  team: string;
-  status: "active" | "deactivated" | "invited" | "suspended";
+  /** The directory emits only these two (`mapStatus`). */
+  status: "active" | "deactivated";
   /**
    * This person has **no login** — a monitored employee (MANAGED-AGENT.md §6.4), recorded by a
    * managed agent rather than by signing in. Distinct from "invited, hasn't accepted yet", which
@@ -116,11 +129,26 @@ export interface EmployeesData {
   employees: EmployeeRow[];
   loading: boolean;
   error: string | null;
+  /**
+   * Part of the org couldn't be read (a department, or the department list), so the list — and
+   * every total drawn from it — is short. Said on screen rather than shown as the whole org (WP-230).
+   */
+  incomplete: boolean;
+  /**
+   * How many departments the org has, from the departments read — not a count of the distinct
+   * labels on people, which counted "no department" as one and missed empty ones (WP-111). `null`
+   * when that read failed.
+   */
+  departmentCount: number | null;
   reload: () => void;
-  deactivate: (id: string) => Promise<void>;
-  reactivate: (id: string) => Promise<void>;
   /** Put an employee on / take them off the bench. Optimistic — the row flips immediately. */
   bench: (id: string, benched: boolean) => Promise<void>;
+  /**
+   * Where the productivity scores stand: `off` — not asked for (the caller may not read org
+   * activity, or doesn't show scores); `loading`; `ready`; `failed` — some reads failed, so a "—"
+   * may be a gap in the data we have rather than a quiet month.
+   */
+  scoreStatus: "off" | "loading" | "ready" | "failed";
   /**
    * Did ANY agent report activity in the 30-day window, scored or not?
    *
@@ -140,16 +168,30 @@ export interface EmployeesData {
  * they looked like the same thing because we called them the same thing.
  */
 function mapStatus(s: string): EmployeeRow["status"] {
-  if (s === "active") return "active";
   if (s === "deactivated") return "deactivated";
   return "active";
 }
 
-export function useEmployees(): EmployeesData {
-  const [employees, setEmployees] = useState<EmployeeRow[]>([]);
-  // Whether ANY agent reported activity in the window, scored or not — the difference
-  // between "nobody is running the agent" and "everyone is, below the scoring floor".
-  const [anyAgentReported, setAnyAgentReported] = useState(false);
+/**
+ * The org's roster, with productivity scores joined in when `withScores` is set.
+ *
+ * `withScores` is the caller's to decide — the Employees page passes whether the viewer may read org
+ * activity. The scores are 30 org-wide reads (one per day), and they used to run for every caller on
+ * every load and every `reload()`: 30 guaranteed 403s for a directory-only viewer, 30 more after each
+ * "Add employee", and 30 on Settings → Ownership, which only needs names (QA audit 2026-10-08,
+ * WP-453). Now they run once per mount, only when asked for, and a roster reload keeps them.
+ */
+export function useEmployees({ withScores = false }: { withScores?: boolean } = {}): EmployeesData {
+  const [rows, setRows] = useState<EmployeeRow[]>([]);
+  const [incomplete, setIncomplete] = useState(false);
+  const [departmentCount, setDepartmentCount] = useState<number | null>(null);
+  const [scores, setScores] = useState<{
+    status: EmployeesData["scoreStatus"];
+    byUser: Map<string, number>;
+    // Whether ANY agent reported activity in the window, scored or not — the difference
+    // between "nobody is running the agent" and "everyone is, below the scoring floor".
+    anyReported: boolean;
+  }>(() => ({ status: withScores ? "loading" : "off", byUser: new Map(), anyReported: false }));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -164,67 +206,44 @@ export function useEmployees(): EmployeesData {
 
     (async () => {
       try {
-        // `listAllEmployees` pages every department; the bare directory call truncates at 50 with
-        // no cursor to follow, which would silently cap this page (and its "Total employees").
-        const [roster, depts] = await Promise.all([
-          listAllEmployees(),
-          departmentMap().catch(() => new Map<string, string>()),
+        // `readRoster` pages every department; the bare directory call truncates at 50 with no
+        // cursor to follow, which would silently cap this page (and its "Total employees").
+        const [roster, serverRoles] = await Promise.all([
+          readRoster(),
+          // The org's real roles, custom ones included. The local roles store is a leftover nothing
+          // populates, so every custom-role member had a blank Role cell (QA audit WP-227). A
+          // reader without roles access falls back to the built-in names.
+          listRoles().catch(() => []),
         ]);
         if (!live) return;
-        // role_id → display name (system + custom roles); blank if the id is unknown.
+        const depts = new Map((roster.departments ?? []).map((d) => [d.id, d.name]));
+        // role_id → display name; the server's catalog first, the built-in names as a fallback.
         const roleNames = new Map(getAllRoles().map((r) => [r.id, r.name]));
-        const rows: EmployeeRow[] = roster.map((e) => ({
-          id: e.user_id,
-          empId: e.emp_id ?? null,
-          name: e.name,
-          email: "", // not on the directory list — lives on the full profile
-          roleName: e.role_id ? (roleNames.get(e.role_id) ?? "") : "",
-          jobTitle: e.title ?? "",
-          department: depts.get(e.department_id) ?? (e.department_id ? UNKNOWN_DEPARTMENT : ""),
-          team: "",
-          status: mapStatus(e.status),
-          // Absent on every row that predates the field, so this reads false for existing orgs.
-          monitored: e.login === "none",
-          benched: e.benched ?? false,
-          // Filled by the score pass below; `null` — rendered "—" — means no agent reported for
-          // them in the window, which is a real gap, not a zero.
-          productivityScore: null,
-        }));
-
-        // **The roster renders before the scores arrive.** The window is 30 days (§3.1) and the
-        // activity endpoint is per-day, so this is 30 requests; blocking the directory on them
-        // would trade a working page for a spinner. The names, roles and departments are the point
-        // of this screen — the score is an enrichment, and it fills in a moment later.
-        setEmployees(rows);
-        setLoading(false);
-
-        // Photos, in ONE request for the whole roster — same reasoning as the scores below: the
-        // directory is the point of this screen and must not wait on an enrichment. Absent ids
-        // simply keep their initials, which is the correct state for someone with no photo.
-        getEmployeeAvatarUrls(rows.map((r) => r.id))
-          .then((urls) => {
-            if (!live || Object.keys(urls).length === 0) return;
-            setEmployees((prev) =>
-              prev.map((r) => (urls[r.id] ? { ...r, avatarUrl: urls[r.id] } : r)),
-            );
-          })
-          .catch(() => {
-            /* decorative — initials are a correct fallback */
-          });
-
-        const { scores, anyReported } = await scoresByUser().catch(() => ({
-          scores: new Map<string, number>(),
-          anyReported: false,
-        }));
-        if (!live) return;
-        // `anyReported` is recorded even when nothing scored — that is precisely the case the
-        // roster used to describe as "no agent activity in the last 30 days" while agents were
-        // reporting daily.
-        setAnyAgentReported(anyReported);
-        if (scores.size === 0) return;
-        setEmployees((prev) =>
-          prev.map((r) => ({ ...r, productivityScore: scores.get(r.id) ?? null })),
+        for (const r of serverRoles) roleNames.set(r.id, r.name);
+        setRows(
+          roster.employees.map((e) => ({
+            id: e.user_id,
+            empId: e.emp_id ?? null,
+            name: e.name,
+            roleName: e.role_id ? (roleNames.get(e.role_id) ?? "") : "",
+            jobTitle: e.title ?? "",
+            // `unassigned` is the server's word for "no department", not a department id. It used
+            // to miss the name table and read "Unknown department" — the label for a deleted one —
+            // and then count as a department of its own (QA audit 2026-10-08, WP-111).
+            department:
+              !e.department_id || e.department_id === UNASSIGNED_DEPT
+                ? ""
+                : (depts.get(e.department_id) ?? UNKNOWN_DEPARTMENT),
+            status: mapStatus(e.status),
+            // Absent on every row that predates the field, so this reads false for existing orgs.
+            monitored: e.login === "none",
+            benched: e.benched ?? false,
+            // Joined from `scores` below; `null` — rendered "—" — until there is one.
+            productivityScore: null,
+          })),
         );
+        setIncomplete(roster.incomplete);
+        setDepartmentCount(roster.departments ? roster.departments.length : null);
       } catch (e) {
         if (live) setError(messageOf(e));
       } finally {
@@ -237,35 +256,62 @@ export function useEmployees(): EmployeesData {
     };
   }, [nonce, getAllRoles]);
 
-  const deactivate = useCallback(
-    async (id: string) => {
-      await deactivateEmployee(id);
-      reload();
-    },
-    [reload],
-  );
+  // **The roster renders before the scores arrive**, and doesn't wait on them: the window is 30 days
+  // (§3.1) and the endpoint is per-day, so this is 30 requests. The names, roles and departments are
+  // the point of this screen — the score is an enrichment that fills in a moment later.
+  useEffect(() => {
+    if (!withScores) {
+      setScores({ status: "off", byUser: new Map(), anyReported: false });
+      return;
+    }
+    let live = true;
+    setScores((s) => ({ ...s, status: "loading" }));
+    scoresByUser()
+      .then(({ scores: byUser, anyReported, failed }) => {
+        // `anyReported` is recorded even when nothing scored — that is precisely the case the
+        // roster used to describe as "no agent activity in the last 30 days" while agents were
+        // reporting daily.
+        if (live) setScores({ status: failed ? "failed" : "ready", byUser, anyReported });
+      })
+      .catch(() => {
+        if (live) setScores({ status: "failed", byUser: new Map(), anyReported: false });
+      });
+    return () => {
+      live = false;
+    };
+  }, [withScores]);
 
-  const reactivate = useCallback(
-    async (id: string) => {
-      await reactivateEmployee(id);
-      reload();
-    },
-    [reload],
+  const employees = useMemo(
+    () =>
+      scores.byUser.size === 0
+        ? rows
+        : rows.map((r) => ({ ...r, productivityScore: scores.byUser.get(r.id) ?? null })),
+    [rows, scores.byUser],
   );
 
   // Optimistic: flip the row's `benched` immediately (a full directory refetch for a toggle is
   // overkill), and revert if the server rejects it.
   const bench = useCallback(async (id: string, benched: boolean) => {
-    setEmployees((prev) => prev.map((r) => (r.id === id ? { ...r, benched } : r)));
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, benched } : r)));
     try {
       await setEmployeeBenched(id, benched);
     } catch (e) {
-      setEmployees((prev) => prev.map((r) => (r.id === id ? { ...r, benched: !benched } : r)));
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, benched: !benched } : r)));
       throw e;
     }
   }, []);
 
-  return { employees, loading, error, reload, deactivate, reactivate, bench, anyAgentReported };
+  return {
+    employees,
+    loading,
+    error,
+    incomplete,
+    departmentCount,
+    reload,
+    bench,
+    scoreStatus: scores.status,
+    anyAgentReported: scores.anyReported,
+  };
 }
 
 function messageOf(e: unknown): string {

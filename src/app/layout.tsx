@@ -16,6 +16,12 @@ import { AppProviders } from "@/providers/app-providers";
 // All selectable type families are loaded under neutral CSS variables; the
 // active pairing is chosen at runtime via `data-font` on <html> (globals.css),
 // switched from Settings → Appearance. IBM Plex is the default.
+//
+// Only the default pairing (IBM Plex) and the marketing display face (Fraunces) are *preloaded*.
+// Every family used to be, so every route — the public pages included — fetched nine families
+// up front while one pairing was on screen, competing with the hero for bandwidth (QA audit
+// 2026-10-08, WP-544). The others carry `preload: false`: their @font-face is still declared, and
+// the browser fetches one the moment someone's chosen pairing uses it.
 const ibmPlexSans = IBM_Plex_Sans({
   variable: "--font-ibm-plex-sans",
   subsets: ["latin"],
@@ -28,23 +34,36 @@ const ibmPlexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
   display: "swap",
 });
-const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+});
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
   display: "swap",
+  preload: false,
 });
-const geist = Geist({ variable: "--font-geist", subsets: ["latin"], display: "swap" });
+const geist = Geist({ variable: "--font-geist", subsets: ["latin"], display: "swap", preload: false });
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
   display: "swap",
+  preload: false,
 });
-const manrope = Manrope({ variable: "--font-manrope", subsets: ["latin"], display: "swap" });
+const manrope = Manrope({
+  variable: "--font-manrope",
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+});
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
   subsets: ["latin"],
   display: "swap",
+  preload: false,
 });
 // Editorial serif — the homepage's display face. Loaded here so the whole marketing
 // surface (pricing, product, auth) can share it via `.m-root`, matching the landing.

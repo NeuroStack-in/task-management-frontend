@@ -43,6 +43,18 @@ describe("navItemForPath", () => {
     expect(navItemForPath(base)).not.toBeNull();
   });
 
+  /** WP-328: a `#section` entry strips to its page's path; the page itself must win the tie. */
+  it("prefers the page over a #section of it", () => {
+    expect(navItemForPath("/settings/security")?.href).toBe("/settings/security");
+    expect(navItemForPath("/settings/ownership")?.label).toBe("Ownership & deletion");
+  });
+
+  /** WP-509: search de-duplicates by href, so a second entry for the same href is never reachable. */
+  it("declares every href once", () => {
+    const hrefs = ALL_NAV_ITEMS.map((i) => i.href);
+    expect(hrefs.filter((h, i) => hrefs.indexOf(h) !== i)).toEqual([]);
+  });
+
   it("returns null for a route that is not in the navigation", () => {
     expect(navItemForPath("/definitely-not-a-page")).toBeNull();
   });

@@ -2,12 +2,13 @@
  * Employees — the real backend (`workforce` context, LLD §6).
  *
  * The directory list is deliberately lean (GSI-projected): `{user_id, name, title?, status,
- * department_id}`. It does **not** carry email, avatar, role, team, or a productivity score:
- *   - email/role/team live on the full profile (`GET /v1/employees/{id}`), not the list;
- *   - **productivityScore needs `insights`, which needs the desktop agent's activity data** — not
- *     flowing yet. So the roster is real; the monitoring numbers degrade honestly to "unavailable".
+ * department_id}` plus a few enrichments (`role_id`, `emp_id`, `login`, `benched`, `joined_at`). It
+ * does **not** carry email, avatar, team, or a productivity score:
+ *   - email/team live on the full profile (`GET /v1/employees/{id}`), not the list;
+ *   - the productivity score comes from `insights` (`GET /v1/insights/activity`), joined in by the
+ *     directory hook for viewers who may read activity.
  */
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
 /** Mirrors `workforce::directory_list::dto::EmployeeRow`. */
@@ -84,9 +85,10 @@ const MAX_DIR_PAGES = 50;
 /**
  * The Directory GSI's bucket for employees with no department (`UNASSIGNED_DEPT` in
  * `wp_platform::keys`). It is a real partition, so it must be walked like any other department or
- * those people vanish from every total.
+ * those people vanish from every total — and it is what the directory reports as `department_id`
+ * for someone with no department: a sentinel to read as "none", never as a department id.
  */
-const UNASSIGNED_DEPT = "unassigned";
+export const UNASSIGNED_DEPT = "unassigned";
 
 /** Page one department to exhaustion. */
 async function listDepartmentEmployees(dept: string): Promise<ApiEmployee[]> {
@@ -114,28 +116,62 @@ async function listDepartmentEmployees(dept: string): Promise<ApiEmployee[]> {
  * concurrency — the standing hazard here is that unbounded per-item bursts trip the Lambda's
  * 503/429 throttle. Departments are few; this stays well inside that budget.
  *
- * Falls back to a single fan-out page if `GET /v1/departments` is unavailable (a 403 for a role
- * without `employees:view` on departments) — degraded and capped, but never empty.
+ * Falls back to a single fan-out page if `GET /v1/departments` fails, and skips a department whose
+ * read fails — degraded rather than empty, for the many screens that use the roster only to label
+ * rows. A screen that states a headcount should use {@link readRoster}, which says when that happened.
  */
 export async function listAllEmployees(): Promise<ApiEmployee[]> {
-  let deptIds: string[];
+  return (await readRoster()).employees;
+}
+
+/** {@link listAllEmployees}, saying whether any of it went unread. */
+export interface RosterRead {
+  employees: ApiEmployee[];
+  /** The departments read on the way (`null` if that read failed) — saves the caller a second one. */
+  departments: ApiDepartment[] | null;
+  /**
+   * Part of the org could not be read — a department partition failed after its retries, or the
+   * department list did and the roster fell back to one capped page — so `employees` is short.
+   */
+  incomplete: boolean;
+}
+
+/**
+ * The roster walk, reporting its gaps. The directory used to get a short — or empty — roster with no
+ * sign anything was missing: "Total employees 0" and "No employees match" over an outage (QA audit
+ * 2026-10-08, WP-230).
+ */
+export async function readRoster(): Promise<RosterRead> {
+  let departments: ApiDepartment[];
   try {
-    deptIds = (await listDepartments()).map((d) => d.id);
+    departments = await listDepartments();
   } catch {
-    return listEmployees({ limit: DIR_PAGE });
+    return {
+      employees: await listEmployees({ limit: DIR_PAGE }),
+      departments: null,
+      incomplete: true,
+    };
   }
 
-  const partitions = [...deptIds, UNASSIGNED_DEPT];
+  let incomplete = false;
+  const partitions = [...departments.map((d) => d.id), UNASSIGNED_DEPT];
   const pages = await mapWithConcurrency(partitions, 4, (dept) =>
-    // One unreadable partition must not empty the roster.
-    listDepartmentEmployees(dept).catch(() => [] as ApiEmployee[]),
+    // One unreadable partition must not empty the roster — but it is recorded.
+    listDepartmentEmployees(dept).catch(() => {
+      incomplete = true;
+      return [] as ApiEmployee[];
+    }),
   );
 
   // A user could in principle appear under two partitions (a department change mid-read); dedupe by
   // id so a total is never double-counted.
   const byId = new Map<string, ApiEmployee>();
   for (const row of pages.flat()) byId.set(row.user_id, row);
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    employees: [...byId.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    departments,
+    incomplete,
+  };
 }
 
 /**
@@ -171,7 +207,7 @@ export async function departmentMap(): Promise<Map<string, string>> {
   return new Map(depts.map((d) => [d.id, d.name]));
 }
 
-/** `POST /v1/departments` — create a department. Needs `settings:manage` (backend `OrgManage`). */
+/** `POST /v1/departments` — create a department. Needs `departments:manage` (backend `OrgManage`). */
 export function createDepartment(name: string): Promise<ApiDepartment> {
   return apiFetch<ApiDepartment>("/v1/departments", {
     method: "POST",
@@ -179,7 +215,7 @@ export function createDepartment(name: string): Promise<ApiDepartment> {
   });
 }
 
-/** `PATCH /v1/departments/{id}` — rename a department. Needs `settings:manage`. */
+/** `PATCH /v1/departments/{id}` — rename a department. Needs `departments:manage`. */
 export function updateDepartment(id: string, name: string): Promise<ApiDepartment> {
   return apiFetch<ApiDepartment>(`/v1/departments/${encodeURIComponent(id)}`, {
     method: "PATCH",
@@ -187,7 +223,7 @@ export function updateDepartment(id: string, name: string): Promise<ApiDepartmen
   });
 }
 
-/** `DELETE /v1/departments/{id}`. Needs `settings:manage`. */
+/** `DELETE /v1/departments/{id}`. Needs `departments:manage`. */
 export async function deleteDepartment(id: string): Promise<void> {
   await apiFetch(`/v1/departments/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
@@ -206,6 +242,8 @@ export interface ApiEmployeeProfile {
   role_id?: string;
   /** `active` | `deactivated`. */
   status: string;
+  /** Excluded from tracking and attendance (still signs in). Absent on older servers. */
+  benched?: boolean;
   /** Epoch **ms**. */
   joined_at?: number;
 }
@@ -250,7 +288,11 @@ export async function teamMap(): Promise<Map<string, string>> {
   return new Map(teams.map((t) => [t.id, t.name]));
 }
 
-/** `POST /v1/teams` — create a team. Needs `settings:manage` (backend `OrgSettingsManage`). */
+/**
+ * `POST /v1/teams` — create a team. Needs `departments:manage` (backend `OrgManage`, like every team
+ * write — `workforce::teams`). Not `settings:manage`: that id is `OrgSettingsManage`, which the
+ * server refuses here (`lib/permission-bits.ts`).
+ */
 export function createTeam(body: {
   name: string;
   /** Optional — omit for a team that spans departments. */
@@ -263,7 +305,7 @@ export function createTeam(body: {
   });
 }
 
-/** `PATCH /v1/teams/{id}` — rename / re-assign a team. Needs `settings:manage`. */
+/** `PATCH /v1/teams/{id}` — rename / re-assign a team. Needs `departments:manage`. */
 export function updateTeam(
   id: string,
   body: { name?: string; department_id?: string; lead_id?: string },
@@ -274,7 +316,7 @@ export function updateTeam(
   });
 }
 
-/** `DELETE /v1/teams/{id}`. Needs `settings:manage`. */
+/** `DELETE /v1/teams/{id}`. Needs `departments:manage`. */
 export async function deleteTeam(id: string): Promise<void> {
   await apiFetch(`/v1/teams/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
@@ -296,7 +338,7 @@ export async function listTeamMembers(teamId: string): Promise<ApiTeamMember[]> 
 }
 
 /**
- * `POST /v1/teams/{id}/members` — add people to a team (idempotent). Needs `settings:manage`.
+ * `POST /v1/teams/{id}/members` — add people to a team (idempotent). Needs `departments:manage`.
  * Returns the team's full member list after the add.
  */
 export async function addTeamMembers(
@@ -310,7 +352,7 @@ export async function addTeamMembers(
   return unwrapMembers(d);
 }
 
-/** `DELETE /v1/teams/{id}/members/{userId}` — remove one person (idempotent). Needs `settings:manage`. */
+/** `DELETE /v1/teams/{id}/members/{userId}` — remove one person (idempotent). Needs `departments:manage`. */
 export async function removeTeamMember(teamId: string, userId: string): Promise<void> {
   await apiFetch(
     `/v1/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`,
@@ -395,10 +437,13 @@ export async function deleteEmployee(userId: string): Promise<void> {
 // ── Invites (LLD §6) ─────────────────────────────────────────────────────────────────────────
 
 /**
- * The created invite. **`token` and `otp` are returned exactly once** — only their hashes are
- * stored, so they can never be retrieved again. The server emails them (Resend, via the
- * notifications rail), and **the UI deliberately does not display them**: the invitee is the only
- * party who should ever hold the credential. Treat them as secrets if you consume this type.
+ * The created invite.
+ *
+ * **`token` and `otp` come back only when the server did not email them (`notify: false`)**, and
+ * then exactly once — only their hashes are stored, so they can never be retrieved again. An emailed
+ * invite's codes go to the invitee's mailbox alone: the server stopped returning them, because a code
+ * the inviter also holds lets the inviter accept the invite as that person (QA audit 2026-10-08,
+ * BEPM-01). Treat them as secrets where they do appear.
  */
 export interface ApiInviteCreated {
   invite_id: string;
@@ -412,8 +457,10 @@ export interface ApiInviteCreated {
   status: string;
   /** Epoch **seconds**. */
   expires_at: number;
-  token: string;
-  otp: string;
+  /** Only with `notify: false` — see above. */
+  token?: string;
+  /** Only with `notify: false` — see above. */
+  otp?: string;
 }
 
 /** `POST /v1/employees/invites` — mint an invite. Department and title are REQUIRED org facts the
@@ -431,7 +478,8 @@ export function createInvite(body: {
    *
    * Pass `false` only when the caller distributes the code itself: with no email sent, the response
    * is the single place `token` and `otp` ever exist, and discarding it creates invites nobody can
-   * use. The bulk importer passes it alongside writing the spreadsheet, in that order.
+   * use. The bulk importer passes it alongside writing the spreadsheet, in that order. With `true`
+   * (or omitted) the response carries no codes at all.
    */
   notify?: boolean;
 }): Promise<ApiInviteCreated> {
@@ -466,8 +514,9 @@ export interface MonitoredRowResult {
   user_id?: string;
   emp_id?: string;
   /**
-   * `invalid_name` · `invalid_email` · `duplicate_in_request` · `email_in_use` ·
-   * `unknown_department` · `unknown_team` · `unknown_role` · `write_failed`.
+   * `invalid_name` · `invalid_title` · `invalid_email` · `duplicate_in_request` · `email_in_use` ·
+   * `unknown_department` · `unknown_team` · `unknown_role` · `role_not_grantable` ·
+   * `seat_limit_reached` · `write_failed`.
    */
   error?: string;
 }
@@ -499,13 +548,17 @@ export function createMonitoredEmployees(
 /** Human sentences for the server's row codes. Unknown codes fall through to the raw value rather
  *  than a generic "failed" — an unmapped code is still more use than no code. */
 const ROW_ERRORS: Record<string, string> = {
-  invalid_name: "Name is blank",
+  invalid_name: "Name is blank or longer than 120 characters",
+  invalid_title: "Title is longer than 200 characters",
   invalid_email: "Email isn't valid",
   duplicate_in_request: "Listed twice in this file",
   email_in_use: "Already in your directory",
   unknown_department: "That department doesn't exist",
   unknown_team: "That team doesn't exist",
   unknown_role: "That role doesn't exist",
+  // Both reached the admin as the raw code (QA audit 2026-10-08, WP-455).
+  role_not_grantable: "That role carries permissions you can't give",
+  seat_limit_reached: "No seat left on your plan",
   write_failed: "Couldn't be saved — try again",
 };
 
@@ -534,7 +587,8 @@ export interface ApiInvite {
   created_by: string;
 }
 
-/** `GET /v1/employees/invites` — every invite the org has minted, newest first.
+/** `GET /v1/employees/invites` — the org's invites, sorted newest first. **At most 500, and they
+ *  are the oldest 500** (one ascending query, no cursor), so past that the newest are missing.
  *  Requires `employees:read` (same bit as the directory — an invite is a not-yet-employee). */
 export function listInvites(): Promise<ApiInvite[]> {
   return apiFetch<ApiInvite[]>("/v1/employees/invites");
@@ -549,51 +603,33 @@ export async function revokeInvite(inviteId: string): Promise<void> {
 
 /** `POST /v1/employees/invites/{id}/resend` — **rotates** the token + OTP, resets the 7-day expiry,
  *  and re-emits the invite email. The invitee's previous link/OTP stops working, so this replaces
- *  a lost invite rather than nudging the same one. */
+ *  a lost invite rather than nudging the same one. The new codes go to the mailbox only (nothing is
+ *  returned), which is also what lets a spreadsheet invite be accepted by someone who already has a
+ *  WorkPulse sign-in — the server refuses that while the inviter holds the codes. */
 export async function resendInvite(inviteId: string): Promise<void> {
   await apiFetch(`/v1/employees/invites/${encodeURIComponent(inviteId)}/resend`, {
     method: "POST",
   });
 }
 
-/* ── Avatar (identity::avatar_upload::view_user_handler) ──────────────────────────────────────── */
-
-/**
- * `GET /v1/users/{id}/avatar` — a short-lived presigned view URL for **another** employee's photo,
- * or `null` when they haven't uploaded one.
- *
- * Requires `employees:read` server-side — the same bit that governs seeing the directory at all.
- * The 404 is the documented empty state, not a fault: render initials. A 403 is also swallowed,
- * because a caller who may see the page but not this bit should get initials rather than an error
- * banner over a cosmetic detail.
- *
- * **Don't cache the URL** — it is a short-lived presign, and it expires. Re-fetch on mount.
- */
-export async function getEmployeeAvatarUrl(userId: string): Promise<string | null> {
-  try {
-    const { url } = await apiFetch<{ url: string }>(
-      `/v1/users/${encodeURIComponent(userId)}/avatar`,
-    );
-    return url;
-  } catch (e) {
-    if (e instanceof ApiError && (e.status === 404 || e.status === 403)) return null;
-    throw e;
-  }
-}
+/* ── Avatars (identity::avatar_upload) ────────────────────────────────────────────────────────── */
 
 /**
  * `GET /v1/users/avatars?ids=a,b,c` — presigned view URLs for a whole page of employees at once.
+ * Any member of the tenant may call it; the route checks no permission (it used to be documented as
+ * needing `employees:read`, which it never did).
  *
- * One request instead of one per row. The single-avatar route cannot serve a list: each photo needs
- * its own presign, so nine rows would be nine calls — the per-item fan-out this codebase warns
- * about, against an account whose default Lambda concurrency ceiling is 10.
+ * One request instead of one per row: each photo needs its own presign, so nine rows on the
+ * single-avatar route would be nine calls — the per-item fan-out this codebase warns about, against
+ * an account whose default Lambda concurrency ceiling is 10.
  *
  * Ids without an avatar are simply **absent** from the map; render initials for those. Capped at 50
- * server-side, so pass a page's worth, not a directory.
+ * server-side, so pass a page's worth, not a directory — `stores/avatars.store.ts` batches for every
+ * `<UserAvatar>` and is the way to show people's photos.
  *
  * Best-effort by contract: any failure resolves to an empty map rather than throwing. These are
- * decorative, they need `employees:read`, and the URLs expire — none of that should be able to
- * break a list that is otherwise fine.
+ * decorative and the URLs expire (15 minutes) — none of that should be able to break a list that is
+ * otherwise fine.
  */
 export async function getEmployeeAvatarUrls(
   userIds: string[],

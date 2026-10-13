@@ -1,15 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, ListChecks, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
-import { DndContext, PointerSensor, closestCorners, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCorners, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type Announcements, type CollisionDetection, type DragEndEvent, type KeyboardCoordinateGetter } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ApiError } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
 import { Gauge } from "@/components/shared/gauge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
@@ -19,8 +20,9 @@ import { personName } from "@/lib/format";
 import type { ProjectFormValues } from "@/modules/projects/forms";
 import type { TaskFormValues } from "@/modules/projects/forms";
 import { useProjectDetail } from "../use-project-detail";
+import { useQueryState } from "../use-query-state";
 import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
-import { canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
+import { OVERSIGHT_TARGETS, canDeleteTask, canMoveTask, canWorkOnTasks, canMoveTaskTo, canReviewTask, settableStatuses, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
 import { Segmented, StatusBadge } from "./parts";
@@ -36,6 +38,52 @@ interface ProjectDetailPageProps {
   id: string;
 }
 
+const TASK_VIEWS = ["board", "list"] as const;
+
+/**
+ * Where a drop lands. With a pointer, only a column **under** it: `closestCorners` always answers
+ * with the nearest column, so releasing a card anywhere off the board still moved it, and Escape was
+ * the only way to cancel (QA audit 2026-10-08, WP-499). A keyboard drag has no pointer, and keeps
+ * the nearest-column rule its arrow keys are built around.
+ */
+const boardCollision: CollisionDetection = (args) =>
+  args.pointerCoordinates ? pointerWithin(args) : closestCorners(args);
+
+const ARROWS = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"];
+
+/**
+ * Arrow keys move a picked-up card **a column at a time** — the nearest column in that direction —
+ * rather than dnd-kit's default 25 px nudge, which took a dozen presses to cross one column.
+ */
+const columnKeyboardCoordinates: KeyboardCoordinateGetter = (event, { context, currentCoordinates }) => {
+  if (!ARROWS.includes(event.code)) return undefined;
+  event.preventDefault();
+  const from = context.collisionRect;
+  if (!from) return currentCoordinates;
+  const cx = from.left + from.width / 2;
+  const cy = from.top + from.height / 2;
+  let best: { left: number; top: number } | null = null;
+  let bestDistance = Infinity;
+  for (const column of context.droppableContainers.getEnabled()) {
+    const rect = context.droppableRects.get(column.id);
+    if (!rect) continue;
+    const dx = rect.left + rect.width / 2 - cx;
+    const dy = rect.top + rect.height / 2 - cy;
+    const ahead =
+      event.code === "ArrowRight" ? dx > 1
+        : event.code === "ArrowLeft" ? dx < -1
+          : event.code === "ArrowDown" ? dy > 1
+            : dy < -1;
+    const distance = Math.hypot(dx, dy);
+    if (ahead && distance < bestDistance) {
+      best = rect;
+      bestDistance = distance;
+    }
+  }
+  // Inside the column's top-left, so the nearest-column rule lands it there.
+  return best ? { x: best.left + 12, y: best.top + 40 } : currentCoordinates;
+};
+
 export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   // Real backend. The server 404s a project the caller isn't a member of (no oversight bit), so the
   // "no access" case is `notFound` — there's no client-side scope check anymore.
@@ -43,14 +91,17 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     project,
     tasks,
     userMap,
+    departments,
+    directoryAvailable,
     loading,
     error,
+    refreshError,
     notFound,
     reload,
     updateProject,
     deleteProject,
     createTask,
-    updateTaskFull,
+    updateTask,
     moveTask,
     deleteTask,
     authority,
@@ -79,13 +130,26 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
    * flag, because for a Member the answer genuinely differs card by card.
    */
   const canDelete = (t: Task) => canDeleteTask(t, authority, currentUserId);
-  /** Mirrors the server: Manager|Lead, only on a `done` task, never your own. */
+  /** Mirrors the server: Manager|Lead, only on an `in_review` task, never your own. */
   const canReview = (t: Task) => canReviewTask(t, authority, currentUserId);
+  /** Any project member — the target column decides the rest (`canMoveTaskTo`, on drop). */
   const canMove = (t: Task) => canMoveTask(t, authority, currentUserId);
+  /** `done` and `blocked` take a Manager or Lead — a new task can't start in either for anyone else. */
+  const isReviewer = authority === "manager" || authority === "lead";
+  /**
+   * On the project at all. A `viewer` — org-wide project oversight without membership — reads the
+   * board and changes nothing, so no Add, Edit, drag or Delete is offered (WP-302).
+   */
+  const canWork = canWorkOnTasks(authority);
   const [reviewTarget, setReviewTarget] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
+  // A manager who has just handed their own project over is no longer its manager once the page
+  // re-reads; the Edit dialog would only offer them saves the server now refuses.
+  useEffect(() => {
+    if (!canManageProject) setEditOpen(false);
+  }, [canManageProject]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
@@ -95,10 +159,17 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const [deletingProject, setDeletingProject] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [createStatus, setCreateStatus] = useState<SettableTaskStatus>("todo");
-  const [taskView, setTaskView] = useState<"board" | "list">("board");
+  // In the URL, so Back from a task's project page and a shared link keep the view (WP-502).
+  const [taskView, setTaskView] = useQueryState("view", "board", TASK_VIEWS);
   const [teamOpen, setTeamOpen] = useState(false);
+  // The board announced itself as keyboard-draggable while only a pointer could drag, and on a phone
+  // a swipe that began on a card dragged it — into the next column — instead of scrolling the page
+  // (QA audit 2026-10-08, WP-500). Mouse: a short move picks a card up. Touch: press and hold, so a
+  // swipe still scrolls. Keyboard: Space picks up, arrows move a column at a time, Space drops.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: columnKeyboardCoordinates }),
   );
 
   // Two different questions, and conflating them broke both in turn.
@@ -157,7 +228,11 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
 
   const status = PROJECT_STATUS_META[project.status];
   const atRisk = isAtRisk(project);
-  const daysLeft = daysUntil(project.dueDate);
+  // The server makes `end_date` optional (another client, a seed, the API can omit it), and an empty
+  // one read "NaN days left" over "undefined NaN" here (QA audit 2026-10-08, WP-305).
+  const hasDeadline = Boolean(project.dueDate);
+  const daysLeft = hasDeadline ? daysUntil(project.dueDate) : 0;
+  const deadlineDate = hasDeadline ? formatDate(project.dueDate) : "No end date";
   const lead = userMap[project.leadUserId];
   const manager = project.managerId ? userMap[project.managerId] : null;
   // One source for every headline number on this page — see `taskTotals`. `pending` used to be
@@ -166,8 +241,9 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const totals = taskTotals(tasks);
 
   const dayWord = (n: number) => (n === 1 ? "day" : "days");
-  const deadlineText =
-    daysLeft === 0
+  const deadlineText = !hasDeadline
+    ? "No deadline"
+    : daysLeft === 0
       ? "Due today"
       : daysLeft < 0
         ? `${-daysLeft} ${dayWord(-daysLeft)} overdue`
@@ -184,20 +260,20 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     // Must be carried: omitting it would pre-fill the form as non-billable and silently
     // reclassify a billable project on save.
     billable: project.billable,
+    status: project.status,
+    key: project.key,
   };
 
   const handleEdit = async (values: ProjectFormValues) => {
     try {
       await updateProject(values);
       toast.success("Project updated", { description: `“${values.name}” saved.` });
+      setEditOpen(false);
     } catch (e) {
-      // A partial save has its own message (the details went through, the team didn't). Showing the
-      // generic "try again" there would be a second lie on top of the one this fixes.
-      toast.error(
-        e instanceof Error && e.message
-          ? e.message
-          : "Couldn't save the project. Try again.",
-      );
+      // The dialog stays open with what was typed. A partial save has its own message (the details
+      // went through, the team didn't), and the page has re-read, so saving again retries only the
+      // part that failed. Showing the generic "try again" there would be a second lie.
+      toast.error(friendlyError(e, "Couldn't save the project. Try again."));
     }
   };
 
@@ -236,7 +312,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const handleTaskSubmit = async (values: TaskFormValues) => {
     try {
       if (editingTask) {
-        await updateTaskFull(editingTask.id, values);
+        await updateTask(editingTask, values);
         toast.success("Task updated", { description: values.title });
       } else {
         await createTask(values);
@@ -244,11 +320,18 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
       }
       setTaskOpen(false);
     } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : "Couldn't save the task. Try again.";
-      toast.error(msg);
+      // The dialog stays open with everything typed and uploaded, except when there is nothing left
+      // to save it to.
+      if (editingTask && e instanceof ApiError && e.status === 404) {
+        toast.error("This task no longer exists — someone may have deleted it.");
+        setTaskOpen(false);
+      } else if (e instanceof ApiError && e.status === 409 && e.code === "task_changed") {
+        toast.error("Someone else changed this task while you were editing it.", {
+          description: "The board now shows their change. Check it, then save again.",
+        });
+      } else {
+        toast.error(friendlyError(e, "Couldn't save the task. Try again."));
+      }
     }
   };
 
@@ -296,10 +379,11 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     : { status: createStatus };
 
   const downloadReport = () => {
-    void generateProjectReportPdf(project, tasks, userMap).then(() =>
-      toast.success("Report generated", {
-        description: `${project.key}-project-report.pdf`,
-      }),
+    // A failed jsPDF chunk load used to be an unhandled rejection and a button that did nothing
+    // (QA audit 2026-10-08, WP-507).
+    generateProjectReportPdf(project, tasks, userMap).then(
+      (filename) => toast.success("Report generated", { description: filename }),
+      () => toast.error("Couldn't generate the report. Try again."),
     );
   };
 
@@ -309,35 +393,54 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     const target = over.id as TaskStatus;
     const moved = tasks.find((t) => t.id === active.id);
     if (!moved || moved.status === target || !TASK_STATUS_SETTABLE.includes(target)) return;
-    // **Someone else's card.** The server refuses this (`update_task`: not an assignee and no
-    // `can_move_any_task` ⇒ 403), and without the check here the card slid into the new column and
-    // sprang back a moment later with a toast — the move looked like it worked, then undid itself.
-    // The card is also not draggable at all (see `TaskCard`); this is the backstop for a drop that
-    // begins before the roster loads.
+    // **The target column decides** — any member may move any card between the working columns, and
+    // only a Manager or Lead may put one in Done or Blocked (`canMoveTaskTo`, the server's
+    // `update_task`). Checked before the move so the card doesn't slide in and spring back. The toast
+    // used to blame the card's ownership ("That task belongs to someone else"), a rule retired on
+    // 2026-09-01 (QA audit 2026-10-08, WP-499).
     if (!canMoveTaskTo(moved, authority, currentUserId, target)) {
-      // Two different refusals, because they are two different rules and one message for both
-      // would be wrong half the time.
-      // Three different refusals. One message for all of them would be wrong twice.
-      const mine = moved.assignees.some((a) => a.userId === currentUserId);
-      const terminal = target === "done" || target === "blocked";
       toast.error(
-        mine && terminal
-          ? "Only a lead or manager can close a task"
-          : mine
-            ? "That column isn't yours to use"
-            : "That task belongs to someone else",
+        `Only a project lead or manager can move a task to ${TASK_STATUS_META[target].label}`,
         {
           description:
-            mine && terminal
-              ? "Move it to In review — a lead signs it off as Done, or parks it as Blocked."
-              : mine
-                ? "You can move your own work between To do, In progress and In review."
-                : "A reviewer can take a task that's In review; otherwise it's the assignee's to move.",
+            target === "done"
+              ? "Move it to In review — a lead or manager signs it off from there."
+              : "Ask a project lead or manager to mark it blocked.",
         },
       );
       return;
     }
-    moveTask(moved.id, target);
+    moveTask(moved.id, target).catch((err: unknown) => {
+      // The board has already re-read, so the card is back where the server says it is; this says
+      // why (QA audit 2026-10-08, WP-303).
+      if (err instanceof ApiError && err.status === 404) {
+        toast.error("That task no longer exists — someone may have deleted it.");
+      } else if (err instanceof ApiError && err.status === 409) {
+        toast.error("Someone else changed that task just now.", {
+          description: "The board shows their change — move it again if you still need to.",
+        });
+      } else {
+        toast.error(friendlyError(err, "Couldn't move the task. Try again."));
+      }
+    });
+  };
+
+  // What a screen reader hears during a drag — task titles and column names, not their ids.
+  const titleOf = (taskId: string | number) =>
+    tasks.find((t) => t.id === taskId)?.title ?? "The task";
+  const columnOf = (col: string | number) =>
+    TASK_STATUS_META[col as TaskStatus]?.label ?? String(col);
+  const announcements: Announcements = {
+    onDragStart: ({ active }) => `Picked up ${titleOf(active.id)}.`,
+    onDragOver: ({ active, over }) =>
+      over
+        ? `${titleOf(active.id)} is over ${columnOf(over.id)}.`
+        : `${titleOf(active.id)} is not over a column.`,
+    onDragEnd: ({ active, over }) =>
+      over
+        ? `${titleOf(active.id)} was dropped on ${columnOf(over.id)}.`
+        : `${titleOf(active.id)} was put back.`,
+    onDragCancel: ({ active }) => `Moving ${titleOf(active.id)} was cancelled.`,
   };
 
   return (
@@ -449,7 +552,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               ) : null}
               <span className="inline-flex items-center gap-1.5">
                 <CalendarRange className="size-4" />
-                {formatDate(project.startDate)} – {formatDate(project.dueDate)}
+                {formatDate(project.startDate)} – {hasDeadline ? deadlineDate : "no end date"}
               </span>
               {lead ? (
                 <span className="inline-flex items-center gap-1.5">
@@ -479,10 +582,28 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             >
               {deadlineText}
             </p>
-            <p className="mt-0.5 text-xs text-white/70">{formatDate(project.dueDate)}</p>
+            {hasDeadline ? (
+              <p className="mt-0.5 text-xs text-white/70">{deadlineDate}</p>
+            ) : null}
           </div>
         </div>
       </header>
+
+      {/* A re-read that failed after the page loaded: say so above what is still the last good read,
+          rather than replacing it with an error screen (WP-303). */}
+      {refreshError ? (
+        <div
+          role="status"
+          className="border-warning/40 bg-warning/10 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-sm"
+        >
+          <span>
+            Couldn&apos;t refresh this project — what you see may be out of date. {refreshError}
+          </span>
+          <Button size="sm" variant="outline" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
 
       {/* KPI row */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -615,34 +736,49 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               value={taskView}
               onChange={setTaskView}
             />
-            <Button
-              className="h-auto gap-1.5 rounded-xl px-4 py-2.5 text-sm"
-              onClick={() => openCreateTask("todo")}
-            >
-              <Plus className="size-4" />
-              Add task
-            </Button>
+            {canWork ? (
+              <Button
+                className="h-auto gap-1.5 rounded-xl px-4 py-2.5 text-sm"
+                onClick={() => openCreateTask("todo")}
+              >
+                <Plus className="size-4" />
+                Add task
+              </Button>
+            ) : null}
           </div>
         </div>
+        {authority === "viewer" ? (
+          <p className="text-muted-foreground text-xs">
+            You can see this project because you oversee projects across the organization. You
+            aren&apos;t a member, so it is read-only here.
+          </p>
+        ) : null}
 
         {taskView === "board" ? (
           <DndContext
             sensors={sensors}
-            collisionDetection={closestCorners}
+            collisionDetection={boardCollision}
+            accessibility={{ announcements }}
             onDragEnd={handleDragEnd}
           >
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Five columns: `lg:grid-cols-4` left Blocked alone on a second row at every width. */}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               {TASK_STATUS_ORDER.map((col) => (
                 <KanbanColumn
                   key={col}
                   col={col}
                   tasks={tasks.filter((t) => t.status === col)}
                   userMap={userMap}
-                  // No "add" on Done: a task cannot be created already signed off, and the
-                  // column exists to show what has been reviewed, not to collect new work.
-                  onAdd={col === "done" ? undefined : () => openCreateTask(col)}
+                  // No "add" on Done: the column shows what has been signed off, not new work. Nor
+                  // on Blocked for anyone who couldn't create a task there — the server refuses a
+                  // Member a task that starts blocked.
+                  onAdd={
+                    !canWork || col === "done" || (OVERSIGHT_TARGETS.includes(col) && !isReviewer)
+                      ? undefined
+                      : () => openCreateTask(col)
+                  }
                   onView={setViewingTask}
-                  onEdit={openEditTask}
+                  onEdit={canWork ? openEditTask : undefined}
                   onDelete={setTaskToDelete}
                   canDelete={canDelete}
                   canReview={canReview}
@@ -656,8 +792,9 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           <TaskListView
             tasks={tasks}
             userMap={userMap}
-            onEdit={openEditTask}
-            onAdd={() => openCreateTask("todo")}
+            // A viewer's row opens the read-only view instead of the edit form.
+            onEdit={canWork ? openEditTask : setViewingTask}
+            onAdd={canWork ? () => openCreateTask("todo") : undefined}
             onDelete={setTaskToDelete}
             canDelete={canDelete}
           />
@@ -678,6 +815,12 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         open={editOpen}
         onOpenChange={setEditOpen}
         leads={orgPeople}
+        departments={departments}
+        peopleNote={
+          directoryAvailable
+            ? undefined
+            : "Only people already on this project are listed — you don't have access to the employee directory. An admin can add anyone else."
+        }
         initial={editInitial}
         onSubmit={handleEdit}
       />
@@ -689,6 +832,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         onOpenChange={setTaskOpen}
         projectId={project.id}
         members={projectTeam}
+        statuses={settableStatuses(authority, editingTask?.status)}
         initial={taskInitial}
         onSubmit={handleTaskSubmit}
       />
@@ -834,7 +978,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                 />
                 <DetailRow
                   label="Timeline"
-                  value={`${formatDate(project.startDate)} – ${formatDate(project.dueDate)}`}
+                  value={`${formatDate(project.startDate)} – ${hasDeadline ? deadlineDate : "no end date"}`}
                 />
                 <DetailRow
                   label="Status"
@@ -850,7 +994,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                     )
                   }
                 />
-                <DetailRow label="Key" value={<Mono>{project.key}</Mono>} />
+                <DetailRow label="Key" value={project.key ? <Mono>{project.key}</Mono> : "—"} />
                 <DetailRow label="Project ID" value={<Mono>{project.id}</Mono>} />
               </dl>
             </section>
@@ -956,14 +1100,15 @@ function KanbanColumn({
   col: TaskStatus;
   tasks: Task[];
   userMap: Record<string, UserMini>;
-  /** Absent on a column that cannot accept new work (Closed). */
+  /** Absent on a column this person can't create a task in (Done; Blocked for a Member). */
   onAdd?: () => void;
   onView: (t: Task) => void;
-  onEdit: (t: Task) => void;
+  /** Absent for a read-only viewer. */
+  onEdit?: (t: Task) => void;
   onDelete: (t: Task) => void;
   canDelete: (t: Task) => boolean;
   canReview: (t: Task) => boolean;
-  /** False ⇒ the card does not lift: it is someone else's, and the server would refuse the move. */
+  /** False ⇒ the card does not lift — only for a viewer with no project role resolved yet. */
   canMove: (t: Task) => boolean;
   onReview: (t: Task) => void;
 }) {
@@ -1014,6 +1159,15 @@ function KanbanColumn({
   );
 }
 
+const stopPropagation = (e: React.SyntheticEvent) => e.stopPropagation();
+
+/** On a card's own buttons: a press is a click, never the start of a drag — for every sensor. */
+const KEEP_OFF_THE_CARD = {
+  onPointerDown: stopPropagation,
+  onMouseDown: stopPropagation,
+  onTouchStart: stopPropagation,
+};
+
 function TaskCard({
   task,
   onReview,
@@ -1027,22 +1181,23 @@ function TaskCard({
   userMap: Record<string, UserMini>;
   /** Open the read-only view of this task. */
   onView: (t: Task) => void;
-  onEdit: (t: Task) => void;
+  /** Absent for a read-only viewer — the pencil is not shown. */
+  onEdit?: (t: Task) => void;
   /** Absent when the caller may not delete this task — see `canDeleteTask`. */
   onDelete?: (t: Task) => void;
   /** Present only when this person may sign this task off — absent hides the action entirely. */
   onReview?: (t: Task) => void;
-  /** False for a task assigned to someone else: the card is inert rather than rejected on drop. */
+  /** False only before a project role is resolved: the card is inert rather than refused on drop. */
   draggable?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: task.id,
-    // Not draggable when it is not yours to move. dnd-kit then never starts a drag, so the card
-    // cannot slide into a column the server will reject — which is what used to happen: the move
-    // rendered, then reverted when the 403 arrived, and the board looked broken rather than
-    // governed. `cursor-default` is the visible half of the same fact.
-    disabled: !draggable,
-  });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } =
+    useDraggable({
+      id: task.id,
+      disabled: !draggable,
+      // Still a list item to assistive tech — dnd-kit's default `role="button"` hid the list and
+      // nested the card's own buttons inside a button (WP-500).
+      attributes: { role: "listitem", roleDescription: "draggable task" },
+    });
   const style = transform
     ? {
         transform: `${CSS.Translate.toString(transform)} rotate(2deg)`,
@@ -1052,12 +1207,19 @@ function TaskCard({
 
   return (
     <li
-      ref={setNodeRef}
+      ref={(el) => {
+        setNodeRef(el);
+        // The card itself is the keyboard handle, so Enter or Space on View / Edit / Delete
+        // still presses that button instead of picking the card up.
+        setActivatorNodeRef(el);
+      }}
       style={style}
       {...attributes}
       {...listeners}
       className={cn(
-        "group/task bg-card relative touch-none rounded-xl border p-3",
+        // `touch-manipulation`, not `touch-none`: a swipe that starts on a card scrolls the page;
+        // a press-and-hold picks it up (the touch sensor's delay).
+        "group/task bg-card relative touch-manipulation rounded-xl border p-3",
         // A grab cursor on a card that cannot be grabbed is a promise the board does not keep.
         draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
         isDragging && "ring-primary/30 shadow-xl ring-2",
@@ -1066,14 +1228,16 @@ function TaskCard({
       {/* Both actions stop the pointer from reaching the drag sensor — otherwise a click on the
           icon starts a drag and the button never fires.
 
-          A solid, bordered pill (not a bare icon row): a `done` task carries up to three actions
-          (edit · review · delete), which is wider than the title's right padding, so a bare row
-          overlapped the title text. The opaque pill floats over the top-right corner cleanly on
-          hover instead, and the title stays full-width when the card isn't hovered. */}
-      <div className="bg-card absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-lg border p-0.5 opacity-0 shadow-sm transition-opacity group-hover/task:opacity-100 focus-within:opacity-100">
+          A solid, bordered pill (not a bare icon row): an `in_review` task carries up to four
+          actions (view · edit · review · delete), which is wider than the title's right padding, so
+          a bare row overlapped the title text. The opaque pill floats over the top-right corner
+          cleanly on hover instead, and the title stays full-width when the card isn't hovered. On a
+          screen with no hover it is always shown — otherwise the actions were found only by tapping
+          one by accident. */}
+      <div className="bg-card absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-lg border p-0.5 opacity-0 shadow-sm transition-opacity group-hover/task:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
         <button
           type="button"
-          onPointerDown={(e) => e.stopPropagation()}
+          {...KEEP_OFF_THE_CARD}
           onClick={() => onView(task)}
           aria-label="View task"
           title="View task"
@@ -1081,25 +1245,27 @@ function TaskCard({
         >
           <Eye className="size-3.5" />
         </button>
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => onEdit(task)}
-          aria-label="Edit task"
-          className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6 items-center justify-center rounded-md"
-        >
-          <Pencil className="size-3.5" />
-        </button>
-        {/* Sign-off, shown only on a `done` task this person may review — the assignee never sees
-            it on their own work. Absent rather than disabled: a greyed-out approve button on your
-            own task reads as "ask someone", which is not what it means. */}
+        {onEdit ? (
+          <button
+            type="button"
+            {...KEEP_OFF_THE_CARD}
+            onClick={() => onEdit(task)}
+            aria-label="Edit task"
+            className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6 items-center justify-center rounded-md"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+        ) : null}
+        {/* Sign-off, shown only on an `in_review` task this person may review — the assignee never
+            sees it on their own work. Absent rather than disabled: a greyed-out approve button on
+            your own task reads as "ask someone", which is not what it means. */}
         {onReview ? (
           <button
             type="button"
-            onPointerDown={(e) => e.stopPropagation()}
+            {...KEEP_OFF_THE_CARD}
             onClick={() => onReview(task)}
-            aria-label="Review and close task"
-            title="Review and close"
+            aria-label="Review and sign off task"
+            title="Review and sign off"
             className="text-muted-foreground hover:bg-warning/10 hover:text-warning flex size-6 items-center justify-center rounded-md"
           >
             <Star className="size-3.5" />
@@ -1108,7 +1274,7 @@ function TaskCard({
         {onDelete ? (
           <button
             type="button"
-            onPointerDown={(e) => e.stopPropagation()}
+            {...KEEP_OFF_THE_CARD}
             onClick={() => onDelete(task)}
             aria-label="Delete task"
             className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-6 items-center justify-center rounded-md"
@@ -1133,7 +1299,8 @@ function TaskListView({
   tasks: Task[];
   userMap: Record<string, UserMini>;
   onEdit: (t: Task) => void;
-  onAdd: () => void;
+  /** Absent for a read-only viewer. */
+  onAdd?: () => void;
   onDelete: (t: Task) => void;
   canDelete: (t: Task) => boolean;
 }) {
@@ -1181,7 +1348,7 @@ function TaskListView({
         {sorted.map((t) => {
           const prio = TASK_PRIORITY_META[t.priority];
           const status = TASK_STATUS_META[t.status];
-          const due = dueLabel(t.dueDate);
+          const due = dueLabel(t.dueDate, t.status === "done");
           const deletable = canDelete(t);
           return (
             // The row is a flex container rather than one big button: a delete control nested
@@ -1247,7 +1414,7 @@ function TaskListView({
                     truncated half-names say less than one whole one plus a "+2" you can hover. */}
                 <span className="hidden w-44 shrink-0 items-center gap-2 sm:flex">
                   {t.assignees.length === 0 ? (
-                    <span className="text-muted-foreground/50 text-xs">Unassigned</span>
+                    <span className="text-muted-foreground text-xs">Unassigned</span>
                   ) : (
                     <>
                       <AssigneeStack
@@ -1294,14 +1461,16 @@ function TaskCardContent({
   userMap: Record<string, UserMini>;
 }) {
   const prio = TASK_PRIORITY_META[task.priority];
-  const due = dueLabel(task.dueDate);
+  // Signed-off work past its date was finished, not late (WP-377).
+  const due = dueLabel(task.dueDate, task.status === "done");
   return (
     <>
       <p className="pr-6 text-sm leading-snug font-medium">{task.title}</p>
 
       {/* Who signed this off, on the card itself — the question the review step exists to answer,
           so it should not need a click. `reviewer_name` was resolved server-side at review time, so
-          it still reads correctly after the reviewer leaves the org. */}
+          it still reads correctly after the reviewer leaves the org. Only a Done task carries one
+          (`boardTasks` drops a review left on a reopened task). */}
       {task.review ? (
         <p className="text-muted-foreground mt-1.5 flex items-center gap-1 text-[0.7rem]">
           <Star className="fill-warning text-warning size-3" />
@@ -1333,7 +1502,7 @@ function TaskCardContent({
             </span>
           ) : null}
           {task.assignees.length === 0 ? (
-            <span className="text-muted-foreground/60 text-[0.7rem]">Unassigned</span>
+            <span className="text-muted-foreground text-[0.7rem]">Unassigned</span>
           ) : (
             <AssigneeStack assignees={task.assignees} userMap={userMap} size="sm" />
           )}

@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { STATUS_WEIGHT, canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, deriveProjectKey, taskTotals, toAssignees } from "./lib";
-import type { TaskStatus } from "./types";
+import { STATUS_WEIGHT, boardTasks, canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, daysUntil, deriveProjectKey, dueLabel, isTaskOverdue, settableStatuses, taskPatchFrom, taskTotals, toAssignees } from "./lib";
+import type { Task, TaskStatus } from "./types";
+import type { TaskFormValues } from "./forms";
+import type { ApiBoardTask } from "./services/projects.service";
 
 /**
  * The delete rule, as an executable statement. It mirrors `projects::delete_task` on the server —
@@ -322,5 +324,154 @@ describe("weighted progress", () => {
       in_review: 90,
       done: 100,
     });
+  });
+});
+
+/**
+ * "Today" is the user's own calendar day, read when asked (WP-304). Built from local-time `Date`s
+ * so these hold in whatever zone the suite runs in — the old UTC module constant failed them in
+ * most of the world, and failed the rollover everywhere.
+ */
+describe("due dates against today", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("counts a task due today as today, late into the local evening", () => {
+    vi.setSystemTime(new Date(2026, 9, 8, 23, 30));
+    expect(daysUntil("2026-10-08")).toBe(0);
+    expect(dueLabel("2026-10-08")).toEqual({ text: "Today", overdue: false });
+  });
+
+  it("rolls over at local midnight without a reload", () => {
+    vi.setSystemTime(new Date(2026, 9, 8, 12, 0));
+    expect(daysUntil("2026-10-08")).toBe(0);
+    vi.setSystemTime(new Date(2026, 9, 9, 0, 5));
+    expect(daysUntil("2026-10-08")).toBe(-1);
+    expect(dueLabel("2026-10-08")).toEqual({ text: "1d overdue", overdue: true });
+  });
+
+  /** WP-377: signed-off work past its date was finished, not late. */
+  it("never calls finished work overdue", () => {
+    vi.setSystemTime(new Date(2026, 9, 13, 9, 0));
+    expect(dueLabel("2026-10-08", true)).toEqual({ text: "Oct 8", overdue: false });
+    expect(isTaskOverdue({ dueDate: "2026-10-08", status: "done" })).toBe(false);
+    expect(isTaskOverdue({ dueDate: "2026-10-08", status: "in_review" })).toBe(true);
+  });
+});
+
+describe("taskPatchFrom — only what the edit changed (WP-301)", () => {
+  const before: Task = {
+    id: "k1",
+    projectId: "p1",
+    title: "Ship it",
+    description: "",
+    status: "in_progress",
+    assignees: [
+      { userId: "u-a", assignedBy: "u-lead", assignedAt: 1 },
+      { userId: "u-b", assignedBy: "u-lead", assignedAt: 2 },
+    ],
+    priority: "medium",
+    dueDate: "2026-10-20",
+    estimateHours: 2,
+    attachments: [
+      { id: "att-1", filename: "a.pdf", contentType: "application/pdf", size: 1 },
+      { id: "att-2", filename: "b.png", contentType: "image/png", size: 2 },
+    ],
+    subtaskProgress: { total: 0, done: 0 },
+  };
+  const unchanged: TaskFormValues = {
+    title: "Ship it",
+    description: "",
+    status: "in_progress",
+    assigneeIds: ["u-a", "u-b"],
+    priority: "medium",
+    dueDate: "2026-10-20",
+    estimateHours: 2,
+    attachments: [
+      { id: "att-2", filename: "b.png", content_type: "image/png", size: 2 },
+      { id: "att-1", filename: "a.pdf", content_type: "application/pdf", size: 1 },
+    ],
+  };
+
+  it("sends nothing when nothing changed — the server refuses an empty PATCH", () => {
+    expect(taskPatchFrom(before, unchanged)).toBeNull();
+  });
+
+  /** The bug: a title fix re-sent the stale status, assignees and files from the dialog's snapshot. */
+  it("sends a title fix as just the title", () => {
+    expect(taskPatchFrom(before, { ...unchanged, title: "Ship it now" })).toEqual({
+      title: "Ship it now",
+    });
+  });
+
+  it("sends the whole set when the assignees or files change, and clears with null", () => {
+    expect(
+      taskPatchFrom(before, {
+        ...unchanged,
+        assigneeIds: ["u-b", "u-a"],
+        attachments: [],
+        dueDate: null,
+        estimateHours: null,
+      }),
+    ).toEqual({
+      assignee_ids: ["u-b", "u-a"],
+      attachments: [],
+      due: null,
+      estimate_hours: null,
+    });
+  });
+});
+
+describe("boardTasks", () => {
+  const row = (over: Partial<ApiBoardTask> = {}): ApiBoardTask => ({
+    id: "k1",
+    title: "T",
+    priority: "medium",
+    review: {
+      reviewed_by: "u-lead",
+      reviewer_name: "Priya",
+      reviewed_at: 1,
+      rating: 4,
+    },
+    ...over,
+  });
+
+  /** WP-313: a review left on a reopened row is not a verdict on the work now in progress. */
+  it("keeps a review only on a task in Done", () => {
+    const [inProgress, done] = boardTasks(
+      [
+        { status: "in_progress", tasks: [row({ id: "k1" })] },
+        { status: "done", tasks: [row({ id: "k2" })] },
+      ],
+      "p1",
+    );
+    expect(inProgress.review).toBeNull();
+    expect(done.review?.reviewer_name).toBe("Priya");
+  });
+
+  it("reads an absent estimate as none, and an unknown priority as medium", () => {
+    const [t] = boardTasks([{ status: "todo", tasks: [row({ priority: "urgent" })] }], "p1");
+    expect(t.estimateHours).toBeNull();
+    expect(t.priority).toBe("medium");
+  });
+});
+
+describe("settableStatuses (WP-300)", () => {
+  it("offers a member the working columns only", () => {
+    expect(settableStatuses("member")).toEqual(["todo", "in_progress", "in_review"]);
+  });
+
+  it("keeps a member's task's current oversight status selectable", () => {
+    expect(settableStatuses("member", "blocked")).toEqual([
+      "todo",
+      "in_progress",
+      "in_review",
+      "blocked",
+    ]);
+  });
+
+  it("offers a lead or manager all five", () => {
+    expect(settableStatuses("lead")).toHaveLength(5);
+    expect(settableStatuses("manager")).toHaveLength(5);
   });
 });

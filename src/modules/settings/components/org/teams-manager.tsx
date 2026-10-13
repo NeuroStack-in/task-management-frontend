@@ -3,8 +3,8 @@
 /**
  * Teams — org structure on the **live backend** (`/v1/teams`, workforce context).
  *
- * List needs `employees:view`; create / rename / delete and **membership** need `settings:manage`
- * (server 403 → toast otherwise).
+ * List needs `employees:view`; create / rename / delete and **membership** need `departments:manage`
+ * (server `OrgManage`; 403 → toast otherwise).
  *
  * **Teams are cross-department by design.** A team is a working group, not a slice of the org chart:
  * it owns no department, and a person can be in several at once. Membership lives entirely in the
@@ -36,15 +36,15 @@ import {
   createTeam,
   updateTeam,
   deleteTeam,
-  listDepartments,
-  listAllEmployees,
   listTeamMembers,
   addTeamMembers,
   removeTeamMember,
+  UNASSIGNED_DEPT,
   type ApiTeam,
   type ApiDepartment,
   type ApiEmployee,
 } from "@/modules/employees/services/employees.service";
+import { readRosterShared } from "../../lib/shared-reads";
 import { EntityPeopleDialog } from "./entity-people-dialog";
 import { MemberEditorDialog } from "./member-editor-dialog";
 
@@ -56,7 +56,8 @@ const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(
 
 export function TeamsManager() {
   const { can } = usePermissions();
-  const canManage = can("settings:manage");
+  // Team CRUD and membership are `OrgManage` server-side (QA audit 2026-10-08, WP-324).
+  const canManage = can("departments:manage");
 
   const [teams, setTeams] = useState<ApiTeam[]>([]);
   /** Departments are still loaded — not to own a team, but to label each *person* with theirs, which
@@ -81,17 +82,14 @@ export function TeamsManager() {
     setLoading(true);
     setError(null);
     // Teams are the page; departments and the directory are enrichment for the member picker, so
-    // either failing degrades a label rather than blanking the section.
-    Promise.all([
-      listTeams(),
-      listDepartments().catch(() => [] as ApiDepartment[]),
-      listAllEmployees().catch(() => [] as ApiEmployee[]),
-    ])
-      .then(([t, d, e]) => {
+    // either failing degrades a label rather than blanking the section. Both come from one roster
+    // walk shared with the Departments card beside this one (WP-539).
+    Promise.all([listTeams(), readRosterShared().catch(() => null)])
+      .then(([t, roster]) => {
         if (!live) return;
         setTeams([...t].sort(byName));
-        setDepts([...d].sort(byName));
-        setPeople(e);
+        setDepts([...(roster?.departments ?? ([] as ApiDepartment[]))].sort(byName));
+        setPeople(roster?.employees ?? ([] as ApiEmployee[]));
       })
       .catch((e) => {
         if (live) setError(messageOf(e, "Couldn't load teams."));
@@ -106,7 +104,11 @@ export function TeamsManager() {
   useEffect(() => load(), [load]);
 
   const deptName = useCallback(
-    (id?: string) => (id ? (depts.find((d) => d.id === id)?.name ?? "—") : "No department"),
+    // `unassigned` is the directory's word for "none", not an id — it used to caption "—" (WP-111).
+    (id?: string) =>
+      id && id !== UNASSIGNED_DEPT
+        ? (depts.find((d) => d.id === id)?.name ?? "—")
+        : "No department",
     [depts],
   );
 
@@ -121,10 +123,14 @@ export function TeamsManager() {
     [people, deptName],
   );
 
+  /** Names are unique, ignoring case — the server doesn't check, so this is the only guard. */
+  const nameTaken = (name: string, exceptId?: string) =>
+    teams.some((t) => t.id !== exceptId && t.name.toLowerCase() === name.toLowerCase());
+
   async function add() {
     const name = newName.trim();
     if (!name) return;
-    if (teams.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+    if (nameTaken(name)) {
       toast.error("A team with that name already exists.");
       return;
     }
@@ -278,8 +284,9 @@ export function TeamsManager() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label>Team name</Label>
+            <Label htmlFor="new-team-name">Team name</Label>
             <Input
+              id="new-team-name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
@@ -335,6 +342,9 @@ export function TeamsManager() {
           description="Rename the team and choose who's in it. Anyone can join, from any department."
           name={editing.name}
           nameLabel="Team name"
+          validateName={(next) =>
+            nameTaken(next, editing.id) ? "Another team already has that name." : null
+          }
           onRename={async (next) => {
             const updated = await updateTeam(editing.id, { name: next });
             setTeams((cur) =>

@@ -3,13 +3,12 @@
 /**
  * One employee's rich profile, assembled entirely from the **live backend** — no mock:
  *   - identity / contact / assignment  → `GET /v1/employees/{id}` + department / team / role maps;
- *   - productivity score + 6-month trend → `GET /v1/insights/user/{id}/activity` (agent-fed);
+ *   - productivity score + hours chart → `GET /v1/insights/user/{id}/activity`, last 30 days;
  *   - projects + per-project KPIs        → `GET /v1/projects/user/{id}` + `GET /v1/projects/{id}`.
  *
  * The output feeds the preview `EmployeeProfileData` shape verbatim. Fields the backend genuinely
- * doesn't carry (`dob`, `address`, `postcode`, `country`, `avatarUrl`) are left `""` and the UI
- * renders them as an em dash. The KPI series is **avg productive hours / day** per month, derived
- * from the agent's `productive_sec` (a month with no scored day is `null`, never `0`).
+ * doesn't carry (`dob`, `address`, `postcode`, `country`) are left `""` and the UI renders them as
+ * an em dash. The photo is not here: the page shows it through `<UserAvatar>` (the shared store).
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -26,7 +25,6 @@ import {
 import { getUserDay } from "@/modules/attendance/services/attendance.service";
 import {
   getEmployeeProfile,
-  getEmployeeAvatarUrl,
   departmentMap,
   teamMap,
 } from "./services/employees.service";
@@ -35,8 +33,10 @@ export interface ProjectItem {
   id: string;
   name: string;
   key: string;
-  progress: number;
-  tasks: number;
+  /** The **project's** completion %, `null` when its details couldn't be read (not 0). */
+  progress: number | null;
+  /** The **project's** task count — everyone's tasks — `null` when unread. */
+  tasks: number | null;
   teammates: number;
   active: boolean;
 }
@@ -45,7 +45,6 @@ export interface EmployeeProfileData {
   id: string;
   name: string;
   email: string;
-  avatarUrl?: string;
   jobTitle: string;
   department: string;
   team: string;
@@ -56,6 +55,8 @@ export interface EmployeeProfileData {
   /** Raw role id — needed to ask whether this person is a tracked contributor (`time-tracking:self`). */
   roleId: string;
   status: "active" | "inactive" | "invited" | "suspended";
+  /** Excluded from tracking and attendance; still signs in (WP-233). */
+  benched: boolean;
   /** `null` = no scored day in the window (agent not reporting) — **not** a score of zero. */
   productivityScore: number | null;
   empCode: string;
@@ -67,11 +68,24 @@ export interface EmployeeProfileData {
   address: string;
   postcode: string;
   projects: ProjectItem[];
+  /** The project list couldn't be read — which is not "on no projects" (WP-229). */
+  projectsFailed: boolean;
   /** Hours worked per day over the last 30 days, tagged with the day's attendance status. Only days
    *  with data appear; an unreported day is absent, never a measured zero. */
   kpi: { days: { date: string; label: string; hours: number; status: string }[] };
+  /**
+   * Whether the activity behind the score and the chart was read. `forbidden`: the viewer may not
+   * read org activity (a different bit from the directory's); `failed`: the read failed. Either way
+   * "nothing recorded for this employee" would be a false statement about them (WP-229).
+   */
+  activityStatus: "ok" | "forbidden" | "failed";
+  /**
+   * Tasks across the projects they're on — **everyone's** tasks, not theirs: there is no
+   * per-assignee read, and this was labelled as if it were theirs (QA audit 2026-10-08, WP-234).
+   */
   totalTasks: number;
-  avgCompletion: number;
+  /** Mean completion of the projects they're on (`null` when none could be read) — WP-234. */
+  avgCompletion: number | null;
   /**
    * **Today's** attendance, live — not a closed verdict.
    *
@@ -192,16 +206,27 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
     (async () => {
       try {
         const now = new Date();
-        const from = ymd(new Date(now.getFullYear(), now.getMonth() - 11, 1));
+        // Only the days the page uses: the score and the chart both cover the last 30. This asked
+        // for 12 months, for a monthly chart that no longer exists (QA audit 2026-10-08, WP-452).
+        const days = Math.max(SCORE_WINDOW_DAYS, DAILY_CHART_DAYS);
+        const from = ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1)));
         const to = ymd(now);
 
+        let activityStatus: EmployeeProfileData["activityStatus"] = "ok";
+        let projectsFailed = false;
         const [p, depts, teams, roles, allProjects, activity, today] = await Promise.all([
           getEmployeeProfile(id),
           departmentMap().catch(() => new Map<string, string>()),
           teamMap().catch(() => new Map<string, string>()),
           listRoles().catch(() => []),
-          listUserProjects(id).catch(() => []),
-          getUserActivity(id, from, to).catch(() => null),
+          listUserProjects(id).catch(() => {
+            projectsFailed = true;
+            return [];
+          }),
+          getUserActivity(id, from, to).catch((e: unknown) => {
+            activityStatus = e instanceof ApiError && e.status === 403 ? "forbidden" : "failed";
+            return null;
+          }),
           // Reads their `TIME#` sessions directly, so unlike the activity rollup it is meaningful
           // for a day that has not closed yet. Best-effort: a reader without `AttendanceReadTeam`
           // simply gets no attendance on the badge.
@@ -224,24 +249,27 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
               id: pr.id,
               name: pr.name,
               key: pr.key ?? "",
-              progress: kpi?.completion_pct ?? 0,
-              tasks: kpi?.total_tasks ?? 0,
+              // Unknown, not 0%, when the project's details couldn't be read (WP-229).
+              progress: kpi ? kpi.completion_pct : null,
+              tasks: kpi ? kpi.total_tasks : null,
               teammates: kpi?.active_members ?? detail?.members.length ?? 0,
               active: pr.status === "active",
             };
           })
-          .sort((a, b) => Number(b.active) - Number(a.active) || b.progress - a.progress);
+          .sort(
+            (a, b) =>
+              Number(b.active) - Number(a.active) || (b.progress ?? -1) - (a.progress ?? -1),
+          );
 
-        const totalTasks = projects.reduce((s, pr) => s + pr.tasks, 0);
-        const avgCompletion = projects.length
-          ? Math.round(projects.reduce((s, pr) => s + pr.progress, 0) / projects.length)
-          : 0;
+        const known = projects.filter((pr) => pr.progress !== null);
+        const totalTasks = projects.reduce((s, pr) => s + (pr.tasks ?? 0), 0);
+        const avgCompletion = known.length
+          ? Math.round(known.reduce((s, pr) => s + (pr.progress ?? 0), 0) / known.length)
+          : null;
 
         // **The mean of this person's scored days over the last 30** (PRODUCTIVITY.md §3.1) —
-        // deliberately *not* `trend.avg_score`, which covers the whole 12-month fetch. That fetch
-        // stays because the KPI chart below genuinely needs a year of buckets; the headline number
-        // does not, and a year-long average beside someone's name is both stale and unlike every
-        // other surface. One window, one meaning — the directory column uses the same 30 days.
+        // deliberately *not* `trend.avg_score`, whose window is whatever was fetched. One window,
+        // one meaning — the directory column uses the same 30 days.
         //
         // **`null` means "not measured", and it must stay `null`.** Collapsing it to `0` published
         // a fabricated verdict: a confident "0%", and a summary card calling the person a
@@ -274,7 +302,6 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           id: p.user_id,
           name: p.name,
           email: p.email,
-          avatarUrl: undefined, // filled in below by `GET /v1/users/{id}/avatar`
           jobTitle: p.title ?? "",
           department: p.department_id ? (depts.get(p.department_id) ?? UNKNOWN_DEPARTMENT) : "",
           team: p.team_id ? (teams.get(p.team_id) ?? UNKNOWN_TEAM) : "",
@@ -283,6 +310,7 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           roleName,
           roleId: p.role_id ?? "",
           status: p.status === "deactivated" ? "inactive" : "active",
+          benched: p.benched ?? false,
           productivityScore,
           empCode: p.emp_id ?? "",
           phone: p.phone ?? "",
@@ -293,7 +321,9 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           address: "", // not carried by the backend
           postcode: "", // not carried by the backend
           projects,
+          projectsFailed,
           kpi,
+          activityStatus,
           todayAttendance: today
             ? today.on_leave
               ? "leave"
@@ -305,18 +335,9 @@ export function useEmployeeProfile(id: string): EmployeeProfileState {
           totalTasks,
           avgCompletion,
         });
-
-        // The photo, second and separately. It is a presigned URL that expires, it is cosmetic,
-        // and it needs its own permission (`employees:read`) — so it must never be able to fail
-        // the page. Patched in when it lands; until then the card renders initials, which is the
-        // correct empty state for someone who has not uploaded one.
-        getEmployeeAvatarUrl(p.user_id)
-          .then((url) => {
-            if (live && url) setData((d) => (d ? { ...d, avatarUrl: url } : d));
-          })
-          .catch(() => {
-            /* cosmetic — initials are a correct fallback */
-          });
+        // No photo patch here any more: `<UserAvatar>` reads it from the shared store. Patching it
+        // into `data` a moment after load changed `data`'s identity, which re-seeded an open Edit
+        // dialog and wiped what was being typed (QA audit 2026-10-08, WP-454).
       } catch (e) {
         if (!live) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);

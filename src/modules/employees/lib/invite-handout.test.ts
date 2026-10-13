@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { handoutTable, joinLink } from "./invite-handout";
-import type { ApiInviteCreated } from "../services/employees.service";
+import { handoutTable, hasCodes, joinLink, type InviteWithCodes } from "./invite-handout";
 
-function invite(over: Partial<ApiInviteCreated> = {}): ApiInviteCreated {
+function invite(over: Partial<InviteWithCodes> = {}): InviteWithCodes {
   return {
     invite_id: "inv-1",
     emp_id: "INF-004",
@@ -18,6 +17,21 @@ function invite(over: Partial<ApiInviteCreated> = {}): ApiInviteCreated {
     ...over,
   };
 }
+
+describe("hasCodes", () => {
+  /**
+   * An emailed invite comes back with no codes (the server stopped returning them), and the
+   * spreadsheet is the only copy on the other path — so a row is written only when both arrived.
+   */
+  it("is true only when both the token and the code came back", () => {
+    expect(hasCodes(invite())).toBe(true);
+    const emailed = { ...invite(), token: undefined, otp: undefined };
+    expect(hasCodes(emailed)).toBe(false);
+    expect(hasCodes({ ...emailed, token: "tok" })).toBe(false);
+    expect(hasCodes({ ...emailed, otp: "123456" })).toBe(false);
+    expect(hasCodes({ ...emailed, token: "", otp: "" })).toBe(false);
+  });
+});
 
 describe("joinLink", () => {
   /**

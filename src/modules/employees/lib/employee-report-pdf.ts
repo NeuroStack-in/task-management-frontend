@@ -12,12 +12,16 @@
  *   - numbers right-align, text truncates with an ellipsis rather than overlapping the next column;
  *   - **an absent measurement prints "—", never 0** — same rule the UI follows, and the reason the
  *     data layer distinguishes "no access" from "nothing recorded".
+ *
+ * Every string goes through the `PdfText` writer (`./pdf-text`), so a name in any script prints —
+ * Polish or Greek as embedded Noto Sans text, Tamil or Hindi drawn by the browser (WP-225).
  */
 import { jsPDF } from "jspdf";
 import { PALETTES } from "@/lib/palette";
 import { formatHours, isUuid } from "@/lib/format";
 import type { AppTotal, EmployeeReportData, Section } from "./employee-report-data";
 import { SCORE_WINDOW } from "./employee-report-data";
+import { buildPdf, type PdfText, type PdfTextFor } from "./pdf-text";
 
 // ── page geometry (A4 portrait, mm) ──
 const PAGE_W = 210;
@@ -72,13 +76,16 @@ interface Col {
 /** A tiny document cursor: everything below writes through this. */
 class Doc {
   readonly d: jsPDF;
+  /** Every string reaches the page through this — never `this.d.text` (WP-225). */
+  private readonly t: PdfText;
   y = 0;
   private readonly accent: RGB;
   private readonly name: string;
   private readonly stamp: string;
 
-  constructor(name: string, stamp: string) {
+  constructor(text: PdfTextFor, name: string, stamp: string) {
     this.d = new jsPDF({ unit: "mm", format: "a4" });
+    this.t = text(this.d);
     this.accent = accentColor();
     this.name = name;
     this.stamp = stamp;
@@ -93,15 +100,15 @@ class Doc {
     this.d.setTextColor(255, 255, 255);
     if (first) {
       this.d.setFont("helvetica", "bold").setFontSize(17);
-      this.d.text(this.name, M, 14);
+      this.t.text(this.name, M, 14);
       this.d.setFont("helvetica", "normal").setFontSize(9);
-      this.d.text("WorkPulse · employee report", M, 21);
-      this.d.text(this.stamp, PAGE_W - M, 21, { align: "right" });
+      this.t.text("WorkPulse · employee report", M, 21);
+      this.t.text(this.stamp, PAGE_W - M, 21, { align: "right" });
     } else {
       this.d.setFont("helvetica", "bold").setFontSize(9);
-      this.d.text(this.name, M, 9);
+      this.t.text(this.name, M, 9);
       this.d.setFont("helvetica", "normal");
-      this.d.text("WorkPulse · employee report", PAGE_W - M, 9, { align: "right" });
+      this.t.text("WorkPulse · employee report", PAGE_W - M, 9, { align: "right" });
     }
     this.y = h + 10;
     this.d.setTextColor(...INK);
@@ -121,10 +128,10 @@ class Doc {
     this.room(28);
     this.y += 2;
     this.d.setFont("helvetica", "bold").setFontSize(12).setTextColor(...INK);
-    this.d.text(heading, M, this.y);
+    this.t.text(heading, M, this.y);
     if (note) {
       this.d.setFont("helvetica", "normal").setFontSize(8).setTextColor(...MUTED);
-      this.d.text(note, PAGE_W - M, this.y, { align: "right" });
+      this.t.text(note, PAGE_W - M, this.y, { align: "right" });
     }
     this.y += 2.5;
     this.d.setDrawColor(...this.accent).setLineWidth(0.6);
@@ -144,9 +151,9 @@ class Doc {
         if (!cell) continue;
         const x = M + j * colW;
         this.d.setFont("helvetica", "normal").setFontSize(8).setTextColor(...MUTED);
-        this.d.text(cell[0], x, this.y);
+        this.t.text(cell[0], x, this.y);
         this.d.setFontSize(9).setTextColor(...INK);
-        this.d.text(this.fit(cell[1] || dash, colW - 34), x + 30, this.y);
+        this.t.text(this.fit(cell[1] || dash, colW - 34), x + 30, this.y);
       }
       this.y += 6.5;
     }
@@ -163,10 +170,10 @@ class Doc {
       this.d.setFillColor(...ZEBRA);
       this.d.roundedRect(x, this.y, w, 20, 1.5, 1.5, "F");
       this.d.setFont("helvetica", "bold").setFontSize(14).setTextColor(...this.accent);
-      this.d.text(this.fit(c.value, w - 6), x + 3, this.y + 9);
+      this.t.text(this.fit(c.value, w - 6), x + 3, this.y + 9);
       this.d.setFont("helvetica", "normal").setFontSize(7.5).setTextColor(...MUTED);
-      this.d.text(this.fit(c.label.toUpperCase(), w - 6), x + 3, this.y + 14);
-      if (c.hint) this.d.text(this.fit(c.hint, w - 6), x + 3, this.y + 17.5);
+      this.t.text(this.fit(c.label.toUpperCase(), w - 6), x + 3, this.y + 14);
+      if (c.hint) this.t.text(this.fit(c.hint, w - 6), x + 3, this.y + 17.5);
     });
     this.y += 26;
   }
@@ -184,7 +191,7 @@ class Doc {
       let x = M;
       for (const c of cols) {
         const right = c.align === "right";
-        this.d.text(c.header.toUpperCase(), right ? x + c.width - 2 : x + 2, this.y, {
+        this.t.text(c.header.toUpperCase(), right ? x + c.width - 2 : x + 2, this.y, {
           align: right ? "right" : "left",
         });
         x += c.width;
@@ -208,7 +215,7 @@ class Doc {
         const v = row[j] == null || row[j] === "" ? dash : String(row[j]);
         const right = c.align === "right";
         this.d.setTextColor(...INK);
-        this.d.text(this.fit(v, c.width - 4), right ? x + c.width - 2 : x + 2, this.y, {
+        this.t.text(this.fit(v, c.width - 4), right ? x + c.width - 2 : x + 2, this.y, {
           align: right ? "right" : "left",
         });
         x += c.width;
@@ -225,23 +232,14 @@ class Doc {
   note(text: string) {
     this.room(8);
     this.d.setFont("helvetica", "italic").setFontSize(8).setTextColor(...MUTED);
-    this.d.text(this.fit(text, CONTENT_W), M, this.y);
+    this.t.text(this.fit(text, CONTENT_W), M, this.y);
     this.d.setFont("helvetica", "normal").setFontSize(9).setTextColor(...INK);
     this.y += 6;
   }
 
-  /** Truncate to fit `w` mm at the current font size. */
+  /** Truncate to fit `w` mm at the current font size — measured on what will actually print. */
   fit(text: string, w: number): string {
-    const s = String(text ?? "");
-    if (this.d.getTextWidth(s) <= w) return s;
-    let lo = 0;
-    let hi = s.length;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      if (this.d.getTextWidth(`${s.slice(0, mid)}…`) <= w) lo = mid;
-      else hi = mid - 1;
-    }
-    return `${s.slice(0, lo)}…`;
+    return this.t.fit(String(text ?? ""), w);
   }
 
   /** Footers need the final page count, so they are stamped once at the end. */
@@ -252,8 +250,12 @@ class Doc {
       this.d.setDrawColor(...LINE).setLineWidth(0.2);
       this.d.line(M, FOOT_Y - 4, PAGE_W - M, FOOT_Y - 4);
       this.d.setFont("helvetica", "normal").setFontSize(7).setTextColor(...MUTED);
-      this.d.text(methodNote, M, FOOT_Y);
-      this.d.text(`Page ${p} of ${pages}`, PAGE_W - M, FOOT_Y, { align: "right" });
+      const label = `Page ${p} of ${pages}`;
+      // The note stops 6 mm short of the page label: a long note (a long name in it) ran on
+      // underneath "Page X of Y" (found while fixing WP-225).
+      const room = PAGE_W - 2 * M - this.d.getTextWidth(label) - 6;
+      this.t.text(this.fit(methodNote, room), M, FOOT_Y);
+      this.t.text(label, PAGE_W - M, FOOT_Y, { align: "right" });
     }
   }
 }
@@ -265,11 +267,21 @@ function unavailable<T>(doc: Doc, s: Section<T>): s is { ok: false; reason: stri
   return true;
 }
 
-export function renderEmployeeReportPdf(r: EmployeeReportData): jsPDF {
+/**
+ * The finished report. Async because a report with text outside WinAnsi loads a Unicode font first
+ * (`buildPdf`); one without renders exactly once, as before.
+ */
+export function renderEmployeeReportPdf(r: EmployeeReportData): Promise<jsPDF> {
+  return buildPdf((text) => drawEmployeeReport(r, text));
+}
+
+function drawEmployeeReport(r: EmployeeReportData, text: PdfTextFor): jsPDF {
   const stamp = r.generatedAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-  const doc = new Doc(r.profile.name || "Employee", `Generated ${stamp}`);
+  const doc = new Doc(text, r.profile.name || "Employee", `Generated ${stamp}`);
   const empId = r.profile.emp_id && !isUuid(r.profile.emp_id) ? r.profile.emp_id : dash;
-  const period = `${r.history.from} → ${r.history.to}`;
+  // An en dash, which WinAnsi carries — the arrow it replaces doesn't, and took the whole label (and
+  // with it the footer of every page) down to garbage (WP-225).
+  const period = `${r.history.from} – ${r.history.to}`;
   const span =
     r.history.days >= 365
       ? `${(r.history.days / 365).toFixed(1)} years`

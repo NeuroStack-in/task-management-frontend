@@ -8,8 +8,9 @@
  * (`type_id → name`). Both **degrade**: a forbidden or missing lookup falls back to the id, so the
  * queue still renders rather than blanking over a name it couldn't resolve.
  *
- * Fetches pending/approved/rejected together so the status tabs can show real counts and switching a
- * tab is instant — three GSI2 queries on an admin screen, not a hot path.
+ * Fetches pending/approved/rejected/cancelled together so the status tabs can show real counts and
+ * switching a tab is instant — four GSI2 queries on an admin screen, not a hot path. (Cancelled used
+ * to be left out, so "All" was not all: a withdrawn request vanished from the approver's view.)
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "@/lib/api";
@@ -47,7 +48,7 @@ export interface ApprovalItem {
   attachments: ApiLeaveAttachment[];
 }
 
-const STATUSES = ["pending", "approved", "rejected"] as const;
+const STATUSES = ["pending", "approved", "rejected", "cancelled"] as const;
 
 export interface ApprovalsData {
   items: ApprovalItem[];
@@ -55,7 +56,10 @@ export interface ApprovalsData {
   loading: boolean;
   error: string | null;
   reload: () => void;
-  /** Approve/reject one; resolves after the server decision and a re-read. */
+  /**
+   * Approve/reject one. Resolves once the server has recorded the decision — the row shows the new
+   * status from that moment, and the queue re-reads in the background.
+   */
   decide: (item: ApprovalItem, decision: "approve" | "reject") => Promise<void>;
 }
 
@@ -66,6 +70,13 @@ export function useApprovals(): ApprovalsData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  /**
+   * Verdicts recorded from this page, by request id. The row used to stay "pending" — buttons live —
+   * until three queue reads came back, so a second click 409'd (QA audit 2026-10-08, WP-482). And
+   * the queues are an index that settles a moment after a write, so the re-read can still say
+   * "pending": a request never goes back to pending, so a recorded verdict wins over that.
+   */
+  const [decided, setDecided] = useState<ReadonlyMap<string, string>>(new Map());
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
@@ -105,9 +116,16 @@ export function useApprovals(): ApprovalsData {
     };
   }, [nonce]);
 
-  const items = useMemo<ApprovalItem[]>(
-    () =>
-      rows
+  const items = useMemo<ApprovalItem[]>(() => {
+    // One row per request. The four queues are separate reads of that settling index, so a
+    // just-decided request can briefly come back in two of them — keep the decided copy.
+    const byId = new Map<string, ApiApprovalRow>();
+    for (const r of rows) {
+      const prev = byId.get(r.request_id);
+      if (!prev || prev.status === "pending") byId.set(r.request_id, r);
+    }
+    return (
+      [...byId.values()]
         .map((r) => ({
           userId: r.user_id,
           requestId: r.request_id,
@@ -121,13 +139,14 @@ export function useApprovals(): ApprovalsData {
           fromTime: r.from_time,
           toTime: r.to_time,
           reason: r.reason,
-          status: r.status,
+          status:
+            r.status === "pending" ? (decided.get(r.request_id) ?? r.status) : r.status,
           createdAt: r.created_at,
         }))
         // Newest first, when the server stamped a created_at.
-        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)),
-    [rows, typeName, userName],
-  );
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    );
+  }, [rows, typeName, userName, decided]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: items.length };
@@ -142,7 +161,8 @@ export function useApprovals(): ApprovalsData {
         request_id: item.requestId,
         decision,
       };
-      await api.decide(input);
+      const result = await api.decide(input);
+      setDecided((m) => new Map(m).set(item.requestId, result.status));
       reload();
     },
     [reload],

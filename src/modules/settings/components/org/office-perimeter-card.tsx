@@ -12,7 +12,7 @@
  * outside the perimeter raises no alert (owner decision).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MapPin } from "lucide-react";
 
 import {
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
 import { LiveMap } from "@/modules/locations/components/live-map";
 import { useGeofenceStore } from "@/stores/geofence.store";
 
@@ -43,6 +44,7 @@ export function OfficePerimeterCard() {
     setEnabled,
     reset,
     dirty,
+    saved,
     saving,
     error,
     load,
@@ -55,7 +57,19 @@ export function OfficePerimeterCard() {
     void load();
   }, [load]);
 
+  // Its own Save, so its own guard (WP-347). Unsaved perimeter edits live in the shared store and
+  // survive moving around the app (the Save stays up when you come back), so only closing or
+  // reloading the tab — which does lose them — asks first.
+  useUnsavedGuard(canManage && dirty, { keptOnLeave: true });
+
   const fence = { center, radiusM };
+
+  // Frame the org's **saved** office once it has loaded (and again after a save). The map is created
+  // before the read lands, so it opened on the placeholder centre and never moved: an org elsewhere
+  // saw an empty street map, and "Move office" there put the office in the wrong city
+  // (QA audit 2026-10-08, WP-354). Keyed on the saved centre, so dragging the pin never re-frames.
+  const officePoints = useMemo(() => (saved ? [saved.center] : undefined), [saved]);
+  const officeKey = saved ? `${saved.center.lat},${saved.center.lng}` : undefined;
 
   return (
     <Card>
@@ -77,7 +91,8 @@ export function OfficePerimeterCard() {
           onCenterChange={setCenter}
           center={center}
           zoom={14}
-          recenterKey="org-perimeter"
+          fitPoints={officePoints}
+          fitKey={officeKey}
         />
 
         {/* Perimeter controls */}
@@ -111,36 +126,51 @@ export function OfficePerimeterCard() {
               <span className="tabular-nums text-muted-foreground">{radiusM} m radius</span>
 
               {canManage ? (
-                <>
-                  <Button
-                    variant={editing ? "default" : "outline"}
-                    size="sm"
-                    className="h-7"
-                    onClick={() => setEditing((v) => !v)}
-                  >
-                    {editing ? "Done" : "Move office"}
-                  </Button>
-                  <Button variant="ghost" size="sm" className="h-7" onClick={reset}>
-                    Reset
-                  </Button>
-                  {/* Explicit save, offered only when something changed — an org-wide autosave would
-                      move everyone's on-site status on a stray drag. */}
-                  {dirty ? (
-                    <Button
-                      size="sm"
-                      className="h-7"
-                      disabled={saving}
-                      onClick={() => void save().then((ok) => ok && setEditing(false))}
-                    >
-                      {saving ? "Saving…" : "Save perimeter"}
-                    </Button>
-                  ) : null}
-                </>
+                <Button
+                  variant={editing ? "default" : "outline"}
+                  size="sm"
+                  className="h-7"
+                  onClick={() => setEditing((v) => !v)}
+                >
+                  {editing ? "Done" : "Move office"}
+                </Button>
               ) : null}
-
-              {error ? <span className="text-destructive">{error}</span> : null}
             </>
           ) : null}
+
+          {/* Explicit save, offered only when something changed — an org-wide autosave would move
+              everyone's on-site status on a stray drag. Outside the enabled-only block on purpose:
+              un-ticking "Enable perimeter" is itself a change, and with Save inside that block it
+              vanished the moment the box was cleared, so turning the perimeter off could never be
+              saved (QA audit 2026-10-08, WP-101). Reset sits beside it for the same reason: it undoes
+              the unsaved edits — back to the saved perimeter, not the shipped placeholder — so it
+              belongs wherever there are edits to undo, the off switch included (WP-535). */}
+          {canManage && dirty ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7"
+                disabled={saving}
+                onClick={() => {
+                  reset();
+                  setEditing(false);
+                }}
+              >
+                Reset
+              </Button>
+              <Button
+                size="sm"
+                className="h-7"
+                disabled={saving}
+                onClick={() => void save().then((ok) => ok && setEditing(false))}
+              >
+                {saving ? "Saving…" : "Save perimeter"}
+              </Button>
+            </>
+          ) : null}
+
+          {error ? <span className="text-destructive">{error}</span> : null}
         </div>
 
         <p className="text-xs text-muted-foreground">

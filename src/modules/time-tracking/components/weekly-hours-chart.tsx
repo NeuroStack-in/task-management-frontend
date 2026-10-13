@@ -42,22 +42,31 @@ function weekRangeLabel(base: Date, offset: number): string {
  * Weekly tracked hours from the real backend (`GET /v1/me/timesheet`), split billable vs other
  * (stacked). The arrows page through earlier weeks; "next" is disabled on the current week. A week
  * with no tracked time shows genuine zeros — not invented bars.
+ *
+ * `running` is the session open right now. The server's figures are settled time only, so without
+ * it this week's total stood still while the timer above it ticked (QA audit 2026-10-08, WP-366).
  */
-export function WeeklyHoursChart() {
+export function WeeklyHoursChart({
+  running = null,
+}: {
+  running?: { sec: number; billable: boolean } | null;
+}) {
   const [offset, setOffset] = useState(0);
   // Resolve "now" on the client to avoid an SSR/hydration mismatch on the range label.
   const [baseDate, setBaseDate] = useState<Date | null>(null);
   useEffect(() => setBaseDate(new Date()), []);
 
-  const { week, totalHoursFor, loading, error, reload } = useWeeklyHours();
+  const { days, totalHours: settledHours, loading, error, reload } = useWeeklyHours(offset);
 
-  const data = week(offset);
-  const chartData = data.map((d) => ({
+  // Today's column on the current week, where the open session's time belongs.
+  const todayIndex = offset === 0 && running && baseDate ? (baseDate.getDay() + 6) % 7 : -1;
+  const liveHours = todayIndex >= 0 && running ? running.sec / 3600 : 0;
+  const chartData = days.map((d, i) => ({
     day: d.day,
-    billable: d.billable,
-    other: d.other,
+    billable: d.billable + (i === todayIndex && running?.billable ? liveHours : 0),
+    other: d.other + (i === todayIndex && !running?.billable ? liveHours : 0),
   }));
-  const totalHours = totalHoursFor(offset);
+  const totalHours = settledHours + liveHours;
 
   const relLabel =
     offset === 0

@@ -43,19 +43,13 @@ export function coerceTheme(v: unknown): AppearanceTheme {
 }
 
 /**
- * The theme the account has **actually chosen**, or `null` when it hasn't chosen one.
+ * The theme the account has chosen, or `null` for a value this client doesn't know.
  *
- * The server returns `"system"` both when the user picked "System" *and* when no preference has ever
- * been stored (`appearance/data.rs` defaults the attribute and the whole item to `"system"`), so the
- * two are indistinguishable on the wire. We therefore treat `"system"` as **unset** and let the
- * product default stand — light, per `AppProviders`. Adopting it instead would put every employee
- * who never touched Settings into whatever their laptop happens to be, which is exactly the
- * behaviour `defaultTheme="light"` exists to prevent.
- *
- * The durable fix is server-side: default the stored theme to `"light"` so an explicit `"system"`
- * means something. Until that ships, this function is the boundary that keeps the product default
- * intact — and it stays correct afterwards, because an explicit `light`/`dark` is still adopted.
+ * **`"system"` is a choice.** The server serves `"light"` for an account that never chose
+ * (`identity::appearance::DEFAULT_THEME`), so a stored `"system"` means someone picked it. This used
+ * to treat `"system"` as unset — true only while the server defaulted to it — which discarded an
+ * explicit "System" at every sign-in and on every other device (QA audit 2026-10-08, WP-334).
  */
-export function explicitTheme(v: unknown): "light" | "dark" | null {
-  return v === "light" || v === "dark" ? v : null;
+export function explicitTheme(v: unknown): AppearanceTheme | null {
+  return v === "light" || v === "dark" || v === "system" ? v : null;
 }

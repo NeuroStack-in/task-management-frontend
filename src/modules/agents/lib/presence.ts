@@ -72,10 +72,8 @@ export function presenceOf(d: PresenceDevice): Presence {
   if (managed) {
     if (d.logon_state === "signed_out") return "out";
     if (d.logon_state === "asleep") return "asleep";
-    if (d.logon_state === "signed_in") {
-      // Signed in — in, even if the heartbeat window briefly reads offline (a just-slept machine).
-      return d.connectivity === "offline" ? "in" : "in";
-    }
+    // Signed in — in, even if the heartbeat window briefly reads offline (a just-slept machine).
+    if (d.logon_state === "signed_in") return "in";
   }
 
   if (d.connectivity === "online" || d.connectivity === "idle") return "in";

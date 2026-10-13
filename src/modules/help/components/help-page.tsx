@@ -63,8 +63,10 @@ import {
 import { EmptyState } from "@/components/shared/empty-state"
 import { useTourStore } from "@/stores/tour.store"
 import { getTour } from "../lib/tours"
+import { useTourStepFilter } from "@/modules/help/lib/use-tour-steps"
 import { usePageTitle } from "@/stores/page-header.store"
 import { usePermissions } from "@/hooks/use-permissions"
+import { useAssistantAccess } from "@/hooks/use-assistant-access"
 import { HelpAssistantDialog } from "./help-assistant-dialog"
 import { useIsSurfaceOn } from "@/hooks/use-features"
 import type { PermissionId } from "@/types/rbac"
@@ -87,6 +89,7 @@ import {
   ATTACHMENT_TYPES,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
+  attachmentName,
   type ApiTicketSummary,
   type ApiThread,
 } from "../services/support.service"
@@ -188,7 +191,8 @@ function ArticleSheet({
   article: HelpArticle | null
   onClose: () => void
   onSelectArticle: (a: HelpArticle) => void
-  onAskAi: () => void
+  /** Absent when the Help assistant isn't available to this caller (see `useAssistantAccess`). */
+  onAskAi?: () => void
 }) {
   const meta = article ? HELP_CATEGORIES.find((c) => c.key === article.category) : undefined
   const Icon = meta?.icon ?? Compass
@@ -197,12 +201,25 @@ function ArticleSheet({
         (a) => a.category === article.category && a.slug !== article.slug,
       ).slice(0, 3)
     : []
+  /**
+   * Set by "Submit a ticket": closing then lands on the ticket form rather than back on the article
+   * card. The button used to just close the panel (QA audit 2026-10-08, WP-468).
+   */
+  const toTicketForm = useRef(false)
 
   return (
     <Sheet open={!!article} onOpenChange={(open) => !open && onClose()}>
       {/* `data-[side=right]:` matches the variant the primitive sets its own max-width with, so
           tailwind-merge replaces it instead of leaving two competing rules. */}
-      <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:sm:max-w-lg">
+      <SheetContent
+        side="right"
+        className="w-full gap-0 p-0 data-[side=right]:sm:max-w-lg"
+        finalFocus={() => {
+          if (!toTicketForm.current) return true
+          toTicketForm.current = false
+          return document.getElementById("ticket-subject")
+        }}
+      >
         {article && (
           <>
             {/* `shrink-0` is load-bearing: SheetContent is `flex flex-col`, so without it this
@@ -292,14 +309,28 @@ function ArticleSheet({
               <div className="border-t border-border bg-muted/40 px-6 py-5">
                 <p className="text-sm font-medium">Didn&apos;t answer your question?</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Ask the assistant, or send it to our support team.
+                  {onAskAi
+                    ? "Ask the assistant, or send it to our support team."
+                    : "Send it to our support team."}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" onClick={onAskAi}>
-                    <Sparkles className="size-3.5" />
-                    Ask the AI assistant
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={onClose}>
+                  {onAskAi ? (
+                    <Button size="sm" onClick={onAskAi}>
+                      <Sparkles className="size-3.5" />
+                      Ask the AI assistant
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      toTicketForm.current = true
+                      document
+                        .getElementById("submit-ticket")
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      onClose()
+                    }}
+                  >
                     <Ticket className="size-3.5" />
                     Submit a ticket
                   </Button>
@@ -317,13 +348,19 @@ function ArticleSheet({
 // Guided walkthroughs data
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The cards that start each tour. Each description names what that tour's steps
+ * (`lib/tours.ts`) actually show — they used to promise timers, manual entries, anomaly
+ * alerts, exports and idle settings that no step (or no screen) has (QA audit 2026-10-08,
+ * WP-468). Edit the two together.
+ */
 const WALKTHROUGHS = [
   {
     id: "getting-started",
     icon: Compass,
     title: "Getting Started",
     description:
-      "A 5-step overview of the dashboard, timer, and your first project setup.",
+      "A short tour of your dashboard and where your work lives in the sidebar.",
     duration: "~3 min",
   },
   {
@@ -331,7 +368,7 @@ const WALKTHROUGHS = [
     icon: Timer,
     title: "Time Tracking",
     description:
-      "Start timers, log manual entries, and review daily work summaries.",
+      "Where your tracked time shows up, how the desktop app records it, and your attendance.",
     duration: "~4 min",
   },
   {
@@ -339,7 +376,7 @@ const WALKTHROUGHS = [
     icon: BarChart2,
     title: "Analytics & Reports",
     description:
-      "Navigate productivity scores, anomaly alerts, and export team reports.",
+      "How the productivity score moves, where the time went, the daily AI summary and screenshot review.",
     duration: "~5 min",
   },
   {
@@ -347,7 +384,7 @@ const WALKTHROUGHS = [
     icon: Users,
     title: "Team Management",
     description:
-      "Add members, assign roles, and organise departments and teams.",
+      "Invite people, see who holds which role, and build custom roles.",
     duration: "~4 min",
   },
   {
@@ -355,14 +392,18 @@ const WALKTHROUGHS = [
     icon: Settings2,
     title: "Monitoring Setup",
     description:
-      "Configure idle detection, screenshot intervals, and alert thresholds.",
+      "Screenshot cadence and retention, what counts as productive, and agent updates.",
     duration: "~3 min",
   },
 ] as const
 
+/**
+ * Each term must match an article's title or excerpt (the search reads only those) — "Timesheets"
+ * matched nothing and opened "No articles found" (WP-468).
+ */
 const POPULAR_SEARCHES: { term: string; category: HelpCategory }[] = [
   { term: "Time tracking", category: "time-tracking" },
-  { term: "Timesheets", category: "time-tracking" },
+  { term: "Timesheet", category: "time-tracking" },
   { term: "MFA", category: "security" },
   { term: "Screenshots", category: "monitoring" },
   { term: "Reports", category: "reports" },
@@ -431,11 +472,19 @@ function TicketThreadSheet({
     setSending(true)
     try {
       await addReply(ticketId, reply.trim())
-      setReply("")
-      setThread(await getThread(ticketId))
-      onReplied()
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Couldn't send the reply.")
+      setSending(false)
+      return
+    }
+    // Sent. A failed refresh after this used to toast "Couldn't send the reply." for a reply
+    // that had been sent (WP-246).
+    setReply("")
+    onReplied()
+    try {
+      setThread(await getThread(ticketId))
+    } catch {
+      toast.info("Reply sent — reopen the ticket to see it in the conversation.")
     } finally {
       setSending(false)
     }
@@ -470,6 +519,23 @@ function TicketThreadSheet({
                   {fmtDate(thread.ticket.created_at)}
                 </p>
                 <p className="whitespace-pre-wrap leading-relaxed">{thread.ticket.description}</p>
+                {/* What was attached when filing — the server sends the keys and this view never
+                    showed them, so people re-attached files or assumed the upload failed (WP-121).
+                    Named, not opened: there is no read route for them yet; support receives the
+                    files themselves with the ticket. */}
+                {thread.ticket.attachments?.length ? (
+                  <ul className="mt-2 space-y-1 border-t pt-2">
+                    {thread.ticket.attachments.map((key) => (
+                      <li
+                        key={key}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                      >
+                        <Paperclip className="size-3 shrink-0" />
+                        <span className="min-w-0 truncate">{attachmentName(key)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
               {thread.replies.length === 0 ? (
                 <p className="py-2 text-center text-xs text-muted-foreground">No replies yet.</p>
@@ -521,6 +587,8 @@ export function HelpPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [tickets, setTickets] = useState<ApiTicketSummary[]>([])
   const [ticketsLoading, setTicketsLoading] = useState(true)
+  /** A failed list read — shown as such, not as "No tickets yet" (QA audit 2026-10-08, WP-246). */
+  const [ticketsError, setTicketsError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   /**
    * Files already uploaded to S3 and waiting to be named on the ticket.
@@ -560,14 +628,17 @@ export function HelpPage() {
   }
   const { can } = usePermissions()
   /**
-   * `ai:use` alone — deliberately NOT the chatbot's `ai:use && ai:view`.
+   * The Help surface's gate: `ai:use` — deliberately NOT the chatbot's `ai:view` too — **and** the
+   * org's "AI assistant" switch (feature + page toggle), which the server enforces on every assistant
+   * route. Gated on `ai:use` alone, Free/Starter orgs and orgs that switched the assistant off showed
+   * every member a button whose every answer was a 403 (QA audit 2026-10-08, WP-319).
    *
-   * This is the surface every user gets. An Employee holds `ai:use` and lacks `ai:view`, which is
-   * exactly what the server reads to confine them to the Help surface, and the Help Center is where
-   * they are meant to ask. Gating this on `ai:view` too would hide the one assistant they have.
+   * An Employee holds `ai:use` and lacks `ai:view`, which is exactly what the server reads to confine
+   * them to the Help surface, and the Help Center is where they are meant to ask.
    */
-  const canAskAi = can("ai:use")
+  const canAskAi = useAssistantAccess().help
   const isSurfaceOn = useIsSurfaceOn()
+  const showableStep = useTourStepFilter()
 
   // Show the page title in the top navbar (this page has no PageHeader).
   usePageTitle("Help Center", "Find answers, guides, and support.")
@@ -587,16 +658,20 @@ export function HelpPage() {
 
   const messageLength = watch("message")?.length ?? 0
 
-  // Load the caller's tickets (real; GSI7). An empty list is the honest initial state.
+  // Load the caller's tickets (real; GSI7), newest first. A failure is said as one — it used to read
+  // "No tickets yet", telling someone with five open tickets they had none.
   const loadTickets = () => {
     let live = true
     setTicketsLoading(true)
+    setTicketsError(null)
     listTickets()
       .then((t) => {
         if (live) setTickets(t)
       })
-      .catch(() => {
-        /* leave the list empty rather than invent tickets */
+      .catch((e) => {
+        if (live) {
+          setTicketsError(e instanceof ApiError ? e.message : "Couldn't load your tickets.")
+        }
       })
       .finally(() => {
         if (live) setTicketsLoading(false)
@@ -666,6 +741,9 @@ export function HelpPage() {
   }
 
   async function onTicketSubmit(data: TicketForm) {
+    // A file still uploading would be left off this ticket, then land in the cleared form and ride
+    // along with the next one (WP-245). The button is disabled meanwhile; this guards Enter too.
+    if (uploading) return
     setSubmitting(true)
     try {
       const created = await createTicket({
@@ -691,6 +769,13 @@ export function HelpPage() {
     return perm === null || can(perm)
   }
   const visibleCategories = HELP_CATEGORIES.filter((c) => canCategory(c.key))
+  /**
+   * Counted from the articles that exist. The counts were hard-coded and wrong for seven of eight —
+   * "General · 4 articles" opened "No articles found" (WP-468). A category with no articles still
+   * names a ticket topic, but it isn't offered as something to browse.
+   */
+  const articleCount = (c: HelpCategory) => HELP_ARTICLES.filter((a) => a.category === c).length
+  const browseCategories = visibleCategories.filter((c) => articleCount(c.key) > 0)
   // Gated on BOTH the category (as before) and the video's own permission — getting-started
   // ships as two cuts, and an employee has no use for a walkthrough of Payroll and Settings.
   const visibleVideos = VIDEO_TUTORIALS.filter(
@@ -705,6 +790,9 @@ export function HelpPage() {
     // …and hide a tour whose feature the org switched off (or whose mode hides it), so we never
     // launch a walkthrough whose every step would drop (MANAGED-AGENT.md §8).
     if (tour?.feature && !isSurfaceOn(tour.feature)) return false
+    // …and one with no step this caller can be shown — the runner's own filter, which also checks
+    // that each step's page opens for this role and plan (WP-070).
+    if (tour && !tour.steps.some(showableStep)) return false
     return true
   })
   const visibleFaqs = FAQS.filter((f) => !f.permission || can(f.permission))
@@ -737,8 +825,9 @@ export function HelpPage() {
           How can we help?
         </h1>
         <p className="mx-auto mt-3 max-w-md text-sm text-feature-foreground/80">
-          Search the knowledge base, browse guides, or ask the WorkPulse AI
-          assistant.
+          {canAskAi
+            ? "Search the knowledge base, browse guides, or ask the WorkPulse AI assistant."
+            : "Search the knowledge base, browse guides, or contact our support team."}
         </p>
 
         <div className="mx-auto mt-7 flex max-w-xl flex-col gap-2.5 sm:flex-row">
@@ -786,8 +875,8 @@ export function HelpPage() {
         </h2>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Submit ticket form */}
-          <Card>
+          {/* Submit ticket form — `id` is where an article's "Submit a ticket" lands. */}
+          <Card id="submit-ticket" className="scroll-mt-24">
             <CardHeader>
               <CardTitle>Submit a ticket</CardTitle>
               <CardDescription>
@@ -824,6 +913,7 @@ export function HelpPage() {
                       >
                         <SelectTrigger
                           className={cn("w-full", errors.category && "border-destructive")}
+                          aria-label="Ticket category"
                         >
                           <SelectValue placeholder="Select a category…" />
                         </SelectTrigger>
@@ -924,9 +1014,13 @@ export function HelpPage() {
                   )}
                 </div>
 
-                <Button type="submit" className="w-full" disabled={submitting}>
+                <Button type="submit" className="w-full" disabled={submitting || uploading}>
                   <Send className="size-4" />
-                  {submitting ? "Submitting…" : "Submit ticket"}
+                  {submitting
+                    ? "Submitting…"
+                    : uploading
+                      ? "Waiting for attachments…"
+                      : "Submit ticket"}
                 </Button>
 
                 {canAskAi ? (
@@ -956,6 +1050,13 @@ export function HelpPage() {
                 <p className="px-6 py-8 text-center text-sm text-muted-foreground">
                   Loading tickets…
                 </p>
+              ) : ticketsError ? (
+                <div className="flex flex-col items-center gap-3 px-6 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">{ticketsError}</p>
+                  <Button variant="outline" size="sm" onClick={() => loadTickets()}>
+                    Retry
+                  </Button>
+                </div>
               ) : tickets.length === 0 ? (
                 <div className="px-6 py-8">
                   <EmptyState
@@ -1028,9 +1129,10 @@ export function HelpPage() {
           Browse by category
         </h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-          {visibleCategories.map((cat) => {
+          {browseCategories.map((cat) => {
             const Icon = cat.icon
             const active = selectedCategory === cat.key
+            const count = articleCount(cat.key)
             return (
               <button
                 key={cat.key}
@@ -1053,7 +1155,9 @@ export function HelpPage() {
                   <Icon className="size-4" />
                 </div>
                 <span className="leading-tight">{cat.label}</span>
-                <span className="text-[10px] text-muted-foreground">{cat.count} articles</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {count} {count === 1 ? "article" : "articles"}
+                </span>
               </button>
             )
           })}
@@ -1329,14 +1433,19 @@ export function HelpPage() {
         // Swaps content in place rather than closing and reopening, so following a related link
         // reads as turning a page.
         onSelectArticle={setSelectedArticle}
-        onAskAi={() => {
-          // The Help assistant, for the same reason as the hero button: the floating chatbot needs
-          // `ai:view`, so for an employee reading an article this would have opened nothing.
-          const seed = selectedArticle?.title
-          setSelectedArticle(null)
-          setHelpAiSeed(seed)
-          setHelpAiOpen(true)
-        }}
+        onAskAi={
+          canAskAi
+            ? () => {
+                // The Help assistant, for the same reason as the hero button: the floating chatbot
+                // needs `ai:view`, so for an employee reading an article this would have opened
+                // nothing.
+                const seed = selectedArticle?.title
+                setSelectedArticle(null)
+                setHelpAiSeed(seed)
+                setHelpAiOpen(true)
+              }
+            : undefined
+        }
       />
 
       {/* Support ticket thread */}

@@ -12,7 +12,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, ChevronDown } from "lucide-react";
+import { Activity, AlertTriangle, ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PeriodFilter, type Granularity } from "@/components/shared/period-filter";
 import {
   Card,
@@ -24,6 +25,7 @@ import {
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { ActiveInactiveRing } from "@/modules/dashboard/components/insight-widgets";
+import { ApiError } from "@/lib/api";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DepartmentScoreFocus } from "./department-score-focus";
@@ -42,25 +44,28 @@ import {
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday, type IsoWeekday } from "@/lib/workdays";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
+// The org's own week, not a Monday one (QA audit 2026-10-08, WP-487).
+import { weekStartIso, weekStartOf, weekWorkdays } from "../lib/week";
 
 /**
  * Activity — the preview's Analytics layout (granularity toggle · AI report card · activity area
  * chart · time-by-category · active/inactive ring · app & website breakdown) wired to the real
  * productivity-score read models (LLD §12), element-for-element. Where the server has a real source
  * the element shows it; where it doesn't yet, the element degrades to an honest empty **in place**
- * rather than being removed or fabricated:
- *  • Time by category / AI metrics / active-vs-inactive ring — real, and **scoped to the selected
- *    granularity**: the day's rollup for Daily, an aggregate of the period's per-day rollups for
- *    Weekly/Monthly. They previously always read the single day, so Weekly and Monthly showed a
- *    day's figures beside a narrative correctly reporting no weekly/monthly data existed.
- *  • AI narrative — real (`GET /v1/insights/reports/ai`), Enterprise-gated → honest upsell note.
- *  • Weekly / Monthly trend — real, aggregated from per-day org rollups (fan-out, concurrency 3).
+ * rather than being removed or fabricated — and a **failed** read says it failed, never that the
+ * period was empty:
+ *  • Time by category / active-vs-inactive ring — real, and **scoped to the selected granularity**:
+ *    the day's rollup for Daily, an aggregate of the period's per-day rollups for Weekly/Monthly.
+ *  • AI narrative — `DepartmentScoreFocus` (`GET /v1/insights/reports/dept-summary`, the
+ *    `ai.insights` feature), org-wide or per department.
+ *  • Weekly / Monthly trend — real, aggregated from per-day org rollups (fan-out, concurrency 3),
+ *    over the org's scheduled days up to today.
  *  • Daily trend — real, from the day's **screenshot captures** (`captured_at` + the server's
  *    category), bucketed into local hours. The scorer stores daily totals so there is no hourly
  *    *score*; captures are a real record of when work happened, and are labelled as moments rather
- *    than minutes. Empty only when the day genuinely has no captures.
- *  • App & website breakdown — no per-app endpoint, so both lists are an honest "waiting on the
- *    agent" note; the section and toggle stay.
+ *    than minutes.
+ *  • App & website breakdown — real (`GET /v1/insights/apps/usage`), the per-app and per-site time
+ *    the agents reported over the same window as the chart.
  */
 
 const CHART_TITLE: Record<Granularity, string> = {
@@ -87,8 +92,6 @@ const CATEGORIES = [
 
 const fmtHours = (sec: number): string => formatDuration(sec);
 
-const formatMinutes = (min: number): string => formatDuration(min * 60);
-
 // ── date helpers ──────────────────────────────────────────────────────────────
 function isoOf(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -98,22 +101,7 @@ function parseIso(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
-function shiftIso(iso: string, days: number): string {
-  const d = parseIso(iso);
-  d.setDate(d.getDate() + days);
-  return isoOf(d);
-}
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-/** The org's **scheduled** ISO dates in the week containing `anchor`. */
-function weekWorkdays(anchor: string, workdays: readonly IsoWeekday[]): string[] {
-  const d = parseIso(anchor);
-  const dow = d.getDay(); // 0 Sun … 6 Sat
-  const mondayOffset = dow === 0 ? -6 : 1 - dow;
-  const monday = shiftIso(anchor, mondayOffset);
-  // `workdays` is ISO (1 = Mon), so day N sits N-1 days after the week's Monday.
-  return [...workdays].sort((a, b) => a - b).map((iso) => shiftIso(monday, iso - 1));
-}
 
 /** All the org's **scheduled** ISO dates in the month containing `anchor`. */
 function monthWorkdays(anchor: string, workdays: readonly IsoWeekday[]): string[] {
@@ -141,7 +129,9 @@ export function ActivityTab() {
   const today = isoOf(new Date());
   const anchor = date || today;
 
-  const org = useOrgActivity(date);
+  // Only Daily reads the single-day rollup; Weekly/Monthly aggregate their own range below, so
+  // fetching (and polling) the day there was a request for a figure nothing on screen used.
+  const org = useOrgActivity(granularity === "daily" ? date : "");
   // No `useAiReport` here any more. The org-wide `reports` narrative was what the old blue banner
   // rendered; `DepartmentScoreFocus` now owns the page's one summary and fetches its own. Leaving
   // this call would keep paying for a second generation nothing displays.
@@ -175,12 +165,20 @@ export function ActivityTab() {
 
   // Weekly / Monthly build the trend by fanning per-day org rollups; Daily draws its curve from
   // the day's captures instead (`useHourlyActivity`), so it needs no range.
+  //
+  // **Never past today.** The range ran to the end of the period, so the current week fetched days
+  // that had not happened, and the AI summary's ranking floor (hours × days in the range) asked for
+  // a month's worth of tracked time on the 1st (QA audit 2026-10-08, WP-487).
   const rangeDates = useMemo<string[]>(() => {
     if (!date) return [];
-    if (granularity === "weekly") return weekWorkdays(anchor, workdays);
-    if (granularity === "monthly") return monthWorkdays(anchor, workdays);
-    return [];
-  }, [granularity, date, anchor, workdays]);
+    const all =
+      granularity === "weekly"
+        ? weekWorkdays(anchor, workdays)
+        : granularity === "monthly"
+          ? monthWorkdays(anchor, workdays)
+          : [];
+    return all.filter((d) => d <= today);
+  }, [granularity, date, anchor, workdays, today]);
 
   const range = useOrgActivityRange(rangeDates);
 
@@ -205,14 +203,12 @@ export function ActivityTab() {
       }));
     }
     if (granularity === "monthly") {
-      // Group workdays into weeks (by Monday) and average the scored days.
+      // Group workdays into the org's weeks and average the scored days.
+      const start = weekStartOf(workdays);
       const buckets: { key: string; scores: number[] }[] = [];
       const index: Record<string, number> = {};
       for (const p of range.points) {
-        const d = parseIso(p.date);
-        const dow = d.getDay();
-        const mondayOffset = dow === 0 ? -6 : 1 - dow;
-        const key = shiftIso(p.date, mondayOffset);
+        const key = weekStartIso(p.date, start);
         if (index[key] === undefined) {
           index[key] = buckets.length;
           buckets.push({ key, scores: [] });
@@ -228,9 +224,31 @@ export function ActivityTab() {
       }));
     }
     return [];
-  }, [granularity, range.points]);
+  }, [granularity, range.points, workdays]);
 
   const hasTrend = trendData.some((d) => d.active !== null);
+
+  /**
+   * Whether the selected period's figures are still on their way, or failed outright.
+   *
+   * A failure used to fall straight into the empty states below — "No activity to categorise" and a
+   * "0% reporting" ring for an org whose read had 403'd or 500'd (QA audit 2026-10-08, WP-274). For
+   * Weekly/Monthly a day whose read failed has `rollup: null`; only *every* day failing is an error,
+   * since the rest of the period can still be shown.
+   */
+  const orgForDay = org.data && org.data.date === date ? org.data : null;
+  const rangeFailedDays = range.loading ? 0 : range.points.filter((p) => !p.rollup).length;
+  const periodLoading =
+    granularity === "daily" ? org.loading && !orgForDay : range.loading && range.points.length === 0;
+  const periodError =
+    granularity === "daily"
+      ? orgForDay
+        ? null
+        : org.error
+      : range.points.length > 0 && rangeFailedDays === range.points.length
+        ? "Couldn't load the team's activity for this period. Check your connection and try again."
+        : null;
+  const retryPeriod = granularity === "daily" ? org.reload : range.reload;
 
   /**
    * Every figure on this tab, resolved for the **selected period** — one source, so the cards
@@ -278,7 +296,7 @@ export function ActivityTab() {
     };
 
     if (granularity === "daily") {
-      const r = org.data?.rollup;
+      const r = orgForDay?.rollup;
       // `avg_score` is null whenever `scored_people` is 0 — the server withholds a mean it cannot
       // compute. That says nothing about `total_people`, which is still a real roster, so bailing
       // here reported "0 reported, 0 not reporting" for an org with seven enrolled agents: a
@@ -333,7 +351,7 @@ export function ActivityTab() {
       label: "Days scored",
       value: `${scoredDays.length}/${range.points.length}`,
     });
-  }, [granularity, org.data, range.points]);
+  }, [granularity, orgForDay, range.points]);
 
   const scored = stats?.scored ?? 0;
   const inactive = stats?.inactive ?? 0;
@@ -420,7 +438,17 @@ export function ActivityTab() {
         <DepartmentScoreFocus
           from={usageRange.from}
           to={usageRange.to}
-          period={granularity === "daily" ? "today" : granularity}
+          // A phrase that stays true whenever it is read. "today" was sent for *any* picked day,
+          // and the narrative is cached per range for everyone, so 1 Oct viewed on 8 Oct was
+          // briefed — and stored — as "today" (QA audit 2026-10-08, WP-487). A single day needs no
+          // phrase: the server names the date itself.
+          period={
+            granularity === "weekly"
+              ? "the week"
+              : granularity === "monthly"
+                ? "the month"
+                : undefined
+          }
         />
       ) : null}
 
@@ -442,26 +470,36 @@ export function ActivityTab() {
                   : [
                       {
                         term: "Productivity score",
+                        // Worded from the scorer itself (`score_compute/score.rs`). This used to
+                        // describe Focus as task-switching — it is input-gated time — and quote the
+                        // weights as fixed, though an org or department can change them
+                        // (QA audit 2026-10-08, WP-486).
                         definition: (
                           <>
-                            A 0–100 score for the day, blended from four parts:
+                            A 0–100 score for the day, blended from four parts (default weights):
                             <ul className="mt-1 list-disc space-y-0.5 pl-4">
                               <li>
-                                <strong>Utilisation (25%)</strong> — how much of the day was active
+                                <strong>Utilisation (25%)</strong> — how much of the time on the
+                                timer was active at the computer
                               </li>
                               <li>
-                                <strong>Quality (40%)</strong> — active time spent in productive apps
+                                <strong>Quality (40%)</strong> — how productive the active time
+                                was: the AI&rsquo;s rating of the day&rsquo;s screenshots, or your
+                                app rules when none were rated
                               </li>
                               <li>
-                                <strong>Focus (15%)</strong> — steady work vs. constant switching
+                                <strong>Focus (15%)</strong> — how much of the active time had real
+                                keyboard or mouse input
                               </li>
                               <li>
-                                <strong>Reliability (20%)</strong> — showing up consistently
+                                <strong>Reliability (20%)</strong> — starting on time and working
+                                the expected hours
                               </li>
                             </ul>
                             <span className="mt-1 block opacity-80">
-                              A day with no agent data isn&rsquo;t scored at all — the line breaks
-                              instead of dropping to 0.
+                              Your organization can change the weights, org-wide or per department,
+                              in Settings → Organization. A day with no agent data isn&rsquo;t
+                              scored at all — the line breaks there instead of dropping to 0.
                             </span>
                           </>
                         ),
@@ -478,6 +516,24 @@ export function ActivityTab() {
               <div className="flex h-[260px] items-center justify-center">
                 <Loader label="Reading the day's captures…" />
               </div>
+            ) : hourly.error ? (
+              <EmptyState
+                icon={AlertTriangle}
+                title={
+                  hourly.denied
+                    ? "Hour-by-hour activity isn't available"
+                    : "Couldn't load hour-by-hour activity"
+                }
+                description={hourly.error}
+                className="border-0"
+                action={
+                  hourly.denied ? undefined : (
+                    <Button variant="outline" size="sm" onClick={hourly.reload}>
+                      Try again
+                    </Button>
+                  )
+                }
+              />
             ) : hourly.captures === 0 ? (
               <EmptyState
                 icon={Activity}
@@ -562,14 +618,28 @@ export function ActivityTab() {
                   </ResponsiveContainer>
                 </div>
                 {/* Say what the curve measures. These are capture *moments*, not minutes — the
-                    agent samples periodically, so this shows when work happened, not how much. */}
+                    agent samples periodically, so this shows when work happened, not how much.
+
+                    And say what a capped read covers. The day's index is sorted person-then-time,
+                    so the cap drops whole people, not the oldest frames: it used to claim "the
+                    most recent captures only" over a curve of two or three people's whole day,
+                    captioned as the team's (QA audit 2026-10-08, WP-275). */}
                 <p className="text-muted-foreground mt-2 text-xs">
-                  {hourly.captures.toLocaleString()} screenshot capture
-                  {hourly.captures === 1 ? "" : "s"} across the team, by the hour they
-                  were taken — when work happened, not hours worked.
-                  {hourly.truncated
-                    ? " Showing the most recent captures only; the day has more than this view reads."
-                    : ""}
+                  {hourly.truncated ? (
+                    <>
+                      This day has more captures than this chart can read, so it shows{" "}
+                      {hourly.people} {hourly.people === 1 ? "person's" : "people's"} hours (
+                      {hourly.captures.toLocaleString()} capture
+                      {hourly.captures === 1 ? "" : "s"}), not the whole team&rsquo;s — by the
+                      hour they were taken: when work happened, not hours worked.
+                    </>
+                  ) : (
+                    <>
+                      {hourly.captures.toLocaleString()} screenshot capture
+                      {hourly.captures === 1 ? "" : "s"} across the team, by the hour they were
+                      taken — when work happened, not hours worked.
+                    </>
+                  )}
                 </p>
               </>
             )
@@ -577,6 +647,18 @@ export function ActivityTab() {
             <div className="flex h-[260px] items-center justify-center">
               <Loader label="Aggregating the team's scores…" />
             </div>
+          ) : periodError ? (
+            <EmptyState
+              icon={AlertTriangle}
+              title="Couldn't load this period"
+              description={periodError}
+              className="border-0"
+              action={
+                <Button variant="outline" size="sm" onClick={range.reload}>
+                  Try again
+                </Button>
+              }
+            />
           ) : !hasTrend ? (
             <EmptyState
               icon={Activity}
@@ -619,6 +701,9 @@ export function ActivityTab() {
                       color: "var(--popover-foreground)",
                     }}
                   />
+                  {/* No `connectNulls`: an unscored day is a gap, as the legend says, not a line
+                      drawn straight across it. Dots, so a lone scored day — an area needs two
+                      points — still shows (QA audit 2026-10-08, WP-486). */}
                   <Area
                     type="monotone"
                     dataKey="active"
@@ -626,12 +711,19 @@ export function ActivityTab() {
                     fill="url(#fillActiveHr)"
                     strokeWidth={2}
                     name="Productivity score"
-                    connectNulls
+                    dot={{ r: 3, fill: "var(--chart-1)", strokeWidth: 0 }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           )}
+          {granularity !== "daily" && !periodError && rangeFailedDays > 0 ? (
+            <p className="text-muted-foreground mt-2 text-xs">
+              {rangeFailedDays} of {range.points.length}{" "}
+              {range.points.length === 1 ? "day" : "days"} couldn&rsquo;t be loaded, so the
+              figures on this tab cover the rest of the period.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -642,12 +734,12 @@ export function ActivityTab() {
             <CardTitle className="flex items-center gap-1.5">
               Time by category
               <ChartLegendInfo
-                label="How time is categorised"
+                label="How time is categorized"
                 terms={[
                   {
                     term: "Productive / Neutral / Distracting",
                     definition:
-                      "Your organisation's own app and URL rules decide which is which — the same app can be classified differently by another organisation. Unrecognised apps land in the rules editor's worklist rather than being guessed at.",
+                      "Your organization's own app rules decide which is which — the same app can be classified differently by another organization. Website rules aren't applied yet, so time in a browser follows the browser's own rule. Unrecognized apps land in the rules editor's worklist rather than being guessed at.",
                   },
                 ]}
               />
@@ -661,7 +753,13 @@ export function ActivityTab() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-3">
-            {catTotal > 0 ? (
+            {periodLoading ? (
+              <div className="flex min-h-[8rem] flex-1 items-center justify-center">
+                <Loader label="Reading the period's activity…" />
+              </div>
+            ) : periodError ? (
+              <PeriodErrorState message={periodError} onRetry={retryPeriod} />
+            ) : catTotal > 0 ? (
               <>
                 {CATEGORIES.map((cat) => {
                   const value =
@@ -710,26 +808,48 @@ export function ActivityTab() {
             )}
           </CardContent>
         </Card>
-        <ActiveInactiveRing
-          active={scored}
-          inactive={inactive}
-          // Not employment status: this is who produced agent data. "Inactive" read as
-          // "deactivated employee" — it means the agent reported nothing for them.
-          title="Reporting coverage"
-          description="Share of employees whose desktop agent sent activity in this period — a coverage measure, not an employment one"
-          caption="reporting"
-          activeLabel="Reported"
-          inactiveLabel="Not reporting"
-          layout="row"
-          // Per-day counts can't be de-duplicated into distinct people across a period, so a
-          // multi-day figure is the best single day — say so rather than let it read as "this many
-          // people were active all week".
-          note={
-            granularity === "daily"
-              ? undefined
-              : "Peak day in this period — per-day counts can't be combined into distinct people."
-          }
-        />
+        {periodLoading || periodError ? (
+          // The ring draws `0%` for an empty roster, which is a coverage *measurement*. Without the
+          // period's data there is nothing to measure, so it is not drawn at all.
+          <Card>
+            <CardHeader>
+              <CardTitle>Reporting coverage</CardTitle>
+              <CardDescription>
+                Share of employees whose desktop agent sent activity in this period
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-1 flex-col">
+              {periodError ? (
+                <PeriodErrorState message={periodError} onRetry={retryPeriod} />
+              ) : (
+                <div className="flex min-h-[8rem] flex-1 items-center justify-center">
+                  <Loader label="Reading the period's activity…" />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <ActiveInactiveRing
+            active={scored}
+            inactive={inactive}
+            // Not employment status: this is who produced agent data. "Inactive" read as
+            // "deactivated employee" — it means the agent reported nothing for them.
+            title="Reporting coverage"
+            description="Share of employees whose desktop agent sent activity in this period — a coverage measure, not an employment one"
+            caption="reporting"
+            activeLabel="Reported"
+            inactiveLabel="Not reporting"
+            layout="row"
+            // Per-day counts can't be de-duplicated into distinct people across a period, so a
+            // multi-day figure is the best single day — say so rather than let it read as "this
+            // many people were active all week".
+            note={
+              granularity === "daily"
+                ? undefined
+                : "Peak day in this period — per-day counts can't be combined into distinct people."
+            }
+          />
+        )}
       </div>
 
       <div className="space-y-4">
@@ -750,6 +870,8 @@ export function ActivityTab() {
               description={`Time spent per application across the team${usageRange ? `, ${usageRange.from === usageRange.to ? `on ${usageRange.from}` : `${usageRange.from} to ${usageRange.to}`}` : ""}`}
               items={usage.apps}
               loading={usage.loading}
+              error={usage.error}
+              onRetry={usage.denied ? undefined : usage.reload}
               truncated={usage.truncated}
             />
             <UsageList
@@ -757,6 +879,8 @@ export function ActivityTab() {
               description={`Time spent per website across the team${usageRange ? `, ${usageRange.from === usageRange.to ? `on ${usageRange.from}` : `${usageRange.from} to ${usageRange.to}`}` : ""}`}
               items={usage.sites}
               loading={usage.loading}
+              error={usage.error}
+              onRetry={usage.denied ? undefined : usage.reload}
               // Sites are the one half that can be legitimately empty while apps are not: the
               // agent only reports a URL for browser spans, and `AppSpan.url` is optional.
               emptyHint="Websites appear here once an agent reports browser activity with a URL. App time is still counted above."
@@ -782,25 +906,32 @@ function useAppUsage(range: { from: string; to: string } | null) {
     sites: UsageItem[];
     loading: boolean;
     truncated: boolean;
-  }>({ apps: [], sites: [], loading: false, truncated: false });
+    error: string | null;
+    /** The read was refused (403) — a retry would only be refused again. */
+    denied: boolean;
+  }>({ apps: [], sites: [], loading: false, truncated: false, error: null, denied: false });
   const [nonce, setNonce] = useState(0);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     if (!range) {
-      setState({ apps: [], sites: [], loading: false, truncated: false });
+      setState({
+        apps: [],
+        sites: [],
+        loading: false,
+        truncated: false,
+        error: null,
+        denied: false,
+      });
       return;
     }
     let alive = true;
-    setState((s) => ({ ...s, loading: true }));
+    setState((s) => ({ ...s, loading: true, error: null, denied: false }));
+    // Seconds, as the server counts them. They used to be rounded to whole minutes first, so an
+    // early-morning list (every app under 30 s) ranked on zeros, read "00:00:00", and divided by a
+    // zero maximum into a `NaN%` bar (QA audit 2026-10-08, WP-485).
     const toItems = (rows: UsageRow[]): UsageItem[] =>
-      rows.map((r) => ({
-        name: r.name,
-        category: r.category,
-        // The panel renders minutes; the server counts seconds. Rounding here rather than
-        // server-side keeps the API in the unit it actually stores.
-        minutes: Math.round(r.seconds / 60),
-      }));
+      rows.map((r) => ({ name: r.name, category: r.category, seconds: r.seconds }));
     getAppUsage(range.from, range.to)
       .then((res) => {
         if (!alive) return;
@@ -809,12 +940,27 @@ function useAppUsage(range: { from: string; to: string } | null) {
           sites: toItems(res.sites),
           loading: false,
           truncated: res.truncated,
+          error: null,
+          denied: false,
         });
       })
-      .catch(() => {
-        // A refused or failed read must not blank the rest of the page. The panel falls back to its
-        // empty state, which is honest: we have nothing to show.
-        if (alive) setState({ apps: [], sites: [], loading: false, truncated: false });
+      .catch((e) => {
+        // A refused or failed read must not blank the rest of the page — but it is not "nothing was
+        // reported" either, which is what the panels used to say (QA audit 2026-10-08, WP-274).
+        if (!alive) return;
+        const denied = e instanceof ApiError && e.status === 403;
+        setState({
+          apps: [],
+          sites: [],
+          loading: false,
+          truncated: false,
+          error: denied
+            ? "App and website usage isn't available to you — your organization's plan or settings, or your role, don't include it."
+            : e instanceof ApiError
+              ? e.message
+              : "Couldn't load app usage. Check your connection and try again.",
+          denied,
+        });
       });
     return () => {
       alive = false;
@@ -827,7 +973,7 @@ function useAppUsage(range: { from: string; to: string } | null) {
 interface UsageItem {
   name: string;
   category: "productive" | "neutral" | "distracting";
-  minutes: number;
+  seconds: number;
 }
 
 const CATEGORY_COLOR: Record<UsageItem["category"], string> = {
@@ -841,6 +987,8 @@ function UsageList({
   description,
   items,
   loading = false,
+  error = null,
+  onRetry,
   truncated = false,
   emptyHint,
 }: {
@@ -849,12 +997,17 @@ function UsageList({
   description: string;
   items: UsageItem[];
   loading?: boolean;
+  /** The read failed — shown instead of the empty state, which would claim nothing was reported. */
+  error?: string | null;
+  /** Omit for a refusal, which a retry would only repeat. */
+  onRetry?: () => void;
   /** The server capped the read, so this is the top of a longer list — say so, never imply totality. */
   truncated?: boolean;
   /** Overrides the empty-state wording where "no data" has a more specific cause than "no agent". */
   emptyHint?: string;
 }) {
-  const max = items.length ? Math.max(...items.map((i) => i.minutes)) : 1;
+  // Floored at one second, so a list of all-zero rows draws empty bars rather than `NaN%` ones.
+  const max = Math.max(1, ...items.map((i) => i.seconds));
   return (
     <Card>
       <CardHeader>
@@ -869,6 +1022,8 @@ function UsageList({
         ) : null}
         {loading && items.length === 0 ? (
           <p className="text-muted-foreground py-6 text-center text-sm">Loading…</p>
+        ) : error ? (
+          <PeriodErrorState message={error} onRetry={onRetry} />
         ) : items.length === 0 ? (
           <EmptyState
             icon={Activity}
@@ -894,14 +1049,14 @@ function UsageList({
                   {it.name}
                 </span>
                 <span className="text-muted-foreground font-mono text-xs tabular-nums">
-                  {formatMinutes(it.minutes)}
+                  {formatDuration(it.seconds)}
                 </span>
               </div>
               <div className="bg-muted h-1.5 overflow-hidden rounded-full">
                 <div
                   className="h-full rounded-full"
                   style={{
-                    width: `${(it.minutes / max) * 100}%`,
+                    width: `${(it.seconds / max) * 100}%`,
                     backgroundColor: CATEGORY_COLOR[it.category],
                   }}
                 />
@@ -911,5 +1066,24 @@ function UsageList({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** A read that failed, said plainly in place of the panel's content — never as an empty period. */
+function PeriodErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <EmptyState
+      icon={AlertTriangle}
+      title="Couldn't load this"
+      description={message}
+      className="border-0"
+      action={
+        onRetry ? (
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            Try again
+          </Button>
+        ) : undefined
+      }
+    />
   );
 }

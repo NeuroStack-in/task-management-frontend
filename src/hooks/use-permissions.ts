@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useAuthStore } from "@/stores/auth.store";
 import { useRolesStore } from "@/stores/roles.store";
 import { SYSTEM_ROLES } from "@/constants/roles";
@@ -9,7 +9,8 @@ import {
   CONTRIBUTOR_ONLY_PERMISSIONS,
 } from "@/constants/permissions";
 import { canAccess, canAll, canAny, getAccessibleNav } from "@/lib/rbac";
-import { permissionsFromBitset } from "@/lib/permission-bits";
+import { permissionsFromBitset, SERVER_ID_BITS } from "@/lib/permission-bits";
+import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
   useIsFeatureAllowed,
   useIsFeatureOn,
@@ -17,7 +18,51 @@ import {
   useTrackingMode,
 } from "@/hooks/use-features";
 import { isPathModeHidden } from "@/constants/features";
-import type { PermissionId, Role } from "@/types/rbac";
+import type { PermissionId, Role, RoleScope } from "@/types/rbac";
+
+/**
+ * A server-created custom role, in the local `Role` shape: its real name, description and scope from
+ * `GET /v1/roles` (any member may read it), its permissions decoded the same way a token's are.
+ */
+function toLocalRole(r: ApiRole): Role {
+  const claim = r.permissions
+    .map((id) => SERVER_ID_BITS[id])
+    .filter((bit): bit is number => bit !== undefined)
+    .reduce((acc, bit) => acc | (BigInt(1) << BigInt(bit)), BigInt(0));
+  const scope: RoleScope =
+    r.scope === "self" || r.scope === "team" || r.scope === "org" ? r.scope : "org";
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    system: false,
+    scope,
+    permissions: permissionsFromBitset(claim.toString()) ?? [],
+  };
+}
+
+/** Role ids already asked for on this page load — one `GET /v1/roles` per custom role, not per mount. */
+const requestedRoleIds = new Set<string>();
+
+/**
+ * Learn a custom role's identity from the server and keep it in the (persisted) roles store, so the
+ * next load has it before any request returns. Best-effort: on failure the placeholder stands.
+ */
+function loadServerRole(roleId: string): void {
+  if (requestedRoleIds.has(roleId)) return;
+  requestedRoleIds.add(roleId);
+  listRoles()
+    .then((roles) => {
+      const found = roles.find((r) => r.id === roleId && !r.system);
+      if (!found) return;
+      useRolesStore.setState((s) => ({
+        customRoles: [...s.customRoles.filter((c) => c.id !== roleId), toLocalRole(found)],
+      }));
+    })
+    .catch(() => {
+      /* keep the placeholder; the next page load asks again */
+    });
+}
 
 /**
  * Resolves the current user's Role object.
@@ -35,6 +80,15 @@ import type { PermissionId, Role } from "@/types/rbac";
 export function useCurrentRole(): Role | null {
   const user = useAuthStore((s) => s.user);
   const customRoles = useRolesStore((s) => s.customRoles);
+  // A custom role's name and scope live only on the server's role record — the token carries the
+  // bits, not the identity. Without this every custom role rendered as "Custom role" with scope
+  // `org`, and the dashboard, profile and data-scope branches all took the org path for a `self` or
+  // `team` role (QA audit 2026-10-08, WP-318). Owners resolve to the wildcard and need no lookup.
+  const customRoleId =
+    user && !user.isOwner && !SYSTEM_ROLES.some((r) => r.id === user.roleId) ? user.roleId : null;
+  useEffect(() => {
+    if (customRoleId) loadServerRole(customRoleId);
+  }, [customRoleId]);
   return useMemo(() => resolveRole(user, customRoles), [user, customRoles]);
 }
 
@@ -76,8 +130,9 @@ export function resolveRole(
   // `reports:view` the server *does* grant (a page hidden from someone entitled to it).
   //
   // Taking permissions from the claim removes both failure modes at once: there is exactly one
-  // source of truth, and it is the same one the server gates on. The catalog entry is still used
-  // for the display name, so an Admin does not suddenly render as "Custom role".
+  // source of truth, and it is the same one the server gates on. The catalog entry — or, for a
+  // custom role, the server's role record `useCurrentRole` fetched — supplies the name and scope.
+  // Until that record arrives the placeholder below stands in, with its scope assumed `org`.
   const derived = permissionsFromBitset(user.perm);
   if (derived) {
     return known

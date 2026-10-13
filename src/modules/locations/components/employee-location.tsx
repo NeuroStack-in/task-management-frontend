@@ -9,11 +9,12 @@ import { Loader } from "@/components/shared/loader";
 import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import { todayIso } from "@/lib/format";
 import { ApiError } from "@/lib/api";
+import { LIVE_REFRESH_MS, useLiveRefresh } from "@/hooks/use-live-refresh";
 import { getLocationTrail, type LocationPoint, type OversightPersonLocation } from "@/modules/insights/services/insights.service";
 import { getUserTimesheet } from "@/modules/time-tracking/services/timesheet.service";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useGeofenceStore } from "@/stores/geofence.store";
-import { deriveMode, deriveStatus, distanceMeters, insidePerimeter, WORK_MODE_LABEL, type GeoPoint } from "@/modules/locations/types";
+import { deriveMode, deriveStatus, distanceMeters, perimeterVerdict, WORK_MODE_LABEL, type GeoPoint } from "@/modules/locations/types";
 import { LiveMap, type MapMarker } from "./live-map";
 import { LocationTimeline, type MomentEntry } from "./location-timeline";
 import { cn } from "@/lib/utils";
@@ -60,14 +61,19 @@ interface TimerSession {
  * - `no-capture` — the timer *was* running but no position reached us (agent offline, OS location
  *   denied, or consent withdrawn). Reporting this as "timer off" would blame the employee for a
  *   gap that is not theirs.
- * - `unknown` — the viewer cannot read this employee's timesheet (`TimeReadTeam`), so the timer's
- *   state is genuinely unknown to them. Shows the last known position without asserting why.
+ * - `unknown` — the timer's state cannot be known: the viewer cannot read this employee's timesheet
+ *   (`TimeReadTeam`, `reason: "no-access"`), or the read failed (`reason: "error"`). Shows the last
+ *   known position without asserting why. A failed read used to resolve every time to "timer off" —
+ *   a false statement about a person, on a screen meant to settle disputes (QA audit 2026-10-08,
+ *   WP-292).
+ * - `future` — the picked time hasn't happened yet, so nothing can be said about it.
  */
 type MomentState =
   | { kind: "located"; point: LocationPoint; session: TimerSession }
   | { kind: "timer-off" }
   | { kind: "no-capture"; session: TimerSession }
-  | { kind: "unknown"; point: LocationPoint | null };
+  | { kind: "unknown"; point: LocationPoint | null; reason: "no-access" | "error" }
+  | { kind: "future" };
 
 /** The session containing `t`, or `null`. A running session is open-ended. */
 function sessionAt(sessions: TimerSession[], t: number, now: number): TimerSession | null {
@@ -121,9 +127,17 @@ export function EmployeeLocationView({
   onDateChange: (iso: string) => void;
   onBack: () => void;
 }) {
-  const [trail, setTrail] = useState<LocationPoint[] | null>(null);
+  /** The trail, with the day it belongs to — another day's trail never stands in for this one's. */
+  const [trail, setTrail] = useState<{
+    date: string;
+    points: LocationPoint[];
+    /** When it was read: "online" is judged against this, not each render's clock. */
+    at: number;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The read was refused (403) — a retry would only be refused again. */
+  const [denied, setDenied] = useState(false);
   const [time, setTime] = useState(""); // "HH:MM" — locate at a specific moment
   const [sessions, setSessions] = useState<TimerSession[] | null>(null);
   /**
@@ -132,6 +146,12 @@ export function EmployeeLocationView({
    * not the timesheet. In that case the page must not claim anything about the timer.
    */
   const [timerAccess, setTimerAccess] = useState(true);
+  /** The timesheet read failed for another reason — the timer's state is then unknown, not "off". */
+  const [timerFailed, setTimerFailed] = useState(false);
+  // Live for today, like the board: a fix and a running timer keep moving while this is open.
+  const { nonce, reload, isBackground } = useLiveRefresh(
+    date !== "" && date === todayIso() ? LIVE_REFRESH_MS : null,
+  );
   // Resolve the person's department id → name. `person` only carries `department_id` (a ULID), which
   // must never be shown to a user; the board resolves names in its own list but doesn't thread them
   // into this detail view, so resolve here (best-effort, same `departmentMap` the rest of the app uses).
@@ -158,34 +178,37 @@ export function EmployeeLocationView({
     [fenceCenter, radiusM],
   );
 
+  // The trail and the day's timer sessions, read together so a poll refreshes both — the sessions
+  // are the authority on "was the timer running at 14:30".
   useEffect(() => {
     if (!date) return;
     let live = true;
-    setLoading(true);
-    setError(null);
+    const background = isBackground();
+    if (!background) {
+      setLoading(true);
+      setError(null);
+      setDenied(false);
+      setSessions(null);
+      setTimerAccess(true);
+      setTimerFailed(false);
+    }
     getLocationTrail(person.user_id, date)
-      .then((d) => live && setTrail(d.points))
-      .catch((e) => {
+      .then((d) => {
         if (!live) return;
-        setTrail(null);
+        setTrail({ date, points: d.points, at: Date.now() });
+        setError(null);
+      })
+      .catch((e) => {
+        if (!live || background) return; // a failed poll keeps the last good trail
+        const refused = e instanceof ApiError && e.status === 403;
+        setDenied(refused);
         setError(
-          e instanceof ApiError && e.status === 403
+          refused
             ? "You don't have access to this employee's location."
             : "Couldn't load this employee's location trail.",
         );
       })
       .finally(() => live && setLoading(false));
-    return () => {
-      live = false;
-    };
-  }, [person.user_id, date]);
-
-  // The day's timer sessions — the authority on "was the timer running at 14:30".
-  useEffect(() => {
-    if (!date) return;
-    let live = true;
-    setSessions(null);
-    setTimerAccess(true);
     getUserTimesheet(person.user_id, date, date)
       .then((g) => {
         if (!live) return;
@@ -193,25 +216,31 @@ export function EmployeeLocationView({
         setSessions(
           (day?.entries ?? []).map((e) => ({ start: e.start, end: e.end })),
         );
+        setTimerAccess(true);
+        setTimerFailed(false);
       })
       .catch((e) => {
-        if (!live) return;
-        // 403 is a permission boundary, not a failure: fall back to "we can't say".
+        if (!live || background) return; // a failed poll keeps the sessions already read
+        // 403 is a permission boundary; anything else is a failed read. Neither is "no sessions",
+        // which made every picked time "the timer was not running" (WP-292).
         if (e instanceof ApiError && e.status === 403) setTimerAccess(false);
-        setSessions([]);
+        else setTimerFailed(true);
+        setSessions(null);
       });
     return () => {
       live = false;
     };
-  }, [person.user_id, date]);
+  }, [person.user_id, date, nonce, isBackground]);
 
-  const points = useMemo(() => trail ?? [], [trail]);
+  const currentPoints = trail && trail.date === date ? trail.points : null;
+  const points = useMemo(() => currentPoints ?? [], [currentPoints]);
   const last = points.length > 0 ? points[points.length - 1] : null;
 
-  const now = Date.now();
+  // The moment the trail was read — one instant for every judgement on the page.
+  const now = trail?.at ?? 0;
   const status = deriveStatus(last?.captured_at ?? null, points.length, now);
   const online = status === "online";
-  const mode = deriveMode(last ? toGeoPoint(last) : null, fence, fenceOn);
+  const mode = deriveMode(last ? toGeoPoint(last) : null, fence, fenceOn, last?.accuracy_m);
 
   /** The requested moment as epoch ms, or `null` when no time is picked / it is malformed. */
   const askedAtMs = useMemo(() => {
@@ -224,14 +253,19 @@ export function EmployeeLocationView({
   /** Resolves the picked moment against the timer sessions — see {@link MomentState}. */
   const momentState: MomentState | null = useMemo(() => {
     if (askedAtMs === null) return null;
-    if (!timerAccess) {
-      // No timesheet access: report position only, assert nothing about the timer.
+    // No read yet to judge against: a running session's end is "now", so judging early could call
+    // it "timer off".
+    if (now === 0) return null;
+    // Later than the trail's read: nothing has been — or could have been — recorded for it yet.
+    if (askedAtMs > now) return { kind: "future" };
+    if (!timerAccess || timerFailed) {
+      // The timer's state is unknown: report position only, assert nothing about the timer.
       let last: LocationPoint | null = null;
       for (const p of points) {
         if (p.captured_at > askedAtMs) break;
         last = p;
       }
-      return { kind: "unknown", point: last };
+      return { kind: "unknown", point: last, reason: timerAccess ? "error" : "no-access" };
     }
     if (sessions === null) return null; // still loading
     const session = sessionAt(sessions, askedAtMs, now);
@@ -240,7 +274,7 @@ export function EmployeeLocationView({
     return point
       ? { kind: "located", point, session }
       : { kind: "no-capture", session };
-  }, [askedAtMs, timerAccess, sessions, points, now]);
+  }, [askedAtMs, timerAccess, timerFailed, sessions, points, now]);
 
   const momentPoint =
     momentState?.kind === "located"
@@ -256,10 +290,15 @@ export function EmployeeLocationView({
     [fenceOn, fenceCenter],
   );
 
+  // Inside `true`, outside `false`, and `null` when there is no perimeter **or the fix is too coarse
+  // to place** — a fix is only called outside beyond its own accuracy (WP-291).
   const insideOf = useMemo(
     () =>
-      (p: LocationPoint): boolean | null =>
-        fenceOn ? insidePerimeter(toGeoPoint(p), fence) : null,
+      (p: LocationPoint): boolean | null => {
+        if (!fenceOn) return null;
+        const verdict = perimeterVerdict(toGeoPoint(p), p.accuracy_m, fence);
+        return verdict === "uncertain" ? null : verdict === "inside";
+      },
     [fenceOn, fence],
   );
 
@@ -283,6 +322,7 @@ export function EmployeeLocationView({
         point: toGeoPoint(points[0]),
         variant: "login",
         name: `Tracking started · ${fmtTime(points[0].captured_at)}`,
+        accuracyM: points[0].accuracy_m,
       });
     }
     if (last && points.length > 1) {
@@ -292,6 +332,7 @@ export function EmployeeLocationView({
         variant: online ? "current" : "default",
         name: `${online ? "Current" : "Last seen"} · ${fmtTime(last.captured_at)}`,
         alert: currentInside === false,
+        accuracyM: last.accuracy_m,
       });
     }
     if (momentPoint) {
@@ -300,6 +341,7 @@ export function EmployeeLocationView({
         point: toGeoPoint(momentPoint),
         variant: "moment",
         name: `At ${time} · recorded ${fmtTime(momentPoint.captured_at)}`,
+        accuracyM: momentPoint.accuracy_m,
       });
     }
     return out;
@@ -437,12 +479,38 @@ export function EmployeeLocationView({
               Clear
             </Button>
           </span>
+        ) : momentState.kind === "future" ? (
+          <span className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            <Clock className="size-4 shrink-0" />
+            {time} hasn&apos;t happened yet on {dateLabel(date)}.
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7"
+              onClick={() => setTime("")}
+            >
+              Clear
+            </Button>
+          </span>
         ) : momentState.kind === "unknown" ? (
           <span className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
             <Clock className="size-4 shrink-0" />
             {momentState.point
-              ? `Last known position at ${time} · recorded ${fmtTime(momentState.point.captured_at)}. Timer status needs time-tracking access.`
-              : `No location recorded at or before ${time} on ${dateLabel(date)}.`}
+              ? `Last known position at ${time} · recorded ${fmtTime(momentState.point.captured_at)}. ${
+                  momentState.reason === "no-access"
+                    ? "Timer status needs time-tracking access."
+                    : "The timesheet couldn't be read, so whether the timer was running is unknown."
+                }`
+              : `No location recorded at or before ${time} on ${dateLabel(date)}.${
+                  momentState.reason === "error"
+                    ? " The timesheet couldn't be read, so whether the timer was running is unknown."
+                    : ""
+                }`}
+            {momentState.reason === "error" ? (
+              <Button variant="ghost" size="sm" className="h-7" onClick={reload}>
+                Try again
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="sm"
@@ -490,11 +558,19 @@ export function EmployeeLocationView({
 
       {error ? (
         <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          <CardContent className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
             {error}
+            {denied ? null : (
+              <Button variant="outline" size="sm" onClick={reload}>
+                Try again
+              </Button>
+            )}
           </CardContent>
         </Card>
-      ) : loading ? (
+      ) : trail === null ? (
+        // Only the first read replaces the map with a loader. After that a new day loads under a
+        // map that stays mounted — swapping it out rebuilt the WebGL map, its style and tiles on
+        // every day stepped through (QA audit 2026-10-08, WP-287).
         <Card>
           <CardContent className="py-10">
             <Loader />
@@ -510,7 +586,9 @@ export function EmployeeLocationView({
                 geofence={fenceOn ? fence : null}
                 center={center}
                 zoom={14}
-                recenterKey={`${person.user_id}-${date}-${time}`}
+                // Re-centres when the day's trail arrives (the map now outlives a date change),
+                // never on a poll of the same day.
+                recenterKey={`${person.user_id}-${date}-${time}-${currentPoints === null ? "loading" : "ready"}`}
                 className="h-[420px] w-full"
               />
             </CardContent>
@@ -523,12 +601,16 @@ export function EmployeeLocationView({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <LocationTimeline
-                points={points}
-                online={online}
-                moment={moment}
-                distanceFromOffice={distFrom}
-              />
+              {currentPoints === null || (loading && currentPoints.length === 0) ? (
+                <Loader label={`Loading ${dateLabel(date)}…`} />
+              ) : (
+                <LocationTimeline
+                  points={points}
+                  online={online}
+                  moment={moment}
+                  distanceFromOffice={distFrom}
+                />
+              )}
             </CardContent>
           </Card>
         </div>

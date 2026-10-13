@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getOrgActivity, type OrgActivity } from "./services/insights.service";
 
 /**
@@ -30,8 +30,12 @@ export interface RangeState {
  * (a failed day becomes `score: null`, never blocks the rest). Used to synthesise the weekly /
  * monthly trend from the per-day org rollups — the scorer stores daily totals only, so a range is
  * built by aggregating day calls rather than a dedicated range endpoint.
+ *
+ * `cancelled` is checked before each request: a run the user has already moved past stops issuing
+ * them. Discarding its result was not enough — flipping through three months left three 23-request
+ * fan-outs in flight at once, the burst the lane cap exists to prevent (QA audit 2026-10-08, WP-492).
  */
-async function fanOut(dates: string[]): Promise<RangePoint[]> {
+async function fanOut(dates: string[], cancelled: () => boolean): Promise<RangePoint[]> {
   const results: RangePoint[] = dates.map((date) => ({
     date,
     score: null,
@@ -39,7 +43,7 @@ async function fanOut(dates: string[]): Promise<RangePoint[]> {
   }));
   let cursor = 0;
   const worker = async () => {
-    while (cursor < dates.length) {
+    while (cursor < dates.length && !cancelled()) {
       const i = cursor++;
       try {
         const d = await getOrgActivity(dates[i]);
@@ -65,6 +69,8 @@ export function useOrgActivityRange(dates: string[]): RangeState {
   const [nonce, setNonce] = useState(0);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
   const key = dates.join(",");
+  /** The range the current `points` describe — a reload of the same range keeps them on screen. */
+  const loadedKey = useRef<string | null>(null);
 
   useEffect(() => {
     if (dates.length === 0) {
@@ -74,7 +80,13 @@ export function useOrgActivityRange(dates: string[]): RangeState {
     }
     let live = true;
     setLoading(true);
-    fanOut(dates)
+    // A **different** range starts empty: last week's days must not stand in for this month's while
+    // the fan-out runs (QA audit 2026-10-08, WP-279).
+    if (loadedKey.current !== key) {
+      setPoints([]);
+      loadedKey.current = key;
+    }
+    fanOut(dates, () => !live)
       .then((r) => {
         if (live) setPoints(r);
       })

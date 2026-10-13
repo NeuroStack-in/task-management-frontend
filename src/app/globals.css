@@ -504,6 +504,10 @@
 }
 
 /* ---- Slate & Teal ---- */
+/* The shipped palette. `--primary` (button fills, links, active states) and `--muted-foreground`
+   are deeper than the brand swatch so the text on/with them clears WCAG AA 4.5:1 — white on the
+   brand teal #0f9b8e measured 3.44:1, and #7a746b captions on the page 4.25:1 (QA audit 2026-10-08,
+   WP-114). Same hue: the brand teal itself stays on the charts, the focus ring and the accents. */
 [data-palette="teal"] {
   --background: #f7f5f1;
   --foreground: #2c2a27;
@@ -511,12 +515,12 @@
   --card-foreground: #2c2a27;
   --popover: #fffefc;
   --popover-foreground: #2c2a27;
-  --primary: #0f9b8e;
+  --primary: #0b7f73;
   --primary-foreground: #ffffff;
   --secondary: #efece6;
   --secondary-foreground: #46423b;
   --muted: #f0ede7;
-  --muted-foreground: #7a746b;
+  --muted-foreground: #6f695f;
   --accent: #d6f3ee;
   --accent-foreground: #0f5e57;
   --destructive: #e5544a;
@@ -537,7 +541,7 @@
   --chart-5: #8a8378;
   --sidebar: #fffefc;
   --sidebar-foreground: #2c2a27;
-  --sidebar-primary: #0f9b8e;
+  --sidebar-primary: #0b7f73;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #d6f3ee;
   --sidebar-accent-foreground: #0f5e57;

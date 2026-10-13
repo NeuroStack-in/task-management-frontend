@@ -4,8 +4,9 @@ import { DeviceDetailView } from "@/modules/agents/components/device-detail-view
 export const metadata: Metadata = { title: "Device agent · Settings" };
 
 // One device, one page — the real reads: `GET /v1/fleet/{agent_id}` (LLD §18) plus the owner
-// lookup, and `POST /v1/fleet/{id}/capture-now`. (Was `AgentDetailPage`, a seeded record
-// synthesised deterministically per agent id, which paired with the mock roster.)
+// lookup, and Release (`POST /v1/fleet/{id}/release`). Capture now lives on the screenshots page,
+// not here. (Was `AgentDetailPage`, a seeded record synthesised deterministically per agent id,
+// which paired with the mock roster.)
 export default async function Page({
   params,
 }: {

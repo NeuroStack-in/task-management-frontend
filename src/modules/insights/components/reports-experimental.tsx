@@ -20,18 +20,24 @@ import { Loader } from "@/components/shared/loader";
 import { formatHours } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
+import { isOwnerOf, useIsFeatureAllowed } from "@/hooks/use-features";
+import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantStore } from "@/stores/assistant.store";
+import { useAssistantAccess } from "@/hooks/use-assistant-access";
+import { useAuthStore } from "@/stores/auth.store";
+import { useEntitlementsStore } from "@/stores/entitlements.store";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { ReportsLibrary } from "./reports-library";
-import { useAiReport } from "../use-reports";
+import { useAiReport, type AiReportLock } from "../use-reports";
 import { useWeekPerformers } from "../use-week-performers";
 import type { AiReport, NamedScore } from "../services/insights.service";
 
 /**
  * AI reports — the AI-first executive surface in the preview's layout, fully live:
- *  • **AI briefing** + **workforce health** score (`GET /v1/insights/reports/ai`, entitlement-gated)
- *    — the AI-written org narrative, a real average-score ring, and the real day rollup. A 403 (the
- *    org lacks the AI Reports add-on) degrades to an honest upsell, not a failure.
+ *  • **AI briefing** + **workforce health** score (`GET /v1/insights/reports/ai`) — the AI-written
+ *    org narrative, a real average-score ring, and the real day rollup. It needs the "Export AI PDF
+ *    report" and "View organization activity" permissions **and** the AI Reports add-on; a refusal
+ *    says which one is missing, not a failure.
  *  • **People to check in on** moved to the Attendance page — absences and short days are acted on
  *    against the roster, and this tab is a reading surface.
  *  • **Report library** ({@link ReportsLibrary}) — the preview's full "All reports" surface, every
@@ -158,6 +164,7 @@ export function ReportsExperimental() {
       <ExecutiveOverview
         state={aiReport}
         date={date}
+        today={today}
         onRegenerate={aiReport.regenerate}
         regenerating={aiReport.regenerating}
       />
@@ -177,27 +184,24 @@ export function ReportsExperimental() {
 function ExecutiveOverview({
   state,
   date,
+  today,
   onRegenerate,
   regenerating,
 }: {
   state: ReturnType<typeof useAiReport>;
   date: string;
+  today: string;
   onRegenerate: () => void;
   regenerating: boolean;
 }) {
   // Ranked over the week, not the day — a single day's roster is too small for "top" and "needs
   // attention" to be different people. Called before the early returns below, because hooks must run
-  // in the same order on every render.
-  const week = useWeekPerformers(date);
+  // in the same order on every render. Not while the report is locked: the lists render under it, so
+  // a week of reads behind a lock was spent on nothing (QA audit 2026-10-08, WP-492).
+  const week = useWeekPerformers(state.locked ? "" : date);
 
   if (state.locked) {
-    return (
-      <EmptyState
-        icon={Lock}
-        title="Requires the AI Reports add-on"
-        description="The AI executive report is part of the AI Reports add-on (insights.reports.ai_pdf). Ask an owner to enable it to generate day-over-day AI briefings and PDF exports."
-      />
-    );
+    return <ReportLocked reason={state.locked} />;
   }
   if (state.loading && !state.data) {
     return (
@@ -206,10 +210,15 @@ function ExecutiveOverview({
       </div>
     );
   }
-  if (state.error) {
+  if (state.error && !state.data) {
+    // With a way back: `reload` existed and was wired to nothing, so only changing the date could
+    // clear this (QA audit 2026-10-08, WP-278).
     return (
-      <div className="rounded-3xl border border-border bg-card py-12 text-center text-sm text-muted-foreground">
-        {state.error}
+      <div className="flex flex-col items-center gap-3 rounded-3xl border border-border bg-card py-12 text-center text-sm text-muted-foreground">
+        <p>{state.error}</p>
+        <Button variant="outline" size="sm" onClick={state.reload}>
+          Try again
+        </Button>
       </div>
     );
   }
@@ -225,6 +234,12 @@ function ExecutiveOverview({
   };
   const band = healthBand(report.metrics.avg_score ?? 0);
 
+  // "this week" only for the week that contains today — a past week's lists were titled "this week"
+  // too (QA audit 2026-10-08, WP-487).
+  const thisWeek = week.days.length === 0 || week.days.includes(today);
+  const weekTitle = thisWeek ? "this week" : `week of ${shortDate(week.days[0])}`;
+  const weekPhrase = thisWeek ? "this week" : "that week";
+
   return (
     <div className="space-y-4">
       <section className="grid gap-4 xl:grid-cols-12" data-tour="insights:ai">
@@ -232,13 +247,20 @@ function ExecutiveOverview({
           report={report}
           onRegenerate={onRegenerate}
           regenerating={regenerating}
+          notice={
+            state.regenError
+              ? `Couldn't regenerate the summary, so this is the previous one. ${state.regenError}`
+              : state.error
+                ? "Couldn't refresh the report — showing the last one loaded."
+                : null
+          }
         />
         <HealthScoreCard report={report} band={band} />
       </section>
 
       <div className="grid gap-4 md:grid-cols-2">
         <NamedScoreList
-          title="Top performers · this week"
+          title={`Top performers · ${weekTitle}`}
           icon={TrendingUp}
           tone="up"
           people={week.topPerformers}
@@ -246,12 +268,14 @@ function ExecutiveOverview({
             week.loading
               ? "Ranking the week…"
               : week.scoredPeople === 0
-                ? "Nobody has been scored this week yet."
-                : "Nobody scored above the attention threshold this week."
+                ? thisWeek
+                  ? "Nobody has been scored this week yet."
+                  : "Nobody was scored that week."
+                : `Nobody scored above the attention threshold ${weekPhrase}.`
           }
         />
         <NamedScoreList
-          title="Needs attention · this week"
+          title={`Needs attention · ${weekTitle}`}
           icon={TrendingDown}
           tone="down"
           people={week.needsAttention}
@@ -259,13 +283,72 @@ function ExecutiveOverview({
             week.loading
               ? "Ranking the week…"
               : week.scoredPeople === 0
-                ? "Nobody has been scored this week yet."
-                : "Nobody is below the attention threshold this week."
+                ? thisWeek
+                  ? "Nobody has been scored this week yet."
+                  : "Nobody was scored that week."
+                : `Nobody was below the attention threshold ${weekPhrase}.`
           }
         />
       </div>
     </div>
   );
+}
+
+/** `2026-10-05` → `"Oct 5"`. */
+function shortDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+const AI_PDF_FEATURE = "insights.reports.ai_pdf";
+
+/**
+ * Why the executive report is unavailable, in terms of what would fix it — see `AiReportLock`.
+ *
+ * Every refusal used to read "Requires the AI Reports add-on … Ask an owner to enable it", including
+ * for a role missing a permission on an org that already had the add-on, and for the owner who had
+ * switched the add-on off (QA audit 2026-10-08, WP-277).
+ */
+function ReportLocked({ reason }: { reason: AiReportLock }) {
+  const isFeatureAllowed = useIsFeatureAllowed();
+  const loaded = useEntitlementsStore((s) => s.loaded);
+  const allowed = useEntitlementsStore((s) => s.allowed.includes(AI_PDF_FEATURE));
+  const switchedOn = useEntitlementsStore((s) => s.enabled[AI_PDF_FEATURE] === true);
+  const isOwner = useAuthStore(isOwnerOf);
+  const { can } = usePermissions();
+
+  let title: string;
+  let description: string;
+  if (reason === "permission") {
+    title = "Not included in your role";
+    description =
+      "The AI executive report needs a role with the “Export AI PDF report” and “View organization activity” permissions. An admin can add them under Settings → Roles & permissions.";
+  } else if (reason === "unavailable") {
+    title = "The AI executive report isn't available to you";
+    description =
+      "It needs the AI Reports add-on, and a role with the “Export AI PDF report” and “View organization activity” permissions.";
+  } else if (loaded && !isFeatureAllowed(AI_PDF_FEATURE)) {
+    title = "Requires the AI Reports add-on";
+    description = `The AI executive report is part of the AI Reports add-on, which isn't in your organization's plan. ${
+      can("billing:view")
+        ? "Upgrade the plan under Settings → Billing to add it."
+        : "Ask an owner to upgrade the plan."
+    }`;
+  } else if (loaded && allowed && !switchedOn) {
+    title = "The AI Reports add-on is turned off";
+    description =
+      isOwner || can("entitlements:manage")
+        ? "It's switched off for your organization. Turn it back on under Settings → Features to generate AI briefings."
+        : "Your organization has switched it off. Ask an owner to turn it back on under Settings → Features.";
+  } else {
+    title = "Requires the AI Reports add-on";
+    description =
+      "The AI executive report needs the AI Reports add-on, which isn't active for your organization right now.";
+  }
+  return <EmptyState icon={Lock} title={title} description={description} />;
 }
 
 /* ------------------------------- AI briefing ------------------------------ */
@@ -274,12 +357,17 @@ function AiBriefing({
   report,
   onRegenerate,
   regenerating,
+  notice,
 }: {
   report: AiReport;
   onRegenerate: () => void;
   regenerating: boolean;
+  /** A failed re-run or refresh — said here, beside the summary it kept. */
+  notice?: string | null;
 }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
+  // The floating assistant's own gate — a button it can't answer is a button that does nothing.
+  const canAsk = useAssistantAccess().chat;
   const attention = report.metrics.needs_attention.slice(0, 3);
 
   return (
@@ -303,9 +391,10 @@ function AiBriefing({
             <p className="text-xs font-semibold uppercase tracking-wide text-feature-foreground/70">
               Needs your attention
             </p>
-            {attention.map((a) => (
+            {attention.map((a, i) => (
               <div
-                key={a.name}
+                // Index too: two people can share a name, and a name-only key collided.
+                key={`${a.name}-${i}`}
                 className="flex w-full items-center gap-3 rounded-xl bg-white/10 px-3 py-2 text-left"
               >
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/15">
@@ -330,9 +419,11 @@ function AiBriefing({
               The day's narrative is generate-once-cached, so each press is a fresh billed model
               run against the org's daily token budget. */}
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => openAssistant()}>
-              Ask the assistant <ArrowUpRight className="size-4" />
-            </Button>
+            {canAsk ? (
+              <Button variant="secondary" size="sm" onClick={() => openAssistant()}>
+                Ask the assistant <ArrowUpRight className="size-4" />
+              </Button>
+            ) : null}
             <Button
               size="sm"
               onClick={onRegenerate}
@@ -350,6 +441,11 @@ function AiBriefing({
             </p>
           ) : null}
         </div>
+        {notice ? (
+          <p className="mt-3 text-xs text-feature-foreground/80" role="status">
+            {notice}
+          </p>
+        ) : null}
       </div>
     </div>
   );

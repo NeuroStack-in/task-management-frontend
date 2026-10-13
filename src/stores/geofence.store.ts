@@ -40,6 +40,8 @@ interface GeofenceState {
    * their change.
    */
   dirty: boolean;
+  /** The perimeter as last loaded or saved — what Reset returns to. `null` until a load succeeds. */
+  saved: { center: GeoPoint; radiusM: number; enabled: boolean } | null;
   loading: boolean;
   saving: boolean;
   /** Last load/save failure, for the board to surface. `null` when the last call succeeded. */
@@ -55,9 +57,12 @@ interface GeofenceState {
 export const useGeofenceStore = create<GeofenceState>((set, get) => ({
   center: DEFAULT_GEOFENCE.center,
   radiusM: DEFAULT_GEOFENCE.radiusM,
-  enabled: true,
+  // **Off until the org's own perimeter loads.** Starting on, at the placeholder centre, flagged
+  // everyone "Outside perimeter" until the read landed — and forever when it failed (WP-084).
+  enabled: false,
   version: 0,
   dirty: false,
+  saved: null,
   loading: false,
   saving: false,
   error: null,
@@ -67,33 +72,51 @@ export const useGeofenceStore = create<GeofenceState>((set, get) => ({
   setEnabled: (enabled) => set({ enabled, dirty: true }),
 
   /**
-   * Back to the shipped default, **locally**. Deliberately does not write: reset is an editing
-   * affordance ("undo my dragging"), not a destructive org-wide action. It reaches everyone only if
-   * the admin then saves.
+   * Undo the unsaved edits — back to the **saved** perimeter, locally. Deliberately does not write:
+   * reset is an editing affordance ("undo my dragging"), not a destructive org-wide action.
+   *
+   * It used to jump to the shipped placeholder (Chennai) instead, so an admin elsewhere who pressed
+   * Reset to undo a nudge and then Save moved the org's perimeter to another city
+   * (QA audit 2026-10-08, WP-290). With nothing loaded yet, it returns to the initial, switched-off
+   * state.
    */
-  reset: () =>
-    set({
-      center: DEFAULT_GEOFENCE.center,
-      radiusM: DEFAULT_GEOFENCE.radiusM,
-      dirty: true,
-    }),
+  reset: () => {
+    const { saved } = get();
+    set(
+      saved
+        ? { ...saved, dirty: false, error: null }
+        : {
+            center: DEFAULT_GEOFENCE.center,
+            radiusM: DEFAULT_GEOFENCE.radiusM,
+            enabled: false,
+            dirty: false,
+            error: null,
+          },
+    );
+  },
 
   load: async () => {
+    // Unsaved edits outlive leaving the board: re-entering it used to reload over a dragged pin and
+    // discard it without a word (WP-290). The Save button stays up, so they cannot be missed.
+    if (get().dirty) return;
     set({ loading: true, error: null });
     try {
       const g = await getGeofence();
-      set({
+      const saved = {
         center: { lat: g.center.lat, lng: g.center.lon },
         radiusM: g.radius_m,
         enabled: g.enabled,
-        version: g.version,
-        dirty: false,
-        loading: false,
-      });
+      };
+      // Edited while the read was in flight: keep the edits, learn only what is saved.
+      if (get().dirty) {
+        set({ saved, version: g.version, loading: false });
+        return;
+      }
+      set({ ...saved, saved, version: g.version, dirty: false, loading: false });
     } catch {
-      // The board still renders against the shipped default: a perimeter that failed to load is a
-      // degraded backdrop, not a reason to hide everyone's location.
-      set({ loading: false, error: "Couldn't load the office perimeter." });
+      // The board still renders, but with **no** perimeter: a placeholder one would flag every
+      // located person as outside an office that is not theirs. Hiding the split beats inventing it.
+      set({ loading: false, enabled: false, error: "Couldn't load the office perimeter." });
     }
   },
 
@@ -108,14 +131,12 @@ export const useGeofenceStore = create<GeofenceState>((set, get) => ({
         radius_m: radiusM,
         version,
       });
-      set({
+      const saved = {
         center: { lat: g.center.lat, lng: g.center.lon },
         radiusM: g.radius_m,
         enabled: g.enabled,
-        version: g.version,
-        dirty: false,
-        saving: false,
-      });
+      };
+      set({ ...saved, saved, version: g.version, dirty: false, saving: false });
       return true;
     } catch (e) {
       // A 409 means another admin saved first. Telling them to reload is the honest instruction —

@@ -8,8 +8,10 @@
  * and was removed rather than left disabled: a provider button that cannot complete is worse than
  * its absence, because someone picks it, fails, and concludes their account is broken.
  *
- * Social sign-in is **invited-users-only** (linked by verified email on the backend) — an uninvited
- * identity is rejected there, not here.
+ * What happens is decided on the backend (the Cognito pre-sign-up trigger): an address it can prove
+ * belongs to an existing account signs in to that account; an address WorkPulse doesn't know gets an
+ * account with no organization, which goes on to request one from /onboarding; anything it can't
+ * prove is refused.
  */
 import { useState } from "react";
 import { Loader2 } from "lucide-react";

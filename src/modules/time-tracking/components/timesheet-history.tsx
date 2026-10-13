@@ -35,8 +35,18 @@ export function TimesheetHistory() {
     setDate(localIso(d));
   }, []);
 
-  // `undefined` until the date settles, so the hook does not fetch today twice on first paint.
-  const { rows, totalSec, billableSec, loading, error } = useTimesheet(date || undefined);
+  // `null` until the date settles: the hook reads nothing yet. (`undefined` would mean *today* — it
+  // fetched today's sheet and armed its poll on first paint, then fetched yesterday.)
+  const {
+    rows,
+    totalSec,
+    billableSec,
+    loading,
+    error,
+    date: shownDate,
+  } = useTimesheet(date || null);
+  // Until the sheet on screen is the picked day's, it is loading — not "nothing tracked".
+  const pending = loading || (!error && shownDate !== date);
 
   const max = useMemo(() => todayLocal(), []);
 
@@ -107,7 +117,7 @@ export function TimesheetHistory() {
       </CardHeader>
 
       <CardContent>
-        {!showing ? null : loading ? (
+        {!showing ? null : pending ? (
           <div className="py-8">
             <Loader label="Loading that day…" />
           </div>
@@ -152,8 +162,10 @@ export function TimesheetHistory() {
                   {rows.map((r) => (
                     <tr key={r.id}>
                       <td className="max-w-[22rem] py-2.5 pr-3">
+                        {/* `||`, not `??`: `description` is "" when nothing was typed, never null, so
+                            a project-only session rendered an empty cell (QA audit 2026-10-08, WP-433). */}
                         <span className="block truncate font-medium">
-                          {r.task ?? r.description ?? "—"}
+                          {r.task || r.description || "—"}
                         </span>
                         {/* Description only when it is not already the label above, so a
                             project-only session does not print the same string twice. */}
@@ -165,10 +177,16 @@ export function TimesheetHistory() {
                       </td>
                       <td className="text-muted-foreground py-2.5 pr-3">{r.project}</td>
                       <td className="text-muted-foreground py-2.5 pr-3 tabular-nums">
-                        {r.start} – {r.end ?? "—"}
+                        {r.start} – {r.end ?? "…"}
                       </td>
                       <td className="py-2.5 text-right font-medium tabular-nums">
-                        {formatDuration(r.durationSec)}
+                        {/* A session still open on that day has no duration yet — a state, not
+                            the zero-length `00:00:00` it used to print. */}
+                        {r.running ? (
+                          <span className="text-primary">Still running</span>
+                        ) : (
+                          formatDuration(r.durationSec)
+                        )}
                       </td>
                     </tr>
                   ))}

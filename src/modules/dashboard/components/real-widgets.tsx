@@ -1,24 +1,17 @@
 "use client";
 
 /**
- * The org dashboard's **real** widget cards — every figure here comes from a live endpoint
- * (employees, projects, billing). Kept in their own file (no imports from the registry or the
- * customizable shell) so the registry can import them without a cycle.
+ * The org dashboard's AI summary card — self-fetching, on the live department-summary endpoint.
+ * Kept in its own file (no imports from the registry or the customizable shell) so the registry can
+ * import it without a cycle.
+ *
+ * (This file also held four cards nothing rendered — projects overview, department headcount,
+ * billing, attendance today — and the `use-dashboard-summary` hook only they read; all removed,
+ * QA audit 2026-10-08, WP-440.)
  */
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  FolderKanban,
-  CreditCard,
-  Building2,
-  ArrowUpRight,
-  Sparkles,
-  CalendarCheck,
-  RefreshCw,
-  Loader2,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpRight, Sparkles, RefreshCw, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import {
   getDeptSummary,
@@ -26,40 +19,9 @@ import {
   type DeptSummaryArgs,
 } from "@/modules/insights/services/insights.service";
 import { type DashboardRange } from "../lib/dashboard-data";
-import {
-  getDayOversight,
-  type ApiDayResponse,
-} from "@/modules/attendance/services/attendance.service";
 import { Markdown } from "@/components/shared/markdown";
 import { useAssistantStore } from "@/stores/assistant.store";
-import { useWorkdays } from "@/hooks/use-working-hours";
-import { isWorkday, type IsoWeekday } from "@/lib/workdays";
-import type { DashboardSummary } from "../use-dashboard-summary";
-
-/** Yesterday in the caller's local calendar as `YYYY-MM-DD` — a completed, fully-closed day. */
-function isoYesterday(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-/** The most recent completed **workday** before today — org scores/attendance only exist on
- *  workdays, so the org summary reads this rather than a bare "yesterday" that may be a day off.
- *
- *  `workdays` is the org's configured schedule (ISO 1 = Mon … 7 = Sun). This skipped Sat/Sun
- *  unconditionally, so a Sun–Thu org asked for a report on a day nobody worked. */
-function isoLastWorkday(workdays: readonly IsoWeekday[]): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  // Bounded: a schedule always has at least one day (the API rejects an empty list), but don't
-  // trust that enough to risk an unbounded loop here.
-  for (let guard = 0; guard < 14 && !isWorkday(d, workdays); guard += 1) {
-    d.setDate(d.getDate() - 1);
-  }
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+import { useAssistantAccess } from "@/hooks/use-assistant-access";
 
 function errorMessage(e: unknown, fallback: string): string {
   if (e instanceof ApiError) {
@@ -69,196 +31,6 @@ function errorMessage(e: unknown, fallback: string): string {
   }
   return fallback;
 }
-
-export function ViewAllLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-    >
-      {label} <ArrowUpRight className="size-3.5" />
-    </Link>
-  );
-}
-
-/* ------------------------------ Projects overview ----------------------------- */
-
-export function ProjectsOverviewCard({ p }: { p: DashboardSummary["projects"] }) {
-  const rows: { label: string; value: string | number; tone?: string }[] = [
-    { label: "Active", value: p.active },
-    { label: "On hold", value: p.onHold },
-    { label: "Completed", value: p.completed },
-    { label: "Open tasks", value: p.kpiCoverage ? p.openTasks : "—" },
-    {
-      label: "Overdue",
-      value: p.kpiCoverage ? p.overdue : "—",
-      tone: p.overdue > 0 ? "text-destructive" : undefined,
-    },
-  ];
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
-            <FolderKanban className="size-4" />
-          </span>
-          Projects overview
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-end justify-between">
-          <p className="font-display text-3xl font-semibold tabular-nums">{p.total}</p>
-          <p className="text-xs text-muted-foreground">
-            {p.avgCompletion === null
-              ? "completion pending"
-              : `${p.avgCompletion}% avg completion`}
-          </p>
-        </div>
-        <ul className="space-y-2">
-          {rows.map((r) => (
-            <li key={r.label} className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{r.label}</span>
-              <span className={`font-medium tabular-nums ${r.tone ?? ""}`}>{r.value}</span>
-            </li>
-          ))}
-        </ul>
-        {p.kpiCoverage < p.total ? (
-          <p className="text-[11px] text-muted-foreground">
-            Task metrics cover {p.kpiCoverage}/{p.total} projects (KPIs still computing for the rest).
-          </p>
-        ) : null}
-        <ViewAllLink href="/projects" label="All projects" />
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ------------------------------ Department headcount ----------------------------- */
-
-export function DepartmentHeadcountCard({
-  departments,
-}: {
-  departments: DashboardSummary["employees"]["byDepartment"];
-}) {
-  const total = departments.reduce((s, d) => s + d.count, 0) || 1;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
-            <Building2 className="size-4" />
-          </span>
-          Headcount by department
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {departments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No departments yet.</p>
-        ) : (
-          departments.slice(0, 6).map((d) => {
-            const pct = Math.round((d.count / total) * 100);
-            return (
-              <div key={d.name} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="truncate text-muted-foreground">{d.name}</span>
-                  <span className="font-medium tabular-nums">
-                    {d.count} · {pct}%
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-            );
-          })
-        )}
-        <ViewAllLink href="/employees" label="All employees" />
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ------------------------------ Billing (real) ----------------------------- */
-
-export function BillingCard({ billing }: { billing: DashboardSummary["billing"] }) {
-  if (!billing) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <CreditCard className="size-4" />
-            </span>
-            Billing overview
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Billing isn&apos;t available for your account.
-          </p>
-          <ViewAllLink href="/billing" label="Manage billing" />
-        </CardContent>
-      </Card>
-    );
-  }
-  // A plan with no seat cap set (e.g. free) reports `seat_cap: 0` — don't render "3 / 0" or a bogus
-  // 0% bar; show the raw usage instead.
-  const capped = billing.seatCap > 0;
-  const pct = capped ? Math.round((billing.seatsUsed / billing.seatCap) * 100) : 0;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
-            <CreditCard className="size-4" />
-          </span>
-          Billing overview
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-end justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground">Current plan</p>
-            <p className="font-display text-xl font-semibold capitalize">{billing.plan}</p>
-          </div>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
-            {billing.status}
-          </span>
-        </div>
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Seats used</span>
-            <span className="tabular-nums">
-              {capped ? `${billing.seatsUsed} / ${billing.seatCap}` : `${billing.seatsUsed} in use`}
-            </span>
-          </div>
-          {capped ? (
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
-            </div>
-          ) : (
-            <p className="text-[11px] text-muted-foreground">No seat cap on this plan.</p>
-          )}
-        </div>
-        <ViewAllLink href="/billing" label="Manage billing" />
-      </CardContent>
-    </Card>
-  );
-}
-
-/* --------------------- Activity monitoring pending (honest) -------------------- */
-
-/** Attendance status slug → human label (shared by the AI summary + attendance cards). */
-const ATTENDANCE_LABEL: Record<string, string> = {
-  present: "Present",
-  partial: "Partial",
-  absent: "Absent",
-  leave: "On leave",
-  non_workday: "Non-workday",
-  // The day-close cron (00:15 UTC) stamps the AttendanceDay; until it runs the server returns
-  // `unknown` for that day — show it as pending rather than a misleading "Absent".
-  unknown: "Pending close",
-};
 
 function AiSummaryPending({ label }: { label: string }) {
   return (
@@ -276,31 +48,23 @@ function AiSummaryPending({ label }: { label: string }) {
   );
 }
 
-/** What period each range's narrative actually covers — stated on the card, because the KPIs
- *  beside it use slightly different windows (a rolling 7 days vs the ISO week). */
+/** What the narrative covers, stated on the card — the same window the KPIs beside it cover. */
 const PERIOD_NOTE: Record<DashboardRange, string> = {
   today: "today, in progress",
-  "7d": "this ISO week",
-  "30d": "this month",
+  "7d": "last 7 days",
+  "30d": "this month so far",
   range: "",
 };
 
 /**
  * The org AI narrative, **following the dashboard's range control**.
  *
- * Narratives are pre-computed and cached per period, so the range maps onto whichever report
- * already covers it rather than summarising an arbitrary window:
- *
- * | Range   | Endpoint                          | Period |
- * |---------|-----------------------------------|--------|
- * | Today   | `/v1/insights/reports/ai`          | the last workday |
- * | Week    | `/v1/insights/reports/ai/weekly`   | the ISO week (Mon–Sun) |
- * | Month   | `/v1/insights/reports/ai/monthly`  | the calendar month |
- * | Custom  | — | no narrative exists for an arbitrary window |
- *
- * ⚠️ **Week is the ISO week, while the KPIs beside it cover a rolling 7 days.** Both are labelled
- * "this week" by `rangeLabelFor`, but on a Wednesday the narrative covers Mon–today and the KPIs
- * cover last Thursday–today. The card names its own period so the two aren't read as one window.
+ * One endpoint for every range: `GET /v1/insights/reports/dept-summary` (`force` → its regenerate
+ * twin) over **exactly the KPI window** — `days[0]..days[last]` from the board, in the selected
+ * department. Today is today (in progress); every other range is the window the KPIs describe, so
+ * the narrative and the tiles beside it are always about the same days. (The table that stood here
+ * described per-period daily/weekly/monthly report endpoints this card no longer calls, and a Week
+ * that was an ISO week while the KPIs were a rolling seven days — QA audit 2026-10-08, WP-431.)
  */
 export function OrgAiSummaryWidget({
   range = "today",
@@ -319,32 +83,33 @@ export function OrgAiSummaryWidget({
   departmentLabel?: string;
 }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
-  const workdays = useWorkdays();
+  // The floating assistant's own gate — a button it can't answer is a button that does nothing.
+  const canAsk = useAssistantAccess().chat;
   const [narrative, setNarrative] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // The window the summary covers. "Today" describes the last completed workday (today isn't scored
-  // until the 00:15 close), matching the KPIs' daily narrative; every other range uses the KPI
-  // window's own bounds — so ANY range is now summarisable, not just a single day.
-  const bounds = useMemo(() => {
-    // "Today" now summarises TODAY — not the last completed workday. Today's numbers are still
-    // accruing (attendance verdicts land at the 00:15 close, scores rise as agents report), so the
-    // card labels this window "today, in progress" rather than presenting a moving figure as final.
+  // The window the summary covers — the KPI window's own bounds, so ANY range is summarisable.
+  const span = useMemo(() => {
+    // "Today" summarises TODAY. Today's numbers are still accruing (attendance verdicts land at the
+    // 00:15 close, scores rise as agents report), so the card labels this window "today, in
+    // progress" rather than presenting a moving figure as final.
     if (range === "today") {
       const t = new Date();
       const iso = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
       return { from: iso, to: iso };
     }
-    // Other ranges with no resolved days (shouldn't happen, but don't fetch a blank window).
-    if (!days || days.length === 0) {
-      const d = isoLastWorkday(workdays);
-      return { from: d, to: d };
-    }
+    // No resolved days — a custom range still being picked. There is nothing to summarise, so
+    // nothing is read: this fell back to the last workday, a day the board was not showing
+    // (QA audit 2026-10-08, WP-432).
+    if (!days || days.length === 0) return null;
     return { from: days[0], to: days[days.length - 1] };
-  }, [range, days, workdays]);
+  }, [range, days]);
+  // Primitives, so a fresh `days` array from each 30 s poll does not refetch the narrative.
+  const from = span?.from ?? null;
+  const to = span?.to ?? null;
 
   // One department-scoped endpoint for every range (`force` picks its regenerate twin). Gated on
   // `ai.insights` — the same gate the old attention fallback used — so respecting the department
@@ -352,47 +117,62 @@ export function OrgAiSummaryWidget({
   // narrative; Regenerate forces a fresh model run.
   const fetchSummary = useCallback(
     async (force: boolean): Promise<{ narrative: string; generatedAt: number | null }> => {
+      if (!from || !to) throw new Error("No window to summarise.");
       const args: DeptSummaryArgs = {
         department,
         label: departmentLabel,
-        from: bounds.from,
-        to: bounds.to,
+        from,
+        to,
         period: rangeLabel,
       };
       const r = force ? await regenerateDeptSummary(args) : await getDeptSummary(args);
       return { narrative: r.narrative, generatedAt: r.generated_at };
     },
-    [department, departmentLabel, bounds.from, bounds.to, rangeLabel],
+    [department, departmentLabel, from, to, rangeLabel],
   );
 
+  // Every read — the load below and Regenerate — takes a ticket, and only the latest may land. A
+  // Regenerate (a multi-second model run) that finished after a range switch put the old window's
+  // narrative under the new window's heading (QA audit 2026-10-08, WP-432).
+  const ticket = useRef(0);
+
   useEffect(() => {
-    let live = true;
-    setLoading(true);
+    const id = ++ticket.current;
     setError(null);
+    if (!from || !to) {
+      setNarrative(null);
+      setGeneratedAt(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     fetchSummary(false)
       .then((r) => {
-        if (!live) return;
+        if (id !== ticket.current) return;
         setNarrative(r.narrative);
         setGeneratedAt(r.generatedAt);
       })
-      .catch((e) => live && setError(errorMessage(e, "Couldn't load the AI summary.")))
-      .finally(() => live && setLoading(false));
-    return () => {
-      live = false;
-    };
-  }, [fetchSummary]);
+      .catch((e) => {
+        if (id === ticket.current) setError(errorMessage(e, "Couldn't load the AI summary."));
+      })
+      .finally(() => {
+        if (id === ticket.current) setLoading(false);
+      });
+  }, [fetchSummary, from, to]);
 
   async function regenerate() {
-    if (regenerating || loading) return;
+    if (regenerating || loading || !from || !to) return;
+    const id = ++ticket.current;
     setRegenerating(true);
     setError(null);
     try {
       const r = await fetchSummary(true);
+      if (id !== ticket.current) return; // the window changed while the model ran
       setNarrative(r.narrative);
       setGeneratedAt(r.generatedAt);
     } catch (e) {
       // Keep the previous narrative on screen — a failed re-run shouldn't blank a good summary.
-      setError(errorMessage(e, "Couldn't regenerate the summary."));
+      if (id === ticket.current) setError(errorMessage(e, "Couldn't regenerate the summary."));
     } finally {
       setRegenerating(false);
     }
@@ -437,17 +217,19 @@ export function OrgAiSummaryWidget({
         {/* Both of the widget's actions, together and out of the shell's way. `flex-wrap` so the
             pair stacks rather than overflowing when the tile is narrow. */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              openAssistant(
-                `Summarise ${rangeLabel ?? "this week"}'s productivity and flag any burnout risks.`,
-              )
-            }
-            className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
-          >
-            Ask the assistant <ArrowUpRight className="size-3.5" />
-          </button>
+          {canAsk ? (
+            <button
+              type="button"
+              onClick={() =>
+                openAssistant(
+                  `Summarise ${rangeLabel ?? "this week"}'s productivity and flag any burnout risks.`,
+                )
+              }
+              className="inline-flex w-fit items-center gap-1 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white hover:bg-white/25"
+            >
+              Ask the assistant <ArrowUpRight className="size-3.5" />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={regenerate}
@@ -459,106 +241,6 @@ export function OrgAiSummaryWidget({
             {regenerating ? "Regenerating…" : "Regenerate"}
           </button>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ------------------------------ Attendance today (real) ----------------------------- */
-
-const ATTENDANCE_TONE: Record<string, string> = {
-  present: "var(--success)",
-  partial: "var(--warning)",
-  absent: "var(--destructive)",
-  leave: "var(--muted-foreground)",
-};
-
-/**
- * Org attendance for a completed day — self-fetching. Pulls `GET /v1/attendance/day?date=` for
- * yesterday (the 00:15 close cron only publishes closed days) and shows present / partial / absent /
- * leave counts. **Real** (needs `AttendanceReadTeam`; a caller without it gets an honest 403 note).
- * `late` isn't on the GSI3 index this route reads, so it isn't broken out here — the personal
- * timesheet is where per-session detail lives.
- */
-export function AttendanceTodayCard() {
-  const [data, setData] = useState<ApiDayResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setError(null);
-    getDayOversight(isoYesterday())
-      .then((d) => live && setData(d))
-      .catch((e) => live && setError(errorMessage(e, "Couldn't load attendance.")))
-      .finally(() => live && setLoading(false));
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const s = data?.summary;
-  const rows: { key: string; count: number }[] = s
-    ? [
-        { key: "present", count: s.present },
-        { key: "partial", count: s.partial },
-        { key: "absent", count: s.absent },
-        { key: "leave", count: s.leave },
-      ]
-    : [];
-  const denom = s?.counted || 1;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
-            <CalendarCheck className="size-4" />
-          </span>
-          Attendance
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {loading ? (
-          <Loader label="Loading attendance…" />
-        ) : error ? (
-          <p className="py-6 text-sm text-muted-foreground">{error}</p>
-        ) : s && s.counted > 0 ? (
-          <>
-            <div className="flex items-end justify-between">
-              <p className="font-display text-3xl font-semibold tabular-nums">{s.present}</p>
-              <p className="text-xs text-muted-foreground">
-                {Math.round((s.present / denom) * 100)}% of {s.counted} present
-              </p>
-            </div>
-            {rows.map((r) => {
-              const pct = Math.round((r.count / denom) * 100);
-              return (
-                <div key={r.key} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{ATTENDANCE_LABEL[r.key]}</span>
-                    <span className="font-medium tabular-nums">
-                      {r.count} · {pct}%
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${pct}%`, backgroundColor: ATTENDANCE_TONE[r.key] }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-            <ViewAllLink href="/attendance" label="Attendance calendar" />
-          </>
-        ) : (
-          <p className="py-6 text-sm text-muted-foreground">
-            No attendance has been recorded for {data?.date ?? "this day"} yet — the close job
-            publishes each day&apos;s verdict shortly after it ends.
-          </p>
-        )}
       </CardContent>
     </Card>
   );

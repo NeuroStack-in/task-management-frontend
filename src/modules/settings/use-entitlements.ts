@@ -9,16 +9,12 @@
  *
  * `lib/api.ts::getEntitlements` had no importers, so neither layer was ever fetched. This closes it.
  *
- * ## Both layers come from the server — `features.store` is not the source of truth
+ * ## Both layers come from the server
  *
- * The endpoint returns `allowed` **and** `enabled`, so the owner's toggles live server-side too.
- * `stores/features.store.ts` keeps a *separate* `persist`ed copy with its own `DEFAULTS`, and the
- * two already disagree on the live dev org: the server has `anomalies` and
- * `insights.reports.ai_pdf` **on**, the local defaults have both **off**.
- *
- * So `effective()` reads both layers from the response and never consults the store. Preferring
- * localStorage over the org's real entitlements would mean one browser's stale toggle silently
- * overriding what the org actually bought — and the server would then refuse the call anyway.
+ * The endpoint returns `allowed` **and** `enabled`, so the owner's toggles live server-side too, and
+ * `effective()` reads both from the response. (A persisted local copy with its own defaults, which
+ * disagreed with the server, used to sit in `stores/features.store.ts`; only the `FeatureKey` type
+ * is left there.)
  *
  * **This is UX, not enforcement.** The server's `FeatureGate` is the real boundary and decides
  * regardless of what this returns; the point is to stop offering a toggle the plan will refuse.
@@ -27,13 +23,24 @@ import { useCallback, useEffect, useState } from "react";
 import { getEntitlements, type Entitlements } from "@/lib/api";
 import { type FeatureKey } from "@/stores/features.store";
 
+type DisabledBy = NonNullable<Entitlements["disabled_by"]>;
+
 export interface EntitlementsState {
+  /** The whole response, for hydrating the shared store from this fresh read. `null` until loaded. */
+  raw: Entitlements | null;
   /** The org's plan id (`free` | `starter` | `enterprise` — `wp_contracts::plans::Plan`). */
   plan: string | null;
   /** Keys the plan permits — the ceiling. Empty until loaded. */
   allowed: Set<string>;
   /** Layer 2 alone — the owner's per-key activation flags, straight from the server. */
   enabled: Record<string, boolean>;
+  /**
+   * Page visibility and the "turned off by" provenance, from **this** read — not the session-old
+   * shared store, which a colleague's change since sign-in leaves stale (QA audit 2026-10-08, WP-338).
+   */
+  pages: Record<string, boolean>;
+  disabledBy: DisabledBy;
+  pagesDisabledBy: DisabledBy;
   loading: boolean;
   error: string | null;
   /**
@@ -48,6 +55,9 @@ export interface EntitlementsState {
   isAllowed: (key: FeatureKey) => boolean;
   reload: () => void;
 }
+
+/** One shared empty map, so an unloaded field keeps a stable identity across renders. */
+const EMPTY = Object.freeze({}) as Record<string, never>;
 
 export function useEntitlements(): EntitlementsState {
   const [ent, setEnt] = useState<Entitlements | null>(null);
@@ -88,9 +98,13 @@ export function useEntitlements(): EntitlementsState {
   );
 
   return {
+    raw: ent,
     plan: ent?.plan ?? null,
     allowed,
-    enabled: ent?.enabled ?? {},
+    enabled: ent?.enabled ?? EMPTY,
+    pages: ent?.pages ?? EMPTY,
+    disabledBy: ent?.disabled_by ?? EMPTY,
+    pagesDisabledBy: ent?.pages_disabled_by ?? EMPTY,
     loading,
     error,
     effective,

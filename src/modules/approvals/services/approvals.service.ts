@@ -8,7 +8,9 @@
  *
  *   GET  /v1/approvals?status        the queue for one status (GSI2 inbox)
  *   POST /v1/approvals/decide        approve | reject one
- *   POST /v1/approvals/bulk-decide   decide many
+ *
+ * (`POST /v1/approvals/bulk-decide` exists server-side but is not wrapped: no screen decides in bulk,
+ * and a wrapper whose only caller was a test made bulk approval look finished — WP-480.)
  *
  * A decision needs BOTH `user_id` and `request_id`: the request lives on the requester's partition,
  * so the id alone doesn't locate it.
@@ -49,10 +51,31 @@ interface QueueResponse {
   cursor?: string;
 }
 
-/** The queue for one status (default `pending`). One GSI2 query per status. */
-export function getQueue(status: string): Promise<ApiApprovalRow[]> {
-  const q = new URLSearchParams({ status });
-  return apiFetch<QueueResponse>(`/v1/approvals?${q}`).then((r) => r.approvals);
+/** Rows per request — the server's maximum. */
+const QUEUE_PAGE = 100;
+/** A guard against a runaway cursor loop, not a product limit (5,000 rows per status). */
+const QUEUE_MAX_PAGES = 50;
+
+/**
+ * The **whole** queue for one status, following the server's cursor page by page.
+ *
+ * The route is cursor-paginated (oldest first). This used to read one page and drop the cursor, so a
+ * status showed at most its 50 oldest requests ever: once an org passed 50 approvals the Approved tab
+ * froze, newer pending requests were invisible and undecidable, and Upcoming leave reported nobody
+ * (QA audit 2026-10-08, WP-073).
+ */
+export async function getQueue(status: string): Promise<ApiApprovalRow[]> {
+  const rows: ApiApprovalRow[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < QUEUE_MAX_PAGES; page++) {
+    const q = new URLSearchParams({ status, limit: String(QUEUE_PAGE) });
+    if (cursor) q.set("cursor", cursor);
+    const r = await apiFetch<QueueResponse>(`/v1/approvals?${q}`);
+    rows.push(...r.approvals);
+    if (!r.cursor) break;
+    cursor = r.cursor;
+  }
+  return rows;
 }
 
 export interface DecideInput {
@@ -60,10 +83,16 @@ export interface DecideInput {
   request_id: string;
   /** `approve` | `reject`. */
   decision: "approve" | "reject";
+  /**
+   * Mirrors `DecideRequest.reason`. The server stores it on the request (`decision_reason`) but no
+   * route returns it and no notification carries it, so the UI does not ask for one — a reason
+   * nobody can ever read would be a promise the product can't keep.
+   */
   reason?: string;
 }
 
-interface DecideResult {
+/** Mirrors `approvals::dto::DecideResult` — the request's status after the decision. */
+export interface DecideResult {
   user_id: string;
   request_id: string;
   status: string;
@@ -74,18 +103,4 @@ export function decide(input: DecideInput): Promise<DecideResult> {
     method: "POST",
     body: JSON.stringify(input),
   });
-}
-
-export interface BulkItemResult {
-  request_id: string;
-  ok: boolean;
-  status?: string;
-  error?: string;
-}
-
-export function bulkDecide(decisions: DecideInput[]): Promise<BulkItemResult[]> {
-  return apiFetch<{ results: BulkItemResult[] }>("/v1/approvals/bulk-decide", {
-    method: "POST",
-    body: JSON.stringify({ decisions }),
-  }).then((r) => r.results);
 }

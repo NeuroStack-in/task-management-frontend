@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, Building2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -48,43 +48,71 @@ export function OrgRequestsQueue() {
   const [rows, setRows] = useState<OpsOrgRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  /**
+   * Every request with a decision in flight. A single busy id meant starting a second action
+   * re-enabled the first row's buttons while its approval was still building the org, and a second
+   * Approve then built a second tenant (QA audit 2026-10-08, WP-251).
+   */
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [rejecting, setRejecting] = useState<OpsOrgRequest | null>(null);
   const [reason, setReason] = useState("");
+  const isBusy = (id: string | undefined) => !!id && busy.has(id);
+  const markBusy = (id: string, on: boolean) =>
+    setBusy((s) => {
+      const next = new Set(s);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
+  /**
+   * Which list request is current. Switching tabs quickly let a slow response land under the wrong
+   * tab — approved requests under Pending, with Approve/Reject buttons on them (WP-252).
+   */
+  const loadSeq = useRef(0);
   const load = useCallback(() => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
     listOrgRequests(status)
-      .then((r) => setRows(r.requests))
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Couldn't load the queue."))
-      .finally(() => setLoading(false));
+      .then((r) => {
+        if (seq === loadSeq.current) setRows(r.requests);
+      })
+      .catch((e) => {
+        if (seq === loadSeq.current) {
+          setError(e instanceof ApiError ? e.message : "Couldn't load the queue.");
+        }
+      })
+      .finally(() => {
+        if (seq === loadSeq.current) setLoading(false);
+      });
   }, [status]);
 
   useEffect(load, [load]);
 
   async function approve(r: OpsOrgRequest) {
-    setBusyId(r.id);
+    if (isBusy(r.id)) return;
+    markBusy(r.id, true);
     try {
       const out = await approveOrgRequest(r.id);
       toast.success(`${r.org_name} created`, { description: `Workspace: ${out.slug}` });
       load();
     } catch (e) {
-      // Approval failing is expected in one real case: another pending request took the slug first.
-      // Say so rather than "something went wrong" — the operator's next move differs entirely.
+      // Nothing is half-done on failure: the request stays pending, so the operator can retry.
       toast.error(
         e instanceof ApiError ? e.message : "Couldn't create the organization. Nothing was changed.",
       );
     } finally {
-      setBusyId(null);
+      markBusy(r.id, false);
     }
   }
 
   async function confirmReject() {
-    if (!rejecting) return;
-    setBusyId(rejecting.id);
+    if (!rejecting || isBusy(rejecting.id)) return;
+    const id = rejecting.id;
+    markBusy(id, true);
     try {
-      await rejectOrgRequest(rejecting.id, reason.trim());
+      await rejectOrgRequest(id, reason.trim());
       toast.success("Request rejected", { description: "The applicant has been told why." });
       setRejecting(null);
       setReason("");
@@ -92,7 +120,7 @@ export function OrgRequestsQueue() {
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Couldn't reject the request.");
     } finally {
-      setBusyId(null);
+      markBusy(id, false);
     }
   }
 
@@ -140,11 +168,18 @@ export function OrgRequestsQueue() {
                 <div className="min-w-0 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-heading font-semibold">{r.org_name}</p>
-                    <Badge variant="secondary" className="font-mono text-[11px]">
+                    {/* The requested name. Approval appends a unique suffix (from the new tenant id),
+                        so this is not the final workspace address. */}
+                    <Badge
+                      variant="secondary"
+                      className="font-mono text-[11px]"
+                      title="Requested name — the workspace address adds a unique suffix"
+                    >
                       {r.slug}
                     </Badge>
-                    {/* Both requests pass review; only the first APPROVED gets the name. Shown so
-                        the order is chosen deliberately rather than discovered as an error. */}
+                    {/* Another pending request asks for the same name. Both can be approved — each
+                        org gets its own suffixed address, so nothing collides — which makes this a
+                        prompt to check for a duplicate application, not a race to win. */}
                     {r.slug_conflict ? (
                       <Badge
                         variant="outline"
@@ -179,11 +214,11 @@ export function OrgRequestsQueue() {
                     <Button
                       size="sm"
                       onClick={() => approve(r)}
-                      disabled={busyId === r.id}
+                      disabled={isBusy(r.id)}
                       className="gap-1.5"
                     >
                       <Check className="size-4" />
-                      {busyId === r.id ? "Creating…" : "Approve"}
+                      {isBusy(r.id) ? "Working…" : "Approve"}
                     </Button>
                     <Button
                       size="sm"
@@ -192,7 +227,7 @@ export function OrgRequestsQueue() {
                         setRejecting(r);
                         setReason("");
                       }}
-                      disabled={busyId === r.id}
+                      disabled={isBusy(r.id)}
                       className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive gap-1.5"
                     >
                       <X className="size-4" />
@@ -228,10 +263,10 @@ export function OrgRequestsQueue() {
             </Button>
             <Button
               onClick={confirmReject}
-              disabled={!reason.trim() || busyId === rejecting?.id}
+              disabled={!reason.trim() || isBusy(rejecting?.id)}
               className="bg-destructive hover:bg-destructive/90 text-white"
             >
-              {busyId === rejecting?.id ? "Rejecting…" : "Reject request"}
+              {isBusy(rejecting?.id) ? "Rejecting…" : "Reject request"}
             </Button>
           </DialogFooter>
         </DialogContent>

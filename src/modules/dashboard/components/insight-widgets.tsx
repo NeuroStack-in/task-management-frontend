@@ -9,10 +9,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import Link from "next/link";
 import type {
   AttendanceStatus,
+  AttendanceView,
   HeadcountCounts,
 } from "@/modules/dashboard/lib/dashboard-data";
+import { useWorkdays } from "@/hooks/use-working-hours";
+import { useOrgHolidays } from "@/hooks/use-org-holidays";
+import { isWorkday } from "@/lib/workdays";
 import { cn } from "@/lib/utils";
 
 /** Heatmap axis labels (formerly from mock-metrics) — pure labels, no seeded data. */
@@ -21,7 +26,46 @@ const HEATMAP_HOURS = ["8am", "10am", "12pm", "2pm", "4pm", "6pm"];
 
 /* ------------------------- Productivity Heatmap ------------------------- */
 
-export function ProductivityHeatmap({ data }: { data: number[][] }) {
+export function ProductivityHeatmap({
+  data,
+  sampled = false,
+}: {
+  data: number[][];
+  /**
+   * The window held more captures than the dashboard reads per day (one page, ordered by person).
+   * A grid drawn from that page would be a few people's day captioned as the org's, so none is
+   * drawn (QA audit 2026-10-08, WP-197).
+   */
+  sampled?: boolean;
+}) {
+  if (sampled) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity heatmap</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
+            <span className="bg-muted flex size-10 items-center justify-center rounded-md">
+              <Grid3x3 className="text-muted-foreground size-5" />
+            </span>
+            <p className="text-sm font-medium">Too many captures to chart here</p>
+            <p className="text-muted-foreground max-w-xs text-xs">
+              This window holds more screenshots than the dashboard reads per day, so a pattern
+              drawn from them would show only a few people. Every capture is in the Screenshot
+              Center.
+            </p>
+            <Link
+              href="/insights/screenshots"
+              className="text-primary text-xs font-medium hover:underline"
+            >
+              Open Screenshot Center
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
   // **This measures when work happened, not how productive it was**, which is why it is titled
   // "Activity heatmap". `use-dashboard-data` builds it from **screenshot capture density** — the
   // agent captures periodically, so a busy cell means frames were taken then, and nothing about
@@ -79,6 +123,10 @@ export function ProductivityHeatmap({ data }: { data: number[][] }) {
                   // Relative to the busiest cell in the window — not a percentage of a total, and
                   // not a score. Saying "%" invited both readings.
                   title={`${HEATMAP_DAYS[d]} · ${v}/100 of peak capture activity`}
+                  // The value was a background colour and a hover title only — nothing a screen
+                  // reader or a keyboard could reach (QA audit 2026-10-08, WP-439).
+                  role="img"
+                  aria-label={`${HEATMAP_DAYS[d]} from ${HEATMAP_HOURS[h]}: ${v} of 100 of peak capture activity`}
                   className="h-4 flex-1 rounded-[4px]"
                   style={{
                     backgroundColor: `color-mix(in srgb, var(--success) ${v}%, var(--muted))`,
@@ -164,8 +212,14 @@ function Donut({
               paddingAngle={2}
               stroke="none"
             >
+              {/* Recharts draws each slice as `<path role="img">`; the Cell's props land on it, so
+                  this is the slice's text alternative (QA audit 2026-10-08, WP-116). */}
               {slices.map((s) => (
-                <Cell key={s.label} fill={s.color} />
+                <Cell
+                  key={s.label}
+                  fill={s.color}
+                  aria-label={`${s.label}: ${s.value} ${s.value === 1 ? "person" : "people"}`}
+                />
               ))}
             </Pie>
             <Tooltip
@@ -214,19 +268,57 @@ function Donut({
 
 /* --------------------------- Attendance donut --------------------------- */
 
+/** `YYYY-MM-DD` → "Tue, Oct 7" — the day a closed-day donut describes. */
+function dayName(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export function AttendanceDonut({
   counts,
+  view,
 }: {
   counts: Record<AttendanceStatus, number>;
+  /** What the counts describe — see `AttendanceView`. `null` when nothing is resolved yet. */
+  view: AttendanceView | null;
 }) {
+  const workdays = useWorkdays();
+  const holidays = useOrgHolidays();
   const total = counts.present + counts.partial + counts.leave + counts.absent;
   const presentPct = Math.round(((counts.present + counts.partial) / (total || 1)) * 100);
+
+  // Today, on a day nobody is scheduled: everyone is "not clocked in", and a donut saying so is a
+  // red ring that measures nothing. Say what the day is instead.
+  if (view?.source === "live" && total > 0) {
+    const holiday = holidays.nameFor(view.day);
+    if (holiday || !isWorkday(new Date(`${view.day}T00:00:00`), workdays)) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>Attendance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground py-6 text-center text-sm">
+              {holiday ? `Today is a holiday — ${holiday}.` : "Today isn't a working day."}
+              <br />
+              <span className="text-xs">
+                Nobody is expected in, so there is no attendance to show for it.
+              </span>
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+  }
 
   // Nothing resolved => say so. Attendance statuses are stamped by the 00:15 close cron, so a range
   // covering only today has no record yet. Dividing by `total || 1` turned that into a confident
   // "0% clocked in" sitting beside a live productivity score — the number read as "nobody came in"
   // when it actually meant "not computed yet".
-  if (total === 0) {
+  if (total === 0 || !view) {
     return (
       <Card>
         <CardHeader>
@@ -245,21 +337,54 @@ export function AttendanceDonut({
     );
   }
 
+  // **Today so far** — no verdict exists yet, so nobody here is "absent": they have not clocked in
+  // *yet*, and that slice is neutral, not red (QA audit 2026-10-08, WP-109).
+  if (view.source === "live") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Attendance</CardTitle>
+          <CardDescription>
+            Today so far: who has clocked in, of {total} people who track time. The day&apos;s
+            statuses are settled after it ends.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Donut
+            center={`${presentPct}%`}
+            caption="clocked in"
+            slices={[
+              { label: "Clocked in", value: counts.present, color: "var(--success)" },
+              { label: "On leave", value: counts.leave, color: "var(--muted-foreground)" },
+              {
+                label: "Not clocked in yet",
+                value: counts.absent,
+                color: "color-mix(in srgb, var(--muted-foreground) 35%, var(--muted))",
+              },
+            ]}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Attendance</CardTitle>
         {/* The centre reads a bare percentage. Of what, out of how many, and for when are all
             invisible without saying so — and "for when" matters here, because a day only gets a
-            status from the nightly close. */}
+            status from the nightly close. It is ONE day, even when the window is a week: the
+            latest closed day with statuses, named here so it is not read as the range's rate. */}
         <CardDescription>
-          Share of the team present or partially present, out of {total} people with a resolved day
+          {dayName(view.day)}: share of the team present or partially present, out of {total}{" "}
+          people with a resolved day
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Donut
           center={`${presentPct}%`}
-          caption="clocked in"
+          caption="present"
           slices={[
             { label: "Present", value: counts.present, color: "var(--success)" },
             { label: "Partial", value: counts.partial, color: "var(--warning)" },
@@ -348,7 +473,10 @@ const STATUS_LABEL: Record<keyof HeadcountCounts, { label: string; color: string
 };
 
 export function HeadcountStatus({ counts }: { counts: HeadcountCounts }) {
-  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  // `|| 1` only as the divisor: it was the headline too, so an empty department read "1" above
+  // three "0 · 0%" rows (QA audit 2026-10-08, WP-436).
+  const divisor = total || 1;
   const order: (keyof HeadcountCounts)[] = ["active", "inactive", "invited"];
   return (
     <Card>
@@ -362,7 +490,7 @@ export function HeadcountStatus({ counts }: { counts: HeadcountCounts }) {
         <p className="font-display text-3xl font-semibold tabular-nums">{total}</p>
         {order.map((s) => {
           const meta = STATUS_LABEL[s];
-          const pct = Math.round((counts[s] / total) * 100);
+          const pct = Math.round((counts[s] / divisor) * 100);
           return (
             <div key={s} className="space-y-1">
               <div className="flex items-center justify-between text-xs">

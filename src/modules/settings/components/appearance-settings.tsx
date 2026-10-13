@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Check, Monitor, Moon, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -17,6 +17,7 @@ import { FONTS, applyFont, currentFont } from "@/lib/fonts";
 import {
   PALETTES,
   applyPalette,
+  coercePalette,
   currentPalette,
   DEFAULT_PALETTE,
 } from "@/lib/palette";
@@ -124,18 +125,25 @@ export function AppearanceSettings() {
   const defaultSwatch = PALETTES.find((p) => p.id === DEFAULT_PALETTE)?.swatch ?? "#0f9b8e";
   const activeSwatch = PALETTES.find((p) => p.id === palette)?.swatch ?? defaultSwatch;
 
-  // Adopting the account's stored theme/palette is the shell's job now (`AppearanceSync`), so it
-  // happens on every screen rather than only this one. This just mirrors whatever ended up applied,
-  // so the selected swatch is right even if the sync landed after this page mounted.
+  // Adopting the account's stored theme/palette is the shell's job (`AppearanceSync`), so it happens
+  // on every screen. But this page reads the same record, and when its read landed first it mirrored
+  // the *old* palette and the swatch stayed there after the shell applied the new one (WP-515). So
+  // it applies what it read too — whichever read lands first, both end on the account's palette —
+  // unless a swatch was picked here since the page opened: that pick is saved, and wins.
+  const pickedHere = useRef(false);
   useEffect(() => {
     if (serverPalette === null) return;
+    if (!pickedHere.current) {
+      const p = coercePalette(serverPalette);
+      if (p !== currentPalette()) applyPalette(p);
+    }
     setPalette(currentPalette());
   }, [serverPalette]);
 
   const chooseTheme = (value: AppearanceTheme) => {
     setTheme(value); // instant, local
-    // Record the deliberate pick so the shell stops forcing the light default here (lib/theme.ts) —
-    // this is what lets "System" survive, given the server can't distinguish it from "unset".
+    // Record the deliberate pick in this browser (lib/theme.ts): it stands in for the account's
+    // theme whenever that can't be read.
     markThemeChosen();
     saveTheme(value).catch(() =>
       toast.error("Theme applied here, but couldn't save it to your account."),
@@ -148,6 +156,7 @@ export function AppearanceSettings() {
   };
 
   const choosePalette = (id: string) => {
+    pickedHere.current = true;
     applyPalette(id); // instant, local
     setPalette(id);
     savePalette(id).catch(() =>

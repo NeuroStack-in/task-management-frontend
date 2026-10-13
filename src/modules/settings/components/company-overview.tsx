@@ -38,6 +38,7 @@ import { Loader } from "@/components/shared/loader";
 import { Markdown } from "@/components/shared/markdown";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
+import { toWebUrl } from "@/lib/validation";
 import {
   getOrg,
   getWorkingHours,
@@ -73,13 +74,26 @@ function longDate(iso: string): string {
   });
 }
 
+/**
+ * Today as a **local** `YYYY-MM-DD` — the same day `daysUntil` counts from. `toISOString()` is the
+ * UTC date, so in New York at 21:00 on a holiday the row was greyed and sorted into the past while
+ * its badge said "today", and in India before 05:30 yesterday's holiday still read as upcoming
+ * (QA audit 2026-10-08, WP-529).
+ */
+function localToday(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** Upcoming first, then most-recent past — the next holiday is what a reader usually wants. */
-function byUpcoming(a: OrgHoliday, b: OrgHoliday): number {
-  const today = new Date().toISOString().slice(0, 10);
-  const aFuture = a.date >= today;
-  const bFuture = b.date >= today;
-  if (aFuture !== bFuture) return aFuture ? -1 : 1;
-  return aFuture ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date);
+function byUpcoming(today: string) {
+  return (a: OrgHoliday, b: OrgHoliday): number => {
+    const aFuture = a.date >= today;
+    const bFuture = b.date >= today;
+    if (aFuture !== bFuture) return aFuture ? -1 : 1;
+    return aFuture ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date);
+  };
 }
 
 /** Whole days from today to an ISO date. Negative = past. Local midnight both sides. */
@@ -137,8 +151,18 @@ export function CompanyOverview() {
   const [hours, setHours] = useState<OrgWorkingHours | null>(null);
   const [holidays, setHolidays] = useState<OrgHoliday[]>([]);
   const [policies, setPolicies] = useState<OrgPolicy[]>([]);
+  /** The local date the holiday list was sorted and split against. */
+  const [today, setToday] = useState("");
+  /**
+   * Which reads failed. Each card says so, with a Retry, instead of showing an empty state: a
+   * throttled policies read used to tell an employee "No policies have been published yet"
+   * (QA audit 2026-10-08, WP-357).
+   */
+  const [failed, setFailed] = useState({ org: false, hours: false, holidays: false, policies: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => setAttempt((n) => n + 1);
 
   useEffect(() => {
     let live = true;
@@ -154,14 +178,22 @@ export function CompanyOverview() {
     ])
       .then(([o, h, hol, pol]) => {
         if (!live) return;
+        const day = localToday();
+        setToday(day);
         if (o.status === "fulfilled") setOrg(o.value);
         if (h.status === "fulfilled") setHours(h.value);
-        if (hol.status === "fulfilled") setHolidays([...hol.value].sort(byUpcoming));
+        if (hol.status === "fulfilled") setHolidays([...hol.value].sort(byUpcoming(day)));
         if (pol.status === "fulfilled") {
           setPolicies([...pol.value].sort((a, b) => a.title.localeCompare(b.title)));
         }
-        // Only a total failure is an error; a partial one just shows the cards that loaded.
-        if (o.status === "rejected" && h.status === "rejected") {
+        setFailed({
+          org: o.status === "rejected",
+          hours: h.status === "rejected",
+          holidays: hol.status === "rejected",
+          policies: pol.status === "rejected",
+        });
+        // Nothing at all came back — one error for the page rather than four.
+        if ([o, h, hol, pol].every((r) => r.status === "rejected")) {
           setError("Couldn't load company information.");
         }
       })
@@ -169,7 +201,20 @@ export function CompanyOverview() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [attempt]);
+
+  const failedNote = (what: string) => (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+      <span className="text-muted-foreground">Couldn&apos;t load {what}.</span>
+      <button
+        type="button"
+        onClick={retry}
+        className="text-primary font-medium underline-offset-2 hover:underline"
+      >
+        Retry
+      </button>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -184,9 +229,17 @@ export function CompanyOverview() {
         icon={Building2}
         title="Couldn't load company information"
         description={error}
+        action={
+          <Button size="sm" variant="outline" onClick={retry}>
+            Retry
+          </Button>
+        }
       />
     );
   }
+
+  // Stored values may predate the form's check: only a real web address becomes a link (WP-356).
+  const websiteHref = org?.website ? toWebUrl(org.website) : null;
 
   return (
     <div className="space-y-6">
@@ -215,9 +268,9 @@ export function CompanyOverview() {
               ) : null}
               {org?.industry ? <span>{org.industry}</span> : null}
               {org?.size ? <span>· {org.size} people</span> : null}
-              {org?.website ? (
+              {org?.website && websiteHref ? (
                 <a
-                  href={org.website}
+                  href={websiteHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-primary hover:underline"
@@ -225,6 +278,8 @@ export function CompanyOverview() {
                   {org.website.replace(/^https?:\/\//, "")}
                   <ExternalLink className="size-3" />
                 </a>
+              ) : org?.website ? (
+                <span>{org.website}</span>
               ) : null}
             </div>
           </div>
@@ -242,16 +297,29 @@ export function CompanyOverview() {
           ) : null}
         </div>
         <CardContent className="p-5 sm:p-6">
-          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <Field label="Industry" value={org?.industry} />
-            <Field label="Company size" value={org?.size} />
-            <Field label="Time zone" value={org?.timezone} />
-          </dl>
+          {failed.org ? (
+            failedNote("the company details")
+          ) : (
+            <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <Field label="Industry" value={org?.industry} />
+              <Field label="Company size" value={org?.size} />
+              <Field label="Time zone" value={org?.timezone} />
+            </dl>
+          )}
         </CardContent>
       </Card>
 
       {/* ── Working hours ───────────────────────────────────────────────────────── */}
-      {hours ? (
+      {failed.hours ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="size-4 text-primary" /> Working hours
+            </CardTitle>
+          </CardHeader>
+          <CardContent>{failedNote("the working hours")}</CardContent>
+        </Card>
+      ) : hours ? (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -318,12 +386,14 @@ export function CompanyOverview() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {holidays.length === 0 ? (
+          {failed.holidays ? (
+            failedNote("the holidays")
+          ) : holidays.length === 0 ? (
             <p className="text-muted-foreground text-sm">No holidays have been added yet.</p>
           ) : (
             <ul className="divide-y">
               {holidays.map((h) => {
-                const past = h.date < new Date().toISOString().slice(0, 10);
+                const past = h.date < today;
                 return (
                   <li
                     key={h.id}
@@ -371,7 +441,9 @@ export function CompanyOverview() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {policies.length === 0 ? (
+          {failed.policies ? (
+            failedNote("the policies")
+          ) : policies.length === 0 ? (
             <p className="text-muted-foreground text-sm">
               No policies have been published yet.
             </p>
@@ -381,9 +453,9 @@ export function CompanyOverview() {
                 <div key={p.id} className="rounded-lg border p-4">
                   <div className="flex items-start justify-between gap-3">
                     <h3 className="font-medium">{p.title}</h3>
-                    {p.url ? (
+                    {p.url && toWebUrl(p.url) ? (
                       <a
-                        href={p.url}
+                        href={toWebUrl(p.url) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary inline-flex shrink-0 items-center gap-1 text-sm hover:underline"
@@ -392,6 +464,11 @@ export function CompanyOverview() {
                       </a>
                     ) : null}
                   </div>
+                  {/* A stored link that isn't a web address is shown as text, never as a relative
+                      link into the app (WP-356). */}
+                  {p.url && !toWebUrl(p.url) ? (
+                    <p className="text-muted-foreground mt-1 break-all text-sm">{p.url}</p>
+                  ) : null}
                   {/* Policy bodies are authored as Markdown in the editor; render them the same way
                       every other AI/authored surface does, so a bulleted policy reads as a list, not
                       as literal asterisks. */}

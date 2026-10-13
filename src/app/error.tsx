@@ -54,7 +54,7 @@ export default function AppError({
       </div>
 
       {error.digest ? (
-        <p className="mt-6 font-mono text-xs text-muted-foreground/70">
+        <p className="mt-6 font-mono text-xs text-muted-foreground">
           Reference: {error.digest}
         </p>
       ) : null}

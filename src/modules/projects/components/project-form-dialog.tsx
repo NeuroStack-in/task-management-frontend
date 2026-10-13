@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,18 +32,19 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { initials, todayIso } from "@/lib/format";
 import type { UserMini } from "../lib";
+import {
+  PROJECT_STATUS_META,
+  PROJECT_STATUS_ORDER,
+  type ProjectStatus,
+} from "../types";
 import type { ProjectFormValues } from "@/modules/projects/forms";
 
-export const PROJECT_DEPARTMENTS = [
-  "Engineering",
-  "Product",
-  "Design",
-  "Sales",
-  "Marketing",
-  "Customer Success",
-  "Finance",
-  "People Ops",
-] as const;
+/** The Department picker's "none" choice — a Select value can't be the empty string. */
+const NO_DEPARTMENT = "__none__";
+
+const STATUS_ITEMS = Object.fromEntries(
+  PROJECT_STATUS_ORDER.map((s) => [s, PROJECT_STATUS_META[s].label]),
+);
 
 const schema = z.object({
   name: z.string().trim().min(2, "Give the project a name"),
@@ -52,8 +53,20 @@ const schema = z.object({
     .trim()
     .max(500, "Keep it under 500 characters")
     .optional(),
-  department: z.string().min(1, "Pick a department"),
-  leadUserId: z.string().min(1, "Pick a lead"),
+  // Optional, as on the server, and picked from the organization's own departments. It was a
+  // required choice among eight hard-coded names, so an org whose departments were "Platform" and
+  // "QA" filed every project under one it doesn't have (QA audit 2026-10-08, WP-314).
+  department: z.string(),
+  // Edit only — see `ProjectFormValues`.
+  status: z.enum(["active", "on_hold", "completed"]).optional(),
+  key: z
+    .string()
+    .trim()
+    .refine((k) => !k || /^[A-Za-z0-9]{2,8}$/.test(k), "Use 2–8 letters or digits, e.g. WP")
+    .optional(),
+  // Optional: a project can run with just a manager, who outranks a lead. Requiring it pushed people
+  // to pick the manager, and that overwrote the manager's own membership (WP-024).
+  leadUserId: z.string(),
   managerId: z.string().min(1, "Pick a manager"),
   memberIds: z.array(z.string()).min(1, "Select at least one member"),
   dueDate: z.string().min(1, "Pick a deadline"),
@@ -110,9 +123,21 @@ interface ProjectFormDialogProps {
   onOpenChange: (open: boolean) => void;
   /** The org directory members can be picked from. */
   leads: UserMini[];
+  /** The organization's departments; `null` when they couldn't be read, absent while loading. */
+  departments?: string[] | null;
+  /**
+   * Shown under the team picker when the list is short for a reason the person can't see — the
+   * directory refused them, so only people they already work with are listed (WP-308).
+   */
+  peopleNote?: string;
   /** Pre-fill for edit mode. */
   initial?: Partial<ProjectFormValues>;
-  onSubmit: (values: ProjectFormValues) => void;
+  /**
+   * Save. **The dialog stays open until this resolves** and does not close itself — the caller
+   * closes it on success, so a refused save keeps everything typed. It used to close straight after
+   * an un-awaited call, and a failed save discarded the whole form (QA audit 2026-10-08, WP-300).
+   */
+  onSubmit: (values: ProjectFormValues) => Promise<void>;
 }
 
 export function ProjectFormDialog({
@@ -120,9 +145,27 @@ export function ProjectFormDialog({
   open,
   onOpenChange,
   leads,
+  departments,
+  peopleNote,
   initial,
   onSubmit,
 }: ProjectFormDialogProps) {
+  const uid = useId();
+  const [submitting, setSubmitting] = useState(false);
+  // The org's departments, plus the project's own label when it isn't (or is no longer) one of
+  // them — an Edit must still show what is stored, rather than a value no option matches.
+  const departmentOptions = useMemo(() => {
+    const all = new Set(departments ?? []);
+    if (initial?.department) all.add(initial.department);
+    return [...all].sort((a, b) => a.localeCompare(b));
+  }, [departments, initial?.department]);
+  const departmentItems = useMemo(
+    () => ({
+      [NO_DEPARTMENT]: "No department",
+      ...Object.fromEntries(departmentOptions.map((d) => [d, d])),
+    }),
+    [departmentOptions],
+  );
   // The domain model carries `billable` as a boolean; the form as an enum, so that
   // "unanswered" is representable and a new project can't default to non-billable.
   // Convert on the way in — the submit handler converts back.
@@ -164,21 +207,27 @@ export function ProjectFormDialog({
   const isEdit = mode === "edit";
   const memberIds = watch("memberIds");
 
-  const submit = handleSubmit((data) => {
-    onSubmit({
-      ...data,
-      description: data.description ?? "",
-      // The form models this as an enum so "unanswered" can fail validation; the domain
-      // model is a boolean. Map at the boundary.
-      billable: data.billable === "yes",
-    });
-    onOpenChange(false);
+  const submit = handleSubmit(async (data) => {
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        ...data,
+        description: data.description ?? "",
+        // The form models this as an enum so "unanswered" can fail validation; the domain
+        // model is a boolean. Map at the boundary.
+        billable: data.billable === "yes",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   });
 
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => {
+        // Not while a save is in flight: closing then would lose the form if the save fails.
+        if (!o && submitting) return;
         if (!o) reset({ ...EMPTY, ...initialForm });
         onOpenChange(o);
       }}
@@ -195,16 +244,23 @@ export function ProjectFormDialog({
 
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-1">
-          <Field label="Project name" error={errors.name?.message}>
+          <Field label="Project name" htmlFor={`${uid}-name`} error={errors.name?.message}>
             <Input
+              id={`${uid}-name`}
               placeholder="e.g. Atlas Migration"
               aria-invalid={!!errors.name}
               {...register("name")}
             />
           </Field>
 
-          <Field label="Description" error={errors.description?.message} optional>
+          <Field
+            label="Description"
+            htmlFor={`${uid}-description`}
+            error={errors.description?.message}
+            optional
+          >
             <textarea
+              id={`${uid}-description`}
               rows={3}
               placeholder="What is this project about? Goals, scope, anything worth knowing."
               aria-invalid={!!errors.description}
@@ -213,13 +269,69 @@ export function ProjectFormDialog({
             />
           </Field>
 
+          {/* Edit only: a new project is always created active, and its key is derived from its
+              name. Neither could be changed anywhere in the app — a finished project could only be
+              deleted, and a renamed one kept its old key (QA audit 2026-10-08, WP-312). */}
+          {isEdit ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                label="Status"
+                htmlFor={`${uid}-status`}
+                hint="Completed and On hold keep the project’s tasks and history. A hold you set stays until someone resumes it."
+              >
+                <Controller
+                  control={control}
+                  name="status"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value ?? null}
+                      onValueChange={(v) => field.onChange(v as ProjectStatus)}
+                      items={STATUS_ITEMS}
+                    >
+                      <SelectTrigger id={`${uid}-status`} className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROJECT_STATUS_ORDER.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {PROJECT_STATUS_META[s].label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </Field>
+              <Field
+                label="Key"
+                htmlFor={`${uid}-key`}
+                error={errors.key?.message}
+                hint="The short badge on cards — 2 to 8 letters or digits."
+              >
+                <Input
+                  id={`${uid}-key`}
+                  maxLength={8}
+                  autoComplete="off"
+                  className="font-mono uppercase"
+                  aria-invalid={!!errors.key}
+                  {...register("key")}
+                />
+              </Field>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Project lead" error={errors.leadUserId?.message}>
+            <Field
+              label="Project lead (optional)"
+              htmlFor={`${uid}-lead`}
+              error={errors.leadUserId?.message}
+            >
               <Controller
                 control={control}
                 name="leadUserId"
                 render={({ field }) => (
                   <PersonSelect
+                    id={`${uid}-lead`}
                     users={leads}
                     value={field.value}
                     onChange={field.onChange}
@@ -234,12 +346,17 @@ export function ProjectFormDialog({
                 control did what the lead picker did — accepted a change, reported success, and
                 moved nothing. A picker that cannot perform its edit should say so rather than
                 pretend. */}
-            <Field label="Project manager" error={errors.managerId?.message}>
+            <Field
+              label="Project manager"
+              htmlFor={`${uid}-manager`}
+              error={errors.managerId?.message}
+            >
               <Controller
                 control={control}
                 name="managerId"
                 render={({ field }) => (
                   <PersonSelect
+                    id={`${uid}-manager`}
                     users={leads}
                     value={field.value}
                     onChange={field.onChange}
@@ -257,22 +374,37 @@ export function ProjectFormDialog({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Department" error={errors.department?.message}>
+            <Field
+              label="Department"
+              htmlFor={`${uid}-department`}
+              error={errors.department?.message}
+              optional
+              hint={
+                departments === null
+                  ? "The organization’s department list couldn’t be loaded."
+                  : undefined
+              }
+            >
               <Controller
                 control={control}
                 name="department"
                 render={({ field }) => (
                   <Select
-                    value={field.value || null}
-                    onValueChange={(v) => field.onChange(v as string)}
+                    value={field.value || NO_DEPARTMENT}
+                    onValueChange={(v) =>
+                      field.onChange(v === NO_DEPARTMENT ? "" : (v as string))
+                    }
+                    items={departmentItems}
                   >
                     <SelectTrigger
+                      id={`${uid}-department`}
                       className={cn("w-full", errors.department && "border-destructive")}
                     >
-                      <SelectValue placeholder="Select…" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {PROJECT_DEPARTMENTS.map((d) => (
+                      <SelectItem value={NO_DEPARTMENT}>No department</SelectItem>
+                      {departmentOptions.map((d) => (
                         <SelectItem key={d} value={d}>
                           {d}
                         </SelectItem>
@@ -282,12 +414,13 @@ export function ProjectFormDialog({
                 )}
               />
             </Field>
-            <Field label="Deadline" error={errors.dueDate?.message}>
+            <Field label="Deadline" htmlFor={`${uid}-deadline`} error={errors.dueDate?.message}>
               <Controller
                 control={control}
                 name="dueDate"
                 render={({ field }) => (
                   <DatePicker
+                    id={`${uid}-deadline`}
                     value={field.value}
                     onChange={field.onChange}
                     min={minDue}
@@ -300,6 +433,7 @@ export function ProjectFormDialog({
 
           <Field
             label="Billing"
+            htmlFor={`${uid}-billing`}
             error={errors.billable?.message}
             hint="Every task inherits this. Time already logged keeps its original billing."
           >
@@ -313,6 +447,7 @@ export function ProjectFormDialog({
                   items={{ yes: "Billable", no: "Non-billable" }}
                 >
                   <SelectTrigger
+                    id={`${uid}-billing`}
                     className={cn("w-full", errors.billable && "border-destructive")}
                   >
                     <SelectValue placeholder="Billable or non-billable?" />
@@ -350,6 +485,9 @@ export function ProjectFormDialog({
                 setValue("memberIds", ids, { shouldValidate: true })
               }
             />
+            {peopleNote ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">{peopleNote}</p>
+            ) : null}
           </Field>
 
           </div>
@@ -358,12 +496,19 @@ export function ProjectFormDialog({
             <Button
               type="button"
               variant="outline"
+              disabled={submitting}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit">
-              {isEdit ? "Save changes" : "Create project"}
+            <Button type="submit" disabled={submitting}>
+              {submitting
+                ? isEdit
+                  ? "Saving…"
+                  : "Creating…"
+                : isEdit
+                  ? "Save changes"
+                  : "Create project"}
             </Button>
           </DialogFooter>
         </form>
@@ -507,6 +652,7 @@ function MemberMultiSelect({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search people…"
+            aria-label="Search people"
             className="h-9 w-full bg-transparent pr-2.5 pl-8 text-sm outline-none"
           />
         </div>
@@ -631,6 +777,7 @@ function MemberMultiSelect({
 /* --------------------- person picker (lead / manager) ---------------------- */
 
 function PersonSelect({
+  id,
   users,
   value,
   onChange,
@@ -638,6 +785,8 @@ function PersonSelect({
   invalid,
   disabled,
 }: {
+  /** For the field's label. */
+  id?: string;
   users: UserMini[];
   value: string;
   onChange: (id: string) => void;
@@ -653,6 +802,7 @@ function PersonSelect({
       disabled={disabled}
     >
       <SelectTrigger
+        id={id}
         className={cn(
           "w-full",
           invalid && "border-destructive",
@@ -707,12 +857,15 @@ function PersonSelect({
 
 function Field({
   label,
+  htmlFor,
   error,
   optional,
   hint,
   children,
 }: {
   label: string;
+  /** The control's id, so the label names it and a click on the label focuses it (WP-508). */
+  htmlFor?: string;
   error?: string;
   optional?: boolean;
   /** Explains a consequence the control can't show. Hidden while an error is up. */
@@ -721,7 +874,7 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="flex items-center gap-1.5">
+      <Label htmlFor={htmlFor} className="flex items-center gap-1.5">
         {label}
         {optional ? (
           <span className="text-xs font-normal text-muted-foreground">

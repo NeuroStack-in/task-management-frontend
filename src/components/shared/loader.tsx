@@ -8,7 +8,11 @@ export function Loader({
   label?: string;
 }) {
   return (
+    // `role="status"` so a screen reader hears that the page is loading; `data-slot` so the product
+    // tour can tell "the page is still fetching" from "this step's target doesn't exist".
     <div
+      role="status"
+      data-slot="loader"
       className={cn(
         "flex flex-1 flex-col items-center justify-center gap-3 p-6 text-muted-foreground",
         className,

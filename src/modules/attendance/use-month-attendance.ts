@@ -5,7 +5,7 @@
  *
  * The backend serves attendance **one day at a time** (`GET /v1/attendance/day?date=`, reads GSI3) —
  * there is no month/range route for org-wide counts. So a month calendar has to fan the day call out
- * over the visible month's workdays. This hook does that safely:
+ * over the visible month's days. This hook does that safely:
  *
  *  - **Bounded concurrency (3).** Firing ~22 requests at once is the fan-out throttle hazard this
  *    project already hit once (`cef2df9`). At most 3 are in flight; `apiFetch` additionally retries
@@ -16,14 +16,16 @@
  *    so the calendar reads `.summary` for the grid and the day view reads `.users` for the selected
  *    day — from the same fetch. Clicking a day the calendar already loaded costs no extra request.
  *
- * Only **closed** days are fetched: weekends (non-workdays) and today/future are skipped — today is
- * still open (resolved by the 00:15 cron), so calling it would just return an empty day.
+ * Only **closed** days are fetched: today and the future are skipped — today is still open (sealed
+ * at 23:59 in the org's timezone), so calling it would just return an empty day. Days off are
+ * fetched: an off day somebody worked is `present` server-side and counts, and skipping it made
+ * that work invisible on the calendar (QA audit 2026-10-08, WP-260).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { getDayOversight, type ApiDayResponse } from "./services/attendance.service";
-import { monthMatrix } from "./lib/calendar";
-import { useWorkdays } from "@/hooks/use-working-hours";
+import { daysInMonth } from "./lib/calendar";
+import { isoOfDay, useToday } from "./use-today";
 
 /** Run `fn` over `items` with at most `limit` in flight. Mirrors `use-projects-data`. */
 async function mapWithConcurrency<T, R>(
@@ -57,40 +59,59 @@ export interface MonthAttendance {
   reload: () => void;
 }
 
-export function useMonthAttendance(year: number, month: number): MonthAttendance {
+/** Closed days change once a night (the 23:59 close), so a slow re-check is plenty. */
+const MONTH_REFRESH_MS = 10 * 60_000;
+
+/**
+ * `enabled` is the calendar being open. It is collapsed by default, and this fanned out over every
+ * closed workday of the month on load **and every 30 s** regardless — up to ~44 day reads a minute
+ * from an idle tab, for data that changes once a night (QA audit 2026-10-08, WP-272). Now: nothing
+ * until it is opened, then a re-check every 10 minutes (and on the page's Refresh).
+ */
+export function useMonthAttendance(
+  year: number,
+  month: number,
+  enabled = true,
+): MonthAttendance {
   const [days, setDays] = useState<Map<string, ApiDayResponse>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
-  // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
-  const { nonce, reload, isBackground } = useLiveRefresh();
-  // Today's iso, computed once client-side (avoids SSR drift). Days ≥ today are open → skip.
-  const todayIso = useRef(
-    isoOf(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()),
-  );
+  const { nonce, reload, isBackground } = useLiveRefresh(MONTH_REFRESH_MS);
+  // What the current `days` were loaded for, so closing and reopening the calendar costs nothing.
+  const loadedFor = useRef<string | null>(null);
+  // Days ≥ today are open → skip. Re-read at midnight, so yesterday becomes fetchable (WP-258).
+  const todayIso = isoOfDay(useToday());
 
-  const workdays = useWorkdays();
-
-  // The closed workdays of the visible month — what we actually fetch.
+  // The closed days of the visible month — what we actually fetch.
   // `year === 0` is the caller's "date not resolved yet" sentinel (the date defaults client-side in
-  // an effect): fetch nothing until a real month arrives, or we'd fire ~22 requests for year 0.
+  // an effect): fetch nothing until a real month arrives, or we'd fire ~30 requests for year 0.
   const targets = useMemo(() => {
     if (year <= 0) return [];
-    return monthMatrix(year, month, workdays)
-      .flat()
-      .filter((c) => c.inMonth && c.isWorkday)
-      .map((c) => isoOf(c.year, c.month, c.day))
-      .filter((iso) => iso < todayIso.current);
-  }, [year, month, workdays]);
+    const out: string[] = [];
+    for (let d = 1; d <= daysInMonth(year, month); d++) {
+      const iso = isoOf(year, month, d);
+      if (iso < todayIso) out.push(iso);
+    }
+    return out;
+  }, [year, month, todayIso]);
 
   useEffect(() => {
+    // Read (and so clear) the poll flag first, whether or not this run fetches.
+    const background = isBackground();
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+    const key = `${targets.join(",")}#${nonce}`;
+    if (loadedFor.current === key) return;
     let live = true;
-    if (!isBackground()) setLoading(true);
+    if (!background) setLoading(true);
     setError(null);
 
     if (targets.length === 0) {
       setDays(new Map());
       setLoading(false);
+      loadedFor.current = key;
       return;
     }
 
@@ -110,6 +131,7 @@ export function useMonthAttendance(year: number, month: number): MonthAttendance
         const map = new Map<string, ApiDayResponse>();
         for (const [iso, resp] of entries) if (resp) map.set(iso, resp);
         setDays(map);
+        loadedFor.current = key;
       })
       .catch((e) => {
         if (live)
@@ -126,7 +148,7 @@ export function useMonthAttendance(year: number, month: number): MonthAttendance
     return () => {
       live = false;
     };
-  }, [targets, nonce, isBackground]);
+  }, [targets, nonce, isBackground, enabled]);
 
   return { days, loading, error, reload };
 }

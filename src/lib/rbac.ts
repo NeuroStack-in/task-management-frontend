@@ -147,9 +147,10 @@ export function getAccessibleNav(
 /**
  * Can this role open `pathname`?
  *
- * **Use this, not `canAccess(role, permissionForPath(p))`.** That pairing silently allows any nav
- * entry gated by `anyPermissions` instead of a single `permission`, because `permissionForPath`
- * only reads the latter and `canAccess(role, null)` is `true`. The Analytics hub is exactly such an
+ * **The one route check.** It replaced `canAccess(role, permissionForPath(p))`, a pairing that
+ * silently allowed any nav entry gated by `anyPermissions` instead of a single `permission`, because
+ * `permissionForPath` only read the latter and `canAccess(role, null)` is `true` (that helper had no
+ * caller left and is gone — QA audit 2026-10-08, WP-548). The Analytics hub is exactly such an
  * entry, so `/insights` — and `/insights/anomalies` and `/insights/reports`, which have no tab of
  * their own and fall back to it — were reachable by anyone signed in, whatever the sidebar showed.
  *
@@ -185,29 +186,6 @@ function navItemForPath(pathname: string): NavItem | null {
 }
 
 /**
- * Resolves the required permission for a given pathname. Scans the sidebar nav
- * AND the admin sections (which live in the Settings hub, not the sidebar) so
- * relocated routes stay guarded. Returns the most specific (longest href) match.
- */
-export function permissionForPath(pathname: string): PermissionId | null {
-  const items: NavItem[] = [
-    ...NAV_GROUPS.flatMap((g) => g.items),
-    ...ADMIN_SECTIONS.flatMap((g) => g.items),
-    ...ACCOUNT_SECTIONS,
-    ...INSIGHTS_TABS,
-  ];
-  let match: NavItem | null = null;
-  for (const item of items) {
-    if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
-      if (!match || item.href.length > match.href.length) {
-        match = item;
-      }
-    }
-  }
-  return match?.permission ?? null;
-}
-
-/**
  * Where to send a user who has just authenticated, given the `?from=` the login page carried.
  *
  * `from` is **not** trustworthy as a destination. `AuthGuard` stamps it from whatever protected path
@@ -224,16 +202,43 @@ export function safeLandingPath(
   role: Role | null | undefined,
   from: string | null | undefined,
 ): string {
-  // Must be a same-origin absolute path. `//evil.com` and `/\evil.com` both start with "/" yet are
-  // protocol-relative URLs to another host — a redirect the attacker controls.
-  if (!from || !from.startsWith("/") || /^\/[\\/]/.test(from)) return "/dashboard";
-  return canAccessPath(role, from) ? from : "/dashboard";
+  const path = sameOriginPath(from);
+  if (!path) return "/dashboard";
+  return canAccessPath(role, path) ? path : "/dashboard";
+}
+
+/** A throwaway origin to resolve `from` against — only "did it stay here?" matters. */
+const LANDING_BASE = "https://landing.invalid";
+
+/**
+ * `from` as a same-origin path (path + query + hash), or `null` when it would leave the app.
+ *
+ * Checking the raw string is not enough. `//evil.com` and `/\evil.com` were caught, but the URL
+ * parser the router uses **drops** tab, LF and CR before parsing, so `/%09/evil.example` arrived as
+ * `//evil.example` — another host — and a sign-in on the genuine page ended on the attacker's
+ * (QA audit 2026-10-08, WP-010). So: refuse control characters and backslashes outright, then resolve
+ * the value exactly as the browser will and keep it only if the origin did not change.
+ */
+function sameOriginPath(from: string | null | undefined): string | null {
+  if (!from || !from.startsWith("/")) return null;
+  for (const ch of from) {
+    const code = ch.charCodeAt(0);
+    if (code < 0x20 || code === 0x7f || ch === "\\") return null;
+  }
+  let url: URL;
+  try {
+    url = new URL(from, LANDING_BASE);
+  } catch {
+    return null;
+  }
+  if (url.origin !== LANDING_BASE) return null;
+  return url.pathname + url.search + url.hash;
 }
 
 /**
  * Resolves the page title for a given pathname by matching the most specific
- * nav entry (sidebar, admin hub, or Insights tab). Used to echo the active
- * page's name in the top navbar.
+ * nav entry (sidebar, admin hub, or Insights tab). The top navbar's fallback when
+ * the page itself hasn't published a title (`page-header.store`).
  */
 export function titleForPath(pathname: string): string | null {
   const items: NavItem[] = [

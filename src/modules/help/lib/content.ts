@@ -8,7 +8,7 @@
  * All content is deterministic — no Math.random() / Date.now().
  */
 
-import type { LucideIcon } from "lucide-react"
+import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   BookOpen,
@@ -18,8 +18,8 @@ import {
   Plug,
   ShieldCheck,
   Timer,
-} from "lucide-react"
-import type { PermissionId } from "@/types/rbac"
+} from "lucide-react";
+import type { PermissionId } from "@/types/rbac";
 
 export type HelpCategory =
   | "getting-started"
@@ -29,244 +29,236 @@ export type HelpCategory =
   | "billing"
   | "security"
   | "integrations"
-  | "general"
+  | "general";
 
+/** A category's article count is derived from {@link HELP_ARTICLES}, never stored — see help-page. */
 export interface HelpCategoryDef {
-  key: HelpCategory
-  label: string
-  icon: LucideIcon
-  count: number
+  key: HelpCategory;
+  label: string;
+  icon: LucideIcon;
 }
 
 export const HELP_CATEGORIES: HelpCategoryDef[] = [
-  { key: "getting-started", label: "Getting Started", icon: BookOpen, count: 6 },
-  { key: "time-tracking", label: "Time Tracking", icon: Timer, count: 5 },
-  { key: "monitoring", label: "Monitoring", icon: Activity, count: 4 },
-  { key: "reports", label: "Reports", icon: FileBarChart, count: 5 },
-  { key: "billing", label: "Billing", icon: CreditCard, count: 3 },
-  { key: "security", label: "Security", icon: ShieldCheck, count: 4 },
-  { key: "integrations", label: "Integrations", icon: Plug, count: 3 },
-  { key: "general", label: "General", icon: HelpCircle, count: 4 },
-]
+  { key: "getting-started", label: "Getting Started", icon: BookOpen },
+  { key: "time-tracking", label: "Time Tracking", icon: Timer },
+  { key: "monitoring", label: "Monitoring", icon: Activity },
+  { key: "reports", label: "Reports", icon: FileBarChart },
+  { key: "billing", label: "Billing", icon: CreditCard },
+  { key: "security", label: "Security", icon: ShieldCheck },
+  { key: "integrations", label: "Integrations", icon: Plug },
+  { key: "general", label: "General", icon: HelpCircle },
+];
 
 export interface HelpArticle {
-  slug: string
-  title: string
-  category: HelpCategory
-  excerpt: string
-  readMins: number
-  body: string
+  slug: string;
+  title: string;
+  category: HelpCategory;
+  excerpt: string;
+  readMins: number;
+  body: string;
 }
 
+/**
+ * Every claim here is about the shipped product, and was checked against the code that does it (QA
+ * audit 2026-10-08, WP-247): several articles used to describe a web timer, manual time entry,
+ * scheduled reports, Slack commands, offline alerts and recovery codes that don't exist. When the
+ * product changes, change the article — a help page that lies is worse than none.
+ */
 export const HELP_ARTICLES: HelpArticle[] = [
   {
     slug: "quick-start",
     title: "Getting started with WorkPulse",
     category: "getting-started",
     excerpt:
-      "Set up your organization, invite your team, and start tracking in under 10 minutes.",
+      "Set up your organization, invite your team, and get the desktop app tracking.",
     readMins: 4,
-    body: "WorkPulse is designed to be set up quickly. Begin by completing your organization profile in Settings → Organization, then invite your team members from the Employees page. Once your team is added, assign roles that match their responsibilities. The dashboard will populate automatically as team members start logging time and the device agent begins collecting activity data. We recommend starting with a small pilot group to fine-tune your monitoring thresholds before rolling out to the full team.",
+    body: "Start with your organization's details in Settings → Organization, then invite your team from the Employees page — each invite carries a role, a department and a job title. Once people accept, they install the WorkPulse desktop app from Download agent in the top bar and sign in with their WorkPulse email and password. Time, attendance and activity all come from what that app records while its timer runs, and the dashboard fills in as it reports. (Organizations that track company computers with the managed service enrol those computers under Settings → Device agents instead.) A small pilot group is a good way to settle your monitoring settings in Settings → Monitoring before everyone joins.",
   },
   {
     slug: "invite-employees",
     title: "How to invite and onboard employees",
     category: "getting-started",
     excerpt:
-      "Send invitations, assign roles, and guide new members through the onboarding flow.",
+      "Send invitations with a role, department and title, and follow up on pending ones.",
     readMins: 3,
-    body: "Navigate to Employees → Invite and enter the email addresses of your team members. Each person will receive an invitation email with a link to create their account. During onboarding, they'll be guided through connecting the device agent and setting their preferences. Outstanding invites appear in the Invited section below the employee list, where you can resend or revoke one. To invite several people at once, paste up to 50 addresses into the email field — they all get the same role, department and job title.",
+    body: "On the Employees page, choose Invite. Enter one address, or paste up to 100 at once — everyone in a paste gets the same role, department, team and job title, and department and job title are required. To give each person their own details, import a CSV of up to 500 rows instead. Each person receives an email with a link and an invite code. Accepting is one short form — their name, the code, a password and a few profile details — after which they're signed in to WorkPulse. Pending invites appear in the Invited section below the employee list, where you can send a new invite or revoke one.",
   },
   {
     slug: "roles-and-permissions",
     title: "Understanding roles and permissions",
     category: "getting-started",
-    excerpt:
-      "Learn how the Owner, Admin, Manager, HR, Finance, and Employee roles differ.",
+    excerpt: "The built-in Owner, Admin and Employee roles, and how custom roles work.",
     readMins: 5,
-    body: "WorkPulse ships with three built-in roles: Owner, Admin and Employee. Owners have full access and can manage billing; Admins control organization settings; Employees see their own data. Everything else is a custom role — create one in Settings → Roles & Permissions, starting from a built-in role and adding or removing individual permissions. Roles like Manager, HR or Finance are custom roles you define, not presets.",
+    body: "WorkPulse has three built-in roles. The Owner has full access, including billing and ownership; Admins run the organization's settings and people; Employees see their own work. Admin and Employee can be adjusted for your organization, and Restore to default puts them back. For anything else — a Manager, HR or Finance role, say — create a custom role in Settings → Roles & permissions, either from scratch with Create role or by cloning an existing role and adjusting its permissions. You can only grant permissions you hold yourself.",
   },
   {
     slug: "dashboard-overview",
     title: "Dashboard overview and widgets",
     category: "getting-started",
-    excerpt:
-      "Customize your dashboard with productivity metrics, team activity, and AI insights.",
+    excerpt: "What the dashboard shows, and how owners and admins arrange its widgets.",
     readMins: 3,
-    body: "The dashboard is your real-time command center. You can add, remove, and reorder widgets by clicking Customize in the top right. Available widgets include: Team Activity Heatmap, Active vs Inactive breakdown, Top Performers leaderboard, AI summary, upcoming task deadlines, and billing status. Your widget layout is saved automatically and persists across sessions. Each role sees only the widgets relevant to their permissions.",
+    body: "The dashboard is your starting point. People who can view employees — owners and admins, typically — get the organization dashboard: a grid of widgets you arrange with Customize, adding, removing and dragging them into order. Widgets include the AI summary, Attendance, Working now, Department comparison, Top performers, Needs attention, Employment status, Where time went, Productivity trends, Upcoming deadlines, Activity heatmap, Headcount by status and Billing overview. The layout is saved to your account, so it follows you between devices. Everyone else gets a personal dashboard with their own figures, tasks and week, which isn't customizable.",
   },
   {
     slug: "install-desktop-agent",
-    title: "Installing the device agent",
+    title: "Installing the desktop app",
     category: "getting-started",
-    excerpt:
-      "The device agent enables real-time monitoring, screenshots, and activity tracking.",
-    readMins: 6,
-    body: "The WorkPulse device agent is a lightweight background process that captures activity data, takes periodic screenshots, and reports time to the platform. Download the installer from Settings → Device agents → Download. The agent supports Windows 10+, macOS 12+, and Ubuntu 20.04+. After installation, the agent appears in the system tray and connects automatically using your organization token. Employees are notified when monitoring is active. Admins can manage agent versions and policies from the Agents page.",
+    excerpt: "Download the WorkPulse desktop app, sign in, and start your timer.",
+    readMins: 4,
+    body: "The WorkPulse desktop app is what records your work. Download it from Download agent in the top bar — it's available for Windows 10 and 11, macOS 12 and later, and Ubuntu/Debian (a .deb or an AppImage). Install it and sign in with the same WorkPulse email and password you use here; there's no separate setup. While it runs, a WorkPulse icon sits in the system tray, and it records activity only while your timer is on. Admins see every device, with its version and connectivity, under Settings → Device agents, and set capture and update policies under Settings → Monitoring. Organizations that track company computers with the managed service enrol them under Settings → Device agents instead — there is nothing for employees to install.",
   },
   {
     slug: "notifications-guide",
-    title: "Managing notifications and alerts",
+    title: "Managing notifications",
     category: "getting-started",
-    excerpt: "Configure which events trigger in-app and email notifications.",
+    excerpt: "What WorkPulse notifies you about, and how to switch each type on or off.",
     readMins: 2,
-    body: "WorkPulse sends notifications for key events: task assignments, approval decisions, productivity anomalies, and system alerts. You can configure your notification preferences in Settings → Notifications. Each notification type can be set to in-app only, email only, or both. Managers and Admins can also configure org-wide alert thresholds in Settings → Monitoring to control when anomaly notifications are triggered.",
+    body: "WorkPulse notifies you in the app about things that concern you: tasks assigned to you, leave requests and their decisions (including requests waiting for your approval), security changes such as a reset two-factor device, plan changes you made, and a few system notices. They appear under the bell in the top bar and on the Notifications page. Choose what you receive in Settings → Notification preferences, where Task assignments, Approvals, Billing & account and Security alerts each have an in-app switch.",
   },
   {
     slug: "log-time",
-    title: "How to log time manually",
+    title: "How your time gets recorded",
     category: "time-tracking",
-    excerpt: "Add, edit, and submit time entries directly from the Time Tracking page.",
-    readMins: 3,
-    body: "To log time manually, go to Time Tracking and click Add Entry. Select the project and task, enter the duration or start/end times, and optionally add a note. Entries can be edited or deleted at any time from the Time Tracking page. You can also use the global timer in the top navigation bar — press Start, work on your task, then press Stop to create an entry automatically.",
+    excerpt:
+      "Your timesheet on the Time Tracking page comes from the desktop app's timer — there's no manual entry.",
+    readMins: 2,
+    body: "WorkPulse records time from the desktop app, not from forms. Start the app's timer on a project and task, and each session is sent to WorkPulse on its own; the Time Tracking page then shows your sessions and your totals for each day. The web app can't add, edit or delete time entries — by design, so what you see always matches what the desktop app actually recorded. (On company computers tracked by the managed service, time runs from Windows sign-in to sign-out instead.) If a day looks wrong, talk to your manager or admin.",
   },
   {
     slug: "global-timer",
-    title: "Using the global timer",
+    title: "The timer in the top bar",
     category: "time-tracking",
-    excerpt: "Start, pause, and stop the global timer from anywhere in the app.",
-    readMins: 2,
-    body: "The global timer lives in the top navigation bar and is always accessible no matter where you are in WorkPulse. Click the timer icon to assign it to a project and task, then press Start. The timer continues running even as you navigate between pages. Press Pause to take a break — idle time will be separated automatically if idle detection is enabled. When you Stop the timer, a time entry is created and added to your current day. Timer state persists across browser refreshes.",
+    excerpt:
+      "A live view of your desktop app's running session — it doesn't start or stop anything.",
+    readMins: 1,
+    body: "The timer in the top navigation bar mirrors the session running in your WorkPulse desktop app: which task it's on and how long it has been running. It's view-only — there's no start, pause or stop on the web, by design. To start or stop tracking, use the desktop app. It appears for people who track their own time.",
   },
   {
     slug: "idle-detection",
-    title: "How idle detection works",
+    title: "How idle time is handled",
     category: "monitoring",
-    excerpt:
-      "WorkPulse detects mouse and keyboard inactivity to separate active from idle time.",
-    readMins: 3,
-    body: "Idle detection monitors keyboard and mouse activity at the OS level via the device agent. If no input is detected for the configured threshold (default: 5 minutes), the timer is automatically paused and the period is marked as idle. Idle time is displayed separately in reports and does not count toward productive hours. You can configure the idle threshold in Settings → Monitoring. If Count Idle as Break is enabled, idle periods are logged as break time rather than untracked.",
+    excerpt: "How the desktop app treats time without keyboard or mouse input.",
+    readMins: 2,
+    body: "The desktop app notices whether there's keyboard and mouse input — never what was typed. After a minute without input, time counts as idle rather than active. After 5 minutes it asks whether you're still working, and after 15 minutes it stops the timer, starting it again by itself if you come back within 4 hours. These timings are built into the app. For company computers tracked by the managed service, an admin sets when an inactive session ends under Settings → Monitoring → Machine tracking → Stop after inactivity.",
   },
   {
     slug: "screenshot-settings",
-    title: "Screenshot capture and privacy settings",
+    title: "Screenshot capture and retention",
     category: "monitoring",
     excerpt:
-      "Configure capture frequency, blur rules, and employee notification settings.",
-    readMins: 4,
-    body: "Screenshots are captured periodically by the device agent at the interval set in Settings → Monitoring → Screenshots. By default, employees are notified via the system tray icon whenever a screenshot is taken. You can enable Blur by Default to automatically blur screenshots before they are uploaded. Screenshots are stored for the configured retention period (default: 30 days) and then deleted automatically. Employees can view their own screenshots in Analytics → Screenshots.",
+      "How often screenshots are captured, how long they're kept, and who can see them.",
+    readMins: 3,
+    body: "The desktop app captures screenshots while it's tracking, at the cadence an admin sets in Settings → Monitoring → Screenshot capture → Capture cadence: off, every 3, 5 or 10 minutes, or a custom interval of 1 to 60 minutes. Every 5 minutes is the default. Screenshots are kept for the Retention period on the same card — 90 days unless it's changed, anywhere from 1 to 365 — and then deleted automatically. They're reviewed in Analytics → Screenshots by people whose role includes it; employees don't see captures in the app.",
   },
   {
     slug: "productivity-scores",
     title: "Understanding productivity scores",
     category: "monitoring",
     excerpt:
-      "How WorkPulse calculates productivity from app usage, active time, and task completion.",
-    readMins: 5,
-    body: "Productivity scores are calculated from three signals: active vs idle time ratio, application category usage (productive/neutral/distracting), and task completion rate. Each signal is weighted and combined into a 0–100 score. Admins can adjust the productive and low-activity thresholds in Settings → Monitoring → Productivity Thresholds. Application categories can be customized in Settings → Tracking rules to match your team's workflow.",
+      "How the daily 0–100 score is built from utilization, quality, focus and reliability.",
+    readMins: 4,
+    body: "Each person gets a daily score from 0 to 100, computed from that day's activity — the AI never decides a score. It combines four parts: Utilization (25%), the share of the time on the timer spent active at the computer (against the expected day when no timer ran); Quality (40%), the average AI rating of the day's screenshots, or — when there are none — tracked time weighted by app category, where productive counts fully, neutral counts half and distracting counts zero; Focus (15%), the share of active time with real keyboard or mouse input; and Reliability (20%), punctuality and hours worked. Task completion isn't part of it. Admins can change the four weights in Settings → Organization → Productivity score weights (or for a single department), and decide which apps and sites count as productive in Settings → Tracking rules.",
   },
   {
     slug: "export-reports",
     title: "Exporting reports to CSV and PDF",
     category: "reports",
-    excerpt: "Download productivity, time, and project data in CSV or PDF format.",
+    excerpt: "Download report data as CSV or PDF from Analytics → AI reports.",
     readMins: 2,
-    body: "Reports can be exported from Analytics → Reports. Select the report you want and click Export CSV or Export PDF. CSV exports are formatted for import into Excel or Google Sheets. PDF exports include charts and are suitable for sharing with stakeholders. Export access requires the Export Reports permission — contact your Admin if the buttons are grayed out.",
-  },
-  {
-    slug: "scheduled-reports",
-    title: "Scheduling automated report delivery",
-    category: "reports",
-    excerpt:
-      "Set up recurring reports delivered to your inbox on a weekly or monthly schedule.",
-    readMins: 3,
-    body: "Scheduled reports let you automatically receive key metrics without logging in. Go to Analytics → Reports and click the clock icon on any report card to open the schedule dialog. Choose the frequency (daily, weekly, monthly), the recipients, and the delivery format (CSV or PDF). Scheduled reports run at midnight UTC on the configured cadence. You can manage or delete schedules from the same dialog.",
+    body: "Reports are downloaded from Analytics → AI reports, in the All reports library. Each report card has Download CSV and Download PDF; tick several and use Download selected, or take everything with Download all. A CSV opens in Excel or Google Sheets, and a PDF is ready to share. The library covers the last workday or the current week — there's no custom date range. Downloading needs the Export Reports permission; without it the buttons are greyed out, so ask your admin.",
   },
   {
     slug: "change-plan",
-    title: "Upgrading or downgrading your subscription",
+    title: "Changing your plan",
     category: "billing",
-    excerpt:
-      "Change your plan, add seats, or cancel directly from the Billing page.",
-    readMins: 3,
-    body: "Go to Billing → Subscription to view your current plan and available options. To upgrade, click Upgrade Plan and select a new tier. Upgrades take effect immediately and are prorated for the remaining billing cycle. Downgrades take effect at the start of the next billing cycle. To add seats, click Add Seats and enter the number of additional users. Billing is per active seat — suspended or uninvited users do not count.",
+    excerpt: "See your plan and seats, and switch plans from Settings → Billing.",
+    readMins: 2,
+    body: "Settings → Billing shows your organization's plan and how many seats are in use. People allowed to manage billing can move to another plan with Upgrade or Switch on that plan's card, and the change applies immediately. Nothing is charged — payments aren't enabled in WorkPulse yet, so there are no invoices, proration or billing cycles, and seats can't be added or removed here. To cancel, contact WorkPulse support.",
   },
   {
     slug: "mfa-setup",
     title: "Setting up multi-factor authentication",
     category: "security",
-    excerpt:
-      "Add TOTP-based MFA to your account or enforce it across the organization.",
-    readMins: 4,
-    body: "MFA adds a second layer of security to your WorkPulse account. To enable it for your personal account, go to Settings → Security → Multi-Factor Authentication and scan the QR code with an authenticator app (Google Authenticator, Authy, or 1Password). Admins can enforce MFA for all users in Security → Policies. Recovery codes are shown once during setup — store them securely.",
+    excerpt: "Add an authenticator-app code (MFA) to your sign-in.",
+    readMins: 3,
+    body: "Multi-factor authentication adds a code from an authenticator app — Google Authenticator, Authy, 1Password and the like — to your sign-in. Go to Settings → Security and, on the Multi-factor authentication card, choose Enable, scan the QR code with your app and enter the code it shows. There are no recovery codes: if you lose the device, an owner or admin can reset your authenticator from their Security page, and you set it up again at your next sign-in. Multi-factor authentication can't yet be made mandatory for the whole organization.",
   },
   {
     slug: "slack-integration",
     title: "Connecting Slack to WorkPulse",
     category: "integrations",
-    excerpt:
-      "Receive WorkPulse alerts, approval requests, and summaries directly in Slack.",
+    excerpt: "Post leave, joiner, payroll and task updates to your Slack channels.",
     readMins: 3,
-    body: "The Slack integration delivers WorkPulse notifications to your chosen channels. Go to Integrations → Slack and click Connect. Authorize WorkPulse to access your Slack workspace, then select which channels should receive which notification types (anomaly alerts, approval requests, daily summaries). The integration also enables /workpulse slash commands in Slack for checking your daily summary or starting/stopping the timer.",
+    body: "The Slack integration posts WorkPulse updates to your channels. Go to Settings → Integrations, find Slack and choose Connect, then approve WorkPulse in your Slack workspace. Once it's connected, open Channel routing to pick a default channel and, if you like, a channel for each event: leave requested, approved or cancelled, an employee joining, payroll finalized, and a task being assigned. Invite the WorkPulse app to every channel you route to, or Slack refuses its messages. WorkPulse only posts messages and reads your channel list — there are no Slack commands.",
   },
-]
+];
 
 export interface Faq {
-  q: string
-  a: string
+  q: string;
+  a: string;
   /** If set, only roles holding this permission see the FAQ (e.g. admin-only). */
-  permission?: PermissionId
+  permission?: PermissionId;
 }
 
 export const FAQS: Faq[] = [
   {
     q: "How does idle detection work?",
-    a: "The device agent monitors keyboard and mouse activity at the OS level. If no input is detected for the configured threshold (default: 5 minutes), the current session is marked as idle. Idle time is shown separately in reports and does not count toward productive hours. You can adjust the threshold in Settings → Monitoring.",
+    a: "The desktop app notices whether there's keyboard and mouse input, never what was typed. After a minute without input, time counts as idle rather than active. After 5 minutes it asks whether you're still working, and after 15 minutes it stops the timer — starting again by itself if you come back within 4 hours. These timings are built into the app; for company computers on the managed service, Settings → Monitoring → Machine tracking sets when an inactive session ends.",
   },
   {
     q: "Are employees notified when screenshots are taken?",
-    a: "Yes. By default, a system tray icon pulses briefly whenever a screenshot is captured, so employees are always aware. This behavior can be configured in Settings → Monitoring → Screenshots. Admins can also enable Blur by Default so captured images are blurred before upload.",
+    a: "The desktop app keeps a WorkPulse icon in the system tray the whole time it runs, and its panel shows a capture indicator while screenshots are being taken. It doesn't flash a separate notice for each screenshot.",
   },
   {
-    q: "Can I use WorkPulse without the device agent?",
-    a: "Yes. The web app supports manual time logging and task management without the agent. However, automatic time tracking, screenshot capture, and application/URL monitoring require the device agent to be installed on the employee's machine.",
+    q: "Can I use WorkPulse without the desktop app?",
+    a: "Partly. The web app handles projects and tasks, leave, approvals, payroll and settings on its own. But time, attendance, activity and screenshots all come from the desktop app — there's no manual time entry on the web.",
   },
   {
     q: "How is the productivity score calculated?",
-    a: "The score combines four signals into a 0–100 number: Utilization (25%) — active time against the expected day; Quality (40%) — time weighted by app category, where productive counts fully, neutral counts half and distracting counts zero; Focus (15%) — the share of active time with real keyboard or mouse input, which is what stops idle time being passed off as work; and Reliability (20%) — punctuality and hours worked. Task completion is not part of the score. App categories are configured in Settings → Monitoring.",
+    a: "The score combines four parts into a 0–100 number: Utilization (25%) — the share of the time on the timer spent active at the computer (against the expected day when no timer ran); Quality (40%) — the average AI rating of the day's screenshots, or when there are none, time weighted by app category, where productive counts fully, neutral counts half and distracting counts zero; Focus (15%) — the share of active time with real keyboard or mouse input, which is what stops idle time being passed off as work; and Reliability (20%) — punctuality and hours worked. Task completion is not part of the score. App categories are set in Settings → Tracking rules.",
   },
   {
-    q: "What data is collected by the device agent?",
-    a: "The agent collects: active application names and window titles, keyboard and mouse activity levels (counts only — no keylogging), periodic screenshots (configurable frequency), and time spent in each application. No keystrokes or clipboard content are recorded. Employees can view their collected data in Analytics → Activity and Screenshots.",
+    q: "What data does the desktop app collect?",
+    a: "While it's tracking, the desktop app records which application is active and its window title, how much keyboard and mouse activity there is each minute (counts only — never which keys), screenshots at your organization's cadence, and the computer's location with its regular check-ins. It doesn't record keystrokes, clipboard contents or web addresses. Employees can't yet view this data in the app; it's reviewed in Analytics by people whose role includes it.",
   },
   {
-    q: "How do I add or remove seats from my plan?",
-    a: "Go to Billing → Subscription and click Add Seats or Remove Seats. Changes take effect immediately. Upgrades are prorated for the current billing cycle; downgrades take effect at the start of the next cycle. Suspended users and pending invitations do not count toward your seat limit.",
+    q: "Can I add or remove seats?",
+    a: "Not in the app yet. Settings → Billing shows your plan and how many seats are in use, and the plan can be changed there. Nothing is charged — payments aren't enabled yet.",
     permission: "billing:view",
   },
   {
     q: "Can I export data for a custom date range?",
-    a: "Yes. In Analytics → Reports, use the date picker to select a custom range before exporting. The selected range applies to all report types on that page. CSV and PDF exports both respect the chosen date range.",
+    a: "Not yet. The report library in Analytics → AI reports covers the last workday or the current week, and its CSV and PDF downloads use that period.",
     permission: "reports:view",
   },
   {
-    q: "What happens if the device agent goes offline?",
-    a: "If the agent loses its connection, it stores activity data locally and syncs when the connection is restored. You will see an alert in Settings → Device agents for any agents offline for more than 30 minutes. Manual time entries can still be submitted via the web app during agent downtime.",
+    q: "What happens if the desktop app goes offline?",
+    a: "It keeps what it records on the computer and sends it when the connection comes back, so nothing is lost. Under Settings → Device agents, a device shows as Offline once it hasn't checked in for 10 minutes; there's no separate alert. Time can't be entered by hand on the web in the meantime.",
   },
   {
     q: "Is WorkPulse GDPR compliant?",
-    a: "WorkPulse is designed with GDPR compliance in mind. Employees have visibility into all data collected about them. Admins can configure data retention periods and request data deletion. All data is encrypted in transit and at rest. For a Data Processing Agreement (DPA), contact your account manager.",
+    a: "WorkPulse is designed with GDPR in mind. Data is encrypted in transit and at rest; screenshot retention is configurable in Settings → Monitoring, and screenshots are deleted automatically when it runs out; and the Owner can export the organization's data from Settings → Ownership & deletion. Employees can't yet see the activity and screenshots collected about them in the app, and there's no in-app request for deleting someone's data. For a Data Processing Agreement (DPA), contact WorkPulse support.",
   },
-]
+];
 
 export interface VideoTutorial {
-  title: string
-  duration: string
-  category: HelpCategory
+  title: string;
+  duration: string;
+  category: HelpCategory;
   /**
    * Where the video lives. **Absent = not filmed yet**, and the card says so rather than pretending
    * — six tiles that all open nothing is worse than one that plays and five that are honest.
    */
-  src?: string
+  src?: string;
   /**
    * `file` → a direct MP4/WebM played by `<video>`. `embed` → an iframe (YouTube, Loom, Vimeo).
    *
    * This one field is why the host isn't a lock-in: moving from S3 to Cloudflare Stream or an
    * unlisted YouTube link is an edit here, not a component rewrite.
    */
-  kind?: "file" | "embed"
+  kind?: "file" | "embed";
   /** Still frame shown before playback. Without one the tile keeps its gradient. */
-  poster?: string
+  poster?: string;
   /**
    * Required to be shown this video — the same idiom the FAQs use.
    *
@@ -275,7 +267,7 @@ export interface VideoTutorial {
    * Ungated ⇒ everyone, which is right for the team-facing cut. An owner sees both, and the titles
    * say which is which — knowing what your team is shown is a fair thing for an owner to want.
    */
-  permission?: PermissionId
+  permission?: PermissionId;
 }
 
 /**
@@ -284,7 +276,7 @@ export interface VideoTutorial {
  * and S3 already serves large public binaries here with a bucket policy that allows exactly
  * `s3:GetObject`.
  */
-const VIDEO_HOST = "https://wp-downloads-dev.s3.ap-south-1.amazonaws.com/help/videos"
+const VIDEO_HOST = "https://wp-downloads-dev.s3.ap-south-1.amazonaws.com/help/videos";
 
 export const VIDEO_TUTORIALS: VideoTutorial[] = [
   {
@@ -304,9 +296,15 @@ export const VIDEO_TUTORIALS: VideoTutorial[] = [
     // whose screens it actually shows.
     permission: "employees:view",
   },
-  { title: "Setting up your first project", duration: "3:45", category: "getting-started" },
+  {
+    title: "Setting up your first project",
+    duration: "3:45",
+    category: "getting-started",
+  },
   { title: "How time gets tracked", duration: "2:18", category: "time-tracking" },
   { title: "Reading activity reports", duration: "4:30", category: "monitoring" },
-  { title: "Configuring monitoring thresholds", duration: "6:12", category: "monitoring" },
-  { title: "Exporting and scheduling reports", duration: "3:55", category: "reports" },
-]
+  // Not filmed yet. Titled for what exists: there are no monitoring "thresholds" and no report
+  // scheduling to film (WP-247).
+  { title: "Configuring monitoring settings", duration: "6:12", category: "monitoring" },
+  { title: "Exporting reports", duration: "3:55", category: "reports" },
+];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
@@ -44,19 +44,13 @@ interface RailGroup {
 
 /**
  * Personal account sections, rendered in-pane. Sourced from the shared catalog
- * (kept in sync with global search). Billing shows only for roles that can view
- * billing (Owner/Admin/Finance). The personal "Security" entry (after Profile)
+ * (kept in sync with global search). The personal "Security" entry (after Profile)
  * shows for roles WITHOUT the org Security Center — Owner/Admin reach security
- * there instead.
+ * there instead. (Billing is org-level and lives in the admin groups, gated there.)
  */
-function accountGroup(opts: {
-  canBilling: boolean;
-  canSecurity: boolean;
-}): RailGroup {
+function accountGroup(opts: { canSecurity: boolean }): RailGroup {
   const items: RailItem[] = [];
   for (const it of ACCOUNT_SECTIONS) {
-    // Billing is org-level — only roles that can view billing get it.
-    if (it.href === "/settings/billing" && !opts.canBilling) continue;
     items.push({ label: it.label, href: it.href, icon: it.icon });
     // Personal security sits after Profile for roles WITHOUT the org Security Center. Owner/Admin
     // don't get a second entry — their own password + reset lives inside that centre instead, so
@@ -79,11 +73,34 @@ export default function SettingsLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  // The visible pane publishes this via `useUnsavedGuard`; the rail is the only thing that can act
-  // on it, because it owns the links that would throw the draft away.
-  const dirtyRef = useUnsavedStore((s) => s.dirty);
-  const setDirty = useUnsavedStore((s) => s.setDirty);
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  // The visible pane publishes this via `useUnsavedGuard`. This layout is where leaving gets
+  // confirmed, because every settings pane renders inside it.
+  const dirty = useUnsavedStore((s) => s.dirty);
+  const pendingHref = useUnsavedStore((s) => s.pendingHref);
+  const requestLeave = useUnsavedStore((s) => s.requestLeave);
+  const cancelLeave = useUnsavedStore((s) => s.cancelLeave);
+  const clearUnsaved = useUnsavedStore((s) => s.clear);
+
+  // While a draft is unsaved, any in-app link asks first — not just this rail. The sidebar, the
+  // navbar and the account menu used to throw the draft away without a word (QA audit 2026-10-08,
+  // WP-347). Capture phase on `document`, so the click is held before the link's own handler runs.
+  useEffect(() => {
+    if (!dirty) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // a new tab or window keeps the draft
+      const a = (e.target as Element | null)?.closest?.("a[href]");
+      if (!(a instanceof HTMLAnchorElement) || a.hasAttribute("download")) return;
+      if (a.target && a.target !== "_self") return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (requestLeave(`${url.pathname}${url.search}${url.hash}`)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [dirty, requestLeave]);
   const { can, role } = usePermissions();
   // The rail must honour the same two gates as the sidebar: a feature the org switched off, or a
   // route its tracking mode hides, should not link into the "turned off" wall (a live bug when it
@@ -155,10 +172,7 @@ export default function SettingsLayout({
   };
 
   const groups: RailGroup[] = [
-    accountGroup({
-      canBilling: can("billing:view"),
-      canSecurity: can("security:view"),
-    }),
+    accountGroup({ canSecurity: can("security:view") }),
     ...(showCompany ? [companyGroup] : []),
     ...adminGroups,
   ];
@@ -190,13 +204,8 @@ export default function SettingsLayout({
                       <Link
                         href={item.href}
                         aria-current={active ? "page" : undefined}
-                        // The rail sits beside the pane being edited, so leaving mid-edit is the
-                        // natural move — and used to discard the draft silently. Ask instead.
-                        onClick={(e) => {
-                          if (!dirtyRef || item.external || item.href === pathname) return;
-                          e.preventDefault();
-                          setPendingHref(item.href);
-                        }}
+                        // Leaving mid-edit (the natural move from a rail beside the pane) is
+                        // confirmed by the link listener above, like every other in-app link.
                         className={cn(
                           "group flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-colors",
                           active
@@ -225,8 +234,8 @@ export default function SettingsLayout({
       </nav>
 
       {/* ── Content pane ── */}
-      {/* Discard confirmation for rail navigation while a pane holds unsaved edits. */}
-      <Dialog open={!!pendingHref} onOpenChange={(o) => !o && setPendingHref(null)}>
+      {/* Discard confirmation for leaving while a pane holds unsaved edits. */}
+      <Dialog open={!!pendingHref} onOpenChange={(o) => !o && cancelLeave()}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Discard unsaved changes?</DialogTitle>
@@ -235,7 +244,7 @@ export default function SettingsLayout({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPendingHref(null)}>
+            <Button variant="outline" size="sm" onClick={cancelLeave}>
               Stay on this page
             </Button>
             <Button
@@ -243,10 +252,9 @@ export default function SettingsLayout({
               className="border-destructive/40 bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 const href = pendingHref;
-                setPendingHref(null);
                 // Clear before navigating: the outgoing pane's unmount would clear it anyway, but
                 // not before the next pane mounts, and a stale `true` would block that one too.
-                setDirty(false);
+                clearUnsaved();
                 if (href) router.push(href);
               }}
             >

@@ -37,8 +37,25 @@ export interface DocumentItem {
   size: number;
 }
 
-/** What the in-app viewer can render. `null` ⇒ download only (Word, and anything unrecognised). */
-type ViewKind = "image" | "pdf" | "markdown" | "text";
+/**
+ * What the in-app viewer can render. `null` ⇒ download only (Word, SVG, and anything unrecognised).
+ * Shared with the task-attachment viewer in `view-task-dialog`, along with the helpers below, so the
+ * two surfaces cannot drift apart on the part that is security-relevant.
+ */
+export type ViewKind = "image" | "pdf" | "markdown" | "text";
+
+/**
+ * The raster image types the viewer shows, by extension. **SVG is deliberately absent**: opened on its
+ * own (a new tab on the preview's blob URL) an SVG is a document, and it runs script in this origin.
+ */
+const RASTER_BY_EXT: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+};
+const RASTER_TYPES = new Set(Object.values(RASTER_BY_EXT));
 
 function extOf(name: string): string {
   const i = name.lastIndexOf(".");
@@ -49,16 +66,41 @@ function extOf(name: string): string {
  * Decide by content type **and** extension. A browser that guessed the type wrong, or a server that
  * stored `application/octet-stream`, would otherwise make a perfectly previewable PDF download-only.
  */
-export function viewKindOf(doc: DocumentItem): ViewKind | null {
-  const ct = doc.content_type ?? "";
-  const ext = extOf(doc.filename);
-  if (ct.startsWith("image/") || [".png", ".jpg", ".jpeg", ".webp"].includes(ext)) {
-    return "image";
-  }
+export function viewKindFor(contentType: string, filename: string): ViewKind | null {
+  const ct = contentType ?? "";
+  const ext = extOf(filename);
+  if (RASTER_TYPES.has(ct) || ext in RASTER_BY_EXT) return "image";
   if (ct === "application/pdf" || ext === ".pdf") return "pdf";
   if (ct === "text/markdown" || ext === ".md") return "markdown";
   if (ct === "text/plain" || ext === ".txt") return "text";
   return null;
+}
+
+export function viewKindOf(doc: DocumentItem): ViewKind | null {
+  return viewKindFor(doc.content_type ?? "", doc.filename);
+}
+
+/**
+ * The bytes the viewer renders, **typed by what we decided to show** — never by the response.
+ *
+ * The response's type is whatever the uploader stored: the presigned PUT does not pin it, so a file
+ * declared `application/pdf` can sit in S3 as `text/html`. Rendering that blob as-is put the
+ * uploader's HTML in an iframe on this origin, script and all — stored XSS against whoever pressed
+ * View, with the Cognito tokens in `localStorage` (QA audit 2026-10-08, WP-008). Typed here, a "PDF"
+ * goes to the PDF viewer and an "image" to the image decoder. Neither runs markup; a file that is not
+ * what it claims simply fails to render.
+ */
+export function previewBlob(
+  bytes: ArrayBuffer,
+  kind: "image" | "pdf",
+  contentType: string,
+  filename: string,
+): Blob {
+  if (kind === "pdf") return new Blob([bytes], { type: "application/pdf" });
+  const type = RASTER_TYPES.has(contentType)
+    ? contentType
+    : (RASTER_BY_EXT[extOf(filename)] ?? "image/png");
+  return new Blob([bytes], { type });
 }
 
 function humanSize(bytes: number): string {
@@ -74,11 +116,16 @@ function humanSize(bytes: number): string {
  *
  * A plain `window.open` on a presigned URL *displays* the file in a new tab instead of saving it,
  * which is the behaviour this deliberately replaces.
+ *
+ * The blob is typed `application/octet-stream`, not with the response's type: a download never needs
+ * the type, and a same-origin blob URL typed as HTML is one navigation away from running as the app.
  */
-async function saveToDevice(url: string, filename: string): Promise<void> {
+export async function saveToDevice(url: string, filename: string): Promise<void> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`download failed (${res.status})`);
-  const blobUrl = URL.createObjectURL(await res.blob());
+  const blobUrl = URL.createObjectURL(
+    new Blob([await res.arrayBuffer()], { type: "application/octet-stream" }),
+  );
   const a = document.createElement("a");
   a.href = blobUrl;
   a.download = filename;
@@ -130,7 +177,8 @@ export function DocumentList({
       if (kind === "text" || kind === "markdown") {
         setViewer({ doc, kind, loading: false, text: await res.text() });
       } else {
-        setViewer({ doc, kind, loading: false, blobUrl: URL.createObjectURL(await res.blob()) });
+        const blob = previewBlob(await res.arrayBuffer(), kind, doc.content_type ?? "", doc.filename);
+        setViewer({ doc, kind, loading: false, blobUrl: URL.createObjectURL(blob) });
       }
     } catch {
       setViewer({ doc, kind, loading: false, error: true });

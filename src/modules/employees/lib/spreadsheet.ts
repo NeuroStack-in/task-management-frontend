@@ -44,15 +44,41 @@ export function resolveColumns<F extends string>(
 export const cell = (row: Record<string, string>, header?: string): string =>
   header ? (row[header] ?? "").trim() : "";
 
+/**
+ * Domains RFC 2606 reserves for documentation. They can never receive mail, so a row using one is
+ * always a mistake — and in practice it is one specific mistake: a template's own sample rows, left
+ * in place while real people were typed underneath them. Both importers refuse them by name, which
+ * turns the most likely way to misuse a template into a message that says exactly what to do.
+ *
+ * Only the three reserved *second-level* domains. The `.test` TLD is reserved too, but this app uses
+ * `acme.test` for its own demo data and placeholders, so refusing it would reject addresses the
+ * product itself suggests.
+ */
+const SAMPLE_DOMAINS = ["example.com", "example.net", "example.org"];
+
+export function isSampleAddress(email: string): boolean {
+  const domain = email.split("@")[1] ?? "";
+  return SAMPLE_DOMAINS.includes(domain);
+}
+
 /** A file read into headers + rows, before any field-specific validation. */
 export interface SheetData {
   headers: string[];
   rows: Record<string, string>[];
 }
 
-/** True for a file we should read with the XLSX reader rather than the CSV one. */
+/**
+ * True for a file we should read with the XLSX reader rather than the CSV one.
+ *
+ * **The extension decides first.** On Windows with Excel installed, browsers report a `.csv` as
+ * `application/vnd.ms-excel`, so the MIME test alone sent every CSV to the XLSX reader, which
+ * rejected it: "That file couldn't be read. Save it as .csv or .xlsx" — for a file that already was
+ * a `.csv` (QA audit 2026-10-08, WP-064). The MIME type only decides for a file with no telling
+ * extension, and then only `spreadsheetml` (unambiguously a workbook), never `ms-excel`.
+ */
 export function isExcelFile(file: File): boolean {
-  return /\.xlsx?$/i.test(file.name) || /spreadsheetml|ms-excel/.test(file.type);
+  if (/\.(csv|txt)$/i.test(file.name)) return false;
+  return /\.xlsx?$/i.test(file.name) || /spreadsheetml/.test(file.type);
 }
 
 /**

@@ -6,13 +6,16 @@
  *
  * The row is lean by design — `{ts, actor, category, action, target?}`. There is no IP, device,
  * severity, or outcome on the server, so none is shown, and no pagination cursor (the "load more"
- * in the feed reveals more of the fetched window client-side). `actor` is a Cognito user id; it is
- * joined to the employee directory for a display name, mirroring `use-audit`.
+ * in the feed reveals more of the fetched window client-side). `actor` is a Cognito user id — or a
+ * device's agent id for agent-side events; it is joined to the directory and the fleet for a display
+ * name, mirroring `use-audit`.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth.store";
-import { listEmployees } from "@/modules/employees/services/employees.service";
+import { listAllEmployees } from "@/modules/employees/services/employees.service";
+import { listFleet } from "@/modules/agents/services/fleet.service";
+import { auditActionLabel, resolveAuditTarget } from "@/modules/audit/lib/categories";
 import { listSecurityEvents, type ApiSecurityEvent } from "./services/security.service";
 
 export interface SecurityEvent {
@@ -22,7 +25,12 @@ export interface SecurityEvent {
   timestamp: string;
   actorId: string;
   actorName: string;
+  /** The actor is an agent on a device, not a person. */
+  actorIsDevice: boolean;
+  /** The action in words; the code is on `actionCode`. */
   action: string;
+  actionCode: string;
+  /** The target in words where its id resolves to a person or a device. */
   target: string | null;
 }
 
@@ -54,14 +62,20 @@ export function useSecurityEvents(enabled = true): SecurityEventsState {
 
     (async () => {
       try {
-        const [rows, roster] = await Promise.all([
+        // The fleet too, as `use-audit` does: capture-now and device events are stamped with a
+        // DEVICE's id, which the roster never resolves — they showed a short id under a person's
+        // avatar (QA audit 2026-10-08, WP-520). Best-effort, like the roster.
+        const [rows, roster, fleet] = await Promise.all([
           listSecurityEvents(),
-          listEmployees().catch(() => []),
+          listAllEmployees().catch(() => []),
+          listFleet().catch(() => ({ devices: [] })),
         ]);
         if (!live) return;
         const names = new Map<string, string>();
         for (const e of roster) names.set(e.user_id, e.name);
         if (currentUser?.id && currentUser.name) names.set(currentUser.id, currentUser.name);
+        const devices = new Map<string, string>();
+        for (const d of fleet.devices ?? []) devices.set(d.agent_id, `${d.hostname} · agent`);
 
         setEvents(
           rows.map((r: ApiSecurityEvent, i: number) => ({
@@ -69,9 +83,11 @@ export function useSecurityEvents(enabled = true): SecurityEventsState {
             ts: r.ts,
             timestamp: fmt(r.ts),
             actorId: r.actor,
-            actorName: names.get(r.actor) ?? shortId(r.actor),
-            action: r.action,
-            target: r.target ?? null,
+            actorName: names.get(r.actor) ?? devices.get(r.actor) ?? shortId(r.actor),
+            actorIsDevice: !names.has(r.actor) && devices.has(r.actor),
+            action: auditActionLabel(r.action, r.target ?? null),
+            actionCode: r.action,
+            target: resolveAuditTarget(r.target ?? null, names, devices),
           })),
         );
       } catch (e) {

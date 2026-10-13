@@ -29,7 +29,8 @@ export interface ProductPageData {
   problem: { heading: string; body: string };
   capabilities: Capability[];
   /** Optional product screenshots showcased in a "See it in action" section. */
-  gallery?: { src: string; title: string; body: string }[];
+  /** `width`/`height` are the image's pixel size — set, so its box is reserved before it loads. */
+  gallery?: { src: string; width: number; height: number; title: string; body: string }[];
   /** Deeper "how it works" — ordered, technical. */
   how: { heading: string; steps: { title: string; body: string }[] };
   /** Scannable technical specs — standards, formats, limits. */
@@ -58,7 +59,8 @@ export function ProductPage({ data }: { data: ProductPageData }) {
         <div className={`relative z-10 mx-auto ${split ? "grid max-w-6xl items-center gap-10 lg:grid-cols-2" : "max-w-3xl text-center"}`}>
           <div className={split ? "text-center lg:text-left" : ""}>
             <nav className={`m-enter-up mb-6 flex items-center gap-1.5 text-xs ${split ? "justify-center lg:justify-start" : "justify-center"}`} style={{ color: "var(--m-muted)" }}>
-              <Link href="/" className="hover:underline">Product</Link>
+              {/* The landing page's product section — there is no /product index (WP-541). */}
+              <Link href="/#features" className="hover:underline">Product</Link>
               <ChevronRight className="size-3" />
               <span style={{ color: "var(--m-accent-ink)" }}>{data.eyebrow}</span>
             </nav>
@@ -251,8 +253,10 @@ export function ProductPage({ data }: { data: ProductPageData }) {
                 <Link href="/register" className="m-btn m-btn-primary">
                   Start free trial <ArrowRight className="size-4" />
                 </Link>
-                <Link href="/login" className="m-btn m-btn-ghost">
-                  Talk to sales
+                {/* Was "Talk to sales" → the sign-in form: there is no sales contact to reach.
+                    Pricing is a real next step (WP-541). */}
+                <Link href="/pricing" className="m-btn m-btn-ghost">
+                  See pricing
                 </Link>
               </div>
             </div>

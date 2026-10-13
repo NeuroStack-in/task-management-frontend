@@ -48,26 +48,37 @@ export function getDeviceId(): string {
  */
 export function deviceLabel(): string {
   if (typeof navigator === "undefined") return "Web session";
-  const ua = navigator.userAgent;
-  const browser = /Edg\//.test(ua)
+  return labelFromUserAgent(navigator.userAgent, navigator.maxTouchPoints ?? 0);
+}
+
+/**
+ * The pure half of {@link deviceLabel}, split out so it can be tested against real UA strings.
+ *
+ * Order matters twice. iOS is tested **before** macOS because every iOS UA says "like Mac OS X"; and
+ * iPadOS 13+ in its default desktop mode sends a plain Macintosh UA, which only a touch screen tells
+ * apart. Browsers on iOS name themselves `CriOS`/`FxiOS`/`EdgiOS` rather than `Chrome`/`Firefox`/`Edg`
+ * (QA audit 2026-10-08, WP-386).
+ */
+export function labelFromUserAgent(ua: string, maxTouchPoints = 0): string {
+  const browser = /Edg(?:e|A|iOS)?\//.test(ua)
     ? "Edge"
     : /OPR\/|Opera/.test(ua)
       ? "Opera"
-      : /Chrome\//.test(ua)
+      : /Chrome\/|CriOS\//.test(ua)
         ? "Chrome"
-        : /Firefox\//.test(ua)
+        : /Firefox\/|FxiOS\//.test(ua)
           ? "Firefox"
           : /Safari\//.test(ua)
             ? "Safari"
             : "Browser";
   const os = /Windows/.test(ua)
     ? "Windows"
-    : /Macintosh|Mac OS X/.test(ua)
-      ? "macOS"
-      : /Android/.test(ua)
-        ? "Android"
-        : /iPhone|iPad|iPod/.test(ua)
-          ? "iOS"
+    : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && maxTouchPoints > 1)
+      ? "iOS"
+      : /Macintosh|Mac OS X/.test(ua)
+        ? "macOS"
+        : /Android/.test(ua)
+          ? "Android"
           : /Linux/.test(ua)
             ? "Linux"
             : "";

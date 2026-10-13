@@ -37,6 +37,18 @@ describe("apiErrorMessage", () => {
   it("drops developer-shaped text in favour of the status sentence", () => {
     const out = apiErrorMessage(400, "DynamoDB ConditionalCheckFailedException at 0xdeadbeef");
     expect(out).toBe(apiErrorMessage(400));
+    expect(apiErrorMessage(409, "called unwrap on a None value")).toBe(apiErrorMessage(409));
+    expect(apiErrorMessage(400, "value was nil")).toBe(apiErrorMessage(400));
+  });
+
+  /** The machine-text words must match as whole words, not inside a name or a place. */
+  it("keeps a human message that merely contains a machine word as a substring", () => {
+    expect(apiErrorMessage(409, "Sunil Kumar already has leave booked for those dates")).toBe(
+      "Sunil Kumar already has leave booked for those dates.",
+    );
+    expect(apiErrorMessage(400, "Manila office is closed that day")).toBe(
+      "Manila office is closed that day.",
+    );
   });
 
   /** A permission refusal reads better in our words than the server's. */

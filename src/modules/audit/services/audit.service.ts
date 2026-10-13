@@ -19,6 +19,8 @@ export interface ApiAuditRow {
   category: string;
   action: string;
   target?: string;
+  /** What changed ("rate 12.5 → 15"), when the server recorded it (WP-425). */
+  detail?: string;
 }
 
 export function listAudit(category?: string, limit = 200): Promise<ApiAuditRow[]> {

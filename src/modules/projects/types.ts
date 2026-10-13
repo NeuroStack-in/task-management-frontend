@@ -59,10 +59,10 @@ export type TaskStatus =
 /**
  * A status a person may set.
  *
- * Every column is now reachable by hand — but not by everyone: `done` is sign-off and needs a
- * Manager or Lead, which is a fact about the CALLER, not about the status, so the type can no
- * longer express it. `canSetTaskStatus` in `lib.ts` is the runtime gate, and the server enforces
- * it regardless.
+ * Every column is now reachable by hand — but not by everyone: `done` and `blocked` need a Manager
+ * or Lead, which is a fact about the CALLER, not about the status, so the type can no longer
+ * express it. `canMoveTaskTo` / `settableStatuses` in `lib.ts` are the runtime gate, and the server
+ * enforces it regardless.
  */
 export type SettableTaskStatus = TaskStatus;
 
@@ -117,7 +117,8 @@ export interface Task {
   assignees: TaskAssignee[];
   priority: TaskPriority;
   dueDate: string | null;
-  estimateHours: number;
+  /** Hours, fractions allowed. `null` = not estimated — a real state, distinct from zero. */
+  estimateHours: number | null;
   /** Files attached to the task; empty array when none. */
   attachments: Attachment[];
   /**
@@ -128,7 +129,7 @@ export interface Task {
    * Absent means "not mine" — never assume ownership from a missing value.
    */
   createdBy?: string | null;
-  /** Sign-off, present only on a `closed` task — who approved it, when, and their rating. */
+  /** Sign-off, present only on a `done` task — who approved it, when, and their rating. */
   review?: TaskReview | null;
   /**
    * How much of this task's breakdown is done — the `3/5` counter on the card.
@@ -212,8 +213,8 @@ export const TASK_STATUS_ORDER: TaskStatus[] = [
  * Statuses a person may drag a card into, or pick in a form.
  *
  * Every column is listed, because which ones a given person may set depends on who they are:
- * `done` is sign-off and needs a Manager or Lead. That check is `canSetTaskStatus` in `lib.ts` —
- * a list of names cannot express it, and pretending otherwise is how `closed` ended up both
+ * `done` and `blocked` need a Manager or Lead. That check is `settableStatuses` in `lib.ts` — a
+ * list of names cannot express it, and pretending otherwise is how `closed` ended up both
  * un-settable and unreachable from the column named for reviewing it.
  */
 export const TASK_STATUS_SETTABLE: TaskStatus[] = [...TASK_STATUS_ORDER];

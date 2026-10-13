@@ -1,13 +1,5 @@
 export type UserStatus = "active" | "inactive" | "invited" | "suspended";
 
-export interface Organization {
-  id: string;
-  name: string;
-  logoUrl?: string;
-  plan: "free" | "starter" | "business" | "enterprise";
-  timezone: string;
-}
-
 export interface User {
   id: string;
   name: string;
@@ -39,9 +31,12 @@ export interface User {
   perm?: string;
 }
 
-/** Mock auth session persisted to localStorage. */
+/**
+ * The Cognito id token a sign-in produced, kept in memory by the auth store (not persisted). API calls
+ * never use it — they take a fresh token from Cognito's own store (`lib/cognito.getIdToken`).
+ */
 export interface AuthSession {
-  token: string; // mock JWT
+  token: string; // the id token's JWT
   userId: string;
   issuedAt: number;
 }

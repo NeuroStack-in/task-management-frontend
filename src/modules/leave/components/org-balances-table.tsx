@@ -25,12 +25,15 @@ import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { adjustBalance, getOrgBalances, type ApiOrgBalances, type ApiTypeBalance } from "../services/leave.service";
+import { formatDays } from "../lib/days";
 
 /** Which person + type the editor is open on. */
 interface EditTarget {
   userId: string;
   name: string;
   balance: ApiTypeBalance;
+  /** The type's catalog allowance — the editor's starting figure when nothing was granted yet. */
+  typeAllowance: number;
 }
 
 export function OrgBalancesTable() {
@@ -175,15 +178,33 @@ export function OrgBalancesTable() {
                             <button
                               type="button"
                               onClick={() =>
-                                setEdit({ userId: emp.user_id, name: emp.name, balance: b })
+                                setEdit({
+                                  userId: emp.user_id,
+                                  name: emp.name,
+                                  balance: b,
+                                  typeAllowance: t.annual_allowance,
+                                })
                               }
                               className="group inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 tabular-nums transition-colors hover:bg-muted"
                               aria-label={`Adjust ${t.name} for ${emp.name}`}
+                              title={
+                                b.seeded
+                                  ? undefined
+                                  : `Not granted for ${data?.year ?? "this year"} yet — they receive the ${t.name} allowance the first time they open Leave, or when you set one here.`
+                              }
                             >
-                              <span className="font-medium">{b.remaining}</span>
-                              <span className="text-xs text-muted-foreground">
-                                / {b.allowance}
-                              </span>
+                              {/* No balance row is not a balance of 0 — it printed "0 / 0", the
+                                  same as a real zero allowance (QA audit 2026-10-08, WP-479). */}
+                              {b.seeded ? (
+                                <>
+                                  <span className="font-medium">{formatDays(b.remaining)}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    / {formatDays(b.allowance)}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Not granted</span>
+                              )}
                               {b.adjusted ? (
                                 <Badge
                                   className="bg-primary/12 px-1 py-0 text-[0.6rem] text-primary"
@@ -235,9 +256,14 @@ function AdjustDialog({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Re-seed whenever a different cell is opened; the dialog is reused across every row.
+  // Re-seed whenever a different cell is opened; the dialog is reused across every row. Nothing
+  // granted yet starts from the type's catalog allowance — what a first visit to Leave would grant.
   useEffect(() => {
-    setValue(target ? String(target.balance.allowance) : "");
+    setValue(
+      target
+        ? String(target.balance.seeded ? target.balance.allowance : target.typeAllowance)
+        : "",
+    );
     setNote("");
   }, [target]);
 
@@ -246,7 +272,12 @@ function AdjustDialog({
   const parsed = Number(value);
   // Below `used` the server refuses anyway — saying so here saves a round trip and explains why.
   const tooLow = Number.isFinite(parsed) && parsed < balance.used;
-  const invalid = value.trim() === "" || !Number.isFinite(parsed) || parsed < 0 || tooLow;
+  // The server's allowance is a whole number of days, at most 366. A fraction (natural to type
+  // when `used` is 2.5) failed deserialisation with a vague "details weren't accepted" (WP-273).
+  const notWhole = Number.isFinite(parsed) && !Number.isInteger(parsed);
+  const tooHigh = Number.isFinite(parsed) && parsed > 366;
+  const invalid =
+    value.trim() === "" || !Number.isFinite(parsed) || parsed < 0 || tooLow || notWhole || tooHigh;
 
   const save = async () => {
     setSaving(true);
@@ -282,11 +313,18 @@ function AdjustDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2 text-center text-sm">
-            <Stat label="Allowance" value={balance.allowance} />
-            <Stat label="Used" value={balance.used} />
-            <Stat label="Remaining" value={balance.remaining} />
-          </div>
+          {balance.seeded ? (
+            <div className="grid grid-cols-3 gap-2 text-center text-sm">
+              <Stat label="Allowance" value={formatDays(balance.allowance)} />
+              <Stat label="Used" value={formatDays(balance.used)} />
+              <Stat label="Remaining" value={formatDays(balance.remaining)} />
+            </div>
+          ) : (
+            <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              No {balance.name} has been granted to {target.name} for {year} yet. Saving grants
+              this allowance.
+            </p>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="allowance">New allowance (days)</Label>
@@ -295,14 +333,19 @@ function AdjustDialog({
               type="number"
               min={balance.used}
               max={366}
+              step={1}
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
             {tooLow ? (
               <p className="text-xs text-destructive">
-                {target.name} has already used {balance.used} day
+                {target.name} has already used {formatDays(balance.used)} day
                 {balance.used === 1 ? "" : "s"} — the allowance can&apos;t go below that.
               </p>
+            ) : notWhole ? (
+              <p className="text-xs text-destructive">Use a whole number of days.</p>
+            ) : tooHigh ? (
+              <p className="text-xs text-destructive">An allowance can be at most 366 days.</p>
             ) : null}
           </div>
 
@@ -336,7 +379,7 @@ function AdjustDialog({
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg bg-muted/50 px-2 py-1.5">
       <p className="text-base font-semibold tabular-nums">{value}</p>

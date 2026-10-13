@@ -6,6 +6,7 @@ import { formatHours } from "@/lib/format";
 import { StatCard } from "@/components/shared/stat-card";
 import { getCalendarSummary } from "@/modules/integrations/services/integrations.service";
 import { localDateOf } from "@/lib/local-day";
+import { useEntitlementsSettled, useIsFeatureOn } from "@/hooks/use-features";
 
 /**
  * "In meetings today" — the payoff of the Google Calendar integration, on the personal dashboard.
@@ -25,8 +26,14 @@ import { localDateOf } from "@/lib/local-day";
 export function MeetingHoursCard() {
   const [hours, setHours] = useState<number | null>(null);
   const [show, setShow] = useState(false);
+  // The whole integrations API is behind the `integrations` feature, so asking without it was a
+  // request that could only fail — on every personal-dashboard load in a Free org (WP-471). Wait for
+  // the entitlements to settle, then ask only if the org has it.
+  const settled = useEntitlementsSettled();
+  const integrationsOn = useIsFeatureOn()("integrations");
 
   useEffect(() => {
+    if (!settled || !integrationsOn) return;
     // Local "today" — the card is a same-day glance, so it must agree with the viewer's calendar.
     // This used to say `toISOString()`, which is UTC: east of Greenwich the tile showed YESTERDAY's
     // meeting hours for the first hours of every day, under a heading that said today. The comment
@@ -47,9 +54,9 @@ export function MeetingHoursCard() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [settled, integrationsOn]);
 
-  if (!show) return null;
+  if (!show || !integrationsOn) return null;
 
   return (
     <StatCard

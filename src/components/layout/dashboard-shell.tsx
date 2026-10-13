@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { usePathname } from "next/navigation";
-import { useUiStore } from "@/stores/ui.store";
+import { isSidebarCollapsed, useUiStore } from "@/stores/ui.store";
 import { useHydrateProfile } from "@/modules/profile/use-hydrate-profile";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
@@ -14,25 +14,41 @@ import { cn } from "@/lib/utils";
 /**
  * Authenticated app shell (Meridian). A full-height inset sidebar meets the
  * viewport edge with a hairline border and collapses to an icon-only rail;
- * content sits on the slate canvas with a subtle per-route fade-in. The mobile
+ * content sits on the slate canvas with a subtle per-section fade-in. The mobile
  * nav sheet mounts here. See Docs/REDESIGN.md.
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const collapsed = useUiStore((s) => s.sidebarCollapsed);
-  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
+  const collapsed = useUiStore(isSidebarCollapsed);
+  const setInSettings = useUiStore((s) => s.setInSettings);
   const pathname = usePathname();
 
   // Patch the store with the caller's real name (the JWT has none — see the hook).
   useHydrateProfile();
 
-  // Settings has its own section rail, so collapse the main sidebar there to
-  // free up width — and expand it again on every other route.
-  useEffect(() => {
-    setSidebarCollapsed(pathname.startsWith("/settings"));
-  }, [pathname, setSidebarCollapsed]);
+  // Settings has its own section rail, so the main sidebar starts collapsed there to free up width.
+  // That's a default for the visit (see `ui.store`), not a write over the user's own collapse choice,
+  // which every other page — and a reload — keeps. Layout effect, so the first frame is already right.
+  useLayoutEffect(() => {
+    setInSettings(pathname.startsWith("/settings"));
+  }, [pathname, setInSettings]);
+
+  /**
+   * The entrance animation replays when the **section** changes, not on every navigation. Keyed on
+   * the full pathname, this wrapper remounted the nested layouts beneath it on each sub-navigation —
+   * the Settings rail jumped back to its top and lost its scroll and dialog state, and the Analytics
+   * tab bar replayed its entrance on every tab (QA audit 2026-10-08, WP-359).
+   */
+  const section = pathname.split("/")[1] ?? "";
 
   return (
     <div className="flex min-h-screen bg-background">
+      {/* First in tab order: past the sidebar's search, links and account controls in one keypress. */}
+      <a
+        href="#main-content"
+        className="bg-primary text-primary-foreground sr-only z-[60] rounded-full px-4 py-2 text-sm font-semibold focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+      >
+        Skip to main content
+      </a>
       <aside className="hidden shrink-0 py-3 pl-3 lg:block">
         <div
           className={cn(
@@ -49,8 +65,12 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
             edge; the translucent, draggable AI FAB overlays the corner. The keyed
             wrapper gives each route a subtle fade-up entrance (disabled under
             reduced-motion). */}
-        <main className="flex-1 px-4 pt-3 pb-3 sm:px-6 sm:pt-4">
-          <div key={pathname} className="wp-enter">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 px-4 pt-3 pb-3 outline-none sm:px-6 sm:pt-4"
+        >
+          <div key={section} className="wp-enter">
             {children}
           </div>
         </main>

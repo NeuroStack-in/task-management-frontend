@@ -27,7 +27,8 @@ import {
 } from "@/components/ui/select";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/currency";
-import { listEmployees, type ApiEmployee } from "@/modules/employees/services/employees.service";
+import { useOrgCurrency } from "@/hooks/use-org";
+import { listAllEmployees, type ApiEmployee } from "@/modules/employees/services/employees.service";
 import type { ApiCompensation, CompensationInput } from "../services/payroll.service";
 import { personName } from "@/lib/format";
 
@@ -38,6 +39,8 @@ export function SetCompensationCard({
 }: {
   onSave: (userId: string, body: CompensationInput) => Promise<ApiCompensation>;
 }) {
+  // Every amount in the org's own currency (WP-078).
+  const currency = useOrgCurrency() ?? undefined;
   const [employees, setEmployees] = useState<ApiEmployee[] | null>(null);
   // Directory unavailable (no employees:view, or transient failure) → manual user-id entry.
   const [directoryFailed, setDirectoryFailed] = useState(false);
@@ -53,7 +56,7 @@ export function SetCompensationCard({
 
   useEffect(() => {
     let live = true;
-    listEmployees()
+    listAllEmployees()
       .then((rows) => {
         if (!live) return;
         setEmployees(rows.filter((e) => e.status === "active"));
@@ -76,6 +79,13 @@ export function SetCompensationCard({
       toast.error("Pick an employee first.");
       return;
     }
+    // `Number("")` is 0, so an empty field used to save a rate of 0 — and the field cleared after
+    // every save with the employee still selected, so the next click zeroed what was just entered
+    // (QA audit 2026-10-08, WP-074). An empty rate is refused, and the saved figure stays in the box.
+    if (!rate.trim()) {
+      toast.error("Enter a rate.");
+      return;
+    }
     const value = Number(rate);
     if (!Number.isFinite(value) || value < 0) {
       toast.error("Enter a non-negative rate.");
@@ -85,12 +95,12 @@ export function SetCompensationCard({
     try {
       const view = await onSave(id, { pay_type: payType, rate: value });
       setLastSaved(view);
-      setRate("");
+      setRate(String(view.rate));
       toast.success(`Compensation set for ${nameOf(view.user_id)}`, {
         description:
           view.pay_type === "hourly"
-            ? `Hourly at ${formatCurrency(view.rate)}/h — the next drafted run uses it.`
-            : `Salaried at ${formatCurrency(view.rate)}/mo — the next drafted run uses it.`,
+            ? `Hourly at ${formatCurrency(view.rate, currency)}/h — the next drafted run uses it.`
+            : `Salaried at ${formatCurrency(view.rate, currency)}/mo — the next drafted run uses it.`,
       });
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
@@ -134,7 +144,8 @@ export function SetCompensationCard({
         </p>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
           <div className="space-y-1.5">
-            <Label>Employee</Label>
+            {/* Labels tied to their controls by id, so each is announced by name (WP-478). */}
+            <Label htmlFor="comp-employee">Employee</Label>
             {!directoryFailed ? (
               <Select
                 value={userId || null}
@@ -146,7 +157,7 @@ export function SetCompensationCard({
                   ]),
                 )}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="comp-employee" className="w-full" aria-label="Employee">
                   <SelectValue
                     placeholder={employees === null ? "Loading employees…" : "Select an employee"}
                   />
@@ -162,6 +173,7 @@ export function SetCompensationCard({
               </Select>
             ) : (
               <Input
+                id="comp-employee"
                 value={userId}
                 onChange={(e) => setUserId(e.target.value)}
                 placeholder="user id (directory unavailable)"
@@ -169,13 +181,13 @@ export function SetCompensationCard({
             )}
           </div>
           <div className="space-y-1.5">
-            <Label>Pay type</Label>
+            <Label htmlFor="comp-pay-type">Pay type</Label>
             <Select
               value={payType}
               onValueChange={(v) => setPayType(v as PayType)}
               items={{ salaried: "Salaried", hourly: "Hourly" }}
             >
-              <SelectTrigger className="w-32">
+              <SelectTrigger id="comp-pay-type" className="w-32" aria-label="Pay type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -199,11 +211,17 @@ export function SetCompensationCard({
             {saving ? "Saving…" : "Save comp"}
           </Button>
         </div>
+        {payType === "hourly" ? (
+          <p className="text-xs text-muted-foreground">
+            Payroll runs pay hourly staff for <span className="font-medium text-foreground">billable</span>{" "}
+            timer hours only — time on non-billable projects counts for nothing.
+          </p>
+        ) : null}
         {lastSaved ? (
           <p className="text-xs text-muted-foreground">
             Last saved: <span className="font-medium text-foreground">{nameOf(lastSaved.user_id)}</span>{" "}
             — {lastSaved.pay_type} at{" "}
-            <span className="tabular-nums">{formatCurrency(lastSaved.rate)}</span>
+            <span className="tabular-nums">{formatCurrency(lastSaved.rate, currency)}</span>
             {lastSaved.pay_type === "hourly" ? "/h" : "/mo"}.
           </p>
         ) : null}

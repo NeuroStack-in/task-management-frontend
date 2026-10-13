@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
+import { usePoll } from "@/hooks/use-poll";
 import { useAuthStore } from "@/stores/auth.store";
 import { getMyOrgRequest, type MyOrgRequest } from "../services/onboarding.service";
 
@@ -33,27 +34,24 @@ export function OrgRequestStatus({
   const refreshClaims = useAuthStore((s) => s.refreshClaims);
   const [current, setCurrent] = useState<MyOrgRequest>(request);
   const [entering, setEntering] = useState(false);
+  /** The approval hand-off's token refresh failed — offer a retry instead of spinning forever. */
+  const [enterFailed, setEnterFailed] = useState(false);
 
   // Poll while pending. Stops the moment it is decided — there is nothing further to learn, and a
-  // decided request never changes again.
-  useEffect(() => {
-    if (current.status !== "pending") return;
-    let live = true;
-    const id = window.setInterval(() => {
-      getMyOrgRequest()
-        .then((r) => {
-          if (live && r) setCurrent(r);
-        })
-        .catch(() => {
-          // A failed check is not worth surfacing: the next one is 30s away and the screen is
-          // already telling the truth.
-        });
-    }, POLL_MS);
-    return () => {
-      live = false;
-      window.clearInterval(id);
-    };
-  }, [current.status]);
+  // decided request never changes again. Through the shared `usePoll`, so it pauses while the tab is
+  // hidden and checks the moment it is shown again: a raw interval kept polling a backgrounded tab
+  // every 30 s for as long as it stayed open (QA audit 2026-10-08, WP-391).
+  const check = useCallback(() => {
+    getMyOrgRequest()
+      .then((r) => {
+        if (r) setCurrent(r);
+      })
+      .catch(() => {
+        // A failed check is not worth surfacing: the next one is 30s away and the screen is
+        // already telling the truth.
+      });
+  }, []);
+  usePoll(check, current.status === "pending" ? POLL_MS : null);
 
   // Approved: mint a token that knows about the org.
   //
@@ -66,12 +64,20 @@ export function OrgRequestStatus({
   // away when the decision lands and comes back to an already-approved request.
   const enter = useCallback(async () => {
     setEntering(true);
+    setEnterFailed(false);
+    let ok = false;
     try {
-      await refreshClaims();
-      // Deliberately nothing after this. `hasOrg` flips in the auth store, the parent swaps this
-      // component for the wizard, and `entering` stays true only until that unmount.
+      // On success `hasOrg` flips in the auth store and the parent swaps this component for the
+      // wizard, so `entering` stays true only until that unmount.
+      ok = await refreshClaims();
     } catch {
+      ok = false;
+    }
+    // A refresh that failed used to be silent: "Signing you in" spun forever with no way on
+    // (QA audit 2026-10-08, WP-126).
+    if (!ok) {
       setEntering(false);
+      setEnterFailed(true);
     }
   }, [refreshClaims]);
 
@@ -86,10 +92,22 @@ export function OrgRequestStatus({
         title={`${current.org_name} is ready`}
         body="Your organization has been approved. Opening your workspace setup…"
       >
-        <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          {entering ? <Loader2 className="size-4 animate-spin" /> : null}
-          Signing you in
-        </div>
+        {enterFailed ? (
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-sm">
+              We couldn&apos;t finish signing you in. Check your connection and try again, or sign
+              out and back in.
+            </p>
+            <Button onClick={() => void enter()} className="w-full">
+              Try again
+            </Button>
+          </div>
+        ) : (
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            {entering ? <Loader2 className="size-4 animate-spin" /> : null}
+            Signing you in
+          </div>
+        )}
       </Card>
     );
   }

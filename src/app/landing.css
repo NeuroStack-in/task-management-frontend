@@ -15,7 +15,7 @@
   --wp-ink: #211a15; /* warm near-black */
   --wp-ink-2: #4a3f37; /* softer heading ink */
   --wp-muted: #766a5f; /* warm taupe body */
-  --wp-faint: #a89b8c; /* captions */
+  --wp-faint: #746758; /* captions — was #a89b8c (2.3:1 on the inset sand); now 4.6:1+ (WP-114) */
 
   /* --- Accent (teal) + warm secondary --- */
   --wp-accent: #0f766e; /* teal */
@@ -407,6 +407,14 @@
   }
   .wp-word {
     opacity: 1 !important;
+  }
+  /* The hero's kicker, lead, sub-copy, CTAs and micro-copy start at inline `opacity: 0` and are
+     revealed only by an inline `wp-rise` animation. With animations killed above they stayed
+     invisible forever — both "Start free" and "See it in action" included, still clickable
+     (QA audit 2026-10-08, WP-104). `!important` here beats the non-important inline style. */
+  .wp-rise-in {
+    opacity: 1 !important;
+    transform: none !important;
   }
   .wp-draw {
     stroke-dashoffset: 0 !important;

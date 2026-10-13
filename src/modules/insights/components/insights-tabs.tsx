@@ -7,6 +7,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import {
   useIsFeatureAllowed,
   useIsFeatureOn,
+  useIsPageOn,
   useTrackingMode,
 } from "@/hooks/use-features";
 import { isNavItemVisible } from "@/lib/rbac";
@@ -14,15 +15,18 @@ import { isPathModeHidden } from "@/constants/features";
 import { cn } from "@/lib/utils";
 
 /**
- * Tab bar for the merged Insights page. Filtered by **permission AND entitlement/mode** — a tab whose
- * feature the org switched off (or whose route its tracking mode hides) previously still rendered and
- * then 403'd when clicked (`isNavItemVisible` resolves its feature via `ROUTE_FEATURES`).
+ * Tab bar for the merged Insights page. Filtered by **permission, entitlement/mode AND page
+ * visibility** — a tab whose feature the org switched off (or whose route its tracking mode hides)
+ * previously still rendered and then 403'd when clicked (`isNavItemVisible` resolves its feature via
+ * `ROUTE_FEATURES`), and a tab the org had hidden in Settings → Features stayed in the bar and led to
+ * "This page is turned off" (QA audit 2026-10-08, WP-326). Owners are exempt inside `isPageOn`.
  */
 export function InsightsTabs() {
   const pathname = usePathname();
   const { role } = usePermissions();
   const isFeatureOn = useIsFeatureOn();
   const isFeatureAllowed = useIsFeatureAllowed();
+  const isPageOn = useIsPageOn();
   const mode = useTrackingMode();
   // Plan-limited tabs stay visible (they open an Upgrade wall) — only tabs the org toggled off vanish.
   const tabs = INSIGHTS_TABS.filter((t) =>
@@ -31,7 +35,7 @@ export function InsightsTabs() {
       t,
       isFeatureOn,
       (href) => isPathModeHidden(href, mode),
-      undefined,
+      isPageOn,
       isFeatureAllowed,
     ),
   );

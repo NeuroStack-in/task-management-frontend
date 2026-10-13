@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useAssistantPageContext } from "@/stores/page-context.store";
-import { Camera, ChevronLeft, ChevronRight, EyeOff, Flag, Loader2, Search, ShieldOff, Sparkles, Trash2, Users, X } from "lucide-react";
+import { AlertTriangle, Camera, ChevronLeft, ChevronRight, EyeOff, Flag, ImageOff, Loader2, Search, ShieldOff, Sparkles, Trash2, Users, X } from "lucide-react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,6 @@ import { DatePicker, TimePicker } from "@/components/ui/date-picker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { useDataScope } from "@/hooks/use-data-scope";
 import { useDirectory } from "@/hooks/use-directory";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { CaptureNowButton } from "@/modules/agents/components/capture-now-button";
@@ -30,15 +29,17 @@ import { AiReportCard } from "./ai-report-card";
 
 /**
  * Screenshot gallery — the preview's polished monitoring surface (AI screenshot-report hero,
- * search + department filter + review toggle, employee-grouped tiles, and an immersive fullscreen
- * viewer), wired onto the **real** pii-gated grid (`GET /v1/insights/screenshots`, LLD §14). Each
- * shot is a presigned image ordered by capture time, so the grid doubles as the day's timeline.
+ * search + department filter + review toggle, one tile per employee, and a per-employee view with an
+ * immersive fullscreen viewer), wired onto the **real** pii-gated grid
+ * (`GET /v1/insights/screenshots`, LLD §14). The org-wide day arrives person-then-time; a person's
+ * own day is read for that person and shown newest first.
  *
- * **Real, monitoring-fed.** Where the backend has no field, the element stays but degrades honestly:
- * the grid exposes no per-shot activity %, so the hero's "Avg activity" reads "—". The **per-shot AI
- * read is wired** — the fullscreen viewer fetches each frame's `vision_map` report on open (category,
- * work-relatedness, a one-line description, a flag) and offers to generate it when the day hasn't been
- * analyzed. Nothing is fabricated — a day is empty until the desktop agent captures.
+ * **Real, monitoring-fed.** Where the backend has no figure, the element stays but degrades honestly:
+ * the hero's "On-task" reads "—" until the vision model has analysed frames for the day. The
+ * **per-shot AI read is wired** — the fullscreen viewer fetches each frame's `vision_map` report on
+ * open (category, work-relatedness, a one-line description, a flag) and offers to generate it when
+ * the frame hasn't been analysed. Nothing is fabricated — a day is empty until the desktop agent
+ * captures, and a day that failed to load says so rather than reading as empty.
  */
 
 function isoOf(d: Date): string {
@@ -72,20 +73,92 @@ function formatDateTime(ms: number): string {
 /**
  * What to show when the directory has no name for a capture's owner.
  *
- * This directory is **scope-limited** (`useDataScope`), so a miss usually means the person is
- * outside the reader's reach rather than deleted — the same distinction `fleet-view` draws. It used
- * to render a truncated Cognito `sub`, which is still a raw id and tells the reader nothing.
+ * The directory is the whole roster, so a miss means the person is no longer in it, or the reader
+ * can't read the directory (no `employees:view`) — the same wording `fleet-view` uses. It used to
+ * render a truncated Cognito `sub`, which is still a raw id and tells the reader nothing.
  */
 const OUT_OF_SCOPE = "Outside your directory";
 /**
  * Ceiling on the gallery's automatic paging — a backstop against a pathological day, not a target.
- * At the hook's page size this is several thousand captures; beyond it the roster stops filling and
- * says so rather than paging forever.
+ * At the hook's page size (60) this is 1,260 frames including the first page; beyond it the roster
+ * stops filling and lists the people it never reached rather than paging forever.
  */
 const MAX_AUTO_PAGES = 20;
 
+/**
+ * How old a loaded list must be before a broken image is read as an **expired** presigned URL.
+ *
+ * Read URLs live 15 minutes (`wp_platform::s3::READ_URL_TTL_SECS`) and this page does not poll, so
+ * a person reviewed for 20 minutes then scrolled got a page of broken tiles (QA audit 2026-10-08,
+ * WP-294). Past this age a failed image refetches the list once — fresh URLs — rather than leaving
+ * it broken; younger than it, the image is genuinely unavailable and shows a placeholder.
+ */
+const URL_STALE_MS = 10 * 60 * 1000;
+
+/**
+ * `reload` once a failed image suggests the list's URLs have expired — at most once per
+ * {@link URL_STALE_MS}, however many tiles fail together.
+ */
+function useExpiredUrlRefresh(loadedAt: number, reload: () => void): () => void {
+  const asked = useRef(0);
+  return useCallback(() => {
+    const now = Date.now();
+    if (!loadedAt || now - loadedAt < URL_STALE_MS || now - asked.current < URL_STALE_MS) return;
+    asked.current = now;
+    reload();
+  }, [loadedAt, reload]);
+}
+
+/**
+ * A screenshot `<img>` that does not stay broken: on an error it shows a placeholder and tells its
+ * owner (which refetches if the URL may have expired). A new `src` — after that refetch — is tried
+ * afresh.
+ */
+function ShotImage({
+  src,
+  alt,
+  className,
+  lazy = false,
+  onError,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+  lazy?: boolean;
+  onError?: () => void;
+}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (failed === src) {
+    return (
+      <div className="flex size-full flex-col items-center justify-center gap-1.5 bg-muted p-3 text-center text-muted-foreground">
+        <ImageOff className="size-5" />
+        <span className="text-xs">Image unavailable</span>
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      loading={lazy ? "lazy" : undefined}
+      onError={() => {
+        setFailed(src);
+        onError?.();
+      }}
+    />
+  );
+}
+
 /** How many of one person's captures to reveal per "Load more" press in their detail view. */
 const DETAIL_PAGE = 60;
+
+/**
+ * Ceiling on one person's automatic paging in their detail view — at the hook's page size, 1,200
+ * frames, well past a full day at a one-minute cadence.
+ */
+const MAX_USER_PAGES = 20;
 
 /** Latest capture in a group — the tile's cover. */
 function coverOf(shots: ShotRow[]): ShotRow {
@@ -143,7 +216,6 @@ export function ScreenshotsTab() {
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState<string>(ALL_DEPTS);
   const [flag, setFlag] = useState<"all" | "flagged">("all");
-  const [viewerIdx, setViewerIdx] = useState<number | null>(null);
   /**
    * The employee whose captures are open, or `null` for the gallery.
    *
@@ -168,20 +240,25 @@ export function ScreenshotsTab() {
   // The backend generates it once per day's frame count and caches it; regenerate forces a fresh one.
   // Falls back to the deterministic template line while it loads or when the model is unavailable.
   const [aiSummary, setAiSummary] = useState<ScreenshotDeptSummary | null>(null);
-  const [aiRegenerating, setAiRegenerating] = useState(false);
+  /** The (date, department) a Regenerate is running for, or `null`. */
+  const [aiRegenFor, setAiRegenFor] = useState<string | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
 
-  const { shots, loading, loadingMore, error, hasMore, loadMore, reload } =
-    useScreenshots(date);
+  // Paused while one person is open: their view reads their own day, and the org-wide gallery read
+  // (up to 21 requests) behind it — again on every date step there — was spent on a page nobody was
+  // looking at. Leaving the person reloads it (`onBack`).
+  const { shots, loading, loadingMore, error, hasMore, loadMore, reload, loadedAt } =
+    useScreenshots(openUser ? "" : date);
 
   /**
    * Page the day to exhaustion instead of making the admin ask for it.
    *
    * The gallery is a roster — one tile per person, each captioned with that person's shot count. A
-   * single page can support neither. The grid reads newest-first, so one page is whoever captured
-   * most recently (two people, on a day eleven worked), and every count would be "shots in the page"
-   * rather than shots in the day. Who appears on the roster must not depend on how far someone
-   * scrolled, so the roster loads the whole day up front and "Load more" belongs inside a person's
-   * captures, not out here.
+   * single page can support neither. The org-wide day is read person-then-time, so one page is the
+   * first two or three people's whole day (on a day eleven worked), and every count would be "shots
+   * in the page" rather than shots in the day. Who appears on the roster must not depend on how far
+   * someone scrolled, so the roster loads the whole day up front and "Load more" belongs inside a
+   * person's captures, not out here.
    *
    * Bounded, and stops on the first error: `loadMore` leaves the cursor intact when a request fails,
    * so an unguarded effect would retry the same failing page forever.
@@ -190,13 +267,22 @@ export function ScreenshotsTab() {
   useEffect(() => {
     autoPages.current = 0;
   }, [date]);
+  /**
+   * Refetch the day **with a fresh paging budget**. The budget used to reset only on a date change,
+   * so every Refresh spent another full day's worth of it, and after a few the roster loaded one
+   * page and told the reader the day was "unusually large" (QA audit 2026-10-08, WP-080).
+   */
+  const reloadDay = useCallback(() => {
+    autoPages.current = 0;
+    reload();
+  }, [reload]);
+  const onTileImageError = useExpiredUrlRefresh(loadedAt, reloadDay);
   useEffect(() => {
     if (!hasMore || loading || loadingMore || error) return;
     if (autoPages.current >= MAX_AUTO_PAGES) return;
     autoPages.current += 1;
     loadMore();
   }, [hasMore, loading, loadingMore, error, loadMore]);
-  const { inScope, loading: scopeLoading } = useDataScope();
   const { employees: directory } = useDirectory();
 
   // department_id → name, best-effort (the board still works on ids if this fails).
@@ -222,65 +308,124 @@ export function ScreenshotsTab() {
 
   // Fetch the department-scoped screenshot narrative for the day/department in view. Best-effort: a
   // failure (or the model being off) leaves `aiSummary` null and the card shows the template line.
+  const aiLabel = dept === ALL_DEPTS ? undefined : deptNames.get(dept);
+  /** What the AI card is about — a response must still match it to land. */
+  const aiSelection = `${date}|${dept}`;
+  const aiCurrent = useRef(aiSelection);
   useEffect(() => {
-    if (!date) return;
+    aiCurrent.current = aiSelection;
+  }, [aiSelection]);
+  // Not while one person is open — the card is not on screen, and a date step there would generate
+  // a narrative per day stepped through.
+  const aiPaused = openUser !== null;
+  /** The selection `aiSummary` belongs to — returning from a person keeps it on screen. */
+  const aiLoadedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!date || aiPaused) return;
     let live = true;
-    const label = dept === ALL_DEPTS ? undefined : deptNames.get(dept);
-    getScreenshotDeptSummary({ department: dept, date, label })
-      .then((s) => live && setAiSummary(s))
-      .catch(() => live && setAiSummary(null));
+    // The title follows the filter at once, so the previous department's (or day's) narrative must
+    // not stay under it while the next one generates (QA audit 2026-10-08, WP-279).
+    if (aiLoadedFor.current !== aiSelection) {
+      setAiSummary(null);
+      setAiNotice(null);
+    }
+    getScreenshotDeptSummary({ department: dept, date, label: aiLabel })
+      .then((s) => {
+        if (!live) return;
+        setAiSummary(s);
+        aiLoadedFor.current = aiSelection;
+      })
+      .catch(() => {
+        if (!live) return;
+        setAiSummary(null);
+        aiLoadedFor.current = aiSelection;
+      });
     return () => {
       live = false;
     };
-  }, [date, dept, deptNames]);
+    // Keyed on the label string, not the department map: the map is replaced when it loads, which
+    // re-issued this identical request on every visit — two generations on a cache miss
+    // (QA audit 2026-10-08, WP-280).
+  }, [date, dept, aiLabel, aiPaused, aiSelection]);
 
   const regenerateAi = async () => {
-    if (aiRegenerating || !date) return;
-    setAiRegenerating(true);
+    if (aiRegenFor === aiSelection || !date) return;
+    const started = aiSelection;
+    setAiRegenFor(started);
+    setAiNotice(null);
     try {
-      const label = dept === ALL_DEPTS ? undefined : deptNames.get(dept);
-      setAiSummary(await regenerateScreenshotDeptSummary({ department: dept, date, label }));
+      const fresh = await regenerateScreenshotDeptSummary({
+        department: dept,
+        date,
+        label: aiLabel,
+      });
+      // A slow re-run must not put one department's narrative under another's title
+      // (QA audit 2026-10-08, WP-278).
+      if (aiCurrent.current === started) setAiSummary(fresh);
     } catch {
-      /* keep the current narrative on a failed re-run */
+      // Keep the current narrative on a failed re-run, but say it failed.
+      if (aiCurrent.current === started) {
+        setAiNotice("Couldn't regenerate the report — showing the previous one.");
+      }
     } finally {
-      setAiRegenerating(false);
+      setAiRegenFor((k) => (k === started ? null : k));
     }
   };
 
-  // Team leads only see their own team's shots; org roles see all.
-  const scopedShots = useMemo(
-    () => shots.filter((s) => inScope(s.user_id)),
-    [shots, inScope],
-  );
+  // Everyone with screenshot access sees every person's captures — no department cap (owner decision
+  // 2026-10-13). This used to keep a team-scoped role to its own department; the server applied the
+  // same cap (QA audit WP-085) until the owner reversed it.
 
   // Hero metrics — REAL where the backend has a source, "—" where it doesn't.
   const monitored = useMemo(
-    () => new Set(scopedShots.map((s) => s.user_id)).size,
-    [scopedShots],
+    () => new Set(shots.map((s) => s.user_id)).size,
+    [shots],
   );
-  const total = scopedShots.length;
+  const total = shots.length;
   // Real: the model's verdicts plus the server's distracting-app fallback. Deliberately the union —
   // both warrant a human look; only the badge claims which one judged the frame.
   const needsReview = useMemo(
-    () => scopedShots.filter((s) => s.flagged).length,
-    [scopedShots],
+    () => shots.filter((s) => s.flagged).length,
+    [shots],
   );
-  // On-task rate = the non-distracting share of the day's captures (real, from classification).
-  const onTaskPct = total > 0 ? Math.round(((total - needsReview) / total) * 100) : 0;
+  /**
+   * The server's narrative and its on-task figure describe only the frames the vision model has
+   * **analysed** — and with none analysed its fallback says no screenshots were captured, over a
+   * grid of them. So both are used once there are analysed frames, and the local line (which counts
+   * the actual captures) speaks until then. "On-task" is the server's figure only: a second,
+   * locally-derived "on-task rate" on the same card disagreed with the one the narrative quoted
+   * (QA audit 2026-10-08, WP-276).
+   */
+  const aiAnalysed = aiSummary && aiSummary.metrics.frames > 0 ? aiSummary : null;
+  const scopeTotal = useMemo(
+    () =>
+      dept === ALL_DEPTS
+        ? shots.length
+        : shots.filter((s) => dirById.get(s.user_id)?.department_id === dept).length,
+    [dept, shots, dirById],
+  );
+  const aiCoverage =
+    aiAnalysed && aiAnalysed.metrics.frames < scopeTotal
+      ? `Written from the ${aiAnalysed.metrics.frames.toLocaleString()} ${
+          aiAnalysed.metrics.frames === 1 ? "screenshot" : "screenshots"
+        } the AI has analysed so far — not every capture below has been analysed yet.`
+      : null;
+  /** The grid has nothing to count *yet* (loading) or could not be read — not an empty day. */
+  const countsUnknown = total === 0 && (loading || error !== null);
 
   // Department options = departments present among the day's captured employees.
   const departments = useMemo(() => {
     const set = new Set<string>();
-    for (const s of scopedShots) {
+    for (const s of shots) {
       const d = dirById.get(s.user_id)?.department_id;
       if (d) set.add(d);
     }
     return [...set].sort();
-  }, [scopedShots, dirById]);
+  }, [shots, dirById]);
 
   const q = query.trim().toLowerCase();
   const filteredShots = useMemo(() => {
-    return scopedShots.filter((s) => {
+    return shots.filter((s) => {
       // "Needs review" → every capture worth a look, and *only* those: the vision model's verdicts
       // plus the captures the server surfaced from the app name alone. It never selects the whole
       // day. The tile badge is what tells the two kinds apart.
@@ -293,9 +438,9 @@ export function ScreenshotsTab() {
       }
       return true;
     });
-  }, [scopedShots, flag, dept, q, dirById]);
+  }, [shots, flag, dept, q, dirById]);
 
-  // One tile per employee, grouped by user_id in first-seen (time) order.
+  // One tile per employee, grouped by user_id in first-seen order (the server's person order).
   const groups = useMemo<EmployeeGroup[]>(() => {
     const map = new Map<string, ShotRow[]>();
     for (const s of filteredShots) {
@@ -306,25 +451,31 @@ export function ScreenshotsTab() {
     return [...map.entries()].map(([userId, list]) => ({ userId, shots: list }));
   }, [filteredShots]);
 
-  // Flat, grouped order for the lightbox so prev/next walks the whole visible day.
-  const flatShots = useMemo(() => groups.flatMap((g) => g.shots), [groups]);
   const withheld = useMemo(
     () => filteredShots.filter((s) => s.redacted || !s.url).length,
     [filteredShots],
   );
 
+  // Says "no screenshots were captured" only when the grid actually loaded empty. While loading, and
+  // when every read had failed, it said exactly that over nothing at all (QA audit 2026-10-08, WP-113).
   const summary =
-    total === 0
-      ? `No screenshots were captured on ${dateLabel(date)}. Frames appear here once the desktop agent starts reporting for the day.`
-      : `${total.toLocaleString()} ${total === 1 ? "screenshot" : "screenshots"}${
-          hasMore ? "+" : ""
-        } captured across ${monitored} ${
-          monitored === 1 ? "employee" : "employees"
-        } on ${dateLabel(date)}. ${
-          needsReview > 0
-            ? `${needsReview} ${needsReview === 1 ? "capture" : "captures"} in a distracting app — review those first.`
-            : "No distracting-app captures flagged."
-        } On-task rate sits at ${onTaskPct}%.`;
+    total === 0 && (loading)
+      ? `Loading the screenshots for ${dateLabel(date)}…`
+      : total === 0 && error
+        ? `The screenshots for ${dateLabel(date)} couldn't be loaded, so there is nothing to summarise yet.`
+        : total === 0 && beyondRetention
+          ? `Screenshots from ${dateLabel(date)} have been deleted under this organization's retention policy.`
+          : total === 0
+            ? `No screenshots were captured on ${dateLabel(date)}. Frames appear here once the desktop agent starts reporting for the day.`
+            : `${total.toLocaleString()} ${total === 1 ? "screenshot" : "screenshots"}${
+                hasMore ? "+" : ""
+              } captured across ${monitored} ${
+                monitored === 1 ? "employee" : "employees"
+              } on ${dateLabel(date)}. ${
+                needsReview > 0
+                  ? `${needsReview} ${needsReview === 1 ? "capture needs" : "captures need"} review — start with those.`
+                  : "None flagged for review."
+              }`;
 
   // Tell the assistant what this page is actually showing.
   //
@@ -338,10 +489,26 @@ export function ScreenshotsTab() {
     date: date || null,
     facts: [
       { label: "Tab", value: "Screenshots" },
-      { label: "Employees captured", value: String(monitored) },
-      { label: "Screenshots", value: `${total}${hasMore ? "+" : ""}` },
-      { label: "Needs review", value: String(needsReview) },
-      { label: "On-task rate", value: `${onTaskPct}%` },
+      ...(countsUnknown
+        ? [
+            {
+              label: "Status",
+              value: error ? "the day's screenshots failed to load" : "still loading",
+            },
+          ]
+        : [
+            { label: "Employees captured", value: String(monitored) },
+            { label: "Screenshots", value: `${total}${hasMore ? "+" : ""}` },
+            { label: "Needs review", value: String(needsReview) },
+          ]),
+      ...(aiAnalysed
+        ? [
+            {
+              label: "On-task (AI-analysed frames)",
+              value: `${aiAnalysed.metrics.on_task_pct}% of ${aiAnalysed.metrics.frames}`,
+            },
+          ]
+        : []),
       ...(dept !== ALL_DEPTS
         ? [{ label: "Department filter", value: deptNames.get(dept) ?? UNKNOWN_DEPARTMENT }]
         : []),
@@ -355,29 +522,66 @@ export function ScreenshotsTab() {
   const nameOf = (id: string) => personName(dirById.get(id)?.name, OUT_OF_SCOPE);
 
   if (openUser) {
-    // Deliberately built from `scopedShots`, **not** the gallery's `filteredShots`: the detail view
-    // has its own review/time filters, so inheriting the gallery's "Needs review" toggle would show
-    // a filtered day while claiming to be the employee's full day. Scope (who you may see) still
-    // applies — that is a permission boundary, not a filter.
-    const mine = scopedShots.filter((s) => s.user_id === openUser);
+    // **Fetched for this person, from the server** — not filtered out of the gallery's list. The
+    // gallery stops paging at a cap, and its sort key is user-then-time, so on a large day whole
+    // people fell outside it: their tile vanished and the profile deep link opened "0 captures"
+    // (QA audit 2026-10-08, WP-079). The detail view has its own review/time filters too, so it was
+    // never meant to inherit the gallery's. Reach is still enforced — server-side, per person.
     const emp = dirById.get(openUser);
     const deptId = emp?.department_id;
     return (
-      <EmployeeCaptures
+      <EmployeeCapturesLoader
         userId={openUser}
         name={nameOf(openUser)}
         dept={deptId ? deptLabel(deptId) : "—"}
-        device={mine.find((s) => s.device)?.device ?? ""}
-        shots={mine}
         date={date}
+        today={today}
+        onDateChange={setDate}
         nameOf={nameOf}
-        onBack={() => setOpenUser(null)}
-        onCaptured={reload}
-        onRefresh={reload}
-        refreshing={loading}
+        onBack={() => {
+          setOpenUser(null);
+          // The person's view may have taken new captures; show them in the roster too.
+          reloadDay();
+        }}
       />
     );
   }
+
+  // The gallery stopped at its paging cap with more of the day unread. Its order is user-then-time,
+  // so the people it never reached are whole people, not just older frames — list the active ones
+  // (under the same department/search filters) so each can still be opened.
+  const capped = hasMore && !loading && !loadingMore && autoPages.current >= MAX_AUTO_PAGES;
+  const shown = new Set(groups.map((g) => g.userId));
+  const unseen = capped
+    ? directory.filter(
+        (e) =>
+          e.status === "active" &&
+          !shown.has(e.user_id) &&
+          (dept === ALL_DEPTS || e.department_id === dept) &&
+          (!q || (e.name ?? "").toLowerCase().includes(q)),
+      )
+    : [];
+  const unseenPanel =
+    unseen.length > 0 ? (
+      <div className="space-y-2 rounded-lg border p-3">
+        <p className="text-sm text-muted-foreground">
+          This day is too large to show everyone above. These people may have captures that
+          weren&apos;t loaded here — open one to see their full day.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {unseen.map((e) => (
+            <Button
+              key={e.user_id}
+              variant="outline"
+              size="sm"
+              onClick={() => setOpenUser(e.user_id)}
+            >
+              {personName(e.name, OUT_OF_SCOPE)}
+            </Button>
+          ))}
+        </div>
+      </div>
+    ) : null;
 
   return (
     <div className="space-y-5" data-tour="shots:review">
@@ -387,18 +591,29 @@ export function ScreenshotsTab() {
             ? "AI screenshot report"
             : `AI screenshot report · ${deptLabel(dept)}`
         }
-        summary={aiSummary?.narrative || summary}
+        summary={aiAnalysed?.narrative || summary}
+        notice={aiNotice ?? aiCoverage}
         onRegenerate={regenerateAi}
-        regenerating={aiRegenerating}
+        regenerating={aiRegenFor === aiSelection}
         metrics={[
-          { label: "Monitored", value: monitored },
+          // "—" while the grid loads or after it failed: a count of 0 there is a measurement of
+          // nothing (QA audit 2026-10-08, WP-113).
+          { label: "Monitored", value: countsUnknown ? "—" : monitored },
           {
             label: "Screenshots",
-            value: total.toLocaleString(),
+            value: countsUnknown ? "—" : total.toLocaleString(),
             hint: hasMore ? "so far" : undefined,
           },
-          { label: "Needs review", value: needsReview },
-          { label: "Avg activity", value: `${onTaskPct}%`, hint: "on-task rate" },
+          { label: "Needs review", value: countsUnknown ? "—" : needsReview },
+          {
+            label: "On-task",
+            value: aiAnalysed ? `${aiAnalysed.metrics.on_task_pct}%` : "—",
+            hint: aiAnalysed
+              ? `of ${aiAnalysed.metrics.frames.toLocaleString()} analysed`
+              : aiSummary
+                ? "none analysed yet"
+                : undefined,
+          },
           // The department's AI screenshot-productivity — the per-department score for this surface.
           // Present only once vision has graded frames for the day/department in view.
           ...(aiSummary?.metrics.avg_productivity != null
@@ -416,7 +631,7 @@ export function ScreenshotsTab() {
 
       {/* Filters: day · search · department · review toggle */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
-        <Field label="Date">
+        <Field label="Date" htmlFor="ss-date">
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
@@ -428,6 +643,7 @@ export function ScreenshotsTab() {
               <ChevronLeft className="size-4" />
             </Button>
             <DatePicker
+              id="ss-date"
               value={date}
               max={today}
               onChange={setDate}
@@ -445,10 +661,11 @@ export function ScreenshotsTab() {
           </div>
         </Field>
 
-        <Field label="Search">
+        <Field label="Search" htmlFor="ss-search">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              id="ss-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Employee name…"
@@ -490,7 +707,7 @@ export function ScreenshotsTab() {
         {/* Pull the latest captures without a page reload — the grid refetches in place. Lifted into
             the top-navbar action slot so Refresh sits where it does on every other page. */}
         <PageActions>
-          <RefreshButton onRefresh={reload} refreshing={loading} />
+          <RefreshButton onRefresh={reloadDay} refreshing={loading} />
         </PageActions>
       </div>
 
@@ -509,17 +726,26 @@ export function ScreenshotsTab() {
           <span className="font-medium text-foreground">{filteredShots.length}</span>{" "}
           {filteredShots.length === 1 ? "screenshot" : "screenshots"}
           {withheld > 0 ? ` · ${withheld} withheld by privacy policy` : ""}
-          {hasMore ? " · more available" : ""} · select one to view it full screen.
+          {hasMore ? " · more available" : ""} · open a person to see their captures.
         </p>
       ) : null}
 
-      {loading || scopeLoading ? (
+      {loading ? (
         <div className="flex min-h-[16rem] items-center justify-center">
           <Loader label="Loading screenshots…" />
         </div>
       ) : error ? (
-        <EmptyState icon={ShieldOff} title="Couldn't load screenshots" description={error} />
-      ) : scopedShots.length === 0 && beyondRetention ? (
+        <EmptyState
+          icon={ShieldOff}
+          title="Couldn't load screenshots"
+          description={error}
+          action={
+            <Button variant="outline" size="sm" onClick={reloadDay}>
+              Try again
+            </Button>
+          }
+        />
+      ) : shots.length === 0 && beyondRetention ? (
         /* An empty day past the retention window is not the same fact as an empty day inside it.
            "Nothing was reported" invites you to go looking for a capture bug; the frames were
            deleted on purpose, and saying so is the difference between a dead end and an answer. */
@@ -528,7 +754,7 @@ export function ScreenshotsTab() {
           title="Deleted by the retention policy"
           description={`${dateLabel(date)} is older than this organization's ${retentionDays}-day retention window, so any screenshots from that day have been permanently deleted. Pick a more recent date to see captures.`}
         />
-      ) : scopedShots.length === 0 ? (
+      ) : shots.length === 0 ? (
         <EmptyState
           icon={Camera}
           title="No screenshots for this day"
@@ -538,14 +764,16 @@ export function ScreenshotsTab() {
         <EmptyState
           icon={Flag}
           title="Nothing flagged for review"
-          description="No captures on this day were in a distracting app. Flagged captures appear here for review."
+          description="The AI hasn't judged any capture on this day to be outside the person's work. Captures it flags appear here for review."
         />
       ) : filteredShots.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No people match"
-          description="Try a different name or department."
-        />
+        unseenPanel ?? (
+          <EmptyState
+            icon={Users}
+            title="No people match"
+            description="Try a different name or department."
+          />
+        )
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -563,6 +791,7 @@ export function ScreenshotsTab() {
                   count={g.shots.length}
                   flaggedCount={g.shots.filter((s) => s.flagged).length}
                   onOpen={() => setOpenUser(g.userId)}
+                  onImageError={onTileImageError}
                 />
               );
             })}
@@ -576,23 +805,12 @@ export function ScreenshotsTab() {
             <p className="pt-1 text-center text-sm text-muted-foreground">
               Loading the rest of the day…
             </p>
-          ) : hasMore ? (
-            <p className="pt-1 text-center text-sm text-muted-foreground">
-              Showing the most recent {filteredShots.length} captures — this day is unusually large,
-              so older ones aren&apos;t listed.
-            </p>
           ) : null}
+          {unseenPanel}
         </>
       )}
 
-      <Lightbox
-        shots={flatShots}
-        index={viewerIdx}
-        date={date}
-        nameOf={nameOf}
-        onIndexChange={setViewerIdx}
-        onClose={() => setViewerIdx(null)}
-      />
+      {/* No full-screen viewer at this level — a tile opens the person, and their view has one. */}
     </div>
   );
 }
@@ -600,9 +818,11 @@ export function ScreenshotsTab() {
 /**
  * Employee tile — the preview's gallery card: a cover screenshot (the latest capture) with the real
  * app label and capture time, over the person's name + department + avatar (initials fallback, no
- * uploaded picture on the lean roster). The preview's red flag-count badge is omitted: the backend
- * has no per-shot flag, so inventing a number would be fiction. A withheld cover shows the privacy
- * placeholder rather than an image.
+ * uploaded picture on the lean roster), and a red badge counting the person's captures flagged for
+ * review (`ShotRow.flagged`). A withheld cover shows the privacy placeholder rather than an image.
+ *
+ * A real button for the keyboard: this tile is the only way into a person's captures, and as a
+ * click-only `<div>` it could not be reached or opened without a mouse (QA audit 2026-10-08, WP-489).
  */
 function EmployeeCard({
   userId,
@@ -612,6 +832,7 @@ function EmployeeCard({
   count,
   flaggedCount,
   onOpen,
+  onImageError,
 }: {
   /** Whose shots these are — so the card shows their photo, not just initials. */
   userId: string;
@@ -621,12 +842,23 @@ function EmployeeCard({
   count: number;
   flaggedCount: number;
   onOpen: () => void;
+  /** The cover image failed to load — its presigned URL may have expired. */
+  onImageError?: () => void;
 }) {
   const withheld = cover.redacted || !cover.url;
   return (
     <Card
-      className="group cursor-pointer gap-0 overflow-hidden p-0 transition hover:ring-1 hover:ring-primary/40"
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${name}'s captures — ${count} ${count === 1 ? "shot" : "shots"}`}
+      className="group cursor-pointer gap-0 overflow-hidden p-0 transition hover:ring-1 hover:ring-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
       <div className="relative aspect-[16/10] overflow-hidden bg-muted">
         {withheld ? (
@@ -637,12 +869,12 @@ function EmployeeCard({
             </span>
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <ShotImage
             src={cover.url}
             alt={`${name} — ${cover.app}`}
-            loading="lazy"
+            lazy
             className="size-full max-w-full object-cover transition group-hover:scale-[1.02]"
+            onError={onImageError}
           />
         )}
         <div className="absolute left-2 top-2 max-w-[70%] truncate rounded-full bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur-sm">
@@ -683,10 +915,29 @@ function EmployeeCard({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * A labelled filter control. Pass `htmlFor` (the control's `id`) so the caption is a real `<label>`
+ * a screen reader announces with the control; a bare caption was an unassociated `<span>`.
+ */
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
+  const caption = "text-xs font-medium text-muted-foreground";
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className={caption}>
+          {label}
+        </label>
+      ) : (
+        <span className={caption}>{label}</span>
+      )}
       {children}
     </div>
   );
@@ -706,6 +957,7 @@ function Lightbox({
   nameOf,
   onIndexChange,
   onClose,
+  onImageError,
 }: {
   shots: ShotRow[];
   index: number | null;
@@ -714,6 +966,8 @@ function Lightbox({
   nameOf: (id: string) => string;
   onIndexChange: (i: number) => void;
   onClose: () => void;
+  /** The frame failed to load — its presigned URL may have expired. */
+  onImageError?: () => void;
 }) {
   const count = shots.length;
   const shot = index !== null ? (shots[index] ?? null) : null;
@@ -775,11 +1029,12 @@ function Lightbox({
                   <p className="text-sm font-medium">Withheld by privacy policy</p>
                 </div>
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <ShotImage
+                  key={shot.shot_id}
                   src={shot.url}
                   alt={`${shot.app} screenshot`}
                   className="max-h-full max-w-full object-contain"
+                  onError={onImageError}
                 />
               )}
 
@@ -1015,7 +1270,10 @@ function ShotAiReport({
   );
 }
 
-/** The rendered report — one-line description + category / work-related / flag badges + provenance. */
+/**
+ * The rendered report — what is on screen, whether it serves the person's role, category /
+ * work-related / flag badges, and provenance.
+ */
 function AiReadBody({ report }: { report: ScreenshotReport }) {
   const catTone =
     report.category === "distracting"
@@ -1026,6 +1284,11 @@ function AiReadBody({ report }: { report: ScreenshotReport }) {
   return (
     <div className="mt-2 space-y-2">
       <p className="max-w-3xl text-sm leading-relaxed text-white/90">{report.description}</p>
+      {/* The role-specific read — does this serve the person's department and job title, and why
+          (owner decision 2026-10-13). Absent on reports written before then. */}
+      {report.assessment ? (
+        <p className="max-w-3xl text-[13px] leading-relaxed text-white/75">{report.assessment}</p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <span className={cn("rounded-sm px-2 py-0.5 text-[11px] font-medium capitalize", catTone)}>
           {report.category}
@@ -1035,7 +1298,7 @@ function AiReadBody({ report }: { report: ScreenshotReport }) {
         </span>
         {report.flag ? (
           <span className="inline-flex items-center gap-1 rounded-sm bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive">
-            <Flag className="size-3" /> Flagged
+            <Flag className="size-3" /> Needs review
           </span>
         ) : null}
       </div>
@@ -1064,11 +1327,7 @@ interface Capture {
   /** Ordered by `display`, so index 0 is always the primary monitor. */
   monitors: ShotRow[];
   flagged: boolean;
-  /**
-   * `true` when the vision model has actually judged this capture — i.e. `flagged` is a verdict
-   * rather than the server's app-name fallback. See the tile badge for why the distinction is
-   * load-bearing.
-   */
+  /** `true` when the vision model has judged every monitor in this capture. */
   reviewed: boolean;
   /** The frame the tile shows: the flagged monitor if any, else the primary. */
   cover: ShotRow;
@@ -1110,15 +1369,95 @@ const hhmm = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /**
+ * Minutes past local midnight — for comparing a capture with the From/To pickers. The pickers give
+ * 24-hour `"HH:MM"`; comparing that with a locale time string was wrong for every PM time in a
+ * 12-hour locale (`"02:15 pm" < "13:00"`), so afternoons vanished from the range (WP-083).
+ */
+const minutesOfDay = (ms: number) => {
+  const d = new Date(ms);
+  return d.getHours() * 60 + d.getMinutes();
+};
+
+/** `"HH:MM"` (24-hour, as the time picker gives it) → minutes past midnight; `null` if unparseable. */
+const pickerMinutes = (v: string): number | null => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+
+/**
+ * One person's day for the detail view, read from the server **for that person** (GSI4 user
+ * prefix), auto-paged to a bound — so it is complete whether or not the gallery reached them.
+ */
+function EmployeeCapturesLoader({
+  userId,
+  name,
+  dept,
+  date,
+  today,
+  onDateChange,
+  nameOf,
+  onBack,
+}: {
+  userId: string;
+  name: string;
+  dept: string;
+  date: string;
+  today: string;
+  onDateChange: (iso: string) => void;
+  nameOf: (id: string) => string;
+  onBack: () => void;
+}) {
+  const { shots, loading, loadingMore, error, hasMore, loadMore, reload, loadedAt } =
+    useScreenshots(date, userId);
+  const pages = useRef(0);
+  useEffect(() => {
+    pages.current = 0;
+  }, [date, userId]);
+  // Capture-now polls this every few seconds while it waits for the frame: only this person's day
+  // is refetched (not the whole org's), and each refetch gets a fresh paging budget.
+  const reloadMine = useCallback(() => {
+    pages.current = 0;
+    reload();
+  }, [reload]);
+  const onImageError = useExpiredUrlRefresh(loadedAt, reloadMine);
+  useEffect(() => {
+    if (!hasMore || loading || loadingMore || error) return;
+    if (pages.current >= MAX_USER_PAGES) return;
+    pages.current += 1;
+    loadMore();
+  }, [hasMore, loading, loadingMore, error, loadMore]);
+  return (
+    <EmployeeCaptures
+      userId={userId}
+      name={name}
+      dept={dept}
+      device={shots.find((s) => s.device)?.device ?? ""}
+      shots={shots}
+      date={date}
+      today={today}
+      onDateChange={onDateChange}
+      nameOf={nameOf}
+      onBack={onBack}
+      onCaptured={reloadMine}
+      onRefresh={reloadMine}
+      refreshing={loading}
+      loadingMore={loadingMore}
+      error={error}
+      onImageError={onImageError}
+    />
+  );
+}
+
+/**
  * One employee's captures for the selected day — the level that was missing.
  *
  * The gallery used to open the full-screen viewer straight from an employee tile, skipping this
  * entirely: there was no way to see what an employee's day looked like, or to find the flagged
  * frames within it, without paging a carousel one frame at a time.
  *
- * Scoped to the day picked on the board (owner decision, 2026-07-22). That matches how the capture
- * index is partitioned — one partition per tenant-day — so this view reuses the query the board
- * already made instead of fanning out across dates.
+ * Day-scoped (owner decision, 2026-07-22), matching how the capture index is partitioned — one
+ * partition per tenant-day. The day is the page's, with its own stepper here, so a profile's deep
+ * link is not stuck on today.
  */
 function EmployeeCaptures({
   userId,
@@ -1127,11 +1466,16 @@ function EmployeeCaptures({
   device,
   shots,
   date,
+  today,
+  onDateChange,
   nameOf,
   onBack,
   onCaptured,
   onRefresh,
   refreshing,
+  loadingMore = false,
+  error = null,
+  onImageError,
 }: {
   /** Whose captures these are — the target for an on-demand capture (device resolved from it). */
   userId: string;
@@ -1140,6 +1484,8 @@ function EmployeeCaptures({
   device: string;
   shots: ShotRow[];
   date: string;
+  today: string;
+  onDateChange: (iso: string) => void;
   nameOf: (id: string) => string;
   onBack: () => void;
   /** Refetch the day's grid once the device confirms a capture landed. */
@@ -1148,6 +1494,12 @@ function EmployeeCaptures({
   onRefresh: () => void;
   /** True while that refetch is in flight, so the button can spin. */
   refreshing?: boolean;
+  /** More of the day is still arriving in the background. */
+  loadingMore?: boolean;
+  /** The day's read failed — never shown as "no captures". */
+  error?: string | null;
+  /** An image failed to load — its presigned URL may have expired. */
+  onImageError?: () => void;
 }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -1160,9 +1512,11 @@ function EmployeeCaptures({
   const captures = useMemo(
     () =>
       allCaptures.filter((c) => {
-        const t = hhmm(c.capturedAt);
-        if (from && t < from) return false;
-        if (to && t > to) return false;
+        const t = minutesOfDay(c.capturedAt);
+        const lo = from ? pickerMinutes(from) : null;
+        const hi = to ? pickerMinutes(to) : null;
+        if (lo !== null && t < lo) return false;
+        if (hi !== null && t > hi) return false;
         if (flag === "flagged" && !c.flagged) return false;
         return true;
       }),
@@ -1172,11 +1526,11 @@ function EmployeeCaptures({
   /**
    * Reveal this person's captures a page at a time.
    *
-   * The whole day is already in memory — the roster loaded it to count the tiles — so this is a
-   * render budget, not a fetch: "Load more" is instant and cannot fail. It exists because a long day
-   * is hundreds of images, and mounting them all at once costs a visibly slow open for frames nobody
-   * has scrolled to. Resets whenever the filters change which captures qualify, so a narrowed range
-   * never starts part-way down a list it no longer describes.
+   * The day is read in the background by `EmployeeCapturesLoader`, so this is a render budget over
+   * what has arrived, not a fetch. It exists because a long day is hundreds of images, and mounting
+   * them all at once costs a visibly slow open for frames nobody has scrolled to. Resets whenever the
+   * filters change which captures qualify, so a narrowed range never starts part-way down a list it
+   * no longer describes.
    */
   const [visible, setVisible] = useState(DETAIL_PAGE);
   useEffect(() => setVisible(DETAIL_PAGE), [from, to, flag, userId]);
@@ -1202,6 +1556,8 @@ function EmployeeCaptures({
   );
   const flaggedCount = allCaptures.filter((c) => c.flagged).length;
   const dirty = from !== "" || to !== "" || flag !== "all";
+  /** Nothing read yet (first page in flight) or the read failed — the counts would be a false 0. */
+  const unread = shots.length === 0 && (Boolean(refreshing) || error !== null);
 
   return (
     <div className="space-y-5">
@@ -1224,11 +1580,11 @@ function EmployeeCaptures({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-5 text-sm">
-          <Summary label="Captures" value={allCaptures.length} />
-          <Summary label="Monitors" value={monitorCount} />
+          <Summary label="Captures" value={unread ? "—" : allCaptures.length} />
+          <Summary label="Monitors" value={unread ? "—" : monitorCount} />
           <Summary
             label="Needs review"
-            value={flaggedCount}
+            value={unread ? "—" : flaggedCount}
             tone={flaggedCount > 0 ? "text-destructive" : undefined}
           />
           {/* Pull this person's latest frames without reloading the page — the grid refetches in
@@ -1245,13 +1601,42 @@ function EmployeeCaptures({
         </div>
       </div>
 
-      {/* Filters — within the selected day */}
+      {/* Filters — the day, then within it */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3 rounded-2xl bg-card px-5 py-3 shadow-soft">
-        <Field label="From">
-          <TimePicker value={from} onChange={setFrom} className="w-32" />
+        <Field label="Date" htmlFor="ss-emp-date">
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Previous day"
+              disabled={!date}
+              onClick={() => date && onDateChange(shiftIso(date, -1))}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <DatePicker
+              id="ss-emp-date"
+              value={date}
+              max={today}
+              onChange={(v) => v && onDateChange(v)}
+              className="w-36"
+            />
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Next day"
+              disabled={!date || date >= today}
+              onClick={() => date && date < today && onDateChange(shiftIso(date, 1))}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
         </Field>
-        <Field label="To">
-          <TimePicker value={to} onChange={setTo} className="w-32" />
+        <Field label="From" htmlFor="ss-emp-from">
+          <TimePicker id="ss-emp-from" value={from} onChange={setFrom} className="w-32" />
+        </Field>
+        <Field label="To" htmlFor="ss-emp-to">
+          <TimePicker id="ss-emp-to" value={to} onChange={setTo} className="w-32" />
         </Field>
         <Field label="Show">
           <div className="flex items-center gap-4 text-sm">
@@ -1297,25 +1682,50 @@ function EmployeeCaptures({
         ) : null}
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">{captures.length}</span>{" "}
-        {captures.length === 1 ? "capture" : "captures"}
-        {monitorCount > 1 ? " · " + monitorCount + " monitors" : ""} on{" "}
-        {dateLabel(date)} · select one to view it full screen.
-      </p>
+      {unread ? null : (
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">{captures.length}</span>{" "}
+          {captures.length === 1 ? "capture" : "captures"}
+          {monitorCount > 1 ? " · " + monitorCount + " monitors" : ""} on{" "}
+          {dateLabel(date)}
+          {captures.length > 0 ? " · select one to view it full screen." : "."}
+        </p>
+      )}
 
-      {captures.length === 0 ? (
+      {/* Loading and failure come first. This view used to render before — and regardless of — its
+          read, so a profile deep link opened on "0 captures … Try widening the time range" with no
+          filter set, and a failed read kept saying it (QA audit 2026-10-08, WP-293). */}
+      {refreshing && shots.length === 0 ? (
+        <div className="flex min-h-[16rem] items-center justify-center">
+          <Loader label={`Loading ${name}'s captures…`} />
+        </div>
+      ) : error && shots.length === 0 ? (
+        <EmptyState
+          icon={ShieldOff}
+          title="Couldn't load these captures"
+          description={error}
+          action={
+            <Button variant="outline" size="sm" onClick={onRefresh}>
+              Try again
+            </Button>
+          }
+        />
+      ) : captures.length === 0 ? (
         <EmptyState
           icon={flag === "flagged" ? Flag : Camera}
           title={
             flag === "flagged"
               ? "Nothing flagged for review"
-              : "No captures in this range"
+              : dirty
+                ? "No captures in this range"
+                : "No captures on this day"
           }
           description={
             flag === "flagged"
-              ? "No captures for this employee on this day were in a distracting app."
-              : "Try widening the time range."
+              ? "None of this employee's captures on this day were flagged for review."
+              : dirty
+                ? "Try widening the time range."
+                : `No screenshots were captured for ${name} on ${dateLabel(date)}.`
           }
         />
       ) : (
@@ -1327,6 +1737,7 @@ function EmployeeCaptures({
                 capture={c}
                 monitorCount={monitorCount}
                 onOpen={() => setViewerIdx(firstIndexOfCapture.get(c.key) ?? 0)}
+                onImageError={onImageError}
               />
             ))}
           </div>
@@ -1347,6 +1758,20 @@ function EmployeeCaptures({
         </>
       )}
 
+      {loadingMore ? (
+        <p className="pt-1 text-center text-sm text-muted-foreground">
+          Loading the rest of the day…
+        </p>
+      ) : error && shots.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-sm text-muted-foreground">
+          <AlertTriangle className="size-4 text-warning" />
+          Some of this day&apos;s captures couldn&apos;t be loaded.
+          <Button variant="outline" size="sm" onClick={onRefresh}>
+            Try again
+          </Button>
+        </div>
+      ) : null}
+
       <Lightbox
         shots={flat}
         index={viewerIdx}
@@ -1354,6 +1779,7 @@ function EmployeeCaptures({
         nameOf={nameOf}
         onIndexChange={setViewerIdx}
         onClose={() => setViewerIdx(null)}
+        onImageError={onImageError}
       />
     </div>
   );
@@ -1383,10 +1809,12 @@ function CaptureCard({
   capture,
   monitorCount,
   onOpen,
+  onImageError,
 }: {
   capture: Capture;
   monitorCount: number;
   onOpen: () => void;
+  onImageError?: () => void;
 }) {
   const shot = capture.cover;
   const withheld = shot.redacted || !shot.url;
@@ -1396,8 +1824,7 @@ function CaptureCard({
       onClick={onOpen}
       className={cn(
         "group overflow-hidden rounded-2xl bg-card text-left shadow-soft transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-        capture.flagged && capture.reviewed && "ring-1 ring-destructive/40",
-        capture.flagged && !capture.reviewed && "ring-1 ring-warning/40",
+        capture.flagged && "ring-1 ring-destructive/40",
       )}
     >
       <div className="relative aspect-video w-full overflow-hidden bg-muted">
@@ -1406,44 +1833,27 @@ function CaptureCard({
             <ShieldOff className="size-6" />
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <ShotImage
             src={shot.url}
             alt={shot.app + " at " + hhmm(capture.capturedAt)}
             className="size-full object-cover"
-            loading="lazy"
+            lazy
+            onError={onImageError}
           />
         )}
         <span className="absolute left-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
           {shot.app || "—"}
         </span>
         {/*
-          Two different things surface a capture, and they must not wear the same badge.
-
-          `flagged && reviewed` is the vision model's verdict — it looked at the frame and judged it.
-          `flagged && !reviewed` is the server's app-name fallback: the app was classified
-          distracting, nothing has looked at the pixels. That second case is the overwhelming
-          majority (219 of 223 captures on one live day had no analysis at all), and it used to
-          render the *identical* red "Needs review" chip. Open one and the detail panel says the
-          frame has not been analysed — the grid appeared to contradict its own analyser.
-
-          A badge therefore names **why this frame was singled out**, and never asserts a review
-          state. "Needs review" would have been the wrong word even here: unreviewed is true of
-          nearly every capture on the day, including all the ones carrying no badge at all, so it
-          describes a set far larger than the one it appears on. What actually singled this frame out
-          is the app classification — so it says that, in warning amber. Only the model's own verdict
-          earns destructive red, because only that one is a finding.
-
-          "Needs review" survives on the metric and the filter, where it *does* select exactly the
-          flagged captures and nothing else.
+          Only the AI flags a capture: the vision model looked at the frame and judged it not work for
+          this person's role (owner decision 2026-10-13). There used to be a second, amber
+          "Distracting app" badge on frames nobody had analysed, raised by the app name alone — the
+          same app can be core work for one department and a distraction for another, so the name
+          decides nothing. An unanalysed frame carries no badge; its detail panel says so.
         */}
-        {capture.flagged && capture.reviewed ? (
+        {capture.flagged ? (
           <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-medium text-white">
-            <Flag className="size-3" /> AI flagged
-          </span>
-        ) : capture.flagged ? (
-          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-warning px-1.5 py-0.5 text-[11px] font-medium text-white">
-            <Flag className="size-3" /> Distracting app
+            <Flag className="size-3" /> Needs review
           </span>
         ) : monitorCount > 1 ? (
           <span className="absolute right-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">

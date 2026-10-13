@@ -4,23 +4,31 @@
  * No "use client" — pure functions + literal Tailwind class maps so both the
  * server page and the client views read from one place.
  */
-import type { User } from "@/types/user";
 import { personName } from "@/lib/format";
-import type { ApiProjectMember } from "./services/projects.service";
-import type { Project, Task, TaskAssignee, TaskStatus } from "./types";
+import type {
+  ApiBoardColumn,
+  ApiProjectMember,
+  TaskPatch,
+} from "./services/projects.service";
+import type { TaskFormValues } from "./forms";
+import { isOpenTaskStatus, type Project, type Task, type TaskAssignee, type TaskPriority, type TaskStatus } from "./types";
 
 const DAY = 86_400_000;
 
 /**
- * **Today at UTC midnight.** Deadlines are real data now (not the old mock seed), so "days left" must
- * count from the actual current day — the previous fixed 2026-06-23 anchor made every deadline read
- * ~52 days off. UTC to match `formatDate`, which renders due dates in UTC (`getUTCDate`); computed
- * once at module load, not in a render path.
+ * **Today — the user's own calendar date**, at UTC midnight so it compares directly with a
+ * `YYYY-MM-DD` due date (which `new Date()` parses as UTC midnight, and `formatDate` renders in UTC).
+ *
+ * It was a module constant holding the **UTC** date: computed once at load, so a tab left open kept
+ * yesterday's "today", and for part of every day outside UTC it disagreed with the date pickers'
+ * local floor — in US Pacific a task due today read "1d overdue" from 5 pm, in India one due
+ * yesterday read "Today" until 05:30 (QA audit 2026-10-08, WP-304). Read per call, from the local
+ * clock. Only ever reached after a client-side load, so it can't split a server and client render.
  */
-export const TODAY = (() => {
+function todayUtc(): number {
   const n = new Date();
-  return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
-})();
+  return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+}
 
 export interface UserMini {
   id: string;
@@ -34,6 +42,11 @@ export interface UserMini {
    * the name, looked, and found nothing. Real directory entries never carry it.
    */
   removed?: boolean;
+  /**
+   * In the directory but unable to take part: deactivated (cannot sign in), or a monitored
+   * employee with no login at all. Shown where they already are, never offered (WP-309).
+   */
+  inactive?: boolean;
 }
 
 /**
@@ -46,7 +59,9 @@ export interface UserMini {
  */
 export function selectablePeople(map: Record<string, UserMini>): UserMini[] {
   return Object.values(map)
-    .filter((u) => !u.removed)
+    // Nor anyone deactivated or login-less: the server accepted them as manager or member, and the
+    // deactivation saga that releases a leaver's projects had already run (QA audit WP-309).
+    .filter((u) => !u.removed && !u.inactive)
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -74,18 +89,77 @@ export function toAssignees(t: {
     : [];
 }
 
-/** Slim, prop-friendly user lookup (avoids shipping the full user array). */
-export function buildUserMap(users: User[]): Record<string, UserMini> {
-  const map: Record<string, UserMini> = {};
-  for (const u of users) {
-    map[u.id] = {
-      id: u.id,
-      name: u.name,
-      avatarUrl: u.avatarUrl,
-      jobTitle: u.jobTitle,
-    };
+const PRIORITIES: readonly TaskPriority[] = ["low", "medium", "high"];
+
+/**
+ * The board's columns as the page's `Task`s — one mapping for both readers (the project page and the
+ * Projects list), so the two can't disagree about what a board row means.
+ */
+export function boardTasks(columns: ApiBoardColumn[], projectId: string): Task[] {
+  return columns.flatMap((col) =>
+    col.tasks.map((t) => ({
+      id: t.id,
+      projectId,
+      title: t.title,
+      description: t.description ?? "",
+      status: col.status as TaskStatus,
+      assignees: toAssignees(t),
+      // Guarded, not cast: an unknown value would reach `TASK_PRIORITY_META[…]` and crash the card.
+      priority: PRIORITIES.includes(t.priority as TaskPriority)
+        ? (t.priority as TaskPriority)
+        : "medium",
+      dueDate: t.due ?? null,
+      // Absent means unestimated, which is not an estimate of zero hours (QA audit 2026-10-08, WP-505).
+      estimateHours: t.estimate_hours ?? null,
+      createdBy: t.created_by ?? null,
+      // A review is a verdict on finished work. Rows reopened before the server cleared it on leaving
+      // Done still carry one, and it must not ride along into In progress (QA audit 2026-10-08, WP-313).
+      review: col.status === "done" ? (t.review ?? null) : null,
+      // A server predating subtasks omits this; an absent breakdown and an empty one are the same
+      // thing to a card, so both collapse to zero.
+      subtaskProgress: t.subtasks ?? { total: 0, done: 0 },
+      attachments: (t.attachments ?? []).map((a) => ({
+        id: a.id,
+        filename: a.filename,
+        contentType: a.content_type,
+        size: a.size,
+      })),
+    })),
+  );
+}
+
+/**
+ * The PATCH for an edit: **only what the form changed**, compared with the task as it was when the
+ * dialog opened.
+ *
+ * The endpoint is a true PATCH, and the dialog used to send every field from that snapshot — so
+ * fixing a typo in the title also re-sent the stale status, assignees and attachment set, reopening a
+ * task a lead had signed off in the meantime and dropping files a teammate had attached (QA audit
+ * 2026-10-08, WP-301). `null` when nothing changed: the server refuses an empty PATCH.
+ */
+export function taskPatchFrom(before: Task, v: TaskFormValues): TaskPatch | null {
+  const patch: TaskPatch = {};
+  if (v.title !== before.title) patch.title = v.title;
+  if (v.description !== before.description) patch.description = v.description;
+  if (v.status !== before.status) patch.status = v.status;
+  // In order: the first assignee is the one older clients are shown.
+  if (!sameList(v.assigneeIds, before.assignees.map((a) => a.userId))) {
+    patch.assignee_ids = v.assigneeIds;
   }
-  return map;
+  const due = v.dueDate || null;
+  if (due !== (before.dueDate ? before.dueDate.slice(0, 10) : null)) patch.due = due;
+  if (v.priority !== before.priority) patch.priority = v.priority;
+  if (v.estimateHours !== before.estimateHours) patch.estimate_hours = v.estimateHours;
+  // A set: sent whole when it changed at all, since a present list replaces the task's files.
+  const ids = (list: { id: string }[]) => list.map((a) => a.id).sort();
+  if (!sameList(ids(v.attachments), ids(before.attachments))) {
+    patch.attachments = v.attachments;
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
 /**
@@ -149,13 +223,23 @@ export function formatDate(iso: string): string {
 export function daysUntil(iso: string): number {
   const d = new Date(iso);
   const dueUtc = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  return Math.round((dueUtc - TODAY) / DAY);
+  return Math.round((dueUtc - todayUtc()) / DAY);
 }
 
-/** Human due-date label, e.g. "in 4d", "Today", "3d overdue". */
-export function dueLabel(iso: string | null): { text: string; overdue: boolean } {
+/**
+ * Human due-date label, e.g. "in 4d", "Today", "3d overdue".
+ *
+ * `finished` work is never overdue — a signed-off task (or a completed project) past its date was
+ * finished, not late, so it shows the date instead. The Done column was covered in red "5d overdue"
+ * labels (QA audit 2026-10-08, WP-377).
+ */
+export function dueLabel(
+  iso: string | null,
+  finished = false,
+): { text: string; overdue: boolean } {
   if (!iso) return { text: "No date", overdue: false };
   const d = daysUntil(iso);
+  if (finished && d < 0) return { text: formatDate(iso), overdue: false };
   if (d === 0) return { text: "Today", overdue: false };
   if (d < 0) return { text: `${-d}d overdue`, overdue: true };
   if (d <= 6) return { text: `in ${d}d`, overdue: false };
@@ -169,6 +253,8 @@ export type Tone = "primary" | "success" | "warning" | "muted" | "negative";
 /** A project needing attention: live, but overdue and not yet finished. */
 export function isAtRisk(p: Project): boolean {
   if (p.status !== "active" && p.status !== "on_hold") return false;
+  // No end date (the server makes it optional) is no deadline to miss.
+  if (!p.dueDate) return false;
   return daysUntil(p.dueDate) < 0 && p.progress < 100;
 }
 
@@ -203,16 +289,16 @@ export function projectStats(projects: Project[]): ProjectStats {
 }
 
 /** An open task whose due date has already passed (excludes done & undated). */
-export function isTaskOverdue(t: Task): boolean {
-  if (!t.dueDate || t.status === "done") return false;
+export function isTaskOverdue(t: Pick<Task, "dueDate" | "status">): boolean {
+  if (!t.dueDate || !isOpenTaskStatus(t.status)) return false;
   return daysUntil(t.dueDate) < 0;
 }
 
 /**
  * The board's headline numbers, counted one way so no two cards can disagree.
  *
- * **`total` is live work: it excludes `closed` and `blocked`.** A closed task is finished and
- * signed off — it has left the queue. A blocked one cannot be worked until something else moves, so
+ * **`total` is live work: it excludes `done` and `blocked`.** A done task is finished and signed
+ * off — it has left the queue. A blocked one cannot be worked until something else moves, so
  * counting it as outstanding overstates what the team can actually pick up. Both are still shown,
  * on their own card, because "how much is parked" is a real question — just not the same question
  * as "how much is left".
@@ -229,9 +315,9 @@ export interface TaskTotals {
   /** Waiting on something else; cannot be picked up. */
   blocked: number;
   /**
-   * Finished work for **progress only**: `done + closed`.
+   * Finished work for **progress only**: `done` (which absorbed the retired `closed`).
    *
-   * Closed counts here even though it is absent from `total`, and the two answer different
+   * Done counts here even though it is absent from `total`, and the two answer different
    * questions on purpose. `total` is *what is left to do*, so signed-off work has left it. Progress
    * is *how much of the work is finished*, and a task a reviewer approved is the most finished a
    * task can be. Counting it only in `total` made approving work push a project's percentage down —
@@ -353,18 +439,6 @@ export function taskCounts(tasks: Task[]): Record<TaskStatus, number> {
 }
 
 /**
- * May this caller delete this task? Mirrors `projects::delete_task` (backend LLD §5).
- *
- * - **Manager | Lead** — any task in the project. An org admin holding `projects:manage` arrives
- *   here as `manager`, because that override is what `GET /v1/projects/{id}` resolves it to.
- * - **Member** — only tasks they created. A task with no recorded `createdBy` (written before the
- *   server stored it) is not theirs: the server's `created_by = :me` condition fails it too, so
- *   offering the button would only produce a 403.
- *
- * This is UX, not security — the server re-decides on every DELETE. It exists so the card shows an
- * action that will actually work, rather than one that fails on click or is hidden when it wouldn't.
- */
-/**
  * Where **any project member** may put a card — the working columns.
  *
  * These three are a shared account of where the work actually is, so anyone on the project keeps
@@ -401,6 +475,16 @@ function isReviewer(authority: string): boolean {
 }
 
 /**
+ * Anyone **on** the project — Manager, Lead or Member — who may add, edit and move its tasks.
+ *
+ * Not `viewer`: that is org-wide project oversight without membership (`projects:read` at org
+ * scope), which the server lets read every project and change nothing (QA audit 2026-10-08, WP-302).
+ */
+export function canWorkOnTasks(authority: string): boolean {
+  return authority === "manager" || authority === "lead" || authority === "member";
+}
+
+/**
  * May this person move this task at all? (Is the card draggable?)
  *
  * **Anyone on the project.** Only members can load a board — a non-member gets a 404 — so a
@@ -415,7 +499,8 @@ export function canMoveTask(
   authority: string,
   _currentUserId: string | null | undefined,
 ): boolean {
-  return authority !== "";
+  // A `viewer` reads the board without being on the project — nothing lifts for them.
+  return canWorkOnTasks(authority);
 }
 
 /**
@@ -436,21 +521,42 @@ export function canMoveTaskTo(
     : MEMBER_TARGETS.includes(target);
 }
 
-function isAssignee(
-  task: Pick<Task, "assignees">,
-  currentUserId: string | null | undefined,
-): boolean {
-  return Boolean(
-    currentUserId && task.assignees.some((a) => a.userId === currentUserId),
+/**
+ * The statuses this person may put a task in from the task form — the same rule as a drop on the
+ * board ({@link canMoveTaskTo}): the working columns for anyone on the project, `done` and `blocked`
+ * for a Manager or Lead. A task already sitting in one of those keeps it as an option, since the
+ * server gates only a *change* into them.
+ *
+ * The form used to offer all five to everyone, so a Member who picked Done lost the whole edit to a
+ * 403 (QA audit 2026-10-08, WP-300).
+ */
+export function settableStatuses(authority: string, current?: TaskStatus): TaskStatus[] {
+  const reviewer = isReviewer(authority);
+  return [...MEMBER_TARGETS, ...OVERSIGHT_TARGETS].filter(
+    (s) => reviewer || MEMBER_TARGETS.includes(s) || s === current,
   );
 }
 
+/**
+ * May this caller delete this task? Mirrors `projects::delete_task` (backend LLD §5).
+ *
+ * - **Manager | Lead** — any task in the project. An org admin holding `projects:manage` arrives
+ *   here as `manager`, because that override is what `GET /v1/projects/{id}` resolves it to.
+ * - **Member** — only tasks they created. A task with no recorded `createdBy` (written before the
+ *   server stored it) is not theirs: the server's `created_by = :me` condition fails it too, so
+ *   offering the button would only produce a 403.
+ *
+ * This is UX, not security — the server re-decides on every DELETE. It exists so the card shows an
+ * action that will actually work, rather than one that fails on click or is hidden when it wouldn't.
+ */
 export function canDeleteTask(
   task: Pick<Task, "createdBy">,
   authority: string,
   currentUserId: string | null | undefined,
 ): boolean {
   if (authority === "manager" || authority === "lead") return true;
+  // A `viewer` deletes nothing, even a task they created while still a member (WP-302).
+  if (!canWorkOnTasks(authority)) return false;
   return Boolean(currentUserId && task.createdBy === currentUserId);
 }
 

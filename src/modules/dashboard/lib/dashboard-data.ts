@@ -7,7 +7,6 @@
  * the field degrades honestly to 0 / empty and its widget shows a "waiting on the agent" state — no
  * fabricated numbers.
  */
-import type { User } from "@/types/user";
 
 /* --------------------------------- filters -------------------------------- */
 
@@ -115,7 +114,9 @@ export function singleDayOf(
 
 export const RANGE_OPTIONS: { value: DashboardRange; label: string }[] = [
   { value: "today", label: "Today" },
-  { value: "7d", label: "Week" },
+  // A rolling seven days ending today — not the calendar week, which "Week" promised and every
+  // tile then called "this week" (QA audit 2026-10-08, WP-431).
+  { value: "7d", label: "7 days" },
   { value: "30d", label: "Month" },
   { value: "range", label: "Custom" },
 ];
@@ -232,6 +233,22 @@ export interface ScoreTrendPoint {
  */
 export type AttendanceStatus = "present" | "partial" | "leave" | "absent";
 
+/**
+ * What the attendance donut's counts describe.
+ *
+ * - `closed` — the statuses the nightly close stamped for **one** day, `day`: the latest closed day
+ *   in the window that carries any. One day even when the window is a week, so the card names it.
+ * - `live` — **today so far**, from who has clocked in. No verdict exists yet, so in this mode
+ *   `absent` means *not clocked in yet* and must never be rendered as an absence: at 08:50, on a day
+ *   off or on a holiday everyone is "not in", and calling that "Absent" in red was the bug
+ *   (QA audit 2026-10-08, WP-109). Only used when the window contains today.
+ */
+export interface AttendanceView {
+  source: "closed" | "live";
+  /** `YYYY-MM-DD` the counts are for. */
+  day: string;
+}
+
 /** A ranked performer for the Top performers widget — the lean shape it actually needs. */
 export interface Performer {
   id: string;
@@ -244,10 +261,10 @@ export interface Performer {
 /**
  * One employee with a **running timer right now**, for the "Working now" live widget.
  *
- * `liveStart` is the epoch-ms start the row's clock ticks from — present only when today is a
- * **single open session**, so `now − start` is exact. `null` when they're running but across several
- * sessions today (the current segment's own start isn't exposed org-wide); the widget then shows
- * "Tracking" without a precise elapsed rather than an overstated one.
+ * `liveStart` is the epoch-ms start of the **open** session the row's clock ticks from (the server's
+ * `running_since`, or `clock_in` on a single-session day from an older server). `null` when neither
+ * pins it; the row then shows the day's completed time, standing still, rather than an overstated
+ * running one.
  */
 export interface LiveTimer {
   userId: string;
@@ -277,6 +294,11 @@ export interface DashboardData {
    * the KPI range made it claim to show one day while showing seven.
    */
   trendLabel: string;
+  /**
+   * The same window for the **score** trend, which is never folded into weeks — on "Month" it is
+   * still one point per day, so the "by week" in `trendLabel` would misdescribe it.
+   */
+  scoreTrendLabel: string;
   kpis: {
     productivity: KpiSeries;
     // Point-in-time (shown for the "Today" range)
@@ -290,7 +312,8 @@ export interface DashboardData {
   };
   productivityTrend: TrendPoint[];
   productivityScoreTrend: ScoreTrendPoint[];
-  teamData: { team: string; score: number }[];
+  /** One bar per department, keyed by its id — two departments can share a first word, or a name. */
+  teamData: { id: string; team: string; score: number }[];
   screenshotCount: number;
   /**
    * `true` when at least one day in the window hit the screenshot grid's page cap, so
@@ -299,19 +322,14 @@ export interface DashboardData {
    * under-reporting.
    */
   screenshotCountPartial: boolean;
-  screenshotsTrend: number[];
   /**
-   * Distinct employees with at least one capture over the range — "is monitoring actually reaching
-   * the team", the question a bare total can't answer. `0` when nothing was captured.
+   * `true` when at least one day's captures did not fit the one page the dashboard reads. Everything
+   * derived from the frames themselves (`screenshotsFlagged`, the heatmap) then describes only that
+   * page — and the server orders it by user, so it is a few people's day, not a sample of everyone's.
    */
-  screenshotsCoverage: number;
-  /** Captures worth a review (a distracting-app frame, `ShotRow.flagged`) — the actionable queue. */
+  screenshotsSampled: boolean;
+  /** Captures the AI flagged for review (`ShotRow.flagged`, judged for the person's role) — a floor when sampled. */
   screenshotsFlagged: number;
-  /**
-   * Server-classified split of the range's captures, for the on-task bar. All zero when the agent's
-   * captures are unclassified (older frames), which the widget renders as an honest "unclassified".
-   */
-  screenshotsSplit: { productive: number; neutral: number; distracting: number };
   topPerformers: Performer[];
   /**
    * Employees whose timer is running **right now**, longest-running first. Drives the "Working now"
@@ -319,9 +337,19 @@ export interface DashboardData {
    * has reported today) — an honest empty state, never a seeded list.
    */
   liveTimers: LiveTimer[];
-  billing: { plan: string; seatsUsed: number; seatsTotal: number };
+  /**
+   * The billing overview, as the server states it — or `null` when it was not read (no
+   * `billing:view`, or the widget is hidden) or the read failed. Never filled in from the
+   * directory: a seat bar of "12 / 14" whose 14 was the number of directory rows is a fabricated
+   * cap (QA audit 2026-10-08, WP-110).
+   */
+  billing: { plan: string; status: string; seatsUsed: number; seatCap: number } | null;
+  /** Weekday × 2-hour capture density, 0–100 of the busiest cell; `[]` when there is nothing to draw
+   *  — no captures, or `screenshotsSampled` (a few people's frames would draw a false pattern). */
   heatmap: number[][];
   attendanceCounts: Record<AttendanceStatus, number>;
+  /** What `attendanceCounts` describe; `null` when nothing is resolved for the window yet. */
+  attendanceView: AttendanceView | null;
   /**
    * How many **closed** days in the window actually carry attendance statuses.
    *
@@ -349,6 +377,13 @@ export interface DashboardData {
     includesToday: boolean;
   };
   /**
+   * Whether `hoursLive` has a source for this window. Settled hours come from the activity rollup,
+   * which a plan without `monitoring.activity` cannot read; for **today** the live per-person reads
+   * stand in. A longer window on such a plan has no source here — and the tile must say where the
+   * hours are rather than claim the plan cannot produce them (QA audit 2026-10-08, WP-199).
+   */
+  hoursAvailable: boolean;
+  /**
    * How many of the trackable team actually produced a score, for the best-covered day in the
    * window. The productivity score divides by `team`, so this is what makes a low number readable:
    * "4% · 1 of 14 reporting" is thin coverage, not a collapsed workforce.
@@ -369,11 +404,4 @@ export interface DashboardData {
    */
   activeCount: number;
   inactiveCount: number;
-}
-
-/* --------------------------------- helpers -------------------------------- */
-
-/** Distinct departments (the dashboard's "team" axis), sorted. */
-export function teamsOf(users: User[]): string[] {
-  return Array.from(new Set(users.map((u) => u.department))).sort();
 }

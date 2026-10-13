@@ -12,7 +12,6 @@ import { getPrefs, updatePrefs } from "@/modules/notifications/services/notifica
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 
 type Channel = "inApp" | "email";
-type DigestValue = "off" | "daily" | "weekly";
 
 interface NotificationType {
   key: string;
@@ -56,33 +55,32 @@ const NOTIFICATION_TYPES: NotificationType[] = [
   },
 ];
 
+/** What this page edits: the in-app switch per notification type. */
 interface NotificationPrefs {
   channels: Record<string, Record<Channel, boolean>>;
-  quietHours: boolean;
-  digest: DigestValue;
 }
 
 const INITIAL_PREFS: NotificationPrefs = {
   channels: Object.fromEntries(
     NOTIFICATION_TYPES.map((t) => [t.key, { ...t.defaults }]),
   ),
-  quietHours: true,
-  digest: "weekly",
 };
 
-const DIGEST_VALUES: DigestValue[] = ["off", "daily", "weekly"];
+type PrefsDocument = Record<string, unknown>;
+
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  Boolean(v) && typeof v === "object" && !Array.isArray(v);
 
 /**
  * Reads the server's opaque pref document into our shape, **field by field with a fallback**.
  *
  * A never-saved user gets the server's *default* document (a different shape), so nothing here may
- * assume our keys exist: each channel falls back to that type's default, `digest`/`quietHours` fall
- * back to `INITIAL_PREFS` when absent or the wrong type. This tolerates both the server default and a
- * previously-saved copy of our own shape.
+ * assume our keys exist: each channel falls back to that type's default. This tolerates both the
+ * server default and a previously-saved copy of our own shape.
  */
 function fromServer(raw: unknown): NotificationPrefs {
-  const doc = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const rawChannels = (doc.channels && typeof doc.channels === "object" ? doc.channels : {}) as Record<
+  const doc = isObject(raw) ? raw : {};
+  const rawChannels = (isObject(doc.channels) ? doc.channels : {}) as Record<
     string,
     { inApp?: unknown; email?: unknown } | undefined
   >;
@@ -98,17 +96,34 @@ function fromServer(raw: unknown): NotificationPrefs {
       ];
     }),
   );
-  const digest = DIGEST_VALUES.includes(doc.digest as DigestValue)
-    ? (doc.digest as DigestValue)
-    : INITIAL_PREFS.digest;
-  const quietHours = typeof doc.quietHours === "boolean" ? doc.quietHours : INITIAL_PREFS.quietHours;
-  return { channels, quietHours, digest };
+  return { channels };
+}
+
+/**
+ * The document to store: the one we loaded, with **only the in-app switches** changed.
+ *
+ * The server stores the document whole and reads quiet hours, the digest and the email flags from it
+ * at send time. Every save used to write this page's fallbacks for them too — `quietHours: true`,
+ * `digest: "weekly"` — opting people into an overnight email blackout and a weekly digest through
+ * controls the page doesn't even show (QA audit 2026-10-08, WP-517). Anything we don't edit is now
+ * passed through exactly as loaded, absent stays absent.
+ */
+function toServer(loaded: PrefsDocument, prefs: NotificationPrefs): PrefsDocument {
+  const loadedChannels = isObject(loaded.channels) ? loaded.channels : {};
+  const channels: Record<string, unknown> = { ...loadedChannels };
+  for (const t of NOTIFICATION_TYPES) {
+    const prev = isObject(loadedChannels[t.key]) ? loadedChannels[t.key] : {};
+    channels[t.key] = { ...(prev as object), inApp: prefs.channels[t.key].inApp };
+  }
+  return { ...loaded, channels };
 }
 
 export function NotificationPreferences() {
   // Working draft vs. last-saved baseline — the diff drives the save bar.
   const [saved, setSaved] = useState<NotificationPrefs>(INITIAL_PREFS);
   const [draft, setDraft] = useState<NotificationPrefs>(INITIAL_PREFS);
+  /** The stored document as loaded — saved back with only our switches changed (see `toServer`). */
+  const [storedDoc, setStoredDoc] = useState<PrefsDocument>({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -121,6 +136,7 @@ export function NotificationPreferences() {
       .then((doc) => {
         if (!live) return;
         const prefs = fromServer(doc.prefs);
+        setStoredDoc(isObject(doc.prefs) ? doc.prefs : {});
         setSaved(prefs);
         setDraft(prefs);
       })
@@ -161,9 +177,11 @@ export function NotificationPreferences() {
   async function handleSave() {
     if (!dirty || saving) return;
     const next = draft;
+    const body = toServer(storedDoc, next);
     setSaving(true);
     try {
-      await updatePrefs(next);
+      await updatePrefs(body);
+      setStoredDoc(body);
       setSaved(next);
       toast.success("Notification preferences saved");
     } catch {

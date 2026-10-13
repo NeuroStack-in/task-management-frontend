@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday } from "@/lib/workdays";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Papa from "papaparse";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -36,11 +35,7 @@ import {
   xAxisLabel,
   yAxisLabel,
 } from "@/components/shared/chart-axis";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,14 +65,19 @@ import {
 import { TablePagination } from "@/components/shared/table-pagination";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
-import { initials, isUuid, UNKNOWN_ROLE } from "@/lib/format";
+import { isUuid, UNKNOWN_ROLE } from "@/lib/format";
 import { useRolesStore } from "@/stores/roles.store";
 import { SYSTEM_ROLES } from "@/constants/roles";
 import { downloadBlob } from "@/lib/download";
 import { usePageTitle } from "@/stores/page-header.store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
-import { listRoles, assignRole, type ApiRole } from "@/modules/roles/services/roles.service";
+import {
+  assignRole,
+  contributorRoleIds,
+  listRoles,
+  type ApiRole,
+} from "@/modules/roles/services/roles.service";
 import {
   listDepartments,
   updateEmployee,
@@ -96,6 +96,7 @@ import {
 import { EmployeeManageMenu } from "./employee-manage-menu";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { PageActions } from "@/components/shared/page-actions";
+import { toCsv } from "@/lib/csv";
 
 const STATUS_META: Record<EmployeeProfileData["status"], string> = {
   active: "bg-success/12 text-success",
@@ -107,7 +108,8 @@ const STATUS_META: Record<EmployeeProfileData["status"], string> = {
 /** Employment states are shown capitalised; the raw lowercase server value is not a label. */
 const EMPLOYMENT_LABEL: Record<EmployeeProfileData["status"], string> = {
   active: "Active",
-  inactive: "Inactive",
+  // The profile's "inactive" is a deactivated leaver — named as such, not as the roster's bench.
+  inactive: "Deactivated",
   invited: "Invited",
   suspended: "Suspended",
 };
@@ -159,6 +161,14 @@ function headerBadge(
       label: EMPLOYMENT_LABEL[data.status],
       className: STATUS_META[data.status],
       title: `This employee is ${EMPLOYMENT_LABEL[data.status].toLowerCase()}`,
+    };
+  }
+  // Benched: still signs in, but excluded from tracking and attendance — no verdict to show.
+  if (data.benched) {
+    return {
+      label: "Not tracked",
+      className: "bg-warning/15 text-warning",
+      title: "This person is excluded from time tracking and attendance",
     };
   }
   // An Owner or Admin is not tracked, so a "Today" attendance verdict is true and meaningless — it
@@ -217,24 +227,26 @@ function exportEmployeeCsv(d: EmployeeProfileData) {
     ["Status", d.status],
     ["Email", d.email],
     ["Phone", d.phone],
-    ["Date of birth", d.dob],
     ["Hire date", d.hireDate],
-    ["Address", `${d.address}, ${d.cityState}, ${d.country} ${d.postcode}`],
+    // Location only. Date of birth and a street address aren't on the server's profile, so those
+    // rows were always blank — the Address row read ", <city>, " (QA audit 2026-10-08, WP-456).
+    ["Location", d.cityState],
     // An unmeasured score exports as "—", never as 0 — a spreadsheet cell reading `0` is
     // indistinguishable from a real zero once it leaves the app, and this file gets forwarded.
     ["Productivity %", d.productivityScore ?? "—"],
-    ["Avg. completion %", d.avgCompletion],
-    ["Total tasks", d.totalTasks],
+    // Project-wide figures, named as such — they are not this person's own tasks (WP-234).
+    ["Avg. completion of their projects %", d.avgCompletion ?? "—"],
+    ["Tasks in their projects (all assignees)", d.totalTasks],
     ["Projects", d.projects.length],
     ["Active projects", activeCount],
     [],
-    ["Project", "Key", "Progress %", "Tasks", "Teammates", "Active"],
+    ["Project", "Key", "Project progress %", "Project tasks", "Teammates", "Active"],
     ...d.projects.map((p) => [
-      p.name, p.key, p.progress, p.tasks, p.teammates, p.active ? "Yes" : "No",
+      p.name, p.key, p.progress ?? "—", p.tasks ?? "—", p.teammates, p.active ? "Yes" : "No",
     ]),
   ];
   downloadBlob(
-    new Blob([Papa.unparse(rows)], { type: "text/csv;charset=utf-8;" }),
+    new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8;" }),
     `${fileCode(d.empCode)}-report.csv`,
   );
   toast.success("Report exported", { description: `${fileCode(d.empCode)}-report.csv` });
@@ -272,7 +284,9 @@ function ReassignDialog({
     listRoles()
       .then((rs) => {
         if (!live) return;
-        setRoles(rs);
+        // Never the Owner role: ownership is granted from Settings → Organization → Owners, and the
+        // role route refuses it — offering it only led to a generic failure (WP-228).
+        setRoles(rs.filter((r) => r.id !== "role-owner"));
         // Pre-select the role matching the current role name, if we can find it.
         setRoleId(rs.find((r) => r.name === currentRoleName)?.id ?? "");
       })
@@ -297,9 +311,14 @@ function ReassignDialog({
       toast.success("Role updated", { description: `${name} → ${roleName}` });
       onOpenChange(false);
       onSaved();
-    } catch {
+    } catch (e) {
       toast.error("Couldn't update role", {
-        description: "You may not have permission, or the server rejected it.",
+        description:
+          e instanceof ApiError && e.status === 403
+            ? "You can't grant this role — it carries permissions you don't hold, or you can't manage roles."
+            : e instanceof ApiError
+              ? e.message
+              : "Check your connection and try again.",
       });
     } finally {
       setSaving(false);
@@ -380,21 +399,27 @@ function EditEmployeeDialog({
     phone: "",
   });
 
+  // The freshest profile, read when the dialog opens — not on every change to `data` while it is
+  // open, which re-seeded the form and wiped what was being typed (QA audit 2026-10-08, WP-454).
+  const latest = useRef(data);
+  useEffect(() => {
+    latest.current = data;
+  });
   useEffect(() => {
     if (!open) return;
-    // Re-seed from the freshest profile every time the dialog opens.
+    const d = latest.current;
     setForm({
-      name: data.name,
-      title: data.jobTitle,
-      departmentId: data.departmentId,
-      location: data.cityState,
-      phone: data.phone,
+      name: d.name,
+      title: d.jobTitle,
+      departmentId: d.departmentId,
+      location: d.cityState,
+      phone: d.phone,
     });
     let live = true;
     setLoadingOpts(true);
     listDepartments()
-      .then((d) => {
-        if (live) setDepts(d);
+      .then((depts) => {
+        if (live) setDepts(depts);
       })
       .catch(() => {})
       .finally(() => {
@@ -403,7 +428,7 @@ function EditEmployeeDialog({
     return () => {
       live = false;
     };
-  }, [open, data]);
+  }, [open]);
 
 
   const setField = (k: keyof typeof form) => (v: string) =>
@@ -595,13 +620,23 @@ function HoursTooltip({
   );
 }
 
-/** The window the app-usage panel shows: the last 14 days, ending today.
+/**
+ * The window the app-usage panel shows: the last 14 days, ending today. Two weeks is wide enough to
+ * show a pattern and inside the endpoint's range cap.
  *
- * Computed at module load rather than in render — `new Date()` in a render path differs between the
- * server and client pass and produces a hydration mismatch (frontend/CLAUDE.md). Two weeks is wide
- * enough to show a pattern and inside the endpoint's range cap. */
-const APP_USAGE_TO = isoDay(new Date());
-const APP_USAGE_FROM = isoDay(new Date(Date.now() - 13 * 86_400_000));
+ * Worked out after mount, each time a profile loads — not in render (`new Date()` there can disagree
+ * between the server and client pass, frontend/CLAUDE.md) and not at module load, which pinned it to
+ * whenever the tab first loaded the code: a tab opened Monday showed every profile's fortnight
+ * ending Monday on Wednesday (QA audit 2026-10-08, WP-464). Calendar days, not 24-hour steps, so a
+ * clock change can't shift it by one.
+ */
+function appUsageWindow(): { from: string; to: string } {
+  const now = new Date();
+  return {
+    from: isoDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13)),
+    to: isoDay(now),
+  };
+}
 
 function ProfileView({
   data,
@@ -634,7 +669,7 @@ function ProfileView({
           description: `Fetching ${p.label} (${p.done + 1}/${p.total + 1})`,
         }),
       );
-      const doc = renderEmployeeReportPdf(report);
+      const doc = await renderEmployeeReportPdf(report);
       const name = reportFileName(report);
       doc.save(name);
       toast.success("Report downloaded", { id: toastId, description: name });
@@ -661,6 +696,10 @@ function ProfileView({
   // quieter "Non-working day" label.
   const workdays = useWorkdays();
   const [todayIsWorkday, setTodayIsWorkday] = useState(true);
+  const [appUsage, setAppUsage] = useState<{ from: string; to: string } | null>(null);
+  useEffect(() => {
+    setAppUsage(appUsageWindow());
+  }, [data]);
   // Does THIS employee personally track time? Resolved from their role's permission list, not from
   // a role-id comparison: an Owner or Admin who is also a contributor holds `time-tracking:self`
   // explicitly, and must keep the attendance badge that a name check would have taken away.
@@ -673,14 +712,30 @@ function ProfileView({
   // change on every render, re-rendered, and looped until React gave up and showed the error
   // boundary. It took down the whole employee profile page.
   const customRoles = useRolesStore((st) => st.customRoles);
+  // The server's own answer to "which roles run a timer" (bit 110), custom roles included. The
+  // local store knows only the built-ins, so a custom non-tracking role (an "HR Manager") read as
+  // tracked and showed a red "Today · Absent" every working day (QA audit 2026-10-08, WP-227).
+  const [contributors, setContributors] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    let live = true;
+    contributorRoleIds()
+      .then((ids) => live && setContributors(ids))
+      .catch(() => {
+        /* no roles access — fall back to the built-in lookup below */
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
   const isTracked = useMemo(() => {
     const roleId = data?.roleId;
     if (!roleId) return true;
+    if (contributors) return contributors.has(roleId);
     const role =
       SYSTEM_ROLES.find((r) => r.id === roleId) ??
       customRoles.find((r) => r.id === roleId);
     return role ? role.permissions.includes("time-tracking:self") : true;
-  }, [customRoles, data?.roleId]);
+  }, [contributors, customRoles, data?.roleId]);
   useEffect(() => {
     setTodayIsWorkday(isWorkday(new Date(), workdays));
   }, [workdays]);
@@ -735,10 +790,14 @@ function ProfileView({
             <span className="font-medium text-foreground">{data.name}</span>
           </nav>
           {canViewLocations ? (
+            // A real link (it was a click handler), carrying the same `?emp=` deep link the
+            // Screenshots button uses. The Locations page has to read it to open on this person —
+            // until it does, this lands on the board unfiltered (QA audit 2026-10-08, WP-232).
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/insights/locations?emp=${data.id}`)}
+              render={<Link href={`/insights/locations?emp=${encodeURIComponent(data.id)}`} />}
+              nativeButton={false}
               title="View live location"
             >
               <MapPin className="size-4" /> Location
@@ -791,6 +850,7 @@ function ProfileView({
               id={data.id}
               name={data.name}
               status={data.status}
+              roleId={data.roleId}
               onChanged={reload}
             />
           ) : null}
@@ -823,12 +883,14 @@ function ProfileView({
           {/* Employee — identity, contact & address in ONE card */}
           <div className="overflow-hidden rounded-xl border bg-card">
             <div className="flex flex-col gap-4 border-b p-5 sm:flex-row sm:items-center">
-              <Avatar className="size-16 shrink-0 ring-4 ring-feature-tint">
-                <AvatarImage src={data.avatarUrl} alt={data.name} />
-                <AvatarFallback className="text-lg">
-                  {initials(data.name)}
-                </AvatarFallback>
-              </Avatar>
+              {/* From the shared avatar store: one cache, refreshed before the presign expires,
+                  and no late patch into `data` to disturb an open Edit dialog (WP-454). */}
+              <UserAvatar
+                userId={data.id}
+                name={data.name}
+                className="size-16 shrink-0 ring-4 ring-feature-tint"
+                fallbackClassName="text-lg"
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <h1 className="font-display text-xl font-semibold tracking-tight">
@@ -860,9 +922,13 @@ function ProfileView({
                   <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
                     <Pencil className="size-4" /> Edit
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setReassignOpen(true)}>
-                    <ShieldCheck className="size-4" /> Reassign
-                  </Button>
+                  {/* The role route needs `roles:manage`, not `employees:manage`, and an owner's role
+                      is changed through ownership, not here (WP-228). */}
+                  {can("roles:manage") && data.roleId !== "role-owner" ? (
+                    <Button variant="outline" size="sm" onClick={() => setReassignOpen(true)}>
+                      <ShieldCheck className="size-4" /> Reassign
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -892,7 +958,10 @@ function ProfileView({
             </div>
             {data.projects.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Not assigned to any project yet.
+                {/* A failed read is not "no projects" (WP-229). */}
+                {data.projectsFailed
+                  ? "Couldn't load this person's projects. Refresh to try again."
+                  : "Not assigned to any project yet."}
               </p>
             ) : (
               <>
@@ -911,18 +980,21 @@ function ProfileView({
                           </Badge>
                         ) : null}
                       </span>
-                      <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                        {p.progress}%
+                      <span
+                        className="shrink-0 font-mono tabular-nums text-muted-foreground"
+                        title="The project's completion, across everyone's tasks"
+                      >
+                        {p.progress === null ? "—" : `${p.progress}%`}
                       </span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                       <div
                         className="wp-meter-fill h-full rounded-full bg-primary"
-                        style={{ width: `${p.progress}%` }}
+                        style={{ width: `${p.progress ?? 0}%` }}
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {p.tasks} tasks · {p.teammates} teammates
+                      {p.tasks === null ? "—" : p.tasks} project tasks · {p.teammates} teammates
                     </p>
                   </li>
                 ))}
@@ -962,8 +1034,8 @@ function ProfileView({
               oversight, and an individual's application history is a narrower privilege an org can
               withhold from a manager who still needs the rest of this page. The server enforces it
               (`AppUsageReadPerson`); this only avoids rendering a card that would 403. */}
-          {canSeeAppUsage ? (
-            <EmployeeAppUsageCard userId={data.id} from={APP_USAGE_FROM} to={APP_USAGE_TO} />
+          {canSeeAppUsage && appUsage ? (
+            <EmployeeAppUsageCard userId={data.id} from={appUsage.from} to={appUsage.to} />
           ) : null}
 
           {/* Stat cards row */}
@@ -976,28 +1048,37 @@ function ProfileView({
                 {data.productivityScore == null ? "—" : `${data.productivityScore}%`}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {data.productivityScore == null
-                  ? "no activity reported yet"
-                  : "overall score"}
+                {data.productivityScore != null
+                  ? "overall score"
+                  : data.activityStatus === "forbidden"
+                    ? "activity isn't visible to you"
+                    : data.activityStatus === "failed"
+                      ? "couldn't load activity"
+                      : "no activity reported yet"}
               </p>
             </div>
+            {/* Both of these are the projects' figures — everyone's tasks — and are labelled so. As
+                "Avg. completion · task delivery rate" and "Total tasks", a new hire on three big
+                projects read as having 412 tasks on day one (QA audit 2026-10-08, WP-234). */}
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Avg. completion
+                Project completion
               </p>
               <p className="mt-1 font-display text-3xl font-bold tabular-nums">
-                {data.avgCompletion}%
+                {data.avgCompletion === null ? "—" : `${data.avgCompletion}%`}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">task delivery rate</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">average of their projects</p>
             </div>
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                Total tasks
+                Project tasks
               </p>
               <p className="mt-1 font-display text-3xl font-bold tabular-nums">
                 {data.totalTasks}
               </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">across all projects</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                in their projects, all assignees
+              </p>
             </div>
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -1023,7 +1104,7 @@ function ProfileView({
                   <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                     Hours worked
                   </p>
-                  <p className="text-xs text-muted-foreground/80">
+                  <p className="text-xs text-muted-foreground">
                     Total hours on the clock · last 30 days
                   </p>
                 </div>
@@ -1046,15 +1127,35 @@ function ProfileView({
               </div>
             </div>
             {!kpiMeasured ? (
-              // The honest empty state. Says which of the two possible zeros this is, and names the
-              // cause, so nobody reads a blank chart as a verdict on the person.
+              // The honest empty state. Says which of the possible blanks this is, and names the
+              // cause, so nobody reads a blank chart as a verdict on the person — including when
+              // the read itself was refused or failed, which used to say "nothing recorded" (WP-229).
               <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-1 text-center">
-                <p className="text-sm font-medium">No work recorded in the last 30 days</p>
-                <p className="max-w-xs text-xs text-muted-foreground">
-                  This chart is built from activity the desktop agent tracks. Nothing has been
-                  recorded for this employee in the last 30 days — which is not the same as a
-                  measured zero.
-                </p>
+                {data.activityStatus === "forbidden" ? (
+                  <>
+                    <p className="text-sm font-medium">Activity isn&apos;t visible to you</p>
+                    <p className="max-w-xs text-xs text-muted-foreground">
+                      Seeing a person&apos;s hours and activity needs access to org activity, which
+                      your role doesn&apos;t have.
+                    </p>
+                  </>
+                ) : data.activityStatus === "failed" ? (
+                  <>
+                    <p className="text-sm font-medium">Couldn&apos;t load activity</p>
+                    <p className="max-w-xs text-xs text-muted-foreground">
+                      This isn&apos;t a sign that nothing was recorded. Refresh to try again.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium">No work recorded in the last 30 days</p>
+                    <p className="max-w-xs text-xs text-muted-foreground">
+                      This chart is built from activity the desktop agent tracks. Nothing has been
+                      recorded for this employee in the last 30 days — which is not the same as a
+                      measured zero.
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
             <ResponsiveContainer width="100%" height="100%" minHeight={220} className="flex-1">
@@ -1106,7 +1207,7 @@ function ProfileView({
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[0.7rem] font-medium tracking-wide text-muted-foreground/70 uppercase">
+      <dt className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </dt>
       <dd className="mt-1 truncate text-sm font-medium" title={value}>

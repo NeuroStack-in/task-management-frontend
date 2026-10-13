@@ -8,7 +8,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { apiFetch } from "@/lib/api";
-import { bulkDecide, decide, getQueue } from "./approvals.service";
+import { decide, getQueue } from "./approvals.service";
 
 const mock = vi.mocked(apiFetch);
 beforeEach(() => mock.mockClear());
@@ -18,7 +18,20 @@ describe("approvals.service route contract", () => {
     // the service unwraps `.approvals`; give it something to unwrap.
     mock.mockResolvedValueOnce({ approvals: [] });
     await getQueue("pending");
-    expect(mock).toHaveBeenCalledWith("/v1/approvals?status=pending");
+    expect(mock).toHaveBeenCalledWith("/v1/approvals?status=pending&limit=100");
+  });
+
+  /** WP-073: the cursor was dropped, so a status never showed more than its 50 oldest rows. */
+  it("getQueue follows the cursor to the end of the queue", async () => {
+    const row = (id: string) => ({ request_id: id }) as never;
+    mock
+      .mockResolvedValueOnce({ approvals: [row("a"), row("b")], cursor: "c1" })
+      .mockResolvedValueOnce({ approvals: [row("c")], cursor: "c2" })
+      .mockResolvedValueOnce({ approvals: [row("d")] });
+    const rows = await getQueue("approved");
+    expect(rows.map((r) => r.request_id)).toEqual(["a", "b", "c", "d"]);
+    expect(mock).toHaveBeenNthCalledWith(2, "/v1/approvals?status=approved&limit=100&cursor=c1");
+    expect(mock).toHaveBeenNthCalledWith(3, "/v1/approvals?status=approved&limit=100&cursor=c2");
   });
 
   it("decide POSTs the whole decision input verbatim", async () => {
@@ -32,19 +45,6 @@ describe("approvals.service route contract", () => {
     expect(mock).toHaveBeenCalledWith("/v1/approvals/decide", {
       method: "POST",
       body: JSON.stringify(input),
-    });
-  });
-
-  it("bulkDecide POSTs the decisions array wrapped under `decisions`", async () => {
-    mock.mockResolvedValueOnce({ results: [] });
-    const decisions = [
-      { user_id: "u1", request_id: "r1", decision: "approve" as const },
-      { user_id: "u2", request_id: "r2", decision: "reject" as const, reason: "no" },
-    ];
-    await bulkDecide(decisions);
-    expect(mock).toHaveBeenCalledWith("/v1/approvals/bulk-decide", {
-      method: "POST",
-      body: JSON.stringify({ decisions }),
     });
   });
 });

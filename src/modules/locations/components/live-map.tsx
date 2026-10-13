@@ -3,7 +3,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import type * as MaplibreNS from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { Hand, Lock } from "lucide-react";
+import { Hand, Lock, MapPinOff } from "lucide-react";
 import { initials } from "@/lib/format";
 import type { GeoPoint, Geofence } from "@/modules/locations/types";
 import { Button } from "@/components/ui/button";
@@ -66,10 +66,29 @@ export interface MapMarker {
   online?: boolean;
   /** Draw a warning (red) ring — e.g. outside the perimeter. */
   alert?: boolean;
+  /**
+   * The OS's own accuracy estimate in metres. Drawn as a shaded radius around the pin: a desktop
+   * without GPS positions by WiFi/IP, and a pinpoint would claim a precision the fix doesn't have.
+   */
+  accuracyM?: number;
   onClick?: () => void;
 }
 
-const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+/**
+ * The map style (and through it, the tile host).
+ *
+ * Overridable per deployment because every tile request tells that host the viewer's IP and the
+ * area being looked at — an employee's trail at zoom 14 is a neighbourhood. An org that must not
+ * disclose that can point this at a self-hosted or proxied style without a code change.
+ */
+const STYLE_URL =
+  process.env.NEXT_PUBLIC_MAP_STYLE_URL || "https://tiles.openfreemap.org/styles/liberty";
+
+/** How long the style may take before the map says it couldn't load (it clears if it then does). */
+const LOAD_TIMEOUT_MS = 20_000;
+
+/** Accuracy radii under this are smaller than the pin itself — not worth a shaded circle. */
+const MIN_ACCURACY_RADIUS_M = 25;
 
 const PIN_COLOR: Record<MarkerVariant, string> = {
   avatar: "#4f46e5",
@@ -150,6 +169,8 @@ export function LiveMap({
   center,
   zoom,
   recenterKey,
+  fitPoints,
+  fitKey,
   className,
 }: {
   markers: MapMarker[];
@@ -161,6 +182,13 @@ export function LiveMap({
   center: GeoPoint;
   zoom: number;
   recenterKey?: string;
+  /**
+   * Points the camera should frame. With `fitKey`, the map fits them **once per key** — so a new
+   * day or filter re-frames, but a refresh of the same view leaves the reader's pan and zoom alone.
+   */
+  fitPoints?: GeoPoint[];
+  /** Changes when the framing should be redone; `undefined` defers it (e.g. while loading). */
+  fitKey?: string;
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -168,7 +196,14 @@ export function LiveMap({
   const glRef = useRef<typeof MaplibreNS | null>(null);
   const markersRef = useRef<MaplibreNS.Marker[]>([]);
   const centerMarkerRef = useRef<MaplibreNS.Marker | null>(null);
+  const fittedFor = useRef<string | null>(null);
   const [ready, setReady] = useState(0);
+  /**
+   * The map's style or tiles could not be loaded — a blocked or unreachable tile host. Without this
+   * the map was a blank rectangle with no message, and no markers either, since they wait for the
+   * style (QA audit 2026-10-08, WP-491).
+   */
+  const [failed, setFailed] = useState(false);
   /** Whether the map may respond to gestures. Off until asked for — see `GESTURES`. */
   const [unlocked, setUnlocked] = useState(false);
 
@@ -179,6 +214,10 @@ export function LiveMap({
   // Create the map once.
   useEffect(() => {
     let cancelled = false;
+    let loaded = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled && !loaded) setFailed(true);
+    }, LOAD_TIMEOUT_MS);
     (async () => {
       const gl = await import("maplibre-gl");
       if (cancelled || !containerRef.current || mapRef.current) return;
@@ -199,12 +238,20 @@ export function LiveMap({
       // — those take a deliberate click and can't be triggered by scrolling past.
       setGestures(map, false);
       map.on("load", () => {
+        loaded = true;
+        setFailed(false);
         map.resize();
         setReady((r) => r + 1);
+      });
+      // Before the style has loaded, an error means the map will never draw (host blocked, offline,
+      // bad style). After it, a stray tile error is transient and MapLibre retries on its own.
+      map.on("error", () => {
+        if (!loaded && !cancelled) setFailed(true);
       });
     })();
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
       mapRef.current?.remove();
@@ -233,6 +280,26 @@ export function LiveMap({
     mapRef.current?.flyTo({ center: [center.lng, center.lat], zoom, duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recenterKey]);
+
+  // Frame `fitPoints` once per `fitKey`. The board used to centre on the office perimeter with a
+  // constant key, so a team that wasn't within a few kilometres of it got "12 people on the map"
+  // over an empty street map (QA audit 2026-10-08, WP-287).
+  useEffect(() => {
+    const gl = glRef.current;
+    const map = mapRef.current;
+    if (!gl || !map || !ready || fitKey === undefined || fittedFor.current === fitKey) return;
+    const pts = fitPoints ?? [];
+    if (pts.length === 0) return;
+    fittedFor.current = fitKey;
+    if (pts.length === 1) {
+      map.flyTo({ center: [pts[0].lng, pts[0].lat], zoom: Math.max(zoom, 13), duration: 600 });
+      return;
+    }
+    const bounds = new gl.LngLatBounds();
+    for (const p of pts) bounds.extend([p.lng, p.lat]);
+    map.fitBounds(bounds, { padding: 48, maxZoom: 15, duration: 600 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitKey, ready, fitPoints]);
 
   // (Re)draw geofence, trail, and markers.
   useEffect(() => {
@@ -274,6 +341,39 @@ export function LiveMap({
       if (map.getLayer(fillId)) map.removeLayer(fillId);
       if (map.getLayer(lineId)) map.removeLayer(lineId);
       if (map.getSource("geofence")) map.removeSource("geofence");
+    }
+
+    // Accuracy radii, under the trail and markers. The service has always said the map "draws a
+    // radius rather than a pinpoint"; it drew pinpoints (QA audit 2026-10-08, WP-291).
+    const accuracyData: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: markers
+        .filter((m) => (m.accuracyM ?? 0) >= MIN_ACCURACY_RADIUS_M)
+        .map(
+          (m): GeoJSON.Feature => ({
+            type: "Feature",
+            properties: {},
+            geometry: { type: "Polygon", coordinates: [circleRing(m.point, m.accuracyM!, 48)] },
+          }),
+        ),
+    };
+    const asrc = map.getSource("accuracy") as MaplibreNS.GeoJSONSource | undefined;
+    if (asrc) {
+      asrc.setData(accuracyData);
+    } else if (accuracyData.features.length > 0) {
+      map.addSource("accuracy", { type: "geojson", data: accuracyData });
+      map.addLayer({
+        id: "accuracy-fill",
+        type: "fill",
+        source: "accuracy",
+        paint: { "fill-color": "#64748b", "fill-opacity": 0.12 },
+      });
+      map.addLayer({
+        id: "accuracy-line",
+        type: "line",
+        source: "accuracy",
+        paint: { "line-color": "#64748b", "line-width": 1, "line-opacity": 0.5 },
+      });
     }
 
     // Trail line.
@@ -365,6 +465,17 @@ export function LiveMap({
           className,
         )}
       />
+
+      {failed ? (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-muted/90 p-6 text-center">
+          <MapPinOff className="size-6 text-muted-foreground" />
+          <p className="text-sm font-medium">The map couldn&apos;t be loaded</p>
+          <p className="max-w-sm text-xs text-muted-foreground">
+            The map service may be blocked on this network or unreachable right now. The locations
+            themselves are still listed on this page.
+          </p>
+        </div>
+      ) : null}
 
       {/* Bottom-left: clear of the zoom buttons (top-right) and the attribution (bottom-right). */}
       <Button

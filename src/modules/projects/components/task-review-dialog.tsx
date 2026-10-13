@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Sign a finished task off: rate it 1–5 and close it.
+ * Sign a task off: rate it 1–5 and move it to Done.
  *
- * The second half of the task lifecycle. `done` is the assignee saying *I finished it*; this is
- * someone with authority over the project agreeing. On success the task moves to `closed`, which is
- * reachable **only** through this call — the board offers no drop target for it and the edit form
- * no option, because a state meaning "approved" must not be settable by the person seeking approval.
+ * The second half of the task lifecycle. `in_review` is the assignee saying *I finished it*; this is
+ * someone with authority over the project agreeing. On success the task moves to `done` with the
+ * rating and the reviewer's name recorded (`review_task`). A Manager or Lead can also drag a card to
+ * Done, which records neither; and moving a signed-off task out of Done clears its review.
  *
  * Who sees the button is decided by the server (`ProjectRole::Manager | Lead`, which org admins and
  * owners resolve into). The caller passes `canReview`, and the assignee is excluded even when they
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { reviewTask } from "../services/projects.service";
 
@@ -54,7 +55,7 @@ export function TaskReviewDialog({
   projectId: string;
   taskId: string;
   taskTitle: string;
-  /** Refresh the board — the task leaves Done and appears under Closed. */
+  /** Refresh the board — the task leaves In review and appears under Done. */
   onReviewed: () => void;
 }) {
   const [rating, setRating] = useState(0);
@@ -75,7 +76,7 @@ export function TaskReviewDialog({
         rating,
         ...(note.trim() ? { note: note.trim() } : {}),
       });
-      toast.success("Task closed", {
+      toast.success("Task signed off", {
         description: `You rated it ${rating}/5. Your name is recorded as the reviewer.`,
       });
       onReviewed();
@@ -83,7 +84,16 @@ export function TaskReviewDialog({
       setRating(0);
       setNote("");
     } catch (e) {
-      toast.error(friendlyError(e, "Couldn't submit the review."));
+      // The two refusals the server names, in words — its own text reads "Conflict: task not
+      // awaiting review".
+      const code = e instanceof ApiError ? e.code : undefined;
+      toast.error(
+        code === "task_not_awaiting_review"
+          ? "This task isn't in review any more — someone may have just moved it. Check the board."
+          : code === "cannot_review_own_task"
+            ? "You can't sign off a task you're assigned to."
+            : friendlyError(e, "Couldn't submit the review."),
+      );
     } finally {
       setBusy(false);
     }
@@ -93,11 +103,11 @@ export function TaskReviewDialog({
     <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Review and close</DialogTitle>
+          <DialogTitle>Review and sign off</DialogTitle>
           <DialogDescription>
             <span className="text-foreground font-medium">{taskTitle}</span> — rate the finished
-            work. Closing is final: the task leaves the board&apos;s active columns and your name is
-            stored as the reviewer.
+            work. Signing off moves the task to Done, with your rating and your name as the
+            reviewer.
           </DialogDescription>
         </DialogHeader>
 
@@ -153,7 +163,7 @@ export function TaskReviewDialog({
           </Button>
           <Button onClick={submit} disabled={busy || !rating}>
             {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-            {busy ? "Closing…" : "Close task"}
+            {busy ? "Signing off…" : "Sign off"}
           </Button>
         </DialogFooter>
       </DialogContent>

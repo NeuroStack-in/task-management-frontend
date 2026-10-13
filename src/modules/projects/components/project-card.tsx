@@ -31,7 +31,8 @@ export function ProjectCard({
   onOpen,
 }: ProjectCardProps) {
   const status = PROJECT_STATUS_META[project.status];
-  const due = dueLabel(project.dueDate);
+  // A completed project past its end date finished — it isn't late (WP-377).
+  const due = dueLabel(project.dueDate, project.status === "completed");
 
   return (
     <Card
@@ -62,15 +63,29 @@ export function ProjectCard({
       {/* Header */}
       <div className="flex items-start justify-between gap-3 px-5">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
-              {project.key}
-            </span>
-            <span className="truncate text-xs text-muted-foreground">
-              · {project.department}
-            </span>
-          </div>
-          <h3 className="mt-1.5 truncate font-heading text-base font-semibold tracking-tight transition-colors group-hover/card:text-primary">
+          {/* Both optional on the server: an empty badge pill and a dangling "·" read as faults
+              (QA audit 2026-10-08, WP-305). */}
+          {project.key || project.department ? (
+            <div className="flex items-center gap-2">
+              {project.key ? (
+                <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-[0.7rem] font-semibold tracking-wide text-accent-foreground">
+                  {project.key}
+                </span>
+              ) : null}
+              {project.department ? (
+                <span className="truncate text-xs text-muted-foreground">
+                  {project.key ? "· " : ""}
+                  {project.department}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          <h3
+            className={cn(
+              "truncate font-heading text-base font-semibold tracking-tight transition-colors group-hover/card:text-primary",
+              (project.key || project.department) && "mt-1.5",
+            )}
+          >
             {project.name}
           </h3>
         </div>

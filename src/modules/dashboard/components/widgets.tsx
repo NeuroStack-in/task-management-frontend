@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, CreditCard, Camera, ArrowUpRight, Trophy, BellRing, TriangleAlert, FolderKanban, CheckSquare, Clock } from "lucide-react";
+import { CalendarClock, CreditCard, ArrowUpRight, Trophy, BellRing, TriangleAlert, FolderKanban, CheckSquare, Clock } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Sparkline } from "@/components/shared/sparkline";
 import { formatDuration, todayIso } from "@/lib/format";
 import { useRunningSeconds } from "@/hooks/use-live-refresh";
 import { cn } from "@/lib/utils";
@@ -86,8 +85,8 @@ export function TopEmployeesWidget({ people }: { people: Performer[] }) {
             </span>
             <p className="text-sm font-medium">No scores yet</p>
             <p className="max-w-xs text-xs text-muted-foreground">
-              The day&apos;s highest-scoring people rank here once the desktop agent&apos;s activity
-              data feeds the scorer.
+              People rank here by their average score in the range once the desktop agent&apos;s
+              activity data feeds the scorer.
             </p>
           </div>
         ) : (
@@ -150,11 +149,20 @@ function LiveTimerRow({ t }: { t: LiveTimer }) {
 }
 
 /**
+ * How many running timers the card lists. Every other list widget stops at five; this one rendered
+ * all of them — each row with its own 1 Hz clock — so with a hundred people tracking it stretched
+ * its whole row of the grid (QA audit 2026-10-08, WP-436). The rest are counted, and the roster
+ * is a click away.
+ */
+const LIVE_TIMER_ROWS = 5;
+
+/**
  * **Working now** — today's live timers across the org. Reads the same running/`clock_in` signal the
  * KPI strip's "Working now" tile uses (per-user `getUserDay`), and ticks each running row live. Empty
  * until an agent reports; never a seeded list. Links out to the full timesheets page.
  */
 export function LiveTimersWidget({ timers }: { timers: LiveTimer[] }) {
+  const more = timers.length - LIVE_TIMER_ROWS;
   return (
     <Card>
       <CardHeader>
@@ -175,111 +183,18 @@ export function LiveTimersWidget({ timers }: { timers: LiveTimer[] }) {
             </p>
           </div>
         ) : (
-          timers.map((t) => <LiveTimerRow key={t.userId} t={t} />)
+          <>
+            {timers.slice(0, LIVE_TIMER_ROWS).map((t) => (
+              <LiveTimerRow key={t.userId} t={t} />
+            ))}
+            {more > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                and {more} more {more === 1 ? "person" : "people"} tracking now
+              </p>
+            ) : null}
+          </>
         )}
         <ViewAllLink href="/time-tracking" label="View timesheets" />
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ---------------------------- Screenshots ---------------------------- */
-
-export function ScreenshotsWidget({
-  count,
-  trend,
-  /**
-   * The count is a **floor** — at least one day in the window hit the screenshot grid's page cap, so
-   * frames beyond it were never fetched and could not be counted. Shown as "1,234+" rather than a
-   * precise figure, because a capped total rendered as exact silently under-reports (and does so
-   * hardest when a department filter is active, since the scoped frames may sit past the cut).
-   */
-  partial = false,
-  /** Distinct employees captured over the range — the "is monitoring reaching the team" signal. */
-  coverage = 0,
-  /** Captures worth a review (distracting-app frames) — the actionable count. */
-  flagged = 0,
-  /** Server-classified split of the range's captures, for the on-task bar. */
-  split = { productive: 0, neutral: 0, distracting: 0 },
-}: {
-  count: number;
-  trend: number[];
-  partial?: boolean;
-  coverage?: number;
-  flagged?: number;
-  split?: { productive: number; neutral: number; distracting: number };
-}) {
-  const classified = split.productive + split.neutral + split.distracting;
-  const pct = (n: number) => (classified > 0 ? (n / classified) * 100 : 0);
-  const onTaskPct = classified > 0 ? Math.round(pct(split.productive)) : 0;
-
-  return (
-    <Card className="justify-between">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-full bg-feature-tint text-primary">
-            <Camera className="size-4" />
-          </span>
-          Screenshots
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {/* Headline: the total, and — the thing a bare count can't tell you — how many people it
-            actually reached. A big number from one laptop is a very different story than from ten. */}
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="font-display text-3xl font-semibold tabular-nums">
-            {count.toLocaleString()}
-            {partial && count > 0 ? "+" : ""}
-          </p>
-          {count > 0 && coverage > 0 && (
-            <span className="text-xs text-muted-foreground">
-              across {coverage} {coverage === 1 ? "person" : "people"}
-            </span>
-          )}
-        </div>
-
-        {count === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            none captured — the desktop agent isn&apos;t reporting yet
-          </p>
-        ) : classified > 0 ? (
-          <>
-            {/* On-task split: productive / neutral / distracting, from the server's app classification.
-                This is the point of screenshots — not that they exist, but what they show. */}
-            <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div className="bg-success" style={{ width: `${pct(split.productive)}%` }} />
-              <div className="bg-muted-foreground/40" style={{ width: `${pct(split.neutral)}%` }} />
-              <div className="bg-destructive" style={{ width: `${pct(split.distracting)}%` }} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{onTaskPct}% productive</span>
-              {flagged > 0 && (
-                <>
-                  {" · "}
-                  <span className="font-medium text-destructive">
-                    {flagged.toLocaleString()} to review
-                  </span>
-                </>
-              )}
-            </p>
-          </>
-        ) : (
-          // Captured but not yet classified (older frames) — say so honestly, still surface the queue.
-          <p className="text-xs text-muted-foreground">
-            {flagged > 0 ? (
-              <>
-                <span className="font-medium text-destructive">
-                  {flagged.toLocaleString()} to review
-                </span>
-                {" · "}
-              </>
-            ) : null}
-            captured over the selected range
-          </p>
-        )}
-
-        <Sparkline data={trend} area showDot={false} width={220} height={40} className="w-full" />
-        <ViewAllLink href="/insights/screenshots" label="Open Screenshot Center" />
       </CardContent>
     </Card>
   );
@@ -380,10 +295,36 @@ function shortDay(iso: string): string {
  */
 export function AlertsDeadlinesWidget() {
   const [items, setItems] = useState<AttentionItem[] | null>(null);
+  // Some read behind the list failed (a throttle, or a read this viewer may not make), so the list
+  // may be missing people — and "Everyone's on track" cannot be said (QA audit 2026-10-08, WP-198).
+  const [incomplete, setIncomplete] = useState(false);
 
   useEffect(() => {
     let live = true;
+    let failures = 0;
     const recent = [0, 1, 2, 3].map(daysAgoIso);
+
+    /**
+     * The most recent closed **workday**: walk back from yesterday to the first day whose roster
+     * holds any status but `non_workday`. The close stamps weekends and holidays with `non_workday`
+     * rows for everyone, so "the latest day with rows" was Sunday on a Monday morning — and Friday's
+     * absences were never shown (QA audit 2026-10-08, WP-203). One read on a weekday, a few after a
+     * weekend or holiday, at most a week back.
+     */
+    const lastClosedWorkday = async (): Promise<{ date: string; users: ApiDayUser[] } | null> => {
+      for (let back = 1; back <= 7 && live; back += 1) {
+        const date = daysAgoIso(back);
+        try {
+          const r = await getDayOversight(date);
+          if (r.users.some((u) => u.status !== "non_workday")) return { date, users: r.users };
+        } catch {
+          failures += 1;
+          return null; // which day was the last workday cannot be told past a failed read
+        }
+      }
+      return null;
+    };
+
     Promise.all([
       // Anomaly scoring runs at the nightly close, so today is usually empty — take the most recent
       // day that ranked anyone (mirrors the AI summary's "last workday").
@@ -391,23 +332,24 @@ export function AlertsDeadlinesWidget() {
         recent.map((d) =>
           getAttention(d)
             .then((l) => l.people)
-            .catch(() => [] as AttentionRow[]),
+            .catch(() => {
+              failures += 1;
+              return [] as AttentionRow[];
+            }),
         ),
       ),
-      // Attendance is only closed for past days — skip today and take the most recent closed roster.
-      Promise.all(
-        recent.slice(1).map((d) =>
-          getDayOversight(d)
-            .then((r) => ({ date: d, users: r.users }))
-            .catch(() => ({ date: d, users: [] as ApiDayUser[] })),
-        ),
-      ),
-      listAllEmployees().catch(() => []),
+      // Attendance is only closed for past days — today is never read here.
+      lastClosedWorkday(),
+      listAllEmployees().catch(() => {
+        failures += 1;
+        return [];
+      }),
       // A failed roles read must not empty the widget — fall back to including everyone, which is
       // the pre-existing behaviour rather than a silent blank.
       contributorRoleIds().catch(() => null),
-    ]).then(([attnDays, oversightDays, roster, contributors]) => {
+    ]).then(([attnDays, closed, roster, contributors]) => {
       if (!live) return;
+      setIncomplete(failures > 0);
       const nameOf = new Map(roster.map((e) => [e.user_id, e.name] as const));
 
       /**
@@ -434,7 +376,6 @@ export function AlertsDeadlinesWidget() {
       const isTracked = (userId: string) => !canTell || tracked.has(userId);
 
       // Not clocked in on the most recent closed workday.
-      const closed = oversightDays.find((d) => d.users.length > 0);
       const absent: AttentionItem[] = (closed?.users ?? [])
         .filter((u) => u.status === "absent" && isTracked(u.user_id))
         .map((u) => ({
@@ -484,6 +425,12 @@ export function AlertsDeadlinesWidget() {
       <CardContent className="space-y-3">
         {items === null ? (
           <RowsSkeleton />
+        ) : items.length === 0 && incomplete ? (
+          <WidgetEmpty
+            icon={TriangleAlert}
+            title="Couldn't check everyone"
+            body="Some of the attendance or activity information behind this list couldn't be read, so it can't say everyone is on track. It checks again the next time the dashboard opens."
+          />
         ) : items.length === 0 ? (
           <WidgetEmpty
             icon={BellRing}
@@ -511,6 +458,11 @@ export function AlertsDeadlinesWidget() {
             </div>
           ))
         )}
+        {items && items.length > 0 && incomplete ? (
+          <p className="text-xs text-muted-foreground">
+            Some checks couldn&apos;t be read, so this list may be missing people.
+          </p>
+        ) : null}
         <ViewAllLink href="/insights/anomalies" label="Open anomalies" />
       </CardContent>
     </Card>
@@ -531,7 +483,8 @@ interface UpcomingItem {
 /**
  * Upcoming **deadlines**, soonest first: the viewer's own tasks (`GET /v1/me/tasks`) **and** the org's
  * projects with a near end-date (`GET /v1/projects` + `/v1/projects/{id}` for the date — bounded
- * fan-out). Real dates from the boards, never an invented schedule; overdue items live in Alerts above.
+ * fan-out). Real dates from the boards, never an invented schedule. Only deadlines still ahead are
+ * listed — "Needs attention" lists people, not tasks, so overdue work is on the Projects boards.
  */
 export function UpcomingTasksWidget() {
   const [items, setItems] = useState<UpcomingItem[] | null>(null);
@@ -544,7 +497,8 @@ export function UpcomingTasksWidget() {
         listProjects().catch(() => []),
       ]);
       // Project end-dates live on the detail item — pull them with a bounded fan-out (never a burst).
-      const activeProjects = projects.filter((p) => p.status !== "completed").slice(0, 24);
+      // The raw server status: a finished project is `archived` ("Completed" is the UI's name for it).
+      const activeProjects = projects.filter((p) => p.status !== "archived").slice(0, 24);
       const details = await mapWithConcurrency(activeProjects, 3, (p) =>
         getProject(p.id).then(
           (d) => d,
@@ -632,16 +586,18 @@ export function UpcomingTasksWidget() {
 
 /* --------------------------- Billing Overview --------------------------- */
 
+/**
+ * The plan and seat use, **as the server states them** (`GET /v1/billing`). When that read is
+ * unavailable it says so: it used to fill in "Current plan —" over a seat bar whose cap was the
+ * number of directory rows (QA audit 2026-10-08, WP-110).
+ */
 export function BillingWidget({
-  plan,
-  seatsUsed,
-  seatsTotal,
+  billing,
 }: {
-  plan: string;
-  seatsUsed: number;
-  seatsTotal: number;
+  billing: { plan: string; status: string; seatsUsed: number; seatCap: number } | null;
 }) {
-  const pct = seatsTotal > 0 ? Math.round((seatsUsed / seatsTotal) * 100) : 0;
+  const capped = billing !== null && billing.seatCap > 0;
+  const pct = capped ? Math.min(100, Math.round((billing.seatsUsed / billing.seatCap) * 100)) : 0;
   return (
     <Card>
       <CardHeader>
@@ -653,26 +609,41 @@ export function BillingWidget({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div>
-          <p className="text-xs text-muted-foreground">Current plan</p>
-          <p className="font-display text-xl font-semibold capitalize">
-            {plan}
+        {billing === null ? (
+          <p className="text-sm text-muted-foreground">
+            The plan and seat use couldn&apos;t be loaded right now.
           </p>
-        </div>
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Seats used</span>
-            <span className="tabular-nums">
-              {seatsUsed} / {seatsTotal}
-            </span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
+        ) : (
+          <>
+            <div className="flex items-end justify-between gap-2">
+              <div>
+                <p className="text-xs text-muted-foreground">Current plan</p>
+                <p className="font-display text-xl font-semibold capitalize">{billing.plan}</p>
+              </div>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+                {billing.status.replace(/_/g, " ")}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Seats used</span>
+                <span className="tabular-nums">
+                  {capped
+                    ? `${billing.seatsUsed} / ${billing.seatCap}`
+                    : `${billing.seatsUsed} in use`}
+                </span>
+              </div>
+              {capped ? (
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </>
+        )}
         <ViewAllLink href="/billing" label="Manage billing" />
       </CardContent>
     </Card>

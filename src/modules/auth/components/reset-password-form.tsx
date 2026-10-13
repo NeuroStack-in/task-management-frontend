@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { validatePassword } from "@/lib/password";
+import { PASSWORD_MIN, validatePassword } from "@/lib/password";
 import { friendlyError } from "@/lib/errors";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { takeHandedOffEmail } from "@/modules/auth/email-handoff";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -46,13 +47,12 @@ type FormValues = z.infer<typeof schema>;
 
 /**
  * Step 2 of the real Cognito reset flow: enter the emailed code and a new password
- * (`confirmPassword`). The email arrives as a query param from the forgot-password step but stays
- * editable so a direct visit (or a typo) still works. "Resend code" re-triggers `forgotPassword`.
+ * (`confirmPassword`). The forgot-password step hands the email over in `sessionStorage` — not the
+ * URL (WP-390) — and it stays editable so a direct visit (or a typo) still works. "Resend code"
+ * re-triggers `forgotPassword`.
  */
 export function ResetPasswordForm() {
   const router = useRouter();
-  const params = useSearchParams();
-  const prefillEmail = params.get("email") ?? "";
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
 
@@ -60,11 +60,17 @@ export function ResetPasswordForm() {
     register,
     handleSubmit,
     getValues,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { email: prefillEmail, code: "", password: "", confirm: "" },
+    defaultValues: { email: "", code: "", password: "", confirm: "" },
   });
+
+  useEffect(() => {
+    const handedOff = takeHandedOffEmail();
+    if (handedOff) setValue("email", handedOff);
+  }, [setValue]);
 
   const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
@@ -107,7 +113,10 @@ export function ResetPasswordForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">Set a new password</CardTitle>
+        {/* A real heading — the title was a styled div (WP-368). */}
+        <CardTitle className="text-xl">
+          <h1>Set a new password</h1>
+        </CardTitle>
         <CardDescription>
           Enter the code we emailed you and choose a strong password you don&apos;t
           use elsewhere.
@@ -156,7 +165,7 @@ export function ResetPasswordForm() {
             <PasswordInput
               id="rp-password"
               autoComplete="new-password"
-              placeholder="At least 12 characters"
+              placeholder={`At least ${PASSWORD_MIN} characters`}
               {...register("password")}
             />
             {errors.password ? (

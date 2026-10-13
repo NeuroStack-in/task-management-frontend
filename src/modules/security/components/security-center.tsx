@@ -1,9 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import Link from "next/link"
 import {
-  ArrowUpRight,
   Lock,
   Monitor,
   RefreshCw,
@@ -41,8 +39,10 @@ import { useDeviceId } from "@/hooks/use-device-id"
 import { resetMfaDevice } from "../services/security.service"
 import { useSessions } from "../use-sessions"
 import { SecurityEventsFeed } from "./security-events-feed"
-import { listEmployees } from "@/modules/employees/services/employees.service"
+import { listAllEmployees } from "@/modules/employees/services/employees.service"
 import { cn } from "@/lib/utils"
+import { ApiError } from "@/lib/api"
+import { PASSWORD_MIN } from "@/lib/password"
 
 // ── Active sessions (your signed-in devices) ──────────────────────────────────
 // Real, from GET /v1/me/sessions — {session_id, last_seen} only. Cognito gives no device / IP /
@@ -132,16 +132,28 @@ export function SecurityCenter() {
   const currentIdx = deviceId ? sessions.findIndex((s) => s.session_id === deviceId) : -1
   const thisDeviceIdx = currentIdx >= 0 ? currentIdx : 0
   const [roster, setRoster] = useState<{ id: string; name: string }[]>([])
+  const [rosterError, setRosterError] = useState(false)
 
   // Roster for the MFA-reset picker loads only when an admin opens the dialog.
   useEffect(() => {
     if (!resetMfaOpen || roster.length) return
     let live = true
-    listEmployees()
+    setRosterError(false)
+    listAllEmployees()
       .then((r) => {
-        if (live) setRoster(r.map((e) => ({ id: e.user_id, name: e.name })))
+        // Only people who can sign in: a monitored (login-less) employee or a deactivated one has
+        // no authenticator, and the server still answers "reset" for them (WP-329).
+        if (live)
+          setRoster(
+            r
+              .filter((e) => e.login !== "none" && e.status === "active")
+              .map((e) => ({ id: e.user_id, name: e.name })),
+          )
       })
-      .catch(() => {})
+      // A failed roster read said "Loading members…" forever (WP-339).
+      .catch(() => {
+        if (live) setRosterError(true)
+      })
     return () => {
       live = false
     }
@@ -152,16 +164,33 @@ export function SecurityCenter() {
     setResetting(true)
     try {
       await resetMfaDevice(resetMfaUserId)
+      // What the reset really does: it turns the member's TOTP off. The pool doesn't enforce MFA,
+      // so nothing makes them re-enrol — it said they "will set up a new device" (WP-329).
       toast.success("Authenticator reset", {
-        description: `${target?.name ?? "The member"} will set up a new device at their next sign-in.`,
+        description: `${target?.name ?? "The member"} can now sign in with their password alone, until they set up a new authenticator themselves.`,
       })
       setResetMfaOpen(false)
       setResetMfaUserId("")
-    } catch {
-      toast.error("Couldn't reset the authenticator. Try again.")
+    } catch (e) {
+      // Say which failure it was — "try again" is wrong advice for a permission or a missing member.
+      const status = e instanceof ApiError ? e.status : 0
+      toast.error(
+        status === 403
+          ? "You don't have permission to reset this member's authenticator."
+          : status === 404
+            ? "That member couldn't be found — they may have been removed."
+            : "Couldn't reset the authenticator. Check your connection and try again.",
+      )
     } finally {
       setResetting(false)
     }
+  }
+
+  /** Closing the dialog forgets the choice: reopening it later to reset someone else must not find
+   *  the last member pre-selected, one click from losing their MFA (WP-339). */
+  function onResetMfaOpenChange(open: boolean) {
+    setResetMfaOpen(open)
+    if (!open) setResetMfaUserId("")
   }
 
   return (
@@ -175,7 +204,7 @@ export function SecurityCenter() {
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but resetting a member&apos;s authenticator requires the{" "}
-          <span className="font-medium text-foreground">Manage Security</span>{" "}
+          <span className="font-medium text-foreground">Manage security &amp; audit</span>{" "}
           permission.
         </div>
       )}
@@ -213,7 +242,7 @@ export function SecurityCenter() {
           {canManage ? (
             <SettingRow
               label="Reset a member's authenticator"
-              description="Clears their current device so they can re-enrol at next sign-in. Use this when someone loses their phone."
+              description="Turns off their authenticator, so they can sign in with their password and set up a new one. Use this when someone loses their phone."
             >
               <Button
                 size="sm"
@@ -289,7 +318,7 @@ export function SecurityCenter() {
             label="Minimum length"
             description="Passwords shorter than this are rejected at sign-up and at change."
           >
-            <PlatformFixed value="12 characters" />
+            <PlatformFixed value={`${PASSWORD_MIN} characters`} />
           </SettingRow>
           <SettingRow
             label="Required characters"
@@ -366,8 +395,10 @@ export function SecurityCenter() {
       {/*
         Real, from GET /v1/security-events (identity, LLD §15) — the audit trail pre-filtered
         to the `security` category. The route requires `security:manage` (same bit as the MFA
-        reset above), so the live feed renders only for managers; viewers keep the link-out
-        card so the page stays honest instead of showing a guaranteed 403.
+        reset above), and so does the audit log (`audit-logs:view` rides the same bit), so the
+        feed renders only for managers. Viewers used to get a "View audit logs" button that could
+        only ever land on Access denied, under copy claiming sign-ins and permission changes are
+        recorded — they are not (QA audit 2026-10-08, WP-516, WP-336).
       */}
       {canManage ? (
         <SecurityEventsFeed />
@@ -376,51 +407,38 @@ export function SecurityCenter() {
         <CardHeader>
           <CardTitle>Security activity</CardTitle>
           <CardDescription>
-            Sign-ins, MFA changes, and policy updates are recorded in the audit log.
+            Authenticator resets, ownership changes and device events are recorded in the audit
+            log.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <ShieldCheck className="size-4" />
-              </span>
-              <div>
-                <p className="text-sm font-medium">
-                  Every security event is written to the audit trail
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Sign-ins, authenticator resets, and permission changes, with the actor
-                  and time.
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              nativeButton={false}
-              render={<Link href="/settings/audit-logs" />}
-            >
-              View audit logs <ArrowUpRight className="size-4" />
-            </Button>
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+              <ShieldCheck className="size-4" />
+            </span>
+            <p className="text-xs text-muted-foreground">
+              The security event feed and the audit log are open to members with the{" "}
+              <span className="font-medium text-foreground">Manage security &amp; audit</span>{" "}
+              permission.
+            </p>
           </div>
         </CardContent>
       </Card>
       )}
 
       {/*
-        The lost-phone flow — the only MFA action in the product (LLD §2). Enrollment is
-        Cognito's MFA_SETUP challenge at sign-in, and MFA is a platform invariant, so an
-        org can neither require it nor waive it. Resetting the device IS the recovery path,
-        and it is the one an admin can actually audit.
+        The lost-phone flow — the only admin MFA action in the product (LLD §2). The pool is
+        `Mfa.OPTIONAL` and sign-in refuses an MFA_SETUP challenge, so a reset can't force anyone to
+        re-enrol: it turns the member's TOTP off, and setting up a new one is up to them.
       */}
-      <Dialog open={resetMfaOpen} onOpenChange={setResetMfaOpen}>
+      <Dialog open={resetMfaOpen} onOpenChange={onResetMfaOpenChange}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Reset authenticator</DialogTitle>
             <DialogDescription>
-              Clears the member&apos;s current device. They will set up a new
-              authenticator the next time they sign in. This is logged to the audit trail.
+              Turns off multi-factor authentication for this member. They&apos;ll sign in with
+              their password alone until they set up a new authenticator themselves — nothing
+              prompts them to. This is recorded in the audit log.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
@@ -431,7 +449,15 @@ export function SecurityCenter() {
               items={Object.fromEntries(roster.map((u) => [u.id, u.name]))}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder={roster.length ? "Select a member…" : "Loading members…"} />
+                <SelectValue
+                  placeholder={
+                    roster.length
+                      ? "Select a member…"
+                      : rosterError
+                        ? "Couldn't load members — close and reopen to retry"
+                        : "Loading members…"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {roster.map((u) => (

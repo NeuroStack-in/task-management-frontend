@@ -28,6 +28,13 @@ export interface TimesheetDayEntry {
    * (`ApiDayRow.entries`); the UI was discarding everything except the project and the duration.
    */
   session?: TimesheetSession;
+  /**
+   * Epoch ms a still-**running** session began, for an entry that carries no `session` (a project
+   * row's per-contributor entry). Lets the grid's live top-up tick it too: without it a project row
+   * stayed at its settled hours, so switching "By employee" → "By project" changed the grand total
+   * (QA audit 2026-10-08, WP-196).
+   */
+  runningSinceMs?: number;
 }
 
 /** One tracked session, as the drill-down shows it. Mirrors the fields of `ApiEntryRow` worth reading. */
@@ -76,9 +83,15 @@ export interface TeamMemberTime {
   dayEntries: TimesheetDayEntry[][];
   /** Idle hours this week. */
   idleHrs: number;
+  /** Settled billable hours in the range — what the team cards sum (a percentage cannot be summed). */
+  billableHrs: number;
   billablePct: number;
-  /** Avg activity 0–100. */
-  activity: number;
+  /**
+   * Avg activity 0–100, or `null` when the agent scored no day in the range (or the score could not
+   * be read). Not `0`: averaging a zero in for every unscored person is how two people at 80 among
+   * ten read "Avg activity 16%" (QA audit 2026-10-08, WP-196).
+   */
+  activity: number | null;
   status: TimesheetStatus;
 }
 
@@ -96,14 +109,6 @@ export interface ProjectTimesheet {
   /** Real time entries per weekday, Mon→Sun (length 7). `label` = contributor name. */
   dayEntries: TimesheetDayEntry[][];
   status: TimesheetStatus;
-}
-
-export interface DailyHours {
-  day: string;
-  /** Total tracked hours. */
-  hours: number;
-  /** Of which billable. */
-  billable: number;
 }
 
 /**

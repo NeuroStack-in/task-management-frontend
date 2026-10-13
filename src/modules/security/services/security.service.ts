@@ -8,8 +8,9 @@
  *   only. Cognito exposes no device / IP / location without its paid advanced-security tier, so those
  *   columns are honestly absent rather than invented. There is **no per-session revoke** endpoint
  *   (that's the blocked §15 work), so the list is read-only.
- * - `POST /v1/users/{id}/mfa/reset` — the lost-phone flow: an admin clears a member's authenticator
- *   so they re-enrol at next sign-in (perm `security:manage`). The one real MFA action (LLD §2).
+ * - `POST /v1/users/{id}/mfa/reset` — the lost-phone flow: an admin turns a member's TOTP off (perm
+ *   `security:manage`). Nothing forces a re-enrol — the pool is `Mfa.OPTIONAL` — so the member signs
+ *   in with a password until they set up a new authenticator themselves. The one admin MFA action.
  * - `GET /v1/security-events` — the audit trail filtered to the `security` category (LLD §15),
  *   newest-first, perm `security:manage`. Same lean row as `/v1/audit`: there is **no** IP, device,
  *   severity, or success/failure on the server, and no pagination cursor — only `?limit` (1–500).
@@ -68,7 +69,7 @@ export function listSecurityEvents(limit = 200): Promise<ApiSecurityEvent[]> {
   return apiFetch<ApiSecurityEvent[]>(`/v1/security-events?${q}`);
 }
 
-/** `POST /v1/users/{id}/mfa/reset` — clears the member's TOTP device. */
+/** `POST /v1/users/{id}/mfa/reset` — turns the member's TOTP off (see the header). */
 export async function resetMfaDevice(userId: string): Promise<void> {
   await apiFetch(`/v1/users/${encodeURIComponent(userId)}/mfa/reset`, {
     method: "POST",

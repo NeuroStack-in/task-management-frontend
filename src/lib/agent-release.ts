@@ -1,6 +1,6 @@
 /**
- * The **real** desktop-agent release surface: where the installers live, what the release manifest
- * is called, and the fallback version number.
+ * The **real** desktop-agent release surface: where the installers live and what the release
+ * manifest is called. (The version itself comes only from that manifest — see `useAgentRelease`.)
  *
  * These constants were carved out of the old `lib/mock-agents.ts` when its seeded fleet was deleted
  * (the routed fleet pages read `GET /v1/fleet` through `modules/agents/services/fleet.service.ts`).
@@ -25,16 +25,10 @@ export interface AgentPlatform {
   altSize?: string;
 }
 
-/** The **real** shipped desktop-agent version — the offline fallback for the manifest fetch.
- *
- *  **Bump this on every agent release.** It is the trigger for the "new version available" dot on
- *  the navbar's Download-agent button: the UI compares it against the release each user has already
- *  acknowledged (`ui.store`'s `agentReleaseSeen`), so raising it here shows the dot once to everyone
- *  and clicking through dismisses it until the next bump. Forget it and the release ships silently.
- *
- *  `useAgentRelease` prefers {@link AGENT_MANIFEST_URL} precisely because this constant has gone
- *  stale before; it survives only for the offline case. */
-export const AGENT_RELEASE_VERSION = "0.1.22";
+// There is deliberately **no** hard-coded version constant any more. `AGENT_RELEASE_VERSION` was the
+// manifest's offline fallback and went stale on every release nobody remembered to bump it for — it
+// read 0.1.22 while 0.1.29 shipped, and it was announced as "new" on every page load until the
+// manifest answered (QA audit 2026-10-08, WP-367).
 
 // ── Published installer URLs ──────────────────────────────────────────────────
 // The desktop repo is PRIVATE, so its GitHub release assets can't be fetched anonymously. The
@@ -48,12 +42,23 @@ const DOWNLOADS_BASE =
 export const WINDOWS_INSTALLER_URL = `${DOWNLOADS_BASE}/WorkPulse-x64-setup.exe`;
 
 /**
+ * The **managed** (machine-mode) agent's installer. monitoring-agent's release workflow publishes
+ * each signed release to the same public bucket under `managed-agent/latest/WorkPulse.msi` — the
+ * file name the enrolment commands use (QA audit 2026-10-08, WP-250; owner decision 2026-10-09).
+ * Override the folder per-env with NEXT_PUBLIC_MANAGED_DOWNLOADS_URL.
+ */
+const MANAGED_DOWNLOADS_BASE =
+  process.env.NEXT_PUBLIC_MANAGED_DOWNLOADS_URL?.replace(/\/$/, "") ??
+  "https://wp-downloads-dev.s3.ap-south-1.amazonaws.com/managed-agent/latest";
+
+export const MANAGED_AGENT_MSI_URL = `${MANAGED_DOWNLOADS_BASE}/WorkPulse.msi`;
+
+/**
  * The release manifest the desktop agent's self-updater reads — `{ version, platforms: {…} }`.
  *
- * The Download page reads it too, so the version it advertises is the version it actually serves.
- * {@link AGENT_RELEASE_VERSION} is a hand-maintained constant and had already gone stale twice in a
- * day: `agent/latest/*` is overwritten by every release, so the files move whether or not anyone
- * remembers to edit this file. The constant survives only as the fallback for a failed fetch.
+ * The navbar and the Download page read it too (through `useAgentRelease`), so the version they
+ * advertise is the version actually served: `agent/latest/*` is overwritten by every release, so the
+ * files move whether or not anyone remembers to edit this file.
  *
  * Publicly readable and CORS-enabled (GET/HEAD from any origin), same as the installers beside it.
  */

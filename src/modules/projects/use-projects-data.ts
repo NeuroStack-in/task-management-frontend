@@ -4,81 +4,94 @@
  * The Projects surface, from the real backend.
  *
  * The list endpoint is lean (id/name/key/status/billable/manager), so KPIs (progress, velocity,
- * overdue, members) and the task board live on per-project reads. This hook fans those out — one
- * `detail` + one `board` per project — and maps everything into the `Project`/`Task` shapes the
- * existing view renders, so the components don't change shape, only their data source.
+ * signed-off counts, members) live on per-project detail reads, and tasks on per-project boards. This
+ * hook reads them in **two phases**: every detail first — all a card and the stat band need — then
+ * every board in the background, for the Tasks tab, the overdue filter and task search. It maps all
+ * of it into the `Project`/`Task` shapes the view renders.
  *
  * Server-scoped: `GET /v1/projects` already returns all-projects (oversight) or just-mine (member),
  * so there is **no client-side member filter** — the old `useIsSelfScoped` gate is dropped.
  *
  * Names come from the employee directory (`user_id → name`), best-effort: a role that can't read it
- * still gets the board, just with short ids instead of names.
+ * still gets the names each project carries for its own members.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   listProjects,
   getProject,
   getBoard,
   createProject as apiCreateProject,
-  directoryUserMap,
-  createTask as apiCreateTask,
-  updateTask as apiUpdateTask,
-  deleteTask as apiDeleteTask,
-  addMember,
+  readProjectDirectory,
+  addMembers,
+  type ApiProjectDetail,
 } from "./services/projects.service";
-import type { NewTask, TaskPatch } from "./services/projects.service";
-import type { Project, ProjectStatus, Task, TaskPriority, TaskStatus } from "./types";
-import { deriveProjectKey, membersToUserMap, toAssignees, type UserMini } from "./lib";
+import type { Project, ProjectStatus, Task } from "./types";
+import { boardTasks, deriveProjectKey, membersToUserMap, type UserMini } from "./lib";
 import type { ProjectFormValues } from "@/modules/projects/forms";
 
 /**
- * How many projects to enrich (detail + board) at once. Each project is 2 calls, so this caps
- * in-flight requests at 2×this — low enough to never trip the projects Lambda's throttle, high
- * enough that a normal org loads in one or two rounds.
+ * Reads in flight at once, in each phase — low enough never to trip the projects Lambda's throttle
+ * (an unbounded burst over a live list 503'd the page), high enough that an org loads in a few rounds.
  */
-const PROJECT_FANOUT = 3;
+const FANOUT = 4;
 
-/** Run `fn` over `items` with at most `limit` in flight at a time, preserving order. */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
-  );
-  return results;
+/** Signed-off over deliverable tasks — the pair under a card's progress bar. */
+export interface TaskSummary {
+  done: number;
+  total: number;
+}
+
+/** What creating a project did, beyond creating it. */
+export interface CreatedProject {
+  id: string;
+  /** People picked for the team (the lead included) who could not be added. */
+  notAdded: number;
+  /** How many were picked, beyond the manager the project was created with. */
+  requested: number;
+  /** The creator may not manage the new project's team — only its manager can add the rest. */
+  denied: boolean;
 }
 
 export interface ProjectsData {
   projects: Project[];
   tasks: Task[];
+  /** Per project id, from its KPIs — the same server read as the card's progress bar. */
+  taskSummary: Record<string, TaskSummary>;
   userMap: Record<string, UserMini>;
+  /** The org's departments, for the New project form; `null` when they couldn't be read. */
+  departments: string[] | null;
+  /** `false` when the org directory refused this caller — the people pickers are then partial. */
+  directoryAvailable: boolean;
   loading: boolean;
+  /** The boards are read after the projects; `true` until every one has answered. */
+  tasksLoading: boolean;
   error: string | null;
+  /** Listed projects whose details could not be read (a fault, worth a retry) — not shown. */
+  failedProjects: number;
+  /** Listed projects the server won't open for this caller (404: not a member) — not shown. */
+  hiddenProjects: number;
+  /** Projects whose tasks could not be read — missing from the Tasks tab, the overdue filter and search. */
+  failedBoards: number;
   reload: () => void;
-  /** Create a project (+ its extra members); resolves to the new id after the server records it. */
-  createProject: (values: ProjectFormValues) => Promise<string>;
-  createTask: (projectId: string, body: NewTask) => Promise<void>;
-  updateTask: (projectId: string, taskId: string, patch: TaskPatch) => Promise<void>;
-  deleteTask: (projectId: string, taskId: string) => Promise<void>;
+  /** Create a project and add the team picked for it; resolves once the server has recorded it. */
+  createProject: (values: ProjectFormValues) => Promise<CreatedProject>;
 }
 
 export function useProjectsData(): ProjectsData {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskSummary, setTaskSummary] = useState<Record<string, TaskSummary>>({});
   const [userMap, setUserMap] = useState<Record<string, UserMini>>({});
+  const [departments, setDepartments] = useState<string[] | null>(null);
+  const [directoryAvailable, setDirectoryAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [tasksLoading, setTasksLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [failedProjects, setFailedProjects] = useState(0);
+  const [hiddenProjects, setHiddenProjects] = useState(0);
+  const [failedBoards, setFailedBoards] = useState(0);
   const [nonce, setNonce] = useState(0);
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
@@ -86,82 +99,75 @@ export function useProjectsData(): ProjectsData {
   useEffect(() => {
     let live = true;
     setLoading(true);
+    setTasksLoading(true);
     setError(null);
 
     (async () => {
       try {
-        const [list, names] = await Promise.all([
+        const [list, directory] = await Promise.all([
           listProjects(),
-          directoryUserMap().catch(() => ({}) as Record<string, UserMini>),
+          readProjectDirectory().then(
+            (d) => ({ d, denied: false }),
+            (e: unknown) => ({ d: null, denied: e instanceof ApiError && e.status === 403 }),
+          ),
         ]);
         if (!live) return;
 
-        // Per-project detail (KPIs, members, dates) + board (tasks). BOUNDED concurrency: firing
-        // detail+board for every project at once bursts the Lambda into throttling (503s) once an
-        // org has more than a handful of projects. Batched, the load stays flat.
-        const enriched = await mapWithConcurrency(list, PROJECT_FANOUT, async (p) => {
-          try {
-            // apiFetch retries transient 503/429 on these GETs; bounded concurrency keeps them from
-            // bursting into a throttle in the first place.
-            const [detail, board] = await Promise.all([
-              getProject(p.id),
-              getBoard(p.id).catch(() => []),
-            ]);
-            return { detail, board };
-          } catch {
-            // One project failing (after retries) must not blank the whole list — skip it.
+        // Phase 1 — each project's detail (KPIs, members, dates). A failure is **counted**, not
+        // dropped in silence: a project whose read failed simply vanished while "Total projects"
+        // counted one fewer (QA audit 2026-10-08, WP-302). A 404 is a project this caller may list
+        // but not open; anything else is a fault worth retrying. apiFetch retries transient 503/429.
+        let failed = 0;
+        let hidden = 0;
+        const details = await mapWithConcurrency(list, FANOUT, (p) =>
+          getProject(p.id).catch((e: unknown) => {
+            if (e instanceof ApiError && e.status === 404) hidden += 1;
+            else failed += 1;
             return null;
-          }
-        });
+          }),
+        );
         if (!live) return;
+        const loaded = details.filter((d): d is ApiProjectDetail => d !== null);
 
-        const projs: Project[] = [];
-        const allTasks: Task[] = [];
-        // Names carried by the projects themselves. `resolveUserMap` (the org directory) needs
-        // `EmployeesRead`, which an Employee doesn't have — it 403s and `names` is `{}`, which is why
-        // the cards and the team dialog showed ids instead of people. Every detail we already fetched
-        // carries its members' server-resolved names, so accumulate those and let the directory —
-        // when the caller can read it — win for avatars and non-members.
+        // Names carried by the projects themselves. The org directory needs `EmployeesRead`, which an
+        // Employee doesn't have — it 403s, which is why the cards and the team dialog showed ids
+        // instead of people. Every detail carries its members' server-resolved names, so accumulate
+        // those and let the directory — when the caller can read it — win for avatars and non-members.
         const fromMembers: Record<string, UserMini> = {};
-        for (const item of enriched) {
-          if (!item) continue;
-          const { detail, board } = item;
-          Object.assign(fromMembers, membersToUserMap(detail.members));
-          projs.push(toProject(detail));
-          for (const col of board) {
-            for (const t of col.tasks) {
-              allTasks.push({
-                id: t.id,
-                projectId: detail.id,
-                title: t.title,
-                description: t.description ?? "",
-                status: col.status as TaskStatus,
-                assignees: toAssignees(t),
-                priority: (t.priority as TaskPriority) ?? "medium",
-                dueDate: t.due ?? null,
-                estimateHours: t.estimate_hours ?? 0,
-                createdBy: t.created_by ?? null,
-                // A server predating subtasks omits this; an absent breakdown and an empty one are
-                // the same thing to a card, so both collapse to zero.
-                subtaskProgress: t.subtasks ?? { total: 0, done: 0 },
-                attachments: (t.attachments ?? []).map((a) => ({
-                  id: a.id,
-                  filename: a.filename,
-                  contentType: a.content_type,
-                  size: a.size,
-                })),
-              });
-            }
-          }
-        }
+        for (const d of loaded) Object.assign(fromMembers, membersToUserMap(d.members));
 
-        setProjects(projs);
-        setTasks(allTasks);
-        setUserMap({ ...fromMembers, ...names });
+        setProjects(loaded.map(toProject));
+        setTaskSummary(Object.fromEntries(loaded.map((d) => [d.id, summaryOf(d)])));
+        setUserMap({ ...fromMembers, ...(directory.d?.people ?? {}) });
+        setDepartments(directory.d?.departments ?? null);
+        setDirectoryAvailable(!directory.denied);
+        setFailedProjects(failed);
+        setHiddenProjects(hidden);
+        setLoading(false);
+
+        // Phase 2 — the boards, in the background. They feed the Tasks tab, the overdue filter and
+        // task search, not the cards; the page used to draw nothing until it had downloaded every task
+        // in the organisation (QA audit 2026-10-08, WP-315).
+        let boardFailures = 0;
+        const boards = await mapWithConcurrency(loaded, FANOUT, (d) =>
+          getBoard(d.id).then(
+            (columns) => boardTasks(columns, d.id),
+            () => {
+              boardFailures += 1;
+              return [] as Task[];
+            },
+          ),
+        );
+        if (!live) return;
+        setTasks(boards.flat());
+        setFailedBoards(boardFailures);
       } catch (e) {
         if (live) setError(messageOf(e));
       } finally {
-        if (live) setLoading(false);
+        if (live) {
+          setLoading(false);
+          setTasksLoading(false);
+        }
       }
     })();
 
@@ -171,10 +177,11 @@ export function useProjectsData(): ProjectsData {
   }, [nonce]);
 
   const createProject = useCallback(
-    async (v: ProjectFormValues) => {
+    async (v: ProjectFormValues): Promise<CreatedProject> => {
       const manager = v.managerId || v.leadUserId;
       const created = await apiCreateProject({
         name: v.name,
+        ...(v.description?.trim() ? { description: v.description.trim() } : {}),
         billable: v.billable,
         start_date: todayIso(),
         end_date: v.dueDate || undefined,
@@ -182,52 +189,56 @@ export function useProjectsData(): ProjectsData {
         key: deriveProjectKey(v.name),
         ...(v.department ? { department: v.department } : {}),
       });
-      // The manager is a member already (created with the project). Add the rest, best-effort — a
-      // failed add shouldn't undo a created project.
-      const extras = v.memberIds.filter((id) => id && id !== manager);
-      await Promise.allSettled(extras.map((id) => addMember(created.id, id, "member")));
-      reload();
-      return created.id;
+      // The manager is a member already (created with the project). The rest are follow-up writes:
+      // a failed one doesn't undo a created project, but it is **reported** — they used to go out as
+      // one unbounded burst whose failures were discarded under "Project created" (QA audit
+      // 2026-10-08, WP-311).
+      // The lead is written as a lead (the form collected it and this path used to drop it, so the
+      // new project had no lead and the first Edit demanded one — WP-025). A lead who is also the
+      // manager needs no row: the manager outranks a lead, and a lead row would overwrite theirs.
+      const lead = v.leadUserId && v.leadUserId !== manager ? v.leadUserId : "";
+      const writes = [
+        ...(lead ? [{ userId: lead, role: "lead" as const }] : []),
+        ...v.memberIds
+          .filter((id) => id && id !== manager && id !== lead)
+          .map((userId) => ({ userId, role: "member" as const })),
+      ];
+      const { failed, denied } = await addMembers(created.id, writes);
+      // No `reload()`: the caller navigates to the new project, and a full re-read of the list here
+      // was thrown away the moment it started.
+      return { id: created.id, notAdded: failed, requested: writes.length, denied };
     },
-    [reload],
-  );
-
-  const createTask = useCallback(
-    async (projectId: string, body: NewTask) => {
-      await apiCreateTask(projectId, body);
-      reload();
-    },
-    [reload],
-  );
-
-  const updateTask = useCallback(
-    async (projectId: string, taskId: string, patch: TaskPatch) => {
-      await apiUpdateTask(projectId, taskId, patch);
-      reload();
-    },
-    [reload],
-  );
-
-  const deleteTask = useCallback(
-    async (projectId: string, taskId: string) => {
-      await apiDeleteTask(projectId, taskId);
-      reload();
-    },
-    [reload],
+    [],
   );
 
   return {
     projects,
     tasks,
+    taskSummary,
     userMap,
+    departments,
+    directoryAvailable,
     loading,
+    tasksLoading,
     error,
+    failedProjects,
+    hiddenProjects,
+    failedBoards,
     reload,
     createProject,
-    createTask,
-    updateTask,
-    deleteTask,
   };
+}
+
+/**
+ * A card's "N / M signed off", from the project's KPIs — the same server read as the progress bar
+ * above it, so the two can't disagree, and the card needn't wait for the board. `total_tasks` is live
+ * work only (todo + in progress + in review), so signed-off work is added back for the denominator and
+ * blocked stays out — `taskTotals().deliverable`, computed server-side. No KPIs yet = no tasks yet.
+ */
+function summaryOf(d: ApiProjectDetail): TaskSummary {
+  const k = d.kpi;
+  if (!k) return { done: 0, total: 0 };
+  return { done: k.tasks_by_status.done, total: k.total_tasks + k.tasks_by_status.done };
 }
 
 /**
@@ -240,6 +251,11 @@ export function mapProjectStatus(s: string): ProjectStatus {
   if (s === "archived") return "completed";
   if (s === "active" || s === "on_hold" || s === "completed") return s;
   return "active";
+}
+
+/** The inverse of {@link mapProjectStatus}, for a PATCH: the server calls "Completed" `archived`. */
+export function toServerStatus(s: ProjectStatus): "active" | "on_hold" | "archived" {
+  return s === "completed" ? "archived" : s;
 }
 
 function toProject(d: Awaited<ReturnType<typeof getProject>>): Project {

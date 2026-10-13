@@ -8,6 +8,13 @@ export function generateStaticParams() {
   return Object.keys(PRODUCT_CONTENT).map((slug) => ({ slug }));
 }
 
+/**
+ * Only the slugs above exist. An unknown one is a real 404 at routing time — rendered on demand, the
+ * page's `notFound()` ran after the root loading boundary had already streamed a 200, so
+ * `/product/<anything>` answered 200 with a 404 body (QA audit 2026-10-08, WP-379).
+ */
+export const dynamicParams = false;
+
 export async function generateMetadata({
   params,
 }: {
@@ -17,7 +24,8 @@ export async function generateMetadata({
   const data = PRODUCT_CONTENT[slug];
   if (!data) return { title: "Product" };
   return {
-    title: `${data.eyebrow} — WorkPulse`,
+    // The root layout's template appends "· WorkPulse" — adding it here doubled the brand.
+    title: data.eyebrow,
     description: data.lede,
   };
 }

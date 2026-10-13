@@ -252,7 +252,9 @@ describe("template round trip", () => {
         title: "Backend Engineer",
       },
     ]);
-  });
+    // Its own timeout: a fresh module graph plus the real XLSX writer and reader takes ~0.3 s alone
+    // but passed Vitest's 5 s default under a full parallel run (QA audit 2026-10-08, WP-372).
+  }, 30_000);
 });
 
 describe("matchByName", () => {

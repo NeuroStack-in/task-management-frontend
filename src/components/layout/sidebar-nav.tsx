@@ -125,8 +125,8 @@ export function SidebarNav({
     window.location.replace("/login");
   };
 
-  // Collapsed rail: expand the sidebar and focus its inline search field rather
-  // than opening the command palette (the inline search shows live suggestions).
+  // Collapsed rail: expand the sidebar and focus its inline search field (which shows live
+  // suggestions). There is no separate command palette.
   const openSearch = () => {
     onNavigate?.();
     setSidebarCollapsed(false);
@@ -321,7 +321,7 @@ export function SidebarNav({
               return (
                 <div key={group.label}>
                   <p
-                    className="wp-rail-item text-muted-foreground/80 px-3 pb-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase"
+                    className="wp-rail-item text-muted-foreground px-3 pb-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase"
                     style={{ "--wp-i": groupStart } as React.CSSProperties}
                   >
                     {group.label}

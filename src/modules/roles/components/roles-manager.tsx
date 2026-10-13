@@ -15,6 +15,8 @@ import {
 import { toast } from "sonner";
 import { usePermissions } from "@/hooks/use-permissions";
 import { invalidateDirectory, useDirectory } from "@/hooks/use-directory";
+import { ApiError } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -45,6 +47,7 @@ import {
 import { RoleEditorDialog } from "./role-editor-dialog";
 import { RoleMembers } from "./role-members";
 import { useRoles } from "../use-roles";
+import { cloneName } from "../lib/role-names";
 import type { ApiRole } from "../services/roles.service";
 import type { ApiEmployee } from "@/modules/employees/services/employees.service";
 
@@ -52,6 +55,28 @@ import type { ApiEmployee } from "@/modules/employees/services/employees.service
 function permissionLabel(role: ApiRole): string {
   if (role.is_owner) return "All";
   return String(role.permissions.length);
+}
+
+/** "Couldn't <verb> “X”" in the terms the server actually refused for (WP-327). */
+function roleActionError(e: unknown, role: ApiRole, verb: "clone" | "restore" | "delete"): string {
+  const name = `“${role.name}”`;
+  if (e instanceof ApiError) {
+    if (e.status === 403) {
+      return verb === "restore"
+        ? `You can't restore ${name}: its default permissions include some you don't hold yourself.`
+        : `You can't ${verb} ${name}: it carries permissions you don't hold yourself.`;
+    }
+    if (e.status === 409 && e.code === "role_in_use") {
+      return `${name} is still held by someone. Move its members to another role first.`;
+    }
+    // Restoring a built-in role: a 404 here is the route, not the role — the role is right there.
+    if (e.status === 404) {
+      return verb === "restore"
+        ? "Restoring defaults isn't available right now. Try again later."
+        : `${name} no longer exists — it may have been deleted elsewhere.`;
+    }
+  }
+  return friendlyError(e, `Couldn't ${verb} ${name}. Try again.`);
 }
 
 export function RolesManager() {
@@ -106,12 +131,24 @@ export function RolesManager() {
   };
 
   const handleClone = async (role: ApiRole) => {
+    const name = cloneName(role.name, roles);
     try {
-      const created = await clone(role.id, `Copy of ${role.name}`);
-      toast.success(`Cloned “${role.name}”.`);
+      // A built-in role is copied from what this row shows — the org's own version of it. The clone
+      // route copies the built-in *code default* instead, so an org that had trimmed Admin got the
+      // full default set (or a 403) under a row reading 12 (WP-321). A custom role's stored set is
+      // what the row shows, so it keeps the clone route.
+      const created = role.system
+        ? await create({
+            name,
+            description: role.description,
+            scope: role.scope,
+            permissions: role.permissions,
+          })
+        : await clone(role.id, name);
+      toast.success(`Cloned “${role.name}” as “${created.name}”.`);
       openEdit(created);
-    } catch {
-      toast.error("Couldn't clone the role. Try again.");
+    } catch (e) {
+      toast.error(roleActionError(e, role, "clone"));
     }
   };
 
@@ -119,8 +156,8 @@ export function RolesManager() {
     try {
       await restore(role.id);
       toast.success(`“${role.name}” restored to its default permissions.`);
-    } catch {
-      toast.error("Couldn't restore the role. Try again.");
+    } catch (e) {
+      toast.error(roleActionError(e, role, "restore"));
     }
   };
 
@@ -131,8 +168,10 @@ export function RolesManager() {
       await remove(deleteTarget.id);
       toast.success(`Role “${deleteTarget.name}” deleted.`);
       setDeleteTarget(null);
-    } catch {
-      toast.error("Couldn't delete the role. It may still be assigned to someone.");
+    } catch (e) {
+      // It said "It may still be assigned to someone" whatever happened — including a 403 for a role
+      // richer than the caller, right under a member list reading "No one holds this role" (WP-327).
+      toast.error(roleActionError(e, deleteTarget, "delete"));
     } finally {
       setBusy(false);
     }
@@ -240,6 +279,8 @@ export function RolesManager() {
                     size="sm"
                     className="-ml-2 h-7 gap-1.5 px-2 font-medium tabular-nums"
                     aria-expanded={expanded}
+                    // The count alone was the name ("3, collapsed") — say whose (WP-513).
+                    aria-label={`${role.name}: ${members.length} ${members.length === 1 ? "member" : "members"}`}
                     onClick={() => setOpenRole(expanded ? null : role.id)}
                   >
                     {members.length}
@@ -260,7 +301,14 @@ export function RolesManager() {
                   <TableCell className="py-3 pr-4 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger
-                        render={<Button variant="ghost" size="icon" className="size-8" />}
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            aria-label={`Actions for ${role.name}`}
+                          />
+                        }
                       >
                         <MoreVertical className="size-4" />
                       </DropdownMenuTrigger>
@@ -268,7 +316,12 @@ export function RolesManager() {
                           menu to the 32px icon trigger and made "Restore to default" wrap onto two
                           lines. Let it size to its widest item instead, with a sane floor. */}
                       <DropdownMenuContent align="end" className="w-auto min-w-[10rem]">
-                        <DropdownMenuItem onClick={() => handleClone(role)}>
+                        {/* Not for Owner: its access is `is_owner`, outside the bitset, so a copy
+                            holds one inert permission and nothing else (WP-321). */}
+                        <DropdownMenuItem
+                          disabled={role.is_owner}
+                          onClick={() => handleClone(role)}
+                        >
                           <Copy className="size-4" /> Clone
                         </DropdownMenuItem>
                         {/* Owner isn't editable — it bypasses every permission check. Admin/Employee

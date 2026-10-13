@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarClock, Check, ChevronLeft, ChevronRight, Clock, UserX } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarOff, Check, ChevronLeft, ChevronRight, Clock, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,28 +105,44 @@ export function PeopleAttentionCard({
    */
   const [suggested, setSuggested] = useState<string>("");
   const [filter, setFilter] = useState<Kind>("all");
-  // `closed` distinguishes "loaded, nobody to flag" from "this day hasn't been closed yet".
-  const [state, setState] = useState<{ people: CheckIn[]; closed: boolean } | null>(null);
+  /**
+   * `closed` distinguishes "loaded, nobody to flag" from "this day hasn't been closed yet";
+   * `failed` a read that didn't answer at all; `nonWorkday` a closed day nobody was scheduled for;
+   * `counts` what the unflagged rest of the day actually was.
+   */
+  const [state, setState] = useState<{
+    people: CheckIn[];
+    closed: boolean;
+    failed?: boolean;
+    nonWorkday?: boolean;
+    counts?: { present: number; leave: number };
+  } | null>(null);
+  const [nonce, setNonce] = useState(0);
   const today = isoOf(new Date());
 
   // Default to the most recent **closed** workday: today isn't resolved until the 00:15 cron, so
   // showing it would be a permanently-empty "today". Walk back up to a week for the first day the
-  // oversight actually returns rows.
+  // oversight actually returns rows — **one day at a time**, stopping at the first hit: firing all
+  // seven at once on mount was the burst the 3-lane cap exists to prevent (QA audit 2026-10-08,
+  // WP-295), and the answer is nearly always yesterday.
   useEffect(() => {
     let live = true;
-    const candidates = Array.from({ length: 7 }, (_, n) => shiftIso(today, -n));
-    Promise.all(
-      candidates.map((d) =>
-        getDayOversight(d)
-          .then((r) => ({ d, has: r.users.length > 0 }))
-          .catch(() => ({ d, has: false })),
-      ),
-    ).then((rs) => {
-      if (!live) return;
-      const best = rs.find((r) => r.has)?.d ?? today;
+    (async () => {
+      let best = today;
+      for (let n = 0; n < 7; n++) {
+        const d = shiftIso(today, -n);
+        const has = await getDayOversight(d)
+          .then((r) => r.users.length > 0)
+          .catch(() => false);
+        if (!live) return;
+        if (has) {
+          best = d;
+          break;
+        }
+      }
       setSuggested(best);
       if (!controlled) setOwnDate(best);
-    });
+    })();
     return () => {
       live = false;
     };
@@ -145,7 +161,9 @@ export function PeopleAttentionCard({
     ]).then(([day, roster, contributors]) => {
       if (!live) return;
       if (!day) {
-        setState({ people: [], closed: false });
+        // A failed read says it failed. It used to be reported as "This day isn't closed yet" —
+        // for a date last week (QA audit 2026-10-08, WP-295).
+        setState({ people: [], closed: false, failed: true });
         return;
       }
       const nameOf = new Map(roster.map((e) => [e.user_id, e.name] as const));
@@ -173,12 +191,25 @@ export function PeopleAttentionCard({
         }))
         // Absent (didn't show at all) before partial (showed, but short).
         .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "absent" ? -1 : 1));
-      setState({ people, closed: day.users.length > 0 });
+      // What the rest of the day was, so an empty list is described rather than assumed: a closed
+      // day with nobody flagged used to read "everyone was present for a full day" — on a Sunday,
+      // and on a day everyone was on leave (WP-295).
+      const trackedRows = day.users.filter((u: ApiDayUser) => isTracked(u.user_id));
+      setState({
+        people,
+        closed: day.users.length > 0,
+        nonWorkday:
+          trackedRows.length > 0 && trackedRows.every((u) => u.status === "non_workday"),
+        counts: {
+          present: trackedRows.filter((u) => u.status === "present").length,
+          leave: trackedRows.filter((u) => u.status === "leave").length,
+        },
+      });
     });
     return () => {
       live = false;
     };
-  }, [date]);
+  }, [date, nonce]);
 
   const people = state?.people ?? [];
   const absentCount = people.filter((p) => p.kind === "absent").length;
@@ -189,12 +220,16 @@ export function PeopleAttentionCard({
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
         <div className="space-y-1">
+          {/* Counts only for a day that was actually read and closed — "0 absent" is a finding. */}
           <CardTitle>
-            {title} ({people.length})
+            {title}
+            {state?.closed ? ` (${people.length})` : ""}
           </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            {absentCount} absent · {partialCount} worked less
-          </p>
+          {state?.closed ? (
+            <p className="text-xs text-muted-foreground">
+              {absentCount} absent · {partialCount} worked less
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {controlled ? null : (
@@ -225,6 +260,8 @@ export function PeopleAttentionCard({
               key={f}
               type="button"
               onClick={() => setFilter(f)}
+              // A toggle group: the selected chip must be announced, not only coloured (WP-489).
+              aria-pressed={filter === f}
               className={cn(
                 "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
                 filter === f
@@ -253,6 +290,18 @@ export function PeopleAttentionCard({
           <div className="flex min-h-[8rem] items-center justify-center">
             <Loader label="Reading attendance…" />
           </div>
+        ) : state.failed ? (
+          <EmptyState
+            icon={AlertTriangle}
+            title="Couldn't read attendance"
+            description={`Attendance for ${longDay(date)} couldn't be loaded, so there's no telling who needs a check-in.`}
+            className="m-4 border-0"
+            action={
+              <Button variant="outline" size="sm" onClick={() => setNonce((n) => n + 1)}>
+                Try again
+              </Button>
+            }
+          />
         ) : !state.closed ? (
           // Today is never closed, and with the page owning the date that is the default view —
           // so this state needs a way *out*, not just an explanation. `suggested` is the most
@@ -274,13 +323,26 @@ export function PeopleAttentionCard({
               ) : undefined
             }
           />
+        ) : people.length === 0 && state.nonWorkday ? (
+          <EmptyState
+            icon={CalendarOff}
+            title="Not a working day"
+            description={`Nobody was scheduled to work on ${longDay(date)}, so there are no absences or short days to review.`}
+            className="m-4 border-0"
+          />
         ) : visible.length === 0 ? (
           <EmptyState
             icon={Check}
             title={people.length === 0 ? "Everyone's accounted for" : "None at this filter"}
             description={
               people.length === 0
-                ? "No unapproved absences and no partial days — everyone was present for a full day."
+                ? `No unapproved absences and no partial days on ${longDay(date)}${
+                    state.counts
+                      ? ` — ${state.counts.present} present${
+                          state.counts.leave > 0 ? `, ${state.counts.leave} on approved leave` : ""
+                        }`
+                      : ""
+                  }.`
                 : "No one matches this filter for the selected day."
             }
             className="m-4 border-0"

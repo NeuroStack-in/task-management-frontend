@@ -25,7 +25,7 @@
  *   let somebody scoring 55 be called a top performer *and* be hidden from the attention list they
  *   belonged in — so a short roster produces a short list, or none, rather than a flattering one.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   getOrgActivity,
@@ -120,6 +120,7 @@ export function rankWeek(
   return { topPerformers, needsAttention, scoredPeople: ranked.length };
 }
 
+/** Ranks the week containing `date`. An empty `date` reads nothing (e.g. while the report is locked). */
 export function useWeekPerformers(date: string): WeekPerformers {
   const [state, setState] = useState<WeekPerformers>({
     topPerformers: [],
@@ -129,10 +130,15 @@ export function useWeekPerformers(date: string): WeekPerformers {
     loading: true,
   });
 
+  // Keyed on the **week**, not the day: stepping from Tuesday to Wednesday is the same week, and
+  // re-reading all of it on every step was up to seven requests for an unchanged answer
+  // (QA audit 2026-10-08, WP-492).
+  const weekKey = useMemo(() => (date ? weekDaysThrough(date).join(",") : ""), [date]);
+
   useEffect(() => {
-    if (!date) return;
+    if (!weekKey) return;
     let live = true;
-    const days = weekDaysThrough(date);
+    const days = weekKey.split(",");
     setState((s) => ({ ...s, loading: true, days }));
 
     (async () => {
@@ -152,7 +158,7 @@ export function useWeekPerformers(date: string): WeekPerformers {
     return () => {
       live = false;
     };
-  }, [date]);
+  }, [weekKey]);
 
   return state;
 }

@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { parseEmails } from "../lib/parse-emails";
@@ -34,7 +35,7 @@ import {
   downloadInviteCsvTemplate,
   downloadInviteXlsxTemplate,
 } from "../lib/invite-template";
-import { downloadInviteHandout, type HandoutRow } from "../lib/invite-handout";
+import { downloadInviteHandout, hasCodes, type HandoutRow } from "../lib/invite-handout";
 import { useAuthStore } from "@/stores/auth.store";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
@@ -88,6 +89,33 @@ const MAX_IMPORT_ROWS = 500;
 /** How many bytes of spreadsheet to accept. A file much larger than this is not a staff list. */
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
+/** Sentinel for "no team" — Base UI's Select can't carry `""` as an item value. */
+const NO_TEAM = "__none__";
+
+/**
+ * Why one invite wasn't created. The server's 409s carry codes whose message text is only
+ * "Conflict: employee is monitored." — so the codes are named here (QA audit 2026-10-08, WP-455).
+ */
+function inviteFailureReason(e: unknown): string {
+  if (e instanceof ApiError) {
+    switch (e.code) {
+      case "employee_is_monitored":
+        return "Already in your directory as an employee without a sign-in — giving them a login isn't supported yet";
+      case "email_in_use":
+        return "Already invited, or already in your directory";
+      case "seat_limit_reached":
+        return "Your plan has no seat left for this person";
+    }
+  }
+  return friendlyError(e, "Couldn't create this invite.");
+}
+
+/** The success toast's title. A no-email run created its invites — it didn't send any. */
+function createdTitle(n: number, withHandout: boolean): string {
+  const noun = n === 1 ? "invite" : "invites";
+  return withHandout ? `${n} ${noun} created` : `${n} ${noun} sent`;
+}
+
 /** The body `POST /v1/employees/invites` wants, once names from the file are resolved to ids. */
 interface ResolvedInvite {
   email: string;
@@ -133,6 +161,21 @@ export function InviteDialog({
   const [handoutRun, setHandoutRun] = useState(false);
   /** Highlights the drop zone while a file is over it — without it, nothing says the drop will land. */
   const [dragging, setDragging] = useState(false);
+  /**
+   * The code sheet of the last no-email run, held until the dialog is closed. The download is a
+   * fire-and-forget click that the browser may block (a second download in a session, with no user
+   * gesture after a long run) or the admin may cancel — and it looks the same as success. These rows
+   * are the only copy of the codes, so they stay here with a button to download them again, instead
+   * of being dropped the moment the run ended (QA audit 2026-10-08, WP-223).
+   */
+  const [handout, setHandout] = useState<{ rows: HandoutRow[]; withName: boolean } | null>(null);
+  /** Which of the pickers' reads failed — said, with a retry, not left at "Loading…" (WP-457). */
+  const [loadFailed, setLoadFailed] = useState<{ roles: boolean; departments: boolean }>({
+    roles: false,
+    departments: false,
+  });
+  const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   // Parsed on every keystroke: the chips below the box are the honest answer to "who am I about to
   // invite", which a raw textarea can't give.
@@ -140,12 +183,14 @@ export function InviteDialog({
   const count = parsed.emails.length;
   const overBy = Math.max(0, count - MAX_INVITES);
 
-  // Load assignable roles (never the Owner) + the org structure when the dialog opens. Departments/
-  // teams are best-effort: if either read fails the selects just stay empty and the invite still
-  // works (the fields are optional server-side).
+  // Load assignable roles (never the Owner) + the org structure when the dialog opens. A role and a
+  // department are required — the server refuses an invite without either — so a failed read is said
+  // in the picker with a retry; it used to read "Loading roles…" or "No departments yet" for good.
+  // Teams are optional: a failed teams read leaves that picker empty and invites still work.
   useEffect(() => {
     if (!open) return;
     let live = true;
+    setLoadFailed({ roles: false, departments: false });
     listRoles()
       .then((r) => {
         if (!live) return;
@@ -155,23 +200,26 @@ export function InviteDialog({
         const emp = assignable.find((role) => /employee/i.test(role.name));
         setRoleId((cur) => cur || emp?.id || assignable[0]?.id || "");
       })
-      .catch(() => {});
+      .catch(() => live && setLoadFailed((f) => ({ ...f, roles: true })));
     listDepartments()
-      .then((d) => live && setDepartments(d))
-      .catch(() => {});
+      .then((d) => {
+        if (!live) return;
+        setDepartments(d);
+        setDepartmentsLoaded(true);
+      })
+      .catch(() => live && setLoadFailed((f) => ({ ...f, departments: true })));
     listTeams()
       .then((t) => live && setTeams(t))
       .catch(() => {});
     return () => {
       live = false;
     };
-  }, [open]);
+  }, [open, loadAttempt]);
 
-  // Teams belong to a department — offer only the picked department's teams (all teams when no
-  // department is picked yet), and drop a team pick that no longer matches the department.
-  const teamOptions = departmentId
-    ? teams.filter((t) => t.department_id === departmentId)
-    : teams;
+  // Every team. Teams no longer belong to a department (Settings creates them without one), so the
+  // old filter by the picked department always came up empty once a department was chosen — and a
+  // department is mandatory (QA audit 2026-10-08, WP-063).
+  const teamOptions = teams;
 
   /**
    * Turn the file's rows into request bodies, or into a reason the row can't be sent.
@@ -220,16 +268,9 @@ export function InviteDialog({
         problems.push({ email: row.email, reason: `No team named "${row.team}"` });
         continue;
       }
-      if (team && team.department_id !== department.id) {
-        problems.push({
-          email: row.email,
-          reason: `Team "${team.name}" isn't in ${department.name}`,
-        });
-        continue;
-      }
-      // Only inherit the picked team when the row named no department of its own — a team from the
-      // picker belongs to the picked department and would be wrong under a different one.
-      if (!row.team && !row.department && teamId) {
+      // A row with no team of its own takes the one picked below. Teams span departments, so the
+      // row's department does not decide whether that pick applies.
+      if (!row.team && teamId) {
         team = teams.find((t) => t.id === teamId);
       }
       const rowTitle = row.title || title.trim();
@@ -266,7 +307,8 @@ export function InviteDialog({
       .catch(() => toast.error("Couldn't read that file"));
   }, []);
 
-  function reset() {
+  /** Every input back to empty — but a held code sheet stays (see `handout`). */
+  function clearInputs() {
     setEmail("");
     setDepartmentId("");
     setTeamId("");
@@ -279,6 +321,23 @@ export function InviteDialog({
     setDragging(false);
     setMode("paste");
     if (fileInput.current) fileInput.current.value = "";
+  }
+
+  function reset() {
+    clearInputs();
+    setHandout(null);
+  }
+
+  /** Download the held code sheet again — from a click, so the browser treats it as asked for. */
+  function downloadHandoutAgain() {
+    if (!handout) return;
+    downloadInviteHandout(handout.rows, window.location.origin, tenantId, {
+      withName: handout.withName,
+    }).catch(() =>
+      toast.error("Couldn't build the code sheet", {
+        description: "Try again — the codes are still held here until you close this dialog.",
+      }),
+    );
   }
 
   /** Drop one address from the pending list — the chips are editable, not just a preview. */
@@ -317,16 +376,29 @@ export function InviteDialog({
         const invite = await createInvite(
           withHandout ? { ...body, notify: false } : body,
         );
-        // Held onto because this response is the **only** time `token` and `otp` exist: the server
+        // On the handout path this response is the **only** time `token` and `otp` exist: the server
         // stores hashes and can never reproduce them. Losing them here means the invite can only be
-        // revoked and re-issued, so they are captured before anything else can go wrong.
-        created.push({ invite, name: nameOf?.(body.email) });
+        // revoked and re-issued, so they are captured before anything else can go wrong. (An emailed
+        // invite comes back without them, by design, so there is nothing to hold.)
+        if (withHandout) {
+          if (!hasCodes(invite)) {
+            // The server always returns them for `notify: false`. If it ever does not, this invite
+            // exists but nobody can use it — said plainly, rather than a blank code in the sheet.
+            return {
+              email: body.email,
+              ok: false as const,
+              reason:
+                "Created, but no code came back. Revoke it in the Invited list and invite again.",
+            };
+          }
+          created.push({ invite, name: nameOf?.(body.email) });
+        }
         return { email: body.email, ok: true as const };
       } catch (e) {
         return {
           email: body.email,
           ok: false as const,
-          reason: friendlyError(e, "Couldn't create this invite."),
+          reason: inviteFailureReason(e),
         };
       } finally {
         setProgress((n) => n + 1);
@@ -334,25 +406,25 @@ export function InviteDialog({
     });
     const failed = results.filter((r) => !r.ok) as { email: string; reason: string }[];
 
-    // Write the handout before anything can close the dialog. Partial runs still produce a file —
-    // the invites that succeeded are real, and their codes are just as unrecoverable as a clean
-    // run's. A failure to build the file must not look like a failure to invite, hence the warning
-    // naming what actually happened.
+    // Partial runs still produce a file — the invites that succeeded are real, and their codes are
+    // just as unrecoverable as a clean run's. The rows are held in the dialog as well (see `handout`):
+    // nothing can tell a download the browser blocked from one that landed. The dialog can't be
+    // closed while the run is in flight (WP-221), so nothing is lost before this point.
     if (withHandout && created.length > 0) {
+      // The imported sheet has a Name column because the file supplies one; a pasted run has no
+      // names to put in it, so the column is left out rather than shipped empty in every row.
+      const withName = mode === "file";
+      setHandout({ rows: created, withName });
       try {
-        // The imported sheet has a Name column because the file supplies one; a pasted run has no
-        // names to put in it, so the column is left out rather than shipped empty in every row.
-        await downloadInviteHandout(created, window.location.origin, tenantId, {
-          withName: mode === "file",
-        });
+        await downloadInviteHandout(created, window.location.origin, tenantId, { withName });
       } catch {
-        // No email was sent on this path, so a lost file means invites nobody can ever use. Said
-        // plainly, and left on screen long enough to read, because the remedy is an action.
+        // No email was sent on this path, so the sheet is the only way these codes reach anyone.
+        // The rows are still held, so the remedy is one click away — said plainly.
         toast.error(
           `${created.length} ${created.length === 1 ? "invite was" : "invites were"} created, but the code sheet couldn't be downloaded`,
           {
             description:
-              "No email was sent on this path, so these codes are now lost. Revoke these invites in the Invited list and issue them again.",
+              "No email was sent. Use “Download the code sheet again” before closing this dialog — the codes exist nowhere else.",
             duration: 30000,
           },
         );
@@ -393,7 +465,7 @@ export function InviteDialog({
     );
 
     if (sent) {
-      toast.success(sent === 1 ? "1 invite sent" : `${sent} invites sent`, {
+      toast.success(createdTitle(sent, withHandout), {
         description: withHandout
           ? "No emails were sent — the downloaded spreadsheet holds every code and join link, and is the only copy."
           : "They'll each get an email with their link and code.",
@@ -417,6 +489,19 @@ export function InviteDialog({
       return;
     }
 
+    finish(withHandout);
+  }
+
+  /**
+   * After a clean run: close — unless the run produced a code sheet, which stays held with its
+   * download-again button until the admin closes the dialog themselves (WP-223). The inputs are
+   * cleared either way, so the same batch can't be sent twice.
+   */
+  function finish(withHandout: boolean) {
+    if (withHandout) {
+      clearInputs();
+      return;
+    }
     reset();
     onOpenChange(false);
   }
@@ -468,9 +553,9 @@ export function InviteDialog({
 
     if (sent) {
       toast.success(
-        sent === 1
+        sent === 1 && !withHandout
           ? `Invite sent to ${parsed.emails.find((e) => !failed.some((f) => f.email === e))}`
-          : `${sent} invites sent`,
+          : createdTitle(sent, withHandout),
         {
           description: withHandout
             ? "No emails were sent — the downloaded spreadsheet holds every code and join link, and is the only copy."
@@ -496,8 +581,7 @@ export function InviteDialog({
       return;
     }
 
-    reset();
-    onOpenChange(false);
+    finish(withHandout);
   }
 
   /** How many this run would invite, whichever input is in use — both buttons count the same set. */
@@ -545,6 +629,10 @@ export function InviteDialog({
     <Dialog
       open={open}
       onOpenChange={(o) => {
+        // Not while a run is in flight. Escape, the ×, or a click outside used to close the dialog
+        // and reset it while the batch kept creating (and emailing) invites in the background — and
+        // a second run could then start alongside the first (QA audit 2026-10-08, WP-221).
+        if (!o && submitting) return;
         if (!o) reset();
         onOpenChange(o);
       }}
@@ -553,7 +641,10 @@ export function InviteDialog({
           viewport on a laptop screen — the title clips off the top and the buttons sit below the
           fold with no way to reach them, which is a dialog you cannot finish. `dvh` rather than
           `vh` so a mobile browser's collapsing toolbar doesn't hide the footer either. */}
-      <DialogContent className="grid max-h-[90dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
+      <DialogContent
+        showCloseButton={!submitting}
+        className="grid max-h-[90dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle>
             {(() => {
@@ -570,7 +661,23 @@ export function InviteDialog({
 
         {/* `-mx-1 px-1` keeps focus rings from being clipped by the scroll container's edge. */}
         <div className="-mx-1 space-y-4 overflow-y-auto px-1">
-          <div className="bg-muted flex gap-1 rounded-lg p-1">
+          {handout ? (
+            <div className="border-primary/30 bg-primary/5 space-y-2 rounded-lg border p-3">
+              <p className="text-sm font-medium">
+                Code sheet for {handout.rows.length}{" "}
+                {handout.rows.length === 1 ? "invite" : "invites"}
+              </p>
+              <p className="text-muted-foreground text-xs">
+                No emails were sent, so this spreadsheet is the only place these codes exist. If it
+                didn&apos;t download, download it again now — once you close this dialog, the codes
+                are gone.
+              </p>
+              <Button variant="outline" size="sm" onClick={downloadHandoutAgain}>
+                <Download className="size-4" /> Download the code sheet again
+              </Button>
+            </div>
+          ) : null}
+          <div className="bg-muted flex gap-1 rounded-lg p-1" role="group" aria-label="How to add people">
             {(
               [
                 ["paste", "Paste emails"],
@@ -582,6 +689,8 @@ export function InviteDialog({
                 type="button"
                 onClick={() => setMode(value)}
                 disabled={submitting}
+                // The selected half was shown only by its styling (WP-461).
+                aria-pressed={mode === value}
                 className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:pointer-events-none ${
                   mode === value
                     ? "bg-background text-foreground shadow-sm"
@@ -600,7 +709,12 @@ export function InviteDialog({
                 type="file"
                 accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="sr-only"
-                onChange={(e) => onFile(e.target.files?.[0])}
+                onChange={(e) => {
+                  onFile(e.target.files?.[0]);
+                  // Clear it, so picking the same file again — after fixing it — fires `change`
+                  // again instead of silently doing nothing (WP-220).
+                  e.currentTarget.value = "";
+                }}
               />
               {/* A drop target, not just a button. Dragging a spreadsheet onto a dialog is the
                   reflex, and a file input alone silently ignores it — the file lands on the page,
@@ -877,7 +991,13 @@ export function InviteDialog({
             >
               <SelectTrigger className="w-full">
                 <SelectValue
-                  placeholder={roles.length ? "Select a role" : "Loading roles…"}
+                  placeholder={
+                    roles.length
+                      ? "Select a role"
+                      : loadFailed.roles
+                        ? "Couldn't load roles"
+                        : "Loading roles…"
+                  }
                 />
               </SelectTrigger>
               <SelectContent>
@@ -889,6 +1009,23 @@ export function InviteDialog({
               </SelectContent>
             </Select>
           </div>
+          {loadFailed.roles || loadFailed.departments ? (
+            <p className="text-destructive text-xs">
+              {loadFailed.roles && loadFailed.departments
+                ? "Roles and departments couldn't be loaded"
+                : loadFailed.roles
+                  ? "Roles couldn't be loaded"
+                  : "Departments couldn't be loaded"}
+              , and an invite needs both.{" "}
+              <button
+                type="button"
+                onClick={() => setLoadAttempt((n) => n + 1)}
+                className="font-medium underline underline-offset-2"
+              >
+                Try again
+              </button>
+            </p>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Department {fallbackHint(fileNeeds?.department)}</Label>
@@ -898,15 +1035,19 @@ export function InviteDialog({
                 onValueChange={(v) => {
                   const dept = (v as string) ?? "";
                   setDepartmentId(dept);
-                  // A picked team from another department no longer applies.
-                  setTeamId((cur) =>
-                    teams.find((t) => t.id === cur)?.department_id === dept ? cur : "",
-                  );
                 }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue
-                    placeholder={departments.length ? "Select" : "No departments yet"}
+                    placeholder={
+                      departments.length
+                        ? "Select"
+                        : loadFailed.departments
+                          ? "Couldn't load departments"
+                          : departmentsLoaded
+                            ? "No departments yet"
+                            : "Loading…"
+                    }
                   />
                 </SelectTrigger>
                 <SelectContent>
@@ -929,10 +1070,14 @@ export function InviteDialog({
                   <span className="text-muted-foreground font-normal">(optional)</span>
                 )}
               </Label>
+              {/* "No team" is an option, so a picked team can be taken back off (WP-457). */}
               <Select
                 value={teamId || null}
-                onValueChange={(v) => setTeamId(v as string)}
-                items={Object.fromEntries(teamOptions.map((t) => [t.id, t.name]))}
+                onValueChange={(v) => setTeamId(v === NO_TEAM ? "" : (v as string))}
+                items={{
+                  [NO_TEAM]: "No team",
+                  ...Object.fromEntries(teamOptions.map((t) => [t.id, t.name])),
+                }}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue
@@ -940,6 +1085,7 @@ export function InviteDialog({
                   />
                 </SelectTrigger>
                 <SelectContent>
+                  {teamOptions.length ? <SelectItem value={NO_TEAM}>No team</SelectItem> : null}
                   {teamOptions.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}
@@ -963,10 +1109,13 @@ export function InviteDialog({
         <DialogFooter className="sm:justify-between">
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => {
+              reset();
+              onOpenChange(false);
+            }}
             disabled={submitting}
           >
-            Cancel
+            {handout ? "Done" : "Cancel"}
           </Button>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
             {/* Both buttons create the same invites. They differ in **how the code reaches the

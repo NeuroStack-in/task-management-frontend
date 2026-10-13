@@ -29,6 +29,42 @@ let loadedOnce = false;
  * window so a poll that races the write can't momentarily revert the read dot to unread.
  */
 let pendingWrites = 0;
+/**
+ * Bumped by every write. Pausing polls (above) only stops a refresh from *starting* during a write;
+ * one already in flight — the bell refetches the moment it opens — still landed after the click and
+ * re-seeded the old unread state (QA audit 2026-10-08, WP-243). So each fetch notes this when it
+ * starts, and a response that a write overtook keeps the reads the store already shows.
+ */
+let writeEpoch = 0;
+
+/**
+ * Notifications dismissed on this browser. The server keeps a notification until it expires (30
+ * days) and has no delete — only read, read-all and prefs — so Dismiss used to filter the in-memory
+ * list and the next 30 s poll put the item straight back (QA audit 2026-10-08, WP-242). The ids live
+ * in `localStorage` under a `wp-*` key, so sign-out clears them with the rest of the user's state,
+ * and every load filters them out. Capped: entries older than any live notification are dead weight.
+ */
+const DISMISSED_KEY = "wp-notifications-dismissed";
+const DISMISSED_CAP = 500;
+
+function readDismissed(): string[] {
+  try {
+    const raw = window.localStorage.getItem(DISMISSED_KEY);
+    const v: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberDismissed(id: string): void {
+  try {
+    const ids = [...readDismissed().filter((x) => x !== id), id].slice(-DISMISSED_CAP);
+    window.localStorage.setItem(DISMISSED_KEY, JSON.stringify(ids));
+  } catch {
+    /* storage blocked (private window) — the dismissal lasts until the next refresh */
+  }
+}
 
 /** Poll cadence while the tab is visible. Matches the backend's ~30s freshness guidance. */
 const POLL_MS = 30_000;
@@ -40,8 +76,22 @@ let stopPush: (() => void) | null = null;
 
 /** Fetch the feed and seed the store — shared by the initial load and every refresh. */
 async function fetchInto(): Promise<void> {
+  const startedAt = writeEpoch;
   const { items } = await api.listNotifications();
-  useNotificationStore.getState().seed(items);
+  const dismissed = new Set(readDismissed());
+  let next = items.filter((n) => !dismissed.has(n.id));
+  if (writeEpoch !== startedAt || pendingWrites > 0) {
+    // A read this response can't know about. Reads only ever go one way, so keep each one the
+    // store already shows; everything else (new items included) comes from the server.
+    const readHere = new Set(
+      useNotificationStore
+        .getState()
+        .notifications.filter((n) => n.read)
+        .map((n) => n.id),
+    );
+    next = next.map((n) => (!n.read && readHere.has(n.id) ? { ...n, read: true } : n));
+  }
+  useNotificationStore.getState().seed(next);
   loadedOnce = true;
 }
 
@@ -71,6 +121,8 @@ export interface NotificationsFeed {
   refresh: () => void;
   markRead: (id: string) => void;
   markAllRead: () => void;
+  /** Hide a notification on this browser, marking it read (see `DISMISSED_KEY`). */
+  dismiss: (id: string) => void;
 }
 
 export function useNotifications(): NotificationsFeed {
@@ -152,6 +204,7 @@ export function useNotifications(): NotificationsFeed {
     (id: string) => {
       useNotificationStore.getState().markRead(id);
       pendingWrites += 1;
+      writeEpoch += 1;
       api.markRead(id).then(
         () => {
           pendingWrites -= 1;
@@ -168,6 +221,7 @@ export function useNotifications(): NotificationsFeed {
   const markAllRead = useCallback(() => {
     useNotificationStore.getState().markAllRead();
     pendingWrites += 1;
+    writeEpoch += 1;
     api.markAllRead().then(
       () => {
         pendingWrites -= 1;
@@ -179,5 +233,22 @@ export function useNotifications(): NotificationsFeed {
     );
   }, [load]);
 
-  return { loading, error, reload, refresh, markRead, markAllRead };
+  /**
+   * Dismissed for good: deleted on the server, so it is gone on every device (WP-242). Hidden here
+   * at once, and remembered locally too — if the delete fails (or the server predates the route)
+   * the item is at least marked read, so the bell and other devices stop counting it.
+   */
+  const dismiss = useCallback(
+    (id: string) => {
+      const n = useNotificationStore.getState().notifications.find((x) => x.id === id);
+      rememberDismissed(id);
+      useNotificationStore.getState().remove(id);
+      api.dismissNotification(id).catch(() => {
+        if (n && !n.read) markRead(id);
+      });
+    },
+    [markRead],
+  );
+
+  return { loading, error, reload, refresh, markRead, markAllRead, dismiss };
 }

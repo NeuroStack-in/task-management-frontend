@@ -58,10 +58,13 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
       chip: "bg-feature-tint text-primary",
     },
     {
+      // Projects past their own end date. Not "Overdue": the filter chip of that name counts
+      // projects with an overdue *task*, and the two read as one number disagreeing with itself
+      // (QA audit 2026-10-08, WP-497).
       key: "atRisk",
-      label: "Overdue",
+      label: "Past deadline",
       value: stats.atRisk,
-      sub: "past due & unfinished",
+      sub: "unfinished, past their end date",
       icon: AlertTriangle,
       chip: "bg-warning/15 text-warning",
       accent: "text-warning",

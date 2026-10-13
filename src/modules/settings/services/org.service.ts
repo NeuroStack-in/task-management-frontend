@@ -6,10 +6,12 @@
  *     timezone, website, emp_id_prefix, industry, size) under an optimistic lock (`version`).
  *     *(This header once claimed "there is deliberately no GET /v1/org" — the read landed; the
  *     stale claim survived it. Trust the exported functions below over prose.)*
- *   - The lifecycle routes (`transfer-ownership`, `close`, `reopen`, `export`) are **owner-only**
- *     (403 otherwise) and each requires the caller to re-type the workspace **slug** as `confirm`.
+ *   - The lifecycle routes (`close`, `reopen`, `export`) are **owner-only** (403 otherwise). Only
+ *     `close` checks a re-typed workspace **slug** (`confirm`) server-side; `reopen` takes no body,
+ *     and `export` is sent one but doesn't read it (the page checks it before calling).
  */
 import { apiFetch } from "@/lib/api";
+import { singleFlight } from "@/lib/single-flight";
 
 /** What `PATCH /v1/org` returns — the org's current server-side meta. `version` drives the next save. */
 export interface OrgView {
@@ -24,9 +26,13 @@ export interface OrgView {
   industry?: string;
   /** Company-size bucket (e.g. "11-50"). Optional org meta. */
   size?: string;
+  /** ISO 4217 code chosen at signup (e.g. "INR") — what payroll amounts are shown in. */
+  currency?: string;
   /** How the org tracks work — `"project"` (default) | `"machine"` | `"both"` (MANAGED-AGENT.md §4). */
   tracking_mode?: string;
   version: number;
+  /** Epoch **seconds** after which a `closing` org is purged. Present only while closing. */
+  purge_after?: number;
 }
 
 /**
@@ -58,9 +64,10 @@ export function updateOrg(body: UpdateOrgRequest): Promise<OrgView> {
 
 /** `GET /v1/org` — the org's current meta. Any authenticated member may read it (shown in Settings,
  * used to prefill the org forms). Throws `ApiError` 404 only before the org exists. */
-export function getOrg(): Promise<OrgView> {
-  return apiFetch<OrgView>("/v1/org");
-}
+export const getOrg: () => Promise<OrgView> = singleFlight(() =>
+  // Concurrent callers share one request (five surfaces read it — WP-369); never cached past it.
+  apiFetch<OrgView>("/v1/org"),
+);
 
 /* ------------------------------- org owners ------------------------------- */
 
@@ -120,34 +127,10 @@ export function revokeOwner(
   });
 }
 
-/**
- * Body for `POST /v1/org/transfer-ownership` (owner-only). `confirm` is the typed workspace slug;
- * `take_role` is the role the departing owner keeps (null/omit ⇒ server default, typically Admin).
- *
- * Distinct from [`grantOwner`]: transfer is **hand over and step back** — the transferor gives up
- * ownership either way. Granting adds an owner and leaves everyone else in place.
- */
-export interface TransferOwnershipRequest {
-  new_owner_id: string;
-  take_role?: string | null;
-  /** The typed workspace **slug** — the server validates it. */
-  confirm: string;
-}
-
-export interface TransferOwnershipResult {
-  new_owner_id: string;
-  /** True when the former owner no longer belongs to the org after the transfer. */
-  transferor_left: boolean;
-}
-
-export function transferOwnership(
-  body: TransferOwnershipRequest,
-): Promise<TransferOwnershipResult> {
-  return apiFetch<TransferOwnershipResult>("/v1/org/transfer-ownership", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
+// `POST /v1/org/transfer-ownership` has no client: ownership is handed over by adding an owner
+// (`grantOwner`) and the old one stepping down. Its unused wrapper was deleted 2026-10-09 — its doc
+// said omitting `take_role` kept the departing owner as an Admin, when the server deactivates them
+// (`ownership::transfer`, QA audit 2026-10-08, WP-536).
 
 /** `POST /v1/org/close` (owner-only). Returns the new status and an optional purge deadline. */
 export interface CloseOrgResult {
@@ -163,19 +146,23 @@ export function closeOrg(confirm: string): Promise<CloseOrgResult> {
   });
 }
 
-/** `POST /v1/org/reopen` (owner-only) — reverses a close before the purge deadline. */
+/**
+ * `POST /v1/org/reopen` (owner-only) — reverses a close before the purge deadline. Takes **no body**:
+ * unlike close, the handler asks for no slug confirmation (undoing a close is not the dangerous
+ * direction), so none is sent.
+ */
 export interface ReopenOrgResult {
   status: string;
 }
 
-export function reopenOrg(confirm: string): Promise<ReopenOrgResult> {
-  return apiFetch<ReopenOrgResult>("/v1/org/reopen", {
-    method: "POST",
-    body: JSON.stringify({ confirm }),
-  });
+export function reopenOrg(): Promise<ReopenOrgResult> {
+  return apiFetch<ReopenOrgResult>("/v1/org/reopen", { method: "POST" });
 }
 
-/** `POST /v1/org/export` (owner-only) — enqueues an async export job. */
+/**
+ * `POST /v1/org/export` (owner-only) — enqueues an async export job. The typed slug goes as
+ * `confirm` and the server checks it, as it does for close (a wrong slug 400s — WP-530).
+ */
 export interface ExportOrgResult {
   job_id: string;
   status: string;
@@ -194,7 +181,10 @@ export interface ExportFile {
   url: string;
 }
 
-/** `GET /v1/org/exports/{job_id}` (owner-only) — poll the job; `files` fills in once `done`. */
+/**
+ * `GET /v1/org/exports/{job_id}` (owner-only) — poll the job; `files` fills in once `done`, **one
+ * page at a time** (follow `next_cursor`, or use {@link getExportStatusAll}).
+ */
 export interface ExportStatusResult {
   job_id: string;
   /** `accepted` | `running` | `done` | `failed`. */
@@ -202,36 +192,69 @@ export interface ExportStatusResult {
   requested_at?: number;
   completed_at?: number;
   files: ExportFile[];
+  /** The walk's phase while it runs: `org`, then `users`. */
+  phase?: string;
+  /** Steps finished so far. */
+  steps?: number;
+  /** Files written so far, across every page. */
+  files_total?: number;
+  /** When the job last moved (epoch ms) — a slow export keeps moving, a stuck one doesn't. */
+  updated_at?: number;
+  /** Why a `failed` job stopped, in words for the owner. */
+  error?: string;
+  /** More files follow: pass back as `cursor` for the next page. */
+  next_cursor?: string;
 }
 
-export function getExportStatus(jobId: string): Promise<ExportStatusResult> {
-  return apiFetch<ExportStatusResult>(`/v1/org/exports/${encodeURIComponent(jobId)}`);
+/** One export job in `GET /v1/org/exports` (owner-only), newest first. */
+export interface ExportSummary {
+  job_id: string;
+  status: string;
+  requested_at?: number;
+  completed_at?: number;
 }
 
-// ── Branding (singleton) — `GET`/`PATCH /v1/org/branding` ─────────────────────────────────────────
-// The org's visual identity: a logo URL and two brand colors. A single row per org (not a
-// collection), so there is one GET and one PATCH — no id. All fields optional; PATCH only what changed.
-
-export interface OrgBranding {
-  logo_url?: string;
-  /** Hex color (e.g. `#4f46e5`). */
-  primary_color?: string;
-  /** Hex color (e.g. `#a855f7`). */
-  accent_color?: string;
+/**
+ * `GET /v1/org/exports` — the org's export jobs, newest first. Lets a browser that never started (or
+ * has forgotten) an export find a running one (WP-349). Absent on servers that predate it (404).
+ */
+export async function listExports(): Promise<ExportSummary[]> {
+  const res = await apiFetch<{ exports: ExportSummary[] }>("/v1/org/exports");
+  return res.exports;
 }
 
-/** `GET /v1/org/branding` — the org's branding. Any member may read it. */
-export function getBranding(): Promise<OrgBranding> {
-  return apiFetch<OrgBranding>("/v1/org/branding");
+export function getExportStatus(
+  jobId: string,
+  cursor?: string,
+): Promise<ExportStatusResult> {
+  const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  return apiFetch<ExportStatusResult>(`/v1/org/exports/${encodeURIComponent(jobId)}${q}`);
 }
 
-/** `PATCH /v1/org/branding` — update branding fields. Needs `settings:manage` (server `OrgSettingsManage`). */
-export function updateBranding(body: OrgBranding): Promise<OrgBranding> {
-  return apiFetch<OrgBranding>("/v1/org/branding", {
-    method: "PATCH",
-    body: JSON.stringify(body),
-  });
+/** Upper bound on file-list pages read for one export (each page is up to ~1,000 files). */
+export const MAX_EXPORT_PAGES = 500;
+
+/**
+ * {@link getExportStatus}, with every page of a finished export's file list gathered into `files`.
+ * The server pages the list because an export with every screenshot is far too many presigned links
+ * for one response (QA audit 2026-10-08, WP-350). `next_cursor` is still set on the result only if
+ * {@link MAX_EXPORT_PAGES} ran out first.
+ */
+export async function getExportStatusAll(jobId: string): Promise<ExportStatusResult> {
+  const first = await getExportStatus(jobId);
+  if (first.status !== "done" || !first.next_cursor) return first;
+  const files = [...first.files];
+  let cursor: string | undefined = first.next_cursor;
+  for (let page = 1; cursor && page < MAX_EXPORT_PAGES; page++) {
+    const next = await getExportStatus(jobId, cursor);
+    files.push(...next.files);
+    cursor = next.next_cursor;
+  }
+  return { ...first, files, next_cursor: cursor };
 }
+
+// (`GET`/`PATCH /v1/org/branding` exist server-side but nothing in the app reads branding, so their
+// wrappers went with the unrendered branding form — QA audit 2026-10-08, WP-536.)
 
 // ── Locations (collection) — `/v1/org/locations` ──────────────────────────────────────────────────
 
@@ -446,14 +469,17 @@ export function deptRulesPath(deptId: string): string {
   return `/v1/org/departments/${encodeURIComponent(deptId)}/rules`;
 }
 
-/** `GET <path>` for a rules document (org or department). Any member may read. */
+/**
+ * `GET <path>` for a rules document (org or department). Needs `monitoring:manage` (server
+ * `MonitoringManage`) — the read is gated exactly like the write.
+ */
 export function getRulesEnvelope(path: string): Promise<RulesEnvelope> {
   return apiFetch<RulesEnvelope>(path);
 }
 
 /**
  * `PUT <path>` for a rules document (org or department). Version-conditioned: a stale `version`
- * 409s. Needs `settings:manage`.
+ * 409s. Needs `monitoring:manage` (server `MonitoringManage`).
  */
 export function putRulesEnvelope(
   path: string,
@@ -471,7 +497,7 @@ export function getDeptRules(deptId: string): Promise<RulesEnvelope> {
   return getRulesEnvelope(deptRulesPath(deptId));
 }
 
-/** `PUT /v1/org/departments/{id}/rules`. Needs `settings:manage`. */
+/** `PUT /v1/org/departments/{id}/rules`. Needs `monitoring:manage`. */
 export function updateDeptRules(
   deptId: string,
   rules: unknown,

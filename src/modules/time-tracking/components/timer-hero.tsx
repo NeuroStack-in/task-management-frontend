@@ -50,9 +50,16 @@ export interface MachineSession extends BaseSession {
 export function TimerHero({
   running,
   todayTotalSec,
+  machine = false,
 }: {
   running: RunningSession | null;
   todayTotalSec: number;
+  /**
+   * The org runs in `machine` mode. Its time is the managed laptop's sign-in session, which the
+   * timesheet this page reads does not carry — so nothing here ever runs, and the idle copy must not
+   * send the person to start a desktop timer they do not have (QA audit 2026-10-08, WP-366).
+   */
+  machine?: boolean;
 }) {
   // Tick once per second while a session is open so the elapsed clock advances. Read-only — this
   // moves the display, it never touches the session (that's the agent's job).
@@ -176,10 +183,13 @@ export function TimerHero({
           <span className="flex size-12 items-center justify-center rounded-full bg-feature-tint text-primary">
             <TimerIcon className="size-5" />
           </span>
-          <p className="text-sm font-semibold">No timer running</p>
+          <p className="text-sm font-semibold">
+            {machine ? "Tracked automatically" : "No timer running"}
+          </p>
           <p className="max-w-sm text-xs text-muted-foreground">
-            Your timer lives in the WorkPulse desktop app — start and stop it there. Sessions appear
-            here once they sync, about every few minutes.
+            {machine
+              ? "Your company laptop records your signed-in time by itself, so there is no timer to start or stop. That time counts toward your attendance rather than appearing here."
+              : "Your timer lives in the WorkPulse desktop app — start and stop it there. Sessions appear here once they sync, about every few minutes."}
           </p>
           {todayTotalSec > 0 ? (
             <p className="mt-2 text-xs text-muted-foreground">

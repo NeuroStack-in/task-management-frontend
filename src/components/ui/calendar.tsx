@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,10 @@ const toIso = (y: number, m0: number, d: number) => `${y}-${pad(m0 + 1)}-${pad(d
 const monthKeyOf = (iso: string) => +iso.slice(0, 4) * 12 + (+iso.slice(5, 7) - 1);
 /** Years shown per page in the year grid (a 3×4 grid). */
 const YEARS_PER_PAGE = 12;
+/** Arrow keys in the day grid: a day, or a week. */
+const ARROW_DAYS: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+/** `"2026-10-09"` → `"October 9, 2026"` — a day cell's accessible name, not just its number. */
+const longDate = (iso: string) => `${MONTHS[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}, ${iso.slice(0, 4)}`;
 
 /**
  * Themed month calendar (Graphite & Indigo). Pure date math — no external deps.
@@ -43,11 +47,14 @@ export function Calendar({
   className?: string;
 }) {
   const anchor = value || max || min;
-  const [view, setView] = useState(() =>
-    anchor
-      ? { y: +anchor.slice(0, 4), m0: +anchor.slice(5, 7) - 1 }
-      : { y: 2026, m0: 5 },
-  );
+  // With nothing to anchor on, open on the current month. It opened on a hard-coded June 2026, so
+  // an empty "Add holiday" date started months back and drifted further every month (QA audit
+  // 2026-10-08, WP-542). Client-only: the calendar renders inside an opened popup, never on the server.
+  const [view, setView] = useState(() => {
+    if (anchor) return { y: +anchor.slice(0, 4), m0: +anchor.slice(5, 7) - 1 };
+    const now = new Date();
+    return { y: now.getFullYear(), m0: now.getMonth() };
+  });
   const [mode, setMode] = useState<"days" | "months" | "years">("days");
 
   const firstDow = new Date(view.y, view.m0, 1).getDay();
@@ -62,6 +69,43 @@ export function Calendar({
       selected: iso === value,
     };
   });
+
+  /**
+   * Keyboard: one day holds the tab stop — the focused day, else the selected one, else today, else
+   * the first available — and the arrow keys move it by a day or a week, crossing months. The 42
+   * cells were each a tab stop with no arrow keys, and the selected day was told by colour alone
+   * (QA audit 2026-10-08, WP-363).
+   */
+  const now = new Date();
+  const todayIso = toIso(now.getFullYear(), now.getMonth(), now.getDate());
+  const [focusIso, setFocusIso] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const available = (iso: string | null | undefined): iso is string =>
+    !!iso && cells.some((c) => c.iso === iso && c.inMonth && !c.disabled);
+  const stopIso = available(focusIso)
+    ? focusIso
+    : available(value)
+      ? value
+      : available(todayIso)
+        ? todayIso
+        : cells.find((c) => c.inMonth && !c.disabled)?.iso;
+
+  useEffect(() => {
+    if (focusIso) gridRef.current?.querySelector<HTMLElement>(`[data-iso="${focusIso}"]`)?.focus();
+  }, [focusIso, view]);
+
+  const onGridKeyDown = (e: React.KeyboardEvent) => {
+    const step = ARROW_DAYS[e.key];
+    const from = (e.target as HTMLElement).dataset.iso;
+    if (step === undefined || !from) return;
+    e.preventDefault();
+    const dt = new Date(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10) + step);
+    let iso = toIso(dt.getFullYear(), dt.getMonth(), dt.getDate());
+    if (min && iso < min) iso = min;
+    if (max && iso > max) iso = max;
+    setView({ y: +iso.slice(0, 4), m0: +iso.slice(5, 7) - 1 });
+    setFocusIso(iso);
+  };
 
   // A whole month/year is out of range only when *no* day in it falls within [min, max].
   const monthDisabled = (y: number, m0: number) => {
@@ -162,10 +206,11 @@ export function Calendar({
       </div>
 
       {mode === "days" ? (
-        <div className="grid grid-cols-7 gap-0.5">
+        <div ref={gridRef} className="grid grid-cols-7 gap-0.5" onKeyDown={onGridKeyDown}>
           {WEEKDAYS.map((w) => (
             <div
               key={w}
+              aria-hidden
               className="flex h-6 items-center justify-center text-[11px] font-medium text-muted-foreground"
             >
               {w}
@@ -175,7 +220,13 @@ export function Calendar({
             <button
               key={i}
               type="button"
+              data-iso={c.iso}
               disabled={c.disabled}
+              tabIndex={c.iso === stopIso ? 0 : -1}
+              data-autofocus={c.iso === stopIso ? "" : undefined}
+              aria-label={longDate(c.iso)}
+              aria-pressed={c.selected}
+              aria-current={c.iso === todayIso ? "date" : undefined}
               onClick={() => onSelect(c.iso)}
               className={cn(
                 "flex size-7 items-center justify-center rounded-md text-[13px] transition-colors",
@@ -205,6 +256,8 @@ export function Calendar({
                 key={label}
                 type="button"
                 disabled={disabled}
+                aria-pressed={selected}
+                aria-label={`${MONTHS[m0]} ${view.y}`}
                 onClick={() => {
                   setView((v) => ({ ...v, m0 }));
                   setMode("days");
@@ -232,6 +285,7 @@ export function Calendar({
                 key={y}
                 type="button"
                 disabled={disabled}
+                aria-pressed={selected}
                 onClick={() => {
                   setView((v) => ({ ...v, y }));
                   setMode("months");

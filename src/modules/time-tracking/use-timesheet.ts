@@ -20,6 +20,7 @@ import {
   getToday,
   todayLocal,
   type ApiEntryRow,
+  type ApiTodayResponse,
 } from "./services/timesheet.service";
 
 /** One row as the table renders it. No `activity` — the server does not serve one (see the service). */
@@ -34,6 +35,12 @@ export interface TimesheetRow {
    * rather than two different fields.
    */
   task: string | null;
+  /**
+   * The task the session ran against, or `null` for a project-only session. What "tasks tracked"
+   * counts: `task` is a label, so it counted a project-only session as a task and each subtask of
+   * one task as another (QA audit 2026-10-08, WP-366).
+   */
+  taskId: string | null;
   /** What the person typed in the agent. The server folds entries by (project, description). */
   description: string;
   project: string;
@@ -73,30 +80,40 @@ export interface TimesheetState {
 
 /**
  * One day's timesheet. Defaults to **today**, which is the primary view; pass a `YYYY-MM-DD` to read
- * a past day for the history section.
+ * a past day for the history section, or `null` while the caller does not know its day yet — that
+ * reads nothing. (`undefined` cannot mean "not yet": it is what means today, so a caller still
+ * settling its date fetched today's sheet and armed the poll first — QA audit 2026-10-08, WP-433.)
  *
  * The 30 s background poll only runs for today. A past day is immutable — the agent cannot fold new
  * entries into a day that has ended — so polling it would be pure request noise against an answer
  * that cannot change.
  */
-export function useTimesheet(day?: string): TimesheetState {
+export function useTimesheet(day?: string | null): TimesheetState {
   const [state, setState] = useState<
     Omit<TimesheetState, "reload" | "loading" | "error">
   >({ rows: [], totalSec: 0, billableSec: 0, running: false, date: "" });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(day !== null);
   const [error, setError] = useState<string | null>(null);
 
   // Monotonic request id: a slow response that lands after a newer one is dropped, so overlapping
   // fetches (a poll firing mid-reload) can't apply stale data out of order.
   const reqId = useRef(0);
+  // A request is in flight. A poll tick that lands during one is **skipped**, not raced: letting a
+  // background poll supersede a foreground load left `loading` on for good — the superseded load
+  // skips its `setLoading(false)` and a background one never touches it — so the table sat on
+  // skeleton rows and Refresh stayed disabled until you navigated away (QA audit 2026-10-08, WP-192).
+  const inFlight = useRef(false);
 
   const fetchToday = useCallback(
     async (background: boolean) => {
+      if (day === null) return;
+      if (background && inFlight.current) return;
       // The date is resolved here (not at render) for the same reason it always was: the server runs
       // in UTC and 400s a missing date, and a render-time `new Date()` would trip a hydration mismatch.
       // An explicit `day` wins; without one this is today, exactly as before.
       const date = day ?? todayLocal();
       const id = ++reqId.current;
+      inFlight.current = true;
       // A foreground load shows the spinner and surfaces errors. A background poll does neither: it
       // refreshes silently, so the page doesn't flash every 30 s and a transient blip doesn't blank
       // good data. This is what makes the poll invisible until it actually has news.
@@ -122,6 +139,22 @@ export function useTimesheet(day?: string): TimesheetState {
             .catch(() => new Map<string, string>()),
         ]);
         if (id !== reqId.current) return; // a newer request superseded this one
+        // A machine-mode day has no timer sessions — its time is the laptop's sign-in. Shown as one
+        // row (and, while signed in, the open session) so the page is no longer empty all day
+        // (WP-366). A day with timer sessions keeps them; the logon is then not double-counted.
+        const logon =
+          today.entries.length === 0 && today.logon ? logonRow(today.logon) : null;
+        if (logon) {
+          setState({
+            date: today.date,
+            totalSec: logon.settledSec,
+            billableSec: 0,
+            running: logon.row.running,
+            rows: [logon.row],
+          });
+          if (background) setError(null);
+          return;
+        }
         setState({
           date: today.date,
           totalSec: today.total_secs,
@@ -143,7 +176,10 @@ export function useTimesheet(day?: string): TimesheetState {
         // data on screen rather than replacing a working timesheet with an error.
         if (!background) setError(messageOf(e));
       } finally {
-        if (id === reqId.current && !background) setLoading(false);
+        if (id === reqId.current) {
+          inFlight.current = false;
+          if (!background) setLoading(false);
+        }
       }
     },
     [day],
@@ -158,8 +194,8 @@ export function useTimesheet(day?: string): TimesheetState {
   // This is the freshness half of the view-only timer: once the agent posts a timer transition
   // out-of-band, the running state shows up here within a poll instead of on a manual refresh.
   // `null` disables the poll: a past day cannot change, so polling it would be request noise against
-  // an answer that is already final.
-  usePoll(() => fetchToday(true), day ? null : 30_000);
+  // an answer that is already final — and a day not chosen yet has nothing to poll.
+  usePoll(() => fetchToday(true), day === undefined ? 30_000 : null);
 
   const reload = useCallback(() => fetchToday(false), [fetchToday]);
 
@@ -180,6 +216,35 @@ function taskLabel(e: ApiEntryRow, titles: Map<string, string>): string | null {
   return task || null;
 }
 
+/**
+ * The day's logon session as one timesheet row. While signed in it is the open session, anchored at
+ * the last time the laptop was seen, with the awake minutes up to then as settled time — so the
+ * ticking total reads awake time, never the wall-clock span across sleep.
+ */
+function logonRow(l: NonNullable<ApiTodayResponse["logon"]>): {
+  row: TimesheetRow;
+  settledSec: number;
+} {
+  const settledSec = Math.max(0, l.minutes) * 60;
+  return {
+    settledSec,
+    row: {
+      id: `logon-${l.first_seen}`,
+      task: "Signed in",
+      taskId: null,
+      description: "",
+      project: "—",
+      start: clockOf(l.first_seen),
+      startMs: l.active ? l.last_seen : l.first_seen,
+      end: l.active ? null : clockOf(l.last_seen),
+      durationSec: l.active ? 0 : settledSec,
+      billable: false,
+      running: l.active,
+      taskInvalid: false,
+    },
+  };
+}
+
 function toRow(
   e: ApiEntryRow,
   names: Map<string, string>,
@@ -193,6 +258,7 @@ function toRow(
     // `Task · Subtask` when the session ran against a subtask — the desktop app lets you point the
     // clock at one, and a timesheet that only ever says the parent hides which part was worked on.
     task: taskLabel(e, titles),
+    taskId: e.task_id?.trim() || null,
     description: e.description?.trim() || "",
     project: projectOf(e.project_id, names),
     start: clockOf(e.start),

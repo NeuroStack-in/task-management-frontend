@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ApiError } from "@/lib/api";
 import { getScreenshots, type ShotRow } from "./services/insights.service";
 // Shared with the dashboard heatmap, which had the same UTC-partition/local-hour mismatch.
 import { localDateOf, utcDatesFor } from "@/lib/local-day";
@@ -45,10 +46,20 @@ export interface HourlyActivityState {
   hours: HourBucket[];
   /** Distinct capture moments counted across the day. `0` = genuinely nothing to draw. */
   captures: number;
-  /** The day had more captures than the page budget — the curve is a partial read, so say so. */
+  /** Distinct people those moments belong to — what a truncated curve actually covers. */
+  people: number;
+  /**
+   * The day had more captures than the page budget — the curve is a partial read, so say so.
+   *
+   * **Partial by person, not by time.** The day's index is sorted user-then-time, so what the budget
+   * drops is whole people (those whose ids sort first), not the oldest frames.
+   */
   truncated: boolean;
   loading: boolean;
+  /** Display-ready, or `null`. Set on a failed read, which must never render as an empty day. */
   error: string | null;
+  /** The read was refused (403): screenshots are not available to this viewer or this org. */
+  denied: boolean;
   /** Manual refetch of the day's curve (for a Refresh button). */
   reload: () => void;
 }
@@ -77,9 +88,11 @@ export function bucketByHour(
 ): {
   hours: HourBucket[];
   captures: number;
+  people: number;
 } {
   const hours: HourBucket[] = EMPTY_HOURS.map((h) => ({ ...h }));
   const seen = new Set<string>();
+  const users = new Set<string>();
 
   for (const s of shots) {
     if (localDate && localDateOf(s.captured_at) !== localDate) continue;
@@ -87,6 +100,7 @@ export function bucketByHour(
     const moment = `${s.user_id}|${s.captured_at}`;
     if (seen.has(moment)) continue;
     seen.add(moment);
+    users.add(s.user_id);
 
     const hour = new Date(s.captured_at).getHours();
     const bucket = hours[hour];
@@ -99,33 +113,31 @@ export function bucketByHour(
     bucket.total += 1;
   }
 
-  return { hours, captures: seen.size };
+  return { hours, captures: seen.size, people: users.size };
 }
 
+const IDLE: Omit<HourlyActivityState, "reload"> = {
+  hours: EMPTY_HOURS,
+  captures: 0,
+  people: 0,
+  truncated: false,
+  loading: false,
+  error: null,
+  denied: false,
+};
+
 export function useHourlyActivity(date: string): HourlyActivityState {
-  const [state, setState] = useState<Omit<HourlyActivityState, "reload">>({
-    hours: EMPTY_HOURS,
-    captures: 0,
-    truncated: false,
-    loading: false,
-    error: null,
-  });
+  const [state, setState] = useState<Omit<HourlyActivityState, "reload">>(IDLE);
   const [nonce, setNonce] = useState(0);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     if (!date) {
-      setState({
-        hours: EMPTY_HOURS,
-        captures: 0,
-        truncated: false,
-        loading: false,
-        error: null,
-      });
+      setState(IDLE);
       return;
     }
     let live = true;
-    setState((s) => ({ ...s, loading: true, error: null }));
+    setState((s) => ({ ...s, loading: true, error: null, denied: false }));
 
     (async () => {
       try {
@@ -146,24 +158,31 @@ export function useHourlyActivity(date: string): HourlyActivityState {
         }
 
         if (!live) return;
-        const { hours, captures } = bucketByHour(all, date);
+        const { hours, captures, people } = bucketByHour(all, date);
         setState({
           hours,
           captures,
+          people,
           truncated: more,
           loading: false,
           error: null,
+          denied: false,
         });
-      } catch {
+      } catch (e) {
         if (!live) return;
-        // A failure (commonly a 403 without screenshot access) degrades to the honest empty state
-        // rather than an error banner — the hourly curve decorates the page, it isn't the page.
+        // A failure is **not** an empty day. It used to land in the same "none were recorded"
+        // state, so a plan without screenshots — or a 500 — read as a measurement of the team
+        // (QA audit 2026-10-08, WP-274). The chart still only decorates the page: the caller shows
+        // this in place of the curve, not as a page-level banner.
+        const denied = e instanceof ApiError && e.status === 403;
         setState({
-          hours: EMPTY_HOURS,
-          captures: 0,
-          truncated: false,
-          loading: false,
-          error: "unavailable",
+          ...IDLE,
+          error: denied
+            ? "Hour-by-hour activity is drawn from screenshot captures, and screenshots aren't available to you — your organization's plan or settings, or your role, don't include them."
+            : e instanceof ApiError
+              ? e.message
+              : "Couldn't load the day's captures. Check your connection and try again.",
+          denied,
         });
       }
     })();

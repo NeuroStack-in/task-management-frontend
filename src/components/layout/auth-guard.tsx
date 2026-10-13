@@ -6,6 +6,8 @@ import { ShieldX } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCurrentRole } from "@/hooks/use-permissions";
 import {
+  isEntitlementGated,
+  useEntitlementsSettled,
   useEntitlementsSync,
   useIsFeatureOn,
   useIsPageOn,
@@ -32,10 +34,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const hydrated = useAuthStore((s) => s.hydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const role = useCurrentRole();
+  // A signed-in user with no organization yet (the "Continue with Google" self-signup) has nothing to
+  // see in the app shell — send them to the standalone onboarding flow to create their org first.
+  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
 
   // Load the org's entitlements once there's a session — the sidebar and the check below read the
   // result. This is the first point inside the authenticated tree, so everything downstream has it.
-  useEntitlementsSync(hydrated && isAuthenticated);
+  // Only with an organisation: an org-less account has no entitlements, and the server now refuses
+  // it every org route but onboarding (403 org_required — WP-135). The read starts the moment the
+  // org is approved and the claims refresh.
+  useEntitlementsSync(hydrated && isAuthenticated && hasOrg);
+  const entitlementsSettled = useEntitlementsSettled();
   const isFeatureOn = useIsFeatureOn();
   const isPageOn = useIsPageOn();
   const mode = useTrackingMode();
@@ -44,17 +53,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // tenant its login happens to be minted in. Hiding the nav and redirecting the dashboard isn't
   // enough: /settings and other member-readable pages still answer to a typed URL, which would leak
   // the host org's details. Bounce the operator off every non-/ops route, the same way features and
-  // hidden pages are closed here rather than only in the sidebar.
-  const { opsOnly } = useIsOpsOnly();
+  // hidden pages are closed here rather than only in the sidebar. The lookup runs only once there is
+  // a session — it used to fire for signed-out visitors on their way to sign-in.
+  const { opsOnly, undecided: opsUndecided } = useIsOpsOnly(hydrated && isAuthenticated && hasOrg);
   const isOpsRoute = pathname === "/ops" || pathname.startsWith("/ops/");
-
-  // A signed-in user with no organization yet (the "Continue with Google" self-signup) has nothing to
-  // see in the app shell — send them to the standalone onboarding flow to create their org first.
-  const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
 
   useEffect(() => {
     if (hydrated && !isAuthenticated) {
-      router.replace(`/login?from=${encodeURIComponent(pathname)}`);
+      // The query string too (`?tab=`, filters), so signing back in lands where they were rather than
+      // on the bare page (QA audit 2026-10-08, WP-465). `safeLandingPath` keeps a same-origin query.
+      const from = `${pathname}${window.location.search}`;
+      router.replace(`/login?from=${encodeURIComponent(from)}`);
     }
   }, [hydrated, isAuthenticated, pathname, router]);
 
@@ -90,9 +99,41 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <Loader label="Setting up your account…" />;
   }
 
-  // Don't paint a customer page for an operator account even for the tick before the redirect lands.
+  // Don't paint a customer page for an operator account even for the tick before the redirect lands
+  // — nor while the allowlist lookup that would say so is still out. The guard ignored that loading
+  // state, so an operator typing /settings/company saw the host org's details until it answered
+  // (WP-465). Only an account with no customer permission of its own ever waits here.
   if (opsOnly && !isOpsRoute) {
     return <Loader label="Opening the support desk…" />;
+  }
+  if (opsUndecided && !isOpsRoute) {
+    return <Loader label="Checking access…" />;
+  }
+
+  // Permission first. Checked last, a role without access to a plan-gated page was told to upgrade
+  // the plan — which would not have let them in (WP-465).
+  if (!canAccessPath(role, pathname)) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <EmptyState
+          icon={ShieldX}
+          title="Access denied"
+          description="Your role doesn't have permission to view this section. Contact your administrator if you believe this is a mistake."
+          action={
+            <Button onClick={() => router.push("/dashboard")}>
+              Back to Dashboard
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // Until the org's entitlements are known, a page a feature, mode or page toggle could close is not
+  // mounted: it used to render, fire its requests and paint real data (a bookmarked /payroll in a
+  // machine-mode org) before being swapped for the wall below (QA audit 2026-10-08, WP-317).
+  if (!entitlementsSettled && isEntitlementGated(pathname)) {
+    return <Loader label="Checking access…" />;
   }
 
   // Hiding the nav entry isn't enough — the URL still works. A feature that's unavailable is closed
@@ -132,23 +173,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           icon={ShieldX}
           title="This page is turned off"
           description="Your organization has hidden this page. An owner or admin can show it again under Settings → Features."
-          action={
-            <Button onClick={() => router.push("/dashboard")}>
-              Back to Dashboard
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-
-  if (!canAccessPath(role, pathname)) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-6">
-        <EmptyState
-          icon={ShieldX}
-          title="Access denied"
-          description="Your role doesn't have permission to view this section. Contact your administrator if you believe this is a mistake."
           action={
             <Button onClick={() => router.push("/dashboard")}>
               Back to Dashboard

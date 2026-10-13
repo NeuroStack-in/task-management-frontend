@@ -10,9 +10,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth.store";
-import { listEmployees } from "@/modules/employees/services/employees.service";
+import { listAllEmployees } from "@/modules/employees/services/employees.service";
 import { listFleet } from "@/modules/agents/services/fleet.service";
 import { listAudit, type ApiAuditRow } from "./services/audit.service";
+import { auditActionLabel, resolveAuditTarget } from "./lib/categories";
 
 export interface AuditEntry {
   key: string;
@@ -23,8 +24,16 @@ export interface AuditEntry {
   /** The actor is an agent on a device, not a person. */
   actorIsDevice: boolean;
   category: string;
+  /** The action in words ("Reset a member's authenticator"). */
   action: string;
+  /** The server's action code (`mfa.reset`), kept for the detail sheet and the export. */
+  actionCode: string;
+  /** The target in words — a person's or device's name where the id resolves. */
   target: string | null;
+  /** The target exactly as stored. */
+  targetRaw: string | null;
+  /** What changed, when the server recorded it (pay, deductions, plan — WP-425). */
+  detail: string | null;
 }
 
 export interface AuditState {
@@ -60,7 +69,7 @@ export function useAudit(): AuditState {
         // avatar. Best-effort: without fleet access the human actors still resolve.
         const [rows, roster, fleet] = await Promise.all([
           listAudit(),
-          listEmployees().catch(() => []),
+          listAllEmployees().catch(() => []),
           listFleet().catch(() => ({ devices: [] })),
         ]);
         if (!live) return;
@@ -74,16 +83,22 @@ export function useAudit(): AuditState {
         for (const d of fleet.devices ?? []) devices.set(d.agent_id, `${d.hostname} · agent`);
 
         setEntries(
-          rows.map((r: ApiAuditRow) => ({
-            key: `${r.ts}-${r.actor}-${r.action}`,
+          rows.map((r: ApiAuditRow, i: number) => ({
+            // `ts` is whole seconds: two saves by one actor in the same second collided on
+            // `${ts}-${actor}-${action}` — duplicate React keys, rows doubled or left behind on
+            // filtering. The index makes it unique, as the security-events hook already did (WP-518).
+            key: `${r.ts}-${r.actor}-${r.action}-${i}`,
             ts: r.ts,
             timestamp: fmt(r.ts),
             actorId: r.actor,
             actorName: names.get(r.actor) ?? devices.get(r.actor) ?? shortId(r.actor),
             actorIsDevice: !names.has(r.actor) && devices.has(r.actor),
             category: r.category,
-            action: r.action,
-            target: r.target ?? null,
+            action: auditActionLabel(r.action, r.target ?? null),
+            actionCode: r.action,
+            target: resolveAuditTarget(r.target ?? null, names, devices),
+            targetRaw: r.target ?? null,
+            detail: r.detail ?? null,
           })),
         );
       } catch (e) {

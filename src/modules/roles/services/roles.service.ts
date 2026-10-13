@@ -8,11 +8,10 @@
  *
  * ## Scope note (important)
  *
- * The app's *own* nav/route gating (`usePermissions` → `canAccess`) still runs off the local
- * `constants/permissions.ts` vocabulary keyed by `roleId`, **not** this catalog — the two use
- * different id vocabularies, and unifying them (projecting the JWT bitset through this catalog) is a
- * separate, larger change. So editing a role here changes what the **server** enforces (reflected in
- * the user's JWT on next sign-in); it does not retroactively rewrite the local UI gate. Owner is
+ * The app's *own* nav/route gating (`usePermissions` → `canAccess`) uses the coarser frontend
+ * vocabulary (`constants/permissions.ts`), derived from the JWT's `perm` bitset by
+ * `lib/permission-bits.ts` — not this catalog's wire ids. So editing a role here changes what the
+ * **server** enforces at once, and the member's own UI follows with their next token. Owner is
  * `is_owner: true` with a near-empty bitset — never `permissions: ["*"]` (that wildcard is a flag
  * outside the capability space).
  */
@@ -23,7 +22,7 @@ export interface ApiRole {
   id: string;
   name: string;
   description: string;
-  /** `true` for the 3 built-in roles — can't be edited or deleted. */
+  /** `true` for the 3 built-in roles — never deleted; Admin/Employee's permissions are editable. */
   system: boolean;
   /** Owner wildcard flag (outside the bitset). Full access; permissions is near-empty. */
   is_owner: boolean;
@@ -121,6 +120,9 @@ export function cloneRole(id: string, name?: string): Promise<ApiRole> {
 /**
  * Reset a customized system role (Admin/Employee) back to its built-in default permission set —
  * `POST /v1/roles/{id}/restore`. Owner isn't editable/restorable, and a custom role has no default.
+ *
+ * ⚠️ The handler exists (`identity/src/main.rs`) but the route is missing from the deployed list in
+ * `infra/stacks/contexts/identity.py`, so API Gateway answers 404 until it is added (WP-120).
  */
 export function restoreRole(id: string): Promise<ApiRole> {
   return apiFetch<ApiRole>(`/v1/roles/${encodeURIComponent(id)}/restore`, {

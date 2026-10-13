@@ -1,9 +1,9 @@
 /**
- * Onboarding — self-service org provisioning for a signed-in user who has no org yet.
+ * Onboarding — a signed-in user who has no org yet asks for one.
  *
  * A brand-new account (e.g. "Continue with Google") is admitted by the backend with no organization;
- * the onboarding form calls this to create one and make the caller its Owner. Mirrors the backend
- * `identity::provision_my_org` slice (`POST /v1/org/provision`, authenticated).
+ * the onboarding form files an org request (`POST /v1/org/requests`) that WorkPulse staff approve,
+ * and the approval builds the org and makes the applicant its Owner (`identity::org_requests`).
  */
 import { apiFetch } from "@/lib/api";
 
@@ -35,12 +35,8 @@ export interface ProvisionOrgInput {
   department?: string;
   location?: string;
   phone?: string;
-}
-
-export interface ProvisionOrgResult {
-  tenant_id: string;
-  slug: string;
-  role_id: string;
+  /** The "authorised to monitor" tick — stored on the request and carried onto the org (WP-128). */
+  monitoring_consent?: boolean;
 }
 
 /**
@@ -82,18 +78,4 @@ export function requestOrg(input: ProvisionOrgInput): Promise<{ id: string; stat
  */
 export function getMyOrgRequest(): Promise<MyOrgRequest | null> {
   return apiFetch<MyOrgRequest | null>("/v1/org/requests/mine");
-}
-
-/**
- * `POST /v1/org/provision` — create the caller's organization; they become Owner.
- *
- * **Retained, but no longer the signup path.** Org creation now goes through {@link requestOrg} and
- * staff approval; this is what the server calls on the approval side. Kept here because the shape
- * is the contract both halves share.
- */
-export function provisionMyOrg(input: ProvisionOrgInput): Promise<ProvisionOrgResult> {
-  return apiFetch<ProvisionOrgResult>("/v1/org/provision", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,6 +23,13 @@ import { StatusBadge } from "./parts";
 import { getAttachmentDownloadUrl, listSubtasks } from "../services/projects.service";
 import { ApiError } from "@/lib/api";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import {
+  previewBlob,
+  saveToDevice,
+  viewKindFor,
+  type ViewKind,
+} from "@/components/shared/document-list";
+import { MarkdownImage } from "@/components/shared/markdown";
 
 /** Human file size, e.g. "812 B", "2.3 MB". */
 function humanSize(bytes: number): string {
@@ -32,41 +39,14 @@ function humanSize(bytes: number): string {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 
-function extOf(name: string): string {
-  const i = name.lastIndexOf(".");
-  return i >= 0 ? name.slice(i).toLowerCase() : "";
-}
-
-/** What the in-app viewer can render. `null` = download only (e.g. .docx). */
-type ViewKind = "image" | "pdf" | "markdown" | "text";
-function viewKindOf(a: Attachment): ViewKind | null {
-  const ct = a.contentType;
-  const ext = extOf(a.filename);
-  if (ct.startsWith("image/") || [".png", ".jpg", ".jpeg"].includes(ext)) return "image";
-  if (ct === "application/pdf" || ext === ".pdf") return "pdf";
-  // Markdown renders formatted (GitHub-style); plain text stays monospace as-is.
-  if (ct === "text/markdown" || ext === ".md") return "markdown";
-  if (ct === "text/plain" || ext === ".txt") return "text";
-  return null; // .docx and anything else — no in-app preview
-}
-
 /**
- * Save the presigned object to the device without navigating: fetch the bytes (the bucket allows
- * CORS GET), wrap in a blob, and click a synthetic `<a download>`. A plain `window.open` opened the
- * file in a new tab instead of downloading it, which is what this replaces.
+ * What can be previewed, how preview bytes are typed, and how a download is saved all come from the
+ * shared document viewer. This dialog keeps its own document-scale Markdown, but the typing is the
+ * security boundary (a "PDF" whose stored bytes were HTML ran as this app — WP-008), so it lives in
+ * exactly one place.
  */
-async function saveToDevice(url: string, filename: string): Promise<void> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`download failed (${res.status})`);
-  const blob = await res.blob();
-  const blobUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = blobUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+function viewKindOf(a: Attachment): ViewKind | null {
+  return viewKindFor(a.contentType, a.filename);
 }
 
 interface ViewerState {
@@ -240,8 +220,25 @@ export function ViewTaskDialog({
   onOpenChange,
   userMap,
 }: ViewTaskDialogProps) {
-  // Hook before the early return — rules of hooks. The viewer is a nested dialog over this one.
+  // Hooks before the early return — rules of hooks. The viewer is a nested dialog over this one.
   const [viewer, setViewer] = useState<ViewerState | null>(null);
+  /**
+   * Which preview request is current. Closing the preview, or opening another, moves it on, and a
+   * response for an older one is dropped. Without it a slow file reopened a preview that had been
+   * closed, and of two files opened in turn whichever answered last won — its loser's object URL
+   * never revoked (QA audit 2026-10-08, WP-501).
+   */
+  const viewSeq = useRef(0);
+
+  // Closing the task closes its preview, and anything still loading for it.
+  useEffect(() => {
+    if (open) return;
+    viewSeq.current += 1;
+    setViewer((v) => {
+      if (v?.blobUrl) URL.revokeObjectURL(v.blobUrl);
+      return null;
+    });
+  }, [open]);
 
   if (!task) return null;
 
@@ -249,6 +246,7 @@ export function ViewTaskDialog({
   const prio = TASK_PRIORITY_META[task.priority];
 
   const closeViewer = () => {
+    viewSeq.current += 1;
     setViewer((v) => {
       if (v?.blobUrl) URL.revokeObjectURL(v.blobUrl);
       return null;
@@ -258,19 +256,27 @@ export function ViewTaskDialog({
   const openViewer = async (a: Attachment) => {
     const kind = viewKindOf(a);
     if (!kind) return;
-    setViewer({ attachment: a, kind, loading: true });
+    const seq = ++viewSeq.current;
+    const current = () => seq === viewSeq.current;
+    setViewer((v) => {
+      if (v?.blobUrl) URL.revokeObjectURL(v.blobUrl);
+      return { attachment: a, kind, loading: true };
+    });
     try {
       const url = await getAttachmentDownloadUrl(projectId, task.id, a.id);
       const res = await fetch(url);
       if (!res.ok) throw new Error(`view failed (${res.status})`);
       if (kind === "text" || kind === "markdown") {
-        setViewer({ attachment: a, kind, loading: false, text: await res.text() });
+        const text = await res.text();
+        if (current()) setViewer({ attachment: a, kind, loading: false, text });
       } else {
-        const blobUrl = URL.createObjectURL(await res.blob());
-        setViewer({ attachment: a, kind, loading: false, blobUrl });
+        const bytes = await res.arrayBuffer();
+        if (!current()) return;
+        const blob = previewBlob(bytes, kind, a.contentType, a.filename);
+        setViewer({ attachment: a, kind, loading: false, blobUrl: URL.createObjectURL(blob) });
       }
     } catch {
-      setViewer({ attachment: a, kind, loading: false, error: true });
+      if (current()) setViewer({ attachment: a, kind, loading: false, error: true });
     }
   };
 
@@ -341,7 +347,14 @@ export function ViewTaskDialog({
                 )}
               </Section>
               <Section label="Estimate" className="pl-4">
-                <p className="text-sm tabular-nums">{task.estimateHours} hrs</p>
+                {/* Unestimated is its own state, not "0 hrs" (WP-505). */}
+                {task.estimateHours === null ? (
+                  <Empty>No estimate</Empty>
+                ) : (
+                  <p className="text-sm tabular-nums">
+                    {task.estimateHours} {task.estimateHours === 1 ? "hr" : "hrs"}
+                  </p>
+                )}
               </Section>
             </div>
 
@@ -556,6 +569,8 @@ function MarkdownDoc({ children }: { children: string }) {
             </h6>
           ),
           p: ({ children }) => <p className="my-3 first:mt-0">{children}</p>,
+          // An uploaded file must not load images from anywhere (a tracking pixel) — WP-103.
+          img: ({ alt }) => <MarkdownImage alt={alt} />,
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
           ul: ({ children }) => (

@@ -24,15 +24,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { invalidateWorkingHours } from "@/hooks/use-working-hours";
 import { type IsoWeekday } from "@/lib/workdays";
 import {
-  getWorkingHours,
   updateWorkingHours,
   type OrgWorkingHours,
 } from "@/modules/settings/services/org.service";
+import { getWorkingHoursShared } from "../../lib/shared-reads";
 
 /** Monday-first, matching the calendars elsewhere in the product. */
 const DAYS: { iso: IsoWeekday; short: string; label: string }[] = [
@@ -66,7 +67,8 @@ export function WorkingDaysManager() {
     let live = true;
     setLoading(true);
     setError(null);
-    getWorkingHours()
+    // One read, shared with the Working hours card that mounts beside this one (WP-539).
+    getWorkingHoursShared()
       .then((h) => {
         if (!live) return;
         setSaved(h);
@@ -88,6 +90,8 @@ export function WorkingDaysManager() {
     () => !!saved && sortedKey(draft) !== sortedKey(saved.workdays),
     [draft, saved],
   );
+  // Its own Save, so its own guard: leaving with an unsaved selection asks first (WP-347).
+  useUnsavedGuard(canManage && dirty);
   // The server rejects an empty list; mirror that here so the reason is visible before the request.
   const empty = draft.length === 0;
 

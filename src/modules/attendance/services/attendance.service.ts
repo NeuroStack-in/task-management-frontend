@@ -2,8 +2,8 @@
  * Attendance — the real backend (`time-attendance` context, LLD §7).
  *
  * `GET /v1/me/attendance?from&to` — the caller's own resolved days plus a summary. Status is
- * **computed by the 00:15 close cron**, never tracked: nobody can set "present", which is the point
- * for a record that feeds payroll.
+ * **computed by the nightly close** (23:59 in the org's timezone), never tracked: nobody can set
+ * "present", which is the point for a record that feeds payroll.
  *
  * ## The working window (clock-in / clock-out)
  *
@@ -16,7 +16,7 @@
  * Only days the cron has actually **closed** come back — today and the future are simply absent,
  * never pre-stamped "absent" (that would slander a day still in progress).
  */
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 
 /**
  * The attendance model (LLD §7). `late` is a qualifier on `present`, not a status of its own.
@@ -24,13 +24,17 @@ import { apiFetch } from "@/lib/api";
  * **Permission is not a status either.** Short time off inside a working day (`docs/LEAVE.md`)
  * leaves the day resolving normally — the person turned up — and its minutes are credited toward
  * presence server-side so a properly-booked short day still reads `present`.
+ *
+ * `excused` is an admin day-override (managed-agent orgs). The server leaves it out of every
+ * summary's `counted`, so the client tallies must too — see `isCounted`.
  */
 export type AttendanceStatus =
   | "present"
   | "partial"
   | "absent"
   | "leave"
-  | "non_workday";
+  | "non_workday"
+  | "excused";
 
 /** Mirrors `time_attendance::personal_attendance::dto::AttendanceDayRow`. */
 export interface ApiAttendanceDay {
@@ -114,8 +118,11 @@ export function getDayOversight(date: string): Promise<ApiDayResponse> {
 export interface RecomputeResult {
   from: string;
   to: string;
-  /** How many user-day statuses were re-stamped across the window. */
+  /** How many user-day statuses were re-stamped (summed across calls by `recomputeAttendance`). */
   recomputed: number;
+  /** `false` when the server ran out of its per-call time budget; call again with `to = resume_to`. */
+  done?: boolean;
+  resume_to?: string;
 }
 
 /**
@@ -124,21 +131,57 @@ export interface RecomputeResult {
  * new working-days/thresholds instead of keeping the status they were closed with. `from`/`to` are
  * the client's local `YYYY-MM-DD`, at most 92 days apart.
  */
-export function recomputeAttendance(
+export async function recomputeAttendance(
   from: string,
   to: string,
 ): Promise<RecomputeResult> {
-  const q = new URLSearchParams({ from, to });
-  return apiFetch<RecomputeResult>(`/v1/attendance/recompute?${q}`, {
-    method: "POST",
-  });
+  // The server re-closes newest-first for a bounded time per call and says where it stopped — one
+  // long call used to die inside the 15 s function and return a 5xx part-way (QA audit 2026-10-08,
+  // WP-159). Keep calling from `resume_to` until it reaches `from`; the cap is a runaway guard.
+  let recomputed = 0;
+  let next = to;
+  for (let call = 0; call < 40; call++) {
+    const q = new URLSearchParams({ from, to: next });
+    const res = await apiFetch<RecomputeResult>(`/v1/attendance/recompute?${q}`, {
+      method: "POST",
+    });
+    recomputed += res.recomputed;
+    if (res.done !== false || !res.resume_to) return { from, to, recomputed, done: true };
+    next = res.resume_to;
+  }
+  return { from, to, recomputed, done: false };
+}
+
+/** The statuses an admin may set (`day_override::dto::resolve_status`) — never presence. */
+export type OverrideStatus = "leave" | "excused" | "non_workday";
+
+/**
+ * `PUT /v1/attendance/user/{id}/day/{date}/override` — correct one person's day (needs
+ * `AttendanceManage` → `attendance:edit`). It can only *excuse* a day — `leave`, `excused` or
+ * `non_workday` — never mark anyone present. Managed-agent (`machine`/`both`) orgs only: a `project`
+ * org keeps the leave workflow and gets `409 tracking_mode_not_managed`. The server records who set
+ * it in the audit log and re-closes an already-closed day at once.
+ */
+export function overrideDay(
+  userId: string,
+  date: string,
+  status: OverrideStatus,
+  note?: string,
+): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(
+    `/v1/attendance/user/${encodeURIComponent(userId)}/day/${encodeURIComponent(date)}/override`,
+    {
+      method: "PUT",
+      body: JSON.stringify(note ? { status, note } : { status }),
+    },
+  );
 }
 
 /** Mirrors `time-attendance::user_day::UserDayDetail` — one employee's day of clock-in/out + hours. */
 export interface ApiUserDayDetail {
   user_id: string;
   date: string;
-  /** Resolved status once the 00:15 close ran; absent while the day is still open (today). */
+  /** Resolved status once the nightly close ran; absent while the day is still open (today). */
   status?: AttendanceStatus;
   late: boolean;
   /** An approved leave request covers this date — true even before the close cron runs, so the live
@@ -166,6 +209,12 @@ export interface ApiUserDayDetail {
    */
   running_since?: number;
   entry_count: number;
+  /** The day's logon session (machine/both orgs): first/last seen signed in, awake minutes. */
+  logon_first_seen?: number;
+  logon_last_seen?: number;
+  logon_minutes?: number;
+  /** Signed in right now (seen within ~12 minutes). */
+  logon_active?: boolean;
 }
 
 /**
@@ -173,10 +222,30 @@ export interface ApiUserDayDetail {
  * (needs `AttendanceReadTeam`). Reads their `TIME#` sessions directly, so it works for **today** too:
  * `clock_in` = first timer start; `clock_out` = last stop, or absent while a timer is still running.
  */
-export function getUserDay(
-  userId: string,
+/**
+ * `GET /v1/attendance/roster?date=` — {@link getUserDay} for **everyone in the caller's reach**, in
+ * one request (needs `AttendanceReadTeam`; org scope + `AttendanceReadOrg` for the whole tenant,
+ * otherwise the caller's department). Replaces one request per person per poll (WP-193). `null`
+ * when the server predates the route (404), so callers fall back to the per-person read.
+ */
+export async function getRosterDay(
   date: string,
-): Promise<ApiUserDayDetail> {
+): Promise<{ users: ApiUserDayDetail[]; truncated: boolean } | null> {
+  const q = new URLSearchParams({ date });
+  try {
+    const res = await apiFetch<{
+      date: string;
+      users: ApiUserDayDetail[];
+      truncated?: boolean;
+    }>(`/v1/attendance/roster?${q}`);
+    return { users: res.users, truncated: res.truncated === true };
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+export function getUserDay(userId: string, date: string): Promise<ApiUserDayDetail> {
   const q = new URLSearchParams({ date });
   return apiFetch<ApiUserDayDetail>(
     `/v1/attendance/user/${encodeURIComponent(userId)}?${q}`,

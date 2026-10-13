@@ -20,6 +20,7 @@ import { useApprovals, type ApprovalItem } from "../use-approvals";
 import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { ApiError } from "@/lib/api";
 
 const STATUS_BADGE: Record<string, string> = {
   pending: "bg-warning/15 text-warning",
@@ -69,11 +70,12 @@ function permissionWindow(r: {
   return `${fmt12(r.fromTime)} to ${fmt12(r.toTime)}`;
 }
 
-type Filter = "pending" | "approved" | "rejected" | "all";
+type Filter = "pending" | "approved" | "rejected" | "cancelled" | "all";
 const FILTERS: { value: Filter; label: string }[] = [
   { value: "pending", label: "Pending" },
   { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
+  { value: "cancelled", label: "Cancelled" },
   { value: "all", label: "All" },
 ];
 
@@ -84,7 +86,9 @@ export function ApprovalsView() {
 
   const [filter, setFilter] = useState<Filter>("pending");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [deciding, setDeciding] = useState<string | null>(null);
+  // Every request with a decision in flight. A single id let row A's buttons re-enable the moment
+  // row B was clicked, while A was still being decided (QA audit 2026-10-08, WP-482).
+  const [deciding, setDeciding] = useState<ReadonlySet<string>>(new Set());
 
   const rows = useMemo(
     () => items.filter((a) => filter === "all" || a.status === filter),
@@ -93,30 +97,66 @@ export function ApprovalsView() {
 
   const selected = items.find((a) => a.requestId === selectedId) ?? null;
   const showActions = canApprove && rows.some((r) => r.status === "pending");
+  // The queue couldn't be read and there is nothing on hand: every count and the "Nothing to review"
+  // state would be statements about data the page doesn't have (QA audit 2026-10-08, WP-113).
+  const failed = Boolean(error) && items.length === 0;
 
   // Publish the approval queue's counts + active filter to the assistant.
   useAssistantPageContext({
-    facts: [
-      { label: "Pending", value: String(counts.pending ?? 0) },
-      { label: "Approved", value: String(counts.approved ?? 0) },
-      { label: "Rejected", value: String(counts.rejected ?? 0) },
-      { label: "Filter", value: filter },
-      { label: "Showing", value: String(rows.length) },
-    ],
+    facts: failed
+      ? [{ label: "Approval queue", value: "couldn't be loaded" }]
+      : [
+          { label: "Pending", value: String(counts.pending ?? 0) },
+          { label: "Approved", value: String(counts.approved ?? 0) },
+          { label: "Rejected", value: String(counts.rejected ?? 0) },
+          { label: "Cancelled", value: String(counts.cancelled ?? 0) },
+          { label: "Filter", value: filter },
+          { label: "Showing", value: String(rows.length) },
+        ],
   });
 
   const runDecide = async (item: ApprovalItem, decision: "approve" | "reject") => {
-    setDeciding(item.requestId);
+    setDeciding((s) => new Set(s).add(item.requestId));
     try {
       await decide(item, decision);
       setSelectedId(null);
       toast.success(decision === "approve" ? "Request approved" : "Request rejected", {
         description: `${item.typeName} · ${item.requesterName}`,
       });
-    } catch {
-      toast.error("Couldn't record the decision. Try again.");
+    } catch (e) {
+      // Two failures need different actions, and "try again" is right for neither (WP-262):
+      // a request decided elsewhere (or withdrawn) is stale — refresh the queue; one the balance
+      // can't cover must be rejected, since approving can never succeed.
+      const code = e instanceof ApiError ? `${e.code ?? ""} ${e.serverMessage ?? ""}` : "";
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error("This request was already decided or withdrawn", {
+          description: "The queue has been refreshed.",
+        });
+        setSelectedId(null);
+        reload();
+      } else if (code.includes("insufficient_balance")) {
+        toast.error("Not enough leave balance to approve this", {
+          description: `${item.requesterName} doesn't have enough ${item.typeName} left. Reject it, or adjust their allowance first.`,
+        });
+      } else if (code.includes("cannot_approve_own_request")) {
+        toast.error("You can't approve your own leave", {
+          description: "Ask another approver to decide it.",
+        });
+      } else if (code.includes("overlapping_leave")) {
+        toast.error("This overlaps leave that's already approved", {
+          description: "Reject it, or cancel the other request first.",
+        });
+      } else {
+        toast.error("Couldn't record the decision.", {
+          description: e instanceof ApiError ? e.message : "Check your connection and try again.",
+        });
+      }
     } finally {
-      setDeciding(null);
+      setDeciding((s) => {
+        const next = new Set(s);
+        next.delete(item.requestId);
+        return next;
+      });
     }
   };
 
@@ -124,7 +164,11 @@ export function ApprovalsView() {
     <div className="space-y-5">
       <PageHeader
         title="Approvals"
-        description={`${counts.pending ?? 0} pending · review and decide time-off requests`}
+        description={
+          failed
+            ? "Review and decide time-off requests"
+            : `${counts.pending ?? 0} pending · review and decide time-off requests`
+        }
         actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
@@ -145,6 +189,7 @@ export function ApprovalsView() {
           <button
             key={f.value}
             type="button"
+            aria-pressed={filter === f.value}
             onClick={() => setFilter(f.value)}
             className={cn(
               "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
@@ -153,7 +198,7 @@ export function ApprovalsView() {
                 : "bg-card text-muted-foreground shadow-soft hover:text-foreground",
             )}
           >
-            {f.label} · {counts[f.value] ?? 0}
+            {f.label} · {failed ? "—" : (counts[f.value] ?? 0)}
           </button>
         ))}
       </div>
@@ -164,6 +209,12 @@ export function ApprovalsView() {
             <Skeleton key={i} className="h-11 w-full" />
           ))}
         </Card>
+      ) : failed ? (
+        <EmptyState
+          icon={TriangleAlert}
+          title="The approval queue couldn't be loaded"
+          description="Requests waiting for a decision are still on file — use Retry above to load them."
+        />
       ) : rows.length === 0 ? (
         <EmptyState
           icon={ClipboardCheck}
@@ -206,7 +257,19 @@ export function ApprovalsView() {
                           className="size-7 shrink-0"
                           fallbackClassName="text-[10px]"
                         />
-                        <span className="truncate font-medium">{req.requesterName}</span>
+                        {/* A real button, so the request (full reason, documents) opens by keyboard
+                            too — the row's click alone was mouse-only (WP-478). */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedId(req.requestId);
+                          }}
+                          aria-label={`Open ${req.requesterName}'s ${req.typeName} request`}
+                          className="min-w-0 truncate text-left font-medium hover:underline focus-visible:underline focus-visible:outline-none"
+                        >
+                          {req.requesterName}
+                        </button>
                       </div>
                     </TableCell>
                       {/* Type, when, and how long — one question, one cell. */}
@@ -264,7 +327,7 @@ export function ApprovalsView() {
                               size="icon"
                               className="size-7 text-success hover:text-success"
                               aria-label="Approve"
-                              disabled={deciding === req.requestId}
+                              disabled={deciding.has(req.requestId)}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 runDecide(req, "approve");
@@ -277,7 +340,7 @@ export function ApprovalsView() {
                               size="icon"
                               className="size-7 text-destructive hover:text-destructive"
                               aria-label="Reject"
-                              disabled={deciding === req.requestId}
+                              disabled={deciding.has(req.requestId)}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 runDecide(req, "reject");
@@ -302,7 +365,7 @@ export function ApprovalsView() {
       <ApprovalDialog
         request={selected}
         canApprove={canApprove}
-        busy={deciding === selected?.requestId}
+        busy={selected ? deciding.has(selected.requestId) : false}
         onClose={() => setSelectedId(null)}
         onDecide={runDecide}
       />
@@ -406,11 +469,10 @@ function ApprovalDialog({
                     <Check className="size-4" /> Approve
                   </Button>
                 </>
-              ) : (
-                <p className="w-full text-center text-sm text-muted-foreground">
-                  You have view-only access to approvals.
-                </p>
-              )}
+              ) : null}
+              {/* No "view-only" branch: the queue route needs `LeaveApprove`, which grants both
+                  `approvals:view` and `approvals:approve` — nobody can read this page without being
+                  able to decide on it (WP-480). */}
             </DialogFooter>
           </>
         ) : null}

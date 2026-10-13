@@ -6,10 +6,9 @@
  *
  * - **Deactivate** disables the person's login immediately and reassigns their projects/tasks, but
  *   keeps them as a `deactivated` record — reversible via Reactivate. Backed by the live route.
- * - **Delete** erases them from the org entirely. Irreversible, so it requires typing the name to
- *   confirm. ⚠️ **The backend `DELETE /v1/employees/{id}` route does not exist yet** (the workforce
- *   context ships only deactivation, to preserve time/payroll/audit records) — so Delete will fail
- *   until that route ships. The dialog reports the failure honestly and points back to Deactivate.
+ * - **Delete** erases them from the org — `DELETE /v1/employees/{id}`, which removes the login,
+ *   directory entry and email claim of an already-deactivated employee and keeps their
+ *   time/attendance/payroll history. Irreversible, so it requires typing the name to confirm.
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -33,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ApiError } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth.store";
 import {
   deactivateEmployee,
   reactivateEmployee,
@@ -41,8 +41,39 @@ import {
 
 type Status = "active" | "deactivated" | "inactive" | "invited" | "suspended";
 
+/** The owner role's id — the same `role_id` the server's deactivate and delete guards read. */
+const OWNER_ROLE_ID = "role-owner";
+
 function messageOf(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
+}
+
+/**
+ * Why this person cannot be deactivated from here, if they cannot — mirroring the server's
+ * `cannot_deactivate_self` / `cannot_deactivate_owner` (QA audit 2026-10-08, WP-005). Deactivating
+ * yourself, or an owner, used to succeed and could leave the org with nobody able to undo it.
+ */
+function deactivationBlock(isSelf: boolean, roleId: string | undefined): string | null {
+  if (isSelf) return "You can't deactivate your own account.";
+  if (roleId === OWNER_ROLE_ID) {
+    return "Owners can't be deactivated. Transfer or revoke ownership first.";
+  }
+  return null;
+}
+
+/** The server's typed 409s for deactivate, for when one slips past the menu (say, a stale page). */
+function deactivateErrorMessage(e: unknown, name: string): string {
+  if (e instanceof ApiError) {
+    switch (e.code) {
+      case "cannot_deactivate_self":
+        return "You can't deactivate your own account.";
+      case "cannot_deactivate_owner":
+        return "Owners can't be deactivated. Transfer or revoke ownership first.";
+      case "not_active":
+        return `${name} is already deactivated.`;
+    }
+  }
+  return messageOf(e, `Couldn't deactivate ${name}. Try again.`);
 }
 
 /** Turn the server's typed 409 codes for delete into something an admin can act on. */
@@ -59,24 +90,31 @@ function deleteErrorMessage(e: unknown, name: string): string {
         return `${name} is already gone.`;
     }
   }
-  // No `code` (e.g. the route 404s because it isn't deployed yet) → the honest fallback.
-  return "Couldn't delete — permanent removal isn't available yet. Deactivate instead?";
+  // Anything else is said as what it was — a permission refusal, a server fault, a dropped
+  // connection. Every one of them used to read "permanent removal isn't available yet. Deactivate
+  // instead?", on an employee who was already deactivated (QA audit 2026-10-08, WP-455).
+  return messageOf(e, `Couldn't delete ${name}. Try again.`);
 }
 
 export function EmployeeManageMenu({
   id,
   name,
   status,
+  roleId,
   onChanged,
 }: {
   id: string;
   name: string;
   status: Status;
+  /** The employee's role id — an owner cannot be deactivated (see `deactivationBlock`). */
+  roleId?: string;
   /** Called after a successful deactivate/reactivate (delete navigates away instead). */
   onChanged: () => void;
 }) {
   const router = useRouter();
   const isActive = status === "active";
+  const viewerId = useAuthStore((s) => s.user?.id);
+  const blocked = isActive ? deactivationBlock(viewerId === id, roleId) : null;
 
   const [activationOpen, setActivationOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -93,10 +131,9 @@ export function EmployeeManageMenu({
       onChanged();
     } catch (e) {
       toast.error(
-        messageOf(
-          e,
-          `Couldn't ${isActive ? "deactivate" : "reactivate"} ${name}. Try again.`,
-        ),
+        isActive
+          ? deactivateErrorMessage(e, name)
+          : messageOf(e, `Couldn't reactivate ${name}. Try again.`),
       );
     } finally {
       setBusy(false);
@@ -129,12 +166,26 @@ export function EmployeeManageMenu({
         <DropdownMenuContent align="end" className="w-auto min-w-44">
           <DropdownMenuItem
             onClick={() => setActivationOpen(true)}
+            disabled={blocked !== null}
             className="gap-2 py-1.5 whitespace-nowrap"
           >
             {isActive ? (
-              <>
-                <UserX className="text-muted-foreground size-4" /> Deactivate
-              </>
+              blocked ? (
+                // Disabled with its reason in place, rather than hidden: a missing action reads as a
+                // bug, and the reason is the instruction for what to do instead.
+                <span className="flex flex-col gap-0.5">
+                  <span className="flex items-center gap-2">
+                    <UserX className="text-muted-foreground size-4" /> Deactivate
+                  </span>
+                  <span className="text-muted-foreground max-w-56 text-xs whitespace-normal">
+                    {blocked}
+                  </span>
+                </span>
+              ) : (
+                <>
+                  <UserX className="text-muted-foreground size-4" /> Deactivate
+                </>
+              )
             ) : (
               <>
                 <UserCheck className="text-muted-foreground size-4" /> Reactivate

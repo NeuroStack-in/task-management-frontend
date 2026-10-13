@@ -3,10 +3,31 @@ import {
   formatDuration,
   formatHours,
   formatMinutes,
+  initials,
   isUuid,
   personName,
   REMOVED_PERSON,
 } from "./format";
+
+describe("initials", () => {
+  it("takes the first letter of the first two words", () => {
+    expect(initials("Anna Lee")).toBe("AL");
+    expect(initials("  priya   raman  kumar ")).toBe("PR");
+  });
+
+  /** A lone UTF-16 surrogate renders as a replacement glyph inside the avatar. */
+  it("never splits a character outside the BMP", () => {
+    const out = initials("🌟 Priya");
+    expect(out).toBe("🌟P");
+    expect(Array.from(out)).toHaveLength(2);
+  });
+
+  /** "" switches the avatar's monogram off and leaves a blank circle. */
+  it("is never empty", () => {
+    expect(initials("")).toBe("?");
+    expect(initials("   ")).toBe("?");
+  });
+});
 
 /**
  * `format.ts` states the rule: "Opaque UUIDs are never shown in the UI." `personName` is where that

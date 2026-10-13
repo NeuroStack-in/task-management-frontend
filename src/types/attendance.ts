@@ -8,7 +8,8 @@
  * performance conversations. The frontend only ever displays them.
  *
  * Resolution order, first match wins:
- *   1. leave  →  2. non_workday  →  3. absent  →  4. partial  →  5. present
+ *   0. an admin override (`excused`, or a forced leave/non_workday)  →  1. leave  →
+ *   2. non_workday  →  3. absent  →  4. partial  →  5. present
  *
  * **Permission is not in this list.** Short time off inside a working day (`docs/LEAVE.md`) does not
  * change the day's status: the person turned up, and the server credits the approved minutes toward
@@ -34,49 +35,22 @@ export type DayStatus =
    * present / present-late"). A late arrival is present. Carry it as the separate
    * `late: boolean` on the record — never as a peer in this union.
    */
-  | "present";
+  | "present"
+  /**
+   * An admin excused the day (`PUT /v1/attendance/user/{id}/day/{date}/override`, managed-agent
+   * orgs only). The one status a person can set — audited server-side, never presence.
+   */
+  | "excused";
 
 /**
  * Does this day count toward an attendance rate's denominator?
  *
  * `non_workday` is excluded by §7 — counting Sundays as absences would skew every rate
- * in the same direction and look like an epidemic of truancy.
+ * in the same direction and look like an epidemic of truancy. `excused` is excluded too: the
+ * server's own summaries (`/v1/me/attendance`, `/v1/attendance/day`) leave it out of `counted`, and
+ * an excused day counted here read as an absence on every client tally (QA audit 2026-10-08,
+ * WP-257).
  */
 export function isCounted(status: DayStatus): boolean {
-  return status !== "non_workday";
+  return status !== "non_workday" && status !== "excused";
 }
-
-/** One person's resolved day. `late` is only meaningful when `status === "present"`. */
-export interface DayRecord {
-  status: DayStatus;
-  /** Qualifier on `present`: the first session started after the org late-threshold. */
-  late: boolean;
-  clockIn: string;
-  clockOut: string;
-  hours: number;
-}
-
-/**
- * Org-wide tally for one day.
- *
- * **`late` is a subset of `present`, not a peer.** Never add them — `present` already
- * includes late arrivals. `total` counts only counted days (`non_workday` excluded).
- */
-export interface DayCounts {
-  present: number;
-  /** Subset of `present`. Display as "of which N late", never as a separate column. */
-  late: number;
-  partial: number;
-  leave: number;
-  absent: number;
-  total: number;
-}
-
-/** Display metadata per status. `late` is styled off the record's qualifier, not here. */
-export const DAY_STATUS_LABEL: Record<DayStatus, string> = {
-  present: "Present",
-  partial: "Partial",
-  leave: "On leave",
-  absent: "Absent",
-  non_workday: "Non-working day",
-};

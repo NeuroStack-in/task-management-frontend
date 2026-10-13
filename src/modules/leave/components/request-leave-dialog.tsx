@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -48,25 +48,30 @@ function isoToday(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/** Inclusive working-day (Mon–Fri) count between two ISO dates. */
-export function workingDays(startIso: string, endIso: string): number {
-  if (!startIso || !endIso) return 0;
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  if (end < start) return 0;
-  let n = 0;
-  const d = new Date(start);
-  while (d <= end) {
-    const wd = d.getDay();
-    if (wd !== 0 && wd !== 6) n += 1;
-    d.setDate(d.getDate() + 1);
-  }
-  return n;
+/**
+ * Inclusive **calendar**-day count between two ISO dates — exactly what the server stores and, at
+ * approval, debits (`shared::leave::days_inclusive`).
+ *
+ * This used to preview Mon–Fri working days, so a Fri→Mon request read "2 days" and cost 4; a
+ * Saturday-only request read nothing and cost 1; and with `new Date("YYYY-MM-DD")` parsed as UTC, a
+ * viewer west of UTC saw a Monday as Sunday (QA audit 2026-10-08, WP-072). The preview must match
+ * the balance. Whether leave *should* skip weekends and holidays is a product rule for the server —
+ * change it there, and this follows.
+ */
+export function requestDays(startIso: string, endIso: string): number {
+  const dayOf = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86_400_000 : null;
+  };
+  const from = dayOf(startIso);
+  const to = dayOf(endIso);
+  if (from === null || to === null || to < from) return 0;
+  return to - from + 1;
 }
 
 // `type` is a server-configured id (not a fixed enum), so it's validated as a non-empty string and
 // the picker is populated from the org's types. The server recomputes the authoritative day count;
-// the `days` shown here is a working-day preview only.
+// the preview below follows the same rule (`requestDays`: inclusive calendar days).
 /** One working day, in minutes — the divisor the server uses (docs/LEAVE.md §2). */
 const WORKDAY_MINUTES = 8 * 60;
 
@@ -178,7 +183,7 @@ export function RequestLeaveDialog({
   const toTime = watch("toTime");
   const isPermission = kind === "permission";
   const permissionMinutes = isPermission ? minutesBetween(fromTime, toTime) : 0;
-  const wholeDays = useMemo(() => workingDays(start, end), [start, end]);
+  const wholeDays = useMemo(() => requestDays(start, end), [start, end]);
   // What will actually be deducted, so the preview matches the balance rather than the calendar.
   const days = isPermission
     ? permissionMinutes / WORKDAY_MINUTES
@@ -191,8 +196,16 @@ export function RequestLeaveDialog({
   // an orphaned S3 object if the dialog is abandoned — the bucket lifecycle sweeps those.
   const [docs, setDocs] = useState<ApiLeaveAttachment[]>([]);
   const [uploading, setUploading] = useState<string[]>([]);
+  // Bumped on every close. This component stays mounted while the dialog is shut, so an upload
+  // still in flight when Cancel was pressed used to land in the reset state and pre-attach itself
+  // to the *next* request (QA audit 2026-10-08, WP-477). A late upload from an older generation is
+  // dropped instead (its S3 object is swept like any abandoned one).
+  const generation = useRef(0);
+  // Label ↔ control ids, so every field is announced by its label (WP-478).
+  const fieldId = useId();
 
   function close() {
+    generation.current += 1;
     reset();
     setDocs([]);
     setUploading([]);
@@ -211,6 +224,7 @@ export function RequestLeaveDialog({
   }
 
   async function addFiles(files: File[]) {
+    const gen = generation.current;
     const slots = LEAVE_DOC_MAX_COUNT - docs.length - uploading.length;
     if (slots <= 0) {
       toast.error(`You can attach at most ${LEAVE_DOC_MAX_COUNT} documents.`);
@@ -220,6 +234,8 @@ export function RequestLeaveDialog({
       toast.error(`Only ${LEAVE_DOC_MAX_COUNT} documents per request — some were skipped.`);
     }
     for (const file of files.slice(0, slots)) {
+      // Closed meanwhile: don't start uploading the rest into a request that no longer exists.
+      if (gen !== generation.current) return;
       const reason = rejectReason(file);
       if (reason) {
         toast.error(reason);
@@ -230,8 +246,10 @@ export function RequestLeaveDialog({
         const { attachment_id, upload_url } = await presignLeaveDocument(
           file.name,
           file.type,
+          file.size,
         );
         await uploadFileToPresignedUrl(upload_url, file);
+        if (gen !== generation.current) continue;
         setDocs((d) => [
           ...d,
           {
@@ -242,14 +260,16 @@ export function RequestLeaveDialog({
           },
         ]);
       } catch {
-        toast.error(`Couldn't upload “${file.name}”. Try again.`);
+        if (gen === generation.current) toast.error(`Couldn't upload “${file.name}”. Try again.`);
       } finally {
         // Remove by first match rather than by name equality across the whole list, so two files
-        // with the same name don't clear each other's spinner.
-        setUploading((u) => {
-          const i = u.indexOf(file.name);
-          return i < 0 ? u : [...u.slice(0, i), ...u.slice(i + 1)];
-        });
+        // with the same name don't clear each other's spinner. A closed dialog already cleared it.
+        if (gen === generation.current) {
+          setUploading((u) => {
+            const i = u.indexOf(file.name);
+            return i < 0 ? u : [...u.slice(0, i), ...u.slice(i + 1)];
+          });
+        }
       }
     }
   }
@@ -279,7 +299,7 @@ export function RequestLeaveDialog({
         mins > 0
           ? `permission ${data.fromTime}–${data.toTime}`
           : (() => {
-              const d = workingDays(data.startDate, data.endDate);
+              const d = requestDays(data.startDate, data.endDate);
               return `${d} day${d === 1 ? "" : "s"}`;
             })();
       toast.success(
@@ -322,6 +342,7 @@ export function RequestLeaveDialog({
                   <button
                     key={value}
                     type="button"
+                    aria-pressed={field.value === value}
                     onClick={() => {
                       field.onChange(value);
                       // A permission is a single date. Collapsing the range here means the user
@@ -345,7 +366,7 @@ export function RequestLeaveDialog({
             )}
           />
 
-          <Field label="Leave type" error={errors.type?.message}>
+          <Field label="Leave type" htmlFor={`${fieldId}-type`} error={errors.type?.message}>
             <Controller
               control={control}
               name="type"
@@ -355,7 +376,7 @@ export function RequestLeaveDialog({
                   onValueChange={field.onChange}
                   items={Object.fromEntries(types.map((t) => [t.type_id, t.name]))}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger id={`${fieldId}-type`} className="w-full">
                     <SelectValue placeholder="Select a leave type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -371,12 +392,13 @@ export function RequestLeaveDialog({
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Start date" error={errors.startDate?.message}>
+            <Field label="Start date" htmlFor={`${fieldId}-start`} error={errors.startDate?.message}>
               <Controller
                 control={control}
                 name="startDate"
                 render={({ field }) => (
                   <DatePicker
+                    id={`${fieldId}-start`}
                     value={field.value}
                     onChange={field.onChange}
                     min={today}
@@ -385,12 +407,13 @@ export function RequestLeaveDialog({
                 )}
               />
             </Field>
-            <Field label="End date" error={errors.endDate?.message}>
+            <Field label="End date" htmlFor={`${fieldId}-end`} error={errors.endDate?.message}>
               <Controller
                 control={control}
                 name="endDate"
                 render={({ field }) => (
                   <DatePicker
+                    id={`${fieldId}-end`}
                     value={field.value}
                     onChange={field.onChange}
                     min={start || today}
@@ -409,12 +432,13 @@ export function RequestLeaveDialog({
               steps, so half-hours would have been a regression. */}
           {isPermission ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="From" error={errors.fromTime?.message}>
+              <Field label="From" htmlFor={`${fieldId}-from`} error={errors.fromTime?.message}>
                 <Controller
                   control={control}
                   name="fromTime"
                   render={({ field }) => (
                     <TimePicker
+                      id={`${fieldId}-from`}
                       value={field.value ?? ""}
                       onChange={field.onChange}
                       stepMinutes={15}
@@ -422,12 +446,13 @@ export function RequestLeaveDialog({
                   )}
                 />
               </Field>
-              <Field label="To" error={errors.toTime?.message}>
+              <Field label="To" htmlFor={`${fieldId}-to`} error={errors.toTime?.message}>
                 <Controller
                   control={control}
                   name="toTime"
                   render={({ field }) => (
                     <TimePicker
+                      id={`${fieldId}-to`}
                       value={field.value ?? ""}
                       onChange={field.onChange}
                       stepMinutes={15}
@@ -453,17 +478,21 @@ export function RequestLeaveDialog({
             </p>
           ) : !isPermission && days > 0 ? (
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{days}</span> working
-              day{days === 1 ? "" : "s"} requested.
+              <span className="font-medium text-foreground">{days}</span> day
+              {days === 1 ? "" : "s"} requested (calendar days, as your balance counts them).
             </p>
           ) : null}
 
-          <Field label="Reason" error={errors.reason?.message}>
-            <Input placeholder="e.g. Family vacation" {...register("reason")} />
+          <Field label="Reason" htmlFor={`${fieldId}-reason`} error={errors.reason?.message}>
+            <Input
+              id={`${fieldId}-reason`}
+              placeholder="e.g. Family vacation"
+              {...register("reason")}
+            />
           </Field>
 
           <div className="space-y-2">
-            <Label>
+            <Label htmlFor={`${fieldId}-docs`}>
               Documents <span className="text-muted-foreground">optional</span>
             </Label>
             <p className="text-xs text-muted-foreground">
@@ -504,6 +533,7 @@ export function RequestLeaveDialog({
             ) : null}
 
             <Input
+              id={`${fieldId}-docs`}
               type="file"
               multiple
               accept={LEAVE_DOC_TYPES.join(",")}
@@ -535,16 +565,21 @@ export function RequestLeaveDialog({
 
 function Field({
   label,
+  htmlFor,
   error,
   children,
 }: {
   label: string;
+  /** The control's id — ties the label to it, so a screen reader names the field (WP-478). */
+  htmlFor?: string;
   error?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm">{label}</Label>
+      <Label className="text-sm" htmlFor={htmlFor}>
+        {label}
+      </Label>
       {children}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

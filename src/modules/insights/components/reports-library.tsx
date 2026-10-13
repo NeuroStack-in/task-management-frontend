@@ -84,7 +84,7 @@ type Filter = "all" | ReportCategory;
 export function ReportsLibrary() {
   const { can } = usePermissions();
   const canExport = can("reports:export");
-  const { reports: allReports, loading, error } = useReportsData();
+  const { reports: allReports, loading, error, reload } = useReportsData();
   const [filter, setFilter] = useState<Filter>("all");
   const [preview, setPreview] = useState<ReportDef | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -146,8 +146,11 @@ export function ReportsLibrary() {
           <Loader label="Composing reports from live data…" />
         </div>
       ) : error ? (
-        <div className="rounded-2xl border border-border bg-card py-12 text-center text-sm text-muted-foreground">
-          {error}
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-card py-12 text-center text-sm text-muted-foreground">
+          <p>{error}</p>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Try again
+          </Button>
         </div>
       ) : (
         <>
@@ -304,6 +307,10 @@ function ReportCard({
       tabIndex={0}
       onClick={onPreview}
       onKeyDown={(e) => {
+        // Only keys pressed **on the card**. The export button inside it bubbled its Enter up here,
+        // where `preventDefault()` cancelled the button's own click — so the preview opened instead
+        // of the download menu (QA audit 2026-10-08, WP-489).
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onPreview();

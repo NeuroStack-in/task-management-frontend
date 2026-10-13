@@ -33,19 +33,49 @@ function unwrap(token: string): string {
   return raw.replace(/^["'<(\[]+/, "").replace(/["'>)\].,;:]+$/, "");
 }
 
+/**
+ * Split on commas, semicolons, newlines and tabs — but never inside double quotes or angle brackets,
+ * where a display name may hold a comma (`"Lee, Jordan" <jordan@acme.test>`). The regex this replaced
+ * split on the comma first and said it didn't (QA audit 2026-10-08, WP-459).
+ */
+function tokenize(input: string): string[] {
+  const out: string[] = [];
+  let current = "";
+  let quoted = false;
+  let angled = false;
+  for (const ch of input) {
+    if (ch === '"' && !angled) quoted = !quoted;
+    else if (ch === "<" && !quoted) angled = true;
+    else if (ch === ">" && !quoted) angled = false;
+    if (!quoted && !angled && (ch === "," || ch === ";" || ch === "\n" || ch === "\t")) {
+      out.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  out.push(current);
+  return out;
+}
+
+/** A token carrying an angle-bracketed address — the display-name form. */
+const HAS_ANGLED_ADDRESS = /<[^>]*@[^>]*>/;
+
 export function parseEmails(input: string): ParsedEmails {
   const emails: string[] = [];
   const invalid: string[] = [];
   const seen = new Set<string>();
   let duplicates = 0;
 
-  // Split on separators *outside* angle brackets: a display name can contain spaces and commas, so
-  // splitting the raw string first would tear `"Lee, Jordan" <j@acme.test>` into pieces.
-  const tokens = input.match(/[^,;\n\t]+(?:<[^>]*>)?/g) ?? [];
+  const tokens = tokenize(input);
 
-  for (const token of tokens) {
-    const trimmed = token.trim();
+  for (let i = 0; i < tokens.length; i++) {
+    const trimmed = tokens[i].trim();
     if (!trimmed) continue;
+    // Outlook's unquoted "Last, First <address>": the comma leaves "Last" on its own, ahead of the
+    // part with the address. It is the front of a display name, not an address that failed — it
+    // used to be listed as "not an email address" under a list that was complete.
+    if (!/[@<]/.test(trimmed) && HAS_ANGLED_ADDRESS.test(tokens[i + 1] ?? "")) continue;
 
     // A token with no angle brackets may still hold several space-separated addresses.
     const parts = /<[^>]*>/.test(trimmed) ? [trimmed] : trimmed.split(/\s+/);

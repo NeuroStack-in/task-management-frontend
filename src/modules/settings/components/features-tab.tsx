@@ -40,7 +40,9 @@ import { type FeatureKey } from "@/stores/features.store"
 import { toggleFeature } from "@/lib/api"
 import { useEntitlementsStore } from "@/stores/entitlements.store"
 import { useAuthStore } from "@/stores/auth.store"
-import { isOwnerOf } from "@/hooks/use-features"
+import { isOwnerOf, useTrackingMode } from "@/hooks/use-features"
+import { featureForHref, isPathModeHidden } from "@/constants/features"
+import { TRACKING_MODE_META } from "@/lib/tracking-mode"
 import { Loader } from "@/components/shared/loader"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils"
@@ -124,7 +126,13 @@ const CONTROLS: ControlDef[] = [
   { icon: Camera, label: "Screenshots", description: "Periodic screenshot capture and the review grid. Off stops the agents capturing, not just the page.", features: ["monitoring.screenshots"], page: "/insights/screenshots" },
   { icon: MapPin, label: "Locations", description: "The device-location board.", page: "/insights/locations" },
   { icon: FileText, label: "Reports", description: "Workforce, time and project reports, CSV export, and the narrated AI PDF — which is billed per generation.", features: ["reports.basic", "insights.reports.ai_pdf"], page: "/insights/ai-reports" },
-  { icon: Sparkles, label: "AI insights", description: "AI-narrated productivity summaries over the day's activity. Off stops them being generated and billed.", features: ["ai.insights"] },
+  // Truthful about the server's gates: the AI summaries on the Locations and Screenshots tabs ride
+  // `monitoring.activity` / `monitoring.screenshots`, not `ai.insights` (QA audit 2026-10-08, WP-281).
+  { icon: Sparkles, label: "AI insights", description: "AI-narrated daily, weekly and monthly recaps and the attention list. Off stops them being generated and billed. The AI summaries on the Locations and Screenshots tabs follow those switches instead.", features: ["ai.insights"] },
+  // It had no row, so nobody could turn it on after an upgrade, or off on an org created with it
+  // (QA audit 2026-10-08, WP-332). It gates the scorer's anomaly flags and their reasons in the
+  // attention list (`insights::scorer`, `attention_list`).
+  { icon: TriangleAlert, label: "Anomaly detection", description: "Flags unusual activity patterns for a person to review in the attention list. Statistical, not AI — and it never acts on its own.", features: ["anomalies"] },
   { icon: Bot, label: "AI assistant", description: "Ask questions about your workspace. Session-only — nothing is stored.", features: ["ai.assistant"], page: "page:assistant" },
   { icon: Plug, label: "Integrations", description: "Connect Slack so leave, joiner and payroll updates land in your channels.", features: ["integrations"] },
   { icon: Bell, label: "Notifications", description: "The notification centre.", page: "/notifications" },
@@ -223,6 +231,13 @@ function draftFromServer(enabled: Record<string, boolean>): Record<FeatureKey, b
   ) as Record<FeatureKey, boolean>
 }
 
+/** Server `pages` map → the per-row page draft (a page nobody hid has no key, and reads as on). */
+function pageDraftFrom(pages: Record<string, boolean>): Record<string, boolean> {
+  return Object.fromEntries(
+    CONTROLS.filter((c) => c.page).map((c) => [c.page as string, pages[c.page as string] !== false]),
+  )
+}
+
 export function FeaturesTab() {
   const { can } = usePermissions()
   // The API requires `entitlements:manage` (identity::toggle_feature). Gating the UI on
@@ -230,106 +245,102 @@ export function FeaturesTab() {
   // was denied a control it was entitled to.
   const canManage = can("entitlements:manage")
 
-  // Layer 2 (owner activation) is the real source of truth — `GET /v1/org/entitlements`.
-  const { enabled, allowed, loading, error, reload } = useEntitlements()
-  // Provenance for the disabled features, straight from the shared store the API hydrates.
-  const disabledBy = useEntitlementsStore((st) => st.disabledBy)
-  const storePages = useEntitlementsStore((st) => st.pages)
-  const pagesDisabledBy = useEntitlementsStore((st) => st.pagesDisabledBy)
-  // Absent key means visible, so the draft seeds `true` for anything never toggled.
-  const [pageDraft, setPageDraft] = useState<Record<string, boolean>>({})
-  useEffect(() => {
-    setPageDraft(
-      Object.fromEntries(
-        CONTROLS.filter((c) => c.page).map((c) => [
-          c.page as string,
-          storePages[c.page as string] !== false,
-        ]),
-      ),
-    )
-  }, [storePages])
+  // Layer 2 (owner activation) is the real source of truth — `GET /v1/org/entitlements`. Page
+  // visibility and the "turned off by" provenance come from the same fresh read, not the shared
+  // store: that is as old as the session, so a colleague's change since sign-in showed stale here,
+  // and toggling the stale row sent nothing (QA audit 2026-10-08, WP-338).
+  const {
+    raw,
+    enabled,
+    allowed,
+    pages: serverPages,
+    disabledBy,
+    pagesDisabledBy,
+    loading,
+    error,
+    reload,
+  } = useEntitlements()
   const isOwner = useAuthStore(isOwnerOf)
-  // The shared copy the sidebar + route guard read. Re-hydrating it here is what makes a
-  // saved toggle take effect immediately instead of only after a full page reload.
+  const mode = useTrackingMode()
+  // The shared copy the sidebar + route guard read. Every read this page makes — on open, and the
+  // re-read after a save — is pushed into it, so the nav follows what the server holds right away.
+  //
+  // **From a full read, never this page's draft or the PATCH response.** Hydrating with a partial
+  // object reset the session's tracking mode, dropped every "turned off by an owner" lock and un-hid
+  // the children of a hidden parent (QA audit 2026-10-08, WP-027); the PATCH response is the stored
+  // shape (attributed objects, no locks, no mode). And after a partly-failed save the nav must follow
+  // what the server accepted, not what the user intended — which a re-read gives in both cases.
   const hydrateShared = useEntitlementsStore((s) => s.hydrate)
+  useEffect(() => {
+    if (raw) hydrateShared(raw)
+  }, [raw, hydrateShared])
 
-  // Edit a local draft; commit to the server only on Save.
+  // Edit a local draft; commit to the server only on Save. Absent page key ⇒ visible.
   const [draft, setDraft] = useState<Record<FeatureKey, boolean>>(() => draftFromServer({}))
+  const [pageDraft, setPageDraft] = useState<Record<string, boolean>>(() => pageDraftFrom({}))
   const [saving, setSaving] = useState(false)
   /** Which confirmation is open, if any. Toggles reach the agents, so neither action is silent. */
   const [confirm, setConfirm] = useState<"save" | "reset" | null>(null)
   const server = draftFromServer(enabled)
+  const serverPageDraft = pageDraftFrom(serverPages)
   // Both halves. A row's single switch can change either or both, so comparing only the feature
   // draft meant a page-only edit left the save bar hidden and the change silently discarded.
   const pagesDirty = CONTROLS.some(
-    (c) => c.page && pageDraft[c.page] !== (storePages[c.page] !== false),
+    (c) => c.page && pageDraft[c.page] !== serverPageDraft[c.page],
   )
   const dirty = JSON.stringify(draft) !== JSON.stringify(server) || pagesDirty
   // Leaving via the settings rail now asks before discarding this draft.
   useUnsavedGuard(dirty)
 
-  // Adopt server state when it (re)loads — but only when the draft is clean, so a save/reload
-  // never clobbers edits in flight. `serverKey` changes only when the server value actually does.
-  const serverKey = JSON.stringify(server)
+  // Adopt server state when it (re)loads, both halves together. `serverKey` changes only when the
+  // server value actually does, so a reload that changed nothing keeps edits in flight — unless a
+  // failed save asked for a resync, which must show what is really in effect.
+  const serverKey = JSON.stringify([server, serverPageDraft])
   const lastSyncedRef = useRef<string>("")
+  const resyncRef = useRef(false)
   useEffect(() => {
-    if (serverKey !== lastSyncedRef.current) {
+    if (serverKey !== lastSyncedRef.current || resyncRef.current) {
       setDraft(draftFromServer(enabled))
+      setPageDraft(pageDraftFrom(serverPages))
       lastSyncedRef.current = serverKey
+      resyncRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverKey])
+  }, [serverKey, raw])
 
   async function handleSave() {
     if (!dirty || saving) return
     // PATCH only the keys that actually changed (one call each; the server enforces enabled ⊆ allowed).
     const changed = FEATURE_LIST.filter((f) => draft[f.key] !== server[f.key])
+    // Page toggles ride the same endpoint with `scope: "page"` — one route, one lock, one audit.
+    const pagesChanged = CONTROLS.filter(
+      (c) => c.page && pageDraft[c.page] !== serverPageDraft[c.page],
+    )
     setSaving(true)
     try {
       for (const f of changed) {
         await toggleFeature(f.key, draft[f.key])
       }
-      // Page toggles ride the same endpoint with `scope: "page"` — one route, one lock, one audit.
-      const pagesChanged = CONTROLS.filter(
-        (c) =>
-          c.page && pageDraft[c.page] !== (storePages[c.page] !== false),
-      )
       for (const c of pagesChanged) {
         await toggleFeature(c.page as string, pageDraft[c.page as string], "page")
       }
-      setConfirm(null)
       toast.success("Feature settings saved")
-      // Push the saved state into the shared store so the nav re-filters right away — `reload()`
-      // only refreshes this page's copy, and without this the owner keeps seeing the section they
-      // just switched off until a full reload.
-      //
-      // **In the success path, not `finally`.** It used to run either way, so a failed save showed
-      // "Couldn't save every change" *and* removed the section from the sidebar anyway: the error
-      // said one thing and the nav said the opposite, with only a hard refresh to resolve it. The
-      // nav must follow what the server accepted, never what the user intended.
-      hydrateShared({
-        allowed: [...allowed],
-        enabled: { ...enabled, ...draft },
-        pages: { ...storePages, ...pageDraft },
-      })
     } catch {
-      toast.error("Couldn't save every change. Reloading the current settings.")
+      // Some PATCHes may have landed. Say so, and put BOTH halves of the draft back to what the
+      // server now holds: re-seeding only the half that changed left a half-applied draft (WP-338).
+      resyncRef.current = true
+      toast.error("Some changes couldn't be saved. The switches now show what's in effect.")
     } finally {
+      // Closed either way — on failure the dialog used to stay open and re-list a different set.
+      setConfirm(null)
       setSaving(false)
-      reload() // re-sync to server truth regardless (partial success is possible)
+      reload() // re-read; the effects above re-seed the draft and the shared store from it
     }
   }
 
   function handleReset() {
     setDraft(server)
-    setPageDraft(
-      Object.fromEntries(
-        CONTROLS.filter((c) => c.page).map((c) => [
-          c.page as string,
-          storePages[c.page as string] !== false,
-        ]),
-      ),
-    )
+    setPageDraft(serverPageDraft)
     setConfirm(null)
   }
 
@@ -346,8 +357,7 @@ export function FeaturesTab() {
     const off: string[] = []
     for (const c of CONTROLS) {
       const featChanged = (c.features ?? []).some((k) => draft[k] !== server[k])
-      const pageChanged =
-        c.page && pageDraft[c.page] !== (storePages[c.page] !== false)
+      const pageChanged = c.page && pageDraft[c.page] !== serverPageDraft[c.page]
       if (!featChanged && !pageChanged) continue
       const nowOn = (c.features ?? []).every((k) => draft[k]) && (c.page ? pageDraft[c.page] !== false : true)
       ;(nowOn ? on : off).push(c.label)
@@ -355,10 +365,50 @@ export function FeaturesTab() {
     return { on, off }
   }
 
+  /**
+   * Why a row's page is hidden whatever its own switch says — the tracking mode, a hidden parent, or
+   * the feature its route rides on. The gate applies these (`isPathModeHidden`, `useIsPageOn`'s
+   * longest prefix, `ROUTE_FEATURES`); the rows used to read On regardless (QA audit 2026-10-08,
+   * WP-527).
+   */
+  function hiddenBecause(c: ControlDef): string | null {
+    if (!c.page || !c.page.startsWith("/")) return null
+    if (c.page.startsWith("/insights/") && pageDraft["/insights"] === false) {
+      return "Hidden while Analytics is off."
+    }
+    const rides = featureForHref(c.page)
+    if (rides && !(c.features ?? []).includes(rides) && !(allowed.has(rides) && draft[rides])) {
+      const owner = CONTROLS.find((o) => o.features?.includes(rides))
+      return owner ? `Hidden while ${owner.label} is off.` : null
+    }
+    return null
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <Loader label="Loading features…" />
+      </div>
+    )
+  }
+
+  // Nothing loaded: say so, with a way back. Rendering the rows here told an Enterprise owner that
+  // every feature was "Not included in your plan" because of one failed read (WP-338).
+  if (!raw) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Features"
+          description="Enable or disable features organization-wide. Changes take effect once saved for everyone except organization owners."
+        />
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            {error ?? "Couldn't load your organization's features."} Nothing has changed.
+          </p>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
       </div>
     )
   }
@@ -373,15 +423,20 @@ export function FeaturesTab() {
       {error && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <TriangleAlert className="size-4 shrink-0" />
-          {error}
+          <span className="flex-1">{error} The switches show the last settings that loaded.</span>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
         </div>
       )}
 
+      {/* Names the permission the switches actually need — the server label, so it can be found in
+          Roles & permissions. It said "Manage Settings", which a role can hold without this (WP-521). */}
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
-          <span className="font-medium text-foreground">Manage Settings</span>{" "}
+          <span className="font-medium text-foreground">Manage feature toggles</span>{" "}
           permission.
         </div>
       )}
@@ -400,14 +455,20 @@ export function FeaturesTab() {
           <div className="divide-y">
             {CONTROLS.map((c) => {
               const Icon = c.icon
-              const feats = c.features ?? []
-              // ON means the whole subject is on: every capability it owns, and its page.
+              const declared = c.features ?? []
+              // The row acts on the capabilities the plan includes. "Reports" owns both basic
+              // reports and the AI PDF; requiring *every* key to be in the plan made the row read Off,
+              // "Not included in your plan", and disabled on Free and Starter — which include basic
+              // reports — and on Enterprise it read Off whenever only one half was on (WP-096).
+              const feats = declared.filter((k) => allowed.has(k))
+              // ON means the subject is on: every capability it owns within the plan, and its page.
               const featOn = feats.every((k) => draft[k])
               const pageOn = c.page ? pageDraft[c.page] !== false : true
               const isOn = featOn && pageOn
 
-              // A capability outside the plan can never be switched on (the server rejects it).
-              const planAllows = feats.every((k) => allowed.has(k))
+              // A row none of whose capabilities are in the plan can never be switched on (the server
+              // rejects it). A row with no capabilities at all (a page-only row) is always allowed.
+              const planAllows = declared.length === 0 || feats.length > 0
               // Locked if ANY half was switched off by a role this caller could not grant.
               const notes = [
                 ...feats.map((k) => disabledBy[k]),
@@ -415,13 +476,17 @@ export function FeaturesTab() {
               ].filter(Boolean) as { by_owner: boolean; locked: boolean }[]
               const locked = notes.some((n) => n.locked)
               const note = notes[0]
+              // The mode hides the route from everyone, owners included — so the owner note below must
+              // not claim they still see it.
+              const modeHidden = Boolean(c.page?.startsWith("/") && isPathModeHidden(c.page, mode))
+              const hiddenNote = isOn && !modeHidden ? hiddenBecause(c) : null
 
               return (
                 <div
                   key={c.label}
                   className={cn(
                     "flex items-center gap-4 px-6 py-3 transition-opacity",
-                    !isOn && "opacity-60",
+                    (!isOn || modeHidden || hiddenNote) && "opacity-60",
                   )}
                 >
                   <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
@@ -437,6 +502,13 @@ export function FeaturesTab() {
                       <p className="mt-1 text-xs text-muted-foreground">
                         Not included in your plan.
                       </p>
+                    ) : modeHidden ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Hidden for everyone in {TRACKING_MODE_META[mode].label} tracking, whatever
+                        this switch says. The tracking mode is set under Settings → Organization.
+                      </p>
+                    ) : hiddenNote ? (
+                      <p className="mt-1 text-xs text-muted-foreground">{hiddenNote}</p>
                     ) : note ? (
                       <p className="mt-1 text-xs text-muted-foreground">
                         Turned off by {note.by_owner ? "an owner" : "an admin"}

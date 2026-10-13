@@ -30,6 +30,7 @@ import {
   AuthError,
   TotpChallengeError,
 } from "@/modules/auth/services/auth.service";
+import { takeHandedOffEmail } from "@/modules/auth/email-handoff";
 import {
   AuthErrorSummary,
   AuthField,
@@ -40,7 +41,7 @@ import {
 } from "./auth-frame";
 import { SsoProviderButtons } from "./sso-provider-buttons";
 
-type Status = "idle" | "loading" | "success";
+type Status = "idle" | "loading";
 type Errors = { email?: string; password?: string; form?: string };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -62,16 +63,25 @@ export function LoginExperience() {
   const summaryRef = useRef<HTMLDivElement>(null);
 
   /**
-   * Prefill after creating a workspace or accepting an invite — both redirect here with `?email=`.
+   * Prefill after creating a workspace whose automatic sign-in didn't go through — handed over in
+   * `sessionStorage`, not as `?email=` in the URL (WP-390).
    *
    * Seeded in an effect rather than as lazy `useState` initial state: the server renders this page
-   * without the query string, so initialising from `params` there produces markup the client
-   * immediately disagrees with, and React reports a hydration mismatch. Setting it post-mount keeps
-   * both renders identical.
+   * without it, so initialising during render produces markup the client immediately disagrees with,
+   * and React reports a hydration mismatch. Setting it post-mount keeps both renders identical.
    */
   useEffect(() => {
-    const seeded = params.get("email");
+    const seeded = takeHandedOffEmail();
     if (seeded) setEmail(seeded);
+    // A failed Google sign-in lands here with `?error=` — which nothing read, so the user got a
+    // pristine sign-in page and no explanation (QA audit 2026-10-08, WP-107). The copy is fixed, not
+    // echoed from the URL: a link must not be able to put its own words on this page.
+    if (params.get("error")) {
+      setErrors({
+        form: "We couldn't complete your Google sign-in. Try again, or sign in with your email and password.",
+      });
+      setSubmitted(true);
+    }
   }, [params]);
 
   useEffect(() => {
@@ -118,13 +128,11 @@ export function LoginExperience() {
     setErrors({});
     setStatus("loading");
     try {
-      await login(email.trim(), password);
-      setStatus("success");
-      const from = params.get("from");
-      setTimeout(
-        () => router.replace(safeLandingPath(currentRoleSnapshot(), from)),
-        600,
-      );
+      await login(email.trim(), password, keepSignedIn);
+      // Nothing more to do: the store is now signed in, so this page renders nothing and the effect
+      // above sends the user on. A timer here navigated a second time 600 ms later — bouncing an
+      // org-less user /onboarding → /dashboard → /onboarding, and pulling back anyone who had
+      // already clicked away (QA audit 2026-10-08, WP-383).
     } catch (err) {
       // The password was CORRECT and Cognito is now asking for the authenticator code. This is a
       // success path wearing a rejection: `login` signals it by throwing, because it has no session
@@ -234,8 +242,6 @@ export function LoginExperience() {
               <>
                 <Loader2 className="m-spin size-4" /> Signing in…
               </>
-            ) : status === "success" ? (
-              "Welcome back!"
             ) : (
               "Sign in"
             )}
@@ -248,7 +254,11 @@ export function LoginExperience() {
 
         <SsoProviderButtons
           disabled={status !== "idle"}
-          onError={(m) => setErrors(m ? { form: m } : {})}
+          onError={(m) => {
+            setErrors(m ? { form: m } : {});
+            // The summary renders only after a submit attempt; an SSO failure is one (WP-107).
+            if (m) setSubmitted(true);
+          }}
         />
 
         <AuthSwitch prompt="Don't have an account?" href="/register" label="Create a workspace" />

@@ -34,7 +34,11 @@ export const ROUTE_FEATURES: ReadonlyArray<{
   // Locations are captured by the same monitoring pipeline as activity; there is no separate key.
   { href: "/insights/locations", feature: "monitoring.activity" },
   { href: "/insights/screenshots", feature: "monitoring.screenshots" },
-  { href: "/insights/ai-reports", feature: "insights.reports.ai_pdf" },
+  // The Reports page: the report library (`reports.basic`, every plan) **and** the AI briefing,
+  // which locks itself with its own add-on notice. Gating the route on the Enterprise-only
+  // `insights.reports.ai_pdf` walled Free and Starter orgs out of the library they are entitled to
+  // (QA audit 2026-10-08, WP-082).
+  { href: "/insights/ai-reports", feature: "reports.basic" },
   { href: "/insights/anomalies", feature: "anomalies" },
   { href: "/insights/reports", feature: "reports.basic" },
   // Settings lives outside the sidebar nav, but the guard resolves by pathname — so switching
@@ -50,7 +54,8 @@ export function featureForHref(href: string): FeatureKey | null {
 /**
  * Routes a **tracking mode** hides, whatever the plan and the owner's toggles say (MANAGED-AGENT.md
  * §4/§8). This is the source of truth (hrefs, so it can cover modules with no feature key — e.g.
- * `/payroll`); `MODE_HIDDEN_FEATURES` below is *derived* from it, for badging the Features tab.
+ * `/payroll`); `MODE_HIDDEN_FEATURES` below is *derived* from it. The Features tab badges its rows
+ * from this list directly (`isPathModeHidden`), which is what catches the key-less `/payroll`.
  *
  * `machine` mode is a **monitoring-only console**: it hides Projects, Leave/Approvals and Payroll —
  * surfaces a login-less org has no operator for. **`/time-tracking` is deliberately NOT here**: that
@@ -67,8 +72,8 @@ export const MODE_HIDDEN_ROUTES: Record<TrackingMode, readonly string[]> = {
 
 /**
  * The feature keys a mode hides — derived from `MODE_HIDDEN_ROUTES` via `featureForHref`, so a route
- * with no key (e.g. `/payroll`) simply contributes nothing here. Used to badge the Features tab and
- * to layer the mode onto `useIsSurfaceOn`.
+ * with no key (e.g. `/payroll`) simply contributes nothing here. Layers the mode onto
+ * `useIsSurfaceOn`.
  */
 /**
  * Is this pathname hidden by the org's tracking mode? True when any route the mode hides equals or is

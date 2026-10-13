@@ -3,19 +3,22 @@
 /**
  * Weekly tracked hours, from the real backend (`GET /v1/me/timesheet?from&to`).
  *
- * The server rolls entries up into days server-side and caps the span at 92 days, so this fetches a
- * single ~12-week window (Monday of 11 weeks ago → today, 84 days max) once and slices it per week
- * on the client. Paging the chart back and forth never re-hits the network.
+ * **One week per read.** This used to fetch a 12-week window and slice it, and re-download all
+ * twelve weeks — every session row in them — every 30 s to draw one week. The server also reads a
+ * range with a single query capped at 2,000 entries and no truncation signal, oldest first, so a
+ * heavy tracker lost the *newest* weeks, the ones shown by default (QA audit 2026-10-08, WP-434).
+ * Now the shown week is read on its own: the current week is polled, a past week is read once and
+ * kept, so paging back to it again costs nothing.
  *
  * Billable vs other is real: each day carries `billable_secs` and `total_secs`; "other" is the
  * remainder. A week with no tracked time reads as genuine zeros — not fabricated bars.
  */
-import { useCallback, useEffect, useState } from "react";
-import { useLiveRefresh } from "@/hooks/use-live-refresh";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { LIVE_REFRESH_MS, useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import { getRange, todayLocal } from "./services/timesheet.service";
 
-/** How many weeks back the chart can page (matches the fetched window). */
+/** How many weeks back the chart can page. */
 export const MAX_WEEKS_BACK = 11;
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -29,10 +32,10 @@ export interface WeekDay {
 }
 
 export interface WeeklyHoursState {
-  /** The 7 days (Mon–Sun) for `offset` weeks from this week (0 = this week, −1 = last). */
-  week: (offset: number) => WeekDay[];
+  /** The 7 days (Mon–Sun) of the requested week. */
+  days: WeekDay[];
   /** Total tracked hours for that week. */
-  totalHoursFor: (offset: number) => number;
+  totalHours: number;
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -60,10 +63,10 @@ interface DayTotals {
   billable: number;
 }
 
-/** The fetched window: a date→seconds map plus the anchor Monday it was built against. */
-interface Loaded {
+/** One read week: its Monday (`YYYY-MM-DD`) and its date → hours map. */
+interface LoadedWeek {
+  monday: string;
   totals: Map<string, DayTotals>;
-  anchorMonday: Date;
 }
 
 const EMPTY_WEEK: WeekDay[] = DAY_LABELS.map((day) => ({
@@ -73,28 +76,50 @@ const EMPTY_WEEK: WeekDay[] = DAY_LABELS.map((day) => ({
   hours: 0,
 }));
 
-export function useWeeklyHours(): WeeklyHoursState {
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
+/** @param offset Which week: `0` = this week, `-1` = last week, and so on. */
+export function useWeeklyHours(offset: number): WeeklyHoursState {
+  const [shown, setShown] = useState<LoadedWeek | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Live: re-fetch every 30 s in the background so a colleague's newly-logged time appears without
-  // a reload. `reload` stays the visible path (Retry); the poll uses the quiet one.
-  const { nonce, reload, isBackground } = useLiveRefresh();
+  // Weeks already read, by Monday. A finished week no longer changes, so paging back to one is
+  // served from here; the current week is shown from here too, then re-read quietly.
+  const weeksRead = useRef(new Map<string, Map<string, DayTotals>>());
+  const lastOffset = useRef<number | null>(null);
+  // Live: the **current** week re-fetches every 30 s in the background, so newly-synced time appears
+  // without a reload. A past week is not polled. `reload` stays the visible path (Retry).
+  const { nonce, reload, isBackground } = useLiveRefresh(offset === 0 ? LIVE_REFRESH_MS : null);
 
   useEffect(() => {
     // Resolve "now" inside the effect (never during render) so the server and client passes agree —
-    // the same reason `use-timesheet` reads the date here. The window is the client's own weeks.
+    // the same reason `use-timesheet` reads the date here. The weeks are the client's own.
     const now = new Date();
-    const anchorMonday = mondayOf(now);
-    const from = ymd(addDays(anchorMonday, -MAX_WEEKS_BACK * 7));
-    const to = todayLocal(now);
+    const monday = addDays(mondayOf(now), offset * 7);
+    const key = ymd(monday);
+    const today = todayLocal(now);
+    const sunday = ymd(addDays(monday, 6));
+    const to = sunday < today ? sunday : today;
+    const background = isBackground();
+    const paged = lastOffset.current !== offset;
+    lastOffset.current = offset;
+
+    const kept = paged ? weeksRead.current.get(key) : undefined;
+    if (kept) {
+      setShown({ monday: key, totals: kept });
+      setError(null);
+      setLoading(false);
+      if (offset !== 0) return; // a finished week cannot change
+    }
 
     let live = true;
-    // A background poll must not blank the grid it is refreshing.
-    if (!isBackground()) setLoading(true);
-    setError(null);
+    // A background poll — or a re-read of a week already on screen — must not blank the chart it
+    // is refreshing, nor replace it with an error.
+    const quiet = background || Boolean(kept);
+    if (!quiet) {
+      setLoading(true);
+      setError(null);
+    }
 
-    getRange(from, to)
+    getRange(key, to)
       .then((res) => {
         if (!live) return;
         const totals = new Map<string, DayTotals>();
@@ -104,10 +129,12 @@ export function useWeeklyHours(): WeeklyHoursState {
             billable: d.billable_secs / 3600,
           });
         }
-        setLoaded({ totals, anchorMonday });
+        weeksRead.current.set(key, totals);
+        setShown({ monday: key, totals });
+        setError(null);
       })
       .catch((e) => {
-        if (live) setError(messageOf(e));
+        if (live && !quiet) setError(messageOf(e));
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -116,31 +143,31 @@ export function useWeeklyHours(): WeeklyHoursState {
     return () => {
       live = false;
     };
-  }, [nonce, isBackground]);
+  }, [offset, nonce, isBackground]);
 
-  const week = useCallback(
-    (offset: number): WeekDay[] => {
-      if (!loaded) return EMPTY_WEEK;
-      const mon = addDays(loaded.anchorMonday, offset * 7);
-      return DAY_LABELS.map((day, i) => {
-        const rec = loaded.totals.get(ymd(addDays(mon, i)));
-        const hours = rec ? round1(rec.total) : 0;
-        const billable = rec ? round1(Math.min(rec.billable, rec.total)) : 0;
-        return { day, hours, billable, other: round1(Math.max(0, hours - billable)) };
-      });
-    },
-    [loaded],
-  );
+  const days = useMemo((): WeekDay[] => {
+    if (!shown) return EMPTY_WEEK;
+    const mon = new Date(`${shown.monday}T00:00:00`);
+    return DAY_LABELS.map((day, i) => {
+      const rec = shown.totals.get(ymd(addDays(mon, i)));
+      const hours = rec ? exactHours(rec.total) : 0;
+      const billable = rec ? exactHours(Math.min(rec.billable, rec.total)) : 0;
+      return { day, hours, billable, other: exactHours(Math.max(0, hours - billable)) };
+    });
+  }, [shown]);
 
-  const totalHoursFor = useCallback(
-    (offset: number) => week(offset).reduce((s, d) => s + d.hours, 0),
-    [week],
-  );
+  const totalHours = useMemo(() => days.reduce((s, d) => s + d.hours, 0), [days]);
 
-  return { week, totalHoursFor, loading, error, reload };
+  return { days, totalHours, loading, error, reload };
 }
 
-const round1 = (n: number) => Math.round(n * 10) / 10;
+/**
+ * Hours as they are — **not** rounded. These were rounded to one decimal (6-minute steps) and
+ * then shown, summed and exported as `HH:MM:SS`, so every cell was a multiple of 00:06:00, a
+ * day under 3 minutes read as untracked, and totals did not equal their parts (WP-056). The
+ * formatters round to the second when they display.
+ */
+const exactHours = (n: number) => n;
 
 function messageOf(e: unknown): string {
   if (e instanceof ApiError) {

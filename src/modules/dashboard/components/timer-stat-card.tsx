@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Timer as TimerIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { useTimesheet } from "@/modules/time-tracking/use-timesheet";
+import type { TimesheetRow } from "@/modules/time-tracking/use-timesheet";
 import { formatDuration } from "@/lib/format";
 
 /**
@@ -24,10 +24,20 @@ import { formatDuration } from "@/lib/format";
  * `duration_secs`, which an open entry does not have yet (`shared::entry::total_secs`).
  * So the open session's elapsed time has to be added here, and only here: adding it
  * server-side would make a cached read drift the moment it was cached.
+ *
+ * **Fed by the caller**, not by its own `useTimesheet()`: the personal dashboard already reads
+ * today's sheet (`useWeekTracked`), and a second instance here polled the same three endpoints
+ * again every 30 s (QA audit 2026-10-08, WP-434).
  */
-export function TimerStatCard() {
-  const { rows, totalSec } = useTimesheet();
-  const running = rows.find((r) => r.running) ?? null;
+export function TimerStatCard({
+  running,
+  settledSec: totalSec,
+}: {
+  /** The session open right now, or `null`. */
+  running: TimesheetRow | null;
+  /** Today's settled seconds — the open session excluded. */
+  settledSec: number;
+}) {
 
   // Advance the clock once a second while a session is open (read-only).
   const [, setTick] = useState(0);
@@ -45,7 +55,10 @@ export function TimerStatCard() {
   // progress. Stopped with time on the clock: say it's the day's total, so a static
   // figure isn't mistaken for a stalled timer.
   const label = running
-    ? (running.task ?? running.project ?? "Tracking now")
+    ? running.task ||
+      running.description ||
+      (running.project !== "—" ? running.project : "") ||
+      "Tracking now"
     : todaySec > 0
       ? "Total tracked today"
       : "Start it in the WorkPulse desktop app";

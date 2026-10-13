@@ -26,37 +26,49 @@ import { explicitTheme, getAppearance } from "@/modules/settings/services/appear
 export function AppearanceSync() {
   const { theme, setTheme } = useTheme();
   const ran = useRef(false);
+  // Read through refs so the sync runs exactly once. With `[theme, setTheme]` as deps (next-themes
+  // gives `setTheme` a new identity whenever the theme changes), any re-run — a theme flip while the
+  // request was in flight, or StrictMode's double effect in dev — cancelled the first run's response
+  // and the `ran` guard stopped the second from asking again, so nothing was applied for the session
+  // (QA audit 2026-10-08, WP-515).
+  const themeRef = useRef(theme);
+  const setThemeRef = useRef(setTheme);
+  useEffect(() => {
+    themeRef.current = theme;
+    setThemeRef.current = setTheme;
+  });
 
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
-    let live = true;
+    // What was showing when the request left. A pick made while it was in flight has already been
+    // saved to the account, so it wins over this older answer.
+    const themeAtStart = themeRef.current;
+    const paletteAtStart = currentPalette();
 
     getAppearance()
       .then((v) => {
-        if (!live) return;
         // Palette: only touch the DOM when it actually differs, so we never cause a needless repaint.
-        // An unset account ("default") coerces to meridian — slate & teal, the product default.
+        // An unset account ("default") coerces to the shipped default, `DEFAULT_PALETTE` (teal).
         const palette = coercePalette(v.palette);
-        if (palette !== currentPalette()) applyPalette(palette);
+        const shown = currentPalette();
+        if (shown === paletteAtStart && palette !== shown) applyPalette(palette);
+        if (themeRef.current !== themeAtStart) return;
         // Theme, in priority order (see lib/theme.ts):
-        //   1. the account's explicit light/dark  — a real choice, so it follows the user anywhere
-        //   2. a pick made in this browser        — respected, including "System"
-        //   3. otherwise                          — LIGHT, the product default
+        //   1. the account's stored light / dark / system — a real choice (the server serves
+        //      `light` for an account that never chose), so it follows the user anywhere
+        //   2. otherwise, a pick made in this browser    — respected
+        //   3. otherwise                                 — LIGHT, the product default
         // Step 3 deliberately overrides whatever is sitting in next-themes' storage: that key is
         // per-origin, not per-account, so one stale `dark` was turning every sign-in on every account
         // dark. Only a recorded choice may keep it.
         const target = explicitTheme(v.theme) ?? (hasChosenTheme() ? null : "light");
-        if (target && target !== theme) setTheme(target);
+        if (target && target !== themeRef.current) setThemeRef.current(target);
       })
       .catch(() => {
         /* keep whatever the pre-paint script applied */
       });
-
-    return () => {
-      live = false;
-    };
-  }, [theme, setTheme]);
+  }, []);
 
   return null;
 }

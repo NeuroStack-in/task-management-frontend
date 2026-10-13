@@ -6,6 +6,7 @@ import { Clock } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { usePermissions } from "@/hooks/use-permissions";
+import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { formatHours } from "@/lib/format";
 import { getUserTimesheet } from "@/modules/time-tracking/services/timesheet.service";
@@ -34,6 +35,8 @@ function rangeFor(period: Period): { from: string; to: string } {
 interface MemberTime {
   userId: string;
   seconds: number;
+  /** Their timesheet couldn't be read: `denied` (outside this viewer's reach) or `failed`. */
+  unread?: "denied" | "failed";
 }
 
 /**
@@ -99,11 +102,16 @@ export function ProjectTimeByMember({
           return { userId: uid, seconds };
         })
         // A member whose timesheet we can't read, or a failed read, contributes nothing rather
-        // than failing the whole panel. This is a per-member fallback and is only sound as one:
-        // when the CALLER cannot read team time at all, every read fails and the sum is a uniform
-        // zero indistinguishable from an idle project. The `allowed` gate above is what keeps that
-        // case from reaching here.
-        .catch(() => ({ userId: uid, seconds: 0 })),
+        // than failing the whole panel — but is **marked**, so the panel can say who is missing.
+        // A team-scoped reader is refused anyone outside their department, and the total used to
+        // present that readable subset as the project's hours (QA audit 2026-10-08, WP-504). When
+        // the CALLER cannot read team time at all, every read fails; the `allowed` gate above keeps
+        // that case from reaching here.
+        .catch((e: unknown) => ({
+          userId: uid,
+          seconds: 0,
+          unread: e instanceof ApiError && e.status === 403 ? ("denied" as const) : ("failed" as const),
+        })),
     ).then((results) => {
       if (live) setRows([...results].sort((a, b) => b.seconds - a.seconds));
     });
@@ -119,6 +127,19 @@ export function ProjectTimeByMember({
 
   const withTime = rows?.filter((r) => r.seconds > 0) ?? [];
   const totalSec = withTime.reduce((s, r) => s + r.seconds, 0);
+  const denied = rows?.filter((r) => r.unread === "denied").length ?? 0;
+  const failed = rows?.filter((r) => r.unread === "failed").length ?? 0;
+  const partial = denied + failed > 0;
+  const people = (n: number) => `${n} ${n === 1 ? "member" : "members"}`;
+  const missingNote = partial ? (
+    <p className="text-xs text-muted-foreground">
+      {denied > 0
+        ? `Not included: ${people(denied)} whose timesheets you can't view.`
+        : null}
+      {denied > 0 && failed > 0 ? " " : null}
+      {failed > 0 ? `${people(failed)} couldn't be loaded.` : null}
+    </p>
+  ) : null;
 
   return (
     <Card>
@@ -148,10 +169,13 @@ export function ProjectTimeByMember({
             <span className="flex size-10 items-center justify-center rounded-md bg-muted">
               <Clock className="size-5 text-muted-foreground" />
             </span>
-            <p className="text-sm font-medium">No time tracked yet</p>
+            <p className="text-sm font-medium">
+              {partial ? "No time tracked by the members shown" : "No time tracked yet"}
+            </p>
             <p className="max-w-xs text-xs text-muted-foreground">
               Each member&apos;s hours on this project appear here once they run a timer against it.
             </p>
+            {missingNote}
           </div>
         ) : (
           <>
@@ -182,11 +206,15 @@ export function ProjectTimeByMember({
               );
             })}
             <div className="flex items-center justify-between border-t border-border pt-2.5 text-sm">
-              <span className="text-muted-foreground">Total</span>
+              {/* Not the project's total when someone is missing from it. */}
+              <span className="text-muted-foreground">
+                {partial ? "Total for the members shown" : "Total"}
+              </span>
               <span className="font-mono font-medium tabular-nums">
                 {formatHours(totalSec / 3600)}
               </span>
             </div>
+            {missingNote}
           </>
         )}
       </CardContent>

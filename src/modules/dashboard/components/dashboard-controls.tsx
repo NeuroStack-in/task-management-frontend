@@ -12,6 +12,14 @@ import {
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/format";
+import { MAX_DAYS } from "@/modules/dashboard/use-dashboard-data";
+
+/** `iso` moved by `days` whole days, built from its own parts (a bare `YYYY-MM-DD` parses as UTC). */
+function shiftIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const t = new Date(y, m - 1, d + days);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+}
 
 export function DashboardControls({
   range,
@@ -47,6 +55,12 @@ export function DashboardControls({
   // The dashboard summarises recorded activity, so a range can never extend into the future. Read
   // per render (not at module scope) so a tab left open overnight bounds to the real today.
   const today = todayIso();
+  // …and never past the `MAX_DAYS` the board reads. A longer pick was silently cut to its first 62
+  // days while the pickers still showed the whole range (QA audit 2026-10-08, WP-435), so each
+  // picker is bounded by the other date instead.
+  const span = MAX_DAYS - 1;
+  const endMax = start && shiftIso(start, span) < today ? shiftIso(start, span) : today;
+  const startMin = end ? shiftIso(end, -span) : undefined;
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       {/* Range segmented control + custom-range pickers */}
@@ -57,6 +71,8 @@ export function DashboardControls({
               key={r.value}
               type="button"
               onClick={() => onRangeChange(r.value)}
+              // The selected range was shown by colour alone (QA audit 2026-10-08, WP-439).
+              aria-pressed={range === r.value}
               className={cn(
                 "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
                 range === r.value
@@ -74,6 +90,7 @@ export function DashboardControls({
             <DatePicker
               value={start}
               onChange={onStartChange}
+              min={startMin}
               max={end || today}
               placeholder="Start date"
             />
@@ -82,7 +99,7 @@ export function DashboardControls({
               value={end}
               onChange={onEndChange}
               min={start || undefined}
-              max={today}
+              max={endMax}
               placeholder="End date"
             />
           </div>

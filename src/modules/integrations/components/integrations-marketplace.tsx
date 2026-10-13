@@ -71,6 +71,8 @@ export function IntegrationsMarketplace() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [channelsOpen, setChannelsOpen] = useState(false);
+  /** A Slack reconnect waiting for the admin to confirm that it clears the routing. */
+  const [confirmReconnect, setConfirmReconnect] = useState<ApiIntegration | null>(null);
 
   const load = useCallback(() => {
     listIntegrations()
@@ -139,32 +141,83 @@ export function IntegrationsMarketplace() {
   if (!rows) return <Loader label="Loading integrations…" />;
 
   const slack = rows.find((r) => r.provider === "slack");
+  // Routing is editable whenever the connection exists — **including `error`**. A post to a channel
+  // the bot was never invited to marks the connection errored, and the editor was reachable only when
+  // connected, so the one way out of a bad-channel error was Reconnect — which wipes the routing
+  // (QA audit 2026-10-08, WP-235). The routing routes don't depend on the status.
+  const hasConnection = (r?: ApiIntegration) => r?.status === "connected" || r?.status === "error";
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
         {rows
-          .filter((row) => !HIDDEN_PROVIDERS.has(row.provider))
+          // A hidden provider still shows while it holds a connection, so whoever connected it
+          // earlier can disconnect it — hiding it outright left no way to revoke the token (WP-471).
+          .filter((row) => !HIDDEN_PROVIDERS.has(row.provider) || hasConnection(row))
           .map((row) => (
           <ProviderCard
             key={row.provider}
             row={row}
             canManage={canManage}
             busy={busy === row.provider}
-            // The channel-routing view is Slack-specific and only meaningful once connected; the
-            // eye button that opens it is shown only then.
+            retired={HIDDEN_PROVIDERS.has(row.provider)}
+            // The channel-routing view is Slack-specific and only meaningful once a connection exists.
             onViewChannels={
-              row.provider === "slack" &&
-              row.status === "connected" &&
-              canManage
+              row.provider === "slack" && hasConnection(row) && canManage
                 ? () => setChannelsOpen(true)
                 : undefined
             }
             onConnect={() => onConnect(row.provider)}
+            // Reconnecting Slack starts a fresh connection server-side, which clears the routing —
+            // say so first rather than let it vanish (WP-235).
+            onReconnect={() =>
+              row.provider === "slack" ? setConfirmReconnect(row) : onConnect(row.provider)
+            }
             onDisconnect={() => onDisconnect(row.provider, row.label)}
           />
         ))}
       </div>
+
+      <Dialog
+        open={confirmReconnect !== null}
+        onOpenChange={(o) => !o && setConfirmReconnect(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reconnect {confirmReconnect?.label}?</DialogTitle>
+            <DialogDescription>
+              Reconnecting starts a new connection and clears your channel routing, so you&apos;ll
+              need to choose the channels again afterwards. If Slack refused a message because of a
+              channel, fix that channel in Channel routing instead — no reconnect needed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap justify-end gap-2">
+            {confirmReconnect && hasConnection(confirmReconnect) && canManage ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setConfirmReconnect(null);
+                  setChannelsOpen(true);
+                }}
+              >
+                Open channel routing
+              </Button>
+            ) : null}
+            <Button variant="outline" onClick={() => setConfirmReconnect(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const row = confirmReconnect;
+                setConfirmReconnect(null);
+                if (row) void onConnect(row.provider);
+              }}
+            >
+              Reconnect
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Routing lives in a dialog now, opened from the Slack card's eye button, so the card grid
           stays compact instead of a tall panel always hanging below it. */}
@@ -179,7 +232,7 @@ export function IntegrationsMarketplace() {
               default channel; with no default, that update isn&apos;t posted at all.
             </DialogDescription>
           </DialogHeader>
-          {slack?.status === "connected" ? <SlackRouting /> : null}
+          {hasConnection(slack) ? <SlackRouting /> : null}
         </DialogContent>
       </Dialog>
     </div>
@@ -191,7 +244,8 @@ export function IntegrationsMarketplace() {
  *
  * Distinct from the old "Coming soon" treatment, which rendered the card blurred with an overlay:
  * a parked card still occupies the page and still invites the question "when?". Google Calendar is
- * hidden outright (2026-08-27) — Slack is the integration this product ships.
+ * hidden (2026-08-27) — Slack is the integration this product ships — except while an org still
+ * holds a connection to it, when its card offers Disconnect only.
  *
  * A front-end gate only. `GET /v1/integrations` still lists it and the backend can still connect
  * it, so restoring the card is deleting one string; nothing server-side was removed.
@@ -202,16 +256,21 @@ function ProviderCard({
   row,
   canManage,
   busy,
+  retired = false,
   onViewChannels,
   onConnect,
+  onReconnect,
   onDisconnect,
 }: {
   row: ApiIntegration;
   canManage: boolean;
   busy: boolean;
-  /** When set (Slack, connected), an eye button that opens the channel-routing dialog. */
+  /** A provider no longer offered ({@link HIDDEN_PROVIDERS}) but still connected: disconnect only. */
+  retired?: boolean;
+  /** When set (Slack, connected or errored), an eye button that opens the channel-routing dialog. */
   onViewChannels?: () => void;
   onConnect: () => void;
+  onReconnect: () => void;
   onDisconnect: () => void;
 }) {
   const connected = row.status === "connected";
@@ -235,11 +294,15 @@ function ProviderCard({
                   {row.org_wide ? "Organization" : "Personal"}
                 </Badge>
               </CardTitle>
+              {/* "Connected" even without an account label — Google's is always empty by design,
+                  and a connected provider read "Not connected" (WP-471). */}
               <CardDescription className="mt-1">
-                {connected && row.external_account
-                  ? `Connected to ${row.external_account}`
+                {connected
+                  ? row.external_account
+                    ? `Connected to ${row.external_account}`
+                    : "Connected"
                   : errored
-                    ? "Needs reconnecting"
+                    ? "Needs attention"
                     : "Not connected"}
               </CardDescription>
             </div>
@@ -275,9 +338,20 @@ function ProviderCard({
           <p className="text-xs text-muted-foreground">
             Only an owner or admin can change this connection.
           </p>
+        ) : retired ? (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              This integration isn&apos;t offered any more. Disconnect it to revoke WorkPulse&apos;s
+              access.
+            </p>
+            <Button variant="ghost" onClick={onDisconnect} disabled={busy}>
+              <Unplug className="size-4" />
+              Disconnect
+            </Button>
+          </div>
         ) : connected || errored ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={onConnect} disabled={busy}>
+            <Button variant="outline" onClick={onReconnect} disabled={busy}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : null}
               Reconnect
             </Button>
@@ -285,7 +359,7 @@ function ProviderCard({
               <Unplug className="size-4" />
               Disconnect
             </Button>
-            {/* Opens the channel-routing dialog. Only present for a connected Slack card. */}
+            {/* Opens the channel-routing dialog. Present for a Slack card with a connection. */}
             {onViewChannels ? (
               <Button
                 variant="ghost"
@@ -320,25 +394,52 @@ function ProviderCard({
 // Sentinel for "no explicit channel — fall back to the default". A Select can't hold "", so the
 // empty routing choice needs a real value; it's mapped back to "" on save.
 const USE_DEFAULT = "__default__";
+// The same for "no default channel" — without it a default, once picked, could never be cleared in
+// picker mode (WP-471).
+const NO_DEFAULT = "__none__";
 
 function SlackRouting() {
   const [config, setConfig] = useState<SlackConfig | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [channels, setChannels] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  useEffect(() => {
+  const loadConfig = useCallback(() => {
+    setLoadError(null);
     getSlackConfig()
       .then(setConfig)
-      // A 404 means "connected, but never configured" — an empty editor, not an error.
-      .catch(() => setConfig({ default_channel: "", channels: {} }));
+      .catch((e) => {
+        // Only a 404 means "connected, but never configured" — an empty editor. Any other failure
+        // is a read that did not happen: showing the empty editor then let Save overwrite the org's
+        // real routing with nothing (QA audit 2026-10-08, WP-069).
+        if (e instanceof ApiError && e.status === 404) {
+          setConfig({ default_channel: "", channels: {} });
+        } else {
+          setLoadError(e instanceof ApiError ? e.message : "Couldn't load the channel routing.");
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    loadConfig();
     // The picker's whole reason to exist. If it fails (scope missing, transient), fall back to
     // free-text entry rather than blocking routing entirely.
     listSlackChannels()
       .then(setChannels)
       .catch(() => setChannels([]));
-  }, []);
+  }, [loadConfig]);
 
+  if (loadError) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <span className="min-w-0">{loadError}</span>
+        <Button variant="outline" size="sm" className="shrink-0" onClick={loadConfig}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
   if (!config) return null;
 
   // A channel already routed but no longer returned by Slack (renamed/archived) must still be
@@ -382,15 +483,18 @@ function SlackRouting() {
           <Label htmlFor="default-channel">Default channel</Label>
           {usePicker ? (
             <Select
-              value={config.default_channel || ""}
+              value={config.default_channel || NO_DEFAULT}
               onValueChange={(v) =>
-                setConfig({ ...config, default_channel: v as string })
+                setConfig({ ...config, default_channel: v === NO_DEFAULT ? "" : (v as string) })
               }
             >
               <SelectTrigger id="default-channel" className="w-full sm:w-64">
-                <SelectValue placeholder="Choose a channel…" />
+                <SelectValue>
+                  {(value) => (value === NO_DEFAULT ? "No default channel" : String(value ?? ""))}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={NO_DEFAULT}>No default channel</SelectItem>
                 {options.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c}

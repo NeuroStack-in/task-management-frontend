@@ -246,16 +246,16 @@ export const ACCOUNT_SECTIONS: NavItem[] = [
     href: "/settings/notifications",
     icon: BellRing,
     permission: null,
-    description: "Email and in-app notification preferences.",
-    keywords: "alerts email digest preferences push reminders notifications",
+    description: "Which events notify you in the app.",
+    keywords: "alerts preferences reminders notifications in-app bell",
   },
   {
     label: "Appearance",
     href: "/settings/appearance",
     icon: Palette,
     permission: null,
-    description: "Theme, palette, and display density.",
-    keywords: "theme palette colour color dark light mode density font",
+    description: "Theme, color palette, and font.",
+    keywords: "theme palette colour color dark light mode font typeface",
   },
 ];
 
@@ -284,20 +284,15 @@ export const SETTINGS_SUBSECTIONS: NavItem[] = [
     keywords:
       "password change reset credentials mfa 2fa authenticator totp enrol enroll disable qr code login security",
   },
-  {
-    label: "Export organization data",
-    href: "/settings/ownership",
-    icon: TriangleAlert,
-    permission: "settings:manage",
-    description: "Request a full export of your organization's data.",
-    keywords: "export download all data backup zip archive gdpr copy organization",
-  },
+  // No separate "Export organization data" entry: it repeated `/settings/ownership` (declared below
+  // in ADMIN_SECTIONS), so search dropped it as a duplicate href and its keywords never matched.
+  // They live on that entry now (QA audit 2026-10-08, WP-509).
   {
     label: "Multi-factor authentication",
     href: "/settings/security#mfa",
     icon: ShieldCheck,
     permission: "security:view",
-    description: "Multi-factor / authenticator setup and policy.",
+    description: "Your authenticator app, and resetting a member's.",
     keywords:
       "mfa 2fa multifactor multi-factor two-factor authenticator otp passkey two step verification",
   },
@@ -306,7 +301,7 @@ export const SETTINGS_SUBSECTIONS: NavItem[] = [
     href: "/settings/security#sessions",
     icon: ShieldCheck,
     permission: "security:view",
-    description: "Session timeout, device limits, and trusted devices.",
+    description: "Session lifetime and your signed-in devices.",
     keywords: "session timeout concurrent device trusted remember access policy",
   },
 ];
@@ -349,8 +344,9 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         href: "/settings/ownership",
         icon: TriangleAlert,
         permission: "settings:manage",
-        description: "Transfer ownership, export data, or close the organization.",
-        keywords: "transfer ownership export data close delete danger zone",
+        description: "Manage owners, export data, or close the organization.",
+        keywords:
+          "transfer ownership export download all data backup zip archive gdpr copy close delete danger zone",
       },
     ],
   },
@@ -362,15 +358,17 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         href: "/settings/monitoring",
         icon: SlidersHorizontal,
         permission: "settings:view",
-        description: "Idle, screenshot, and productivity thresholds.",
-        keywords: "idle screenshot productivity threshold tracking monitoring",
+        description: "Screenshot capture, retention, and agent updates.",
+        keywords: "idle screenshot capture cadence retention agent updates tracking monitoring",
       },
       {
         label: "Tracking rules",
         href: "/settings/tracking-rules",
         icon: Globe,
-        permission: "settings:view",
-        description: "Allow lists, block lists, and productivity scoring.",
+        // `GET` and `PUT /v1/org/rules` both require `MonitoringManage`; on `settings:view` the rail
+        // offered the page to roles that then got a 403 (QA audit 2026-10-08, WP-346).
+        permission: "monitoring:manage",
+        description: "Not-tracked and restricted lists, and productivity scoring.",
         keywords: "allow list block list apps url website productivity scoring rules",
       },
     ],
@@ -391,16 +389,17 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         href: "/settings/security",
         icon: ShieldCheck,
         permission: "security:view",
-        description: "MFA, SSO, session policies, and security events.",
-        keywords: "security center protect compliance events policy",
+        description: "Multi-factor authentication, sessions, password policy, and security events.",
+        keywords: "security center protect compliance events policy mfa password sessions",
       },
       {
         label: "Audit logs",
         href: "/settings/audit-logs",
         icon: ScrollText,
         permission: "audit-logs:view",
-        description: "User actions, permission changes, and login events.",
-        keywords: "activity log history events sign-in audit trail",
+        // Only what the server records: no role changes and no sign-ins are written (WP-336).
+        description: "Settings, ownership, device and security changes.",
+        keywords: "activity log history events audit trail changes",
       },
     ],
   },
@@ -412,8 +411,9 @@ export const ADMIN_SECTIONS: NavGroup[] = [
         href: "/settings/integrations",
         icon: Plug,
         permission: "integrations:view",
-        description: "Slack, Teams, Jira, GitHub, and more.",
-        keywords: "connect apps slack teams jira github webhook api marketplace",
+        // The server offers Slack and Google Calendar (`integrations::Provider::ALL`) — nothing else.
+        description: "Slack and Google Calendar.",
+        keywords: "connect apps slack google calendar meetings marketplace",
       },
       {
         label: "Device agents",
@@ -452,17 +452,23 @@ export const ALL_NAV_ITEMS: NavItem[] = [
  * than to `/settings`, and a detail route like `/employees/abc` still resolves to Employees — a
  * detail page is about the same thing as its list. Any `#fragment` on an entry is ignored: it is a
  * scroll target, not a different page.
+ *
+ * **On a tie, the page beats a section of it.** `/settings/security#mfa` strips to the same path as
+ * `/settings/security`, and the sub-sections are listed first, so the first-wins rule told the
+ * assistant the Security page was "Multi-factor authentication" (QA audit 2026-10-08, WP-328).
  */
 export function navItemForPath(pathname: string): NavItem | null {
   const path = pathname.split("?")[0].replace(/\/+$/, "") || "/";
+  const pathOf = (item: NavItem) => item.href.split("#")[0].replace(/\/+$/, "");
   let best: NavItem | null = null;
   for (const item of ALL_NAV_ITEMS) {
-    const href = item.href.split("#")[0].replace(/\/+$/, "");
+    const href = pathOf(item);
     if (!href) continue;
     if (path === href || path.startsWith(`${href}/`)) {
-      if (!best || href.length > best.href.split("#")[0].replace(/\/+$/, "").length) {
-        best = item;
-      }
+      const bestLen = best ? pathOf(best).length : -1;
+      const pageOverSection =
+        href.length === bestLen && best?.href.includes("#") && !item.href.includes("#");
+      if (href.length > bestLen || pageOverSection) best = item;
     }
   }
   return best;

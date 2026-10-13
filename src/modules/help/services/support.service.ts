@@ -2,8 +2,9 @@
  * Support tickets — the real backend (`workforce` context, LLD §19; the one sanctioned cross-tenant
  * read via the sparse GSI7). The caller sees their own tenant's tickets.
  *
- * There is **no priority and no attachments** on the server — the ticket is `{subject, description,
- * category}` plus a status and a reply thread. So the form collects only what's stored.
+ * A ticket is `{subject, description, category}` plus up to five **attachments** (S3 keys — the
+ * browser uploads the bytes straight to S3, see {@link uploadAttachment}), a status and a reply
+ * thread. There is no priority on the server, so the form doesn't ask for one.
  */
 import { apiFetch } from "@/lib/api";
 
@@ -26,6 +27,21 @@ export interface ApiTicketView {
   status: string;
   created_at: number;
   updated_at?: number;
+  /**
+   * The files attached when filing — S3 **keys**, not URLs. Omitted by the server when there are
+   * none. Missing from this type, so the ticket view never showed them (QA audit 2026-10-08, WP-121).
+   */
+  attachments?: string[];
+}
+
+/**
+ * The file name to show for an attachment key. The server mints
+ * `support/<tenant>/<user>/<ULID>-<sanitized name>`, so the name is the last segment minus its
+ * id prefix.
+ */
+export function attachmentName(key: string): string {
+  const last = key.split("/").pop() || key;
+  return last.replace(/^[0-9A-HJKMNP-TV-Z]{26}-/, "") || last;
 }
 
 /** Mirrors `ReplyView` — `author` is a user id (or "support"). */
@@ -40,11 +56,16 @@ export interface ApiThread {
   replies: ApiReply[];
 }
 
+/**
+ * The caller's tickets, **newest first**. The server returns them in key order — oldest first — so
+ * a just-filed ticket landed at the bottom of "Your recent tickets" (QA audit 2026-10-08, WP-246).
+ */
 export async function listTickets(): Promise<ApiTicketSummary[]> {
   const data = await apiFetch<ApiTicketSummary[] | { tickets: ApiTicketSummary[] }>(
     "/v1/support/tickets",
   );
-  return Array.isArray(data) ? data : (data?.tickets ?? []);
+  const list = Array.isArray(data) ? data : (data?.tickets ?? []);
+  return [...list].sort((a, b) => b.created_at - a.created_at);
 }
 
 export function createTicket(body: {
@@ -102,7 +123,8 @@ export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export async function uploadAttachment(file: File): Promise<string> {
   const slot = await apiFetch<PresignSlot>("/v1/support/tickets/attachments/presign", {
     method: "POST",
-    body: JSON.stringify({ filename: file.name, content_type: file.type }),
+    // The size is signed into the slot, so S3 refuses anything bigger (WP-170).
+    body: JSON.stringify({ filename: file.name, content_type: file.type, size: file.size }),
   });
   const res = await fetch(slot.url, {
     method: "PUT",

@@ -38,8 +38,10 @@ function Flag({ iso, className }: { iso: string; className?: string }) {
     );
   }
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- a 20px flag needs no optimisation pass,
-    // and next/image would require configuring a remote pattern for a purely decorative asset.
+    // A 20px flag needs no optimisation pass, and next/image would require configuring a remote
+    // pattern for a purely decorative asset. (The directive must sit on the line right above `<img`
+    // — split across two comment lines it suppressed nothing and was itself reported as unused.)
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={`https://flagcdn.com/w40/${iso.toLowerCase()}.png`}
       alt=""
@@ -114,8 +116,22 @@ export function PhoneInput({
   );
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  /**
+   * The country chosen in the picker this session. A dial code can't always name its country (+1 is
+   * the US, Canada and the Caribbean), so an explicit choice of Canada must not turn into the US the
+   * moment the value is re-parsed — and it must survive the number being cleared (WP-362).
+   */
+  const [picked, setPicked] = useState<Country | null>(null);
 
-  const { country, national } = parse(value);
+  const parsed = parse(value);
+  const allDigits = (value ?? "").replace(/[^\d]/g, "");
+  const isE164 = (value ?? "").trim().startsWith("+");
+  // The picked country wins while the value agrees with it, or is empty; otherwise the value decides.
+  const country =
+    picked && (!allDigits || (isE164 && allDigits.startsWith(picked.dial)))
+      ? picked
+      : parsed.country;
+  const national = country && isE164 ? allDigits.slice(country.dial.length) : parsed.national;
 
   useEffect(() => {
     if (!open) return;
@@ -136,9 +152,34 @@ export function PhoneInput({
     );
   }, [query]);
 
+  /**
+   * No digits ⇒ **empty**, whatever the country. It emitted the bare dial code (`+91`), so once a
+   * country was chosen the number could never be removed — clearing it saved "+91" as the phone.
+   * The country stays on screen through `picked`.
+   */
   const emit = (c: Country | null, nat: string) => {
     const digits = nat.replace(/[^\d]/g, "");
-    onChange(c ? (digits ? `+${c.dial}${digits}` : `+${c.dial}`) : digits);
+    if (!digits && c) setPicked(c);
+    onChange(!digits ? "" : c ? `+${c.dial}${digits}` : digits);
+  };
+
+  /**
+   * Typing or pasting into the number box. A full international number (`+91 98765 43210`, or
+   * `0091…`) is read as one — its own country code wins — instead of having its digits appended to
+   * the selected code (`+91919876543210`), or its `+` stripped into a bare local number.
+   */
+  const onNationalChange = (text: string) => {
+    const t = text.trim();
+    if (t.startsWith("+") || t.startsWith("00")) {
+      const digits = t.replace(/^00/, "").replace(/[^\d]/g, "");
+      const c = countryFromDial(digits);
+      if (c && digits.length > c.dial.length) {
+        setPicked(c);
+        onChange(`+${digits}`);
+        return;
+      }
+    }
+    emit(country, text);
   };
 
   return (
@@ -149,6 +190,8 @@ export function PhoneInput({
           onClick={toggle}
           disabled={disabled}
           aria-label={country ? `Country: ${country.name}` : "Select country code"}
+          aria-haspopup="dialog"
+          aria-expanded={open}
           className={cn(
             "border-input bg-background hover:bg-muted/40 focus-visible:ring-ring/40 flex h-9 items-center gap-1.5 rounded-l-md border border-r-0 px-2.5 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
             disabled && "cursor-not-allowed opacity-50",
@@ -170,6 +213,8 @@ export function PhoneInput({
           ? createPortal(
               <div
                 ref={panelRef}
+                role="dialog"
+                aria-label="Choose a country code"
                 className="bg-popover text-popover-foreground ring-foreground/10 fixed z-[60] rounded-lg border p-1.5 shadow-lg ring-1"
                 style={{ top: pos.top, left: pos.left, width: PANEL_W }}
               >
@@ -179,6 +224,7 @@ export function PhoneInput({
                     ref={searchRef}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
+                    aria-label="Search country or code"
                     placeholder="Search country or code"
                     className="border-input bg-background focus-visible:ring-ring/40 h-8 w-full rounded-md border pl-7 pr-2 text-sm focus-visible:ring-2 focus-visible:outline-none"
                   />
@@ -194,7 +240,9 @@ export function PhoneInput({
                         <button
                           key={c.iso}
                           type="button"
+                          aria-pressed={country?.iso === c.iso}
                           onClick={() => {
+                            setPicked(c);
                             emit(c, national);
                             setOpen(false);
                           }}
@@ -236,9 +284,9 @@ export function PhoneInput({
         disabled={disabled}
         placeholder={placeholder}
         value={national}
-        // Digits only. A pasted "+91 98765 43210" would otherwise land in the national part and
-        // save as "+91+919876543210"; stripping here means paste does the obvious thing.
-        onChange={(e) => emit(country, e.target.value)}
+        // Digits only — except a full international number, which is read as one (see
+        // `onNationalChange`).
+        onChange={(e) => onNationalChange(e.target.value)}
         className={cn(
           "border-input bg-background focus-visible:ring-ring/40 h-9 w-full min-w-0 rounded-r-md border px-3 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none",
           disabled && "cursor-not-allowed opacity-50",

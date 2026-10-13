@@ -23,10 +23,11 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/currency";
+import { useOrgCurrency } from "@/hooks/use-org";
 import type { ApiDeduction } from "../services/payroll.service";
 
-function deductionLabel(kind: string, value: number): string {
-  return kind === "percent" ? `${value}%` : formatCurrency(value);
+function deductionLabel(kind: string, value: number, currency?: string): string {
+  return kind === "percent" ? `${value}%` : formatCurrency(value, currency);
 }
 
 /** Editor row: `value` stays a string while typing; parsed + validated on save. */
@@ -72,13 +73,20 @@ function validate(rows: DraftRule[]): { rules: ApiDeduction[] } | { error: strin
 
 export function DeductionsCard({
   deductions,
+  loadError,
+  onRetry,
   canManage,
   onSave,
 }: {
   deductions: ApiDeduction[];
+  /** The rules could not be read — show that, never "none configured" (see `usePayroll`). */
+  loadError?: string | null;
+  onRetry?: () => void;
   canManage: boolean;
   onSave: (rules: ApiDeduction[]) => Promise<ApiDeduction[]>;
 }) {
+  // Flat amounts in the org's own currency (WP-078).
+  const currency = useOrgCurrency() ?? undefined;
   const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState<DraftRule[]>([]);
   const [saving, setSaving] = useState(false);
@@ -86,7 +94,9 @@ export function DeductionsCard({
   // read-only view and stop offering the editor (honest degradation).
   const [denied, setDenied] = useState(false);
 
-  const showEditor = canManage && !denied;
+  // No editor over a failed read: saving replaces the whole rule set, so editing "nothing" would
+  // delete every real rule (QA audit 2026-10-08, WP-075).
+  const showEditor = canManage && !denied && !loadError;
 
   function startEdit() {
     setRows(toDraft(deductions));
@@ -134,7 +144,16 @@ export function DeductionsCard({
         ) : null}
       </CardHeader>
       <CardContent>
-        {!editing ? (
+        {loadError && !editing ? (
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <p className="text-destructive">Couldn&apos;t load the deduction rules: {loadError}</p>
+            {onRetry ? (
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+            ) : null}
+          </div>
+        ) : !editing ? (
           deductions.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No deduction rules configured.
@@ -152,7 +171,7 @@ export function DeductionsCard({
                       </Badge>
                     ) : null}
                   </span>
-                  <span className="font-mono tabular-nums">{deductionLabel(d.kind, d.value)}</span>
+                  <span className="font-mono tabular-nums">{deductionLabel(d.kind, d.value, currency)}</span>
                 </li>
               ))}
             </ul>

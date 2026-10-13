@@ -6,8 +6,7 @@ import { Sparkles, X, ArrowUp, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAssistantStore } from "@/stores/assistant.store";
-import { useIsFeatureOn, useIsPageOn } from "@/hooks/use-features";
-import { usePermissions } from "@/hooks/use-permissions";
+import { useAssistantAccess } from "@/hooks/use-assistant-access";
 import { ApiError } from "@/lib/api";
 import {
   sendAssistantMessage,
@@ -18,17 +17,17 @@ import { usePublishedPageContext } from "@/stores/page-context.store";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 
-/**
- * The assistant's page key. It is a floating launcher, not a route, so it cannot key off an href —
- * but it is a surface an org may want to hide, so it carries a pseudo-key in the same namespace.
- * The `page:` prefix keeps it unmistakable from a real path.
- */
-export const ASSISTANT_PAGE_KEY = "page:assistant";
-
 interface Message {
   id: number;
   role: "user" | "assistant";
   text: string;
+  /**
+   * Not a turn of the conversation: the canned greeting, the client's own error sentences, and a
+   * question whose request failed. All of it used to be replayed to the model as history — the
+   * greeting and the apologies labelled `assistant` — so it answered turns it never produced, and
+   * after a 403 it tended to repeat the refusal (QA audit 2026-10-08, WP-543).
+   */
+  local?: true;
   /**
    * What the answer was read from — the server's own record of which lookups ran, over which day
    * and for whom. Absent on the greeting, on an error, and whenever no lookup happened.
@@ -45,6 +44,13 @@ const FAB_SIZE = 56; // size-14
 const FAB_MARGIN = 16; // gap from the edge after snapping
 const FAB_KEY = "wp-fab-pos";
 
+/** The panel's preferred size (28rem × 22rem), and its gaps to the launcher and the viewport. */
+const PANEL_H = 448;
+const PANEL_W = 352;
+const PANEL_GAP = 12;
+const VIEWPORT_EDGE = 8;
+const PANEL_ID = "wp-assistant-panel";
+
 interface FabPos {
   x: number;
   y: number;
@@ -53,9 +59,9 @@ interface FabPos {
 const GREETING =
   "I'm your WorkPulse assistant. Ask about productivity, your team, or the current screen.";
 
-// Questions v1 can answer well. It has no live org-data grounding yet (that lands with `insights`),
-// so the old data-summary prompts ("Summarize this week") would just draw an honest "I can't see
-// your data yet" — these play to what the assistant actually does now.
+// Opening questions for an empty panel. The assistant can answer from live org data now (the
+// handler has a grounded data path, an org snapshot and a tool belt — `send_message/mod.rs`), and
+// the on-screen page context rides with every question; these are simply general starters.
 const SUGGESTIONS = [
   "What can you help me with?",
   "How does WorkPulse track productivity?",
@@ -63,14 +69,10 @@ const SUGGESTIONS = [
 ];
 
 export function ChatBot() {
-  // The assistant is a plan feature: when the org switches it off, the launcher goes with it
-  // rather than sitting there offering a surface every request would be refused for.
-  const isFeatureOn = useIsFeatureOn()
-  const isPageOn = useIsPageOn();
-  // …and on the caller holding the assistant bit. The two gates answer different questions —
-  // "did the org buy it" vs "may this role use it" — and both must pass. Without the second, every
-  // signed-in user got the launcher and reached a surface the server refuses outright.
-  const { can } = usePermissions();
+  // The org's switch (plan feature + page toggle) AND the caller's bits — see `useAssistantAccess`.
+  // Evaluated before any effect below: the gate used to sit after every hook, so with the assistant
+  // switched off a seeded prompt was still sent from a panel nobody could see (WP-364).
+  const available = useAssistantAccess().chat;
   const open = useAssistantStore((s) => s.open);
   const setOpen = useAssistantStore((s) => s.setOpen);
   const pendingPrompt = useAssistantStore((s) => s.pendingPrompt);
@@ -99,10 +101,11 @@ export function ChatBot() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { id: 0, role: "assistant", text: GREETING },
+    { id: 0, role: "assistant", text: GREETING, local: true },
   ]);
   const idRef = useRef(1);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   // Both halves of "outside": the panel, and the launcher that toggles it. Without the launcher in
   // the exclusion, clicking it while open would close via this handler and immediately reopen via
   // its own onClick — the button would look dead.
@@ -136,8 +139,17 @@ export function ChatBot() {
       if (fabRef.current?.contains(target)) return;
       setOpen(false);
     };
+    // Escape closes the panel only when it is pressed *in* the assistant. As a bare document
+    // listener it also fired for an Escape meant for a select or menu elsewhere on the page, and
+    // closed the chat along with it (WP-546).
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const target = e.target as Node | null;
+      const inside =
+        !!target && (!!panelRef.current?.contains(target) || !!fabRef.current?.contains(target));
+      if (!inside) return;
+      setOpen(false);
+      fabRef.current?.focus();
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKey);
@@ -147,9 +159,23 @@ export function ChatBot() {
     };
   }, [open, setOpen]);
 
+  // Opening moves focus into the panel's message box, so a keyboard or screen-reader user lands in
+  // the dialog they just opened rather than wherever they were on the page.
+  useEffect(() => {
+    if (open && available) inputRef.current?.focus();
+  }, [open, available]);
+
+  // Switched off (or out of reach) while open: close, and drop any seeded question rather than let
+  // it fire the next time something opens the store.
+  useEffect(() => {
+    if (available) return;
+    if (open) setOpen(false);
+    if (pendingPrompt) consumePrompt();
+  }, [available, open, pendingPrompt, setOpen, consumePrompt]);
+
   const send = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || pending) return;
+    if (!available || !trimmed || pending) return;
     const userMsg: Message = { id: idRef.current++, role: "user", text: trimmed };
     setMessages((m) => [...m, userMsg]);
     setInput("");
@@ -158,10 +184,11 @@ export function ChatBot() {
       // Real Groq Llama 3.3 70B via /v1/assistant/messages (session-only; nothing stored
       // server-side — so the conversation so far is replayed with each turn, or a follow-up
       // reaches the model with no question attached to it). `messages` here is deliberately the
-      // state *before* this turn was appended: it is the history, not the message.
+      // state *before* this turn was appended: it is the history, not the message — and only its
+      // real turns (see `Message.local`).
       const answer = await sendAssistantMessage(
         trimmed,
-        messages.map((m) => ({ role: m.role, content: m.text })),
+        messages.filter((m) => !m.local).map((m) => ({ role: m.role, content: m.text })),
         page,
       );
       setMessages((m) => [
@@ -178,21 +205,24 @@ export function ChatBot() {
         e instanceof ApiError && e.status === 403
           ? "You don't have access to the assistant."
           : "Sorry — I couldn't reach the assistant just now. Please try again.";
-      setMessages((m) => [...m, { id: idRef.current++, role: "assistant", text }]);
+      // Neither the question that failed nor this sentence is a turn the model saw.
+      setMessages((m) => [
+        ...m.map((x) => (x.id === userMsg.id ? { ...x, local: true as const } : x)),
+        { id: idRef.current++, role: "assistant", text, local: true },
+      ]);
     } finally {
       setPending(false);
     }
   };
 
-  // When opened with a seeded prompt (e.g. from the Help Center "Ask AI"
-  // button), send it once.
+  // When opened with a seeded prompt (an "Ask the assistant" button), send it once — after any
+  // request already in flight, rather than consuming the prompt and dropping it (WP-364).
   useEffect(() => {
-    if (open && pendingPrompt) {
-      const prompt = consumePrompt();
-      if (prompt) send(prompt);
-    }
+    if (!available || !open || !pendingPrompt || pending) return;
+    const prompt = consumePrompt();
+    if (prompt) void send(prompt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pendingPrompt]);
+  }, [available, open, pendingPrompt, pending]);
 
   /* ── Draggable, edge-snapping floating button ──────────────────────── */
   const [fab, setFab] = useState<FabPos | null>(null);
@@ -286,19 +316,29 @@ export function ChatBot() {
     setOpen(!open);
   };
 
-  // Anchor the chat panel to the button's current corner.
+  /**
+   * Anchor the chat panel beside the launcher — and keep all of it on screen.
+   *
+   * It was a fixed 448px anchored 12px above or below the launcher with no clamping, so a launcher
+   * dragged to mid-height (or any short viewport) put the header or the input off-screen (WP-360).
+   * Now: the height shrinks to fit the viewport, the panel opens toward whichever side of the
+   * launcher has more room, and both axes are clamped inside the viewport.
+   */
   const panelStyle: React.CSSProperties | undefined = fab
     ? (() => {
         const vw = window.innerWidth;
         const vh = window.innerHeight;
+        const height = Math.min(PANEL_H, vh - VIEWPORT_EDGE * 2);
+        const width = Math.min(PANEL_W, vw - VIEWPORT_EDGE * 2);
         const cx = fab.x + FAB_SIZE / 2;
-        const cy = fab.y + FAB_SIZE / 2;
-        const s: React.CSSProperties = {};
-        if (cx < vw / 2) s.left = fab.x;
-        else s.right = vw - (fab.x + FAB_SIZE);
-        if (cy > vh / 2) s.bottom = vh - fab.y + 12;
-        else s.top = fab.y + FAB_SIZE + 12;
-        return s;
+        const preferredLeft = cx < vw / 2 ? fab.x : fab.x + FAB_SIZE - width;
+        const left = Math.min(Math.max(VIEWPORT_EDGE, preferredLeft), vw - width - VIEWPORT_EDGE);
+        const roomAbove = fab.y - PANEL_GAP;
+        const roomBelow = vh - (fab.y + FAB_SIZE + PANEL_GAP);
+        const preferredTop =
+          roomAbove >= roomBelow ? fab.y - PANEL_GAP - height : fab.y + FAB_SIZE + PANEL_GAP;
+        const top = Math.min(Math.max(VIEWPORT_EDGE, preferredTop), vh - height - VIEWPORT_EDGE);
+        return { left, top, width, height };
       })()
     : undefined;
 
@@ -306,7 +346,7 @@ export function ChatBot() {
    *  server-side — the panel simply forgets, and the next turn starts with no history to replay. */
   const clearChat = () => {
     if (pending) return;
-    setMessages([{ id: idRef.current++, role: "assistant", text: GREETING }]);
+    setMessages([{ id: idRef.current++, role: "assistant", text: GREETING, local: true }]);
     setInput("");
   };
 
@@ -330,8 +370,7 @@ export function ChatBot() {
   // calls the endpoint directly still gets the Help assistant — no tools, no snapshot, no fetch.
   // The assistant is a launcher, not a route, so it carries a pseudo page-key rather than an href.
   // Same layer-3 rule as any page: org preference on top of plan + permission, owners exempt.
-  if (!isPageOn(ASSISTANT_PAGE_KEY)) return null;
-  if (!isFeatureOn("ai.assistant") || !can("ai:use") || !can("ai:view")) return null;
+  if (!available) return null;
 
   return (
     <>
@@ -339,11 +378,12 @@ export function ChatBot() {
       {open ? (
         <div
           ref={panelRef}
+          id={PANEL_ID}
           role="dialog"
           aria-label="WorkPulse assistant"
           style={panelStyle}
           className={cn(
-            "border-border bg-popover shadow-soft animate-in fade-in slide-in-from-bottom-3 fixed z-50 flex h-[28rem] w-[min(22rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-xl border duration-200",
+            "border-border bg-popover shadow-soft animate-in fade-in slide-in-from-bottom-3 fixed z-50 flex h-[28rem] max-h-[calc(100dvh-1rem)] w-[min(22rem,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-xl border duration-200",
             !panelStyle && "right-5 bottom-24",
           )}
         >
@@ -442,6 +482,7 @@ export function ChatBot() {
             className="flex items-center gap-2 border-t p-3"
           >
             <Input
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask the assistant…"
@@ -466,6 +507,7 @@ export function ChatBot() {
         size="icon"
         aria-label={open ? "Close assistant" : "Open assistant"}
         aria-expanded={open}
+        aria-controls={open ? PANEL_ID : undefined}
         style={fab ? { left: fab.x, top: fab.y } : undefined}
         ref={fabRef}
         onPointerDown={onFabPointerDown}

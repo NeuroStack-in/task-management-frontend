@@ -15,6 +15,7 @@ import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useDataScope } from "@/hooks/use-data-scope";
+import { useIsFeatureOn } from "@/hooks/use-features";
 import { cn } from "@/lib/utils";
 import { useTeamTimesheet, type Period } from "../use-team-timesheet";
 import { PersonalTimeView } from "./personal-time-view";
@@ -29,8 +30,10 @@ type View = "team" | "personal";
  * - Team timesheet oversight for management roles (`time-tracking:manage`), now fed by the **real**
  *   per-user reads assembled in `useTeamTimesheet` (`/v1/timesheet/user/{id}` + activity), replacing
  *   the old "not available yet" placeholder.
- * Users with both (Owner/Admin) get a toggle and default to their own time. Team leads see only
- * their own department (`useDataScope`); a caller without `TimeReadTeam` gets an honest 403 state.
+ * Someone holding both — a manager who also tracks their own time (Owner and Admin hold no
+ * `time-tracking:self`, so not them) — gets a toggle and defaults to their own time. Team leads see
+ * only their own department (`useDataScope`); a caller without `TimeReadTeam` gets an honest 403
+ * state.
  */
 export function TimeTrackingView() {
   const { can } = usePermissions();
@@ -38,6 +41,10 @@ export function TimeTrackingView() {
   const canManageTeam = can("time-tracking:manage");
   const canTrack = can("time-tracking:self");
   const showToggle = canManageTeam && canTrack;
+  // Whether per-person activity scores can be read at all: the server's gate on the activity routes
+  // (plan + toggle, owner exempt from the toggle) and the route's own `ActivityReadOrg`. Without
+  // either, each person's read was a certain 403 (QA audit 2026-10-08, WP-196).
+  const activityOn = useIsFeatureOn()("monitoring.activity") && can("activity:view");
 
   // Which week the team grid is showing: 0 = this week, -1 = last week, … Lives here because the
   // fan-out hook is called here; the grid's stepper drives it.
@@ -46,23 +53,31 @@ export function TimeTrackingView() {
   // three *months* in the other, so carrying it across would silently jump the range by months.
   const [period, setPeriod] = useState<Period>("week");
 
-  // Only fetch the team roll-up when the caller can actually see it — a pure employee never fans out.
+  // The team view is only for someone who may oversee it. Anyone else — including a role that holds
+  // only "View own timesheet" (`time-tracking:view`), which can read its own sheet but neither track
+  // nor oversee — gets their own time: defaulting them to "team" ran a disabled hook into "No one in
+  // view has tracked time" (QA audit 2026-10-08, WP-437).
+  const [view, setView] = useState<View>(
+    canManageTeam && !canTrack ? "team" : "personal",
+  );
+
+  // Only fetch the team roll-up while the team view is on screen — a pure employee never fans out,
+  // and neither does a manager looking at "My time" (QA audit 2026-10-08, WP-434).
   const {
     teamRows,
     projectRows,
-    teamWeekly,
     dates,
     weekLabel,
+    loaded,
     loading,
     error,
     forbidden,
     reload,
-  } = useTeamTimesheet(canManageTeam, weekOffset, period);
+    truncated,
+  } = useTeamTimesheet(canManageTeam && view === "team", weekOffset, period, activityOn);
 
   // Team leads only see their own team's timesheets; org roles see everyone.
   const scopedTeamRows = teamRows.filter((r) => inScope(r.id));
-
-  const [view, setView] = useState<View>(canTrack ? "personal" : "team");
 
   const description =
     view === "team"
@@ -121,9 +136,12 @@ export function TimeTrackingView() {
               </Button>
             }
           />
-        ) : loading ? (
+        ) : !loaded ? (
+          // Only before the first read. After it, the grid stays mounted (dimmed) while the next
+          // period loads, so its grouping, department filter and search survive the step.
           <Loader label="Assembling team timesheets…" className="min-h-64" />
-        ) : scopedTeamRows.length === 0 &&
+        ) : !loading &&
+          scopedTeamRows.length === 0 &&
           projectRows.length === 0 &&
           weekOffset === 0 ? (
           // Only the *current* week short-circuits to a standalone empty state. On a past week the
@@ -135,20 +153,33 @@ export function TimeTrackingView() {
             description="No one in view has tracked time for the current week yet. Entries appear here once the desktop agent syncs them."
           />
         ) : (
-          <TeamTimeView
-            rows={scopedTeamRows}
-            projectRows={projectRows}
-            weekly={teamWeekly}
-            dates={dates}
-            weekLabel={weekLabel}
-            weekOffset={weekOffset}
-            period={period}
-            onPeriodChange={(p) => {
-              setPeriod(p);
-              setWeekOffset(0);
-            }}
-            onWeekOffsetChange={setWeekOffset}
-          />
+          <>
+            {truncated.length > 0 ? (
+              // The server read stopped at its cap for these people, so their hours are a floor.
+              <p className="text-muted-foreground text-xs" role="status">
+                {truncated.length === 1
+                  ? `${truncated[0]} has more sessions in this period than can be shown at once`
+                  : `${truncated.length} people have more sessions in this period than can be shown at once`}
+                {
+                  " — their hours here are a minimum. Pick a shorter period to see everything."
+                }
+              </p>
+            ) : null}
+            <TeamTimeView
+              rows={scopedTeamRows}
+              projectRows={projectRows}
+              dates={dates}
+              weekLabel={weekLabel}
+              weekOffset={weekOffset}
+              period={period}
+              onPeriodChange={(p) => {
+                setPeriod(p);
+                setWeekOffset(0);
+              }}
+              onWeekOffsetChange={setWeekOffset}
+              updating={loading}
+            />
+          </>
         )
       ) : (
         <PersonalTimeView canExport={canTrack} />
@@ -172,6 +203,8 @@ function ToggleButton({
     <button
       type="button"
       onClick={onClick}
+      // Not colour alone: the selected view is announced (QA audit 2026-10-08, WP-439).
+      aria-pressed={active}
       className={cn(
         "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
         active

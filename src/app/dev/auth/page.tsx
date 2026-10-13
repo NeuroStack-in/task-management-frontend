@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
+import { InertFrame } from "./inert-frame";
 
 export const metadata: Metadata = { title: "Auth screens — preview" };
 
@@ -30,7 +31,7 @@ function Brand() {
   );
 }
 
-/** A framed, non-interactive preview of one screen. */
+/** A framed preview of one screen — the real component, made inert (see `InertFrame`). */
 function ScreenFrame({
   title,
   wide,
@@ -57,15 +58,14 @@ function ScreenFrame({
       </div>
       <div className="flex flex-col items-center gap-6 bg-muted/40 p-6">
         <Brand />
-        <div
-          aria-hidden
+        <InertFrame
           className={cn(
             "pointer-events-none w-full select-none",
             wide ? "max-w-xl" : "max-w-sm",
           )}
         >
           {children}
-        </div>
+        </InertFrame>
       </div>
     </figure>
   );
@@ -119,10 +119,11 @@ export default function AuthPreviewPage() {
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
             A visual sample of the sign-in, account creation, recovery,
-            multi-factor, and onboarding screens for review. These previews are
-            static; open the
-            live, interactive versions to try them. Everything runs on mock data —
-            no backend.
+            multi-factor, and onboarding screens for review. Each preview is the
+            real component, made inert — nothing in it can be clicked, focused or
+            submitted. They are not mock-ups: the onboarding frames still read your
+            organization from the live API when they load. Open the live versions
+            to try them.
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <Button render={<Link href="/login" />} nativeButton={false} size="sm">

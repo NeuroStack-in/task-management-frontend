@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -16,7 +17,8 @@ import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { useDirectory } from "@/hooks/use-directory";
-import {  } from "@/lib/format";
+import { useTrackingMode } from "@/hooks/use-features";
+import type { TrackingMode } from "@/lib/tracking-mode";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -178,6 +180,9 @@ export function Info({ label, value, mono }: { label: string; value: string; mon
   );
 }
 
+/** The device page — `/settings/agents/[agentId]`. */
+const deviceHref = (d: ApiDevice) => `/settings/agents/${encodeURIComponent(d.agent_id)}`;
+
 function DeviceRow({
   d,
   behind,
@@ -193,6 +198,8 @@ function DeviceRow({
   const meta = connMeta(d.connectivity);
   return (
     <TableRow
+      // The whole row opens the device for a mouse; the device name is the real link, so the row is
+      // reachable by Tab and announced as a link (QA audit 2026-10-08, WP-472).
       className="cursor-pointer"
       onClick={onOpen}
       // `presence_live` distinguishes an observed socket state from an inferred one — the tooltip
@@ -209,7 +216,14 @@ function DeviceRow({
             <MonitorSmartphone className="size-4" />
           </span>
           <div className="min-w-0">
-            <p className="truncate font-medium">{d.hostname || d.agent_id}</p>
+            <Link
+              href={deviceHref(d)}
+              // The row's own click would navigate a second time.
+              onClick={(e) => e.stopPropagation()}
+              className="block truncate rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {d.hostname || d.agent_id}
+            </Link>
             <p className="truncate text-xs text-muted-foreground">
               {d.os} {d.os_version} · agent {d.agent_version}
               {behind && (
@@ -278,9 +292,24 @@ function DeviceRow({
   );
 }
 
+/**
+ * What to do when nothing is enrolled yet — per tracking mode, because the two agents are installed
+ * by different people in different ways. Every mode used to be told to install the desktop app and
+ * sign in, which a machine-mode org doesn't use (WP-472).
+ */
+const EMPTY_FLEET_HINT: Record<TrackingMode, string> = {
+  project:
+    "Employees install the WorkPulse desktop app from Download agent and sign in — their devices appear here with status and telemetry.",
+  machine:
+    "Enrol a company computer under Enrol a device: mint a code for its employee and install the WorkPulse agent with it. Enrolled devices appear here with status and telemetry.",
+  both:
+    "Employees install the WorkPulse desktop app and sign in, or IT enrols a company computer under Enrol a device. Devices appear here with status and telemetry.",
+};
+
 export function FleetView() {
   const { fleet, loading, error, reload } = useFleet();
   const router = useRouter();
+  const mode = useTrackingMode();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -346,7 +375,7 @@ export function FleetView() {
   if (error) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Device agents" description="Machines running the WorkPulse desktop agent." />
+        <PageHeader title="Device agents" description="Computers running a WorkPulse agent." />
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
           <p className="text-sm text-muted-foreground">{error}</p>
           <Button variant="outline" size="sm" onClick={reload}>
@@ -363,7 +392,7 @@ export function FleetView() {
     <div className="space-y-6">
       <PageHeader
         title="Device agents"
-        description="Machines running the WorkPulse desktop agent, with live connectivity."
+        description="Computers running a WorkPulse agent, with their connectivity — refreshed every 30 seconds."
         actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
@@ -397,7 +426,7 @@ export function FleetView() {
               />
             </div>
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as string)}>
-              <SelectTrigger className="w-full sm:w-36">
+              <SelectTrigger className="w-full sm:w-36" aria-label="Filter by status">
                 {/* Base UI renders the raw *value* unless given a render function, so a bare
                     `<SelectValue />` would show "all"/"online" instead of the option's label. */}
                 <SelectValue>
@@ -413,7 +442,7 @@ export function FleetView() {
               </SelectContent>
             </Select>
             <Select value={osFilter} onValueChange={(v) => setOsFilter(v as string)}>
-              <SelectTrigger className="w-full sm:w-36">
+              <SelectTrigger className="w-full sm:w-36" aria-label="Filter by operating system">
                 <SelectValue>
                   {(v) => (v === "all" || !v ? "All OS" : String(v))}
                 </SelectValue>
@@ -433,7 +462,7 @@ export function FleetView() {
             <EmptyState
               icon={MonitorSmartphone}
               title="No agents enrolled yet"
-              description="Install the WorkPulse desktop agent and sign in — enrolled devices appear here with their status and telemetry."
+              description={EMPTY_FLEET_HINT[mode]}
               className="m-4 border-0"
             />
           ) : visible.length === 0 ? (
@@ -464,9 +493,7 @@ export function FleetView() {
                       d={d}
                       behind={isBehind(d)}
                       ownerName={attributedName(d)}
-                      onOpen={() =>
-                        router.push(`/settings/agents/${encodeURIComponent(d.agent_id)}`)
-                      }
+                      onOpen={() => router.push(deviceHref(d))}
                     />
                   ))}
                 </TableBody>

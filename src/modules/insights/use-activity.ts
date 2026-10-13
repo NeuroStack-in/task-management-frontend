@@ -1,14 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useLiveRefresh } from "@/hooks/use-live-refresh";
+import { useEffect, useState } from "react";
+import { LIVE_REFRESH_MS, useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
-import {
-  getOrgActivity,
-  getSelfActivity,
-  type OrgActivity,
-  type SelfActivity,
-} from "./services/insights.service";
+import { todayIso } from "@/lib/format";
+import { getOrgActivity, type OrgActivity } from "./services/insights.service";
 
 export interface OrgActivityState {
   data: OrgActivity | null;
@@ -24,12 +20,24 @@ export function useOrgActivity(date: string): OrgActivityState {
   const [error, setError] = useState<string | null>(null);
   // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
   // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
-  const { nonce, reload, isBackground } = useLiveRefresh();
+  //
+  // **Today only.** A past day's rollup no longer moves, and an empty `date` (the Activity tab in
+  // Weekly/Monthly, which does not read this) has nothing to fetch — polling either was a request
+  // every 30 s for an answer nothing displays (QA audit 2026-10-08, WP-492).
+  const { nonce, reload, isBackground } = useLiveRefresh(
+    date !== "" && date === todayIso() ? LIVE_REFRESH_MS : null,
+  );
   useEffect(() => {
-    if (!date) return;
+    if (!date) {
+      setLoading(false);
+      return;
+    }
     let live = true;
     if (!isBackground()) setLoading(true);
     setError(null);
+    // Another day's figures must not sit under the newly picked date while it loads; only a
+    // refresh of the **same** day keeps them on screen (QA audit 2026-10-08, WP-279).
+    setData((d) => (d && d.date !== date ? null : d));
     getOrgActivity(date)
       .then((d) => {
         if (live) setData(d);
@@ -44,44 +52,6 @@ export function useOrgActivity(date: string): OrgActivityState {
       live = false;
     };
   }, [date, nonce, isBackground]);
-
-  return { data, loading, error, reload };
-}
-
-export interface SelfActivityState {
-  data: SelfActivity | null;
-  loading: boolean;
-  error: string | null;
-  reload: () => void;
-}
-
-/** Loads the caller's own daily scores over `[from, to]` (`YYYY-MM-DD`). Empty bounds skip the fetch. */
-export function useSelfActivity(from: string, to: string): SelfActivityState {
-  const [data, setData] = useState<SelfActivity | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Live, same as the day hook above.
-  const { nonce, reload, isBackground } = useLiveRefresh();
-
-  useEffect(() => {
-    if (!from || !to) return;
-    let live = true;
-    if (!isBackground()) setLoading(true);
-    setError(null);
-    getSelfActivity(from, to)
-      .then((d) => {
-        if (live) setData(d);
-      })
-      .catch((e) => {
-        if (live) setError(messageOf(e, "your activity trend"));
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [from, to, nonce]);
 
   return { data, loading, error, reload };
 }

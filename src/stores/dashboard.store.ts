@@ -30,7 +30,7 @@ export type WidgetType =
   | "reports.headcount"
   | "org_activity.top_performers"
   | "attention_list.ai_summary"
-  | "payroll_summary"
+  | "billing_summary"
   | "attention_list.alerts"
   | "reports.upcoming_tasks";
 
@@ -61,7 +61,10 @@ export const LEGACY_WIDGET_TYPE: Record<string, WidgetType> = {
   "alerts-deadlines": "attention_list.alerts",
   "upcoming-tasks": "reports.upcoming_tasks",
   headcount: "reports.headcount",
-  billing: "payroll_summary",
+  billing: "billing_summary",
+  // The card's own catalog entry since 2026-10-09 (WP-110): layouts that stored it under the payroll
+  // entry keep it, renamed.
+  payroll_summary: "billing_summary",
 };
 
 /** One customizable tile. `id === type` — a single instance of each widget. */
@@ -75,9 +78,13 @@ export interface DashboardWidget {
 
 /**
  * Default layout (left→right): AI summary, Attendance, Working now, Department comparison — then the
- * exec snapshot. The first seven are single-width visible tiles; the rest ship hidden and are opt-in
+ * exec snapshot. The first six are single-width visible tiles; the rest ship hidden and are opt-in
  * via Customize. The grid picks its own column count to stay gap-free, so the exact span total isn't
  * load-bearing.
+ *
+ * Titles are what Customize lists, so they are the cards' own titles — it listed "Active vs
+ * inactive" and "Upcoming tasks" for cards titled "Employment status" and "Upcoming deadlines"
+ * (QA audit 2026-10-08, WP-431).
  */
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
   // AI summary leads the default layout — the at-a-glance narrative reads first, before the
@@ -89,19 +96,26 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "team_activity", title: "Department comparison", type: "team_activity", position: 3, visible: true },
   { id: "org_activity.top_performers", title: "Top performers", type: "org_activity.top_performers", position: 4, visible: true },
   { id: "attention_list.alerts", title: "Needs attention", type: "attention_list.alerts", position: 5, visible: true },
-  { id: "org_activity.active_ring", title: "Active vs inactive", type: "org_activity.active_ring", position: 7, visible: false },
+  { id: "org_activity.active_ring", title: "Employment status", type: "org_activity.active_ring", position: 7, visible: false },
   { id: "org_activity.trends", title: "Where time went", type: "org_activity.trends", position: 8, visible: false },
   { id: "org_activity.score_trend", title: "Productivity trends", type: "org_activity.score_trend", position: 9, visible: false },
-  { id: "reports.upcoming_tasks", title: "Upcoming tasks", type: "reports.upcoming_tasks", position: 10, visible: false },
+  { id: "reports.upcoming_tasks", title: "Upcoming deadlines", type: "reports.upcoming_tasks", position: 10, visible: false },
   { id: "org_activity.heatmap", title: "Activity heatmap", type: "org_activity.heatmap", position: 11, visible: false },
   { id: "reports.headcount", title: "Headcount by status", type: "reports.headcount", position: 12, visible: false },
-  { id: "payroll_summary", title: "Billing overview", type: "payroll_summary", position: 13, visible: false },
+  { id: "billing_summary", title: "Billing overview", type: "billing_summary", position: 13, visible: false },
 ];
 
 const KNOWN_TYPES = new Set<string>(DEFAULT_WIDGETS.map((w) => w.type));
 
 interface DashboardState {
   widgets: DashboardWidget[];
+  /**
+   * The layout changed on this device and the server has not confirmed it yet — a save still
+   * waiting out its debounce, cut short by leaving the page, or one that failed. **Persisted**, so
+   * the next visit pushes this layout instead of installing the server's older one over it, which
+   * is how a change the failure toast promised to keep was lost (QA audit 2026-10-08, WP-195).
+   */
+  unsynced: boolean;
   toggleWidget: (id: string) => void;
   reorder: (orderedIds: string[]) => void;
   reset: () => void;
@@ -110,18 +124,22 @@ interface DashboardState {
    * (persisted) state stays the optimistic source of truth between hydrations.
    */
   hydrate: (widgets: DashboardWidget[]) => void;
+  /** The server confirmed `saved` — clears `unsynced` unless the layout has changed since. */
+  markSynced: (saved: DashboardWidget[]) => void;
 }
 
 export const useDashboardStore = create<DashboardState>()(
   persist(
     (set) => ({
       widgets: DEFAULT_WIDGETS,
+      unsynced: false,
 
       toggleWidget: (id) =>
         set((s) => ({
           widgets: s.widgets.map((w) =>
             w.id === id ? { ...w, visible: !w.visible } : w,
           ),
+          unsynced: true,
         })),
 
       reorder: (orderedIds) =>
@@ -130,11 +148,15 @@ export const useDashboardStore = create<DashboardState>()(
             ...w,
             position: orderedIds.indexOf(w.id),
           })),
+          unsynced: true,
         })),
 
-      reset: () => set({ widgets: DEFAULT_WIDGETS }),
+      reset: () => set({ widgets: DEFAULT_WIDGETS, unsynced: true }),
 
-      hydrate: (widgets) => set({ widgets }),
+      hydrate: (widgets) => set({ widgets, unsynced: false }),
+
+      markSynced: (saved) =>
+        set((s) => (s.widgets === saved ? { unsynced: false } : {})),
     }),
     {
       name: "wp-dashboard",
@@ -144,11 +166,17 @@ export const useDashboardStore = create<DashboardState>()(
       // "Working now" live-timers widget was added — the migrate appends it (hidden) to existing
       // layouts, so it shows up in Customize without disturbing a saved order. v16: the Screenshots
       // widget was removed — the migrate drops it (it's no longer a KNOWN_TYPE), so it leaves saved
-      // Customize lists cleanly instead of lingering as a dead toggle.
-      version: 16,
+      // Customize lists cleanly instead of lingering as a dead toggle. v17: two titles changed to
+      // match their cards; the rebuild below takes titles from `DEFAULT_WIDGETS`, so stored layouts
+      // pick them up with their order and visibility intact. v18: "Billing overview" moved from the
+      // `payroll_summary` catalog entry to its own `billing_summary` (WP-110) — LEGACY_WIDGET_TYPE
+      // renames it in place.
+      version: 18,
       migrate: (persisted, version) => {
         if (version < 13) return { widgets: DEFAULT_WIDGETS } as DashboardState;
 
+        const unsynced =
+          (persisted as { unsynced?: unknown } | null | undefined)?.unsynced === true;
         const old = (persisted as { widgets?: unknown } | null | undefined)?.widgets;
         if (!Array.isArray(old)) return { widgets: DEFAULT_WIDGETS } as DashboardState;
 
@@ -180,7 +208,7 @@ export const useDashboardStore = create<DashboardState>()(
           if (seen.has(def.type)) continue;
           widgets.push({ ...def, position: widgets.length, visible: false });
         }
-        return { widgets } as DashboardState;
+        return { widgets, unsynced } as DashboardState;
       },
     },
   ),

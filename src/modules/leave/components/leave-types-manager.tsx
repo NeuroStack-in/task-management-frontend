@@ -9,8 +9,10 @@
  * surfaces as `409 version_conflict` (handled by refetching). Archiving is the soft delete — there
  * is no per-type DELETE; `active: false` hides a type from the request picker and from balance
  * seeding while keeping its history labelled. "Restore defaults" resets the whole catalog to the
- * platform set. Per-employee balances are materialized automatically by the backend (on join and at
- * year rollover), so there is no manual seed control here.
+ * platform set. There is no manual seed control here: a person's balances for a year are created
+ * lazily — the first time they open Leave or request leave, or when an admin sets their allowance.
+ * (The server's join / New Year triggers are not built, so a new year has no balance rows until
+ * then; the ledger shows those as "Not granted".)
  */
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -73,11 +75,16 @@ function slugify(name: string): string {
 // allowance a whole number of days, capped at 366.
 const typeSchema = z.object({
   name: z.string().trim().min(1, "Name is required.").max(60, "Keep it under 60 characters."),
-  annual_allowance: z.coerce
-    .number({ invalid_type_error: "Enter a number of days." })
-    .int("Whole days only.")
-    .min(0, "Can't be negative.")
-    .max(366, "The server caps allowances at 366 days."),
+  // An emptied box is "not answered", not 0: coercing "" to 0 quietly turned a quota type into
+  // "no fixed allowance" and pushed 0 onto every balance on save (QA audit 2026-10-08, WP-265).
+  annual_allowance: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.coerce
+      .number({ invalid_type_error: "Enter a number of days." })
+      .int("Whole days only.")
+      .min(0, "Can't be negative.")
+      .max(366, "The server caps allowances at 366 days."),
+  ),
   paid: z.boolean(),
 });
 
@@ -287,7 +294,9 @@ export function LeaveTypesManager({ onCatalogChanged }: { onCatalogChanged?: () 
             <DialogDescription>
               This replaces the entire catalog with the platform defaults — Annual Leave (20 days),
               Sick Leave (10), Casual Leave (7) and Unpaid Leave — discarding every custom type and
-              edit. Balances already granted this year are not changed.
+              edit. This year&apos;s balances keep their figures for now, but the next time any leave
+              type is saved, every employee&apos;s balance takes these default allowances (except
+              ones adjusted individually).
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -345,23 +354,29 @@ function TypeEditDialog({
           <DialogTitle>{isNew ? "Add leave type" : `Edit “${target?.name ?? ""}”`}</DialogTitle>
           <DialogDescription>
             Allowances are uniform across all employees, granted up-front per year in whole days.
-            Changes apply when balances are next seeded — days already granted this year keep their
-            allowance.
+            Saving applies the allowance to every employee&apos;s balance for this year straight
+            away — only balances adjusted individually keep their own figure. Days already taken
+            still count against it.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-sm">Name</Label>
-            <Input placeholder="e.g. Parental Leave" {...register("name")} />
+            <Label className="text-sm" htmlFor="leave-type-name">
+              Name
+            </Label>
+            <Input id="leave-type-name" placeholder="e.g. Parental Leave" {...register("name")} />
             {errors.name ? (
               <p className="text-xs text-destructive">{errors.name.message}</p>
             ) : null}
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-sm">Annual allowance (days)</Label>
+            <Label className="text-sm" htmlFor="leave-type-allowance">
+              Annual allowance (days)
+            </Label>
             <Input
+              id="leave-type-allowance"
               type="number"
               min={0}
               max={366}

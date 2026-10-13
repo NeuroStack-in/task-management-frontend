@@ -6,6 +6,10 @@ import { Reveal } from "@/modules/marketing/reveal";
 
 interface GalleryItem {
   src: string;
+  /** Pixel size, so the browser reserves the box before the image loads — without it the page
+   *  shifted as each screenshot arrived (QA audit 2026-10-08, WP-545). */
+  width: number;
+  height: number;
   title: string;
   body: string;
 }
@@ -55,7 +59,13 @@ export function ProductGallery({ items }: { items: GalleryItem[] }) {
                 style={{ background: "rgb(255 255 255 / 0.07)", border: "1px solid rgb(255 255 255 / 0.18)", backdropFilter: "blur(10px)", boxShadow: "0 40px 90px -40px rgb(0 0 0 / 0.6)" }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={g.src} alt={g.title} className="block w-full rounded-xl" />
+                <img
+                  src={g.src}
+                  alt={g.title}
+                  width={g.width}
+                  height={g.height}
+                  className="block h-auto w-full rounded-xl"
+                />
                 {/* hover overlay */}
                 <span
                   className="absolute inset-2 flex items-center justify-center rounded-xl opacity-0 transition-opacity duration-200 group-hover:opacity-100"
@@ -92,7 +102,14 @@ export function ProductGallery({ items }: { items: GalleryItem[] }) {
           </button>
           <figure className="my-auto w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={active.src} alt={active.title} className="block w-full rounded-xl" style={{ boxShadow: "0 40px 100px -30px rgb(0 0 0 / 0.7)" }} />
+            <img
+              src={active.src}
+              alt={active.title}
+              width={active.width}
+              height={active.height}
+              className="block h-auto w-full rounded-xl"
+              style={{ boxShadow: "0 40px 100px -30px rgb(0 0 0 / 0.7)" }}
+            />
             <figcaption className="mt-3 text-center text-sm" style={{ color: "rgb(255 255 255 / 0.7)" }}>
               {active.title}
             </figcaption>

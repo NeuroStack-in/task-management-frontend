@@ -16,10 +16,10 @@ interface TablePaginationProps {
 }
 
 /**
- * The single pagination control for every data table (SPEC §5 — UX consistency).
- * Page-based: "Showing a–b of n" + Prev / page x of y / Next. Replaces the
- * hand-rolled per-table copies (Employees, Attendance, Payroll, …) so paginated
- * tables behave and read identically everywhere.
+ * A shared pagination control for data tables (SPEC §5 — UX consistency).
+ * Page-based: "Showing a–b of n" + Prev / page x of y / Next. Used by the employee
+ * profile's tables; the attendance log still has its own (icon-button) copy — new
+ * paginated tables should use this one rather than add another.
  */
 export function TablePagination({
   page,

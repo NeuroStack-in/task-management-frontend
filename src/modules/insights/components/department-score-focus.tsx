@@ -13,9 +13,10 @@
  * backend and no per-item fan-out — one request per selection.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DepartmentFilter } from "@/components/shared/department-filter";
+import { ApiError } from "@/lib/api";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import {
   getDeptSummary,
@@ -29,6 +30,28 @@ const ALL = "all";
 
 const person = (p: DeptPersonStat | null) => (p ? `${p.name} · ${p.score}` : "—");
 
+/**
+ * Why the summary could not be read, in words that do not pretend it was an empty period. A refusal
+ * and an outage used to fall into the same "No scored activity in this period yet." as a quiet week
+ * (QA audit 2026-10-08, WP-274).
+ */
+function summaryError(e: unknown): { message: string; retryable: boolean } {
+  if (e instanceof ApiError && e.status === 403) {
+    // A refusal will refuse again, so it gets no retry.
+    return {
+      message:
+        e.code === "feature_disabled"
+          ? "AI summaries aren't available here — they're not part of your organization's plan, or they've been switched off in Settings → Features."
+          : "Your role doesn't include AI summaries of team activity.",
+      retryable: false,
+    };
+  }
+  return {
+    message: "The AI summary couldn't be loaded just now. Try again in a moment.",
+    retryable: true,
+  };
+}
+
 export function DepartmentScoreFocus({
   from,
   to,
@@ -36,14 +59,22 @@ export function DepartmentScoreFocus({
 }: {
   from: string;
   to: string;
-  /** Natural window phrase ("this week") so the prose reads well; optional. */
+  /**
+   * A phrase for the window that stays true however later it is read ("the week"), so the prose
+   * reads well; optional. It reaches the model's brief and the narrative is cached per range for
+   * every viewer, so never a "today"/"this week" that goes stale.
+   */
   period?: string;
 }) {
   const [depts, setDepts] = useState<Map<string, string>>(new Map());
   const [dept, setDept] = useState<string>(ALL);
   const [data, setData] = useState<DeptSummary | null>(null);
   const [loading, setLoading] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
+  const [error, setError] = useState<{ message: string; retryable: boolean } | null>(null);
+  const [nonce, setNonce] = useState(0);
+  /** The selection a Regenerate is running for, or `null` — see `regenerate`. */
+  const [regenFor, setRegenFor] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -56,30 +87,51 @@ export function DepartmentScoreFocus({
   }, []);
 
   const label = dept === ALL ? undefined : depts.get(dept);
+  /** What the card is showing — a response must still match it to land. */
+  const selection = `${dept}|${from}|${to}|${period ?? ""}`;
+  const current = useRef(selection);
+  useEffect(() => {
+    current.current = selection;
+  }, [selection]);
 
   useEffect(() => {
     if (!from || !to) return;
     let live = true;
     setLoading(true);
+    setError(null);
+    setNotice(null);
+    // The previous selection's narrative and figures must not sit under this one's filter for the
+    // length of a model call (QA audit 2026-10-08, WP-279).
+    setData(null);
     getDeptSummary({ department: dept, from, to, label, period })
       .then((d) => live && setData(d))
-      .catch(() => live && setData(null))
+      .catch((e) => live && setError(summaryError(e)))
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dept, from, to, period, depts]);
+    // Keyed on the label **string**, not the department map. The map is replaced once
+    // `departmentMap()` resolves, which re-issued this identical request on every mount — and on a
+    // cache miss that was two billed generations (QA audit 2026-10-08, WP-280).
+  }, [dept, from, to, period, label, nonce]);
 
   async function regenerate() {
-    if (regenerating || !from || !to) return;
-    setRegenerating(true);
+    if (regenFor === selection || !from || !to) return;
+    const started = selection;
+    setRegenFor(started);
+    setNotice(null);
     try {
-      setData(await regenerateDeptSummary({ department: dept, from, to, label, period }));
+      const fresh = await regenerateDeptSummary({ department: dept, from, to, label, period });
+      // A slow model run must not land under a department or period the user has since moved to
+      // (QA audit 2026-10-08, WP-278).
+      if (current.current === started) setData(fresh);
     } catch {
-      /* keep the narrative already on screen — a failed re-run must not blank the card */
+      // Keep the narrative already on screen — a failed re-run must not blank the card — but say so.
+      if (current.current === started) {
+        setNotice("Couldn't regenerate the summary — showing the previous one.");
+      }
     } finally {
-      setRegenerating(false);
+      setRegenFor((k) => (k === started ? null : k));
     }
   }
 
@@ -108,15 +160,20 @@ export function DepartmentScoreFocus({
       ]
     : [];
 
-  const summary = loading && !data
-    ? "Reading the scores for this period…"
-    : data?.narrative || "No scored activity in this period yet.";
+  const summary =
+    loading && !data
+      ? "Reading the scores for this period…"
+      : error
+        ? error.message
+        : data?.narrative || "No scored activity in this period yet.";
 
   return (
     <AiReportCard
       title="AI activity report"
       summary={summary}
       metrics={metrics}
+      notice={notice}
+      onRetry={error?.retryable ? () => setNonce((n) => n + 1) : undefined}
       action={
         <DepartmentFilter
           value={dept}
@@ -130,7 +187,7 @@ export function DepartmentScoreFocus({
       // Only once a narrative exists: an empty period has nothing to re-run, and each press is a
       // fresh billed generation.
       onRegenerate={data?.narrative ? regenerate : undefined}
-      regenerating={regenerating}
+      regenerating={regenFor === selection}
     />
   );
 }

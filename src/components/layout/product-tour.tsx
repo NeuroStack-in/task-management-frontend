@@ -7,10 +7,8 @@ import { ArrowLeft, ArrowRight, Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useTourStore } from "@/stores/tour.store";
-import { usePermissions } from "@/hooks/use-permissions";
-import { useIsSurfaceOn, useTrackingMode } from "@/hooks/use-features";
-import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import { getTour, type TourStep } from "@/modules/help/lib/tours";
+import { useTourStepFilter } from "@/modules/help/lib/use-tour-steps";
 import { cn } from "@/lib/utils";
 
 /**
@@ -60,6 +58,14 @@ const MARGIN = 16;
  */
 const SAME_ROUTE_MS = 1200;
 const NAV_MS = 5000;
+/**
+ * The budget is per **step**, not per effect run. Arriving on the route re-runs the wait, and it
+ * used to restart with the 1.2 s same-route budget the moment `pathname` changed — so a target
+ * behind the destination page's own loader (Monitoring's capture card, the AI report) was skipped
+ * whenever the data took longer than that (QA audit 2026-10-08, WP-249). And while the page is
+ * visibly loading (a shared `Loader` is on screen) the step keeps waiting, up to this cap.
+ */
+const LOADING_CAP_MS = 10_000;
 const POLL_MS = 60;
 /**
  * Don't show the loader until a step has actually been slow.
@@ -95,6 +101,27 @@ function visibleTarget(sel: string): HTMLElement | null {
   return null;
 }
 
+/** The navbar's "Open menu" button — where the sidebar lives below the `lg` breakpoint. */
+const NAV_MENU_TARGET = "nav:menu";
+
+/**
+ * The element a step points at. Below `lg` the sidebar is `display:none` and the nav sheet is
+ * closed, so a `nav:` item has no visible element at all: every such step sat on "Loading step…"
+ * and then skipped, and "Getting Started" lost its closing card (WP-248). There the step points at
+ * the menu button instead — the place that item actually lives on that screen.
+ */
+function findTarget(target: string): HTMLElement | null {
+  return (
+    visibleTarget(selector(target)) ??
+    (target.startsWith("nav:") ? visibleTarget(selector(NAV_MENU_TARGET)) : null)
+  );
+}
+
+/** The card's width: its design width, or the viewport less its margins on a phone (WP-248). */
+function cardWidth(): number {
+  return Math.min(CARD_W, window.innerWidth - MARGIN * 2);
+}
+
 /**
  * Measure once the element has stopped moving.
  *
@@ -126,10 +153,11 @@ function whenStill(el: HTMLElement, done: (r: DOMRect) => void, cancelled: () =>
 function place(rect: Rect, cardH: number): Placement {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const w = cardWidth();
   if (rect.top + rect.height + GAP + cardH + MARGIN < vh) return "bottom";
   if (rect.top - GAP - cardH - MARGIN > 0) return "top";
-  if (rect.left + rect.width + GAP + CARD_W + MARGIN < vw) return "right";
-  if (rect.left - GAP - CARD_W - MARGIN > 0) return "left";
+  if (rect.left + rect.width + GAP + w + MARGIN < vw) return "right";
+  if (rect.left - GAP - w - MARGIN > 0) return "left";
   return "bottom";
 }
 
@@ -137,19 +165,20 @@ function place(rect: Rect, cardH: number): Placement {
 function cardPos(rect: Rect, placement: Placement, cardH: number) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const clampX = (x: number) => Math.min(Math.max(x, MARGIN), vw - CARD_W - MARGIN);
+  const w = cardWidth();
+  const clampX = (x: number) => Math.min(Math.max(x, MARGIN), vw - w - MARGIN);
   const clampY = (y: number) => Math.min(Math.max(y, MARGIN), vh - cardH - MARGIN);
 
   switch (placement) {
     case "bottom":
       return {
         top: clampY(rect.top + rect.height + GAP),
-        left: clampX(rect.left + rect.width / 2 - CARD_W / 2),
+        left: clampX(rect.left + rect.width / 2 - w / 2),
       };
     case "top":
       return {
         top: clampY(rect.top - GAP - cardH),
-        left: clampX(rect.left + rect.width / 2 - CARD_W / 2),
+        left: clampX(rect.left + rect.width / 2 - w / 2),
       };
     case "right":
       return {
@@ -159,22 +188,16 @@ function cardPos(rect: Rect, placement: Placement, cardH: number) {
     case "left":
       return {
         top: clampY(rect.top + rect.height / 2 - cardH / 2),
-        left: clampX(rect.left - GAP - CARD_W),
+        left: clampX(rect.left - GAP - w),
       };
     default:
-      return { top: vh / 2 - cardH / 2, left: vw / 2 - CARD_W / 2 };
+      return { top: vh / 2 - cardH / 2, left: vw / 2 - w / 2 };
   }
 }
 
 export function ProductTour() {
   const router = useRouter();
   const pathname = usePathname();
-  const { can } = usePermissions();
-  // Which /dashboard this caller lands on — decides which dashboard steps are real for them.
-  const personalDashboard = useIsPersonalDashboard();
-  // A step whose feature the org switched off (or whose mode hides it) has no target on screen.
-  const isSurfaceOn = useIsSurfaceOn();
-  const mode = useTrackingMode();
 
   const activeTourId = useTourStore((s) => s.activeTourId);
   const stepIndex = useTourStore((s) => s.stepIndex);
@@ -188,25 +211,33 @@ export function ProductTour() {
   const [waiting, setWaiting] = useState(false);
   const [cardH, setCardH] = useState(180);
   const cardRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  /** The step this tour last navigated for, and whether its page has been reached (see below). */
+  const navRef = useRef<{ key: string; arrived: boolean } | null>(null);
+  /** The current step's wait budget — kept across the re-run that arriving on its route causes. */
+  const budgetRef = useRef<{ key: string; deadline: number; cap: number } | null>(null);
 
   /** Steps this caller can actually be shown — see `tours.ts` on why they're removed, not skipped. */
+  const showable = useTourStepFilter();
   const steps: TourStep[] = useMemo(() => {
     const tour = activeTourId ? getTour(activeTourId) : undefined;
     if (!tour) return [];
-    return tour.steps.filter(
-      (s) =>
-        (!s.permission || can(s.permission)) &&
-        // `/dashboard` renders one of two components; a step anchored to the other one has no
-        // target on screen and would burn the full target-wait before skipping.
-        (!s.dashboard || s.dashboard === (personalDashboard ? "personal" : "org")) &&
-        // A feature the org switched off, or a surface its tracking mode hides, isn't on screen.
-        (!s.feature || isSurfaceOn(s.feature)) &&
-        (!s.modes || s.modes.includes(mode)),
-    );
-  }, [activeTourId, can, personalDashboard, isSurfaceOn, mode]);
+    return tour.steps.filter(showable);
+  }, [activeTourId, showable]);
 
   const step: TourStep | undefined = steps[stepIndex];
   const isLast = stepIndex === steps.length - 1;
+  /** Identity of the step on screen — what the per-step refs below are keyed by. */
+  const stepKey = step ? `${activeTourId}:${stepIndex}:${step.route}:${step.target}` : null;
+  const showing = mounted && !!activeTourId && !!step;
+
+  // A finished tour forgets its per-step state, so restarting the same tour starts clean.
+  useEffect(() => {
+    if (activeTourId) return;
+    navRef.current = null;
+    budgetRef.current = null;
+  }, [activeTourId]);
 
   // A tour with nothing to show for this role says so rather than opening empty.
   const checked = useRef<string | null>(null);
@@ -223,12 +254,22 @@ export function ProductTour() {
     }
   }, [activeTourId, mounted, steps.length, stopTour]);
 
-  // Navigate to the step's route. Separate from the measuring effect so a re-measure (scroll,
-  // resize) never re-triggers navigation.
+  // Navigate to the step's route — **once per step**. Separate from the measuring effect so a
+  // re-measure (scroll, resize) never re-triggers navigation. It used to push whenever `pathname`
+  // differed, so pressing the browser's Back mid-tour was undone by a fresh push (WP-469). Now a
+  // route change after the step's page was reached is the user leaving, and the tour ends.
   useEffect(() => {
-    if (!step) return;
-    if (step.route && step.route !== pathname) router.push(step.route);
-  }, [step, pathname, router]);
+    if (!step || !stepKey) return;
+    const here = !step.route || step.route === pathname;
+    const nav = navRef.current;
+    if (!nav || nav.key !== stepKey) {
+      navRef.current = { key: stepKey, arrived: here };
+      if (!here) router.push(step.route);
+      return;
+    }
+    if (here) nav.arrived = true;
+    else if (nav.arrived) stopTour();
+  }, [step, stepKey, pathname, router, stopTour]);
 
   /**
    * Find and measure the step's target, waiting for it to exist.
@@ -256,9 +297,18 @@ export function ProductTour() {
 
     // Budget by what we're waiting for: a same-route element is a render away, a route change is a
     // network fetch. Using the navigation budget for both is what turned an absent target into
-    // eight seconds of "Loading step…".
-    const navigating = !!step.route && step.route !== pathname;
-    const deadline = Date.now() + (navigating ? NAV_MS : SAME_ROUTE_MS);
+    // eight seconds of "Loading step…". Set once per step (see `LOADING_CAP_MS`).
+    const key = stepKey ?? "";
+    if (budgetRef.current?.key !== key) {
+      const navigating = !!step.route && step.route !== pathname;
+      const now = Date.now();
+      budgetRef.current = {
+        key,
+        deadline: now + (navigating ? NAV_MS : SAME_ROUTE_MS),
+        cap: now + LOADING_CAP_MS,
+      };
+    }
+    const { deadline, cap } = budgetRef.current;
 
     // The loader appears only if the step is genuinely slow; a fast step never flickers.
     setWaiting(false);
@@ -271,8 +321,9 @@ export function ProductTour() {
 
     const tick = () => {
       if (cancelled) return;
-      // The visible match — `nav:` targets exist twice (desktop aside + mobile sheet).
-      const el = visibleTarget(selector(step.target!));
+      // The visible match — `nav:` targets exist twice (desktop aside + mobile sheet), and below
+      // `lg` neither is visible, so they resolve to the menu button.
+      const el = findTarget(step.target!);
       if (el) {
         // Only scroll when the element isn't already comfortably in view; scrolling something
         // **Always** scroll, and let `block: "nearest"` decide whether anything moves.
@@ -295,7 +346,14 @@ export function ProductTour() {
         );
         return;
       }
-      if (Date.now() > deadline) {
+      const now = Date.now();
+      if (now > deadline) {
+        // The page is visibly still fetching (a shared Loader is on screen) — its target may be
+        // behind that loader, so give it until the cap before calling the target absent.
+        if (now < cap && visibleTarget('[data-slot="loader"]')) {
+          setTimeout(tick, POLL_MS);
+          return;
+        }
         // The target doesn't exist for this user. Skip on rather than strand them — a stuck overlay
         // with a live Next button that does nothing is the worst failure available.
         settle();
@@ -312,9 +370,9 @@ export function ProductTour() {
       cancelled = true;
       clearTimeout(loaderTimer);
     };
-    // `step.target` is the identity that matters; pathname re-runs it after a navigation lands.
+    // `stepKey` is the identity that matters; pathname re-runs it after a navigation lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, step?.target, step?.route, pathname, stepIndex, steps.length]);
+  }, [mounted, stepKey, pathname, stepIndex, steps.length]);
 
   /**
    * Keep the spotlight glued to its element, every frame.
@@ -337,7 +395,7 @@ export function ProductTour() {
     const follow = () => {
       // Same visible-match rule as the initial measure — a resize across the `lg` breakpoint swaps
       // which sidebar mount is on screen, and following the hidden one would jump the spotlight.
-      const el = visibleTarget(selector(step.target!));
+      const el = findTarget(step.target!);
       if (el) {
         const r = el.getBoundingClientRect();
         if (
@@ -361,6 +419,29 @@ export function ProductTour() {
   useLayoutEffect(() => {
     if (cardRef.current) setCardH(cardRef.current.offsetHeight);
   }, [step, waiting]);
+
+  // While the tour is on screen everything else is inert: Tab can't wander into the dimmed page,
+  // Enter can't activate a control behind the overlay, and assistive tech sees only the tour. It
+  // declared `aria-modal` but enforced none of that (WP-469). The overlay is portaled straight into
+  // <body>, so "everything else" is its siblings.
+  useEffect(() => {
+    if (!showing) return;
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    const others = Array.from(document.body.children).filter(
+      (el): el is HTMLElement =>
+        el instanceof HTMLElement && el !== overlay && !el.hasAttribute("inert"),
+    );
+    for (const el of others) el.setAttribute("inert", "");
+    return () => {
+      for (const el of others) el.removeAttribute("inert");
+    };
+  }, [showing]);
+
+  // Each step's card takes focus, so the keyboard is where the tour is.
+  useEffect(() => {
+    if (showing && !waiting) nextRef.current?.focus();
+  }, [showing, waiting, stepKey]);
 
   const next = useCallback(() => {
     if (isLast) stopTour();
@@ -390,7 +471,14 @@ export function ProductTour() {
   const pos = rect ? cardPos(rect, placement, cardH) : cardPos({ top: 0, left: 0, width: 0, height: 0 }, "center", cardH);
 
   return createPortal(
-    <div className="fixed inset-0 z-[9998]" role="dialog" aria-modal="true" aria-label="Product tour">
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-[9998]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Product tour"
+      aria-describedby={waiting ? undefined : "wp-tour-step-content"}
+    >
       {/* Dimmer + spotlight in one element: the box-shadow paints everywhere EXCEPT this rect. */}
       {rect ? (
         <div
@@ -430,7 +518,7 @@ export function ProductTour() {
             "absolute rounded-xl border border-border bg-card p-5 text-card-foreground shadow-2xl",
             "transition-all duration-300 ease-out",
           )}
-          style={{ top: pos.top, left: pos.left, width: CARD_W }}
+          style={{ top: pos.top, left: pos.left, width: cardWidth() }}
         >
           <div className="mb-3 flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -448,7 +536,9 @@ export function ProductTour() {
             </button>
           </div>
 
-          <p className="text-sm leading-relaxed text-muted-foreground">{step.content}</p>
+          <p id="wp-tour-step-content" className="text-sm leading-relaxed text-muted-foreground">
+            {step.content}
+          </p>
 
           {/* Progress bar doubles as the step map — a count alone doesn't show how much is left. */}
           <div className="mt-4 flex gap-1" aria-hidden>
@@ -477,7 +567,7 @@ export function ProductTour() {
                   Back
                 </Button>
               )}
-              <Button size="sm" onClick={next}>
+              <Button size="sm" onClick={next} ref={nextRef}>
                 {isLast ? (
                   <>
                     <Check className="size-3.5" />

@@ -11,12 +11,13 @@
  * `import type` — every consumer wanted these interfaces and none wanted the store — so the stores
  * were deleted and the interfaces moved here.
  */
-import type { TaskPriority, TaskStatus } from "./types";
+import type { ProjectStatus, TaskPriority, TaskStatus } from "./types";
 import type { ApiAttachment } from "./services/projects.service";
 
 export interface ProjectFormValues {
   name: string;
   description: string;
+  /** Owning department label; `""` = none (the server treats it as optional). */
   department: string;
   leadUserId: string;
   managerId: string;
@@ -25,6 +26,10 @@ export interface ProjectFormValues {
   dueDate: string;
   /** Project-level, required at creation; every task inherits it (LLD §4). */
   billable: boolean;
+  /** Edit only — a new project is always created active. */
+  status?: ProjectStatus;
+  /** Edit only — the short badge key; a new project's is derived from its name. */
+  key?: string;
 }
 
 export interface TaskFormValues {
@@ -36,7 +41,8 @@ export interface TaskFormValues {
   assigneeIds: string[];
   priority: TaskPriority;
   dueDate: string | null;
-  estimateHours: number;
+  /** `null` = no estimate. */
+  estimateHours: number | null;
   /** Attachments in wire shape — sent straight into the create/update request body. */
   attachments: ApiAttachment[];
 }

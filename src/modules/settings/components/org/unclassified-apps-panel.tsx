@@ -11,7 +11,7 @@
  * way to even see the gap.
  *
  * **Adding a rule here is a normal edit.** The row becomes an entry in the same `apps` list the
- * table below manages, saved through the same `PATCH /v1/org/rules`. There is no separate
+ * table below manages, saved through the same `PUT /v1/org/rules`. There is no separate
  * "suggestion" storage and no auto-apply: the model proposes, a human decides, and the stored
  * artifact is the rule — which is what keeps every score reproducible (`docs/AI.md` §1).
  */
@@ -40,10 +40,18 @@ const fmtHours = (sec: number) => formatDuration(sec);
 
 export function UnclassifiedAppsPanel({
   canManage,
+  isClassified,
   onAdd,
   onAddMany,
 }: {
   canManage: boolean;
+  /**
+   * Does the editor's current draft already classify this app? Rows it does are left out. Read off
+   * the draft rather than remembered here: a local "added" set outlived a discarded draft, so after
+   * Reset (or a 409 reload) the worklist still hid apps that no rule matched any more
+   * (QA audit 2026-10-08, WP-538).
+   */
+  isClassified: (app: string) => boolean;
   /** Append one rule to the draft the editor is holding. The parent owns saving. */
   onAdd: (app: string, category: RuleCategoryName) => void;
   /**
@@ -59,8 +67,6 @@ export function UnclassifiedAppsPanel({
   const [loading, setLoading] = useState(true);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Rows already added in this session — kept out of the list without a refetch. */
-  const [done, setDone] = useState<Set<string>>(new Set());
 
   const load = useCallback((suggest: boolean) => {
     let live = true;
@@ -76,7 +82,8 @@ export function UnclassifiedAppsPanel({
       })
       .catch((e) => {
         if (!live) return;
-        // A 403 is ordinary here — the panel needs a higher permission than viewing the tab.
+        // Same permission as the rules editor around it (`MonitoringManage`), so a 403 means that
+        // editor is refused too and already says so — stay quiet rather than repeat it.
         setError(
           e instanceof ApiError && e.status === 403
             ? null
@@ -94,7 +101,7 @@ export function UnclassifiedAppsPanel({
   }, []);
   useEffect(() => load(false), [load]);
 
-  const visible = apps.filter((a) => !done.has(a.app));
+  const visible = apps.filter((a) => !isClassified(a.app));
   // Rows that carry a model suggestion — the ones "accept all" would apply in one click.
   const suggested = visible.filter(
     (a): a is UnclassifiedApp & { suggested_category: RuleCategoryName } =>
@@ -103,7 +110,6 @@ export function UnclassifiedAppsPanel({
 
   function add(a: UnclassifiedApp, category: RuleCategoryName) {
     onAdd(a.app, category);
-    setDone((cur) => new Set(cur).add(a.app));
   }
 
   // Apply every visible suggestion at once — still a single deliberate human action, just not one
@@ -111,11 +117,6 @@ export function UnclassifiedAppsPanel({
   function acceptAllSuggestions() {
     if (suggested.length === 0) return;
     onAddMany(suggested.map((a) => ({ app: a.app, category: a.suggested_category })));
-    setDone((cur) => {
-      const next = new Set(cur);
-      suggested.forEach((a) => next.add(a.app));
-      return next;
-    });
   }
 
   if (loading) {

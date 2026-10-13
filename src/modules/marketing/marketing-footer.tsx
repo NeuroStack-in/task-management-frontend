@@ -1,51 +1,30 @@
 import Link from "next/link";
 import { CheckCheck } from "lucide-react";
 import { Logo } from "@/modules/marketing/logo";
-import { PRODUCTS, productHref } from "@/modules/marketing/products";
+import { PRODUCTS, RESOURCES, SOLUTIONS, productHref } from "@/modules/marketing/products";
+import { LEGAL_DOCS, legalHref } from "@/modules/legal/documents";
 
+/**
+ * Only links a signed-out visitor can follow, taken from the same shared lists the nav uses. This
+ * footer used to keep its own list. Solutions pointed at a `/#solutions` anchor that no page has,
+ * "Help center" pointed at the signed-in app, "API docs" at a roadmap page, and ten more (About,
+ * Careers, Blog, Contact, Status, Privacy, Terms, DPA, Cookies) at `#` (QA audit 2026-10-08, WP-541).
+ *
+ * The legal links are back (WP-115). They come from `modules/legal/documents`, the registry that also
+ * generates the `/legal/*` routes, so none of them can point at a page that doesn't exist. The
+ * documents are drafts pending legal review, and each page says so. The company links stay out until
+ * there is something to link to.
+ */
 const COLUMNS = [
-  {
-    h: "Solutions",
-    links: [
-      { label: "Field service", href: "/#solutions" },
-      { label: "Remote & hybrid", href: "/#solutions" },
-      { label: "Agencies", href: "/#solutions" },
-      { label: "BPO & support", href: "/#solutions" },
-    ],
-  },
-  {
-    h: "Company",
-    links: [
-      { label: "About", href: "#" },
-      { label: "Careers", href: "#" },
-      { label: "Blog", href: "#" },
-      { label: "Contact", href: "#" },
-    ],
-  },
-  {
-    h: "Resources",
-    links: [
-      { label: "Help center", href: "/help" },
-      { label: "API docs", href: productHref("integrations") },
-      { label: "Security", href: productHref("security") },
-      { label: "Status", href: "#" },
-    ],
-  },
-  {
-    h: "Legal",
-    links: [
-      { label: "Privacy", href: "#" },
-      { label: "Terms", href: "#" },
-      { label: "DPA", href: "#" },
-    ],
-  },
+  { h: "Solutions", links: SOLUTIONS },
+  { h: "Resources", links: RESOURCES },
 ];
 
 export function MarketingFooter() {
   return (
     <footer className="border-t px-5 pt-16 pb-10" style={{ borderColor: "var(--m-border)" }}>
       <div className="mx-auto max-w-6xl">
-        <div className="grid gap-10 lg:grid-cols-[1.3fr_repeat(5,1fr)]">
+        <div className="grid gap-10 lg:grid-cols-[1.3fr_repeat(3,1fr)]">
           <div>
             <Logo />
             <p className="mt-4 max-w-xs text-sm" style={{ color: "var(--m-muted)" }}>
@@ -54,7 +33,7 @@ export function MarketingFooter() {
             </p>
             <div className="mt-5 flex gap-2.5">
               <CheckCheck className="size-4" style={{ color: "var(--m-muted)" }} />
-              <span className="text-xs" style={{ color: "var(--m-muted)" }}>SOC 2 · GDPR ready</span>
+              <span className="text-xs" style={{ color: "var(--m-muted)" }}>Encrypted in transit &amp; at rest</span>
             </div>
           </div>
 
@@ -100,10 +79,13 @@ export function MarketingFooter() {
           <p className="text-xs" style={{ color: "var(--m-muted)" }}>
             © 2026 WorkPulse. All rights reserved.
           </p>
-          <div className="flex gap-5 text-xs" style={{ color: "var(--m-muted)" }}>
-            <Link href="#" className="hover:opacity-70">Privacy</Link>
-            <Link href="#" className="hover:opacity-70">Terms</Link>
-            <Link href="#" className="hover:opacity-70">Cookies</Link>
+          <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs" style={{ color: "var(--m-muted)" }}>
+            <Link href={productHref("security")} className="hover:opacity-70">Security</Link>
+            {LEGAL_DOCS.map((d) => (
+              <Link key={d.slug} href={legalHref(d.slug)} className="hover:opacity-70">
+                {d.label}
+              </Link>
+            ))}
           </div>
         </div>
       </div>

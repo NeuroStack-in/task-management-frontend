@@ -7,8 +7,17 @@ import { getScreenshots, type ShotRow } from "./services/insights.service";
 const PAGE_SIZE = 60;
 
 export interface ScreenshotsState {
-  /** All shots loaded so far for the current (date, userId), time-ordered, across pages. */
+  /**
+   * All shots loaded so far for the current (date, userId), across pages, in the server's order:
+   * **person-then-time** (newest first within a person) for the org-wide day, newest first for one
+   * person. Not a timeline of the org's day — group or sort before treating it as one.
+   */
   shots: ShotRow[];
+  /**
+   * Epoch ms the current first page arrived, `0` before then. Its presigned image URLs expire 15
+   * minutes after issue, so a caller can tell a broken image on an old list from a missing one.
+   */
+  loadedAt: number;
   /** Initial-page load (no shots on screen yet). */
   loading: boolean;
   /** A "Load more" page fetch is in flight (shots already on screen). */
@@ -25,11 +34,13 @@ export interface ScreenshotsState {
 /**
  * Loads the pii-gated screenshot grid for a day (`GET /v1/insights/screenshots`, LLD §14).
  * Empty `date` skips the fetch. Changing `date` or `userId` resets to page 1; `loadMore`
- * follows the server cursor and appends. Shots arrive time-ordered, so the accumulated list
- * doubles as the day's timeline. **Real, monitoring-fed:** empty until the desktop agent captures.
+ * follows the server cursor and appends. The index is sorted person-then-time, so an org-wide read
+ * arrives one person at a time — see {@link ScreenshotsState.shots}. **Real, monitoring-fed:** empty
+ * until the desktop agent captures.
  */
 export function useScreenshots(date: string, userId?: string): ScreenshotsState {
   const [shots, setShots] = useState<ShotRow[]>([]);
+  const [loadedAt, setLoadedAt] = useState(0);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -38,21 +49,31 @@ export function useScreenshots(date: string, userId?: string): ScreenshotsState 
 
   // Guards a stale in-flight response from committing after the query changed.
   const runId = useRef(0);
+  /** The (date, user) the current list belongs to — a reload of the same one keeps it on screen. */
+  const loadedFor = useRef<string | null>(null);
 
   // First page — resets whenever the query (date/userId) or reload nonce changes.
   useEffect(() => {
     if (!date) return;
     const id = ++runId.current;
+    const key = `${date}|${userId ?? ""}`;
     setLoading(true);
     setLoadingMore(false);
     setError(null);
-    setShots([]);
+    // A **new** query starts empty. A reload of the same one keeps what is on screen until the new
+    // first page arrives: clearing it made the employee view flash "0 captures … No captures in this
+    // range" on every refresh — every six seconds while Capture-now waited (WP-080).
+    if (loadedFor.current !== key) {
+      setShots([]);
+      loadedFor.current = key;
+    }
     setCursor(undefined);
     getScreenshots(date, { userId, limit: PAGE_SIZE })
       .then((g) => {
         if (runId.current !== id) return;
         setShots(g.shots);
         setCursor(g.cursor);
+        setLoadedAt(Date.now());
       })
       .catch((e) => {
         if (runId.current !== id) return;
@@ -86,6 +107,7 @@ export function useScreenshots(date: string, userId?: string): ScreenshotsState 
 
   return {
     shots,
+    loadedAt,
     loading,
     loadingMore,
     error,

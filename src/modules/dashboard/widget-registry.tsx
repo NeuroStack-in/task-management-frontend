@@ -30,6 +30,12 @@ interface WidgetDef {
    */
   span: 1 | 2;
   render: (d: DashboardData) => ReactNode;
+  /**
+   * The widget fetches its own data on mount. A drag must not mount a second copy of it in the drag
+   * overlay: each copy fetched again, and the AI summary's read can start a model run
+   * (QA audit 2026-10-08, WP-201). The overlay shows a stand-in card for these.
+   */
+  selfFetching?: boolean;
 }
 
 // Keys are the catalog-aligned widget types (`<catalog_id>` or `<catalog_id>.<variant>` —
@@ -51,13 +57,13 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
     render: (d) => (
       <ProductivityTrendChart
         data={d.productivityScoreTrend}
-        rangeLabel={d.trendLabel}
+        rangeLabel={d.scoreTrendLabel}
       />
     ),
   },
   "org_activity.heatmap": {
     span: 1,
-    render: (d) => <ProductivityHeatmap data={d.heatmap} />,
+    render: (d) => <ProductivityHeatmap data={d.heatmap} sampled={d.screenshotsSampled} />,
   },
   team_activity: {
     span: 1,
@@ -65,7 +71,7 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
   },
   org_attendance: {
     span: 1,
-    render: (d) => <AttendanceDonut counts={d.attendanceCounts} />,
+    render: (d) => <AttendanceDonut counts={d.attendanceCounts} view={d.attendanceView} />,
   },
   "org_attendance.live_timers": {
     span: 1,
@@ -93,10 +99,11 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
     span: 1,
     render: (d) => <TopEmployeesWidget people={d.topPerformers} />,
   },
-  // Follows the dashboard's range control like every other widget — the narrative it fetches is the
-  // one covering the selected period (day / ISO week / calendar month).
+  // Follows the dashboard's range control like every other widget — the narrative it fetches covers
+  // exactly the KPI window (`days`), in the selected department.
   "attention_list.ai_summary": {
     span: 1,
+    selfFetching: true,
     render: (d) => (
       <OrgAiSummaryWidget
         range={d.range}
@@ -107,7 +114,15 @@ export const WIDGET_REGISTRY: Record<WidgetType, WidgetDef> = {
       />
     ),
   },
-  payroll_summary: { span: 1, render: (d) => <BillingWidget {...d.billing} /> },
-  "attention_list.alerts": { span: 1, render: () => <AlertsDeadlinesWidget /> },
-  "reports.upcoming_tasks": { span: 1, render: () => <UpcomingTasksWidget /> },
+  billing_summary: { span: 1, render: (d) => <BillingWidget billing={d.billing} /> },
+  "attention_list.alerts": {
+    span: 1,
+    selfFetching: true,
+    render: () => <AlertsDeadlinesWidget />,
+  },
+  "reports.upcoming_tasks": {
+    span: 1,
+    selfFetching: true,
+    render: () => <UpcomingTasksWidget />,
+  },
 };

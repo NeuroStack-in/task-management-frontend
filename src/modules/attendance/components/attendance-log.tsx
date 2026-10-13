@@ -9,13 +9,13 @@
  * data of its own, no invented punches or hours (the attendance index carries neither).
  *
  * `LogDatePicker` — a compact month calendar in a dropdown, used to pick a single (non-future) day.
- * It carries no attendance data and is shared by the personal attendance view and the locations
- * module, so it stays exported here unchanged.
+ * It carries no attendance data and is shared by the oversight overview and the personal attendance
+ * view, so it stays exported here.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useNow } from "@/hooks/use-now";
 import { useRouter } from "next/navigation";
-import Papa from "papaparse";
 import { ArrowDown, ArrowUp, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -29,12 +29,15 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { downloadBlob } from "@/lib/download";
 import { isFutureDate, monthMatrix, MONTH_NAMES, WEEKDAY_LABELS } from "../lib/calendar";
+import { useToday } from "../use-today";
 import type {
   OversightMode,
   OversightRow,
 } from "../use-oversight-attendance";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { toCsv } from "@/lib/csv";
+import { DayOverrideDialog, type DayOverrideTarget } from "./day-override-dialog";
 
 /* ────────────────────────── Attendance log ────────────────────────── */
 
@@ -44,6 +47,8 @@ const STATUS_META: Record<string, { label: string; badge: string; dot: string }>
   leave: { label: "On leave", badge: "bg-primary/12 text-primary", dot: "bg-primary" },
   absent: { label: "Absent", badge: "bg-destructive/12 text-destructive", dot: "bg-destructive" },
   non_workday: { label: "Non-working", badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" },
+  // An admin excused the day — neither present nor absent, and counted in neither (WP-257).
+  excused: { label: "Excused", badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/60" },
   in: { label: "In now", badge: "bg-success/12 text-success", dot: "bg-success" },
   out: { label: "Out", badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" },
 };
@@ -62,6 +67,8 @@ const TODAY_STATUS_META: Record<
   { label: string; badge: string; dot: string }
 > = {
   leave: { label: "On leave", badge: "bg-primary/12 text-primary", dot: "bg-primary" },
+  // A holiday, or an unscheduled day they didn't work — not expected, so never "Absent" (WP-254).
+  off: { label: "Day off", badge: "bg-muted text-muted-foreground", dot: "bg-muted-foreground/40" },
   absent: { label: "Absent", badge: "bg-destructive/12 text-destructive", dot: "bg-destructive" },
   late: { label: "Late", badge: "bg-warning/15 text-warning", dot: "bg-warning" },
   present: { label: "On time", badge: "bg-success/12 text-success", dot: "bg-success" },
@@ -81,7 +88,8 @@ const STATUS_RANK: Record<string, number> = {
   leave: 3,
   absent: 4,
   out: 5,
-  non_workday: 6,
+  excused: 6,
+  non_workday: 7,
 };
 const statusRank = (s?: string) => STATUS_RANK[s ?? ""] ?? 99;
 
@@ -93,14 +101,26 @@ const fmtTime = (ms?: number) =>
 /** Worked minutes → one-decimal hours, or `—`. */
 const fmtHours = (mins?: number) => (mins && mins > 0 ? (mins / 60).toFixed(1) : "—");
 /**
- * Live worked hours for a row. A single-session running row ticks from `clockIn` — which is then the
- * open session's own start, so `now − clockIn` is exact (no closed time to double-count, no break to
- * overstate). Any other row shows its settled worked minutes; `—` when there's nothing.
+ * Live worked hours for a row. A running row ticks as its completed sessions plus the open one,
+ * counted from that session's own start (`runningSince`) — exact after a break and a restart, where
+ * it used to freeze until the timer stopped (QA audit 2026-10-08, WP-480). Without `runningSince`
+ * (an older server) only a single-session row can tick, from `clockIn` — which is then the open
+ * session's start. Any other row shows its settled worked minutes; `—` when there's nothing.
  */
 const fmtRowHours = (
-  r: { running?: boolean; entryCount?: number; clockIn?: number; workedMinutes?: number },
+  r: {
+    running?: boolean;
+    runningSince?: number;
+    entryCount?: number;
+    clockIn?: number;
+    workedMinutes?: number;
+  },
   now: number,
 ): string => {
+  if (r.running && typeof r.runningSince === "number") {
+    const mins = (r.workedMinutes ?? 0) + Math.max(0, (now - r.runningSince) / 60_000);
+    return mins > 0 ? (mins / 60).toFixed(1) : "—";
+  }
   if (r.running && r.entryCount === 1 && typeof r.clockIn === "number") {
     const h = Math.max(0, (now - r.clockIn) / 3_600_000);
     return h > 0 ? h.toFixed(1) : "—";
@@ -135,13 +155,17 @@ function formatPermission(minutes: number): string {
   return formatMinutes(minutes);
 }
 
+/** Statuses a day correction is offered on: a false absence (or short day), or an earlier correction. */
+const CORRECTABLE = new Set(["absent", "partial", "excused"]);
+
 export function AttendanceLog({
-  rows,
+  rows: rowsIn,
   mode,
   loading,
   error,
   label,
   note,
+  correction,
 }: {
   rows: OversightRow[];
   mode: OversightMode;
@@ -149,8 +173,29 @@ export function AttendanceLog({
   error: string | null;
   label: string;
   note: string | null;
+  /**
+   * The day-correction for a closed past day (`DayOverrideDialog`) — set by the page only for
+   * `attendance:edit` holders in a managed-agent org. Adds a Correct action to absent, partial and
+   * excused rows; `onSaved` re-reads the day.
+   */
+  correction?: { date: string; onSaved: () => void } | null;
 }) {
   const router = useRouter();
+  // Corrections made here show at once: the day's roster comes from an index that settles a moment
+  // after the write, so the re-read alone could still show the old status.
+  const correctionDate = correction?.date ?? null;
+  const [corrected, setCorrected] = useState<{
+    date: string;
+    byUser: ReadonlyMap<string, string>;
+  }>({ date: "", byUser: new Map() });
+  const [correcting, setCorrecting] = useState<DayOverrideTarget | null>(null);
+  const rows = useMemo(() => {
+    if (correctionDate === null || corrected.date !== correctionDate) return rowsIn;
+    return rowsIn.map((r) => {
+      const s = corrected.byUser.get(r.userId);
+      return s ? { ...r, status: s } : r;
+    });
+  }, [rowsIn, correctionDate, corrected]);
   const isRange = mode === "range";
   // Today has no closed verdict, so it gets the extra live-classification column (leave/absent/late).
   const isToday = mode === "today";
@@ -162,11 +207,20 @@ export function AttendanceLog({
   // Today's roster leads with whoever is working right now — that is the question the live view is
   // open to answer, and alphabetical order buries it (four In-now people scattered through seven
   // Out rows). Name stays the tiebreak, and the column headers still re-sort on demand. A past day
-  // is a record rather than a live board, so it keeps opening alphabetically.
-  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
-    key: mode === "today" ? "status" : "name",
-    dir: "asc",
-  });
+  // is a record rather than a live board, so it opens alphabetically.
+  //
+  // A sort picked by hand belongs to the kind of table it was picked on: the log is not remounted
+  // when the window changes, so Today's status sort used to carry into a past day and a range table
+  // that has no status column (QA audit 2026-10-08, WP-259).
+  const [sortPick, setSortPick] = useState<{
+    mode: OversightMode;
+    key: SortKey;
+    dir: "asc" | "desc";
+  } | null>(null);
+  const sort: { key: SortKey; dir: "asc" | "desc" } =
+    sortPick && sortPick.mode === mode
+      ? sortPick
+      : { key: mode === "today" ? "status" : "name", dir: "asc" };
   const [page, setPage] = useState(0);
 
   // Reset paging when the underlying window changes.
@@ -200,7 +254,7 @@ export function AttendanceLog({
     if (isRange) return [];
     const seen = new Set<string>();
     for (const r of rows) if (r.status) seen.add(r.status);
-    const order = ["present", "partial", "leave", "absent", "non_workday", "in", "out"];
+    const order = ["present", "partial", "leave", "absent", "excused", "non_workday", "in", "out"];
     const opts = ["all", ...order.filter((s) => seen.has(s))];
     // **Permission is not a status.** Someone on a few hours' approved leave still worked the rest
     // of the day, so it cannot be one of the mutually-exclusive values above without hiding them
@@ -216,14 +270,19 @@ export function AttendanceLog({
     return base;
   }, [rows]);
 
+  // A chip picked on one window must not strand the next. Range rows have no status (and no chips),
+  // and another day may not have that status at all — so the "Out" picked on Today emptied the Week
+  // table with no chip left to clear it. A pick that isn't on offer here reads as All (WP-259).
+  const activeStatus = statusOptions.includes(status) ? status : "all";
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const out = rows.filter(
       (r) =>
-        (status === "all" ||
-          (status === PERMISSION
+        (activeStatus === "all" ||
+          (activeStatus === PERMISSION
             ? (r.permissionMinutes ?? 0) > 0
-            : r.status === status)) &&
+            : r.status === activeStatus)) &&
         (q === "" || r.name.toLowerCase().includes(q)),
     );
     const dir = sort.dir === "asc" ? 1 : -1;
@@ -235,17 +294,17 @@ export function AttendanceLog({
       return a.name.localeCompare(b.name) * dir;
     });
     return out;
-  }, [rows, query, status, sort]);
+  }, [rows, query, activeStatus, sort.key, sort.dir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pageRows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
   const toggleSort = (key: SortKey) => {
-    setSort((s) =>
-      s.key === key
-        ? { key, dir: s.dir === "asc" ? "desc" : "asc" }
-        : { key, dir: key === "name" ? "asc" : "desc" },
+    setSortPick(
+      sort.key === key
+        ? { mode, key, dir: sort.dir === "asc" ? "desc" : "asc" }
+        : { mode, key, dir: key === "name" ? "asc" : "desc" },
     );
     setPage(0);
   };
@@ -292,7 +351,7 @@ export function AttendanceLog({
         ? [...base, r.todayStatus ? TODAY_STATUS_META[r.todayStatus].label : "—", perm, ...tail]
         : [...base, perm, ...tail];
     });
-    const csv = Papa.unparse({ fields, data });
+    const csv = toCsv({ fields, data });
     const slug = label.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     downloadBlob(
       new Blob([csv], { type: "text/csv;charset=utf-8;" }),
@@ -343,13 +402,14 @@ export function AttendanceLog({
               <button
                 key={s}
                 type="button"
+                aria-pressed={activeStatus === s}
                 onClick={() => {
                   setStatus(s);
                   setPage(0);
                 }}
                 className={cn(
                   "rounded-full px-3 py-1 text-sm font-medium transition-colors",
-                  status === s
+                  activeStatus === s
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground",
                 )}
@@ -419,6 +479,11 @@ export function AttendanceLog({
                         <TableHead>Clock in</TableHead>
                         <TableHead>Clock out</TableHead>
                         <TableHead>Hours</TableHead>
+                        {correction && !isRange ? (
+                          <TableHead className="text-right">
+                            <span className="sr-only">Correct</span>
+                          </TableHead>
+                        ) : null}
                       </>
                     )}
                   </TableRow>
@@ -441,7 +506,15 @@ export function AttendanceLog({
                               className="size-8"
                               fallbackClassName="text-xs"
                             />
-                            <span className="font-medium">{r.name}</span>
+                            {/* A real link, so the profile is reachable by keyboard and announced
+                                as one — the row's click alone was mouse-only (WP-478). */}
+                            <Link
+                              href={`/employees/${r.userId}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="font-medium hover:underline focus-visible:underline focus-visible:outline-none"
+                            >
+                              {r.name}
+                            </Link>
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{r.dept}</TableCell>
@@ -526,6 +599,23 @@ export function AttendanceLog({
                             <TableCell className="tabular-nums text-muted-foreground">
                               {fmtRowHours(r, now)}
                             </TableCell>
+                            {correction && !isRange ? (
+                              <TableCell className="text-right">
+                                {r.status && CORRECTABLE.has(r.status) ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-label={`Correct ${r.name}'s day`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCorrecting({ userId: r.userId, name: r.name });
+                                    }}
+                                  >
+                                    Correct
+                                  </Button>
+                                ) : null}
+                              </TableCell>
+                            ) : null}
                           </>
                         )}
                       </TableRow>
@@ -570,6 +660,24 @@ export function AttendanceLog({
           </>
         )}
       </CardContent>
+      {correction ? (
+        <DayOverrideDialog
+          target={correcting}
+          date={correction.date}
+          dateLabel={label}
+          onClose={() => setCorrecting(null)}
+          onSaved={(userId, status) => {
+            setCorrecting(null);
+            setCorrected((c) => ({
+              date: correction.date,
+              byUser: new Map<string, string>(
+                c.date === correction.date ? c.byUser : undefined,
+              ).set(userId, status),
+            }));
+            correction.onSaved();
+          }}
+        />
+      ) : null}
     </Card>
   );
 }
@@ -628,8 +736,13 @@ export function LogDatePicker({
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState({ year: value.year, month: value.month });
+  // The real today, re-read at midnight — the picker used to refuse days after the load day (WP-258).
+  const now = useToday();
 
-  const weeks = useMemo(() => monthMatrix(view.year, view.month), [view]);
+  const weeks = useMemo(
+    () => monthMatrix(view.year, view.month, undefined, now),
+    [view, now],
+  );
 
   const step = (dir: -1 | 1) =>
     setView((v) => {
@@ -640,7 +753,16 @@ export function LogDatePicker({
     });
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        // Open on the selected day's month. The month was seeded from `value` once, so after the
+        // chevrons, "Today" or the big calendar moved the selection, the picker reopened on the
+        // month it was last left on (QA audit 2026-10-08, WP-542).
+        if (next) setView({ year: value.year, month: value.month });
+        setOpen(next);
+      }}
+    >
       <DropdownMenuTrigger
         render={<Button variant="outline" size="sm" className="h-8 gap-1.5" />}
       >
@@ -685,7 +807,7 @@ export function LogDatePicker({
               cell.month === value.month &&
               cell.day === value.day;
             const disabled =
-              !cell.inMonth || isFutureDate(cell.year, cell.month, cell.day);
+              !cell.inMonth || isFutureDate(cell.year, cell.month, cell.day, now);
             return (
               <button
                 key={i}

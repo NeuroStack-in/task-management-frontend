@@ -2,9 +2,10 @@
  * Countries with their international dialling codes, for {@link PhoneInput}.
  *
  * **Dial codes are not unique.** +1 is the US, Canada, and a dozen Caribbean countries; +7 is both
- * Russia and Kazakhstan. So a stored `+1...` number cannot tell you which country it belongs to —
- * parsing picks the first match, which is a display choice, not a claim about the subscriber. That
- * is fine here: what is stored is the number, and the country is only how we help someone type it.
+ * Russia and Kazakhstan. {@link countryFromDial} tells them apart where the number itself can (an
+ * area code, a number range) and otherwise names the code's main country — a display choice, not a
+ * claim about the subscriber. That is fine here: what is stored is the number, and the country is
+ * only how we help someone type it.
  *
  * Sorted by name so the list reads alphabetically without sorting at render.
  */
@@ -191,12 +192,45 @@ export const COUNTRIES: Country[] = [
   { iso: "ZW", name: "Zimbabwe", dial: "263" },
 ];
 
-/** Longest-prefix match, so +1 does not shadow nothing and +91 beats +9. */
+/**
+ * Which country a **shared** dial code means. Longest-prefix matching alone picked whichever sharer
+ * came first alphabetically, so every US and Canadian number displayed as the Bahamas and every
+ * Russian one as Kazakhstan (QA audit 2026-10-08, WP-362). The Caribbean members of +1 are told
+ * apart by their area codes and Kazakhstan by its 6xx/7xx ranges; anything else is the code's main
+ * country. (Canada keeps no list of its many area codes here, so it reads as the US — the picker
+ * keeps an explicit choice of Canada for as long as the number is being edited.)
+ */
+const SHARED_DIAL: Record<string, { main: string; byPrefix: Record<string, string> }> = {
+  "1": {
+    main: "US",
+    byPrefix: {
+      "242": "BS",
+      "246": "BB",
+      "809": "DO",
+      "829": "DO",
+      "849": "DO",
+      "658": "JM",
+      "876": "JM",
+      "787": "PR",
+      "939": "PR",
+      "868": "TT",
+    },
+  },
+  "7": { main: "RU", byPrefix: { "6": "KZ", "7": "KZ" } },
+};
+
+/** Longest-prefix match, so +91 beats +9 — then a shared code is resolved (see `SHARED_DIAL`). */
 export function countryFromDial(e164: string): Country | null {
   const digits = e164.replace(/[^\d]/g, "");
   let best: Country | null = null;
   for (const c of COUNTRIES) {
     if (digits.startsWith(c.dial) && (!best || c.dial.length > best.dial.length)) best = c;
   }
-  return best;
+  const shared = best ? SHARED_DIAL[best.dial] : undefined;
+  if (!best || !shared) return best;
+  const rest = digits.slice(best.dial.length);
+  const iso =
+    Object.entries(shared.byPrefix).find(([prefix]) => rest.startsWith(prefix))?.[1] ??
+    shared.main;
+  return COUNTRIES.find((c) => c.iso === iso) ?? best;
 }

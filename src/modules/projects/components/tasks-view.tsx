@@ -68,6 +68,22 @@ export function TasksView({
     );
   }
 
+  // Tasks exist, but none in this filter. It rendered an empty bordered box with no word at all
+  // (QA audit 2026-10-08, WP-498).
+  if (visible.length === 0) {
+    const what =
+      filter === "overdue" ? "overdue" : filter === "all" ? "" : TASK_STATUS_META[filter].label;
+    return (
+      <EmptyState
+        icon={ListChecks}
+        title={what ? `No ${what.toLowerCase()} tasks` : "No tasks"}
+        description={
+          query ? "None match your search with this filter." : "Try another filter."
+        }
+      />
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-2xl border bg-card">
       <ul className="divide-y">
@@ -75,7 +91,8 @@ export function TasksView({
           const project = projectMap[t.projectId];
           const prio = TASK_PRIORITY_META[t.priority];
           const status = TASK_STATUS_META[t.status];
-          const due = dueLabel(t.dueDate);
+          // Signed-off work past its date was finished, not late (WP-377).
+          const due = dueLabel(t.dueDate, t.status === "done");
           return (
             <li key={t.id}>
               <button
@@ -101,9 +118,11 @@ export function TasksView({
                     {t.title}
                   </p>
                   <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                    <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
-                      {project?.key ?? "—"}
-                    </span>
+                    {project?.key ? (
+                      <span className="rounded bg-accent px-1 font-mono text-[0.65rem] font-semibold text-accent-foreground">
+                        {project.key}
+                      </span>
+                    ) : null}
                     <span className="truncate">
                       {project?.name ?? "Unknown"}
                     </span>

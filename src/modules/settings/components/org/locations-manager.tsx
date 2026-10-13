@@ -132,10 +132,12 @@ export function LocationsManager() {
     if (!name) return;
     const body = {
       name,
-      address: form.address.trim() || undefined,
-      city: form.city.trim() || undefined,
-      country: form.country.trim() || undefined,
-      timezone: form.timezone.trim() || undefined,
+      // Sent even when empty: blank is how a field is cleared ("No timezone"). Omitted, the server
+      // kept the old value and the save looked applied (WP-102).
+      address: form.address.trim(),
+      city: form.city.trim(),
+      country: form.country.trim(),
+      timezone: form.timezone.trim(),
     };
     setSaving(true);
     try {
@@ -262,8 +264,9 @@ export function LocationsManager() {
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
-              <Label>Name</Label>
+              <Label htmlFor="location-name">Name</Label>
               <Input
+                id="location-name"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="HQ"
@@ -272,8 +275,9 @@ export function LocationsManager() {
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label>Address</Label>
+              <Label htmlFor="location-address">Address</Label>
               <Input
+                id="location-address"
                 value={form.address}
                 onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
                 placeholder="123 Market St"
@@ -281,8 +285,9 @@ export function LocationsManager() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>City</Label>
+              <Label htmlFor="location-city">City</Label>
               <Input
+                id="location-city"
                 value={form.city}
                 onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
                 placeholder="San Francisco"
@@ -290,8 +295,9 @@ export function LocationsManager() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Country</Label>
+              <Label htmlFor="location-country">Country</Label>
               <Input
+                id="location-country"
                 value={form.country}
                 onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))}
                 placeholder="United States"
@@ -309,7 +315,7 @@ export function LocationsManager() {
                   ...Object.fromEntries(TIMEZONE_OPTIONS.map((tz) => [tz, tz])),
                 }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Location timezone">
                   <SelectValue placeholder="Select a timezone…" />
                 </SelectTrigger>
                 <SelectContent>

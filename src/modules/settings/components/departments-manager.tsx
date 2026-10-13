@@ -3,8 +3,8 @@
 /**
  * Department management — on the **live backend** (`/v1/departments`, workforce context).
  *
- * List needs `employees:view`; create / rename / delete and **membership** need `settings:manage`
- * (backend `OrgManage` / `employees:manage`). Lives on the Organization settings page because
+ * List needs `employees:view`; create / rename / delete and **membership** need `departments:manage`
+ * (backend `OrgManage`; a membership move is an employee update, `employees:manage`). Lives on the Organization settings page because
  * departments are org structure.
  *
  * A department is a **roster you edit here**, not just a name in a picker. Membership is a single
@@ -31,15 +31,16 @@ import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import {
-  listDepartments,
   listAllEmployees,
   createDepartment,
   updateDepartment,
   updateEmployee,
   deleteDepartment,
+  UNASSIGNED_DEPT,
   type ApiDepartment,
   type ApiEmployee,
 } from "@/modules/employees/services/employees.service";
+import { readRosterShared } from "../lib/shared-reads";
 import { EntityPeopleDialog } from "./org/entity-people-dialog";
 import { DeptProductivityDialog } from "./org/dept-productivity-dialog";
 import { MemberEditorDialog } from "./org/member-editor-dialog";
@@ -68,7 +69,8 @@ const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(
 
 export function DepartmentsManager() {
   const { can } = usePermissions();
-  const canManage = can("settings:manage");
+  // `OrgManage`, not `OrgSettingsManage` — the server tells them apart (QA audit 2026-10-08, WP-324).
+  const canManage = can("departments:manage");
 
   const [depts, setDepts] = useState<ApiDepartment[]>([]);
   /**
@@ -77,6 +79,8 @@ export function DepartmentsManager() {
    * list inside it.
    */
   const [people, setPeople] = useState<ApiEmployee[]>([]);
+  /** Part of the directory couldn't be read, so the member counts may be short. */
+  const [peopleIncomplete, setPeopleIncomplete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,14 +99,20 @@ export function DepartmentsManager() {
     let live = true;
     setLoading(true);
     setError(null);
-    // Departments are the page; the directory is enrichment. A directory failure degrades the counts
-    // to zero rather than blanking the section, so a viewer without `employees:view` still sees the
-    // structure.
-    Promise.all([listDepartments(), listAllEmployees().catch(() => [] as ApiEmployee[])])
-      .then(([d, e]) => {
+    // One roster walk, shared with the Teams card mounting beside this one; it lists the departments
+    // on the way, so they come from the same read (WP-539). Departments are the page: without them
+    // this is an error. A partition that couldn't be read shortens the counts, and is now said so
+    // rather than passing for smaller departments.
+    readRosterShared()
+      .then((r) => {
         if (!live) return;
-        setDepts([...d].sort(byName));
-        setPeople(e);
+        if (!r.departments) {
+          setError("Couldn't load departments.");
+          return;
+        }
+        setDepts([...r.departments].sort(byName));
+        setPeople(r.employees);
+        setPeopleIncomplete(r.incomplete);
       })
       .catch((e) => {
         if (live) setError(messageOf(e, "Couldn't load departments."));
@@ -131,14 +141,25 @@ export function DepartmentsManager() {
   }, [people]);
 
   const deptName = useCallback(
-    (id?: string) => (id ? (depts.find((d) => d.id === id)?.name ?? "—") : "No department"),
+    // `unassigned` is the directory's word for "none", not an id — it used to caption "—" (WP-111).
+    (id?: string) =>
+      id && id !== UNASSIGNED_DEPT
+        ? (depts.find((d) => d.id === id)?.name ?? "—")
+        : "No department",
+    [depts],
+  );
+
+  /** Names are unique, ignoring case — the server doesn't check, so this is the only guard. */
+  const nameTaken = useCallback(
+    (name: string, exceptId?: string) =>
+      depts.some((d) => d.id !== exceptId && d.name.toLowerCase() === name.toLowerCase()),
     [depts],
   );
 
   async function add() {
     const name = newName.trim();
     if (!name) return;
-    if (depts.some((d) => d.name.toLowerCase() === name.toLowerCase())) {
+    if (nameTaken(name)) {
       toast.error("A department with that name already exists.");
       return;
     }
@@ -190,8 +211,20 @@ export function DepartmentsManager() {
       toast.success(`“${pendingDelete.name}” deleted`);
       setPendingDelete(null);
     } catch (e) {
-      // The backend may refuse to delete a department that still has members — surface its reason.
-      toast.error(messageOf(e, "Couldn't delete the department."));
+      // The server refuses to delete a department people or teams are still filed under (WP-049):
+      // say what to do rather than a bare failure.
+      const code = e instanceof ApiError ? e.code : undefined;
+      if (code === "department_has_members") {
+        toast.error(`“${pendingDelete.name}” still has people in it.`, {
+          description: "Move them to another department first, then delete it.",
+        });
+      } else if (code === "department_in_use") {
+        toast.error(`A team still belongs to “${pendingDelete.name}”.`, {
+          description: "Move or delete that team first.",
+        });
+      } else {
+        toast.error(messageOf(e, "Couldn't delete the department."));
+      }
     } finally {
       setDeleting(false);
     }
@@ -267,6 +300,19 @@ export function DepartmentsManager() {
                 ) : null}
               </div>
             ) : (
+              <>
+              {peopleIncomplete ? (
+                <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-xs">
+                  <span>Some people couldn&apos;t be loaded, so member counts may be low.</span>
+                  <button
+                    type="button"
+                    onClick={load}
+                    className="text-primary font-medium underline-offset-2 hover:underline"
+                  >
+                    Retry
+                  </button>
+                </p>
+              ) : null}
               <ul className="divide-y divide-border rounded-lg border">
                 {depts.map((d) => {
                   const count = countOf.get(d.id) ?? 0;
@@ -322,28 +368,34 @@ export function DepartmentsManager() {
                   );
                 })}
               </ul>
+              </>
             )}
           </>
         )}
       </CardContent>
 
-      {/* Delete confirmation — deleting orphans the department_id on any member still in it. */}
+      {/* Delete confirmation. The server refuses to delete a department anyone is still filed under
+          (`department_has_members`), so with known members the dialog says what to do first instead
+          of promising they "will be left without one" (QA audit 2026-10-08, WP-536). */}
       <Dialog open={!!pendingDelete} onOpenChange={(o) => !o && setPendingDelete(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Delete “{pendingDelete?.name}”?</DialogTitle>
             <DialogDescription>
               {pendingDeleteCount > 0
-                ? `${pendingDeleteCount} ${pendingDeleteCount === 1 ? "person is" : "people are"} in this department and will be left without one. `
-                : ""}
-              This can&apos;t be undone.
+                ? `${pendingDeleteCount} ${pendingDeleteCount === 1 ? "person is" : "people are"} in this department. Move them to another department first — a department with people in it can't be deleted.`
+                : "This can't be undone."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPendingDelete(null)} disabled={deleting}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleting || pendingDeleteCount > 0}
+            >
               {deleting ? "Deleting…" : "Delete department"}
             </Button>
           </DialogFooter>
@@ -375,6 +427,9 @@ export function DepartmentsManager() {
           description="Rename the department and choose who belongs to it."
           name={editing.name}
           nameLabel="Department name"
+          validateName={(next) =>
+            nameTaken(next, editing.id) ? "Another department already has that name." : null
+          }
           onRename={async (next) => {
             const updated = await updateDepartment(editing.id, next);
             setDepts((cur) => cur.map((d) => (d.id === editing.id ? updated : d)).sort(byName));

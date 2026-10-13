@@ -10,9 +10,14 @@
  *   - productivity, hours, top performers, team comparison  ← `getOrgActivity(day)` per day
  *   - attendance rate + the attendance donut                ← `getDayOversight(day)` per day
  *   - screenshots                                           ← `getScreenshots(day)` per day
- *   - active / inactive / headcount                         ← `getEmployees()` directory
- *   - running timers                                        ← `getFleet()` online devices
+ *   - active / inactive / headcount                         ← `listAllEmployees()` directory
+ *   - running timers, today's live attendance ← `getRosterDay(today)`, one request (per-person `getUserDay` only on an older server)
  *   - billing seats                                         ← `getBillingOverview()`
+ *
+ * **Only what the board can use is read** (`DashboardSources`): no activity or screenshot reads on a
+ * plan that refuses them, no screenshot pages a visible widget doesn't need, no billing read for a
+ * viewer who can't open billing. Each of those used to fire — and fail — every 30 s
+ * (QA audit 2026-10-08, WP-193).
  *
  * Everything the desktop agent must feed (scores, hours, screenshots, heatmap) is **0 / empty until an
  * agent reports** — a gap, never a fabricated number.
@@ -29,17 +34,21 @@
  *    prior window has to be fetched and the type widened to `number | null` — a computed 0 and an
  *    uncomputed one must not look alike.
  */
-import { useCallback, useEffect, useState } from "react";
-import { useLiveRefresh } from "@/hooks/use-live-refresh";
+import { useEffect, useRef, useState } from "react";
+import { LIVE_REFRESH_MS, useLiveRefresh } from "@/hooks/use-live-refresh";
 import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   listAllEmployees,
   listInvites,
   departmentMap,
+  UNASSIGNED_DEPT,
 } from "@/modules/employees/services/employees.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
-import { getUserDay } from "@/modules/attendance/services/attendance.service";
+import {
+  getRosterDay,
+  getUserDay,
+} from "@/modules/attendance/services/attendance.service";
 import { todayIso, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { getBillingOverview } from "@/modules/billing/services/billing.service";
 // The local-day filter the heatmap needs: screenshots are partitioned by UTC date.
@@ -55,6 +64,7 @@ import {
 } from "@/modules/attendance/services/attendance.service";
 import { foldToWeeks } from "./lib/dashboard-data";
 import type {
+  AttendanceView,
   DashboardData,
   DashboardFilters,
   LiveTimer,
@@ -66,10 +76,13 @@ import type {
 
 /** Bounded per-day fan-out — a small cap so a month window doesn't burst the Lambda. */
 const DAY_FANOUT = 3;
-/** Screenshots are paginated; a page is plenty to count activity for a day. */
+/** Screenshots are paginated; one page per day is all the dashboard reads (it is the server max). */
 const SHOT_PAGE = 200;
-/** Hard ceiling on days fanned out for a custom range, so a huge window can't storm the API. */
-const MAX_DAYS = 62;
+/**
+ * Hard ceiling on days fanned out for a custom range, so a huge window can't storm the API. The
+ * range pickers are bounded to it (`DashboardControls`), so a longer range cannot be chosen.
+ */
+export const MAX_DAYS = 62;
 
 const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SHORT_MONTH = [
@@ -134,7 +147,9 @@ function resolveDays(f: DashboardFilters): string[] {
 
 function rangeLabelFor(f: DashboardFilters, days: string[]): string {
   if (f.range === "today") return "today";
-  if (f.range === "7d") return "this week";
+  // A rolling seven days, not the calendar week: it said "this week", so on a Monday "Hours Tracked
+  // · this week" was mostly last week's hours (QA audit 2026-10-08, WP-431).
+  if (f.range === "7d") return "last 7 days";
   if (f.range === "30d") return "this month";
   if (days.length === 0) return "selected range";
   const s = new Date(`${days[0]}T00:00:00`);
@@ -155,17 +170,32 @@ interface DayBundle {
   shots: number;
   /** The day's grid was cut off at `SHOT_PAGE`, so `shots` is a floor, not a total. */
   shotsTruncated: boolean;
+  /** The day's frames did not fit the one page read, so `hourly`/`flagged` describe part of it. */
+  shotsSampled: boolean;
   /** In-scope screenshot counts bucketed by local hour-of-day (0..23) — feeds the heatmap. */
   hourly: number[];
   /** Captures worth a review this day (`ShotRow.flagged`). */
   flagged: number;
-  /** Server-classified category tallies for the day's in-scope captures. */
-  productive: number;
-  neutral: number;
-  distracting: number;
-  /** Distinct employees seen in this day's captures — unioned across the range for coverage. */
-  userIds: string[];
 }
+
+/**
+ * Which reads the board needs — decided by the caller, which knows the plan, the viewer's
+ * permissions and which widgets are on screen. A source left out is simply not requested.
+ */
+export interface DashboardSources {
+  /** The activity rollup is readable: `monitoring.activity` is in effect for this org. */
+  activity: boolean;
+  /** Screenshot pages are needed: in effect for the org AND something visible uses them. */
+  screenshots: boolean;
+  /** The billing overview is needed: the viewer holds `billing:view` AND its widget is shown. */
+  billing: boolean;
+}
+
+const ALL_SOURCES: DashboardSources = {
+  activity: true,
+  screenshots: true,
+  billing: true,
+};
 
 export interface DashboardDataState {
   data: DashboardData | null;
@@ -175,47 +205,77 @@ export interface DashboardDataState {
   reload: () => void;
 }
 
-export function useDashboardData(filters: DashboardFilters): DashboardDataState {
+export function useDashboardData(
+  filters: DashboardFilters,
+  sources: DashboardSources = ALL_SOURCES,
+): DashboardDataState {
   const [data, setData] = useState<DashboardData | null>(null);
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // A load is running. The poll waits for it rather than restarting it: a load slower than the
+  // interval was superseded by every tick and never landed (QA audit 2026-10-08, WP-193).
+  const inFlight = useRef(false);
   // Live: a quiet background re-fetch every 30 s, so time on screen keeps up with what the
   // agents have uploaded. `reload` stays the visible path; the poll uses `refresh`.
-  const { nonce, reload, isBackground } = useLiveRefresh();
+  const { nonce, reload, isBackground } = useLiveRefresh(LIVE_REFRESH_MS, {
+    isBusy: () => inFlight.current,
+  });
   const { range, team, start, end } = filters;
+  const {
+    activity: readActivity,
+    screenshots: readShots,
+    billing: readBilling,
+  } = sources;
 
   useEffect(() => {
+    const background = isBackground();
+    const days = resolveDays({ range, team, start, end });
+    // A custom range without both dates is not a range yet: there is nothing to ask for, and the
+    // view shows a prompt instead of a board. It used to run the whole load anyway, for zero days.
+    if (days.length === 0) {
+      inFlight.current = false;
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     let live = true;
-    if (!isBackground()) setLoading(true);
-    setError(null);
+    inFlight.current = true;
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
 
     (async () => {
       try {
-        const days = resolveDays({ range, team, start, end });
-
         // Range-independent org context. Billing/roles are best-effort (a 403 must not blank the board).
         //
         // `listAllEmployees` (not `listEmployees`) is load-bearing: the bare directory call returns
         // the alphabetically-first 50 people with **no cursor to page past them**, so departments
         // sorting late simply never appeared in the filter below. A filter missing its options reads
         // as "filtering is broken", which is exactly what it was.
-        const [roster, deptNames, contributorIds, invites] = await Promise.all([
+        const [roster, deptNames, contributorIds, invites, billing] = await Promise.all([
           listAllEmployees(),
           departmentMap().catch(() => new Map<string, string>()),
           // A failed roles read must not empty the KPI — fall back to counting everyone.
           contributorRoleIds().catch(() => null),
           // Invited people are **not** directory rows (see `HeadcountCounts`), so the only way to
-          // count them is the invites list. Needs a higher permission than the dashboard does, so a
-          // 403 degrades to "no invites known" rather than blanking the board.
+          // count them is the invites list. Same `EmployeesRead` as the directory this board is
+          // built on, so a failure here is transient — it degrades to "no invites known" rather
+          // than blanking the board.
           listInvites().catch(() => []),
+          readBilling ? getBillingOverview().catch(() => null) : Promise.resolve(null),
         ]);
-        const billing = await getBillingOverview().catch(() => null);
         if (!live) return;
 
         // The filter matches on `department_id`; the label is display-only (see DashboardFilters).
+        // `unassigned` is the directory's bucket for people with no department — not an id the
+        // department map can name, and not an unknown department either.
         const deptLabel = (id: string) =>
-          deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : "");
+          id === UNASSIGNED_DEPT
+            ? "No department"
+            : (deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : ""));
         const teamList: TeamOption[] = Array.from(
           new Set(roster.map((e) => e.department_id).filter(Boolean)),
         )
@@ -253,9 +313,12 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
          * empty org rather than an unfiltered one.
          */
         const trackedUserIds = new Set(
-          roster.filter((e) => e.role_id && contributorIds?.has(e.role_id)).map((e) => e.user_id),
+          roster
+            .filter((e) => e.role_id && contributorIds?.has(e.role_id))
+            .map((e) => e.user_id),
         );
-        const isTracked = (id: string) => contributorIds === null || trackedUserIds.has(id);
+        const isTracked = (id: string) =>
+          contributorIds === null || trackedUserIds.has(id);
         const inScopeDept = (id: string) => team === "all" || id === team;
 
         // Directory-derived headcount (dept-filtered) — **employment status**, not "working now".
@@ -264,7 +327,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         // is what made an invited person count as "inactive".
         const scopedRoster = roster.filter((e) => inScopeUser(e.user_id));
         const activeCount = scopedRoster.filter((e) => e.status === "active").length;
-        const inactiveCount = scopedRoster.filter((e) => e.status === "deactivated").length;
+        const inactiveCount = scopedRoster.filter(
+          (e) => e.status === "deactivated",
+        ).length;
 
         // Pending invites, scoped to the selected department. Expiry is lazy server-side, so a
         // `pending` row whose `expires_at` (epoch **seconds**) has passed is really expired.
@@ -291,15 +356,44 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
          *
          * Bounded fan-out, skip-on-failure: one call per timer-holding employee. A failed row
          * counts as not-working rather than failing the dashboard.
+         *
+         * **Benched people are not in it**, as on the Attendance and Time Tracking pages (and the
+         * server's own oversight read): they are not expected to work, so they are neither "not
+         * tracking" nor absent.
          */
         const timerHolders = scopedRoster.filter(
           (e) =>
             e.status === "active" &&
+            !e.benched &&
             (contributorIds === null || contributorIds.has(e.role_id ?? "")),
         );
         const todayForTimers = todayIso();
-        const todayStatus = await mapWithConcurrency(timerHolders, 4, (e) =>
-          getUserDay(e.user_id, todayForTimers).then(
+        const notWorking = {
+          running: false,
+          present: false,
+          onLeave: false,
+          completedSec: 0,
+          liveStart: null as number | null,
+        };
+        // **One roster read** for everyone in reach (WP-193) — it used to be one request per
+        // contributor every poll. A server without the route (404) falls back to the per-person
+        // read; a roster that failed outright degrades each row to not-working, as before.
+        const rosterDay = await getRosterDay(todayForTimers).catch(() => undefined);
+        const rosterById =
+          rosterDay && !rosterDay.truncated
+            ? new Map(rosterDay.users.map((d) => [d.user_id, d]))
+            : null;
+        const todayStatus = await mapWithConcurrency(timerHolders, 4, async (e) => {
+          // A run already superseded stops asking — it used to finish its whole fan-out.
+          if (!live) return { employee: e, ...notWorking };
+          const fromRoster = rosterById?.get(e.user_id);
+          const read: Promise<Awaited<ReturnType<typeof getUserDay>>> = fromRoster
+            ? Promise.resolve(fromRoster)
+            : rosterById
+              ? // In reach of the roster and absent from it: nobody to read.
+                Promise.reject(new Error("not in roster"))
+              : getUserDay(e.user_id, todayForTimers);
+          return read.then(
             // `present` = has clocked in at all today (a live signal — the attendance *verdict* only
             // exists after the nightly close), so the Attendance donut has something truthful to show
             // for the Today range instead of a blank "resolved tomorrow".
@@ -307,10 +401,13 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               employee: e,
               running: d.running === true,
               present: Boolean(d.clock_in),
+              // Approved leave covering today — stamped before the close, so it is known live.
+              onLeave: d.on_leave === true,
               // Today's completed tracked time (the running session excluded — user_day's
               // worked_minutes is the finished-sessions sum for an open day). The widget adds the
               // live running elapsed on top so each row reads as the whole day's time.
-              completedSec: (typeof d.worked_minutes === "number" ? d.worked_minutes : 0) * 60,
+              completedSec:
+                (typeof d.worked_minutes === "number" ? d.worked_minutes : 0) * 60,
               // The start a live "elapsed" clock ticks from. Prefer `running_since` — the OPEN
               // session's own start — so it's exact for *anyone* running, including after a break and
               // a restart. Fall back to `clock_in` only for a single-session day (where the two are
@@ -324,15 +421,10 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
                     ? d.clock_in
                     : null,
             }),
-            () => ({
-              employee: e,
-              running: false,
-              present: false,
-              completedSec: 0,
-              liveStart: null as number | null,
-            }),
-          ),
-        );
+            () => ({ employee: e, ...notWorking }),
+          );
+        });
+        if (!live) return;
         const workingNow = todayStatus.filter((s) => s.running).length;
         // The per-employee "who is tracking right now" list the Working-now widget renders and ticks
         // live. Longest-running first (earliest start), the not-precisely-tickable rows last.
@@ -360,16 +452,23 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const rangeIncludesToday = days.includes(todayForTimers);
 
         // Per-day monitoring reads — bounded + skip-on-fail. A day with no agent data just contributes
-        // nothing (nulls), never a seeded number.
+        // nothing (nulls), never a seeded number. A source the board does not need (see
+        // `DashboardSources`) is not asked for at all, and a superseded run asks for nothing more.
         const bundles = await mapWithConcurrency<string, DayBundle>(
           days,
           DAY_FANOUT,
           async (iso) => {
-            const [activity, oversight, grid] = await Promise.all([
-              getOrgActivity(iso).catch(() => null),
-              getDayOversight(iso).catch(() => null),
-              getScreenshots(iso, { limit: SHOT_PAGE }).catch(() => null),
-            ]);
+            const [activity, oversight, grid] = live
+              ? await Promise.all([
+                  readActivity ? getOrgActivity(iso).catch(() => null) : null,
+                  // Only closed days carry statuses (see the attendance block below) — today's
+                  // roster read was made every poll and never used.
+                  iso < todayForTimers ? getDayOversight(iso).catch(() => null) : null,
+                  readShots
+                    ? getScreenshots(iso, { limit: SHOT_PAGE }).catch(() => null)
+                    : null,
+                ])
+              : [null, null, null];
             // ⚠️ One page only, and `SHOT_PAGE` is already the server's `MAX_LIMIT`. Following the
             // cursor here would mean up to 62 days × N pages of sequential requests, which is
             // exactly the fan-out that throttles the Lambda. So the count can be a floor — and when
@@ -387,15 +486,15 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
                 ? grid.total
                 : null;
             const shots = exactTotal ?? scopedShots.length;
-            const shotsTruncated =
-              exactTotal !== null
-                ? false
-                : grid
-                  ? Boolean(grid.cursor) || grid.shots.length >= SHOT_PAGE
-                  : false;
-            // One pass over the day's in-scope frames: the activity-heatmap bucket, review flags,
-            // the productive/neutral/distracting split, and who was captured — all from data
-            // already fetched, no extra request.
+            // The page did not hold the whole day. The server orders it by user, then time, so what
+            // it holds is a few people's frames — not a sample of everyone's (QA audit 2026-10-08,
+            // WP-197). The count above can use the exact total org-wide; nothing below can.
+            const shotsSampled = grid
+              ? Boolean(grid.cursor) || grid.shots.length >= SHOT_PAGE
+              : false;
+            const shotsTruncated = exactTotal !== null ? false : shotsSampled;
+            // One pass over the day's in-scope frames: the activity-heatmap bucket and the review
+            // flags — from data already fetched, no extra request.
             //
             // **Filtered to the local day first, and that filter covers every counter here.** The
             // endpoint partitions on the UTC date, so at any non-zero offset this page's frames
@@ -407,19 +506,11 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             // against `iso`, so they need the same cut for the same reason.
             const hourly = new Array(24).fill(0);
             let flagged = 0;
-            let productive = 0;
-            let neutral = 0;
-            let distracting = 0;
-            const seen = new Set<string>();
             for (const s of scopedShots) {
               if (localDateOf(s.captured_at) !== iso) continue;
               const h = new Date(s.captured_at).getHours();
               if (h >= 0 && h < 24) hourly[h] += 1;
               if (s.flagged) flagged += 1;
-              if (s.category === "productive") productive += 1;
-              else if (s.category === "distracting") distracting += 1;
-              else neutral += 1;
-              seen.add(s.user_id);
             }
             return {
               iso,
@@ -427,12 +518,9 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               oversight,
               shots,
               shotsTruncated,
+              shotsSampled,
               hourly,
               flagged,
-              productive,
-              neutral,
-              distracting,
-              userIds: [...seen],
             };
           },
         );
@@ -494,6 +582,17 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const productivityValue = scoredPersonDays
           ? Math.round(scoreSum / scoredPersonDays)
           : 0;
+        // Settled hours come from the activity rollup — which a plan without `monitoring.activity`
+        // cannot read. Logged time is still the plan's (`time.tracking`), and for **today** the
+        // per-person reads above already carry it (`worked_minutes`, the finished sessions), so
+        // that window has a source either way. A longer one does not, on this board.
+        const todayOnly = days.length === 1 && days[0] === todayForTimers;
+        const hoursAvailable = readActivity || todayOnly;
+        const closedSec = readActivity
+          ? trackedSecTotal
+          : todayOnly
+            ? todayStatus.reduce((s, t) => s + t.completedSec, 0)
+            : 0;
         // Snapshot of live-running seconds at fetch time, so the KPI is already correct before the
         // first `useNow` tick and the assistant reads a truthful figure. The view re-derives this
         // live from `hoursLive` on an interval. `Date.now()` here is in the data effect, not a render
@@ -501,23 +600,28 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         const runningSnapSec = rangeIncludesToday
           ? runningStarts.reduce((s, st) => s + Math.max(0, (Date.now() - st) / 1000), 0)
           : 0;
-        const hoursTrackedSec = trackedSecTotal + runningSnapSec;
-        // One decimal below 10h so a live-accruing morning (0.4h) isn't floored to "0h"; whole hours
-        // above, where a tenth is noise.
-        const hoursTracked =
-          hoursTrackedSec >= 36000
-            ? Math.round(hoursTrackedSec / 3600)
-            : Math.round((hoursTrackedSec / 3600) * 10) / 10;
+        const hoursTrackedSec = closedSec + runningSnapSec;
+        // Exact hours. This was rounded to whole hours above ten, and that rounded figure is what the
+        // assistant was told beside a tile reading the live `HH:MM:SS` (QA audit 2026-10-08, WP-431);
+        // every display now formats `hoursLive` itself.
+        const hoursTracked = hoursTrackedSec / 3600;
 
         // ── Productivity trend (the chart): a real multi-day line. A single "today" point is not a
         // trend, so when the selected range is one day, draw a rolling 7-day window fetched just for
         // the chart — the KPI numbers above stay scoped to the selected range. ──
         let trendBundles: { iso: string; activity: OrgActivity | null }[] = bundles;
-        if (days.length < 2) {
+        const widened = days.length < 2;
+        if (widened) {
           const trendDays = resolveDays({ range: "7d", team, start, end });
+          // The selected day is already read: it used to be fetched a second time here, every poll.
+          const read = new Map(bundles.map((b) => [b.iso, b.activity] as const));
           trendBundles = await mapWithConcurrency(trendDays, DAY_FANOUT, async (iso) => ({
             iso,
-            activity: await getOrgActivity(iso).catch(() => null),
+            activity: read.has(iso)
+              ? (read.get(iso) ?? null)
+              : live && readActivity
+                ? await getOrgActivity(iso).catch(() => null)
+                : null,
           }));
           if (!live) return;
         }
@@ -558,7 +662,8 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           // time. This keeps every bar's height equal to hours *tracked* (never overstating), and the
           // remainder is the honest "unclassified" band. When classification fits, `scale` is 1.
           const classified = t.prod + t.neut + t.dist;
-          const scale = classified > t.active && classified > 0 ? t.active / classified : 1;
+          const scale =
+            classified > t.active && classified > 0 ? t.active / classified : 1;
           const prodSec = t.prod * scale;
           const neutSec = t.neut * scale;
           const distSec = t.dist * scale;
@@ -571,13 +676,16 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           // optional: `false` = explicitly dropped; **absent OR `true` = measured** (rollup/older
           // payloads omit the flag — see ScoreBreakdown). So exclude only explicit `false`; treating
           // absent as unmeasured wrongly showed "not measured" on a day that was in fact scored.
-          const qScored = people.filter((p) => p.breakdown && p.breakdown.q_measured !== false);
+          const qScored = people.filter(
+            (p) => p.breakdown && p.breakdown.q_measured !== false,
+          );
           const label = dayLabel(b.iso, trendShort);
           productivityScoreTrend.push({
             label,
             score: qScored.length
               ? Math.round(
-                  qScored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) / qScored.length,
+                  qScored.reduce((s, p) => s + (p.breakdown?.score ?? 0), 0) /
+                    qScored.length,
                 )
               : null,
             measured: qScored.length,
@@ -595,9 +703,12 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         });
         // A month per-day is ~22 slivers with colliding labels; weeks are the unit the monthly AI
         // report already narrates in, so the chart matches it instead of inventing a third
-        // granularity. Day-level ranges are untouched.
-        const trendPoints =
-          range === "30d" ? foldToWeeks(productivityTrend) : productivityTrend;
+        // granularity. Day-level ranges are untouched — and so is a widened one: on the 1st of a
+        // month the window is last week's days, which "this month, by week" would misname.
+        const foldWeeks = range === "30d" && !widened;
+        const trendPoints = foldWeeks
+          ? foldToWeeks(productivityTrend)
+          : productivityTrend;
 
         const productivityTrendSeries = dayScores;
 
@@ -605,6 +716,7 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         let presentSum = 0;
         let countedSum = 0;
         let latestCounts = { present: 0, partial: 0, leave: 0, absent: 0 };
+        let attendanceView: AttendanceView | null = null;
         // **Closed days only.** Attendance statuses are stamped by the 00:15 close cron, so today
         // has no attendance record yet — every user comes back unresolved and counts as "not
         // present". Including today therefore reported `0 present` next to a live productivity
@@ -630,22 +742,29 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
               leave: users.filter((u) => u.status === "leave").length,
               absent: users.filter((u) => u.status === "absent").length,
             };
+            // One day — the latest one with statuses — which the donut names, since the window
+            // around it may be a week the KPI tile describes as a whole.
+            attendanceView = { source: "closed", day: b.iso };
           }
         }
         // Live fallback: when no closed day in the window carries resolved statuses (the Today range
-        // always, plus any window whose close cron hasn't produced statuses), fall back to who has
-        // clocked in **today** from the live per-user reads — so the donut shows real presence instead
-        // of a blank "resolved tomorrow". `present` = clocked in; `absent` = active but not; partial /
-        // leave only exist after the close, so they stay 0 here.
-        const attendanceTotal =
-          latestCounts.present + latestCounts.partial + latestCounts.leave + latestCounts.absent;
-        if (attendanceTotal === 0 && timerHolders.length > 0) {
+        // always, plus any window whose close cron hasn't produced statuses), show **today so far**
+        // from the live per-user reads — but only when the window contains today. A past window with
+        // nothing resolved used to be shown today's clock-ins as its attendance.
+        //
+        // No verdict exists yet, so nobody is "absent": `absent` here counts the people who have
+        // not clocked in *yet*, and the donut says exactly that. Approved leave is known live
+        // (`on_leave`), so it is its own slice rather than one more person "not in"
+        // (QA audit 2026-10-08, WP-109).
+        if (attendanceView === null && rangeIncludesToday && timerHolders.length > 0) {
+          const onLeaveToday = todayStatus.filter((s) => s.onLeave && !s.present).length;
           latestCounts = {
             present: presentToday,
             partial: 0,
-            leave: 0,
-            absent: timerHolders.length - presentToday,
+            leave: onLeaveToday,
+            absent: timerHolders.length - presentToday - onLeaveToday,
           };
+          attendanceView = { source: "live", day: todayForTimers };
         }
 
         // ── Activity heatmap (capture density, not a score): weekday (Mon..Sun) × 2-hour workday buckets (8a..8p), 0..100 intensity,
@@ -662,9 +781,13 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           }
         }
         const heatMax = Math.max(1, ...heatCounts.flat());
-        const heatmap = heatCounts.flat().some((v) => v > 0)
-          ? heatCounts.map((row) => row.map((v) => Math.round((v / heatMax) * 100)))
-          : [];
+        // Not drawn from a sampled window: the one page per day holds the frames of whichever users
+        // sort last, so a "relative to this org's busiest hour" grid would be a few people's day.
+        const screenshotsSampled = bundles.some((b) => b.shotsSampled);
+        const heatmap =
+          !screenshotsSampled && heatCounts.flat().some((v) => v > 0)
+            ? heatCounts.map((row) => row.map((v) => Math.round((v / heatMax) * 100)))
+            : [];
 
         const attendanceRate = countedSum
           ? Math.round((presentSum / countedSum) * 100)
@@ -683,22 +806,28 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             ).length > 0,
         ).length;
 
-        // ── Latest day with scored people → team comparison + top performers. ──
-        //
-        // **Scope first, then pick the day.** This used to find the newest day with *anybody* in it
-        // and only then filter by department — so if the most recent reporting day happened to hold
-        // no one from the selected team, Top performers came back empty even though that team had
-        // plenty of data earlier in the same window. Switching teams appeared to blank the widget at
-        // random. The day now has to be the newest one that carries someone *in scope*.
-        const latestScopedPeople =
-          [...bundles]
-            .reverse()
-            .map((b) =>
-              (b.activity?.people ?? []).filter(
-                (p) => inScopeDept(p.department_id) && p.breakdown,
-              ),
-            )
-            .find((people) => people.length > 0) ?? [];
+        // ── Top performers: each in-scope person's **average** score over the days they were scored
+        // in the window — what the widget says it ranks. It used to rank the single newest day with
+        // anyone scored, so "Month" showed yesterday's leaderboard (QA audit 2026-10-08, WP-431).
+        // A day under the scoring floor carries no `breakdown`, so it simply does not count.
+        const perPerson = new Map<
+          string,
+          { name: string; departmentId: string; sum: number; days: number }
+        >();
+        for (const b of bundles) {
+          for (const p of b.activity?.people ?? []) {
+            if (!p.breakdown || !inScopeDept(p.department_id)) continue;
+            const acc = perPerson.get(p.user_id) ?? {
+              name: p.name,
+              departmentId: p.department_id,
+              sum: 0,
+              days: 0,
+            };
+            acc.sum += p.breakdown.score;
+            acc.days += 1;
+            perPerson.set(p.user_id, acc);
+          }
+        }
 
         // Department comparison is deliberately the **cross-department** view and stays org-wide
         // even when one is selected — otherwise the comparison renders a single bar. It reads off the
@@ -711,54 +840,49 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
             .map((b) => (b.activity?.people ?? []).filter((p) => p.breakdown))
             .find((people) => people.length > 0) ?? [];
 
+        // Keyed by department **id**, labelled in full. It kept the first word of the name, so
+        // "Customer Success" and "Customer Support" became two bars both called "Customer".
         const byDept = new Map<string, number[]>();
         for (const p of latestAnyPeople) {
           if (!p.breakdown) continue;
-          const label = deptLabel(p.department_id);
-          const arr = byDept.get(label) ?? [];
+          const arr = byDept.get(p.department_id) ?? [];
           arr.push(p.breakdown.score);
-          byDept.set(label, arr);
+          byDept.set(p.department_id, arr);
         }
         const teamData = [...byDept.entries()]
-          .map(([dept, scores]) => ({
-            team: dept.split(" ")[0],
+          .map(([id, scores]) => ({
+            id,
+            team: deptLabel(id) || UNKNOWN_DEPARTMENT,
             score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
           }))
           .sort((a, b) => b.score - a.score)
           .slice(0, 7);
 
-        const topPerformers: Performer[] = [...latestScopedPeople]
-          .sort((a, b) => (b.breakdown?.score ?? 0) - (a.breakdown?.score ?? 0))
-          .slice(0, 5)
-          .map((p) => ({
-            id: p.user_id,
+        const topPerformers: Performer[] = [...perPerson.entries()]
+          .map(([id, p]) => ({
+            id,
             name: p.name,
-            department: deptLabel(p.department_id),
-            productivityScore: Math.round(p.breakdown?.score ?? 0),
-          }));
+            department: deptLabel(p.departmentId),
+            productivityScore: Math.round(p.sum / p.days),
+          }))
+          .sort((a, b) => b.productivityScore - a.productivityScore)
+          .slice(0, 5);
 
         // ── Screenshots over the window (agent-dependent — 0 is honest). ──
-        const screenshotsTrend = bundles.map((b) => b.shots);
-        const screenshotCount = screenshotsTrend.reduce((a, b) => a + b, 0);
+        const screenshotCount = bundles.reduce((a, b) => a + b.shots, 0);
         const screenshotCountPartial = bundles.some((b) => b.shotsTruncated);
-        // Meaningful cuts of the same frames: how many need a look, how work-time split, and how many
-        // employees were actually reached — the three things a raw total can't tell an admin.
+        // How many need a look — counted over the page read, so a floor when `screenshotsSampled`.
         const screenshotsFlagged = bundles.reduce((a, b) => a + b.flagged, 0);
-        const screenshotsSplit = {
-          productive: bundles.reduce((a, b) => a + b.productive, 0),
-          neutral: bundles.reduce((a, b) => a + b.neutral, 0),
-          distracting: bundles.reduce((a, b) => a + b.distracting, 0),
-        };
-        const screenshotsCoverage = new Set(bundles.flatMap((b) => b.userIds)).size;
 
-        // ── Billing seats. ──
-        const seatsTotal =
-          billing && billing.seat_cap > 0 ? billing.seat_cap : roster.length || 1;
-        const billingBlock = {
-          plan: billing?.plan ?? "—",
-          seatsUsed: roster.filter((e) => e.status === "active").length,
-          seatsTotal,
-        };
+        // ── Billing: the server's own figures, or nothing. ──
+        const billingBlock = billing
+          ? {
+              plan: billing.plan,
+              status: billing.status,
+              seatsUsed: billing.seats_used,
+              seatCap: billing.seat_cap,
+            }
+          : null;
 
         // ── Headcount by status. See `HeadcountCounts` for why `invited` can't come from the
         // directory, and why there is no `suspended`. ──
@@ -804,12 +928,15 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           days,
           // The chart's own window. When a one-day selection widened to a rolling week above, say
           // so — the card used to carry the KPI range and quietly misdescribe itself.
-          trendLabel:
-            range === "30d"
-              ? "this month, by week"
-              : trendBundles.length > days.length && trendBundles.length > 1
-                ? `last ${trendBundles.length} days`
-                : rangeLabelFor({ range, team, start, end }, days),
+          trendLabel: foldWeeks
+            ? "this month, by week"
+            : widened
+              ? `last ${trendBundles.length} days`
+              : rangeLabelFor({ range, team, start, end }, days),
+          // Never folded, so never "by week" (QA audit 2026-10-08, WP-431).
+          scoreTrendLabel: widened
+            ? `last ${trendBundles.length} days`
+            : rangeLabelFor({ range, team, start, end }, days),
           kpis: {
             productivity: {
               value: productivityValue,
@@ -830,22 +957,22 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
           teamData,
           screenshotCount,
           screenshotCountPartial,
-          screenshotsTrend,
-          screenshotsCoverage,
+          screenshotsSampled,
           screenshotsFlagged,
-          screenshotsSplit,
           topPerformers,
           liveTimers,
           billing: billingBlock,
           heatmap, // weekday × 2-hour intensity from screenshot capture density (empty if none).
           attendanceCounts: latestCounts,
+          attendanceView,
           attendanceResolvedDays,
           newHiresTracked,
           hoursLive: {
-            closedSec: trackedSecTotal,
+            closedSec,
             runningStarts,
             includesToday: rangeIncludesToday,
           },
+          hoursAvailable,
           productivityCoverage: {
             scored: coverageScored,
             team: coverageTeam,
@@ -857,17 +984,33 @@ export function useDashboardData(filters: DashboardFilters): DashboardDataState 
         };
 
         setData(built);
+        setError(null);
       } catch (e) {
-        if (live) setError(messageOf(e));
+        // A failed background poll keeps the last good board quietly; a load someone asked for
+        // (a filter change, Refresh) says it failed — the view shows that beside the old figures.
+        if (live && !background) setError(messageOf(e));
       } finally {
-        if (live) setLoading(false);
+        if (live) {
+          inFlight.current = false;
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       live = false;
     };
-  }, [range, team, start, end, nonce, isBackground]);
+  }, [
+    range,
+    team,
+    start,
+    end,
+    nonce,
+    isBackground,
+    readActivity,
+    readShots,
+    readBilling,
+  ]);
 
   return { data, teams, loading, error, reload };
 }

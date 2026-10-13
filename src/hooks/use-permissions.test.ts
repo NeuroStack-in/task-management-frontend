@@ -53,9 +53,30 @@ describe("resolveRole", () => {
 
   it("maps the three bits that had no frontend id", () => {
     const role = resolveRole(user({ perm: perm(36, 120, 121) }), []);
-    expect(role?.permissions).toContain("attendance:manage"); // bit 36
+    expect(role?.permissions).toContain("attendance:edit"); // bit 36
     expect(role?.permissions).toContain("integrations:view"); // bit 120
     expect(role?.permissions).toContain("integrations:manage"); // bit 121
+  });
+
+  /** WP-324: ids the server tells apart must not be collapsed onto one frontend id. */
+  it("keeps department writes, org-settings writes and attendance writes apart", () => {
+    const orgManage = resolveRole(user({ perm: perm(12) }), [])?.permissions ?? [];
+    expect(orgManage).toContain("departments:manage");
+    expect(orgManage).not.toContain("settings:manage");
+
+    const orgSettings = resolveRole(user({ perm: perm(13) }), [])?.permissions ?? [];
+    expect(orgSettings).toContain("settings:manage");
+    expect(orgSettings).not.toContain("departments:manage");
+
+    const teamRead = resolveRole(user({ perm: perm(34) }), [])?.permissions ?? [];
+    expect(teamRead).toContain("attendance:manage");
+    expect(teamRead).not.toContain("attendance:edit");
+  });
+
+  /** WP-325: OwnershipManage gates nothing server-side; it must not open the Settings admin pages. */
+  it("does not turn OwnershipManage into settings access", () => {
+    const role = resolveRole(user({ perm: perm(75) }), []);
+    expect(role?.permissions).not.toContain("settings:view");
   });
 
   it("gives Owner the wildcard — is_owner lives outside the bitset", () => {

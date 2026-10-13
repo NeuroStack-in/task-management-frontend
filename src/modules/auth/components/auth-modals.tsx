@@ -1,39 +1,23 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  ArrowLeft,
-  ArrowRight,
-  BadgeCheck,
-  Building2,
-  Check,
-  ChevronDown,
-  CreditCard,
-  Globe,
-  ImagePlus,
-  Loader2,
-  Search,
-  UserPlus,
-  UserRound,
-  X,
-} from "lucide-react";
-import { GoogleIcon } from "@/modules/marketing/brand-icons";
-import {
-  slugify as serverSlugify,
-  empPrefixCandidates,
-  normalizeEmpPrefix,
-} from "@/lib/api";
-import { friendlyError } from "@/lib/errors";
+import { Check, ChevronDown, Search, X } from "lucide-react";
+import { membersLabel, tierOf } from "@/modules/billing/lib/plans";
 
 /* ----------------------------- options ------------------------------- */
 
+/**
+ * The exact strings Settings → Organization offers for the same two fields. Sign-up had its own
+ * ("Software / SaaS", "11–50" with an en dash), so an org's industry and size came back from the
+ * server as values the Settings pickers didn't list (QA audit 2026-10-08, WP-392). Keep in step with
+ * `INDUSTRY_OPTIONS` / `SIZE_OPTIONS` in `settings/components/organization-tab.tsx`.
+ */
 export const INDUSTRIES = [
-  "Software / SaaS", "Field service", "Construction", "Healthcare",
-  "Agency / Consulting", "Retail & hospitality", "Finance", "Manufacturing",
-  "Logistics & transport", "Education", "Government / Public sector", "Other",
+  "Software", "Technology", "Finance", "Healthcare", "Education", "Retail",
+  "Manufacturing", "Media", "Consulting", "Non-profit", "Government", "Other",
 ];
-export const SIZES = ["1–10", "11–50", "51–200", "201–500", "501–1,000", "1,000–5,000", "5,000+"];
+export const SIZES = ["1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5000+"];
 export const COUNTRIES = [
   "United States", "United Kingdom", "Canada", "Australia", "India",
   "Germany", "France", "Singapore", "United Arab Emirates", "Other",
@@ -69,58 +53,52 @@ export const PLANS = [
   {
     id: "free",
     name: "Free",
-    monthly: 0,
-    annual: 0,
+    monthly: tierOf("free").pricePerSeat,
+    annual: tierOf("free").annualPerSeat,
     tagline: "For individuals and very small teams getting started.",
     features: [
-      "Core time tracking & timesheets",
-      "Up to 5 members",
-      "1 active project",
-      "7-day activity history",
+      "Time tracking, timesheets & attendance",
+      "Leave, approvals & projects",
+      "Basic reports",
+      membersLabel("free"),
     ],
     featured: false,
   },
   {
     id: "starter",
     name: "Starter",
-    monthly: 12,
-    annual: 10,
+    monthly: tierOf("starter").pricePerSeat,
+    annual: tierOf("starter").annualPerSeat,
     tagline: "For growing teams that need real insight.",
     features: [
-      "Time tracking, attendance & timesheets",
+      "Everything in Free",
       "Activity & productivity analytics",
-      "Unlimited projects & tasks",
-      "Reports, dashboards & exports",
-      "Priority support",
+      "Slack & Google Calendar integrations",
+      membersLabel("starter"),
     ],
     featured: false,
   },
   {
     id: "enterprise",
     name: "Enterprise",
-    monthly: 22,
-    annual: 18,
+    monthly: tierOf("enterprise").pricePerSeat,
+    annual: tierOf("enterprise").annualPerSeat,
     tagline: "For organizations operating at scale.",
     features: [
       "Everything in Starter",
-      "AI anomaly & burnout detection",
-      "Audit logs, DPA & data residency",
-      "Advanced security & roles",
-      "Custom contracts & premier SLA",
-      "Dedicated success manager",
+      "Screenshot review",
+      "AI insights, assistant & PDF reports",
+      "Anomaly detection",
+      membersLabel("enterprise"),
     ],
     featured: true,
   },
 ];
 
-const STEPS = [
-  { key: "org", label: "Organization", icon: Building2 },
-  { key: "region", label: "Region & localization", icon: Globe },
-  { key: "profile", label: "Your profile", icon: UserRound },
-  { key: "plan", label: "Plan", icon: Check },
-];
-
 /* ------------------------------ MModal ------------------------------- */
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function MModal({
   open,
@@ -129,6 +107,7 @@ export function MModal({
   maxW = "max-w-lg",
   dismissable = true,
   backdropClose = true,
+  labelledBy,
 }: {
   open: boolean;
   onClose: () => void;
@@ -136,19 +115,51 @@ export function MModal({
   maxW?: string;
   dismissable?: boolean;
   backdropClose?: boolean;
+  /** Id of the element that names the dialog — its title. */
+  labelledBy?: string;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Latest `onClose` without re-running the effect: callers pass a fresh arrow every render, and a
+  // re-run would yank focus back to the panel mid-use.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return;
+    // Focus moves in, stays in, and goes back. The dialog had the role but none of this, so a
+    // keyboard user kept tabbing through the page behind it (QA audit 2026-10-08, WP-389).
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const panel = panelRef.current;
+    panel?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && dismissable) onClose();
+      if (e.key === "Escape" && dismissable) onCloseRef.current();
+      if (e.key !== "Tab" || !panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const at = document.activeElement;
+      if (e.shiftKey && (at === first || at === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && at === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
+      opener?.focus();
     };
-  }, [open, dismissable, onClose]);
+  }, [open, dismissable]);
 
   if (!open) return null;
   return (
@@ -159,9 +170,12 @@ export function MModal({
         onClick={dismissable && backdropClose ? onClose : undefined}
       />
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
-        className={`m-card m-root m-enter-scale relative z-10 flex max-h-[92vh] w-full flex-col overflow-hidden ${maxW}`}
+        aria-labelledby={labelledBy}
+        tabIndex={-1}
+        className={`m-card m-root m-enter-scale relative z-10 flex max-h-[92vh] w-full flex-col overflow-hidden outline-none ${maxW}`}
         style={{ boxShadow: "0 50px 110px -40px rgb(18 28 40 / 0.5)" }}
       >
         {dismissable ? (
@@ -188,18 +202,22 @@ export function MModal({
  *  and adds type-ahead search for longer lists.                          */
 
 export function MSelect({
+  id,
   value,
   onChange,
   options,
   placeholder = "Select…",
   ariaLabel,
 }: {
+  /** Put on the trigger, so a label or an error-summary link can point at the control. */
+  id?: string;
   value: string;
   onChange: (v: string) => void;
   options: string[];
   placeholder?: string;
   ariaLabel?: string;
 }) {
+  const listId = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [pos, setPos] = useState<{
@@ -238,7 +256,10 @@ export function MSelect({
       if (!btnRef.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        btnRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -256,6 +277,44 @@ export function MSelect({
     if (!open) setQuery("");
   }, [open]);
 
+  // Into the menu once it is placed: the selected option, else the first. A searchable menu focuses
+  // its search box instead (`autoFocus`). The short lists left focus on the trigger, so the keyboard
+  // never reached the portalled options (WP-389). Keyed on `placed`, not `pos`, so repositioning
+  // on scroll doesn't drag focus back while someone is arrowing through.
+  const placed = open && pos !== null;
+  useEffect(() => {
+    if (!placed || searchable) return;
+    const opts = menuRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+    const selected = menuRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    (selected ?? opts?.[0])?.focus();
+  }, [placed, searchable]);
+
+  /** Arrow keys, Home and End move between options; Tab closes back to the trigger. */
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    const opts = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [],
+    );
+    if (e.key === "Tab") {
+      e.preventDefault();
+      setOpen(false);
+      btnRef.current?.focus();
+      return;
+    }
+    if (opts.length === 0) return;
+    const at = opts.indexOf(document.activeElement as HTMLElement);
+    // In the search box (`at` is -1) only ArrowDown leaves it — Home/End still move the caret.
+    if (at === -1 && e.key !== "ArrowDown") return;
+    const to =
+      e.key === "ArrowDown" ? Math.min(at + 1, opts.length - 1)
+      : e.key === "ArrowUp" ? Math.max(at - 1, 0)
+      : e.key === "Home" ? 0
+      : e.key === "End" ? opts.length - 1
+      : null;
+    if (to === null) return;
+    e.preventDefault();
+    opts[to]?.focus();
+  };
+
   const filtered =
     searchable && query.trim()
       ? options.filter((o) => o.toLowerCase().includes(query.trim().toLowerCase()))
@@ -265,6 +324,7 @@ export function MSelect({
     <>
       <button
         ref={btnRef}
+        id={id}
         type="button"
         className="m-trigger"
         data-open={open}
@@ -272,7 +332,14 @@ export function MSelect({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
         onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
       >
         <span className="truncate">{value || placeholder}</span>
         <ChevronDown className="size-4" />
@@ -282,7 +349,7 @@ export function MSelect({
             <div
               ref={menuRef}
               className="m-menu m-root"
-              role="listbox"
+              onKeyDown={onMenuKey}
               style={{
                 left: pos.left,
                 width: pos.width,
@@ -304,7 +371,8 @@ export function MSelect({
                   />
                 </div>
               ) : null}
-              <div className="m-menu-list">
+              {/* The listbox is the options alone — the search box beside them is not an option. */}
+              <div className="m-menu-list" role="listbox" id={listId} aria-label={ariaLabel}>
                 {filtered.length ? (
                   filtered.map((o) => (
                     <button
@@ -317,6 +385,7 @@ export function MSelect({
                       onClick={() => {
                         onChange(o);
                         setOpen(false);
+                        btnRef.current?.focus();
                       }}
                     >
                       <span>{o}</span>
@@ -332,777 +401,5 @@ export function MSelect({
           )
         : null}
     </>
-  );
-}
-
-/* -------------------------- SSO account picker ------------------------ */
-
-/** Google is the only social provider (owner decision, 2026-09-30) — hence no provider branching. */
-export function SsoPickerModal({
-  provider,
-  onClose,
-  onPicked,
-}: {
-  provider: "google" | null;
-  onClose: () => void;
-  onPicked: () => void;
-}) {
-  const accounts = [
-    { name: "Alex Morgan", email: "alex@acme.com", initials: "AM" },
-    { name: "Sam Rivera", email: "sam@acme.com", initials: "SR" },
-  ];
-  return (
-    <MModal open={!!provider} onClose={onClose} maxW="max-w-sm">
-      <div className="p-7">
-        <div className="flex items-center gap-2">
-          <GoogleIcon className="size-5" />
-          <span className="text-sm font-medium">Sign in with Google</span>
-        </div>
-        <h2 className="m-display mt-4 text-xl font-semibold">Choose an account</h2>
-        <p className="text-sm" style={{ color: "var(--m-muted)" }}>
-          to continue to WorkPulse
-        </p>
-
-        <ul className="mt-4 divide-y" style={{ borderColor: "var(--m-border)" }}>
-          {accounts.map((a) => (
-            <li key={a.email}>
-              <button
-                type="button"
-                onClick={onPicked}
-                className="flex w-full items-center gap-3 py-3 text-left transition-opacity hover:opacity-80"
-              >
-                <span
-                  className="flex size-9 items-center justify-center rounded-full text-xs font-semibold"
-                  style={{ background: "var(--m-accent-tint)", color: "var(--m-accent-ink)" }}
-                >
-                  {a.initials}
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{a.name}</span>
-                  <span className="block truncate text-xs" style={{ color: "var(--m-muted)" }}>
-                    {a.email}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-          <li>
-            <button
-              type="button"
-              onClick={onPicked}
-              className="flex w-full items-center gap-3 py-3 text-left transition-opacity hover:opacity-80"
-            >
-              <span
-                className="flex size-9 items-center justify-center rounded-full border"
-                style={{ borderColor: "var(--m-border-strong)", color: "var(--m-muted)" }}
-              >
-                <UserPlus className="size-4" />
-              </span>
-              <span className="text-sm font-medium">Use another account</span>
-            </button>
-          </li>
-        </ul>
-        <p className="mt-4 text-xs" style={{ color: "var(--m-faint)" }}>
-          Demo only — no real authentication occurs.
-        </p>
-      </div>
-    </MModal>
-  );
-}
-
-/* ----------------------- Plan confirmation popup --------------------- */
-
-function PayConfirm({
-  planId,
-  billing,
-  status,
-  onConfirm,
-  onClose,
-}: {
-  planId: string;
-  billing: "monthly" | "annual";
-  status: "idle" | "loading" | "success";
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  const pl = PLANS.find((p) => p.id === planId);
-  if (typeof document === "undefined" || !pl) return null;
-  const price = billing === "annual" ? pl.annual : pl.monthly;
-  return createPortal(
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0"
-        style={{ background: "rgb(22 32 43 / 0.5)", backdropFilter: "blur(6px)" }}
-        onClick={status === "idle" ? onClose : undefined}
-      />
-      <div
-        className="m-card m-root m-enter-scale relative z-10 w-full max-w-sm p-6"
-        style={{ boxShadow: "0 44px 96px -36px rgb(18 28 40 / 0.55)" }}
-      >
-        <div
-          className="flex size-11 items-center justify-center rounded-xl"
-          style={{ background: "var(--m-accent-tint)", color: "var(--m-accent-ink)" }}
-        >
-          <CreditCard className="size-5" />
-        </div>
-        <h3 className="m-display mt-4 text-xl font-semibold">Confirm your plan</h3>
-        <p className="mt-1 text-sm" style={{ color: "var(--m-muted)" }}>
-          Review your subscription before we set things up.
-        </p>
-
-        <div
-          className="mt-4 rounded-xl border p-4"
-          style={{ borderColor: "var(--m-border)", background: "var(--m-surface-2)" }}
-        >
-          <div className="flex items-center justify-between">
-            <span className="font-medium">WorkPulse {pl.name}</span>
-            <span className="m-display text-lg font-semibold">
-              ${price}
-              <span className="text-xs font-normal" style={{ color: "var(--m-muted)" }}> / user / mo</span>
-            </span>
-          </div>
-          <p className="mt-1 text-xs" style={{ color: "var(--m-muted)" }}>
-            Billed {billing === "annual" ? "annually" : "monthly"} · per active user
-          </p>
-        </div>
-
-        <ul className="mt-4 space-y-2 text-xs" style={{ color: "var(--m-muted)" }}>
-          {[
-            "14-day free trial — you won't be charged today",
-            "Cancel anytime before the trial ends",
-            `Renews at $${price}/user/mo after the trial`,
-          ].map((t) => (
-            <li key={t} className="flex items-start gap-2">
-              <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--m-accent-ink)" }} />
-              {t}
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-5 flex gap-2">
-          <button type="button" onClick={onClose} disabled={status !== "idle"} className="m-btn m-btn-ghost flex-1">
-            Back
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={status !== "idle"}
-            className="m-btn m-btn-primary flex-1"
-            style={status === "success" ? { background: "var(--m-success)", color: "#fff" } : undefined}
-          >
-            {status === "loading" ? (
-              <>
-                <Loader2 className="m-spin size-4" /> Setting up…
-              </>
-            ) : status === "success" ? (
-              <>
-                <Check className="size-4" /> All set
-              </>
-            ) : (
-              <>
-                Confirm <ArrowRight className="size-4" />
-              </>
-            )}
-          </button>
-        </div>
-        <p className="mt-3 text-center text-[0.7rem]" style={{ color: "var(--m-faint)" }}>
-          Secure checkout · no card charged during the trial
-        </p>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-/* ------------------------ Organization setup ------------------------- */
-
-/**
- * The server's own normalisation (shared, so the previewed workspace URL is the one that gets
- * stored), plus a 24-char cap that is purely ours — a suggestion while typing, and still editable.
- */
-const slugify = (s: string) => serverSlugify(s).slice(0, 24);
-
-/**
- * Everything the wizard collects that `POST /v1/org/create` accepts. The owner's email/password
- * aren't here — they were captured on the signup form before this modal opened.
- */
-export interface OrgSetupData {
-  org: {
-    name: string;
-    slug: string;
-    /**
-     * Employee-id prefix, e.g. `INF` → `INF-0001`. **Required, like `slug`** — the server rejects a
-     * signup without one, and a prefix nobody supplied is a prefix nobody claimed in the global
-     * `SYS#EMPPFX` partition.
-     */
-    emp_id_prefix: string;
-    industry?: string;
-    size?: string;
-    website?: string;
-    timezone?: string;
-    country?: string;
-    currency?: string;
-  };
-  owner: {
-    full_name?: string;
-    job_title?: string;
-    department?: string;
-    location?: string;
-    phone?: string;
-  };
-  plan: string;
-}
-
-export function OrgSetupModal({
-  open,
-  onClose,
-  onComplete,
-}: {
-  open: boolean;
-  onClose: () => void;
-  /** Rejects to keep the wizard open and show the failure. */
-  onComplete: (data: OrgSetupData) => Promise<void>;
-}) {
-  const [step, setStep] = useState(0);
-  const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
-  const [err, setErr] = useState<string | null>(null);
-
-  const [org, setOrg] = useState({ name: "", slug: "", industry: "", size: "", website: "", logo: "", empPrefix: "" });
-  const [slugTouched, setSlugTouched] = useState(false);
-  // Like the slug: derived from the org name until the user types their own, then left alone.
-  const [prefixTouched, setPrefixTouched] = useState(false);
-  const [region, setRegion] = useState({ country: "", currency: "", timezone: "" });
-  const [profile, setProfile] = useState({
-    fullName: "", jobTitle: "", department: "", location: "", phone: "", avatar: "",
-  });
-  const [billing, setBilling] = useState<"monthly" | "annual">("annual");
-  const [plan, setPlan] = useState("");
-  const [consent, setConsent] = useState(false);
-  const [payOpen, setPayOpen] = useState(false);
-
-  const logoInput = useRef<HTMLInputElement>(null);
-  const avatarInput = useRef<HTMLInputElement>(null);
-
-  const setName = (v: string) =>
-    setOrg((o) => ({
-      ...o,
-      name: v,
-      slug: slugTouched ? o.slug : slugify(v),
-      empPrefix: prefixTouched ? o.empPrefix : (empPrefixCandidates(v)[0] ?? ""),
-    }));
-
-  // Selecting a headquarters country pre-fills the matching billing currency.
-  const setCountry = (v: string) =>
-    setRegion((r) => ({ ...r, country: v, currency: COUNTRY_CURRENCY[v] ?? r.currency }));
-
-  const readImage = (file: File | undefined, apply: (data: string) => void) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => apply(typeof reader.result === "string" ? reader.result : "");
-    reader.readAsDataURL(file);
-  };
-
-  const next = () => {
-    setErr(null);
-    if (step === 0) {
-      if (!org.name.trim() || !org.slug.trim() || !org.industry || !org.size || !org.empPrefix.trim())
-        return setErr("Add your organization name, workspace URL, industry and size.");
-    }
-    if (step === 1) {
-      if (!region.country || !region.currency)
-        return setErr("Select your headquarters country and billing currency.");
-    }
-    if (step === 2) {
-      if (!profile.fullName.trim() || !profile.jobTitle.trim())
-        return setErr("Add your name and job title.");
-    }
-    setStep((s) => Math.min(3, s + 1));
-  };
-
-  const submitPlan = () => {
-    if (!plan) return setErr("Select a plan to continue.");
-    if (!consent) return setErr("Please confirm the monitoring authorization to continue.");
-    setErr(null);
-    if (plan === "free") {
-      doFinish(); // free plan needs no payment confirmation
-      return;
-    }
-    setPayOpen(true);
-  };
-
-  // Hands the collected setup up to be committed (`POST /v1/org/create`) and reflects the real
-  // outcome: a failure returns to the form with the server's message rather than a fake success.
-  const doFinish = async () => {
-    setStatus("loading");
-    setErr(null);
-    try {
-      await onComplete({
-        org: {
-          name: org.name.trim(),
-          slug: org.slug.trim(),
-          emp_id_prefix: org.empPrefix.trim(),
-          industry: org.industry || undefined,
-          size: org.size || undefined,
-          website: org.website.trim() || undefined,
-          timezone: region.timezone || undefined,
-          country: region.country || undefined,
-          currency: region.currency || undefined,
-        },
-        owner: {
-          full_name: profile.fullName.trim() || undefined,
-          job_title: profile.jobTitle.trim() || undefined,
-          department: profile.department.trim() || undefined,
-          location: profile.location.trim() || undefined,
-          phone: profile.phone.trim() || undefined,
-        },
-        plan,
-      });
-      setStatus("success");
-    } catch (e) {
-      setStatus("idle");
-      setErr(friendlyError(e, "Couldn't create your workspace. Try again."));
-    }
-  };
-
-  const StepIcon = STEPS[step].icon;
-
-  return (
-    <>
-      <MModal open={open} onClose={onClose} maxW="max-w-2xl" backdropClose={false}>
-        {/* Header + stepper */}
-        <div className="shrink-0 border-b p-5 pr-12" style={{ borderColor: "var(--m-border)" }}>
-          <div className="flex items-center gap-2">
-            <span
-              className="flex size-7 items-center justify-center rounded-lg"
-              style={{ background: "var(--m-accent-tint)", color: "var(--m-accent-ink)" }}
-            >
-              <StepIcon className="size-4" />
-            </span>
-            <p className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--m-accent-ink)" }}>
-              Set up your workspace
-            </p>
-          </div>
-          <h2 className="m-display mt-1.5 text-xl font-semibold">{STEPS[step].label}</h2>
-
-          <ol className="mt-4 flex items-center gap-2">
-            {STEPS.map((s, i) => {
-              const done = i < step;
-              const active = i === step;
-              return (
-                <li key={s.key} className="flex flex-1 items-center gap-2">
-                  <span
-                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-[0.7rem] font-semibold transition-colors"
-                    style={{
-                      background: done || active ? "var(--m-accent)" : "var(--m-surface-2)",
-                      color: done || active ? "var(--m-on-accent)" : "var(--m-faint)",
-                    }}
-                  >
-                    {done ? <Check className="size-3.5" /> : i + 1}
-                  </span>
-                  {i < STEPS.length - 1 ? (
-                    <span
-                      className="h-0.5 flex-1 rounded-full transition-colors"
-                      style={{ background: i < step ? "var(--m-accent)" : "var(--m-surface-2)" }}
-                    />
-                  ) : null}
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-
-        {/* Body (scrolls) */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
-          {/* Step 0 — Organization */}
-          {step === 0 ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => logoInput.current?.click()}
-                  className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed transition-colors"
-                  style={{ borderColor: "var(--m-border-strong)", color: "var(--m-faint)" }}
-                >
-                  {org.logo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={org.logo} alt="" className="size-full object-cover" />
-                  ) : (
-                    <ImagePlus className="size-5" />
-                  )}
-                </button>
-                <div>
-                  <p className="text-sm font-medium">Organization logo</p>
-                  <p className="text-xs" style={{ color: "var(--m-muted)" }}>
-                    PNG or SVG, square works best. Optional.
-                  </p>
-                </div>
-                <input
-                  ref={logoInput}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => readImage(e.target.files?.[0], (d) => setOrg((o) => ({ ...o, logo: d }))) }
-                />
-              </div>
-
-              <Field label="Organization name">
-                <input className="m-input" value={org.name} onChange={(e) => setName(e.target.value)} placeholder="Acme Inc." />
-              </Field>
-
-              <Field label="Organization URL">
-                <div className="m-input-affix">
-                  <input
-                    value={org.slug}
-                    onChange={(e) => { setSlugTouched(true); setOrg((o) => ({ ...o, slug: slugify(e.target.value) })); }}
-                    placeholder="acme"
-                    aria-label="Organization URL"
-                  />
-                  <span className="m-suffix">.workpulse.io</span>
-                </div>
-              </Field>
-
-              {/* Employee ID prefix — required, and globally unique. Every employee id is minted
-                  `<prefix>-0001`, so an org without one used to fall back to a shared `EMP`
-                  default and several unrelated orgs all minted `EMP-0001`. Suggestions are derived
-                  locally as the name is typed; the server holds the global claim and rejects a
-                  taken prefix at create time, exactly as it already does for the slug. */}
-              <Field label="Employee ID prefix" hint="Used for every employee ID, e.g. INF-0001">
-                <input
-                  className="m-input"
-                  value={org.empPrefix}
-                  onChange={(e) => {
-                    setPrefixTouched(true);
-                    setOrg((o) => ({ ...o, empPrefix: normalizeEmpPrefix(e.target.value) }));
-                  }}
-                  placeholder="INF"
-                  aria-label="Employee ID prefix"
-                />
-                {org.empPrefix ? (
-                  <p className="mt-1.5 text-xs text-white/45">
-                    Employee IDs will look like{" "}
-                    <span className="font-medium text-white/70">{org.empPrefix}-0001</span>
-                  </p>
-                ) : null}
-                {empPrefixCandidates(org.name).length > 0 ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="text-xs text-white/40">Suggestions</span>
-                    {empPrefixCandidates(org.name).map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => {
-                          setPrefixTouched(true);
-                          setOrg((o) => ({ ...o, empPrefix: p }));
-                        }}
-                        className={
-                          "rounded-md border px-2 py-0.5 text-xs transition-colors " +
-                          (org.empPrefix === p
-                            ? "border-white/40 bg-white/10 text-white"
-                            : "border-white/15 text-white/60 hover:border-white/35 hover:text-white")
-                        }
-                      >
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </Field>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Industry">
-                  <MSelect value={org.industry} onChange={(v) => setOrg({ ...org, industry: v })} options={INDUSTRIES} ariaLabel="Industry" />
-                </Field>
-                <Field label="Organization size">
-                  <MSelect value={org.size} onChange={(v) => setOrg({ ...org, size: v })} options={SIZES} ariaLabel="Organization size" />
-                </Field>
-              </div>
-
-              <Field label="Organization website" hint="Optional">
-                <input className="m-input" value={org.website} onChange={(e) => setOrg({ ...org, website: e.target.value })} placeholder="https://acme.com" />
-              </Field>
-            </div>
-          ) : null}
-
-          {/* Step 1 — Region & localization */}
-          {step === 1 ? (
-            <div className="space-y-4">
-              <p className="text-sm" style={{ color: "var(--m-muted)" }}>
-                Set your headquarters and how WorkPulse formats time and currency for your teams.
-              </p>
-              <Field label="Headquarters country">
-                <MSelect value={region.country} onChange={setCountry} options={COUNTRIES} ariaLabel="Headquarters country" />
-              </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Default timezone" hint="Optional">
-                  <MSelect value={region.timezone} onChange={(v) => setRegion({ ...region, timezone: v })} options={TIMEZONES} ariaLabel="Default timezone" />
-                </Field>
-                <Field label="Billing currency">
-                  <MSelect value={region.currency} onChange={(v) => setRegion({ ...region, currency: v })} options={CURRENCIES} ariaLabel="Billing currency" />
-                </Field>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Step 2 — Your profile (organization lead / manager) */}
-          {step === 2 ? (
-            <div className="space-y-5">
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => avatarInput.current?.click()}
-                  className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-dashed transition-colors"
-                  style={{ borderColor: "var(--m-border-strong)", color: "var(--m-faint)" }}
-                >
-                  {profile.avatar ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={profile.avatar} alt="" className="size-full object-cover" />
-                  ) : (
-                    <ImagePlus className="size-4" />
-                  )}
-                </button>
-                <div>
-                  <p className="text-sm font-medium">
-                    Profile picture <span style={{ color: "var(--m-faint)", fontWeight: 400 }}>· optional</span>
-                  </p>
-                  <p className="text-xs" style={{ color: "var(--m-muted)" }}>As the workspace owner, this is how your team sees you.</p>
-                </div>
-                <input
-                  ref={avatarInput}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => readImage(e.target.files?.[0], (d) => setProfile((p) => ({ ...p, avatar: d }))) }
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Full name">
-                  <input className="m-input" value={profile.fullName} onChange={(e) => setProfile({ ...profile, fullName: e.target.value })} placeholder="Jordan Avery" autoComplete="name" />
-                </Field>
-                <Field label="Job title">
-                  <input className="m-input" value={profile.jobTitle} onChange={(e) => setProfile({ ...profile, jobTitle: e.target.value })} placeholder="Head of Operations" />
-                </Field>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Department" hint="Optional">
-                  <input className="m-input" value={profile.department} onChange={(e) => setProfile({ ...profile, department: e.target.value })} placeholder="Operations" />
-                </Field>
-                <Field label="Work location" hint="Optional">
-                  <input className="m-input" value={profile.location} onChange={(e) => setProfile({ ...profile, location: e.target.value })} placeholder="San Francisco, CA" />
-                </Field>
-              </div>
-              <Field label="Work phone" hint="Optional">
-                <input className="m-input" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} placeholder="+1 555 000 1234" />
-              </Field>
-            </div>
-          ) : null}
-
-          {/* Step 3 — Plan & consent */}
-          {step === 3 ? (
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm" style={{ color: "var(--m-muted)" }}>
-                  Every plan includes the full platform. Pick the support and security tier you need.
-                </p>
-                <div className="m-seg shrink-0">
-                  <button type="button" data-on={billing === "monthly"} onClick={() => setBilling("monthly")}>Monthly</button>
-                  <button type="button" data-on={billing === "annual"} onClick={() => setBilling("annual")}>
-                    Annual <span style={{ color: "var(--m-accent-ink)" }}>−17%</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Free-trial banner */}
-              <div
-                className="mt-3 flex items-center gap-2.5 rounded-xl border p-2.5 text-xs font-medium"
-                style={{
-                  borderColor: "color-mix(in srgb, var(--m-accent) 30%, transparent)",
-                  background: "var(--m-accent-tint)",
-                  color: "var(--m-accent-ink)",
-                }}
-              >
-                <BadgeCheck className="size-4 shrink-0" />
-                Start free, or try Starter &amp; Enterprise free for 14 days — no card required.
-              </div>
-
-              <div className="mt-3 grid gap-2">
-                {PLANS.map((pl) => {
-                  const on = plan === pl.id;
-                  const free = pl.monthly === 0;
-                  const price = billing === "annual" ? pl.annual : pl.monthly;
-                  return (
-                    <button
-                      key={pl.id}
-                      type="button"
-                      onClick={() => setPlan(pl.id)}
-                      className="w-full rounded-2xl border p-3 text-left transition-colors sm:p-3.5"
-                      style={{
-                        borderColor: on ? "var(--m-accent)" : "var(--m-border-strong)",
-                        background: on ? "var(--m-accent-tint)" : "var(--m-surface)",
-                        boxShadow: on ? "inset 0 0 0 1px var(--m-accent)" : "none",
-                      }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span
-                          className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border"
-                          style={{
-                            borderColor: on ? "var(--m-accent)" : "var(--m-border-strong)",
-                            background: on ? "var(--m-accent)" : "transparent",
-                            color: "var(--m-on-accent)",
-                          }}
-                        >
-                          {on ? <Check className="size-3" /> : null}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="m-display text-base font-semibold">{pl.name}</span>
-                            {pl.featured ? (
-                              <span
-                                className="rounded-full px-2 py-0.5 text-[0.6rem] font-semibold"
-                                style={{ background: "var(--m-accent)", color: "var(--m-on-accent)" }}
-                              >
-                                Recommended
-                              </span>
-                            ) : null}
-                            <span className="ml-auto whitespace-nowrap">
-                              <span className="m-display text-xl font-semibold">{free ? "$0" : `$${price}`}</span>
-                              <span className="text-xs" style={{ color: "var(--m-muted)" }}>
-                                {free ? " forever" : ` / user / mo${billing === "annual" ? ", yearly" : ""}`}
-                              </span>
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-xs" style={{ color: "var(--m-muted)" }}>{pl.tagline}</p>
-                          <ul className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
-                            {pl.features.map((f) => (
-                              <li key={f} className="flex items-start gap-2 text-xs">
-                                <Check className="mt-0.5 size-3.5 shrink-0" style={{ color: "var(--m-accent-ink)" }} />
-                                {f}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Pinned footer — the required consent (Plan step) and any error stay
-            visible above the actions, so nothing critical hides below the scroll. */}
-        <div className="shrink-0 border-t" style={{ borderColor: "var(--m-border)" }}>
-          {step === 3 ? (
-            <label
-              className="mx-4 mt-4 flex cursor-pointer items-start gap-3 rounded-xl border p-3"
-              style={{
-                borderColor: consent ? "var(--m-accent)" : "var(--m-border-strong)",
-                background: consent ? "var(--m-accent-tint)" : "var(--m-surface)",
-              }}
-            >
-              <span
-                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors"
-                style={{
-                  borderColor: consent ? "var(--m-accent)" : "var(--m-border-strong)",
-                  background: consent ? "var(--m-accent)" : "transparent",
-                  color: "var(--m-on-accent)",
-                }}
-              >
-                {consent ? <Check className="size-3.5" /> : null}
-              </span>
-              <input type="checkbox" className="sr-only" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-              <span className="text-xs leading-relaxed" style={{ color: "var(--m-muted)" }}>
-                I&apos;m authorized to enable workforce activity monitoring for this organization and confirm team
-                members will be informed in line with applicable law.
-              </span>
-            </label>
-          ) : null}
-
-          {err ? (
-            <p className="mx-4 mt-2.5 text-xs" style={{ color: "var(--m-danger)" }} role="alert">
-              {err}
-            </p>
-          ) : null}
-
-          {/* Actions */}
-          <div className="flex items-center justify-between gap-3 p-4">
-          {step > 0 ? (
-            <button type="button" onClick={() => { setErr(null); setStep((s) => s - 1); }} className="m-btn m-btn-ghost" disabled={status !== "idle"}>
-              <ArrowLeft className="size-4" /> Back
-            </button>
-          ) : (
-            <span className="text-xs" style={{ color: "var(--m-muted)" }}>14-day free trial · no card required</span>
-          )}
-          {step < 3 ? (
-            <button type="button" onClick={next} className="m-btn m-btn-primary">
-              Continue <ArrowRight className="size-4" />
-            </button>
-          ) : plan === "free" ? (
-            <button
-              type="button"
-              onClick={submitPlan}
-              disabled={status !== "idle"}
-              className="m-btn m-btn-primary"
-              style={status === "success" ? { background: "var(--m-success)", color: "#fff" } : undefined}
-            >
-              {status === "loading" ? (
-                <>
-                  <Loader2 className="m-spin size-4" /> Creating organization…
-                </>
-              ) : status === "success" ? (
-                <>
-                  <Check className="size-4" /> Organization ready
-                </>
-              ) : (
-                <>
-                  Get started free <ArrowRight className="size-4" />
-                </>
-              )}
-            </button>
-          ) : (
-            <button type="button" onClick={submitPlan} className="m-btn m-btn-primary">
-              <CreditCard className="size-4" /> Proceed to pay
-            </button>
-          )}
-          </div>
-        </div>
-      </MModal>
-
-      {/* Plan confirmation popup */}
-      {payOpen ? (
-        <PayConfirm
-          planId={plan}
-          billing={billing}
-          status={status}
-          onConfirm={doFinish}
-          onClose={() => {
-            if (status === "idle") setPayOpen(false);
-          }}
-        />
-      ) : null}
-    </>
-  );
-}
-
-/* ------------------------------- fields ------------------------------ */
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <span className="text-xs font-medium" style={{ color: "var(--m-muted)" }}>{label}</span>
-        {hint ? <span className="text-[0.7rem]" style={{ color: "var(--m-faint)" }}>{hint}</span> : null}
-      </div>
-      {children}
-    </div>
   );
 }

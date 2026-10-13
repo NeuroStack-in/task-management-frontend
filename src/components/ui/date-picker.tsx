@@ -37,6 +37,7 @@ export function DatePicker({
   max,
   placeholder = "mm/dd/yyyy",
   className,
+  id,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -44,13 +45,22 @@ export function DatePicker({
   max?: string;
   placeholder?: string;
   className?: string;
+  /** Forwarded to the trigger, so a label or an error-summary link can point at it. */
+  id?: string;
 }) {
   const { open, setOpen, toggle, triggerRef, panelRef, pos } =
     useAnchoredPopup(CAL_W, CAL_H);
 
   return (
     <div ref={triggerRef} className="relative">
-      <button type="button" onClick={toggle} className={cn(TRIGGER, className)}>
+      <button
+        id={id}
+        type="button"
+        onClick={toggle}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className={cn(TRIGGER, className)}
+      >
         <CalendarIcon className="size-4 text-muted-foreground" />
         <span className={value ? "text-foreground" : "text-muted-foreground"}>
           {value ? formatDate(value) : placeholder}
@@ -60,6 +70,8 @@ export function DatePicker({
         ? createPortal(
             <div
               ref={panelRef}
+              role="dialog"
+              aria-label="Choose a date"
               // z-[60]: above the dialog overlay (z-50), since it is now a sibling of it rather
               // than a descendant.
               className="fixed z-[60]"
@@ -202,6 +214,8 @@ export function TimePicker({
         type="button"
         onClick={toggle}
         disabled={disabled}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         className={cn(
           TRIGGER,
           "justify-between",
@@ -218,6 +232,8 @@ export function TimePicker({
         createPortal(
           <div
             ref={panelRef}
+            role="dialog"
+            aria-label="Choose a time"
             className="fixed z-[60] rounded-lg border bg-popover p-1.5 text-popover-foreground shadow-lg ring-1 ring-foreground/10"
             style={{ top: pos.top, left: pos.left, width: TIME_W }}
           >
@@ -241,6 +257,12 @@ export function TimePicker({
                       key={h}
                       type="button"
                       onClick={() => pick({ h12: h })}
+                      aria-pressed={draft.h12 === h}
+                      aria-label={`${h} o'clock`}
+                      // Focus lands on the hour already set, else the first, when the panel opens.
+                      data-autofocus={
+                        draft.h12 === h || (draft.h12 === null && h === 1) ? "" : undefined
+                      }
                       className={colBtn(draft.h12 === h)}
                     >
                       {String(h).padStart(2, "0")}
@@ -256,6 +278,8 @@ export function TimePicker({
                       key={m}
                       type="button"
                       onClick={() => pick({ m })}
+                      aria-pressed={draft.m === m}
+                      aria-label={`${m} minutes`}
                       className={colBtn(draft.m === m)}
                     >
                       {String(m).padStart(2, "0")}
@@ -270,6 +294,7 @@ export function TimePicker({
                     key={ap}
                     type="button"
                     onClick={() => pick({ ampm: ap })}
+                    aria-pressed={draft.ampm === ap}
                     className={colBtn(draft.ampm === ap)}
                   >
                     {ap}

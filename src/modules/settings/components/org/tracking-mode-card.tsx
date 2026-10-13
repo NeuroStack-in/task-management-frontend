@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAuthStore } from "@/stores/auth.store";
-import { isOwnerOf } from "@/hooks/use-features";
+import { useEntitlementsStore } from "@/stores/entitlements.store";
+import { isOwnerOf, refreshEntitlements } from "@/hooks/use-features";
 import { ApiError } from "@/lib/api";
 import {
   TRACKING_MODE_META,
@@ -38,6 +39,8 @@ export function TrackingModeCard() {
   const isOwner = useAuthStore(isOwnerOf);
   const { view, version, status, load, applyPatchResult } = useOrgMetaStore();
   const loading = status === "idle" || status === "loading";
+  // A failed read must not pass for the default mode (WP-357); the page's banner carries the Retry.
+  const unavailable = status === "error" && !view;
   const [mode, setMode] = useState<TrackingMode>("project");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -47,14 +50,14 @@ export function TrackingModeCard() {
     void load();
   }, [load]);
 
-  // Seed the local mode from the shared meta **once** — later `view` writes (e.g. a profile save
-  // bumping the version) must not clobber a mode the owner is midway through changing.
-  const seeded = useRef(false);
+  // Follow the shared meta, so a re-read that finds another owner's change shows it (a once-only
+  // seed kept the first value for the whole session — QA audit 2026-10-08, WP-344) — but not while
+  // the dialog is open: it resets its choice whenever `current` changes, which would undo a
+  // selection the owner is midway through.
   useEffect(() => {
-    if (seeded.current || status !== "ready") return;
+    if (status !== "ready" || dialogOpen) return;
     setMode(trackingModeOf(view?.tracking_mode));
-    seeded.current = true;
-  }, [status, view]);
+  }, [status, view, dialogOpen]);
 
   async function apply(next: TrackingMode) {
     setSaving(true);
@@ -62,7 +65,14 @@ export function TrackingModeCard() {
       const updated = await updateOrg({ tracking_mode: next, version });
       // Thread the fresh version back into the shared store so the profile card's next save uses it.
       applyPatchResult(updated);
-      setMode(trackingModeOf(updated.tracking_mode));
+      const applied = trackingModeOf(updated.tracking_mode);
+      setMode(applied);
+      // The sidebar, the settings rail and the route guard read the mode from the entitlements
+      // store, which was loaded once per session — so the surfaces this change shows or hides stayed
+      // as they were until a full reload (QA audit 2026-10-08, WP-340). Apply the server's answer
+      // at once, then re-read the rest (the read takes the mode from the same org record).
+      useEntitlementsStore.setState({ trackingMode: applied });
+      void refreshEntitlements();
       setDialogOpen(false);
       toast.success("Tracking mode updated", {
         description: `This organization now uses ${TRACKING_MODE_META[next].label}.`,
@@ -94,19 +104,23 @@ export function TrackingModeCard() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{meta.label}</Badge>
+          {unavailable ? (
+            <span className="text-sm text-destructive">Couldn&apos;t load the current mode.</span>
+          ) : (
+            <Badge variant="secondary">{meta.label}</Badge>
+          )}
           {loading && (
             <span className="text-xs text-muted-foreground">Loading…</span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground">{meta.blurb}</p>
+        {unavailable ? null : <p className="text-sm text-muted-foreground">{meta.blurb}</p>}
 
         {isOwner ? (
           <div className="flex items-center gap-3 pt-1">
             <Button
               variant="outline"
               size="sm"
-              disabled={loading}
+              disabled={loading || unavailable}
               onClick={() => setDialogOpen(true)}
             >
               Change

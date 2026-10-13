@@ -11,16 +11,18 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import {
   MONTH_NAMES,
-  TODAY,
   WEEKDAY_LABELS,
   monthMatrix,
   daysInMonth,
   isFutureDate,
   isCounted,
+  today,
+  type CalendarDay,
   type DayStatus,
   type DayCell,
 } from "../lib/calendar";
 import { attendanceRate } from "../lib/attended";
+import { useToday } from "../use-today";
 import { LogDatePicker } from "./attendance-log";
 import { useWorkdays, useWorkingHours } from "@/hooks/use-working-hours";
 import { useMyStartDate } from "@/hooks/use-org-start";
@@ -44,6 +46,8 @@ const STATUS: Record<
   leave: { label: "On leave", tile: "bg-primary/12 ring-primary/30", dot: "bg-primary" },
   absent: { label: "Absent", tile: "bg-destructive/12 ring-destructive/30", dot: "bg-destructive" },
   non_workday: { label: "Non-working day", tile: "bg-muted/40 ring-border", dot: "bg-muted-foreground/40" },
+  // An admin excused the day — not an absence, and not counted (WP-257).
+  excused: { label: "Excused", tile: "bg-muted/60 ring-border", dot: "bg-muted-foreground/60" },
 };
 
 /** Never index STATUS with a raw server value directly: a status the map doesn't have would be
@@ -111,9 +115,9 @@ function expectedDayMinutes(
   return span > 0 ? Math.max(60, span) : 480;
 }
 
-/** The 24-day window back from today that feeds the "recent days" list, as YYYY-MM-DD. */
-function recentFrom(): string {
-  const d = new Date(TODAY.year, TODAY.month, TODAY.day);
+/** The 24-day window back from `now` that feeds the "recent days" list, as YYYY-MM-DD. */
+function recentFrom(now: CalendarDay): string {
+  const d = new Date(now.year, now.month, now.day);
   d.setDate(d.getDate() - 24);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
@@ -121,10 +125,13 @@ function recentFrom(): string {
 
 export function PersonalAttendanceView() {
   const user = useAuthStore((s) => s.user);
+  // The real today, re-read at midnight. A module constant kept the load day, so a tab open since
+  // Monday treated Tuesday's closed record as the future on Wednesday (QA audit 2026-10-08, WP-258).
+  const now = useToday();
 
   // The displayed month follows the selected date (mirrors the management
   // calendar), so the header date picker and chevrons share one source of truth.
-  const [selected, setSelected] = useState({ ...TODAY });
+  const [selected, setSelected] = useState<CalendarDay>(today);
   const view = { year: selected.year, month: selected.month };
 
   const workdays = useWorkdays();
@@ -136,8 +143,8 @@ export function PersonalAttendanceView() {
   // The expected working day the day-completion bar fills toward (the org's declared hours).
   const expectedMin = expectedDayMinutes(useWorkingHours());
   const weeks = useMemo(
-    () => monthMatrix(view.year, view.month, workdays),
-    [view.year, view.month, workdays],
+    () => monthMatrix(view.year, view.month, workdays, now),
+    [view.year, view.month, workdays, now],
   );
 
   // Two range reads from the real backend (GET /v1/me/attendance):
@@ -148,9 +155,9 @@ export function PersonalAttendanceView() {
     ymd(view.year, view.month, 1),
     ymd(view.year, view.month, daysInMonth(view.year, view.month)),
   );
-  const recentData = useMyAttendance(recentFrom(), ymd(TODAY.year, TODAY.month, TODAY.day));
+  const recentData = useMyAttendance(recentFrom(now), ymd(now.year, now.month, now.day));
 
-  // The current user's own tally for the viewed month (elapsed workdays only).
+  // The current user's own tally for the viewed month (elapsed, counted days only).
   const summary = useMemo(() => {
     const acc = {
       present: 0,
@@ -158,14 +165,16 @@ export function PersonalAttendanceView() {
       leave: 0,
       absent: 0,
       non_workday: 0,
+      /** Excused by an admin — counted in nothing, kept only so the legend can mention it. */
+      excused: 0,
       /** Subset of `present` — never add the two. */
       late: 0,
       hours: 0,
       workdays: 0,
     };
     for (const cell of weeks.flat()) {
-      if (!cell.isWorkday) continue;
-      if (isFutureDate(cell.year, cell.month, cell.day)) continue;
+      if (!cell.inMonth) continue;
+      if (isFutureDate(cell.year, cell.month, cell.day, now)) continue;
       // Blocked-out days are outside the expected set, exactly like a weekend — counting them would
       // put days the person had not joined for into the denominator and drag the month's rate down.
       if (myStart !== null && ymd(cell.year, cell.month, cell.day) < myStart) continue;
@@ -173,17 +182,24 @@ export function PersonalAttendanceView() {
       // is genuinely unknown, so it counts toward nothing until the cron stamps it.
       const rec = monthData.recordFor(cell.year, cell.month, cell.day);
       if (!rec) continue;
-      // A non-workday is excluded from the expected set, so it must not reach the
-      // denominator — that's what `isCounted` is for (LLD §7).
+      if (rec.status === "excused") acc.excused += 1;
+      // The record decides, not the schedule. A day off nobody worked closes as `non_workday` and
+      // `isCounted` drops it (LLD §7); a day off that was worked closes as `present` and counts —
+      // filtering by the schedule first made that day and its hours vanish (QA audit 2026-10-08,
+      // WP-260).
       if (!isCounted(rec.status)) continue;
       acc[rec.status] += 1;
       if (rec.late) acc.late += 1;
+      // Exact hours (`worked_minutes / 60`) — summed, then formatted once (WP-261).
       acc.hours += rec.hours;
       acc.workdays += 1;
     }
-    acc.hours = Math.round(acc.hours * 10) / 10;
     return acc;
-  }, [weeks, monthData]);
+  }, [weeks, monthData, myStart, now]);
+  // The tiles show "—" until this month's records are in — and after a failed read — rather than
+  // zeros that look exactly like a real empty month (QA audit 2026-10-08, WP-483).
+  const ready = monthData.loaded;
+  const tileHint = monthData.error ? "Not available" : "Loading…";
 
   // One definition of "attended" for every surface (`lib/attended`): present + partial over the
   // counted days. This used to be `present / workdays`, which silently dropped partial days from the
@@ -203,12 +219,16 @@ export function PersonalAttendanceView() {
         label: "Viewing month",
         value: `${view.year}-${String(view.month + 1).padStart(2, "0")}`,
       },
-      { label: "Attendance rate (month)", value: `${rate}%` },
-      { label: "Present days", value: String(summary.present) },
-      { label: "Absent", value: String(summary.absent) },
-      { label: "On leave", value: String(summary.leave) },
-      { label: "Late arrivals", value: String(summary.late) },
-      { label: "Hours (month)", value: formatHours(summary.hours) },
+      ...(ready
+        ? [
+            { label: "Attendance rate (month)", value: summary.workdays > 0 ? `${rate}%` : "no closed days yet" },
+            { label: "Present days", value: String(summary.present) },
+            { label: "Absent", value: String(summary.absent) },
+            { label: "On leave", value: String(summary.leave) },
+            { label: "Late arrivals", value: String(summary.late) },
+            { label: "Hours (month)", value: formatHours(summary.hours) },
+          ]
+        : [{ label: "Attendance (month)", value: monthData.error ? "couldn't be loaded" : "loading" }]),
     ],
   });
 
@@ -217,38 +237,37 @@ export function PersonalAttendanceView() {
   // rather than shown blank, and the walk is bounded so it can't run past the fetched range.
   const recent = useMemo(() => {
     const out: { key: string; label: string; status: DayStatus; late: boolean; clockIn: string; clockOut: string; hours: number; holiday: string | undefined }[] = [];
-    const cursor = new Date(TODAY.year, TODAY.month, TODAY.day);
+    const cursor = new Date(now.year, now.month, now.day);
     let guard = 0;
     while (out.length < 10 && guard < 40) {
       guard += 1;
       const wd = cursor.getDay();
-      // Include exactly the org's scheduled days — never a hardcoded Mon–Fri. A 7-day org shows Sat
-      // and Sun here; a Sun–Thu org shows those. (This used to skip weekends unconditionally.)
-      if (isWorkday(cursor, workdays)) {
-        const rec = recentData.recordFor(
-          cursor.getFullYear(),
-          cursor.getMonth(),
-          cursor.getDate(),
-        );
-        if (rec) {
-          out.push({
-            key: `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`,
-            label: `${SHORT_DAY[wd]} ${MONTH_NAMES[cursor.getMonth()].slice(0, 3)} ${cursor.getDate()}`,
-            status: rec.status,
-            late: rec.late,
-            clockIn: rec.clockIn,
-            clockOut: rec.clockOut,
-            hours: rec.hours,
-            holiday: holidays.nameFor(
-              ymd(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()),
-            ),
-          });
-        }
+      const rec = recentData.recordFor(
+        cursor.getFullYear(),
+        cursor.getMonth(),
+        cursor.getDate(),
+      );
+      // The org's scheduled days — never a hardcoded Mon–Fri: a 7-day org shows Sat and Sun here, a
+      // Sun–Thu org shows those. Plus any day off that was worked: it closes as a counted day, and
+      // skipping it hid that work from the list (WP-260).
+      if (rec && (isWorkday(cursor, workdays) || isCounted(rec.status))) {
+        out.push({
+          key: `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`,
+          label: `${SHORT_DAY[wd]} ${MONTH_NAMES[cursor.getMonth()].slice(0, 3)} ${cursor.getDate()}`,
+          status: rec.status,
+          late: rec.late,
+          clockIn: rec.clockIn,
+          clockOut: rec.clockOut,
+          hours: rec.hours,
+          holiday: holidays.nameFor(
+            ymd(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()),
+          ),
+        });
       }
       cursor.setDate(cursor.getDate() - 1);
     }
     return out;
-  }, [recentData, workdays, holidays]);
+  }, [recentData, workdays, holidays, now]);
 
   // Prev/next move the selection by one month, clamping the day to the new
   // month's length; the grid follows because the view derives from the selection.
@@ -298,7 +317,8 @@ export function PersonalAttendanceView() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="att:summary">
         <StatCard
           label="Attendance rate"
-          value={`${rate}%`}
+          // No closed day yet (the 1st of the month) is no rate, not 0 %.
+          value={ready && summary.workdays > 0 ? `${rate}%` : "—"}
           icon={CalendarCheck}
           hint={`${MONTH_NAMES[view.month]} ${view.year}`}
           featured
@@ -311,21 +331,22 @@ export function PersonalAttendanceView() {
           // late day and could print more present days than the month has workdays ("25/20"). The
           // rate below was corrected for exactly this; this card was missed. `late` stays as the
           // hint, which is what it is: a qualifier on some of these days, not extra days.
-          value={`${summary.present}/${summary.workdays}`}
+          value={ready ? `${summary.present}/${summary.workdays}` : "—"}
           icon={CalendarCheck}
-          hint={`${summary.late} late`}
+          hint={ready ? `${summary.late} late` : tileHint}
         />
         <StatCard
           label="Hours tracked"
-          value={summary.hours.toFixed(1)}
+          // The product's one duration notation, from the exact minute total (WP-261).
+          value={ready ? formatHours(summary.hours) : "—"}
           icon={Clock}
-          hint="this month"
+          hint={ready ? "this month" : tileHint}
         />
         <StatCard
           label="Time off"
-          value={summary.leave + summary.absent}
+          value={ready ? summary.leave + summary.absent : "—"}
           icon={Plane}
-          hint={`${summary.leave} leave · ${summary.absent} absent`}
+          hint={ready ? `${summary.leave} leave · ${summary.absent} absent` : tileHint}
         />
       </div>
 
@@ -361,7 +382,7 @@ export function PersonalAttendanceView() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setSelected({ ...TODAY })}
+              onClick={() => setSelected({ ...now })}
             >
               Today
             </Button>
@@ -385,6 +406,7 @@ export function PersonalAttendanceView() {
               <PersonalDayCell
                 key={i}
                 cell={cell}
+                now={now}
                 recordFor={monthData.recordFor}
                 beforeStart={
                   myStart !== null && ymd(cell.year, cell.month, cell.day) < myStart
@@ -397,15 +419,18 @@ export function PersonalAttendanceView() {
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
-            {(Object.keys(STATUS) as DayStatus[]).map((s) => (
-              <span
-                key={s}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground"
-              >
-                <span className={cn("size-2.5 rounded-full", STATUS[s].dot)} />
-                {STATUS[s].label}
-              </span>
-            ))}
+            {/* "Excused" only exists in managed-agent orgs; it joins the legend when the month has one. */}
+            {(Object.keys(STATUS) as DayStatus[])
+              .filter((s) => s !== "excused" || summary.excused > 0)
+              .map((s) => (
+                <span
+                  key={s}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                >
+                  <span className={cn("size-2.5 rounded-full", STATUS[s].dot)} />
+                  {STATUS[s].label}
+                </span>
+              ))}
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="wp-hatch size-2.5 rounded-full ring-1 ring-border" />
               Weekend / off
@@ -530,17 +555,27 @@ export function PersonalAttendanceView() {
 
 function PersonalDayCell({
   cell,
+  now,
   recordFor,
   holidayName,
   beforeStart = false,
 }: {
   cell: DayCell;
+  /** The real today (`useToday`), so a day is "future" against the clock, not the load day. */
+  now: CalendarDay;
   recordFor: MyAttendanceRange["recordFor"];
   holidayName?: string;
   /** Before this person joined: hatched and unlabelled, like a weekend. */
   beforeStart?: boolean;
 }) {
-  if (!cell.isWorkday || beforeStart) {
+  const future = isFutureDate(cell.year, cell.month, cell.day, now);
+  const rec =
+    future || beforeStart || !cell.inMonth ? null : recordFor(cell.year, cell.month, cell.day);
+  // A day off is hatched unless it was worked: then it closed as a counted day (`present`), and the
+  // hatch hid that work and its hours (QA audit 2026-10-08, WP-260).
+  const workedOff = !cell.isWorkday && rec !== null && isCounted(rec.status);
+
+  if ((!cell.isWorkday && !workedOff) || beforeStart) {
     return (
       <div
         className={cn(
@@ -555,7 +590,7 @@ function PersonalDayCell({
               : undefined
         }
       >
-        <span className="text-xs font-semibold leading-none tabular-nums text-muted-foreground/70">
+        <span className="text-xs font-semibold leading-none tabular-nums text-muted-foreground">
           {cell.day}
         </span>
         {!beforeStart && holidayName ? (
@@ -565,8 +600,6 @@ function PersonalDayCell({
     );
   }
 
-  const future = isFutureDate(cell.year, cell.month, cell.day);
-  const rec = future ? null : recordFor(cell.year, cell.month, cell.day);
   const meta = rec ? statusMeta(rec.status) : null;
 
   return (
@@ -578,7 +611,7 @@ function PersonalDayCell({
       )}
       title={
         rec
-          ? `${cell.day}: ${meta!.label}${rec.late ? " (late)" : ""} · ${formatHours(rec.hours)}${holidayName ? ` · Holiday: ${holidayName}` : ""}`
+          ? `${cell.day}: ${meta!.label}${rec.late ? " (late)" : ""} · ${formatHours(rec.hours)}${holidayName ? ` · Holiday: ${holidayName}` : ""}${workedOff ? " · worked on a day off" : ""}`
           : holidayName
             ? `${cell.day} · Holiday: ${holidayName}`
             : `${cell.day}`

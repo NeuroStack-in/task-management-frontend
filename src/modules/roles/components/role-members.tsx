@@ -35,6 +35,14 @@ import { ArrowUpRight, Loader2, Shield, ShieldCheck, UserCog } from "lucide-reac
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { friendlyError } from "@/lib/errors";
 import { assignRole, type ApiRole } from "../services/roles.service";
 import { grantOwner } from "@/modules/settings/services/org.service";
@@ -66,6 +74,17 @@ export function RoleMembers({
    * cannot be granted to a custom role. `roles:manage` is therefore not enough to appoint an owner.
    */
   const callerIsOwner = useAuthStore((st) => st.user?.isOwner === true);
+  const callerId = useAuthStore((st) => st.user?.id);
+  /**
+   * A move that needs a second look first: changing your OWN role (one click lost an Admin role
+   * management at their next sign-in), and making someone an owner (full, unrestricted access) —
+   * neither asked before (QA audit 2026-10-08, WP-510).
+   */
+  const [pending, setPending] = useState<{ person: ApiEmployee; to: ApiRole } | null>(null);
+  const request = (person: ApiEmployee, to: ApiRole) => {
+    if (to.id === ROLE_OWNER || person.user_id === callerId) setPending({ person, to });
+    else void move(person, to);
+  };
 
   /**
    * Two destinations, two endpoints.
@@ -111,7 +130,8 @@ export function RoleMembers({
     return (
       <p className="text-muted-foreground px-6 py-4 text-sm">
         No one holds this role yet.
-        {role.system ? null : " A role with no members can be deleted safely."}
+        {/* Not "can be deleted": a role richer than the caller is refused all the same (WP-327). */}
+        {role.system ? null : " Deleting it wouldn't affect anyone."}
       </p>
     );
   }
@@ -199,7 +219,7 @@ export function RoleMembers({
                   {roleTargets.map((r) => (
                     <DropdownMenuItem
                       key={r.id}
-                      onClick={() => move(m, r)}
+                      onClick={() => request(m, r)}
                       className="gap-2"
                     >
                       {/* Every row carries an icon so the labels share a left edge — without one,
@@ -215,7 +235,7 @@ export function RoleMembers({
                           grants unrestricted access to the whole organisation. */}
                       {roleTargets.length > 0 ? <DropdownMenuSeparator /> : null}
                       <DropdownMenuItem
-                        onClick={() => move(m, ownerTarget)}
+                        onClick={() => request(m, ownerTarget)}
                         className="gap-2"
                       >
                         <ShieldCheck className="text-primary size-4 shrink-0" />
@@ -234,6 +254,37 @@ export function RoleMembers({
           </li>
         ))}
       </ul>
+
+      <Dialog open={pending !== null} onOpenChange={(o) => !o && setPending(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {pending?.to.id === ROLE_OWNER
+                ? `Make ${pending.person.name} an owner?`
+                : `Change your own role to ${pending?.to.name ?? ""}?`}
+            </DialogTitle>
+            <DialogDescription>
+              {pending?.to.id === ROLE_OWNER
+                ? "Owners have full, unrestricted access to the whole organization, including billing, transferring ownership and closing it. An owner can remove an owner again under Settings → Ownership."
+                : `You'll have only what ${pending?.to.name ?? "that role"} grants from your next sign-in. If it doesn't include managing roles, you won't be able to change this back yourself.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPending(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={pending?.to.id === ROLE_OWNER ? "default" : "destructive"}
+              onClick={() => {
+                if (pending) void move(pending.person, pending.to);
+                setPending(null);
+              }}
+            >
+              {pending?.to.id === ROLE_OWNER ? "Make an owner" : "Change my role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

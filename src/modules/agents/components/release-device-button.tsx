@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Release (or revoke) a managed device (MANAGED-AGENT.md §6.3, Ph3). `agents:manage`.
+ * Release a device (MANAGED-AGENT.md §6.3, Ph3). `agents:manage`.
  *
  * Release is the deliberate action behind a laptop refresh or a leaver. What it does depends on the
  * kind of agent, and the backend forks on that (`fleet::features::release_device`):
@@ -36,22 +36,38 @@ import { releaseDevice } from "../services/fleet.service";
 export function ReleaseDeviceButton({
   deviceId,
   employeeName,
+  managed = false,
   onReleased,
 }: {
   deviceId: string;
-  employeeName: string;
+  /**
+   * Who the device belongs to, for the copy. Optional: the owner lookup can fail or be out of the
+   * caller's reach, and that must not take Release away (WP-240) — the copy then says "the employee".
+   */
+  employeeName?: string;
+  /**
+   * A managed (login-less) device: release revokes its credential and frees the 1:1 claim — there is
+   * no app to be signed out of, so the interactive copy described the wrong product (WP-066).
+   */
+  managed?: boolean;
   /** Called after a successful release — the page reloads the device. */
   onReleased?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const who = employeeName ?? "the employee";
+  const Who = employeeName ?? "The employee";
 
   const release = () => {
     setBusy(true);
     releaseDevice(deviceId)
       .then(() => {
+        // Said as what actually happens: an interactive agent is told to sign out and does so at
+        // its next check-in (an asleep laptop, later); a managed device's credential is revoked.
         toast.success("Device released", {
-          description: `${employeeName} has been signed out of the desktop app.`,
+          description: managed
+            ? "Its credential is revoked and the laptop can be enrolled again — for anyone."
+            : `${Who} will be signed out of the desktop app at its next check-in.`,
         });
         setOpen(false);
         onReleased?.();
@@ -77,9 +93,19 @@ export function ReleaseDeviceButton({
                 claim a *managed* device holds, which the desktop agent never takes. The employee
                 simply signs in again — on this laptop or a new one — and that is what to promise. */}
             <DialogDescription>
-              {employeeName}&apos;s timer stops and they are signed out of the desktop app
-              immediately. Everything already recorded stays on their record, and they can sign in
-              again on this laptop or a replacement.
+              {managed ? (
+                <>
+                  The monitoring service on this laptop loses its credential and stops reporting,
+                  and the laptop is free to enrol for someone else. Everything already recorded
+                  stays on {who}&apos;s record.
+                </>
+              ) : (
+                <>
+                  {Who}&apos;s timer stops and they are signed out of the desktop app at
+                  its next check-in. Everything already recorded stays on their record, and they
+                  can sign in again on this laptop or a replacement.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

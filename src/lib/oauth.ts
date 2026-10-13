@@ -31,6 +31,38 @@ function hostedUiDomain(): string {
   return d.replace(/\/$/, "");
 }
 
+/** Set while the signed-in session came through the Hosted UI (Google/Microsoft). */
+const HOSTED_SESSION_KEY = "wp-sso-hosted";
+
+/**
+ * The Hosted UI's logout URL when **this browser's session came through it**, else `null` — and the
+ * marker is consumed either way.
+ *
+ * Sign-out cleared this tab's tokens but left the Hosted UI's own session cookie, so the next "Sign
+ * in with Google" went straight back into the same account without asking (QA audit 2026-10-08,
+ * WP-124). The logout URI (`<origin>/login`) is registered on the app client (auth_stack.py).
+ */
+export function takeHostedUiLogoutUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  let hosted = false;
+  try {
+    hosted = window.localStorage.getItem(HOSTED_SESSION_KEY) === "1";
+    window.localStorage.removeItem(HOSTED_SESSION_KEY);
+  } catch {
+    return null;
+  }
+  if (!hosted) return null;
+  try {
+    const q = new URLSearchParams({
+      client_id: clientId(),
+      logout_uri: `${window.location.origin}/login`,
+    });
+    return `${hostedUiDomain()}/logout?${q}`;
+  } catch {
+    return null; // Hosted UI not configured in this build
+  }
+}
+
 function clientId(): string {
   const id = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
   if (!id) throw new Error("Missing NEXT_PUBLIC_COGNITO_CLIENT_ID.");
@@ -76,6 +108,9 @@ export async function beginSso(idpName: string): Promise<void> {
     response_type: "code",
     client_id: clientId(),
     redirect_uri: redirectUri(),
+    // Not `aws.cognito.signin.user.admin` (yet): the app client allows only these three
+    // (`auth_stack.py`), and asking for a scope it doesn't allow fails the whole sign-in. Without it
+    // the session can't use Cognito's self-service APIs — see `sessionCanSelfManage`.
     scope: "openid email profile",
     identity_provider: idpName,
     state,
@@ -83,6 +118,35 @@ export async function beginSso(idpName: string): Promise<void> {
     code_challenge_method: "S256",
   });
   window.location.assign(`${hostedUiDomain()}/oauth2/authorize?${params.toString()}`);
+}
+
+/** The scope Cognito's self-service user APIs (`GetUser`, `AssociateSoftwareToken`,
+ *  `SetUserMFAPreference`, …) require on the access token. */
+export const COGNITO_SELF_SERVICE_SCOPE = "aws.cognito.signin.user.admin";
+
+/**
+ * Can this browser's session call Cognito's self-service user APIs?
+ *
+ * A password (SRP) sign-in's access token carries {@link COGNITO_SELF_SERVICE_SCOPE}; a Hosted-UI
+ * (Google) sign-in's carries only what {@link beginSso} asked for. Such a session can't read or
+ * change its own MFA, so a screen that said "reload to retry" could never recover (QA audit
+ * 2026-10-08, WP-337). Resolves `null` when there is no session to inspect.
+ */
+export function sessionCanSelfManage(): Promise<boolean | null> {
+  return new Promise((resolve) => {
+    let user: CognitoUser | null;
+    try {
+      user = userPool().getCurrentUser();
+    } catch {
+      return resolve(null);
+    }
+    if (!user) return resolve(null);
+    user.getSession((err: Error | null, session: CognitoUserSession | null) => {
+      if (err || !session) return resolve(null);
+      const scope = (session.getAccessToken().decodePayload() as { scope?: unknown }).scope;
+      resolve(typeof scope === "string" && scope.split(" ").includes(COGNITO_SELF_SERVICE_SCOPE));
+    });
+  });
 }
 
 interface TokenResponse {
@@ -132,7 +196,14 @@ export async function completeSsoExchange(): Promise<CognitoUserSession> {
   if (!res.ok) throw new Error("SSO token exchange failed.");
   const tokens = (await res.json()) as TokenResponse;
 
-  return persistSession(tokens);
+  const session = persistSession(tokens);
+  // Remember that this sign-in went through the Hosted UI, so sign-out can end that session too.
+  try {
+    window.localStorage.setItem(HOSTED_SESSION_KEY, "1");
+  } catch {
+    /* storage off: sign-out then only clears this tab's session, as before */
+  }
+  return session;
 }
 
 /**

@@ -79,6 +79,25 @@ describe("AssigneePicker", () => {
   });
 
   /**
+   * The server takes at most ten people on a task. "Select all" on a big project used to pick past
+   * that, and the save was refused after the dialog had already closed (WP-300).
+   */
+  it("stops at the cap: no select-all that would pass it, and no more ticks once full", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <AssigneePicker members={members(4)} value={["u0", "u1"]} onChange={onChange} max={2} />,
+    );
+
+    await user.click(screen.getByRole("button"));
+    await screen.findByText("Person 2");
+
+    expect(screen.queryByText("Select all")).not.toBeInTheDocument();
+    await user.click(screen.getByText("Person 2"));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  /**
    * With a search active the control must promise only what it will do. Selecting "all" while three
    * of twelve are listed has to mean those three — assigning the nine nobody looked at would be a
    * silent act on invisible data.

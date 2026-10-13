@@ -16,7 +16,7 @@ import { apiFetch } from "@/lib/api";
 export interface ScoreBreakdown {
   /** 0–100 = 0.25·U + 0.40·Q + 0.15·F + 0.20·R. */
   score: number;
-  /** Utilization (active vs expected day). */
+  /** Utilization — active time vs the day's timer time (vs the expected day when no timer ran). */
   u: number;
   /** Quality (category-weighted, using the org's weights). **Only meaningful if `q_measured`.** */
   q: number;
@@ -30,7 +30,13 @@ export interface ScoreBreakdown {
    *
    * The server reports `q: 0` in that case, which on the wire is indistinguishable from a day spent
    * entirely on distracting apps — so **rendering `q` without checking this shows "Quality 0" for
-   * what was really an instrumentation gap.** Absent (older payloads) means measured.
+   * what was really an instrumentation gap.**
+   *
+   * The activity read-models (`/v1/insights/activity`, `/v1/me/insights/activity`,
+   * `/v1/insights/user/{id}/activity`) only started sending it with the server's QA-audit fix
+   * (WP-150); before that deploy they omit it, so on those rows absence is **unknown** rather than
+   * measured, and a `q_measured !== false` guard cannot fire there. Absent on a daily summary still
+   * means measured (an older payload).
    */
   q_measured?: boolean;
   /**
@@ -45,7 +51,10 @@ export interface ScoreBreakdown {
 // ── GET /v1/me/insights/summary?date= ──
 
 export interface DailySummaryMetrics {
-  /** `present` | `partial` | `absent` | `leave` | `non_workday`. */
+  /**
+   * `present` | `late` | `partial` | `absent` | `leave` | `non_workday` | `unknown` — `unknown`
+   * until the nightly close has resolved the day. Compare or humanise; never index a table by it.
+   */
   attendance: string;
   late: boolean;
   worked_minutes: number;
@@ -71,7 +80,9 @@ export interface DailySummary {
  * first call for the day) and cached — subsequent calls return the same text until regenerated.
  */
 export function getDailySummary(date: string): Promise<DailySummary> {
-  return apiFetch<DailySummary>(`/v1/me/insights/summary?date=${encodeURIComponent(date)}`);
+  return apiFetch<DailySummary>(
+    `/v1/me/insights/summary?date=${encodeURIComponent(date)}`,
+  );
 }
 
 /** `POST /v1/me/insights/summary/regenerate` — force a fresh AI narrative for the day and re-cache it. */
@@ -106,7 +117,9 @@ export interface MyLocations {
 
 /** `date` is `YYYY-MM-DD` in the caller's local calendar (the server is UTC and cannot guess it). */
 export function getMyLocations(date: string): Promise<MyLocations> {
-  return apiFetch<MyLocations>(`/v1/me/insights/locations?date=${encodeURIComponent(date)}`);
+  return apiFetch<MyLocations>(
+    `/v1/me/insights/locations?date=${encodeURIComponent(date)}`,
+  );
 }
 
 // ── GET /v1/me/insights/activity?from=&to=  (personal daily scores + trend) ──
@@ -170,9 +183,7 @@ export interface UnclassifiedAppsResponse {
  * `suggest` asks the model for a category per app. It is off by default because it is the only
  * paid, slow part of the call, and the worklist is useful without it.
  */
-export function getUnclassifiedApps(
-  suggest = false,
-): Promise<UnclassifiedAppsResponse> {
+export function getUnclassifiedApps(suggest = false): Promise<UnclassifiedAppsResponse> {
   return apiFetch<UnclassifiedAppsResponse>(
     `/v1/insights/apps/unclassified${suggest ? "?suggest=true" : ""}`,
   );
@@ -277,7 +288,9 @@ export interface AppUsage {
 }
 
 /**
- * One employee's measured app and website time over a range (org oversight, `activity:read`).
+ * One employee's measured app and website time over a range. Needs **`AppUsageReadPerson`**
+ * (frontend `activity:apps:person`) — its own bit, deliberately grantable apart from the org-wide
+ * activity read.
  *
  * **Empty is ambiguous and the caller must say which kind.** Per-person rows only exist from
  * 2026-08-27 — before that the ingest fold kept category totals and discarded app names, so an
@@ -355,19 +368,13 @@ export interface ShotRow {
   /** Server-classified category of the captured app: `productive | neutral | distracting`. */
   category: string;
   /**
-   * `true` when the capture is worth reviewing.
-   *
-   * **Check {@link ShotRow.reviewed} before calling this a verdict.** When the vision model has
-   * analysed the frame this is its judgement; when it hasn't — the common case, since analysis is
-   * on-demand — it falls back to "the app was classified distracting", which is a guess about the
-   * app and not about what is on screen.
+   * `true` when the capture needs review — **only** the vision model's verdict that what is on screen
+   * is not work for this person's role (owner decision 2026-10-13). The app name never sets it.
    */
   flagged: boolean;
   /**
-   * `true` when the vision model has actually analysed this frame.
-   *
-   * Rendering `flagged` without this is what made a capture badged "Needs review" open to the model
-   * saying it was clear: the badge was the app-name fallback, and the frame had never been analysed.
+   * `true` when the vision model has analysed this frame. `false` means no verdict either way yet —
+   * not "fine", and not "flagged".
    */
   reviewed?: boolean;
   /**
@@ -416,7 +423,13 @@ export interface ScreenshotReport {
   /** One factual sentence about what is visible in the frame. */
   description: string;
   flag: boolean;
-  flag_reason: string;
+  /** Why it was flagged. **Omitted** by the server when empty (`skip_serializing_if`). */
+  flag_reason?: string;
+  /**
+   * One sentence on whether the frame serves this person's role (department and job title), and
+   * why. **Omitted** on reports written before 2026-10-13.
+   */
+  assessment?: string;
   /** Model confidence, 0..1. */
   confidence: number;
   model: string;
@@ -468,9 +481,12 @@ export function runScreenshotReports(
   const q = new URLSearchParams({ date });
   if (userId) q.set("user_id", userId);
   if (shotId) q.set("shot_id", shotId);
-  return apiFetch<ScreenshotReportRun>(`/v1/insights/screenshots/reports?${q.toString()}`, {
-    method: "POST",
-  });
+  return apiFetch<ScreenshotReportRun>(
+    `/v1/insights/screenshots/reports?${q.toString()}`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 // ── GET /v1/insights/attention?date=  (AI reduce: people who need attention) ──
@@ -496,7 +512,9 @@ export interface AttentionList {
 }
 
 export function getAttention(date: string): Promise<AttentionList> {
-  return apiFetch<AttentionList>(`/v1/insights/attention?date=${encodeURIComponent(date)}`);
+  return apiFetch<AttentionList>(
+    `/v1/insights/attention?date=${encodeURIComponent(date)}`,
+  );
 }
 
 /** `POST /v1/insights/attention/regenerate?date=` — re-run the brief over the current ranking. */
@@ -542,7 +560,12 @@ export interface AiReport {
   generated_at: number;
 }
 
-/** Enterprise-gated (`insights.reports.ai_pdf`); throws `ApiError` 403 if the org lacks it. */
+/**
+ * The AI executive day report. Needs **`AiPdfExport` and `ActivityReadOrg`** and the
+ * `insights.reports.ai_pdf` entitlement — with no owner exemption on the entitlement. Any of the
+ * three missing is the same plain 403 `forbidden`; `useAiReport` tells them apart from the token.
+ * The weekly/monthly twins below are gated identically.
+ */
 export function getAiReport(date: string): Promise<AiReport> {
   return apiFetch<AiReport>(`/v1/insights/reports/ai?date=${encodeURIComponent(date)}`);
 }
@@ -567,7 +590,7 @@ export interface AiPeriodReport {
   generated_at?: number | null;
 }
 
-/** `GET /v1/insights/reports/ai/weekly?week=YYYY-Www`. Enterprise-gated like the daily. */
+/** `GET /v1/insights/reports/ai/weekly?week=YYYY-Www`. Same permissions and entitlement as the daily. */
 export function getAiWeeklyReport(week: string): Promise<AiPeriodReport> {
   return apiFetch<AiPeriodReport>(
     `/v1/insights/reports/ai/weekly?week=${encodeURIComponent(week)}`,
@@ -582,7 +605,7 @@ export function regenerateAiWeeklyReport(week: string): Promise<AiPeriodReport> 
   );
 }
 
-/** `GET /v1/insights/reports/ai/monthly?month=YYYY-MM`. Enterprise-gated like the daily. */
+/** `GET /v1/insights/reports/ai/monthly?month=YYYY-MM`. Same permissions and entitlement as the daily. */
 export function getAiMonthlyReport(month: string): Promise<AiPeriodReport> {
   return apiFetch<AiPeriodReport>(
     `/v1/insights/reports/ai/monthly?month=${encodeURIComponent(month)}`,
@@ -646,7 +669,9 @@ function deptSummaryQuery(a: DeptSummaryArgs): string {
 
 /** `GET /v1/insights/reports/dept-summary?department=&from=&to=[&label=&period=]`. */
 export function getDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> {
-  return apiFetch<DeptSummary>(`/v1/insights/reports/dept-summary?${deptSummaryQuery(a)}`);
+  return apiFetch<DeptSummary>(
+    `/v1/insights/reports/dept-summary?${deptSummaryQuery(a)}`,
+  );
 }
 
 // ── Locations board summary (insights::location_summary) ──────────────────────
@@ -723,6 +748,9 @@ export interface ScreenshotDeptSummary {
   metrics: {
     people_captured: number;
     people_total: number;
+    /** Frames captured that day, analysed or not (WP-276; absent from servers that predate it). */
+    captured?: number;
+    /** Frames the AI has analysed — what the narrative is written from. */
     frames: number;
     productive: number;
     neutral: number;
@@ -790,12 +818,18 @@ export interface OversightPersonLocation {
 export interface OversightLocations {
   date: string;
   people: OversightPersonLocation[];
+  /** Everyone in reach, before the board's cap (absent from servers that predate it). */
+  total?: number;
+  /** `people` stops short of `total` — the first by name are shown (WP-408). */
+  truncated?: boolean;
 }
 
 /**
- * Gated on `activity:read` (org oversight). `date` is `YYYY-MM-DD` in the caller's local calendar.
- * Empty `people` (or all-`null` `latest`) is the honest state until the desktop agent reports
- * location for the org — the same "waiting on the agent" stance as every other monitoring surface.
+ * Needs **`ActivityReadTeam`** (frontend `locations:view`), and is **narrowed by reach**: only an
+ * org-scoped reader holding `ActivityReadOrg` gets the whole org; anyone else gets their own
+ * department. `date` is `YYYY-MM-DD` in the caller's local calendar. Empty `people` (or all-`null`
+ * `latest`) is the honest state until the desktop agent reports location for the org — the same
+ * "waiting on the agent" stance as every other monitoring surface.
  */
 export function getOversightLocations(date: string): Promise<OversightLocations> {
   return apiFetch<OversightLocations>(
@@ -859,10 +893,7 @@ export interface LocationTrail {
   points: LocationPoint[];
 }
 
-export function getLocationTrail(
-  userId: string,
-  date: string,
-): Promise<LocationTrail> {
+export function getLocationTrail(userId: string, date: string): Promise<LocationTrail> {
   return apiFetch<LocationTrail>(
     `/v1/insights/locations/${encodeURIComponent(userId)}?date=${encodeURIComponent(date)}`,
   );

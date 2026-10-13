@@ -16,27 +16,17 @@ interface TourState {
   activeTourId: string | null;
   /** Index into the *resolved* step list — the one with unavailable steps already removed. */
   stepIndex: number;
-  /**
-   * False while the driver is navigating between routes.
-   *
-   * Joyride positions a step against an element that must already be on screen. Across a route
-   * change there is a window where the old page is gone and the new one hasn't painted, and a
-   * tooltip rendered into that gap lands in the top-left corner over nothing. The driver pauses
-   * here, waits for the target, and resumes.
-   */
-  running: boolean;
+  // (A Joyride-era `running`/`setRunning` pause flag lived here; nothing read it once the tour went
+  // hand-rolled — the driver waits for each step's target itself.)
   startTour: (id: string) => void;
   stopTour: () => void;
   setStepIndex: (i: number) => void;
-  setRunning: (running: boolean) => void;
 }
 
 export const useTourStore = create<TourState>((set) => ({
   activeTourId: null,
   stepIndex: 0,
-  running: false,
-  startTour: (id) => set({ activeTourId: id, stepIndex: 0, running: true }),
-  stopTour: () => set({ activeTourId: null, stepIndex: 0, running: false }),
+  startTour: (id) => set({ activeTourId: id, stepIndex: 0 }),
+  stopTour: () => set({ activeTourId: null, stepIndex: 0 }),
   setStepIndex: (stepIndex) => set({ stepIndex }),
-  setRunning: (running) => set({ running }),
 }));

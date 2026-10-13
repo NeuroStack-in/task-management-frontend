@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -44,20 +44,45 @@ import {
 } from "../services/projects.service";
 import type { TaskFormValues } from "@/modules/projects/forms";
 
+/** The server's limits (`create_task::dto`, `assignment::MAX_ASSIGNEES`), counted the way it counts. */
+const MAX_TITLE = 200;
+const MAX_DESCRIPTION = 10_000;
+const MAX_ASSIGNEES = 10;
+/** Characters as the server counts them (Unicode scalar values), not UTF-16 units. */
+const chars = (s: string) => Array.from(s).length;
+
 const schema = z.object({
-  title: z.string().trim().min(2, "Give the task a title"),
-  description: z.string(),
-  // Mirrors TASK_STATUS_SETTABLE, which deliberately omits `closed`: that state is reached by
-  // reviewing the task, not by editing it. A form that offered it would let the assignee mark their
-  // own work approved — and the server would refuse the write anyway.
+  // Limits mirrored from the server so the message lands on the field rather than in a toast after a
+  // refused save (QA audit 2026-10-08, WP-307).
+  title: z
+    .string()
+    .trim()
+    .min(2, "Give the task a title")
+    .refine((t) => chars(t) <= MAX_TITLE, `Keep the title to ${MAX_TITLE} characters or fewer`),
+  description: z
+    .string()
+    .refine(
+      (d) => chars(d) <= MAX_DESCRIPTION,
+      `Keep the description to ${MAX_DESCRIPTION.toLocaleString("en-US")} characters or fewer`,
+    ),
+  // All five columns; which of them this person may pick is the `statuses` prop (see
+  // `settableStatuses`), because that depends on who they are, not on the value.
   status: z.enum(["todo", "in_progress", "in_review", "done", "blocked"]),
-  // **At least one assignee** (owner decision, 2026-09-01). Unassigned tasks are refused by the
-  // server (`assignment::require_someone`); catching it here means the message lands on the field
-  // rather than as a toast after a round-trip that was never going to succeed.
-  assigneeIds: z.array(z.string()).min(1, "Assign this task to at least one person"),
+  // **At least one assignee** (owner decision, 2026-09-01) **and at most ten**. Both are refused by
+  // the server (`assignment::require_someone`, `MAX_ASSIGNEES`); catching them here means the message
+  // lands on the field rather than as a toast after a round-trip that was never going to succeed.
+  assigneeIds: z
+    .array(z.string())
+    .min(1, "Assign this task to at least one person")
+    .max(MAX_ASSIGNEES, `A task can have at most ${MAX_ASSIGNEES} assignees`),
   priority: z.enum(["low", "medium", "high"]),
   dueDate: z.string(),
-  estimateHours: z.coerce.number().min(0, "Must be ≥ 0").max(400),
+  // Empty is "no estimate" (`null`), not zero; any non-negative number of hours, halves included —
+  // the server takes an f64 (QA audit 2026-10-08, WP-505).
+  estimateHours: z
+    .number({ invalid_type_error: "Enter the estimate in hours, e.g. 1.5" })
+    .min(0, "Must be 0 or more")
+    .nullable(),
 });
 
 type FormShape = z.infer<typeof schema>;
@@ -83,7 +108,8 @@ const EMPTY: FormShape = {
   assigneeIds: [],
   priority: "medium",
   dueDate: "",
-  estimateHours: 4,
+  // Not 4: a guess the person never made would be saved as their estimate.
+  estimateHours: null,
 };
 
 /* ---------------------------- attachments ----------------------------- */
@@ -91,16 +117,7 @@ const EMPTY: FormShape = {
 const MAX_FILES = 8;
 const MAX_SIZE = 15 * 1024 * 1024; // 15 MB
 
-/** Extensions and MIME types the backend accepts. Either match passes a file. */
-const ALLOWED_EXT = new Set([
-  ".pdf",
-  ".docx",
-  ".txt",
-  ".md",
-  ".png",
-  ".jpg",
-  ".jpeg",
-]);
+/** The MIME types the backend accepts (`attachment::is_allowed_type`) — the only thing it checks. */
 const ALLOWED_MIME = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -109,12 +126,33 @@ const ALLOWED_MIME = new Set([
   "image/png",
   "image/jpeg",
 ]);
+/** The type each allowed extension stands for, when the browser reports none or another name for it. */
+const MIME_BY_EXT: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+};
 const ACCEPT =
   ".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,image/png,image/jpeg";
 
 function extOf(name: string): string {
   const i = name.lastIndexOf(".");
   return i >= 0 ? name.slice(i).toLowerCase() : "";
+}
+
+/**
+ * The type to declare for a file: the browser's when the server accepts it, otherwise the one its
+ * extension stands for. The file used to pass on either, then go out under the raw `file.type` — so
+ * a `.md` the OS reports as `""` or `text/x-markdown` passed here and was refused at presign, every
+ * time (QA audit 2026-10-08, WP-306). `null` = not a type the server takes.
+ */
+function contentTypeOf(file: File): string | null {
+  if (ALLOWED_MIME.has(file.type)) return file.type;
+  return MIME_BY_EXT[extOf(file.name)] ?? null;
 }
 
 /** Human file size, e.g. "812 B", "2.3 MB". */
@@ -127,8 +165,7 @@ function humanSize(bytes: number): string {
 
 /** Null when the file is acceptable, otherwise a human reason to show in a toast. */
 function rejectReason(file: File): string | null {
-  const ok = ALLOWED_MIME.has(file.type) || ALLOWED_EXT.has(extOf(file.name));
-  if (!ok) return `“${file.name}” isn’t an allowed file type.`;
+  if (!contentTypeOf(file)) return `“${file.name}” isn’t an allowed file type.`;
   if (file.size > MAX_SIZE) return `“${file.name}” is larger than 15 MB.`;
   return null;
 }
@@ -140,9 +177,17 @@ interface TaskFormDialogProps {
   /** Needed to presign attachment uploads against the project. */
   projectId: string;
   members: UserMini[];
+  /** The statuses this person may pick (`settableStatuses`); every column when omitted. */
+  statuses?: TaskStatus[];
   /** `attachments` (in wire shape) seeds the attachment list when editing. */
   initial?: Partial<FormShape> & { attachments?: ApiAttachment[] };
-  onSubmit: (values: TaskFormValues) => void;
+  /**
+   * Save. **The dialog stays open until this resolves** and does not close itself: the caller
+   * closes it on success, so a refused save leaves everything typed (and uploaded) in place. It
+   * used to close straight after an un-awaited call, and a failed write took the whole form with it
+   * (QA audit 2026-10-08, WP-300).
+   */
+  onSubmit: (values: TaskFormValues) => Promise<void>;
 }
 
 export function TaskFormDialog({
@@ -151,6 +196,7 @@ export function TaskFormDialog({
   onOpenChange,
   projectId,
   members,
+  statuses = TASK_STATUS_ORDER,
   initial,
   onSubmit,
 }: TaskFormDialogProps) {
@@ -158,6 +204,8 @@ export function TaskFormDialog({
   // uploads are async side effects, not form values, and only fold into the submit at the end.
   const [attachments, setAttachments] = useState<ApiAttachment[]>([]);
   const [pending, setPending] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const uid = useId();
 
   // Form defaults, minus `attachments` (not a form field — it lives in its own state above).
   const formInitial = useMemo<Partial<FormShape>>(() => {
@@ -216,18 +264,24 @@ export function TaskFormDialog({
       }
       setPending((p) => [...p, file.name]);
       try {
+        // `rejectReason` has passed it, so it has a type the server accepts. The bytes go up under
+        // that same type, so the stored object, the presign and the task record all agree.
+        const type = contentTypeOf(file) as string;
         const { attachment_id, upload_url } = await presignTaskAttachment(
           projectId,
           file.name,
-          file.type,
+          type,
         );
-        await uploadFileToPresignedUrl(upload_url, file);
+        await uploadFileToPresignedUrl(
+          upload_url,
+          file.type === type ? file : new File([file], file.name, { type }),
+        );
         setAttachments((a) => [
           ...a,
           {
             id: attachment_id,
             filename: file.name,
-            content_type: file.type,
+            content_type: type,
             size: file.size,
           },
         ]);
@@ -251,6 +305,14 @@ export function TaskFormDialog({
   };
 
   const onPaste = (e: React.ClipboardEvent) => {
+    // Text pasted into a text field stays text. Excel and Word put a picture of the selection on the
+    // clipboard beside the text, and pasting into Title or Description uploaded "image.png" and
+    // inserted nothing (QA audit 2026-10-08, WP-506). A screenshot carries no text, so it still
+    // attaches from anywhere in the form.
+    const target = e.target;
+    const intoText =
+      target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+    if (intoText && Array.from(e.clipboardData.types).includes("text/plain")) return;
     const collected: File[] = [];
     for (const f of Array.from(e.clipboardData.files)) collected.push(f);
     for (const item of Array.from(e.clipboardData.items)) {
@@ -271,24 +333,30 @@ export function TaskFormDialog({
   const removeAttachment = (id: string) =>
     setAttachments((a) => a.filter((x) => x.id !== id));
 
-  const submit = handleSubmit((data) => {
-    onSubmit({
-      title: data.title,
-      description: data.description,
-      status: data.status,
-      assigneeIds: data.assigneeIds,
-      priority: data.priority,
-      dueDate: data.dueDate || null,
-      estimateHours: data.estimateHours,
-      attachments,
-    });
-    onOpenChange(false);
+  const submit = handleSubmit(async (data) => {
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        title: data.title,
+        description: data.description,
+        status: data.status,
+        assigneeIds: data.assigneeIds,
+        priority: data.priority,
+        dueDate: data.dueDate || null,
+        estimateHours: data.estimateHours,
+        attachments,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   });
 
   return (
     <Dialog
       open={open}
       onOpenChange={(o) => {
+        // Not while a save is in flight: closing then would lose the form if the save fails.
+        if (!o && submitting) return;
         if (!o) reset({ ...EMPTY, ...formInitial });
         onOpenChange(o);
       }}
@@ -309,24 +377,31 @@ export function TaskFormDialog({
           className="flex min-h-0 flex-1 flex-col gap-4"
         >
           <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-1">
-            <Field label="Task title" error={errors.title?.message}>
+            <Field label="Task title" htmlFor={`${uid}-title`} error={errors.title?.message}>
               <Input
+                id={`${uid}-title`}
                 placeholder="e.g. Wire up the checkout API"
                 aria-invalid={!!errors.title}
                 {...register("title")}
               />
             </Field>
 
-            <Field label="Description">
+            <Field
+              label="Description"
+              htmlFor={`${uid}-description`}
+              error={errors.description?.message}
+            >
               <Textarea
+                id={`${uid}-description`}
                 placeholder="Add any detail, context, or acceptance criteria…"
                 rows={3}
+                aria-invalid={!!errors.description}
                 {...register("description")}
               />
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Status">
+              <Field label="Status" htmlFor={`${uid}-status`}>
                 <Controller
                   control={control}
                   name="status"
@@ -335,7 +410,7 @@ export function TaskFormDialog({
                       value={field.value}
                       onValueChange={(v) => field.onChange(v as TaskStatus)}
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger id={`${uid}-status`} className="w-full">
                         <SelectValue>
                           {(v) => (
                             <TonePill
@@ -346,7 +421,7 @@ export function TaskFormDialog({
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
-                        {TASK_STATUS_ORDER.map((s) => (
+                        {statuses.map((s) => (
                           <SelectItem key={s} value={s}>
                             <TonePill
                               tone={TASK_STATUS_META[s].tone}
@@ -360,7 +435,7 @@ export function TaskFormDialog({
                 />
               </Field>
 
-              <Field label="Priority">
+              <Field label="Priority" htmlFor={`${uid}-priority`}>
                 <Controller
                   control={control}
                   name="priority"
@@ -369,7 +444,7 @@ export function TaskFormDialog({
                       value={field.value}
                       onValueChange={(v) => field.onChange(v as TaskPriority)}
                     >
-                      <SelectTrigger className="w-full">
+                      <SelectTrigger id={`${uid}-priority`} className="w-full">
                         <SelectValue>
                           {(v) => (
                             <TonePill
@@ -395,7 +470,7 @@ export function TaskFormDialog({
               </Field>
             </div>
 
-            <Field label="Assignees">
+            <Field label="Assignees" error={errors.assigneeIds?.message}>
               <Controller
                 control={control}
                 name="assigneeIds"
@@ -404,6 +479,7 @@ export function TaskFormDialog({
                     members={members}
                     value={field.value}
                     onChange={field.onChange}
+                    max={MAX_ASSIGNEES}
                   />
                 )}
               />
@@ -417,12 +493,13 @@ export function TaskFormDialog({
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Due date">
+              <Field label="Due date" htmlFor={`${uid}-due`} error={errors.dueDate?.message}>
                 <Controller
                   control={control}
                   name="dueDate"
                   render={({ field }) => (
                     <DatePicker
+                      id={`${uid}-due`}
                       value={field.value}
                       onChange={field.onChange}
                       min={minDue}
@@ -431,13 +508,22 @@ export function TaskFormDialog({
                   )}
                 />
               </Field>
-              <Field label="Estimate (hrs)" error={errors.estimateHours?.message}>
+              <Field
+                label="Estimate (hrs)"
+                htmlFor={`${uid}-estimate`}
+                error={errors.estimateHours?.message}
+              >
                 <Input
+                  id={`${uid}-estimate`}
                   type="number"
                   min={0}
-                  step={1}
+                  step="any"
+                  placeholder="No estimate"
                   aria-invalid={!!errors.estimateHours}
-                  {...register("estimateHours")}
+                  {...register("estimateHours", {
+                    setValueAs: (v: unknown) =>
+                      v === "" || v === null || v === undefined ? null : Number(v),
+                  })}
                 />
               </Field>
             </div>
@@ -515,12 +601,19 @@ export function TaskFormDialog({
             <Button
               type="button"
               variant="outline"
+              disabled={submitting}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={uploading}>
-              {uploading ? "Uploading…" : isEdit ? "Save task" : "Add task"}
+            <Button type="submit" disabled={uploading || submitting}>
+              {uploading
+                ? "Uploading…"
+                : submitting
+                  ? "Saving…"
+                  : isEdit
+                    ? "Save task"
+                    : "Add task"}
             </Button>
           </DialogFooter>
         </form>
@@ -540,16 +633,21 @@ function TonePill({ tone, label }: { tone?: string; label?: string }) {
 
 function Field({
   label,
+  htmlFor,
   error,
   children,
 }: {
   label: string;
+  /** The control's id, so the label names it and a click on the label focuses it (WP-508). */
+  htmlFor?: string;
   error?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className={cn(error && "text-destructive")}>{label}</Label>
+      <Label htmlFor={htmlFor} className={cn(error && "text-destructive")}>
+        {label}
+      </Label>
       {children}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

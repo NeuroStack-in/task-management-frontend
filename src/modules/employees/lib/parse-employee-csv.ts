@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import { isEmail } from "@/lib/validation";
-import { cell, resolveColumns } from "./spreadsheet";
+import { cell, isSampleAddress, resolveColumns } from "./spreadsheet";
 
 /**
  * Turn an uploaded CSV into monitored-employee rows (`POST /v1/employees`, MANAGED-AGENT.md §6.4).
@@ -111,6 +111,13 @@ export function parseEmployeeCsv(text: string): ParsedEmployeeCsv {
       errors.push({ line, reason: email ? `Invalid email: ${email}` : "No email" });
       return;
     }
+    // The template's own sample people. Unlike the invite importer this one accepted them, so
+    // typing real staff under the samples created "Priya Nair" and "Sam Okoro" as real directory
+    // records holding seats (QA audit 2026-10-08, WP-460).
+    if (isSampleAddress(email)) {
+      errors.push({ line, reason: "Example row from the template — delete it before importing" });
+      return;
+    }
     if (seen.has(email)) {
       duplicates++;
       return;
@@ -134,7 +141,10 @@ export function parseEmployeeCsv(text: string): ParsedEmployeeCsv {
   return { rows, errors, duplicates };
 }
 
-/** A ready-to-download template, so nobody has to guess the column names. */
+/**
+ * A ready-to-download template, so nobody has to guess the column names. The sample people use
+ * `@example.com`, which the parser refuses — leaving them in can't add them.
+ */
 export const CSV_TEMPLATE =
   "name,email,department,team,title\n" +
   "Priya Nair,priya.nair@example.com,Engineering,Platform,Backend Engineer\n" +

@@ -11,7 +11,6 @@ import {
   exportOrg,
   getWorkingHours,
   reopenOrg,
-  transferOwnership,
   updateOrg,
   updateWorkingHours,
 } from "./org.service";
@@ -28,25 +27,15 @@ describe("org.service route contract", () => {
     });
   });
 
-  it("transferOwnership POSTs the new owner + typed slug confirm", async () => {
-    await transferOwnership({ new_owner_id: "u1", confirm: "acme" });
-    expect(mock).toHaveBeenCalledWith("/v1/org/transfer-ownership", {
-      method: "POST",
-      body: JSON.stringify({ new_owner_id: "u1", confirm: "acme" }),
-    });
-  });
-
   it("lifecycle routes wrap the confirm slug", async () => {
     await closeOrg("acme");
     expect(mock).toHaveBeenCalledWith("/v1/org/close", {
       method: "POST",
       body: JSON.stringify({ confirm: "acme" }),
     });
-    await reopenOrg("acme");
-    expect(mock).toHaveBeenCalledWith("/v1/org/reopen", {
-      method: "POST",
-      body: JSON.stringify({ confirm: "acme" }),
-    });
+    // Reopen asks for no confirmation server-side (`ownership::reopen_handler` takes no body).
+    await reopenOrg();
+    expect(mock).toHaveBeenCalledWith("/v1/org/reopen", { method: "POST" });
     await exportOrg("acme");
     expect(mock).toHaveBeenCalledWith("/v1/org/export", {
       method: "POST",

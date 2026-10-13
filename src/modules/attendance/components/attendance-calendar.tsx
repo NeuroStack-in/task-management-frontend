@@ -11,7 +11,6 @@
  */
 import { useMemo, useState } from "react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download } from "lucide-react";
-import Papa from "papaparse";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,8 +21,11 @@ import { useWorkdays } from "@/hooks/use-working-hours";
 import { useOrgStartDate } from "@/hooks/use-org-start";
 import { useOrgHolidays, type HolidayIndex } from "@/hooks/use-org-holidays";
 import { HolidayBadge } from "@/components/shared/holiday-badge";
-import type { ApiDayResponse, ApiDaySummary } from "../services/attendance.service";
+import type { ApiDayResponse, ApiDayUser } from "../services/attendance.service";
+import type { DayPoint } from "../use-oversight-attendance";
 import { attendanceRate } from "../lib/attended";
+import { useToday } from "../use-today";
+import { toCsv } from "@/lib/csv";
 
 interface AttendanceDate {
   year: number;
@@ -31,11 +33,44 @@ interface AttendanceDate {
   day: number;
 }
 
+/** Tallies one day over the page's own population — see `useOversightAttendance().summarizeDay`. */
+type Summarize = (iso: string, users: ApiDayUser[]) => DayPoint;
+
+/** One day as a cell reads it: present / partial / leave / absent over the `counted` people. */
+interface DayTally {
+  present: number;
+  partial: number;
+  leave: number;
+  absent: number;
+  counted: number;
+}
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const isoOf = (y: number, m: number, d: number) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
 
-/** Present-rate over counted days. Guarded: no counted days → 0, never NaN. */
-function rateOf(s: ApiDaySummary): number {
+/**
+ * A day's tally, recounted over the same people the overview, roster and trend count — contributors
+ * in reach, the department filter applied. The server's `summary` counts everyone in reach (Owner
+ * and Admin too) across every department, so a day all 8 employees attended read 100 % on the
+ * overview and 80 % here (QA audit 2026-10-08, WP-256). It is only the fallback until the directory
+ * has loaded.
+ */
+function tallyOf(
+  resp: ApiDayResponse | undefined,
+  iso: string,
+  summarize: Summarize | null | undefined,
+): DayTally | undefined {
+  if (!resp) return undefined;
+  if (summarize) {
+    const p = summarize(iso, resp.users);
+    return { present: p.present, partial: p.partial, leave: p.leave, absent: p.absent, counted: p.total };
+  }
+  const s = resp.summary;
+  return { present: s.present, partial: s.partial, leave: s.leave, absent: s.absent, counted: s.counted };
+}
+
+/** Attended-rate over counted days. Guarded: no counted days → 0, never NaN. */
+function rateOf(s: DayTally): number {
   // The shared definition — partial counts as attended. This used to be `present / counted`, which
   // made a day read 31% here and 38% on the overview card above it.
   return attendanceRate(s, s.counted);
@@ -47,34 +82,40 @@ function exportMonthCsv(
   weeks: DayCell[][],
   days: Map<string, ApiDayResponse>,
   orgStart: string | null,
+  summarize: Summarize | null | undefined,
+  deptLabel: string | null | undefined,
 ) {
   const rows = weeks
     .flat()
     .filter(
-      (c) =>
-        c.inMonth &&
-        c.isWorkday &&
-        !(orgStart !== null && isoOf(c.year, c.month, c.day) < orgStart),
+      (c) => c.inMonth && !(orgStart !== null && isoOf(c.year, c.month, c.day) < orgStart),
     )
     .map((c) => {
-      const s = days.get(isoOf(c.year, c.month, c.day))?.summary;
-      return {
-        Date: isoOf(c.year, c.month, c.day),
-        Weekday: WEEKDAY_LABELS[c.weekday],
-        Present: s?.present ?? "",
-        Partial: s?.partial ?? "",
-        "On leave": s?.leave ?? "",
-        Absent: s?.absent ?? "",
-        Counted: s?.counted ?? "",
-        "Attendance %": s ? rateOf(s) : "",
-      };
-    });
-  const csv = Papa.unparse(rows);
+      const iso = isoOf(c.year, c.month, c.day);
+      return { c, iso, s: tallyOf(days.get(iso), iso, summarize) };
+    })
+    // Scheduled days, plus any day off somebody worked — the close counts that day, so the export
+    // does too (WP-260).
+    .filter(({ c, s }) => c.isWorkday || (s !== undefined && s.counted > 0))
+    .map(({ c, iso, s }) => ({
+      Date: iso,
+      Weekday: WEEKDAY_LABELS[c.weekday],
+      Present: s?.present ?? "",
+      Partial: s?.partial ?? "",
+      "On leave": s?.leave ?? "",
+      Absent: s?.absent ?? "",
+      Counted: s?.counted ?? "",
+      "Attendance %": s && s.counted > 0 ? rateOf(s) : "",
+    }));
+  const csv = toCsv(rows);
+  const deptSlug = deptLabel ? `-${deptLabel.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}` : "";
   downloadBlob(
     new Blob([csv], { type: "text/csv;charset=utf-8;" }),
-    `attendance-${MONTH_NAMES[month].toLowerCase()}-${year}.csv`,
+    `attendance-${MONTH_NAMES[month].toLowerCase()}-${year}${deptSlug}.csv`,
   );
-  toast.success("Month exported", { description: `${rows.length} working days` });
+  toast.success("Month exported", {
+    description: `${rows.length} days${deptLabel ? ` · ${deptLabel}` : ""}`,
+  });
 }
 
 export function AttendanceCalendar({
@@ -82,11 +123,22 @@ export function AttendanceCalendar({
   onSelect,
   days,
   loading,
+  open: openProp,
+  onOpenChange,
+  summarize,
+  deptLabel,
 }: {
   selected: AttendanceDate;
   onSelect: (d: AttendanceDate) => void;
   days: Map<string, ApiDayResponse>;
   loading: boolean;
+  /** Controlled open state — the view gates the month fetch on it. Uncontrolled when omitted. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Recount each day over the page's population (see `tallyOf`); the server summary until then. */
+  summarize?: Summarize | null;
+  /** The department the page is filtered to, or null for all — said in the header and the export. */
+  deptLabel?: string | null;
 }) {
   /**
    * Collapsed by default, matching `UpcomingLeave` below it.
@@ -95,20 +147,27 @@ export function AttendanceCalendar({
    * gone" — that is asked far less often than "who is out today", which the tiles and roster answer.
    * Leaving it open pushed the roster below the fold on every visit.
    *
-   * The month fetch is upstream (`useMonthAttendance` in the view) and is unchanged: collapsing is a
-   * display choice, not a data one, so the calendar is instant when opened and the month's numbers
-   * stay available to anything else that reads them.
+   * The month fetch is upstream (`useMonthAttendance` in the view) and **follows this**: collapsed,
+   * the calendar costs no request. It used to fetch (and poll) the whole month regardless, for a
+   * grid nobody had opened (QA audit 2026-10-08, WP-272).
    */
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const toggle = () => {
+    if (onOpenChange) onOpenChange(!open);
+    else setOpenState(!open);
+  };
   const view = { year: selected.year, month: selected.month };
   const workdays = useWorkdays();
   const holidays = useOrgHolidays();
   // Days before the org existed have no roster to attend — block them out (hatched, like weekends)
   // instead of rendering the backend's all-absent fallback as an alarming "0% attended".
   const orgStart = useOrgStartDate();
+  // The today highlight follows the clock past midnight (WP-258).
+  const now = useToday();
   const weeks = useMemo(
-    () => monthMatrix(view.year, view.month, workdays),
-    [view.year, view.month, workdays],
+    () => monthMatrix(view.year, view.month, workdays, now),
+    [view.year, view.month, workdays, now],
   );
 
   const step = (dir: -1 | 1) => {
@@ -128,7 +187,7 @@ export function AttendanceCalendar({
           month you cannot see are just a puzzle. */}
       <CardHeader
         className="cursor-pointer select-none"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -139,7 +198,7 @@ export function AttendanceCalendar({
               <CardTitle>Attendance calendar</CardTitle>
               <p className="text-muted-foreground text-sm">
                 {open
-                  ? `${MONTH_NAMES[view.month]} ${view.year} · pick a day to load its roster`
+                  ? `${MONTH_NAMES[view.month]} ${view.year}${deptLabel ? ` · ${deptLabel}` : ""} · pick a day to load its roster`
                   : "Open to see the month, day by day"}
               </p>
             </div>
@@ -174,7 +233,7 @@ export function AttendanceCalendar({
               </Button>
               {loading ? <span className="text-muted-foreground ml-2 text-xs">loading…</span> : null}
             </div>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportMonthCsv(view.year, view.month, weeks, days, orgStart)}>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => exportMonthCsv(view.year, view.month, weeks, days, orgStart, summarize, deptLabel)}>
               <Download className="size-4" /> Download
             </Button>
           </div>
@@ -186,7 +245,7 @@ export function AttendanceCalendar({
 
         <div className="grid grid-cols-7 gap-1.5">
           {weeks.flat().map((cell, i) => (
-            <DayCellView key={i} cell={cell} selected={selected} onSelect={onSelect} days={days} loading={loading} holidays={holidays} orgStart={orgStart} />
+            <DayCellView key={i} cell={cell} selected={selected} onSelect={onSelect} days={days} loading={loading} holidays={holidays} orgStart={orgStart} summarize={summarize} />
           ))}
         </div>
 
@@ -228,6 +287,7 @@ function DayCellView({
   loading,
   holidays,
   orgStart,
+  summarize,
 }: {
   cell: DayCell;
   selected: AttendanceDate;
@@ -237,6 +297,7 @@ function DayCellView({
   holidays: HolidayIndex;
   /** The org's first day (`YYYY-MM-DD`), or null when unknown — see {@link useOrgStartDate}. */
   orgStart: string | null;
+  summarize?: Summarize | null;
 }) {
   const iso = isoOf(cell.year, cell.month, cell.day);
   const holidayName = cell.inMonth ? holidays.nameFor(iso) : undefined;
@@ -244,10 +305,16 @@ function DayCellView({
   // blocked out exactly like a weekend rather than shown as an all-absent "0%". ISO date strings
   // compare lexicographically.
   const beforeOrgStart = orgStart !== null && iso < orgStart;
+  // guarded — undefined for future / today-open / failed fetch
+  const s = cell.inMonth && !beforeOrgStart ? tallyOf(days.get(iso), iso, summarize) : undefined;
+  // A day off that somebody worked is a counted day server-side (they read `present`), so it shows
+  // its figures like any workday instead of disappearing behind the hatch (QA audit 2026-10-08,
+  // WP-260).
+  const workedOff = !cell.isWorkday && s !== undefined && s.counted > 0;
 
-  // Weekends, off-days, and pre-launch days: hatched, no data by design. A holiday landing on one is
-  // still labelled.
-  if (!cell.isWorkday || beforeOrgStart) {
+  // Weekends, off-days nobody worked, and pre-launch days: hatched, no data by design. A holiday
+  // landing on one is still labelled.
+  if ((!cell.isWorkday && !workedOff) || beforeOrgStart) {
     const title = beforeOrgStart
       ? `${cell.day}: before the organization was created`
       : holidayName
@@ -266,7 +333,6 @@ function DayCellView({
     );
   }
 
-  const s = days.get(iso)?.summary; // guarded — undefined for future / today-open / failed fetch
   const isSelected =
     cell.inMonth && selected.year === cell.year && selected.month === cell.month && selected.day === cell.day;
 
@@ -276,15 +342,24 @@ function DayCellView({
     isSelected && "ring-2 ring-primary",
   );
 
-  // No summary for a workday: either today (still open) or a day the cron hasn't closed / a skipped
-  // fetch. Selectable, but shows a neutral placeholder rather than fabricated counts.
-  if (!s) {
+  // No summary for a workday: either today (still open) or a day the close hasn't sealed / a
+  // skipped fetch. Or a closed day nobody was expected (a weekday holiday, everyone `non_workday`):
+  // that used to divide by `counted || 1` and print "0%" in red over a full red bar (QA audit
+  // 2026-10-08, WP-112). Selectable, but a neutral placeholder rather than fabricated counts.
+  if (!s || s.counted === 0) {
+    const why = s
+      ? "nobody was expected"
+      : cell.isToday
+        ? "today — closes at the end of the day"
+        : loading
+          ? "loading"
+          : "no record";
     return (
       <button
         type="button"
         onClick={() => onSelect({ year: cell.year, month: cell.month, day: cell.day })}
         className={cn(base, "hover:ring-primary/50")}
-        title={`${cell.day}: ${cell.isToday ? "today — closes after midnight" : loading ? "loading" : "no record"}${holidayName ? ` · Holiday: ${holidayName}` : ""}`}
+        title={`${cell.day}: ${why}${holidayName ? ` · Holiday: ${holidayName}` : ""}`}
       >
         <span className={cn("text-sm font-semibold leading-none tabular-nums", cell.isToday ? "text-primary" : "text-foreground")}>
           {cell.day}
@@ -293,7 +368,7 @@ function DayCellView({
           <HolidayBadge name={holidayName} showIcon={false} className="mt-auto self-start px-1" />
         ) : (
           <span className="mt-auto text-[11px] leading-none text-muted-foreground">
-            {cell.isToday ? "open" : loading ? "…" : "—"}
+            {cell.isToday ? "open" : loading && !s ? "…" : "—"}
           </span>
         )}
       </button>
@@ -301,7 +376,7 @@ function DayCellView({
   }
 
   const rate = rateOf(s);
-  const denom = s.counted || 1;
+  const denom = s.counted;
   const presentPct = (s.present / denom) * 100;
   // Its own band, in the amber the roster badge already uses. Folded into the red "absent" bar
   // before, so a day where someone clocked in briefly looked identical to one where they never
@@ -314,7 +389,7 @@ function DayCellView({
     <button
       type="button"
       onClick={() => onSelect({ year: cell.year, month: cell.month, day: cell.day })}
-      title={`${cell.day}: ${s.present} present · ${s.leave} on leave · ${s.absent} absent · ${s.partial} partial${holidayName ? ` · Holiday: ${holidayName}` : ""}`}
+      title={`${cell.day}: ${s.present} present · ${s.leave} on leave · ${s.absent} absent · ${s.partial} partial${holidayName ? ` · Holiday: ${holidayName}` : ""}${workedOff ? " · worked on a day off" : ""}`}
       className={cn(base, "hover:shadow-sm hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary")}
     >
       <div className="flex items-center justify-between gap-1">

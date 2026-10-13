@@ -7,8 +7,10 @@ import { Download, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { usePageHeaderStore } from "@/stores/page-header.store";
+import { titleForPath } from "@/lib/rbac";
 import { useAgentRelease } from "@/hooks/use-agent-release";
 import { useTrackingMode } from "@/hooks/use-features";
+import { useIsPersonalDashboard } from "@/modules/dashboard/scope";
 import { SidebarNav } from "./sidebar-nav";
 import { GlobalTimer } from "./global-timer";
 import { ThemeSwitcher } from "./theme-switcher";
@@ -18,9 +20,15 @@ export function TopNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const mode = useTrackingMode();
+  const personalDashboard = useIsPersonalDashboard();
   // Pages (e.g. the Dashboard greeting) publish their title/subtitle here so the
-  // navbar carries it at the top — the page keeps an sr-only <h1>.
-  const title = usePageHeaderStore((s) => s.title);
+  // navbar carries it at the top — the page keeps an sr-only <h1>. When none has (the store's
+  // documented `null` = "use the route fallback"), the route's own nav label stands in: the access
+  // walls ("Access denied", "This page is turned off", upgrade notices) never mount a page, so they
+  // used to show an empty title bar, and the product tour's `page:header` anchor vanished with it
+  // (QA audit 2026-10-08, WP-548).
+  const publishedTitle = usePageHeaderStore((s) => s.title);
+  const title = publishedTitle ?? titleForPath(pathname);
   const description = usePageHeaderStore((s) => s.description);
 
   // "A newer agent than the one you were last told about." The version comes from the release
@@ -42,6 +50,8 @@ export function TopNavbar() {
               size="icon"
               className="bg-card shadow-soft hover:bg-card size-10 rounded-full lg:hidden"
               aria-label="Open menu"
+              // Where a tour's sidebar steps point below `lg`, where the sidebar itself is hidden.
+              data-tour="nav:menu"
             />
           }
         >
@@ -134,9 +144,11 @@ export function TopNavbar() {
           </Button>
         ) : null}
         {/* The running-session timer lives in the navbar everywhere EXCEPT the
-            dashboard, where the employee dashboard promotes it to a hero KPI tile
-            (see TimerStatCard) — so it isn't shown twice. */}
-        {pathname !== "/dashboard" ? <GlobalTimer /> : null}
+            personal dashboard, which promotes it to a hero KPI tile (see TimerStatCard)
+            — so it isn't shown twice. Only there: the org dashboard has no timer tile,
+            and hiding the chip on it left an org-scoped contributor no timer at all
+            (QA audit 2026-10-08, WP-437). */}
+        {pathname !== "/dashboard" || !personalDashboard ? <GlobalTimer /> : null}
         <div className="bg-card shadow-soft flex items-center gap-0.5 rounded-full p-1">
           <NotificationsMenu />
           <ThemeSwitcher />

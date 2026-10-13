@@ -9,8 +9,8 @@
  *
  * The two RBAC models are intentionally parallel (SPEC "RBAC parity"): the UI gates on the role's
  * permission strings for convenience; the **server** gates on the `perm` bitset and is the real
- * boundary. There is no `/me` endpoint yet, so profile fields the token doesn't carry (job title,
- * department, team) stay empty until `workforce` ships.
+ * boundary. Profile fields the token doesn't carry (job title, department, team) start empty and are
+ * filled from `GET /v1/me/profile` by `useHydrateProfile`.
  */
 import {
   AuthenticationDetails,
@@ -20,11 +20,12 @@ import {
 import {
   claimsOf,
   clearCognitoCache,
+  clearOtherCognitoUsers,
   cognitoSignOut,
   refreshSession,
   userPool,
 } from "@/lib/cognito";
-import { completeSsoExchange } from "@/lib/oauth";
+import { completeSsoExchange, takeHostedUiLogoutUrl } from "@/lib/oauth";
 import { friendlyError } from "@/lib/errors";
 import { resetOrgMeta } from "@/stores/org-meta.store";
 import type { AuthSession, User } from "@/types/user";
@@ -42,9 +43,6 @@ export interface DemoAccount {
 export const DEMO_ACCOUNTS: DemoAccount[] = [
   { email: "owner@acme.test", label: "Owner", hint: "Full admin access" },
 ];
-
-/** Kept for back-compat; the primary (owner) demo email. */
-export const DEMO_EMAIL = DEMO_ACCOUNTS[0].email;
 
 export interface LoginResult {
   session: AuthSession;
@@ -131,7 +129,7 @@ export class AuthError extends Error {
   }
 }
 
-/** Derive a display name from the email local-part until `workforce` serves real profiles. */
+/** A display name from the email local-part — only for a token that carries no `name`. */
 function nameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? email;
   return local
@@ -145,7 +143,10 @@ function toUser(session: CognitoUserSession): User {
   const c = claimsOf(session);
   return {
     id: c.sub,
-    name: nameFromEmail(c.email),
+    // The login's real name, which the server stamps on it for exactly this. Derived from the email
+    // it read "Priya.nair" until the profile read landed, and for good if that read failed (QA audit
+    // 2026-10-08, WP-392).
+    name: c.name?.trim() || nameFromEmail(c.email),
     email: c.email,
     // Same ids the backend seeds — the roles store resolves the permission set from this.
     roleId:
@@ -164,7 +165,25 @@ function toUser(session: CognitoUserSession): User {
   };
 }
 
-function toSession(session: CognitoUserSession): AuthSession {
+/**
+ * The **authority** a token carries — role, owner flag, organization and permission bitset — and
+ * nothing else. What the auth store re-applies on every newer token (`onFreshSession`); the profile
+ * fields a user may have edited since sign-in are left alone.
+ */
+export function authorityOf(
+  session: CognitoUserSession,
+): Pick<User, "id" | "roleId" | "isOwner" | "organizationId" | "perm"> {
+  const u = toUser(session);
+  return {
+    id: u.id,
+    roleId: u.roleId,
+    isOwner: u.isOwner,
+    organizationId: u.organizationId,
+    perm: u.perm,
+  };
+}
+
+export function toSession(session: CognitoUserSession): AuthSession {
   const c = claimsOf(session);
   return {
     token: session.getIdToken().getJwtToken(),
@@ -207,6 +226,29 @@ export async function login(email: string, password: string): Promise<LoginResul
           return reject(
             new AuthError("You need to reset your password before signing in.", "state"),
           );
+        // `NotAuthorizedException` is not only "wrong password": Cognito also uses it for its
+        // temporary lockout after repeated failures and for a disabled login (a deactivated
+        // employee). Folded into "incorrect", a locked-out user was told their correct password was
+        // wrong, and every retry extended the lockout (QA audit 2026-10-08, WP-130). Both name an
+        // account that exists, so they leak the way the two above do — the lockout only after
+        // several failures against that account.
+        if (code === "NotAuthorizedException") {
+          const said = err?.message ?? "";
+          if (/attempts exceeded/i.test(said))
+            return reject(
+              new AuthError(
+                "Too many failed sign-in attempts. Wait a few minutes, then try again.",
+                "state",
+              ),
+            );
+          if (/disabled/i.test(said))
+            return reject(
+              new AuthError(
+                "This account has been deactivated. Contact your organization's administrator.",
+                "state",
+              ),
+            );
+        }
         // ONLY these two are enumeration-sensitive, so only these two collapse to one message.
         if (code === "NotAuthorizedException" || code === "UserNotFoundException")
           return reject(
@@ -278,6 +320,10 @@ export async function login(email: string, password: string): Promise<LoginResul
  */
 export async function completeSso(): Promise<LoginResult> {
   const session = await completeSsoExchange();
+  // The password path starts from a clean slate (`clearCognitoCache` in `login`); this one can't —
+  // the exchange itself writes the new session — so whoever signed in here before kept their tokens
+  // in storage (QA audit 2026-10-08, WP-387). Sweep everyone but the user just signed in.
+  clearOtherCognitoUsers();
   return { session: toSession(session), user: toUser(session) };
 }
 
@@ -289,12 +335,16 @@ export async function completeSso(): Promise<LoginResult> {
  * dashboard layout, directory edits), and the two logins disagree. The server is the single source
  * of truth; every login must start clean and re-hydrate from it. Cognito's own tokens
  * (`CognitoIdentityServiceProvider.*`) are not `wp-*` and are cleared separately by `cognitoSignOut`.
+ *
+ * `alsoKeep` spares further keys — a sign-in that replaces another user keeps the new session's own.
  */
-export function clearWorkPulseState(): void {
+export function clearWorkPulseState(alsoKeep: readonly string[] = []): void {
   if (typeof window === "undefined") return;
   // Device-only UI prefs (not account data) are safe to keep across accounts — leaking "the sidebar
   // was collapsed" to the next user is harmless, and resetting it every login is a needless regression.
-  const KEEP = new Set(["wp-ui"]);
+  // `wp-font` is one: the Font card says "Saved on this browser" and no server field holds it, so
+  // clearing it lost the choice at every sign-out (QA audit 2026-10-08, WP-514).
+  const KEEP = new Set(["wp-ui", "wp-font", ...alsoKeep]);
   try {
     for (const key of Object.keys(window.localStorage)) {
       if (key.startsWith("wp-") && !KEEP.has(key)) window.localStorage.removeItem(key);
@@ -306,11 +356,16 @@ export function clearWorkPulseState(): void {
 
 /** Clear the Cognito session and every WorkPulse local cache (the auth store clears its own state). */
 export function logout(): void {
+  // Read before the wipe below, which removes the marker along with every other `wp-` key.
+  const hostedLogout = takeHostedUiLogoutUrl();
   cognitoSignOut();
   clearWorkPulseState();
   // The shared org-meta store lives in memory (not localStorage), so it survives clearWorkPulseState;
   // reset it explicitly so the next sign-in re-fetches rather than showing the previous org's meta.
   resetOrgMeta();
+  // A Google/Microsoft sign-in also ends the Hosted UI's own session, which then returns to /login
+  // (WP-124). A password sign-in has none, and stays where the caller sends it.
+  if (hostedLogout) window.location.assign(hostedLogout);
 }
 
 /* ------------------------------ Password reset ------------------------------ */

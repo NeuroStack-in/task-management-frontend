@@ -103,9 +103,17 @@ export function HolidaysManager() {
     setEditorOpen(true);
   }
 
+  // One holiday per date: the server accepts any number, and everything that reads the calendar
+  // keeps a single name per day — whichever came last (QA audit 2026-10-08, WP-533).
+  const sameDay = date ? rows.find((r) => r.date === date && r.id !== editId) : undefined;
+
   async function save() {
     const n = name.trim();
     if (!n || !date) return;
+    if (sameDay) {
+      toast.error(`“${sameDay.name}” is already on that date.`);
+      return;
+    }
     setSaving(true);
     try {
       if (editId) {
@@ -227,8 +235,9 @@ export function HolidaysManager() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Name</Label>
+              <Label htmlFor="holiday-name">Name</Label>
               <Input
+                id="holiday-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="New Year's Day"
@@ -237,19 +246,25 @@ export function HolidaysManager() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Date</Label>
+              <Label htmlFor="holiday-date">Date</Label>
               <DatePicker
+                id="holiday-date"
                 value={date}
                 onChange={setDate}
                 className={saving ? "pointer-events-none w-full opacity-50" : "w-full"}
               />
+              {sameDay ? (
+                <p className="text-destructive text-xs">
+                  “{sameDay.name}” is already on that date.
+                </p>
+              ) : null}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditorOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={save} disabled={saving || !name.trim() || !date}>
+            <Button onClick={save} disabled={saving || !name.trim() || !date || !!sameDay}>
               {saving ? "Saving…" : editId ? "Save changes" : "Add holiday"}
             </Button>
           </DialogFooter>

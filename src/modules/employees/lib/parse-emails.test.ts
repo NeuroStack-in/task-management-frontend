@@ -29,8 +29,23 @@ describe("parseEmails", () => {
 
   /** A quoted display name contains a comma — splitting naively would tear the address apart. */
   it("keeps a quoted display name with a comma intact", () => {
-    const out = parseEmails('"Lee, Jordan" <jordan@acme.test>');
-    expect(out.emails).toEqual(["jordan@acme.test"]);
+    const out = parseEmails('"Lee, Jordan" <jordan@acme.test>, "Okoro, Sam" <sam@acme.test>');
+    expect(out.emails).toEqual(["jordan@acme.test", "sam@acme.test"]);
+    // WP-459: this used to assert only the addresses, while "Lee" was reported as invalid.
+    expect(out.invalid).toEqual([]);
+  });
+
+  /** WP-459: what an Outlook To: line copies — "Last, First <address>", unquoted, `;`-separated. */
+  it("reads Outlook's unquoted Last, First form without inventing invalid fragments", () => {
+    const out = parseEmails("Lee, Jordan <jordan@acme.test>; Okoro, Sam <sam@acme.test>");
+    expect(out.emails).toEqual(["jordan@acme.test", "sam@acme.test"]);
+    expect(out.invalid).toEqual([]);
+  });
+
+  it("still reports a bare fragment that isn't the front of a display name", () => {
+    const out = parseEmails("jordan.acme.test, sam@acme.test");
+    expect(out.emails).toEqual(["sam@acme.test"]);
+    expect(out.invalid).toEqual(["jordan.acme.test"]);
   });
 
   it("folds duplicates case-insensitively and counts them", () => {

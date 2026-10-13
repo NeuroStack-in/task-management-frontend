@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -84,17 +84,24 @@ export function FirstRunGate() {
   const [errors, setErrors] = useState<Partial<Record<keyof Details, string>>>({});
   const [saving, setSaving] = useState(false);
 
-  // Ask once per signed-in account. `checked` stops a re-render or a store update re-running the
+  // Ask once per signed-in account. `checkedFor` stops a re-render or a store update re-running the
   // read; the gate is a one-shot per session, not a subscription.
-  const [checkedFor, setCheckedFor] = useState<string | null>(null);
+  //
+  // Both are refs, and the effect has no cleanup flag, on purpose. `checkedFor` used to be state in
+  // the effect's own dependency list: setting it re-ran the effect, whose cleanup marked the request
+  // that had just started as stale, so every answer was thrown away and the gate never opened
+  // (QA audit 2026-10-08, WP-033). The answer is now kept unless a different account is signed in
+  // by the time it lands — the only case in which it is genuinely stale.
+  const checkedFor = useRef<string | null>(null);
+  const signedIn = useRef(userId);
+  signedIn.current = userId;
 
   useEffect(() => {
-    if (!hydrated || !isAuthenticated || !userId || checkedFor === userId) return;
-    setCheckedFor(userId);
-    let live = true;
+    if (!hydrated || !isAuthenticated || !userId || checkedFor.current === userId) return;
+    checkedFor.current = userId;
     getMyProfile()
       .then((p) => {
-        if (!live) return;
+        if (signedIn.current !== userId) return;
         const current: Details = {
           phone: p.phone ?? "",
           location: p.location ?? "",
@@ -110,10 +117,7 @@ export function FirstRunGate() {
         // A failed read must not lock anyone out of the app over a profile field. Stay silent and
         // let the next visit try again — the gate is a nudge, not a turnstile with a broken hinge.
       });
-    return () => {
-      live = false;
-    };
-  }, [hydrated, isAuthenticated, userId, checkedFor]);
+  }, [hydrated, isAuthenticated, userId]);
 
   const set = <K extends keyof Details>(k: K) => (v: Details[K]) => {
     setForm((s) => ({ ...s, [k]: v }));
@@ -164,11 +168,12 @@ export function FirstRunGate() {
         </DialogHeader>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Contact number" error={errors.phone}>
-            <PhoneInput value={form.phone} onChange={set("phone")} className="w-full" />
+          <Field id="frg-phone" label="Contact number" error={errors.phone}>
+            <PhoneInput id="frg-phone" value={form.phone} onChange={set("phone")} className="w-full" />
           </Field>
-          <Field label="Date of birth" error={errors.dateOfBirth}>
+          <Field id="frg-dob" label="Date of birth" error={errors.dateOfBirth}>
             <DatePicker
+              id="frg-dob"
               value={form.dateOfBirth}
               onChange={set("dateOfBirth")}
               max={todayIso()}
@@ -176,15 +181,17 @@ export function FirstRunGate() {
               className="w-full"
             />
           </Field>
-          <Field label="Location" error={errors.location}>
+          <Field id="frg-location" label="Location" error={errors.location}>
             <Input
+              id="frg-location"
               value={form.location}
               onChange={(e) => set("location")(e.target.value)}
               placeholder="City"
             />
           </Field>
-          <Field label="Work mode" error={errors.workMode}>
+          <Field id="frg-workmode" label="Work mode" error={errors.workMode}>
             <select
+              id="frg-workmode"
               value={form.workMode}
               onChange={(e) => set("workMode")(e.target.value)}
               className="border-input bg-background focus-visible:ring-ring/40 h-9 w-full rounded-md border px-3 text-sm focus-visible:ring-2 focus-visible:outline-none"
@@ -211,18 +218,21 @@ export function FirstRunGate() {
   );
 }
 
+/** `id` is the control's: the label used to name nothing a screen reader could tie it to (WP-389). */
 function Field({
+  id,
   label,
   error,
   children,
 }: {
+  id: string;
   label: string;
   error?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label>{label}</Label>
+      <Label htmlFor={id}>{label}</Label>
       {children}
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
     </div>

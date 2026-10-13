@@ -1,13 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { DepartmentFilter } from "@/components/shared/department-filter";
-import { AlertTriangle, ChevronLeft, ChevronRight, MapPin, MapPinOff, Navigation, Search, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  MapPin,
+  MapPinOff,
+  Navigation,
+  Search,
+  Users,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
@@ -21,11 +38,22 @@ import {
 } from "@/modules/insights/services/insights.service";
 import { departmentMap } from "@/modules/employees/services/employees.service";
 import { useDataScope } from "@/hooks/use-data-scope";
+import { LIVE_REFRESH_MS, useLiveRefresh } from "@/hooks/use-live-refresh";
+import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useGeofenceStore } from "@/stores/geofence.store";
 import { UNKNOWN_DEPARTMENT } from "@/lib/format";
-import { deriveMode, deriveStatus, insidePerimeter, WORK_MODE_LABEL, type GeoPoint, type WorkMode } from "@/modules/locations/types";
+import {
+  deriveMode,
+  deriveStatus,
+  perimeterVerdict,
+  WORK_MODE_LABEL,
+  type GeoPoint,
+  type WorkMode,
+} from "@/modules/locations/types";
 import { cn } from "@/lib/utils";
+import { RefreshButton } from "@/components/shared/refresh-button";
+import { PageActions } from "@/components/shared/page-actions";
 import { LiveMap, type MapMarker } from "./live-map";
 import { EmployeeLocationView } from "./employee-location";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -68,17 +96,39 @@ export function LocationsView() {
   const [selected, setSelected] = useState<OversightPersonLocation | null>(null);
   const [date, setDate] = useState<string>("");
   useEffect(() => setDate(isoOf(new Date())), []);
+  // `?emp=<user_id>` — the employee profile's Location button. Read in a Suspense-wrapped child so
+  // the page itself never bails out of static rendering over a query string.
+  const [deepLink, setDeepLink] = useState<string | null>(null);
 
-  return selected ? (
-    <EmployeeLocationView
-      person={selected}
-      date={date}
-      onDateChange={setDate}
-      onBack={() => setSelected(null)}
-    />
-  ) : (
-    <LocationsBoard onSelect={setSelected} date={date} onDateChange={setDate} />
+  return (
+    <>
+      <Suspense fallback={null}>
+        <EmpParam onChange={setDeepLink} />
+      </Suspense>
+      {selected ? (
+        <EmployeeLocationView
+          person={selected}
+          date={date}
+          onDateChange={setDate}
+          onBack={() => setSelected(null)}
+        />
+      ) : (
+        <LocationsBoard
+          onSelect={setSelected}
+          date={date}
+          onDateChange={setDate}
+          deepLink={deepLink}
+        />
+      )}
+    </>
   );
+}
+
+/** Reports the `?emp=` query parameter. */
+function EmpParam({ onChange }: { onChange: (id: string | null) => void }) {
+  const id = useSearchParams().get("emp");
+  useEffect(() => onChange(id), [id, onChange]);
+  return null;
 }
 
 /**
@@ -110,28 +160,67 @@ function LocationsBoard({
   onSelect,
   date,
   onDateChange: setDate,
+  deepLink = null,
 }: {
   onSelect: (p: OversightPersonLocation) => void;
   date: string;
   onDateChange: (iso: string) => void;
+  /** A person to open once the day's rows load — the profile's deep link (WP-232). */
+  deepLink?: string | null;
 }) {
   const { inScope, loading: scopeLoading } = useDataScope();
+  const { can } = usePermissions();
+  // `PUT /v1/org/geofence` needs `MonitoringManage`; everyone else sees the perimeter read-only
+  // rather than an editor whose Save always fails (QA audit 2026-10-08, WP-290).
+  const canEditFence = can("monitoring:manage");
 
   const today = isoOf(new Date());
   const isToday = date === today;
 
-  const [people, setPeople] = useState<OversightPersonLocation[] | null>(null);
+  /** The rows, with the day they belong to — so another day's rows never stand in for this one's. */
+  const [people, setPeople] = useState<{
+    date: string;
+    rows: OversightPersonLocation[];
+    /** When they were fetched: "online" is judged against this, not against each render's clock. */
+    at: number;
+    /** Everyone in reach when the server's cap cut the list short (WP-408), else `null`. */
+    cappedFrom: number | null;
+  } | null>(null);
   const [deptNames, setDeptNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The first read has answered (either way) — from then on the page shell stays mounted. */
+  const [booted, setBooted] = useState(false);
 
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [mode, setMode] = useState<"all" | WorkMode>("all");
-  // Captured once per render pass so every row in one pass is judged against the same instant —
-  // calling Date.now() per row could classify two people differently on the same tick.
-  const now = Date.now();
+
+  /**
+   * Live for today: a quiet re-read every 30 s while the tab is visible, plus Refresh. The board was
+   * titled "Live map" but read once per date, while "Online" was judged against each render's clock
+   * — so after ten minutes the Online filter emptied though every agent was still reporting, and no
+   * position ever moved (QA audit 2026-10-08, WP-286). A past day does not change, so it isn't polled.
+   */
+  const { nonce, reload, isBackground } = useLiveRefresh(
+    isToday ? LIVE_REFRESH_MS : null,
+  );
+  const rows = error === null && people && people.date === date ? people.rows : null;
+
+  // The deep link from an employee profile (`?emp=<id>`, the Location button): once this day's rows
+  // are in, open that person exactly as a click would. Applied once — after that the operator's own
+  // navigation owns the selection. It used to land on the unfiltered board (QA audit 2026-10-08,
+  // WP-232). Someone out of reach, or not on the board, simply leaves the board showing.
+  const appliedDeepLink = useRef(false);
+  useEffect(() => {
+    if (!deepLink || appliedDeepLink.current || rows === null) return;
+    appliedDeepLink.current = true;
+    const person = rows.find((p) => p.user_id === deepLink);
+    if (person) onSelect(person);
+  }, [deepLink, rows, onSelect]);
+  // Every row in one pass is judged against the same instant: the moment the rows were read.
+  const now = people?.at ?? 0;
 
   // Geofence ("location perimeter") — a client-side admin tool, shared via store.
   const {
@@ -159,24 +248,39 @@ function LocationsBoard({
   useEffect(() => {
     if (!date) return;
     let live = true;
-    setLoading(true);
-    setError(null);
+    const background = isBackground();
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
     getOversightLocations(date)
-      .then((d) => live && setPeople(d.people))
+      .then((d) => {
+        if (!live) return;
+        setPeople({
+          date,
+          rows: d.people,
+          at: Date.now(),
+          cappedFrom: d.truncated && typeof d.total === "number" ? d.total : null,
+        });
+        setError(null);
+        setBooted(true);
+      })
       .catch((e) => {
         if (!live) return;
-        setPeople(null);
+        // A failed poll keeps the last good read; the next one tries again.
+        if (background) return;
+        setBooted(true);
         setError(
           e instanceof ApiError && e.status === 403
             ? "You don't have access to the organization's location data."
-            : "Couldn't load location data. It may not be available yet.",
+            : "Couldn't load location data. Check your connection and try again.",
         );
       })
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
     };
-  }, [date]);
+  }, [date, nonce, isBackground]);
 
   // Department names are a best-effort label lookup; the board still works on ids if this fails.
   useEffect(() => {
@@ -190,38 +294,55 @@ function LocationsBoard({
   }, []);
 
   const scoped = useMemo(
-    () => (people ?? []).filter((p) => inScope(p.user_id)),
-    [people, inScope],
+    () => (rows ?? []).filter((p) => inScope(p.user_id)),
+    [rows, inScope],
   );
 
   const departments = useMemo(
     () => Array.from(new Set(scoped.map((p) => p.department_id))).sort(),
     [scoped],
   );
+  // `unassigned` is the server's sentinel for someone not yet filed under a department.
   const deptLabel = (id: string) =>
-    deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : "");
+    id === "unassigned"
+      ? "Unassigned"
+      : (deptNames.get(id) ?? (id ? UNKNOWN_DEPARTMENT : ""));
 
   const fence = { center: fenceCenter, radiusM };
-  const isOutside = (p: OversightPersonLocation) =>
-    p.latest ? !insidePerimeter(toGeoPoint(p.latest), fence) : false;
+  /** Inside / outside / too coarse to place — the fix's own accuracy counts (see `perimeterVerdict`). */
+  const verdictOf = (p: OversightPersonLocation) =>
+    p.latest ? perimeterVerdict(toGeoPoint(p.latest), p.latest.accuracy_m, fence) : null;
   const flagOutside = (p: OversightPersonLocation) =>
-    showFence && p.latest !== null && isOutside(p);
+    showFence && verdictOf(p) === "outside";
 
   const locatedCount = scoped.filter((p) => p.latest).length;
   const outsideCount = scoped.filter(flagOutside).length;
+  const insideCount = showFence
+    ? scoped.filter((p) => verdictOf(p) === "inside").length
+    : 0;
+  const imprecise = showFence ? locatedCount - insideCount - outsideCount : 0;
 
   // On-site / off-site are only meaningful once an office perimeter is set (the geofence toggle).
   // Without one we don't invent a number — the AI hero tiles read an honest note instead.
-  const onSiteCount = showFence ? locatedCount - outsideCount : null;
+  const onSiteCount = showFence ? insideCount : null;
   const offSiteCount = showFence ? outsideCount : null;
 
-  // Publish the location board's day + counts to the assistant.
+  // Publish the location board's day + counts to the assistant — or that there are none to give.
   useAssistantPageContext({
     date: date || null,
     facts: [
-      { label: "People", value: String(scoped.length) },
-      { label: "Located (have a fix)", value: String(locatedCount) },
-      ...(showFence && onSiteCount !== null && offSiteCount !== null
+      ...(rows === null
+        ? [
+            {
+              label: "Status",
+              value: error ? "the day's locations failed to load" : "still loading",
+            },
+          ]
+        : [
+            { label: "People", value: String(scoped.length) },
+            { label: "Located (have a fix)", value: String(locatedCount) },
+          ]),
+      ...(rows !== null && showFence && onSiteCount !== null && offSiteCount !== null
         ? [
             { label: "On-site", value: String(onSiteCount) },
             { label: "Off-site", value: String(offSiteCount) },
@@ -246,55 +367,76 @@ function LocationsBoard({
    * facts in our own words, so the page still answers the question when the model doesn't.
    */
   const localRecap =
-    scoped.length === 0
-      ? `No employees in view for ${label}.`
-      : showFence
-        ? `${locatedCount} of ${scoped.length} employees located on ${label}; ${onSiteCount} on-site, ${offSiteCount} off-site.`
-        : `${locatedCount} of ${scoped.length} employees located on ${label}. Set an office location to see on-site vs off-site.`;
+    rows === null
+      ? error
+        ? `Location data for ${label} couldn't be loaded, so there is nothing to summarise yet.`
+        : `Reading the locations for ${label}…`
+      : scoped.length === 0
+        ? `No employees in view for ${label}.`
+        : showFence
+          ? `${locatedCount} of ${scoped.length} employees located on ${label}; ${onSiteCount} on-site, ${offSiteCount} off-site${
+              imprecise > 0 ? `, ${imprecise} too imprecise to place` : ""
+            }.`
+          : `${locatedCount} of ${scoped.length} employees located on ${label}. Set an office location to see on-site vs off-site.`;
 
   /** The department's display name for the narrative — undefined for the org-wide view. */
   const deptAiLabel = dept === "all" ? undefined : deptLabel(dept);
   const [aiNarrative, setAiNarrative] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
+  /** The (date, department) a Regenerate is running for, or `null`. */
+  const [regenFor, setRegenFor] = useState<string | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const aiSelection = `${date}|${dept}`;
+  const aiCurrent = useRef(aiSelection);
+  useEffect(() => {
+    aiCurrent.current = aiSelection;
+  }, [aiSelection]);
 
   useEffect(() => {
     if (!date) return;
     let live = true;
     setAiLoading(true);
     setAiNarrative(null);
-      // Re-fetches on a department change as well as a date change: the board's counts already
-      // follow the filter, and the narrative used to describe the whole org beside them.
-      getLocationSummary({ date, department: dept, label: deptAiLabel })
+    setAiNotice(null);
+    // Re-fetches on a department change as well as a date change: the board's counts already
+    // follow the filter, and the narrative used to describe the whole org beside them.
+    getLocationSummary({ date, department: dept, label: deptAiLabel })
       .then((s) => live && setAiNarrative(s.narrative))
       .catch(() => live && setAiNarrative(null))
       .finally(() => live && setAiLoading(false));
     return () => {
       live = false;
     };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [date, dept, deptAiLabel]);
+  }, [date, dept, deptAiLabel]);
 
   async function regenerateAi() {
-    if (regenerating || !date) return;
-    setRegenerating(true);
+    if (regenFor === aiSelection || !date) return;
+    const started = aiSelection;
+    setRegenFor(started);
+    setAiNotice(null);
     try {
       const s = await regenerateLocationSummary({
         date,
         department: dept,
         label: deptAiLabel,
       });
-      setAiNarrative(s.narrative);
+      // A slow re-run must not put one department's (or day's) narrative under another's
+      // (QA audit 2026-10-08, WP-278).
+      if (aiCurrent.current === started) setAiNarrative(s.narrative);
     } catch {
-      /* keep what's on screen — a failed re-run must not blank the card */
+      // Keep what's on screen — a failed re-run must not blank the card — but say it failed.
+      if (aiCurrent.current === started) {
+        setAiNotice("Couldn't regenerate the report — showing the previous one.");
+      }
     } finally {
-      setRegenerating(false);
+      setRegenFor((k) => (k === started ? null : k));
     }
   }
 
-  const aiSummary = aiLoading && !aiNarrative
-    ? "Reading the day's locations…"
-    : aiNarrative || localRecap;
+  const aiSummary =
+    aiLoading && !aiNarrative
+      ? "Reading the day's locations…"
+      : aiNarrative || localRecap;
 
   const q = query.trim().toLowerCase();
   const matchesStatus = (p: OversightPersonLocation) => {
@@ -309,7 +451,14 @@ function LocationsBoard({
   // would silently empty the board. Treat it as inactive instead.
   const matchesMode = (p: OversightPersonLocation) => {
     if (mode === "all" || !showFence) return true;
-    return deriveMode(p.latest ? toGeoPoint(p.latest) : null, fence, showFence) === mode;
+    return (
+      deriveMode(
+        p.latest ? toGeoPoint(p.latest) : null,
+        fence,
+        showFence,
+        p.latest?.accuracy_m,
+      ) === mode
+    );
   };
   const employees = useMemo(
     () =>
@@ -333,24 +482,31 @@ function LocationsBoard({
           point: toGeoPoint(p.latest!),
           variant: "avatar" as const,
           name: `${p.name}${flagOutside(p) ? " · outside perimeter" : ""}`,
-          online: isToday,
+          // The same definition of "online" as the Online filter beside it. The dot was simply
+          // "it's today", so a fix from 08:00 still wore it at 17:00 (WP-286).
+          online: deriveStatus(p.latest!.captured_at, p.fix_count, now) === "online",
           alert: flagOutside(p),
+          accuracyM: p.latest!.accuracy_m,
           onClick: () => onSelect(p),
         })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [employees, showFence, radiusM, fenceCenter, onSelect, isToday],
+    [employees, showFence, radiusM, fenceCenter, onSelect, now],
   );
 
-  if (loading || scopeLoading) return <Loader />;
+  /**
+   * Frame the people, not the office: re-fit when the day or a filter changes, never on a poll —
+   * that would yank the map away from wherever the reader had panned (QA audit 2026-10-08, WP-287).
+   */
+  const fitPoints = useMemo(() => mapMarkers.map((m) => m.point), [mapMarkers]);
+  // Not on search keystrokes: re-framing the map per letter typed would make it lurch.
+  const fitKey = rows === null ? undefined : `${date}|${dept}|${status}|${mode}`;
 
-  if (error) {
-    return (
-      <EmptyState
-        icon={MapPinOff}
-        title="Location data unavailable"
-        description={error}
-      />
-    );
+  // Only the very first read replaces the page with a loader. After that the page — the date
+  // stepper and the map — stays mounted: swapping it out tore down and rebuilt the WebGL map on
+  // every day stepped through, re-downloading its style and tiles and losing pan, zoom and the
+  // lock (WP-287), and a failed read took the stepper with it, leaving nothing to click (WP-288).
+  if (!date || (!booted && (loading || scopeLoading))) {
+    return <Loader />;
   }
 
   return (
@@ -362,23 +518,45 @@ function LocationsBoard({
         // Only once a real narrative exists: with the local recap showing there is nothing to
         // re-run, and each press is a fresh billed generation.
         onRegenerate={aiNarrative ? regenerateAi : undefined}
-        regenerating={regenerating}
-        metrics={[
-          { label: "Employees", value: scoped.length },
-          {
-            label: isToday ? "Located today" : "Located",
-            value: locatedCount,
-            hint: isToday ? "last seen" : undefined,
-          },
-          showFence
-            ? { label: "On-site", value: onSiteCount ?? 0 }
-            : { label: "On-site", value: "—", hint: "set office location" },
-          showFence
-            ? { label: "Off-site", value: offSiteCount ?? 0 }
-            : { label: "Off-site", value: "—", hint: "set office location" },
-          { label: "No location", value: scoped.length - locatedCount },
-        ]}
+        regenerating={regenFor === aiSelection}
+        notice={aiNotice}
+        metrics={
+          rows === null
+            ? // No read for this day (yet, or it failed): counts here would be a false zero.
+              [
+                { label: "Employees", value: "—" },
+                { label: isToday ? "Located today" : "Located", value: "—" },
+                { label: "On-site", value: "—" },
+                { label: "Off-site", value: "—" },
+                { label: "No location", value: "—" },
+              ]
+            : [
+                { label: "Employees", value: scoped.length },
+                {
+                  label: isToday ? "Located today" : "Located",
+                  value: locatedCount,
+                  hint: isToday ? "last seen" : undefined,
+                },
+                showFence
+                  ? { label: "On-site", value: onSiteCount ?? 0 }
+                  : { label: "On-site", value: "—", hint: "set office location" },
+                showFence
+                  ? {
+                      label: "Off-site",
+                      value: offSiteCount ?? 0,
+                      hint:
+                        imprecise > 0 ? `${imprecise} too imprecise to place` : undefined,
+                    }
+                  : { label: "Off-site", value: "—", hint: "set office location" },
+                { label: "No location", value: scoped.length - locatedCount },
+              ]
+        }
       />
+
+      {/* Pull the latest positions without a page reload — the same slot every other page uses. */}
+      <PageActions>
+        <RefreshButton onRefresh={reload} refreshing={loading} />
+      </PageActions>
 
       {/* Live map */}
       <Card>
@@ -388,9 +566,23 @@ function LocationsBoard({
               <p className="text-sm font-medium">
                 {isToday ? "Live map · latest positions" : `${label} · locations`}
               </p>
-              <p className="text-xs text-muted-foreground">
-                {mapMarkers.length} {mapMarkers.length === 1 ? "person" : "people"}{" "}
-                on the map
+              <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                {rows === null && !error ? (
+                  <>
+                    <Loader2 className="size-3 animate-spin" /> Loading {label}…
+                  </>
+                ) : (
+                  <>
+                    {mapMarkers.length} {mapMarkers.length === 1 ? "person" : "people"} on
+                    the map
+                    {isToday && rows !== null && now > 0
+                      ? ` · updated ${clock(now)}`
+                      : ""}
+                    {people?.cappedFrom != null && rows !== null
+                      ? ` · showing the first ${rows.length} of ${people.cappedFrom} people by name`
+                      : ""}
+                  </>
+                )}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -423,22 +615,19 @@ function LocationsBoard({
                 </Button>
               </div>
 
+              {/* Names, not ids: the options were the raw `dept-01K…` ids although the names had
+                  already been loaded (QA audit 2026-10-08, WP-289). */}
               <DepartmentFilter
                 value={dept}
                 onChange={setDept}
-                options={departments.map((d) => ({ value: d, label: d }))}
+                options={departments.map((d) => ({ value: d, label: deptLabel(d) }))}
                 ariaLabel="Filter locations by department"
               />
 
-              <Select
-                value={status}
-                onValueChange={(v) => setStatus(v as StatusFilter)}
-              >
+              <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
                 <SelectTrigger className="h-8 w-44" aria-label="Status">
                   <SelectValue>
-                    {(v) =>
-                      STATUS_LABEL[v as StatusFilter] ?? "All status"
-                    }
+                    {(v) => STATUS_LABEL[v as StatusFilter] ?? "All status"}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -492,26 +681,49 @@ function LocationsBoard({
           <LiveMap
             markers={mapMarkers}
             geofence={showFence ? fence : null}
-            editableCenter={showFence && editingFence}
+            editableCenter={canEditFence && showFence && editingFence}
             onCenterChange={setCenter}
             center={fenceCenter}
             zoom={13}
             recenterKey="board"
+            fitPoints={fitPoints}
+            fitKey={fitKey}
           />
 
-          {/* Perimeter control */}
+          {/* Perimeter control — an editor for `monitoring:manage`, a read-out for everyone else. */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-            <label className="flex items-center gap-1.5 font-medium">
-              <input
-                type="checkbox"
-                checked={showFence}
-                onChange={(e) => setEnabled(e.target.checked)}
-                className="size-3.5"
-                style={{ accentColor: "var(--primary)" }}
-              />
-              Office perimeter
-            </label>
-            {showFence ? (
+            {!canEditFence ? (
+              <span className="font-medium">
+                {showFence ? (
+                  <>
+                    Office perimeter · {radiusM} m radius ·{" "}
+                    <span
+                      className={cn(
+                        outsideCount > 0 ? "text-destructive" : "text-muted-foreground",
+                      )}
+                    >
+                      {outsideCount} outside
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">
+                    No office perimeter is set.
+                  </span>
+                )}
+              </span>
+            ) : (
+              <label className="flex items-center gap-1.5 font-medium">
+                <input
+                  type="checkbox"
+                  checked={showFence}
+                  onChange={(e) => setEnabled(e.target.checked)}
+                  className="size-3.5"
+                  style={{ accentColor: "var(--primary)" }}
+                />
+                Office perimeter
+              </label>
+            )}
+            {canEditFence && showFence ? (
               <>
                 <input
                   type="range"
@@ -524,14 +736,12 @@ function LocationsBoard({
                   style={{ accentColor: "var(--primary)" }}
                   aria-label="Perimeter radius"
                 />
-                <span className="tabular-nums text-muted-foreground">
+                <span className="text-muted-foreground tabular-nums">
                   {radiusM} m radius
                 </span>
                 <span
                   className={cn(
-                    outsideCount > 0
-                      ? "text-destructive"
-                      : "text-muted-foreground",
+                    outsideCount > 0 ? "text-destructive" : "text-muted-foreground",
                   )}
                 >
                   · {outsideCount} outside
@@ -544,55 +754,62 @@ function LocationsBoard({
                 >
                   {editingFence ? "Done" : "Move office"}
                 </Button>
+              </>
+            ) : null}
+            {/*
+              Saving is explicit and only offered when something actually changed. The perimeter is
+              org-wide, so an accidental autosave would move every colleague's inside/outside status;
+              and without the dirty check there is no way to tell a dragged-but-unsaved fence from the
+              saved one. Reset undoes those edits — back to the saved perimeter — so it appears with
+              them; outside the `showFence` block, so switching the perimeter off can be undone too.
+            */}
+            {canEditFence && fenceDirty ? (
+              <>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7"
-                  onClick={resetFence}
+                  onClick={() => {
+                    resetFence();
+                    setEditingFence(false);
+                  }}
                 >
                   Reset
                 </Button>
-                {/*
-                  Saving is explicit and only offered when something actually changed. The perimeter
-                  is org-wide, so an accidental autosave would move every colleague's inside/outside
-                  status; and without the dirty check there is no way to tell a dragged-but-unsaved
-                  fence from the saved one.
-                */}
-                {fenceDirty ? (
-                  <Button
-                    size="sm"
-                    className="h-7"
-                    disabled={fenceSaving}
-                    onClick={() => {
-                      void saveFence().then((ok) => ok && setEditingFence(false));
-                    }}
-                  >
-                    {fenceSaving ? "Saving…" : "Save perimeter"}
-                  </Button>
-                ) : null}
-                {fenceError ? (
-                  <span className="text-destructive">{fenceError}</span>
-                ) : null}
+                <Button
+                  size="sm"
+                  className="h-7"
+                  disabled={fenceSaving}
+                  onClick={() => {
+                    void saveFence().then((ok) => ok && setEditingFence(false));
+                  }}
+                >
+                  {fenceSaving ? "Saving…" : "Save perimeter"}
+                </Button>
               </>
             ) : null}
+            {/* Load failures too, for everyone — they used to show only inside the editor, which a
+                failed load had switched off, so they were never seen. */}
+            {fenceError ? <span className="text-destructive">{fenceError}</span> : null}
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Positions are the latest device fix the desktop agent reported that
-            day (consent-gated). The office perimeter is a review aid — a red ring
-            marks a fix outside it.
+          <p className="text-muted-foreground text-xs">
+            Positions are the latest device fix the desktop agent reported that day
+            (consent-gated); a shaded circle is the fix&apos;s own accuracy. The office
+            perimeter is a review aid — a red ring marks a fix outside it, beyond its
+            accuracy.
           </p>
         </CardContent>
       </Card>
 
       {/* Count + search */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{employees.length}</span>{" "}
-          of {scoped.length} employees
+        <p className="text-muted-foreground text-sm">
+          <span className="text-foreground font-medium">{employees.length}</span> of{" "}
+          {scoped.length} employees
         </p>
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -603,27 +820,42 @@ function LocationsBoard({
       </div>
 
       {status === "outside" ? (
-        <div className="flex items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3">
-          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
+        <div className="border-destructive/30 bg-destructive/10 flex items-start gap-3 rounded-2xl border px-4 py-3">
+          <AlertTriangle className="text-destructive mt-0.5 size-5 shrink-0" />
           <div className="text-sm">
-            <p className="font-medium text-foreground">
+            <p className="text-foreground font-medium">
               Employees outside the office perimeter
             </p>
-            <p className="mt-0.5 text-muted-foreground">
-              These employees&apos; latest fix is beyond the {radiusM} m office
-              perimeter for this day.
+            <p className="text-muted-foreground mt-0.5">
+              These employees&apos; latest fix is beyond the {radiusM} m office perimeter
+              for this day, even allowing for its accuracy.
             </p>
           </div>
         </div>
       ) : null}
 
-      {employees.length === 0 ? (
+      {error ? (
+        // In place of the list, with the stepper and map still on the page: this used to replace
+        // the whole board, so one failed read left nothing to click but browser reload (WP-288).
+        <EmptyState
+          icon={MapPinOff}
+          title="Location data unavailable"
+          description={error}
+          action={
+            <Button variant="outline" size="sm" onClick={reload}>
+              Try again
+            </Button>
+          }
+        />
+      ) : rows === null ? (
+        <div className="flex min-h-[10rem] items-center justify-center">
+          <Loader label={`Loading the locations for ${label}…`} />
+        </div>
+      ) : employees.length === 0 ? (
         <EmptyState
           icon={Users}
           title={
-            scoped.length === 0
-              ? "No location data for this day"
-              : "No employees match"
+            scoped.length === 0 ? "No location data for this day" : "No employees match"
           }
           description={
             scoped.length === 0
@@ -641,7 +873,7 @@ function LocationsBoard({
                 key={p.user_id}
                 type="button"
                 onClick={() => onSelect(p)}
-                className="group flex items-center gap-3 rounded-2xl border bg-card p-3 text-left transition hover:ring-1 hover:ring-primary/40"
+                className="group bg-card hover:ring-primary/40 flex items-center gap-3 rounded-2xl border p-3 text-left transition hover:ring-1"
               >
                 <UserAvatar
                   userId={p.user_id}
@@ -652,22 +884,22 @@ function LocationsBoard({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{p.name}</p>
                   {outside ? (
-                    <p className="flex items-center gap-1 truncate text-xs text-destructive">
+                    <p className="text-destructive flex items-center gap-1 truncate text-xs">
                       <AlertTriangle className="size-3 shrink-0" />
                       <span className="truncate">
                         Outside perimeter · {clock(p.latest!.captured_at)}
                       </span>
                     </p>
                   ) : located ? (
-                    <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                      <Navigation className="size-3 shrink-0 text-primary" />
+                    <p className="text-muted-foreground flex items-center gap-1 truncate text-xs">
+                      <Navigation className="text-primary size-3 shrink-0" />
                       <span className="truncate">
                         Last seen {clock(p.latest!.captured_at)} · {p.fix_count}{" "}
                         {p.fix_count === 1 ? "location" : "locations"}
                       </span>
                     </p>
                   ) : (
-                    <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                    <p className="text-muted-foreground flex items-center gap-1 truncate text-xs">
                       <MapPinOff className="size-3 shrink-0" />
                       <span className="truncate">No location reported</span>
                     </p>
@@ -684,7 +916,7 @@ function LocationsBoard({
                   <MapPin className="size-3" />
                   {located ? "Located" : "—"}
                 </Badge>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5" />
+                <ChevronRight className="text-muted-foreground size-4 shrink-0 transition group-hover:translate-x-0.5" />
               </button>
             );
           })}

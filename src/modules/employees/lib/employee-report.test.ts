@@ -188,7 +188,7 @@ describe("collectEmployeeReport", () => {
 describe("renderEmployeeReportPdf", () => {
   it("produces a multi-page PDF that carries the employee's data", async () => {
     const r = await collectEmployeeReport("u1");
-    const doc = renderEmployeeReportPdf(r);
+    const doc = await renderEmployeeReportPdf(r);
 
     expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
     const text = doc.output("datauristring");
@@ -204,7 +204,38 @@ describe("renderEmployeeReportPdf", () => {
     projects.listUserProjects.mockRejectedValue(new ApiError("Forbidden", 403));
 
     const r = await collectEmployeeReport("u1");
-    expect(() => renderEmployeeReportPdf(r)).not.toThrow();
+    await expect(renderEmployeeReportPdf(r)).resolves.toBeDefined();
+  });
+
+  /** A Latin-only report must not fetch anything (the font is loaded only when needed). */
+  it("loads no font for a report Helvetica can print", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    try {
+      await renderEmployeeReportPdf(await collectEmployeeReport("u1"));
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  /** WP-225: offline, a Polish name must still produce the report — sanitised, not garbled. */
+  it("still builds the report when the Unicode font can't be loaded", async () => {
+    employees.getEmployeeProfile.mockResolvedValue({ ...PROFILE, name: "Łukasz Żółć" });
+    const fetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetch);
+    // No canvas to fall back on either (jsdom has none; its stub would log an error).
+    const canvas = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    try {
+      const doc = await renderEmployeeReportPdf(await collectEmployeeReport("u1"));
+      expect(fetch).toHaveBeenCalled();
+      const pdf = doc.output();
+      expect(pdf).toContain("(Lukasz Zólc)");
+      expect(pdf).not.toContain("WPNotoSans");
+    } finally {
+      vi.unstubAllGlobals();
+      canvas.mockRestore();
+    }
   });
 
   it("names the file from the employee code and the generation day", async () => {
@@ -239,6 +270,28 @@ describe("history walking", () => {
     expect(chunks("2026-09-01", "2026-09-10", 92)).toEqual([
       { from: "2026-09-01", to: "2026-09-10" },
     ]);
+  });
+
+  /**
+   * WP-226 (QA audit 2026-10-08): "local midnight + 24 h" stays on the same date the day the clocks
+   * go back, so a walk ending that day never ended and one crossing it repeated the day.
+   */
+  it("advances across the day the clocks go back", () => {
+    const tz = process.env.TZ;
+    process.env.TZ = "Europe/Berlin"; // 25 Oct 2026 is 25 hours long here
+    try {
+      expect(chunks("2026-10-24", "2026-10-26", 1)).toEqual([
+        { from: "2026-10-24", to: "2026-10-24" },
+        { from: "2026-10-25", to: "2026-10-25" },
+        { from: "2026-10-26", to: "2026-10-26" },
+      ]);
+      expect(chunks("2026-10-01", "2026-10-25", 92)).toEqual([
+        { from: "2026-10-01", to: "2026-10-25" },
+      ]);
+    } finally {
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
+    }
   });
 
   /** The whole point of the rewrite: history starts the day the person joined. */

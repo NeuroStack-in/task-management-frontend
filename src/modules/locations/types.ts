@@ -23,8 +23,9 @@ export interface Geofence {
 }
 
 /**
- * A sensible default map center + fence for a fresh session (Chennai / Thoraipakkam), used only to
- * seed the client-side perimeter tool until an admin moves it. Not employee data.
+ * A placeholder map center + fence radius (Chennai / Thoraipakkam), used only to seed the perimeter
+ * editor until an admin places the real one. Never treated as an org's perimeter: the store starts
+ * with the perimeter switched **off**, as the server's default does. Not employee data.
  */
 export const DEFAULT_GEOFENCE: Geofence = {
   center: { lat: 12.9424, lng: 80.2411 },
@@ -45,9 +46,35 @@ export function distanceMeters(a: GeoPoint, b: GeoPoint): number {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** THE authoritative in/out check — the one pure function a server would replace unchanged. */
+/** Is the reported point within the perimeter? Ignores accuracy — see {@link perimeterVerdict}. */
 export function insidePerimeter(point: GeoPoint, fence: Geofence): boolean {
   return distanceMeters(point, fence.center) <= fence.radiusM;
+}
+
+/**
+ * Where a **fix** stands against the perimeter, given the OS's own accuracy estimate.
+ *
+ * - `inside` — the reported point is within the perimeter.
+ * - `outside` — even the nearest edge of the fix's accuracy circle is beyond it.
+ * - `uncertain` — the point is outside, but the fix is too coarse to say so: the true position
+ *   could be inside.
+ *
+ * Comparing the raw point alone flagged a desktop in the office as outside whenever its IP-based
+ * fix landed 3 km away with `accuracy_m: 5000` — listed under "outside the office perimeter" and
+ * counted off-site (QA audit 2026-10-08, WP-291). Being called outside is the claim that needs
+ * evidence, so only a fix that is outside beyond its own error margin earns it.
+ */
+export type PerimeterVerdict = "inside" | "outside" | "uncertain";
+
+export function perimeterVerdict(
+  point: GeoPoint,
+  accuracyM: number,
+  fence: Geofence,
+): PerimeterVerdict {
+  const d = distanceMeters(point, fence.center);
+  if (d <= fence.radiusM) return "inside";
+  const margin = Number.isFinite(accuracyM) && accuracyM > 0 ? accuracyM : 0;
+  return d - margin > fence.radiusM ? "outside" : "uncertain";
 }
 
 // ── derived status + work mode ───────────────────────────────────────────────
@@ -99,9 +126,9 @@ export function deriveStatus(
  * relative to the office geofence (owner decision, 2026-07-22). The UI labels it as derived for
  * exactly that reason: it answers "are they at the office right now", not "what is their contract".
  *
- * `null` when there is no fix to judge, or the perimeter is switched off — an unknown mode is shown
- * as unknown rather than defaulted to "remote", which would silently mark every untracked employee
- * as working from home.
+ * `null` when there is no fix to judge, the perimeter is switched off, or the fix is too coarse to
+ * place (see {@link perimeterVerdict}) — an unknown mode is shown as unknown rather than defaulted to
+ * "remote", which would silently mark every untracked employee as working from home.
  */
 export type WorkMode = "in-office" | "remote";
 
@@ -109,9 +136,12 @@ export function deriveMode(
   point: GeoPoint | null,
   fence: Geofence,
   fenceEnabled: boolean,
+  /** The fix's accuracy estimate in metres; omit for an exact point. */
+  accuracyM = 0,
 ): WorkMode | null {
   if (!point || !fenceEnabled) return null;
-  return insidePerimeter(point, fence) ? "in-office" : "remote";
+  const verdict = perimeterVerdict(point, accuracyM, fence);
+  return verdict === "inside" ? "in-office" : verdict === "outside" ? "remote" : null;
 }
 
 export const WORK_MODE_LABEL: Record<WorkMode, string> = {

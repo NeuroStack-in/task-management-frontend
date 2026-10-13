@@ -1,13 +1,15 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useMemo, useState } from "react"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
+import { updateOrgCache } from "@/hooks/use-org"
 import { AlertCircle, Building2, Lock } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
   CardContent,
 } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -32,6 +34,7 @@ import { PoliciesManager } from "./org/policies-manager"
 import { Loader } from "@/components/shared/loader"
 import { usePermissions } from "@/hooks/use-permissions"
 import { ApiError } from "@/lib/api"
+import { toWebUrl } from "@/lib/validation"
 import { useOrgMetaStore } from "@/stores/org-meta.store"
 import {
   updateOrg,
@@ -45,7 +48,7 @@ import {
  * On mount we `getOrg()` and seed the form with the org's current server-side values, keeping the
  * returned `version` for the next optimistic-locked write. Every field shown is persisted: name,
  * timezone, website, employee-id prefix, industry and size all ride `PATCH /v1/org`, and the
- * sub-managers below (branding, departments, teams, locations, holidays, policies) each have their
+ * sub-managers below (departments, teams, locations, schedule, holidays, policies) each have their
  * own live endpoints. *(A previous version of this comment said industry/size/locations/etc. were
  * "mock-only, not shown until endpoints back them" — long false; kept as a warning that stale
  * comments here have hidden real features before.)* A 404 means the org isn't provisioned yet ⇒
@@ -70,6 +73,19 @@ const TIMEZONE_OPTIONS = [
   "Asia/Tokyo",
   "Australia/Sydney",
 ] as const
+
+/**
+ * The picker's zones, with the org's saved one first when it is not among them. Sign-up stores
+ * fixed-offset labels (`(GMT+05:30) India Standard`) that this list does not contain; without this
+ * the select showed an empty placeholder for every such org, inviting an admin to "set" a timezone
+ * that was already set. The server reads both forms (`wp_platform::tz`, QA audit WP-028).
+ */
+function timezoneOptions(saved: string): readonly string[] {
+  const current = saved.trim()
+  return current && !(TIMEZONE_OPTIONS as readonly string[]).includes(current)
+    ? [current, ...TIMEZONE_OPTIONS]
+    : TIMEZONE_OPTIONS
+}
 
 // Industry + company-size pickers. `__none__` is the "unset" sentinel (Base UI selects need a value).
 const INDUSTRY_OPTIONS = [
@@ -129,6 +145,9 @@ function formFromView(v: OrgView): OrgProfileForm {
   }
 }
 
+const sameProfile = (a: OrgProfileForm, b: OrgProfileForm) =>
+  JSON.stringify(a) === JSON.stringify(b)
+
 /**
  * A titled band of related fields.
  *
@@ -165,38 +184,64 @@ export function OrganizationTab() {
   // card and the tracking-mode card below. A single fetch, a single version: after either card
   // saves, the version here updates too, so the other card never sends a stale version and gets a
   // spurious 409. See stores/org-meta.store.ts.
-  const { view, version, status, error: loadError, load, applyPatchResult } = useOrgMetaStore()
+  const { view, status, error: loadError, load, applyPatchResult } = useOrgMetaStore()
   const loading = status === "idle" || status === "loading"
 
   // `saved` is the last server-confirmed profile state; seeded from the shared meta below.
   const [saved, setSaved] = useState<OrgProfileForm>(EMPTY_FORM)
   const [draft, setDraft] = useState<OrgProfileForm>(EMPTY_FORM)
+  /**
+   * The `version` that `saved` was read at — what a save sends as its lock. Never the store's
+   * latest: on a second visit the form seeded from the store's cached view, the re-fetch then moved
+   * the store's version on, and a save sent the old field values under the new version — so another
+   * admin's change in between was silently overwritten instead of refused with a 409
+   * (QA audit 2026-10-08, WP-344).
+   */
+  const [baseVersion, setBaseVersion] = useState<number | undefined>(undefined)
+  /** The form has been filled from a real read — until then there is no profile to edit. */
+  const [seeded, setSeeded] = useState(false)
   const [saving, setSaving] = useState(false)
+  const ids = useId()
 
   // One shared fetch (deduped inside the store).
   useEffect(() => {
     void load()
   }, [load])
 
-  // Seed the profile form from the shared meta **once**. Deliberately not on every `view` change:
-  // the tracking-mode card also writes `view` (a mode save bumps the shared version), and reseeding
-  // then would wipe any unsaved profile edits sitting in `draft`. A 404 leaves `view` null ⇒ the
-  // empty editable form, which is not an error.
-  const seeded = useRef(false)
-  useEffect(() => {
-    if (seeded.current || status !== "ready") return
-    const next = view ? formFromView(view) : EMPTY_FORM
-    setSaved(next)
-    setDraft(next)
-    seeded.current = true
-  }, [status, view])
-
   const dirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(saved),
     [draft, saved],
   )
-  // Leaving via the settings rail now asks before discarding this draft.
+  // Leaving now asks before discarding this draft.
   useUnsavedGuard(dirty)
+
+  // Follow the shared meta without ever trampling a draft:
+  //  - first read → seed the form (a 404 leaves `view` null ⇒ the empty editable form, not an error);
+  //  - a read or save that leaves the profile fields as they are (the tracking-mode card bumps the
+  //    version) → adopt its version, nothing visible changes;
+  //  - the fields changed on the server and nothing is typed here → show the fresh values;
+  //  - they changed *and* something is typed here → keep the edits and the old version, so the save
+  //    is refused (409) rather than writing over the other change.
+  useEffect(() => {
+    if (status !== "ready") return
+    const next = view ? formFromView(view) : EMPTY_FORM
+    if (!seeded) {
+      setSaved(next)
+      setDraft(next)
+      setBaseVersion(view?.version)
+      setSeeded(true)
+    } else if (sameProfile(next, saved)) {
+      setBaseVersion(view?.version)
+    } else if (!dirty) {
+      setSaved(next)
+      setDraft(next)
+      setBaseVersion(view?.version)
+    }
+  }, [status, view, seeded, saved, dirty])
+
+  // Checked before the request, because the server stores any string and the pages that show it
+  // use it as a link (WP-356).
+  const websiteInvalid = draft.website.trim() !== "" && toWebUrl(draft.website) === null
 
   const update = (patch: Partial<OrgProfileForm>) =>
     setDraft((d) => ({ ...d, ...patch }))
@@ -205,17 +250,31 @@ export function OrganizationTab() {
   function buildBody(): UpdateOrgRequest {
     const body: UpdateOrgRequest = {}
     if (draft.name.trim()) body.name = draft.name.trim()
-    if (draft.timezone.trim()) body.timezone = draft.timezone.trim()
-    if (draft.website.trim()) body.website = draft.website.trim()
     if (draft.empIdPrefix.trim()) body.emp_id_prefix = draft.empIdPrefix.trim()
-    if (draft.industry.trim()) body.industry = draft.industry.trim()
-    if (draft.size.trim()) body.size = draft.size.trim()
-    if (version !== undefined) body.version = version
+    // Optional fields go whenever they changed — **including to empty**, which the server reads as
+    // "clear". Omitting an emptied field meant the save succeeded, the old value came back, and the
+    // toast said "saved" while the field snapped back (WP-102).
+    const changed = (k: "timezone" | "website" | "industry" | "size") =>
+      draft[k].trim() !== saved[k].trim()
+    if (changed("timezone") || draft.timezone.trim()) body.timezone = draft.timezone.trim()
+    // Stored as an absolute link (`acme.com` → `https://acme.com`); `""` clears it.
+    if (changed("website") || draft.website.trim()) {
+      body.website = draft.website.trim() ? (toWebUrl(draft.website) ?? "") : ""
+    }
+    if (changed("industry") || draft.industry.trim()) body.industry = draft.industry.trim()
+    if (changed("size") || draft.size.trim()) body.size = draft.size.trim()
+    if (baseVersion !== undefined) body.version = baseVersion
     return body
   }
 
   async function handleSave() {
     if (!dirty || saving) return
+    if (websiteInvalid) {
+      toast.error("Check the website", {
+        description: "Enter a web address, like acme.com or https://acme.com.",
+      })
+      return
+    }
     const body = buildBody()
     // The API rejects an empty body ("nothing to update"); guard before the round-trip.
     if (
@@ -236,19 +295,33 @@ export function OrganizationTab() {
       // Thread the fresh version back into the shared store so the tracking-mode card's next save
       // uses it (and vice-versa) — no false 409 for a single user editing both cards.
       applyPatchResult(updated)
+      // And into the cache the sidebar header and the Company rail item read (WP-534).
+      updateOrgCache(updated)
       const next = formFromView(updated)
       setSaved(next)
       setDraft(next)
+      setBaseVersion(updated.version)
       toast.success("Organization saved", {
         description: `Changes are live${
           updated.slug ? ` for ${updated.slug}` : ""
         }.`,
       })
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
+      // `PATCH /v1/org` answers 409 for two unrelated reasons; every one used to read as "someone
+      // else changed these settings", so a taken prefix sent the admin round a reload loop for good
+      // (QA audit 2026-10-08, WP-345).
+      if (e instanceof ApiError && e.code === "emp_prefix_taken") {
+        toast.error("That employee-ID prefix is taken", {
+          description:
+            "Another organization already uses it, and prefixes are unique. Choose a different one.",
+        })
+      } else if (e instanceof ApiError && e.status === 409) {
+        // Fetch the other change now; the edits here stay. Reset then shows the latest (see the
+        // follow effect above), ready to reapply on top of it.
+        void load()
         toast.error("Someone else changed these settings", {
           description:
-            "Your version is stale. Reload the page to pick up the latest, then reapply.",
+            "Your edits are still here. Press Reset to load the latest version, then reapply them.",
         })
       } else if (e instanceof ApiError && e.status === 400) {
         toast.error("Check your entries", { description: e.message })
@@ -272,7 +345,7 @@ export function OrganizationTab() {
     <div className="space-y-6">
       <PageHeader
         title="Organization"
-        description="Manage your organization's profile, branding, structure, locations, holidays, and policies."
+        description="Manage your organization's profile, structure, schedule, locations, holidays, and policies."
       />
 
       {!canManage && (
@@ -287,7 +360,17 @@ export function OrganizationTab() {
       {loadError && (
         <div className="flex items-start gap-2.5 rounded-md border border-destructive/40 bg-destructive/10 px-5 py-3 text-sm text-destructive">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
-          <span>{loadError}</span>
+          <span className="min-w-0 flex-1">{loadError}</span>
+          {/* A failed load is never retried behind the user's back (see the store), so the retry is
+              theirs to ask for. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="-my-1 shrink-0"
+            onClick={() => void load()}
+          >
+            Retry
+          </Button>
         </div>
       )}
 
@@ -295,6 +378,10 @@ export function OrganizationTab() {
         <Loader label="Loading organization settings…" />
       ) : (
       <>
+      {/* Only once a read has filled it. After a failed first load this used to be an empty,
+          editable form under the error — and saving it sent whatever was typed with no lock
+          (QA audit 2026-10-08, WP-357). The banner above carries the Retry. */}
+      {seeded ? (
       <Card className="overflow-hidden p-0">
         {/* The org's own name leads the card rather than sitting as the first of six identical
             inputs. This page is *about* this organisation; six flat fields under one heading read
@@ -323,8 +410,9 @@ export function OrganizationTab() {
         <CardContent className="space-y-6 p-5 sm:p-6">
           <FieldGroup label="Identity">
             <div className="space-y-1.5">
-              <Label>Organization name</Label>
+              <Label htmlFor={`${ids}-name`}>Organization name</Label>
               <Input
+                id={`${ids}-name`}
                 value={draft.name}
                 disabled={!canManage}
                 placeholder="Acme Inc."
@@ -332,14 +420,22 @@ export function OrganizationTab() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Website</Label>
+              <Label htmlFor={`${ids}-website`}>Website</Label>
               <Input
+                id={`${ids}-website`}
                 type="url"
                 value={draft.website}
                 disabled={!canManage}
                 placeholder="https://acme.example.com"
+                aria-invalid={websiteInvalid || undefined}
+                aria-describedby={websiteInvalid ? `${ids}-website-error` : undefined}
                 onChange={(e) => update({ website: e.target.value })}
               />
+              {websiteInvalid ? (
+                <p id={`${ids}-website-error`} className="text-destructive text-xs">
+                  Enter a web address, like acme.com or https://acme.com.
+                </p>
+              ) : null}
             </div>
           </FieldGroup>
 
@@ -351,11 +447,11 @@ export function OrganizationTab() {
                 onValueChange={(v) => update({ timezone: v as string })}
                 disabled={!canManage}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Primary timezone">
                   <SelectValue placeholder="Select a timezone…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {TIMEZONE_OPTIONS.map((tz) => (
+                  {timezoneOptions(saved.timezone).map((tz) => (
                     <SelectItem key={tz} value={tz}>
                       {tz}
                     </SelectItem>
@@ -376,7 +472,7 @@ export function OrganizationTab() {
                   ...Object.fromEntries(INDUSTRY_OPTIONS.map((ind) => [ind, ind])),
                 }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Industry">
                   <SelectValue placeholder="Select an industry…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -405,7 +501,7 @@ export function OrganizationTab() {
                   ...Object.fromEntries(SIZE_OPTIONS.map((s) => [s, `${s} employees`])),
                 }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Company size">
                   <SelectValue placeholder="Select a size…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -419,8 +515,9 @@ export function OrganizationTab() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Employee-ID prefix</Label>
+              <Label htmlFor={`${ids}-prefix`}>Employee-ID prefix</Label>
               <Input
+                id={`${ids}-prefix`}
                 value={draft.empIdPrefix}
                 disabled={!canManage}
                 placeholder="EMP"
@@ -437,14 +534,14 @@ export function OrganizationTab() {
           </FieldGroup>
         </CardContent>
       </Card>
+      ) : null}
 
       {/* Each of these is its own live-backend CRUD, independent of the org-profile save bar. */}
-      {/* `BrandingManager` was here. Removed 2026-08-22: **nothing in the app reads any of it.**
-          `logo_url` is never rendered — the only other reference is an unused field on the `User`
-          type — and the stored brand colours are read by nothing either (the `accentColor` uses
-          elsewhere are CSS on checkboxes, bound to `var(--primary)`, not to these). It was a form
-          that saved three values into a void. The component and its endpoints still exist, so
-          restoring it is one import and one line if branding is ever wired up for real. */}
+      {/* `BrandingManager` was here. Removed from the page 2026-08-22 and deleted 2026-10-09:
+          **nothing in the app reads any of it.** `logo_url` is never rendered and the stored brand
+          colours are read by nothing either (the `accentColor` uses elsewhere are CSS on checkboxes,
+          bound to `var(--primary)`). It was a form that saved three values into a void. The server
+          routes (`GET`/`PATCH /v1/org/branding`) still exist if branding is ever wired up for real. */}
       <TrackingModeCard />
       {/* Productivity first: it is the setting that changes what every other number on the product
           means, so it should not sit buried between two roster editors. Then the structures those

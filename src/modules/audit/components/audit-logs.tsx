@@ -31,6 +31,7 @@ import {  } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { AUDIT_CATEGORIES, type AuditCategory } from "@/modules/audit/lib/categories";
 import { useAudit, type AuditEntry } from "../use-audit";
+import { toCsv } from "@/lib/csv";
 
 const PAGE_SIZE = 20;
 
@@ -64,7 +65,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="px-5 py-4 [&+&]:border-t">
-      <h3 className="pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
+      <h3 className="pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         {title}
       </h3>
       {children}
@@ -92,15 +93,19 @@ function CopyValue({ value }: { value: string }) {
 }
 
 function exportCsv(entries: AuditEntry[]) {
-  const head = ["Timestamp", "Actor", "Category", "Action", "Target"];
-  const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-  const body = entries
-    .map((e) => [e.timestamp, e.actorName, e.category, e.action, e.target ?? ""].map(esc).join(","))
-    .join("\n");
-  downloadBlob(
-    new Blob([`${head.join(",")}\n${body}`], { type: "text/csv;charset=utf-8;" }),
-    "audit-log.csv",
-  );
+  const csv = toCsv({
+    fields: ["Timestamp", "Actor", "Category", "Action", "Target", "Action code", "Target id"],
+    data: entries.map((e) => [
+      e.timestamp,
+      e.actorName,
+      e.category,
+      e.action,
+      e.target ?? "",
+      e.actionCode,
+      e.targetRaw ?? "",
+    ]),
+  });
+  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), "audit-log.csv");
   toast.success("Audit log exported", { description: `audit-log.csv · ${entries.length} events` });
 }
 
@@ -125,7 +130,9 @@ export function AuditLogs() {
     return entries.filter((e) => {
       if (category !== "all" && e.category !== category) return false;
       if (q) {
-        const hay = `${e.actorName} ${e.action} ${e.target ?? ""} ${e.category}`.toLowerCase();
+        // Words and codes both: someone pasting `mfa.reset` or an id from a ticket still finds it.
+        const hay =
+          `${e.actorName} ${e.action} ${e.actionCode} ${e.target ?? ""} ${e.targetRaw ?? ""} ${e.category}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -165,9 +172,11 @@ export function AuditLogs() {
 
   return (
     <div className="space-y-5 pt-1">
+      {/* Only what the server records. Role and permission changes and sign-ins are not written to
+          the audit trail, so the page must not promise them (QA audit 2026-10-08, WP-336). */}
       <PageHeader
         title="Audit Logs"
-        description="A record of user actions, permission changes, and settings updates across WorkPulse."
+        description="Administrative actions in your organization: settings and feature changes, ownership, devices, authenticator resets, and leave and attendance adjustments."
         actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
@@ -177,6 +186,7 @@ export function AuditLogs() {
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by user, action, or target…"
+            aria-label="Search audit events"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -193,7 +203,7 @@ export function AuditLogs() {
             setVisible(PAGE_SIZE);
           }}
         >
-          <SelectTrigger className="w-full sm:w-56">
+          <SelectTrigger className="w-full sm:w-56" aria-label="Filter by category">
             <span className="truncate">
               <span className="text-muted-foreground">Category:</span>{" "}
               {category === "all" ? "All" : categoryDef(category).label}
@@ -291,7 +301,18 @@ export function AuditLogs() {
                     </div>
                   </td>
                   <td className="py-3">
-                    <p className="font-medium">{e.action}</p>
+                    {/* The row opens on click; this button is how a keyboard (or screen-reader) user
+                        opens it — a bare `<tr onClick>` is unreachable without a mouse (WP-520). */}
+                    <button
+                      type="button"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setSelected(e);
+                      }}
+                      className="rounded-sm text-left font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    >
+                      {e.action}
+                    </button>
                     <p className="text-xs text-muted-foreground lg:hidden">{e.timestamp}</p>
                   </td>
                   <td className="hidden py-3 md:table-cell">
@@ -379,7 +400,20 @@ export function AuditLogs() {
                   <dl>
                     <DetailRow label="Category">{categoryDef(selected.category).label}</DetailRow>
                     <DetailRow label="Action">{selected.action}</DetailRow>
+                    <DetailRow label="Action code">
+                      <CopyValue value={selected.actionCode} />
+                    </DetailRow>
                     <DetailRow label="Target">{selected.target ?? "—"}</DetailRow>
+                    {selected.targetRaw && selected.targetRaw !== selected.target ? (
+                      <DetailRow label="Target id">
+                        <CopyValue value={selected.targetRaw} />
+                      </DetailRow>
+                    ) : null}
+                    {selected.detail ? (
+                      <DetailRow label="Change">
+                        <span className="break-words">{selected.detail}</span>
+                      </DetailRow>
+                    ) : null}
                     <DetailRow label="Timestamp">
                       <span className="tabular-nums">{selected.timestamp}</span>
                     </DetailRow>

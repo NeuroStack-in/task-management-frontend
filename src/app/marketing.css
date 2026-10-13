@@ -19,7 +19,7 @@
   --m-surface-2: #17313f; /* inset / lifted panel — --wp-surface-2 */
   --m-text: #eaf1f2; /* near-white ink — --wp-ink */
   --m-muted: #90a4a9; /* light slate — secondary text — --wp-muted */
-  --m-faint: #5f7379; /* faint — placeholders — --wp-faint */
+  --m-faint: #879aa0; /* faint — placeholders — was #5f7379 (3.0:1 on the card panel); now 4.6:1+ (WP-114) */
 
   --m-accent: #12a594; /* teal fill, brightened for dark — matches --wp-accent */
   --m-accent-ink: #5eead4; /* light teal as TEXT on dark (legible) */
@@ -250,7 +250,7 @@
 .m-authglass {
   --m-text: #eef6f4; /* near-white ink */
   --m-muted: rgba(221, 238, 235, 0.64); /* secondary / field icons */
-  --m-faint: rgba(221, 238, 235, 0.44); /* placeholders */
+  --m-faint: rgba(221, 238, 235, 0.62); /* placeholders — was 0.44 alpha (~3.7:1 on the glass); 0.62 passes 4.5:1 (WP-114) */
   --m-surface: rgba(255, 255, 255, 0.06); /* glass input fill */
   --m-surface-2: rgba(255, 255, 255, 0.12);
   --m-border: rgba(255, 255, 255, 0.1);

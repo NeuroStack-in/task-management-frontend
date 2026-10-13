@@ -88,37 +88,6 @@ export function MemberStack({
   );
 }
 
-export function MetricTile({
-  label,
-  value,
-  sub,
-  subTone,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  subTone?: Tone;
-}) {
-  return (
-    <div className="rounded-xl border bg-muted/30 p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 font-heading text-lg leading-none font-semibold tabular-nums">
-        {value}
-      </p>
-      {sub ? (
-        <p
-          className={cn(
-            "mt-1.5 text-xs",
-            subTone ? toneSoft[subTone].split(" ").pop() : "text-muted-foreground",
-          )}
-        >
-          {sub}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 export interface SegmentedOption<T extends string> {
   value: T;
   label: string;

@@ -6,7 +6,7 @@
  * Each policy has a title and either inline `body` text or an external `url` (both optional). Full
  * CRUD behind one editor dialog. List is open to members; writes need `settings:manage` (403 → toast).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, FileText, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,7 @@ import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
+import { toWebUrl } from "@/lib/validation";
 import {
   listPolicies,
   createPolicy,
@@ -62,6 +63,9 @@ export function PoliciesManager() {
 
   const [pendingDelete, setPendingDelete] = useState<OrgPolicy | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const ids = useId();
+  // The server stores any string, and every reader uses it as a link — so check it here (WP-356).
+  const urlInvalid = form.url.trim() !== "" && toWebUrl(form.url) === null;
 
   const load = useCallback(() => {
     let live = true;
@@ -96,11 +100,13 @@ export function PoliciesManager() {
 
   async function save() {
     const title = form.title.trim();
-    if (!title) return;
+    if (!title || urlInvalid) return;
     const body = {
       title,
-      body: form.body.trim() || undefined,
-      url: form.url.trim() || undefined,
+      // Sent even when empty, so removing a link actually removes it (WP-102). Stored as an
+      // absolute link: `intranet.acme.com/leave` became a relative link into the app (WP-356).
+      body: form.body.trim(),
+      url: form.url.trim() ? (toWebUrl(form.url) ?? "") : "",
     };
     setSaving(true);
     try {
@@ -189,16 +195,19 @@ export function PoliciesManager() {
                 <FileText className="size-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{p.title}</p>
-                  {p.url ? (
+                  {p.url && toWebUrl(p.url) ? (
                     <a
-                      href={p.url}
+                      href={toWebUrl(p.url) ?? undefined}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 truncate text-xs text-primary hover:underline"
                     >
                       <ExternalLink className="size-3 shrink-0" />
                       <span className="truncate">{p.url}</span>
                     </a>
+                  ) : p.url ? (
+                    // Saved before links were checked — shown, not linked; editing it fixes it.
+                    <p className="truncate text-xs text-muted-foreground">{p.url}</p>
                   ) : p.body ? (
                     <p className="truncate text-xs text-muted-foreground">{p.body}</p>
                   ) : null}
@@ -236,8 +245,9 @@ export function PoliciesManager() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Title</Label>
+              <Label htmlFor={`${ids}-title`}>Title</Label>
               <Input
+                id={`${ids}-title`}
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 placeholder="Remote work policy"
@@ -246,8 +256,9 @@ export function PoliciesManager() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Body</Label>
+              <Label htmlFor={`${ids}-body`}>Body</Label>
               <textarea
+                id={`${ids}-body`}
                 value={form.body}
                 onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
                 placeholder="Policy details…"
@@ -259,21 +270,29 @@ export function PoliciesManager() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Link (URL)</Label>
+              <Label htmlFor={`${ids}-url`}>Link (URL)</Label>
               <Input
+                id={`${ids}-url`}
                 type="url"
                 value={form.url}
                 onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
                 placeholder="https://intranet.example.com/policy"
                 disabled={saving}
+                aria-invalid={urlInvalid || undefined}
+                aria-describedby={urlInvalid ? `${ids}-url-error` : undefined}
               />
+              {urlInvalid ? (
+                <p id={`${ids}-url-error`} className="text-destructive text-xs">
+                  Enter a web address, like intranet.example.com/policy or https://….
+                </p>
+              ) : null}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditorOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={save} disabled={saving || !form.title.trim()}>
+            <Button onClick={save} disabled={saving || !form.title.trim() || urlInvalid}>
               {saving ? "Saving…" : editId ? "Save changes" : "Add policy"}
             </Button>
           </DialogFooter>

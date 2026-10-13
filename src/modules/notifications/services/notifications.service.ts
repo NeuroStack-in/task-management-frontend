@@ -20,7 +20,10 @@ import type { AppNotification, NotificationType } from "@/types";
 /** Mirrors `notifications::features::list_notifications::data::NotificationRow`. */
 export interface ApiNotification {
   id: string;
-  /** `system` | `approval` today — the server's own grouping, also its email opt-in key. */
+  /**
+   * The server's own grouping: `system` | `approval` | `security` | `task` | `billing` today
+   * (`notifications/src/consumers.rs`).
+   */
   category: string;
   /** The specific event, e.g. `leave_approved`. Enumerated in the backend's `consumers.rs`. */
   ntype: string;
@@ -50,6 +53,15 @@ export async function markRead(id: string): Promise<void> {
   await apiFetch(`/v1/notifications/${encodeURIComponent(id)}/read`, {
     method: "POST",
   });
+}
+
+/**
+ * `DELETE /v1/notifications/{id}` — dismiss for good, so it stays gone on every device (QA audit
+ * 2026-10-08, WP-242). The route arrives with the backend deploy; until then the hook's local hide
+ * and mark-read stand in.
+ */
+export async function dismissNotification(id: string): Promise<void> {
+  await apiFetch(`/v1/notifications/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** `POST /v1/notifications/read-all`. */
@@ -99,12 +111,20 @@ const TITLES: Record<string, string> = {
   mfa_reset: "Two-factor device reset",
   ownership_transferred: "You're now the owner",
   ticket_replied: "Support replied",
+  task_assigned: "New task assigned",
+  plan_changed: "Plan changed",
+  leave_awaiting_approval: "Leave awaiting your approval",
 };
 
-/** The frontend's union. The server only ever sends `system`/`approval`; the rest are unused. */
+/**
+ * The frontend's union. The server sends `system`, `approval`, `security`, `task` and `billing`;
+ * `productivity` is not emitted by anything yet. `security` was missing, so a two-factor reset
+ * landed under System with the generic icon (QA audit 2026-10-08, WP-381).
+ */
 const KNOWN_TYPES: NotificationType[] = [
   "task",
   "approval",
+  "security",
   "productivity",
   "billing",
   "system",
@@ -125,9 +145,9 @@ function toAppNotification(n: ApiNotification): AppNotification {
 /**
  * `category` → the UI's type union.
  *
- * The server's two categories (`system`, `approval`) are already members of it, so this is a
- * *check*, not a translation. An unknown category falls back to `system` rather than being coerced
- * into a wrong bucket — a mislabelled billing alert is worse than a generic one.
+ * The server's categories are already members of it, so this is a *check*, not a translation. An
+ * unknown category falls back to `system` rather than being coerced into a wrong bucket — a
+ * mislabelled billing alert is worse than a generic one.
  */
 function typeOf(category: string): NotificationType {
   const hit = KNOWN_TYPES.find((t) => t === category);
@@ -148,7 +168,14 @@ function humanize(ntype: string): string {
  * worse than none — it teaches people the bell lies.
  */
 function hrefOf(ntype: string): string | undefined {
-  if (ntype.startsWith("leave_")) return "/leave";
+  // There is no `/leave` route — every leave link used to land on the 404 page (WP-013). The
+  // approver's notice is about the queue they act on; the rest are about the person's own requests.
+  if (ntype === "leave_awaiting_approval") return "/approvals";
+  if (ntype.startsWith("leave_")) return "/leave-requests";
   if (ntype === "ticket_replied") return "/help";
+  // Where the reset device is re-enrolled. Not `/settings/security` (the server's own link resolves
+  // there): that is the org Security Center, which an Employee can't open — the personal page is
+  // open to every role and carries the same two-factor card.
+  if (ntype === "mfa_reset") return "/settings/login-security";
   return undefined;
 }

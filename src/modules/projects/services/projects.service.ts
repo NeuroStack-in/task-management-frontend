@@ -10,10 +10,11 @@
  * below and nothing more. Rather than pad the gap with zeroes that look like real measurements,
  * this module models what is actually served and lets callers handle the rest.
  */
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import type { TaskReview } from "../types";
 import type { UserMini } from "../lib";
-import { listAllEmployees } from "@/modules/employees/services/employees.service";
+import { readRoster } from "@/modules/employees/services/employees.service";
 
 /** Mirrors `projects::features::list_projects::dto::ProjectRow`. */
 export interface ApiProject {
@@ -21,11 +22,15 @@ export interface ApiProject {
   name: string;
   /** Short uppercase key (e.g. "WP"). Optional — projects created without one have none. */
   key?: string;
-  /** `active` | `on_hold` | `completed` (LLD §5). */
+  /**
+   * `active` | `on_hold` | `archived` (LLD §5). The UI calls `archived` "Completed" —
+   * `mapProjectStatus` translates, so compare the mapped value, never this raw one, to `"completed"`.
+   */
   status: string;
   /**
-   * Why the project is on hold. Present only for `on_hold`, and only `auto_hold` may be auto-lifted
-   * when time is logged again — a manual hold is a human decision the sweep must not undo.
+   * Why the project is on hold: `auto-hold` (the nightly sweep parked it) or `manual`. Present only
+   * for `on_hold`, and only `auto-hold` is lifted when time is logged again — a manual hold is a human
+   * decision the sweep must not undo.
    */
   status_reason?: string;
   billable: boolean;
@@ -58,9 +63,19 @@ export async function listUserProjects(userId: string): Promise<ApiProject[]> {
 
 // ── Detail + KPIs (GET /v1/projects/{id}) ──────────────────────────────────────────────────────
 
-/** Precomputed KPIs from the Streams aggregator (`project_kpi`). Absent until it has run. */
+/**
+ * Precomputed KPIs from the Streams aggregator (`project_kpi`). Absent until it has run, and
+ * recomputed only when a task changes — so the clock-relative fields describe the moment of the
+ * last change, not now.
+ */
 export interface ApiProjectKpi {
+  /** Weighted 0–100 over every task except blocked (the board's `STATUS_WEIGHT`). */
   completion_pct: number;
+  /**
+   * **Live work only: todo + in progress + in review.** The server already excludes `done` and
+   * `blocked`, so this is the open-task count as it stands — subtracting `tasks_by_status.done` from
+   * it counts the finished work out a second time (QA audit 2026-10-08, WP-316).
+   */
   total_tasks: number;
   tasks_by_status: {
     todo: number;
@@ -69,6 +84,7 @@ export interface ApiProjectKpi {
     done: number;
     blocked: number;
   };
+  /** Open tasks past their due date **as of the last recompute** — a quiet project keeps its count. */
   overdue_count: number;
   active_members: number;
   /** 7-day completed-per-day series, oldest first. */
@@ -124,6 +140,8 @@ export function getProject(id: string): Promise<ApiProjectDetail> {
 /** `POST /v1/projects` body. The server mints the id and makes `manager_user_id` a member. */
 export interface NewProject {
   name: string;
+  /** Accepted by the server; the form collected it and the create path used to drop it (WP-025). */
+  description?: string;
   billable: boolean;
   start_date: string;
   end_date?: string;
@@ -145,6 +163,11 @@ export function createProject(body: NewProject): Promise<{ id: string }> {
  *
  * `department` is **always sent, empty string included**: the server reads `""` as "clear it", so
  * deselecting a department is a real edit rather than an unreachable state.
+ *
+ * `status` and `key` go **only when they changed**. Re-sending an unchanged `on_hold` is not a no-op:
+ * the server stamps every hold it is sent as `manual`, which would turn a sweep's `auto-hold` into one
+ * that logging time no longer lifts. A blank `key` or `end_date` **clears** it (WP-413), and the
+ * server refuses an end date before the project's start.
  */
 export interface ProjectPatch {
   name: string;
@@ -152,6 +175,8 @@ export interface ProjectPatch {
   billable: boolean;
   department: string;
   end_date?: string;
+  status?: "active" | "on_hold" | "archived";
+  key?: string;
 }
 
 /** `PATCH /v1/projects/{id}` — edit a project's own fields. Membership is a separate resource. */
@@ -248,7 +273,10 @@ interface SubtaskListResponse {
  *
  * Requires project membership; a non-member gets 404 rather than 403, like every project route.
  */
-export function listSubtasks(projectId: string, taskId: string): Promise<SubtaskListResponse> {
+export function listSubtasks(
+  projectId: string,
+  taskId: string,
+): Promise<SubtaskListResponse> {
   return apiFetch<SubtaskListResponse>(
     `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/subtasks`,
   );
@@ -279,7 +307,11 @@ export interface ApiBoardTask {
    * the server answers too (`delete_task` fails the `created_by = :me` condition).
    */
   created_by?: string;
-  /** Sign-off, present only on a `closed` task — served inline so the badge needs no second call. */
+  /**
+   * Sign-off, served inline so the badge needs no second call. Read it only on a `done` task:
+   * rows reopened before the server cleared it on leaving Done may still carry one (`boardTasks`
+   * drops it there).
+   */
   review?: TaskReview;
   /**
    * How much of this card's breakdown is finished. Served on the board so the counter needs no
@@ -308,7 +340,6 @@ export function getBoard(id: string): Promise<ApiBoardColumn[]> {
 }
 
 /**
- * The caller's own tasks (`GET /v1/me/tasks`). The projection is lean — `{id, project_id, status,
  * The caller's own tasks (`GET /v1/me/tasks`).
  *
  * **`title` is returned** — the server resolves it at read time (backend `757971a`). This comment
@@ -352,7 +383,10 @@ export function listMyTasks(
 export interface NewTask {
   title: string;
   description?: string;
-  /** Everyone to put on it. Omit or send `[]` for unassigned, which offers it to the whole project. */
+  /**
+   * Everyone to put on it — **at least one, at most 10** (`assignment::require_someone`,
+   * `MAX_ASSIGNEES`). Omitted or `[]` is a 400: unassigned tasks were retired on 2026-09-01.
+   */
   assignee_ids?: string[];
   status?: string;
   due?: string;
@@ -368,7 +402,12 @@ export function createTask(projectId: string, body: NewTask): Promise<ApiBoardTa
   });
 }
 
-/** PATCH — omitted fields are left as-is; `null` on `due`/`assignee_ids`/`estimate_hours` clears. */
+/**
+ * PATCH — omitted fields are left as-is; `null` on `due`/`estimate_hours` clears. Send only what
+ * changed (`taskPatchFrom`): an empty patch is a 400, and a changed status/due/assignee set is
+ * conditioned on the rest of the task's index position being unchanged — **409 `task_changed`** means
+ * someone else edited (or deleted) it meanwhile, so re-read before retrying.
+ */
 export interface TaskPatch {
   title?: string;
   description?: string;
@@ -376,9 +415,10 @@ export interface TaskPatch {
   due?: string | null;
   /**
    * **Replaces** the whole set, like `attachments` — a present array is exactly who ends up on the
-   * task. Omit to leave the assignees alone; `[]` or `null` unassigns everyone.
+   * task. Omit to leave the assignees alone. `[]` and `null` are refused: a task keeps at least one
+   * person on it (`assignment::require_someone`), and at most 10.
    */
-  assignee_ids?: string[] | null;
+  assignee_ids?: string[];
   priority?: string;
   estimate_hours?: number | null;
   /** A present array REPLACES the whole attachment set; omit to leave it unchanged. */
@@ -431,6 +471,41 @@ export async function removeMember(projectId: string, userId: string): Promise<v
   );
 }
 
+/** Membership writes in flight at once — writes are never retried, so a throttled one is lost. */
+const MEMBER_WRITE_FANOUT = 3;
+
+/**
+ * Add several people to a project, a few at a time. Resolves to how many writes failed, and whether
+ * the caller was refused outright (`denied`) — then the rest are not sent, since each would be
+ * refused too. Never rejects: the caller decides what a shortfall means.
+ *
+ * Callers used to fire every add at once and discard the failures, so "Select all" on a big org sent
+ * a hundred simultaneous writes and reported success over whichever were throttled (QA audit
+ * 2026-10-08, WP-311).
+ */
+export async function addMembers(
+  projectId: string,
+  writes: { userId: string; role: "lead" | "member" }[],
+): Promise<{ failed: number; denied: boolean }> {
+  if (writes.length === 0) return { failed: 0, denied: false };
+  const add = (w: { userId: string; role: "lead" | "member" }) =>
+    addMember(projectId, w.userId, w.role).then(
+      () => ({ ok: true as const }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+  // One first, alone: someone who may not manage the team (a creator who named another manager, for
+  // one) is refused every add, and finding that out once beats a burst of refusals.
+  const first = await add(writes[0]);
+  if (!first.ok && first.error instanceof ApiError && first.error.status === 403) {
+    return { failed: writes.length, denied: true };
+  }
+  const rest = await mapWithConcurrency(writes.slice(1), MEMBER_WRITE_FANOUT, add);
+  return {
+    failed: [first, ...rest].filter((r) => !r.ok).length,
+    denied: false,
+  };
+}
+
 /**
  * `project_id` → name, for joining onto rows that carry only ids (timesheet entries, tasks).
  *
@@ -443,33 +518,88 @@ export async function projectNameMap(): Promise<Map<string, string>> {
   return new Map(projects.map((p) => [p.id, p.name]));
 }
 
-/**
- * `user_id → UserMini` for every person in the org — the option list behind the project's lead,
- * manager and member pickers, and the join that turns an assignee id into a name.
- *
- * Reads the directory through the **employees** module service (`listAllEmployees`), which walks
- * every department partition. Both project hooks used to call a bare `GET /v1/employees` directly:
- * that endpoint truncates to `limit` alphabetically with **no cursor and no signal** (see the
- * warning on `listEmployees`), so a picker built from it silently could not offer anyone past the
- * first page — a member you cannot select reads as a broken form, not a short list.
- *
- * Best-effort by contract: callers fall back to `{}` and render ids, never an error.
- */
-export async function directoryUserMap(): Promise<Record<string, UserMini>> {
-  const people = await listAllEmployees();
-  const map: Record<string, UserMini> = {};
-  for (const e of people) {
-    map[e.user_id] = { id: e.user_id, name: e.name, jobTitle: e.title ?? "" };
-  }
-  return map;
+/** What the project forms can offer from the org directory. */
+export interface ProjectDirectory {
+  /** `user_id → UserMini` for every person in the org. */
+  people: Record<string, UserMini>;
+  /** The org's department names, for the Department picker; `null` when they couldn't be read. */
+  departments: string[] | null;
 }
 
 /**
- * `POST /v1/projects/{id}/tasks/{taskId}/review` — rate a finished task and close it.
+ * The org directory as the project forms use it — the option list behind the lead, manager and
+ * member pickers, the join that turns an assignee id into a name, and the Department picker's
+ * options (one walk serves all three: the roster read lists the departments on the way).
+ *
+ * Reads through the **employees** module service (`readRoster`), which walks every department
+ * partition. Both project hooks used to call a bare `GET /v1/employees` directly: that endpoint
+ * truncates to `limit` alphabetically with **no cursor and no signal** (see the warning on
+ * `listEmployees`), so a picker built from it silently could not offer anyone past the first page —
+ * a member you cannot select reads as a broken form, not a short list.
+ *
+ * Needs `employees:view` (both routes are `EmployeesRead`). **Without it** — an org Employee who
+ * manages a project — it falls back to the projects context's own picker, `GET /v1/projects/people`
+ * (`?project_id=` for an existing project's Manager, bare for someone who may create projects), so
+ * "Add members" is no longer empty for them (WP-308). Only when that is refused too does the caller
+ * get the 403, and the hooks fall back to the names the project itself carries.
+ */
+export async function readProjectDirectory(
+  projectId?: string,
+): Promise<ProjectDirectory> {
+  let roster: Awaited<ReturnType<typeof readRoster>>;
+  try {
+    roster = await readRoster();
+  } catch (e) {
+    if (!(e instanceof ApiError && e.status === 403)) throw e;
+    return readPickerDirectory(projectId);
+  }
+  const people: Record<string, UserMini> = {};
+  for (const e of roster.employees) {
+    people[e.user_id] = {
+      id: e.user_id,
+      name: e.name,
+      jobTitle: e.title ?? "",
+      inactive: e.status === "deactivated" || e.login === "none",
+    };
+  }
+  return {
+    people,
+    departments: roster.departments
+      ? roster.departments.map((d) => d.name).sort((a, b) => a.localeCompare(b))
+      : null,
+  };
+}
+
+/** Mirrors `projects::features::people::PeopleResponse`. */
+interface ApiPickerResponse {
+  people: { user_id: string; name: string; title?: string; inactive: boolean }[];
+  departments: string[];
+}
+
+/** `GET /v1/projects/people[?project_id=]` — the projects-scoped picker (see above). */
+async function readPickerDirectory(projectId?: string): Promise<ProjectDirectory> {
+  const q = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  const res = await apiFetch<ApiPickerResponse>(`/v1/projects/people${q}`);
+  const people: Record<string, UserMini> = {};
+  for (const p of res.people) {
+    people[p.user_id] = {
+      id: p.user_id,
+      name: p.name,
+      jobTitle: p.title ?? "",
+      inactive: p.inactive,
+    };
+  }
+  return { people, departments: res.departments };
+}
+
+/**
+ * `POST /v1/projects/{id}/tasks/{taskId}/review` — rate a task that is **in review** and sign it
+ * off, which moves it to `done` with the rating and the reviewer's name recorded.
  *
  * Only a Manager or Lead on the project may call it (org admins and owners resolve to Manager), and
- * never for their own task. `closed` is reachable **only** this way: PATCHing the status will not
- * set it, because a state meaning "approved" must not be settable by the person seeking approval.
+ * never for their own task; any other status is a 409 `task_not_awaiting_review`. A Manager or Lead
+ * can also drag a card to Done, which records neither — and moving a signed-off task out of Done
+ * clears its review.
  */
 export function reviewTask(
   projectId: string,

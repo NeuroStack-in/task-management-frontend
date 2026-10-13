@@ -21,8 +21,16 @@ import {
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
 interface TeamDatum {
+  /** Department id — the key. Two departments may share a name, or its first word. */
+  id: string;
+  /** The full department name (the axis shortens it; the tooltip shows it whole). */
   team: string;
   score: number;
+}
+
+/** Long names would overlap at this width; the tooltip carries the full one. */
+function shortName(name: string): string {
+  return name.length > 14 ? `${name.slice(0, 13)}…` : name;
 }
 
 /**
@@ -87,6 +95,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
                 tickLine={false}
                 axisLine={false}
                 interval={0}
+                tickFormatter={shortName}
                 tick={{ fontSize: 9, fill: "var(--muted-foreground)" }}
               />
               <YAxis
@@ -119,7 +128,7 @@ export function TeamComparisonChart({ data }: { data: TeamDatum[] }) {
               >
                 {data.map((d) => (
                   <Cell
-                    key={d.team}
+                    key={d.id}
                     fill={
                       d.score === top
                         ? "var(--chart-1)"

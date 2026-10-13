@@ -5,11 +5,14 @@ import { ArrowRight, Check, Minus } from "lucide-react";
 import { MarketingNav } from "@/modules/marketing/marketing-nav";
 import { MarketingFooter } from "@/modules/marketing/marketing-footer";
 import { Reveal } from "@/modules/marketing/reveal";
+import { membersLabel, tierOf } from "@/modules/billing/lib/plans";
 
 export const metadata: Metadata = {
-  title: "Pricing — WorkPulse",
+  // The root layout's template appends "· WorkPulse"; "Pricing — WorkPulse" came out with the
+  // brand twice (QA audit 2026-10-08, WP-379).
+  title: "Pricing",
   description:
-    "Simple, per-seat pricing. Start free, or trial Starter and Enterprise for 14 days — no card required.",
+    "Simple, per-seat pricing — and every plan is free while WorkPulse is in beta. No card required.",
 };
 
 /**
@@ -24,52 +27,54 @@ export const metadata: Metadata = {
 const PLANS = [
   {
     name: "Free",
-    price: "$0",
+    price: `$${tierOf("free").pricePerSeat}`,
     unit: "forever",
     tagline: "For individuals and very small teams getting started.",
-    features: ["Core time tracking & timesheets", "Up to 5 members", "1 active project", "7-day activity history", "Community support"],
+    features: ["Time tracking, timesheets & attendance", "Leave, approvals & projects", "Basic reports", membersLabel("free")],
     cta: "Get started free",
     featured: false,
   },
   {
     name: "Starter",
-    price: "$12",
+    price: `$${tierOf("starter").pricePerSeat}`,
     unit: "/ user / mo",
     tagline: "For growing teams that need real insight.",
-    features: ["Everything in Free", "Activity & productivity analytics", "Unlimited projects & tasks", "Reports, dashboards & exports", "Attendance & payroll", "Priority support"],
-    cta: "Start free trial",
+    features: ["Everything in Free", "Activity & productivity analytics", "App & website usage", "Slack & Google Calendar integrations", membersLabel("starter")],
+    cta: "Choose Starter",
     featured: false,
   },
   {
     name: "Enterprise",
-    price: "$22",
+    price: `$${tierOf("enterprise").pricePerSeat}`,
     unit: "/ user / mo",
     tagline: "For organizations operating at scale.",
-    features: ["Everything in Starter", "AI anomaly & burnout detection", "Audit logs, DPA & data residency", "Advanced security & roles", "Custom contracts & premier SLA", "Dedicated success manager"],
-    cta: "Start free trial",
+    features: ["Everything in Starter", "Screenshot review", "AI insights, assistant & PDF reports", "Anomaly detection", membersLabel("enterprise")],
+    cta: "Choose Enterprise",
     featured: true,
   },
 ];
 
+// What the server's plan catalog (`Plan::allowed`) actually enables — nothing here may be sold
+// that a plan cannot switch on.
 const COMPARISON: { label: string; values: [string | boolean, string | boolean, string | boolean] }[] = [
   { label: "Time tracking & timesheets", values: [true, true, true] },
-  { label: "Members", values: ["Up to 5", "Unlimited", "Unlimited"] },
-  { label: "Active projects", values: ["1", "Unlimited", "Unlimited"] },
+  { label: "Members", values: [membersLabel("free"), membersLabel("starter"), membersLabel("enterprise")] },
+  { label: "Attendance, leave & projects", values: [true, true, true] },
   { label: "Activity & productivity analytics", values: [false, true, true] },
-  { label: "Screenshots & app/URL usage", values: [false, true, true] },
-  { label: "Attendance & payroll", values: [false, true, true] },
-  { label: "Reports & exports", values: ["Basic", true, true] },
-  { label: "AI insights & anomaly detection", values: [false, false, true] },
+  { label: "App & website usage", values: [false, true, true] },
+  { label: "Integrations (Slack, Google Calendar)", values: [false, true, true] },
+  { label: "Screenshot review", values: [false, false, true] },
+  { label: "Reports", values: ["Basic", "Basic", "Basic + AI PDF"] },
+  { label: "AI insights, assistant & anomaly detection", values: [false, false, true] },
   { label: "Google sign-in", values: [true, true, true] },
-  { label: "Audit logs, DPA & data residency", values: [false, false, true] },
-  { label: "Support", values: ["Community", "Priority", "Dedicated CSM"] },
+  { label: "Audit log & custom roles", values: [true, true, true] },
 ];
 
 const FAQS = [
-  { q: "How does per-seat billing work?", a: "You're billed per active user per month. Suspended and uninvited users don't count. Annual billing saves ~17% over monthly." },
-  { q: "Is there really a free plan?", a: "Yes — Free is free forever for up to 5 members. Starter and Enterprise include a 14-day free trial with no card required." },
-  { q: "Can I change plans later?", a: "Upgrade or downgrade anytime. Upgrades are prorated immediately; downgrades take effect at the next cycle." },
-  { q: "Do you offer enterprise terms?", a: "Enterprise includes audit logs, data residency, advanced roles, and a signed DPA. Talk to sales for volume and procurement." },
+  { q: "How does per-seat billing work?", a: "Prices are per active member per month; annual billing saves about 17%. While WorkPulse is in beta every plan is free — nothing is billed." },
+  { q: "Is there really a free plan?", a: "Yes — Free stays free for up to 5 members. During the beta, Starter and Enterprise are free too, with no card required." },
+  { q: "Can I change plans later?", a: "Yes, any time, from Settings → Billing. A plan can't be changed to one with fewer seats than you already use." },
+  { q: "What does Enterprise add?", a: "Screenshot review, AI insights and the assistant, PDF reports and anomaly detection, for up to 1,000 members. Talk to us about anything larger." },
 ];
 
 function Cell({ v }: { v: string | boolean }) {
@@ -147,8 +152,13 @@ export default function PricingPage() {
             <h2 className="m-display text-center text-3xl font-semibold sm:text-4xl">Compare plans</h2>
           </Reveal>
           <Reveal>
+            {/* The border clips the corners; the inner box scrolls sideways. Four columns need more
+                than a phone's width, and with `overflow-hidden` alone (inside a page that hides
+                horizontal overflow) the Enterprise column was cut off with no way to reach it
+                (QA audit 2026-10-08, WP-545). */}
             <div className="mt-10 overflow-hidden rounded-2xl border" style={{ borderColor: "var(--m-border)" }}>
-              <table className="w-full text-left">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[36rem] text-left">
                 <thead>
                   <tr style={{ background: "var(--m-surface)" }}>
                     <th className="p-4 text-sm font-semibold">Capability</th>
@@ -171,6 +181,7 @@ export default function PricingPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </Reveal>
         </div>
@@ -207,7 +218,8 @@ export default function PricingPage() {
               <Link href="/register" className="m-btn m-btn-primary">
                 Get started <ArrowRight className="size-4" />
               </Link>
-              <Link href="/login" className="m-btn m-btn-ghost">Talk to sales</Link>
+              {/* "Talk to sales" was here and went to the sign-in form — there is no sales contact
+                  to send anyone to yet (QA audit 2026-10-08, WP-541). */}
             </div>
           </div>
         </Reveal>

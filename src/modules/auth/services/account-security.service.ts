@@ -9,7 +9,11 @@
  * the tokens if needed). A missing/expired session rejects with `SessionExpiredError` so the UI can
  * prompt a re-login instead of surfacing a raw Cognito error.
  */
-import type { CognitoUser, CognitoUserSession } from "amazon-cognito-identity-js";
+import {
+  AuthenticationDetails,
+  type CognitoUser,
+  type CognitoUserSession,
+} from "amazon-cognito-identity-js";
 import { claimsOf, userPool } from "@/lib/cognito";
 
 /** Nobody signed in (or the refresh token died) — the UI should route back to /login. */
@@ -35,7 +39,18 @@ function signedInUser(): Promise<{ user: CognitoUser; session: CognitoUserSessio
     const user = userPool().getCurrentUser();
     if (!user) return reject(new SessionExpiredError());
     user.getSession((err: Error | null, session: CognitoUserSession | null) => {
-      if (err || !session?.isValid()) return reject(new SessionExpiredError());
+      if (err) {
+        // Only Cognito saying the login is no longer valid means "signed out". A network failure or
+        // a throttle while refreshing the token is transient — calling that "session expired" sent
+        // people to sign in for nothing (WP-095), so it surfaces as the error it is.
+        const code = (err as { code?: string }).code ?? err.name;
+        return reject(
+          code === "NotAuthorizedException" || code === "UserNotFoundException"
+            ? new SessionExpiredError()
+            : err,
+        );
+      }
+      if (!session?.isValid()) return reject(new SessionExpiredError());
       resolve({ user, session });
     });
   });
@@ -95,8 +110,13 @@ export async function confirmTotpEnrollment(code: string): Promise<void> {
       onSuccess: () => resolve(),
       onFailure: (err: CognitoError) => {
         // EnableSoftwareTokenMFAException = wrong/expired code (Cognito's CodeMismatch for TOTP).
-        if (err?.code === "EnableSoftwareTokenMFAException" || err?.code === "CodeMismatchException")
-          return reject(new Error("That code didn't match. Check your app and try again."));
+        if (
+          err?.code === "EnableSoftwareTokenMFAException" ||
+          err?.code === "CodeMismatchException"
+        )
+          return reject(
+            new Error("That code didn't match. Check your app and try again."),
+          );
         reject(new Error("Couldn't verify the code. Try again."));
       },
     });
@@ -104,10 +124,66 @@ export async function confirmTotpEnrollment(code: string): Promise<void> {
   await setTotpPreference(user, true);
 }
 
-/** Turn TOTP MFA off for the signed-in user. */
+/** Turn TOTP MFA off for the signed-in user. Call {@link reauthenticate} first (WP-393). */
 export async function disableTotp(): Promise<void> {
   const { user } = await signedInUser();
   await setTotpPreference(user, false);
+}
+
+/**
+ * **Step-up re-authentication**: sign in again with the account's password and answer the
+ * authenticator challenge with the current code, before something that weakens the account — turning
+ * MFA off (QA audit 2026-10-08, WP-393; owner decision 2026-10-09: password + current code).
+ *
+ * "Turn off" was one click, so anyone at an unlocked laptop could remove the second factor. This
+ * proves the person both knows the password and holds the device. On success Cognito issues fresh
+ * tokens for the same user, which become this browser's session.
+ */
+export async function reauthenticate(password: string, code: string): Promise<void> {
+  const { user } = await signedInUser();
+  const details = new AuthenticationDetails({
+    Username: user.getUsername(),
+    Password: password,
+  });
+  await new Promise<void>((resolve, reject) => {
+    const fail = (err: CognitoError) => reject(new Error(stepUpMessage(err)));
+    user.authenticateUser(details, {
+      onSuccess: () => resolve(),
+      onFailure: fail,
+      // The account has an authenticator: answer the challenge with the code typed alongside.
+      totpRequired: () =>
+        user.sendMFACode(
+          code.trim(),
+          { onSuccess: () => resolve(), onFailure: fail },
+          "SOFTWARE_TOKEN_MFA",
+        ),
+      mfaRequired: () =>
+        user.sendMFACode(code.trim(), { onSuccess: () => resolve(), onFailure: fail }),
+      newPasswordRequired: () =>
+        reject(
+          new Error("Your password must be changed first. Sign out and sign in again."),
+        ),
+    });
+  });
+}
+
+/** Cognito's step-up failures, in plain language. */
+function stepUpMessage(err: CognitoError): string {
+  switch (err?.code) {
+    case "NotAuthorizedException":
+      return "That password isn't right.";
+    case "CodeMismatchException":
+    case "EnableSoftwareTokenMFAException":
+      return "That code isn't right. Check your authenticator app and try again.";
+    case "ExpiredCodeException":
+      return "That code has expired. Use the current one from your app.";
+    case "TooManyRequestsException":
+    case "LimitExceededException":
+    case "TooManyFailedAttemptsException":
+      return "Too many attempts. Wait a few minutes and try again.";
+    default:
+      return "Couldn't confirm it's you. Try again.";
+  }
 }
 
 function setTotpPreference(user: CognitoUser, enabled: boolean): Promise<void> {
@@ -119,35 +195,13 @@ function setTotpPreference(user: CognitoUser, enabled: boolean): Promise<void> {
         if (err)
           return reject(
             new Error(
-              enabled ? "Verified, but enabling MFA failed. Try again." : "Couldn't turn off MFA. Try again.",
+              enabled
+                ? "Verified, but enabling MFA failed. Try again."
+                : "Couldn't turn off MFA. Try again.",
             ),
           );
         resolve();
       },
     );
-  });
-}
-
-/* ----------------------------- Password change ----------------------------- */
-
-/**
- * Change the signed-in user's password (`changePassword` on the current session).
- * The new password must already satisfy the pool policy (`lib/password.ts`) —
- * validate before calling so users get a specific message, not Cognito's generic one.
- */
-export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {
-  const { user } = await signedInUser();
-  await new Promise<void>((resolve, reject) => {
-    user.changePassword(oldPassword, newPassword, (err) => {
-      if (!err) return resolve();
-      const code = (err as CognitoError).code ?? "";
-      if (code === "NotAuthorizedException")
-        return reject(new Error("Your current password is incorrect."));
-      if (code === "LimitExceededException")
-        return reject(new Error("Too many attempts. Wait a bit, then try again."));
-      if (code === "InvalidPasswordException")
-        return reject(new Error("The new password doesn't meet the password policy."));
-      reject(new Error("Couldn't update your password. Try again."));
-    });
   });
 }

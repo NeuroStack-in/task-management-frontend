@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { Logo } from "@/modules/marketing/logo";
 import { ClockBackdrop } from "@/modules/marketing/clock-backdrop";
+import { PASSWORD_MIN } from "@/lib/password";
 
 export interface AuthFeature {
   icon: LucideIcon;
@@ -94,8 +95,10 @@ export function AuthFrame({
           requires consistent placement, it does not require offering help at all — so removing the
           row outright is conformant, whereas keeping it on some auth screens and not others would
           not be. If a help link returns, it must go back on **all six** auth screens in this same
-          position. The Terms and Privacy wording still appears where it legally matters: beside the
-          consent checkbox on the sign-up step.
+          position. The legal documents now exist, as drafts at `/legal/*` (WP-115), and sign-up links
+          Terms and Privacy from its consent box on the last step. A legal-links row here would be a
+          separate decision: like help, it would belong on all six screens, and the height budget in
+          auth.css would have to absorb it.
         */}
       </main>
 
@@ -316,7 +319,13 @@ export function AuthField({
           Error: {error}
         </p>
       ) : null}
-      <div className="m-afield__wrap">
+      {/* A custom control (phone, date, select) can't take the input's `aria-invalid`, so the wrap
+          carries it and auth.css paints the control's border — otherwise those fields failed with
+          no visible mark at all (QA audit 2026-10-08, WP-030). */}
+      <div
+        className="m-afield__wrap"
+        {...(control && error ? { "data-invalid": "true" } : {})}
+      >
         {control ?? (
         <input
           id={id}
@@ -414,15 +423,16 @@ export function AuthPasswordField({
  * The Cognito user pool's actual password policy (`auth_stack.py`), mirrored so the form rejects
  * what the pool would reject rather than letting someone discover it three steps later.
  *
- * ⚠️ These are **not** invented house rules. The pool is configured `min_length: 12`,
- * `require_lowercase`, `require_uppercase`, `require_digits`, `require_symbols: false`. The backend's
- * own `create_org` validator only checks length ≥ 8, so a short lowercase password passes both this
- * app's old check and the server's, and is then refused by Cognito at the final step with a message
- * the user never sees in context. Keep this list and the pool in step; changing the pool needs a
- * deploy, so if it moves, this moves with it.
+ * The length comes from `lib/password.ts` — the one place the policy lives. This list said 12
+ * while the pool, invite acceptance and password reset all use 8 (product decision 2026-07-22), so
+ * `Passw0rd9` was refused at sign-up and accepted everywhere else (QA audit 2026-10-08, WP-108).
  */
 export const PASSWORD_RULES: { id: string; label: string; test: (v: string) => boolean }[] = [
-  { id: "len", label: "At least 12 characters", test: (v) => v.length >= 12 },
+  {
+    id: "len",
+    label: `At least ${PASSWORD_MIN} characters`,
+    test: (v) => v.length >= PASSWORD_MIN,
+  },
   { id: "upper", label: "One uppercase letter", test: (v) => /[A-Z]/.test(v) },
   { id: "lower", label: "One lowercase letter", test: (v) => /[a-z]/.test(v) },
   { id: "digit", label: "One number", test: (v) => /\d/.test(v) },

@@ -18,8 +18,11 @@ import { PageHeader } from "@/components/shared/page-header";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { Button } from "@/components/ui/button";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
+import { usePermissions } from "@/hooks/use-permissions";
+import { useTrackingMode } from "@/hooks/use-features";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
-import { TODAY } from "../lib/calendar";
+import { today } from "../lib/calendar";
+import { isoOfDay, useToday } from "../use-today";
 import { useMonthAttendance } from "../use-month-attendance";
 import {
   useOversightAttendance,
@@ -34,23 +37,36 @@ import { UpcomingLeave } from "./upcoming-leave";
 import { PeopleAttentionCard } from "@/modules/insights/components/people-attention";
 
 export function AttendanceView() {
-  const selfScoped = useIsSelfScoped();
+  // The roster reads `GET /v1/attendance/day` (`AttendanceReadTeam`/`Org` → `attendance:manage`),
+  // not the directory bit the old shared rule keyed on (QA audit 2026-10-08, WP-322).
+  const selfScoped = useIsSelfScoped(["attendance:manage"]);
   if (selfScoped) return <PersonalAttendanceView />;
   return <OversightAttendance />;
 }
 
 function OversightAttendance() {
+  const { can } = usePermissions();
   // Shared filter: a Today/Week/Month/Custom range (or a specific "day") + a department.
   const [range, setRange] = useState<AttendanceRange>("today");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [dept, setDept] = useState("all");
-  // The selected day drives the "day" range and the calendar's month.
-  const [date, setDate] = useState<AttendanceDate>({ ...TODAY });
+  // The real today, re-read at midnight (QA audit 2026-10-08, WP-258).
+  const now = useToday();
+  // The picked day drives the "day" range and the calendar's month. On Today the date *is* today,
+  // so it follows the clock past midnight instead of keeping the day the page was opened on.
+  const [picked, setPicked] = useState<AttendanceDate>(today);
+  const date = range === "today" ? now : picked;
 
-  // Selecting a day (picker or calendar) shows that specific date.
+  // Selecting a day (picker or calendar) shows that specific date — except today itself, which is
+  // the live Today view. As a "day" it has no closed record by construction, so picking it used to
+  // swap the live roster for "No records" (QA audit 2026-10-08, WP-255).
   const selectDay = (d: AttendanceDate) => {
-    setDate(d);
+    if (isoOfDay(d) === isoOfDay(now)) {
+      setRange("today");
+      return;
+    }
+    setPicked(d);
     setRange("day");
   };
 
@@ -60,10 +76,11 @@ function OversightAttendance() {
    * `selectDay` already did. The range buttons were wired straight to `setRange`, so pressing
    * **Today** refetched the data — the hook reads `range` — while `date` stayed on whatever day was
    * last picked. The chart showed today; the date picker, the heading and the calendar highlight
-   * (all driven by `date`) still showed the old day, with nothing to say which was current.
+   * (all driven by `date`) still showed the old day, with nothing to say which was current. Leaving
+   * Today starts the next range from today too.
    */
   const changeRange = (r: AttendanceRange) => {
-    if (r === "today") setDate({ ...TODAY });
+    if (r === "today" || range === "today") setPicked({ ...now });
     setRange(r);
   };
 
@@ -72,19 +89,39 @@ function OversightAttendance() {
 
   // A separate always-"today" read for the header — so the live headline stays live even while the
   // body shows a past range. `dept` is honoured so the headline tracks the department filter.
-  const live = useOversightAttendance({
+  // While the body is itself on Today the two are the same query, so the body's answers the header
+  // and this one stays switched off (it doubled every request on load; WP-272).
+  const onToday = range === "today";
+  const liveSeparate = useOversightAttendance({
     range: "today",
     dept,
     date,
     start: "",
     end: "",
+    enabled: !onToday,
   });
+  const live = onToday ? data : liveSeparate;
   const livePct = live.counts.total
     ? Math.round((live.counts.present / live.counts.total) * 100)
     : 0;
+  // Never a percentage the page doesn't have: a failed read said "0% of the team clocked in"
+  // (QA audit 2026-10-08, WP-113), and a weekend said 0 % with everyone absent (WP-254).
+  const liveDescription = live.loading
+    ? "Today · presence loading…"
+    : live.error
+      ? "Today · presence unavailable"
+      : live.todayOff
+        ? `Today · not a working day${
+            live.counts.present > 0 ? ` — ${live.counts.present} clocked in` : ""
+          }`
+        : live.counts.total === 0
+          ? "Today · nobody is expected at work"
+          : `Today · ${livePct}% of the team clocked in`;
 
-  // The calendar shows the selected date's month, fed by the real month fan-out.
-  const month = useMonthAttendance(date.year, date.month);
+  // The calendar shows the selected date's month, fed by the real month fan-out — fetched only while
+  // the (collapsed-by-default) calendar is open.
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const month = useMonthAttendance(date.year, date.month, calendarOpen);
 
   // Org holidays, to flag when the day being inspected is a non-working holiday.
   const holidays = useOrgHolidays();
@@ -97,26 +134,37 @@ function OversightAttendance() {
     facts: [
       { label: "Range", value: range === "custom" ? `${start} to ${end}` : range },
       ...(dept !== "all" ? [{ label: "Department filter", value: dept }] : []),
-      { label: "Present", value: String(data.counts.present) },
-      { label: "On leave", value: String(data.counts.leave) },
-      { label: "Team size", value: String(data.counts.total) },
+      // A failed read is not a set of zeros (WP-113).
+      ...(data.error
+        ? [{ label: "Attendance", value: "couldn't be loaded" }]
+        : [
+            { label: "Present", value: String(data.counts.present) },
+            { label: "On leave", value: String(data.counts.leave) },
+            // Expected people only — a day off and an unread day are not in it (WP-253/WP-254).
+            { label: "Counted toward the rate", value: String(data.counts.total) },
+          ]),
     ],
   });
+
+  // Correcting a closed day (the admin day-override): `attendance:edit` holders, in an org whose
+  // people can't file leave themselves — managed agents. A project-mode org keeps the leave
+  // workflow and the server refuses it there (QA audit 2026-10-08, WP-380).
+  const trackingMode = useTrackingMode();
+  const correction =
+    range === "day" && data.mode === "day" && can("attendance:edit") && trackingMode !== "project"
+      ? { date: iso, onSaved: data.reload }
+      : null;
 
   return (
     <div className="space-y-5 pt-1">
       <PageHeader
         title="Attendance"
-        description={
-          live.loading
-            ? "Today · presence loading…"
-            : `Today · ${livePct}% of the team clocked in`
-        }
+        description={liveDescription}
         actions={
           <RefreshButton
             onRefresh={() => {
               data.reload();
-              live.reload();
+              if (!onToday) liveSeparate.reload();
               month.reload();
             }}
             refreshing={data.loading || live.loading || month.loading}
@@ -145,6 +193,7 @@ function OversightAttendance() {
           benchmarkRate={data.benchmarkRate}
           label={data.label}
           loading={data.loading}
+          error={data.error}
           note={data.note}
         />
       </div>
@@ -163,6 +212,10 @@ function OversightAttendance() {
         onSelect={selectDay}
         days={month.days}
         loading={month.loading}
+        open={calendarOpen}
+        onOpenChange={setCalendarOpen}
+        summarize={data.summarizeDay}
+        deptLabel={dept === "all" ? null : dept}
       />
 
       {/* When the inspected day is an org holiday, say so above the roster — the backend marks the
@@ -184,12 +237,15 @@ function OversightAttendance() {
         error={data.error}
         label={data.label}
         note={data.note}
+        correction={correction}
       />
 
       {/* After the roster, before "who do I chase": the roster answers who is out today, this
           answers who will be. Collapsed by default so it costs no request until asked for — it
-          reads the approvals queue, which the day's view does not otherwise need. */}
-      <UpcomingLeave />
+          reads the approvals queue, which the day's view does not otherwise need. That queue needs
+          the approver's permission, so it is offered only to approvers: anyone else could only
+          ever open it to "Couldn't load upcoming leave" (QA audit 2026-10-08, WP-474). */}
+      {can("approvals:view") ? <UpcomingLeave /> : null}
 
       {/* Last on the page, deliberately. It is the follow-up *after* reading the day — the numbers,
           then the calendar, then the roster, and only then "who do I chase". Above the roster it

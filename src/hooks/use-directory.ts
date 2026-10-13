@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listEmployees, type ApiEmployee } from "@/modules/employees/services/employees.service";
+import {
+  listAllEmployees,
+  type ApiEmployee,
+} from "@/modules/employees/services/employees.service";
 
 /**
  * Shared, cached access to the real employee directory (`GET /v1/employees`, the `workforce`
@@ -16,12 +19,20 @@ import { listEmployees, type ApiEmployee } from "@/modules/employees/services/em
 let cache: ApiEmployee[] | null = null;
 let inflight: Promise<ApiEmployee[]> | null = null;
 
+/** Bumped by `invalidateDirectory`, so a read that started before it cannot repopulate the cache. */
+let generation = 0;
+
 function load(): Promise<ApiEmployee[]> {
   if (cache) return Promise.resolve(cache);
   if (!inflight) {
-    inflight = listEmployees()
+    const gen = generation;
+    // **Every** department partition. This was the bare `listEmployees()` — the call its own JSDoc
+    // forbids — which returns the first 50 people and no cursor, so ten screens built rosters missing
+    // everyone past the 50th: no enrolment code for "Zoe", devices "outside your directory", short
+    // role counts (QA audit 2026-10-08, WP-020).
+    inflight = listAllEmployees()
       .then((rows) => {
-        cache = rows;
+        if (gen === generation) cache = rows;
         return rows;
       })
       .catch((e) => {
@@ -56,6 +67,11 @@ export interface DirectoryData {
  */
 export function invalidateDirectory(): void {
   cache = null;
+  // Drop the settled (or in-flight) read too. Clearing only `cache` left `inflight` holding the old
+  // resolved promise, so every later `load()` handed back the same stale rows for the life of the
+  // tab — a role change never showed (WP-021).
+  inflight = null;
+  generation += 1;
 }
 
 export function useDirectory(enabled = true, version = 0): DirectoryData {
@@ -68,10 +84,12 @@ export function useDirectory(enabled = true, version = 0): DirectoryData {
     if (cache) {
       setEmployees(cache);
       setLoading(false);
+      setError(false);
       return;
     }
     let live = true;
     setLoading(true);
+    setError(false);
     load()
       .then((rows) => {
         if (!live) return;

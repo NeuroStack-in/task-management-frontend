@@ -121,15 +121,26 @@ async function section<T>(label: string, run: () => Promise<T>): Promise<Section
 
 const dayMs = 86_400_000;
 const parse = (iso: string) => new Date(`${iso}T00:00:00`).getTime();
-const shift = (iso: string, days: number) => isoDay(new Date(parse(iso) + days * dayMs));
+
+/**
+ * `iso` moved by `days` **calendar** days. It was "local midnight + 24 h", which on the day clocks go
+ * back is still that day: `chunks` then never got past it — on that day itself the PDF's loop never
+ * ended and the tab froze, and otherwise the day was fetched twice and its app time counted twice
+ * (QA audit 2026-10-08, WP-226). `new Date(y, m, d + n)` keeps the local calendar date.
+ */
+const shift = (iso: string, days: number) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return isoDay(new Date(y, m - 1, d + days));
+};
 
 /** Split `[from, to]` into inclusive windows of at most `size` days, oldest first. */
 export function chunks(from: string, to: string, size: number): { from: string; to: string }[] {
   const out: { from: string; to: string }[] = [];
   let cursor = from;
-  while (parse(cursor) <= parse(to)) {
+  // `YYYY-MM-DD` strings order as their dates do — no clock, so no clock change, involved.
+  while (cursor <= to) {
     const end = shift(cursor, size - 1);
-    const clamped = parse(end) > parse(to) ? to : end;
+    const clamped = end > to ? to : end;
     out.push({ from: cursor, to: clamped });
     cursor = shift(clamped, 1);
   }

@@ -18,6 +18,7 @@ import {
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
+import { refreshEntitlements } from "@/hooks/use-features";
 import { PLAN_TIERS, type PlanTier } from "@/modules/billing/lib/plans";
 import { formatCurrency } from "@/lib/currency";
 import { changePlan } from "@/modules/billing/services/billing.service";
@@ -50,14 +51,23 @@ export function BillingSettings() {
     if (!pendingTier) return;
     setChanging(true);
     try {
-      await changePlan({ plan: pendingTier.id });
-      toast.success(`You're on the ${pendingTier.name} plan.`, {
-        description: "Feature entitlements update within a few moments.",
-      });
+      const target = pendingTier;
+      await changePlan({ plan: target.id });
+      toast.success(`You're on the ${target.name} plan.`);
       setPendingTier(null);
-      // Re-fetch so the new plan and seat cap render. The server reconciles entitlements
-      // asynchronously from `billing.plan_changed`, so they may lag this by a moment.
+      // Re-fetch so the new plan and seat cap render.
       reload();
+      // …and the shared entitlements the sidebar, route guard and upgrade walls read. They were
+      // hydrated once per page load and never again, so the app kept gating on the old plan until
+      // a hard reload (QA audit 2026-10-08, WP-335). The server applies the plan to entitlements
+      // asynchronously (`billing.plan_changed`), so this waits for it to land.
+      void refreshEntitlements(target.id).then((synced) => {
+        if (!synced) {
+          toast.info("Your new plan is still being applied.", {
+            description: "Reload in a minute if a section still looks out of date.",
+          });
+        }
+      });
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
         toast.error("You don't have permission to change the plan.");
@@ -214,18 +224,20 @@ export function BillingSettings() {
             </div>
           </section>
 
-          {/* Cancellation */}
+          {/* Cancellation — there is no billing period to run out (nothing is charged yet), so the
+              copy says what is true: self-serve cancellation isn't available (WP-526). */}
           <section className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold">Cancel plan</p>
               <p className="text-muted-foreground text-xs">
-                Your plan stays active until the end of the billing period.
+                Self-serve cancellation isn&apos;t available yet. Contact support to cancel.
               </p>
             </div>
             <Button
               variant="outline"
               size="sm"
               className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+              disabled={!canManage}
               onClick={() =>
                 toast.info("Self-serve cancellation isn't enabled yet.", {
                   description: "Contact support to change your plan.",
@@ -250,6 +262,7 @@ export function BillingSettings() {
                 ? `, up to ${pendingTier.seatCap.toLocaleString()} seats`
                 : ", unlimited seats"}
               ). The change takes effect immediately and adjusts which features your plan allows.
+              Nothing is charged — payments aren&apos;t enabled yet.
             </DialogDescription>
           </DialogHeader>
           {overCapAfter ? (

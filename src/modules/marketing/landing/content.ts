@@ -53,6 +53,7 @@ import {
   productHref,
   type NavLink,
 } from "@/modules/marketing/products";
+import { membersLabel, tierOf } from "@/modules/billing/lib/plans";
 
 export type VisualKind = "pulse" | "time" | "insight" | "board" | "ai";
 
@@ -64,7 +65,10 @@ export interface Word {
 export const HERO_LINES: Word[][] = [
   [{ w: "Run" }, { w: "your" }, { w: "whole" }],
   [{ w: "workforce" }, { w: "on" }, { w: "one" }],
-  [{ w: "calm", em: true }, { w: "pulse.", em: true }],
+  [
+    { w: "calm", em: true },
+    { w: "pulse.", em: true },
+  ],
 ];
 export const HERO_LEAD = "Time, attendance, projects and people — in one calm place.";
 export const HERO_SUB =
@@ -187,7 +191,11 @@ export const ROLES: Role[] = [
     icon: HeartPulse,
     headline: "The whole organization, in one glance.",
     body: "One dashboard across headcount, projects and plan usage, with a daily AI summary of what moved since yesterday.",
-    points: ["Org dashboard & headcount", "Daily AI summary", "Plan, seats & feature control"],
+    points: [
+      "Org dashboard & headcount",
+      "Daily AI summary",
+      "Plan, seats & feature control",
+    ],
     visual: "ai",
   },
   {
@@ -196,7 +204,11 @@ export const ROLES: Role[] = [
     icon: FolderKanban,
     headline: "Assign the work, see who's actually in.",
     body: "Keep boards moving and approve leave in a couple of clicks, with the team's attendance in the same view.",
-    points: ["Kanban projects & tasks", "Team attendance calendar", "Leave approvals, single or bulk"],
+    points: [
+      "Kanban projects & tasks",
+      "Team attendance calendar",
+      "Leave approvals, single or bulk",
+    ],
     visual: "board",
   },
   {
@@ -205,7 +217,11 @@ export const ROLES: Role[] = [
     icon: Users,
     headline: "Attendance & leave, minus the spreadsheets.",
     body: "Attendance, leave balances, requests and approvals in one place — with a clean audit trail behind every change.",
-    points: ["Attendance & leave balances", "Directory, teams & departments", "Invites & onboarding"],
+    points: [
+      "Attendance & leave balances",
+      "Directory, teams & departments",
+      "Invites & onboarding",
+    ],
     visual: "time",
   },
   {
@@ -214,7 +230,11 @@ export const ROLES: Role[] = [
     icon: Wallet,
     headline: "Compensation, deductions and pay runs.",
     body: "Set compensation per person, define deductions once, and generate a pay run whose totals you can trace back to their inputs.",
-    points: ["Compensation & deductions", "Pay runs with traceable totals", "Plan, seats & billing"],
+    points: [
+      "Compensation & deductions",
+      "Pay runs with traceable totals",
+      "Plan, seats & billing",
+    ],
     visual: "time",
   },
   {
@@ -223,7 +243,11 @@ export const ROLES: Role[] = [
     icon: ShieldCheck,
     headline: "Governed, isolated, and auditable.",
     body: "Role-based access down to 44 permissions, MFA on every password sign-in, and an audit trail behind every change — with monitoring that is consent-first by design.",
-    points: ["RBAC & custom roles", "MFA & session visibility", "Audit log & device fleet"],
+    points: [
+      "RBAC & custom roles",
+      "MFA & session visibility",
+      "Audit log & device fleet",
+    ],
     visual: "insight",
   },
 ];
@@ -238,7 +262,12 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     icon: Clock,
     title: "Time & attendance",
-    items: ["Automatic timesheets", "Attendance calendar", "Leave balances & requests", "Approvals, single or bulk"],
+    items: [
+      "Automatic timesheets",
+      "Attendance calendar",
+      "Leave balances & requests",
+      "Approvals, single or bulk",
+    ],
   },
   {
     icon: FolderKanban,
@@ -248,7 +277,11 @@ export const MODULE_GROUPS: ModuleGroup[] = [
   {
     icon: Users,
     title: "People",
-    items: ["Employee directory & profiles", "Departments & teams", "Invites & onboarding"],
+    items: [
+      "Employee directory & profiles",
+      "Departments & teams",
+      "Invites & onboarding",
+    ],
   },
   {
     icon: Wallet,
@@ -377,41 +410,41 @@ export interface PricingTier {
 export const PRICING: PricingTier[] = [
   {
     name: "Free",
-    price: "$0",
+    price: `$${tierOf("free").pricePerSeat}`,
     tagline: "For individuals and very small teams getting started.",
     features: [
       "Timesheets & attendance",
       "Leave & approvals",
       "Projects & tasks",
       "Basic reports",
-      "Up to 5 members",
+      membersLabel("free"),
     ],
     cta: "Get started free",
     featured: false,
   },
   {
     name: "Starter",
-    price: "$12",
+    price: `$${tierOf("starter").pricePerSeat}`,
     tagline: "For growing teams that need real insight.",
     features: [
       "Everything in Free",
-      "Unlimited projects & tasks",
       "Activity insight (beta)",
-      "Unlimited members",
+      "Slack & Google Calendar integrations",
+      membersLabel("starter"),
     ],
     cta: "Choose Starter",
     featured: false,
   },
   {
     name: "Enterprise",
-    price: "$22",
+    price: `$${tierOf("enterprise").pricePerSeat}`,
     tagline: "For organizations operating at scale.",
     features: [
       "Everything in Starter",
       "Screenshot review (beta)",
       "AI summaries & assistant",
       "PDF report export",
-      "Audit log & role controls",
+      membersLabel("enterprise"),
     ],
     cta: "Choose Enterprise",
     featured: true,
@@ -424,7 +457,12 @@ export const PRICING_NOTE =
 export const FAQS: Faq[] = [
   {
     q: "Is WorkPulse employee monitoring or surveillance?",
-    a: "It's built to be the opposite. Capture is opt-in on the device, stops whenever the timer stops, and stays inside app and URL rules you set yourself. Screenshots are blurred and reviewable. Nothing about it is designed to be hidden from the person it's about.",
+    // Was: "Screenshots are blurred … Nothing about it is designed to be hidden from the person it's
+    // about." Both false — there is no blur control (every monitoring save sends blur 0, WP-331), and
+    // the managed-laptop service runs with no on-screen notice by design — and the draft Privacy
+    // Policy says so (QA audit WP-115). Only app rules are claimed: the agents read no URL yet, so
+    // website rules don't apply (WP-343).
+    a: "It's workforce monitoring, and it tells you exactly what it captures. In the desktop app, capture runs only while the timer is running and follows the app rules you set. On company-managed laptops, a background service records the Windows session from sign-in to sign-out. Screenshots are deleted automatically after the retention period you choose, and only the people you authorize can review them. Your organization decides what's captured and is responsible for telling employees about it.",
   },
   {
     q: "Do you have a mobile app?",
@@ -455,7 +493,10 @@ export interface Faq {
 export const FOOTER_COLUMNS: { title: string; links: NavLink[] }[] = [
   {
     title: "Product",
-    links: PRODUCTS.slice(0, 4).map((p) => ({ label: p.name, href: productHref(p.slug) })),
+    links: PRODUCTS.slice(0, 4).map((p) => ({
+      label: p.name,
+      href: productHref(p.slug),
+    })),
   },
   { title: "Solutions", links: SOLUTIONS },
   { title: "Resources", links: [...RESOURCES, { label: "Log in", href: "/login" }] },

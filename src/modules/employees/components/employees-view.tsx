@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useRouter } from "next/navigation";
-import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import {
@@ -29,7 +28,6 @@ import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -48,7 +46,6 @@ import {
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { Loader } from "@/components/shared/loader";
-import { initials } from "@/lib/format";
 import { downloadBlob } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { useTrackingMode } from "@/hooks/use-features";
@@ -58,6 +55,8 @@ import { InviteDialog } from "./invite-dialog";
 import { AddEmployeeDialog } from "./add-employee-dialog";
 import { PendingInvites } from "./pending-invites";
 import { useEmployees, type EmployeeRow } from "../use-employees";
+import { buildPdf } from "../lib/pdf-text";
+import { toCsv } from "@/lib/csv";
 
 export type { EmployeeRow };
 
@@ -72,28 +71,33 @@ export type { EmployeeRow };
  *
  * `benched` used to be labelled "Inactive", which collided with "Deactivate" in the same UI and is
  * what made them look like one idea. It now says what it is.
+ *
+ * No "Invited": no roster row can have that status — invitees are listed in their own section below
+ * (QA audit 2026-10-08, WP-456).
  */
-const STATUSES = ["all", "active", "benched", "deactivated", "invited"] as const;
+const STATUSES = ["all", "active", "benched", "deactivated"] as const;
 const STATUS_LABELS: Record<(typeof STATUSES)[number], string> = {
   all: "All statuses",
   active: "Active",
   benched: "Not tracked",
   deactivated: "Deactivated",
-  invited: "Invited",
 };
 const PAGE_SIZE = 9;
 
-const REPORT_COLUMNS = [
-  "ID", "Name", "Email", "Role", "Title", "Department", "Team", "Status", "Productivity %",
-];
+/** The department filter's value for people with no department (a name can't be empty). */
+const NO_DEPARTMENT = "__none__";
+
+// No Email or Team columns: the directory list carries neither, so they were blank in every row
+// (WP-456). Both are on each person's profile.
+const REPORT_COLUMNS = ["ID", "Name", "Role", "Title", "Department", "Status", "Productivity %"];
 const pct = (v: number | null) => (v === null ? "—" : `${v}%`);
 const reportRow = (e: EmployeeRow) => [
   // Human employee code only — never fall back to the opaque UUID.
-  e.empId ?? "", e.name, e.email, e.roleName, e.jobTitle, e.department, e.team, e.status, pct(e.productivityScore),
+  e.empId ?? "", e.name, e.roleName, e.jobTitle, e.department, e.status, pct(e.productivityScore),
 ];
 
 function exportEmployeesCsv(list: EmployeeRow[]) {
-  const csv = Papa.unparse({ fields: REPORT_COLUMNS, data: list.map(reportRow) });
+  const csv = toCsv({ fields: REPORT_COLUMNS, data: list.map(reportRow) });
   downloadBlob(
     new Blob([csv], { type: "text/csv;charset=utf-8;" }),
     "employees-report.csv",
@@ -103,47 +107,60 @@ function exportEmployeesCsv(list: EmployeeRow[]) {
   });
 }
 
-function exportEmployeesPdf(
-  list: EmployeeRow[],
-  stats: { active: number; avgProductivity: number | null },
-) {
-  const doc = new jsPDF();
-  doc.setFontSize(18);
-  doc.text("Employee Report", 14, 18);
-  doc.setFontSize(10);
-  doc.setTextColor(120);
-  doc.text(
-    `${list.length} employees · ${stats.active} active · ${pct(stats.avgProductivity)} avg productivity · WorkPulse`,
-    14,
-    25,
-  );
+async function exportEmployeesPdf(list: EmployeeRow[]) {
+  // The header describes the rows in this file. It used to put the filtered row count beside
+  // org-wide totals — "12 employees · 87 active" for one department (WP-456).
+  const active = list.filter((e) => e.status === "active").length;
+  const scored = list.filter((e) => e.productivityScore !== null);
+  const avgProductivity = scored.length
+    ? Math.round(scored.reduce((s, e) => s + (e.productivityScore ?? 0), 0) / scored.length)
+    : null;
+  try {
+    // Every string through the `PdfText` writer: one character the standard font can't encode
+    // garbled the whole line, and a name in another script printed as gaps (WP-225).
+    const doc = await buildPdf((text) => {
+      const doc = new jsPDF();
+      const t = text(doc);
+      doc.setFontSize(18);
+      t.text("Employee Report", 14, 18);
+      doc.setFontSize(10);
+      doc.setTextColor(120);
+      t.text(
+        `${list.length} employees · ${active} active · ${pct(avgProductivity)} avg productivity · WorkPulse`,
+        14,
+        25,
+      );
 
-  const xs = [14, 92, 140, 178];
-  let y = 36;
-  doc.setTextColor(20);
-  doc.setFont("helvetica", "bold");
-  ["Name", "Department", "Status", "Prod %"].forEach((c, i) => doc.text(c, xs[i], y));
-  doc.setDrawColor(210);
-  doc.line(14, y + 2, 196, y + 2);
-  doc.setFont("helvetica", "normal");
-  y += 8;
+      const xs = [14, 92, 140, 178];
+      let y = 36;
+      doc.setTextColor(20);
+      doc.setFont("helvetica", "bold");
+      ["Name", "Department", "Status", "Prod %"].forEach((c, i) => t.text(c, xs[i], y));
+      doc.setDrawColor(210);
+      doc.line(14, y + 2, 196, y + 2);
+      doc.setFont("helvetica", "normal");
+      y += 8;
 
-  for (const e of list) {
-    doc.text(e.name, xs[0], y);
-    doc.text(e.department, xs[1], y);
-    doc.text(e.status, xs[2], y);
-    doc.text(pct(e.productivityScore), xs[3], y);
-    y += 7;
-    if (y > 285) {
-      doc.addPage();
-      y = 18;
-    }
+      for (const e of list) {
+        t.text(e.name, xs[0], y);
+        t.text(e.department || "—", xs[1], y);
+        t.text(e.status, xs[2], y);
+        t.text(pct(e.productivityScore), xs[3], y);
+        y += 7;
+        if (y > 285) {
+          doc.addPage();
+          y = 18;
+        }
+      }
+      return doc;
+    });
+    doc.save("employees-report.pdf");
+    toast.success("Report exported", {
+      description: `employees-report.pdf · ${list.length} people`,
+    });
+  } catch {
+    toast.error("Couldn't build the PDF. Try again.");
   }
-
-  doc.save("employees-report.pdf");
-  toast.success("Report exported", {
-    description: `employees-report.pdf · ${list.length} people`,
-  });
 }
 
 function FilterDropdown({
@@ -184,15 +201,26 @@ function FilterDropdown({
   );
 }
 
-function ProductivityCell({ value }: { value: number | null }) {
-  // `null` = the score isn't available yet (it needs the desktop agent's activity data, via
-  // insights). Show a clear placeholder rather than a fake 0%.
+/** Why a productivity cell shows "—" — the reason the scores aren't there, not a verdict on the person. */
+const NO_SCORE_REASON: Record<ReturnType<typeof useEmployees>["scoreStatus"], string> = {
+  off: "Productivity scores need access to org activity, which your role doesn't have.",
+  loading: "Loading productivity scores…",
+  ready: "No day in the last 30 met the scoring minimum for this person.",
+  failed: "Some productivity scores couldn't be loaded. Refresh to try again.",
+};
+
+function ProductivityCell({
+  value,
+  status,
+}: {
+  value: number | null;
+  status: ReturnType<typeof useEmployees>["scoreStatus"];
+}) {
+  // A clear placeholder rather than a fake 0% — with the actual reason. It used to say "activity
+  // monitoring isn't enabled yet" for a 403 or a network blip alike (QA audit 2026-10-08, WP-229).
   if (value === null) {
     return (
-      <span
-        className="text-xs text-muted-foreground"
-        title="Productivity scoring needs activity monitoring, which isn't enabled yet."
-      >
+      <span className="text-xs text-muted-foreground" title={NO_SCORE_REASON[status]}>
         —
       </span>
     );
@@ -219,8 +247,19 @@ export function EmployeesView() {
   const { can } = usePermissions();
   const router = useRouter();
   // Real backend directory (server-scoped by `employees:read`). No client scope filter, no session
-  // overlays — the server is the roster.
-  const { employees, loading, error, reload, bench, anyAgentReported } = useEmployees();
+  // overlays — the server is the roster. Scores only for a viewer who may read org activity (the
+  // route needs `ActivityReadOrg`, a different bit from the directory's) — WP-453.
+  const {
+    employees,
+    loading,
+    error,
+    incomplete,
+    departmentCount,
+    reload,
+    bench,
+    scoreStatus,
+    anyAgentReported,
+  } = useEmployees({ withScores: can("activity:view") });
   const [query, setQuery] = useState("");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState("all");
@@ -249,13 +288,17 @@ export function EmployeesView() {
   const canAddMonitored = mode === "machine" || mode === "both";
 
   const allEmployees = employees;
-  // Every row is a real directory user with a profile page — none are session-only.
-  const customIds = useMemo(() => new Set<string>(), []);
 
-  const deptOptions = useMemo(
-    () => [...new Set(allEmployees.map((e) => e.department))].sort(),
-    [allEmployees],
-  );
+  // The departments people are in, plus "No department" when anyone has none — never a blank
+  // option (WP-111).
+  const deptOptions = useMemo(() => {
+    const named = [...new Set(allEmployees.map((e) => e.department).filter(Boolean))]
+      .sort()
+      .map((d) => ({ value: d, label: d }));
+    return allEmployees.some((e) => !e.department)
+      ? [...named, { value: NO_DEPARTMENT, label: "No department" }]
+      : named;
+  }, [allEmployees]);
 
   const liveStats = useMemo(() => {
     const total = allEmployees.length;
@@ -272,14 +315,18 @@ export function EmployeesView() {
           scored.reduce((s, e) => s + (e.productivityScore ?? 0), 0) / scored.length,
         )
       : null;
-    const departmentCount = new Set(allEmployees.map((e) => e.department)).size;
-    return { total, active, activeWorking, benched, avgProductivity, departments: departmentCount };
-  }, [allEmployees]);
+    // The org's own department count. Counting distinct labels on people made "no department" a
+    // department and missed the empty ones (WP-111); that count is only the fallback now.
+    const departments =
+      departmentCount ?? new Set(allEmployees.map((e) => e.department).filter(Boolean)).size;
+    return { total, active, activeWorking, benched, avgProductivity, departments };
+  }, [allEmployees, departmentCount]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return allEmployees.filter((e) => {
-      if (dept !== "all" && e.department !== dept) return false;
+      if (dept === NO_DEPARTMENT ? e.department !== "" : dept !== "all" && e.department !== dept)
+        return false;
       // "benched" (surfaced as "Inactive") is an orthogonal flag, not a lifecycle status. Filter on
       // it directly, and keep it out of "Active" so the two filters stay mutually exclusive.
       if (status === "deactivated") {
@@ -288,12 +335,10 @@ export function EmployeesView() {
         if (!e.benched) return false;
       } else if (status === "active") {
         if (e.status !== "active" || e.benched) return false;
-      } else if (status !== "all" && e.status !== status) {
-        return false;
       }
       if (
         q &&
-        !`${e.name} ${e.email} ${e.jobTitle} ${e.empId ?? ""} ${e.id}`
+        !`${e.name} ${e.jobTitle} ${e.empId ?? ""} ${e.id}`
           .toLowerCase()
           .includes(q)
       )
@@ -313,7 +358,9 @@ export function EmployeesView() {
       ...(liveStats.avgProductivity !== null
         ? [{ label: "Avg productivity", value: `${liveStats.avgProductivity}%` }]
         : []),
-      ...(dept !== "all" ? [{ label: "Department filter", value: dept }] : []),
+      ...(dept !== "all"
+        ? [{ label: "Department filter", value: dept === NO_DEPARTMENT ? "No department" : dept }]
+        : []),
       ...(status !== "all" ? [{ label: "Status filter", value: status }] : []),
       ...(query.trim() ? [{ label: "Search", value: query.trim() }] : []),
       { label: "Showing (after filters)", value: String(filtered.length) },
@@ -423,12 +470,22 @@ export function EmployeesView() {
           icon={GaugeIcon}
           hint={
             liveStats.avgProductivity !== null
-              ? "30-day average of reporting employees"
-              : anyAgentReported
-                // Agents ARE reporting; no day cleared the server's 30-minute scoring floor. Saying
-                // "no agent activity" here sent people to check installs on a working fleet.
-                ? "agents reporting, but no day met the scoring minimum"
-                : "no agent activity in the last 30 days"
+              ? scoreStatus === "failed"
+                ? "30-day average — some days couldn't be loaded"
+                : "30-day average of reporting employees"
+              : scoreStatus === "off"
+                // Not a fact about the fleet: this viewer can't read org activity (WP-229).
+                ? "needs access to org activity"
+                : scoreStatus === "loading"
+                  ? "loading…"
+                  : scoreStatus === "failed"
+                    ? "couldn't load activity — refresh to try again"
+                    : anyAgentReported
+                      // Agents ARE reporting; no day cleared the server's 30-minute scoring floor.
+                      // Saying "no agent activity" here sent people to check installs on a working
+                      // fleet.
+                      ? "agents reporting, but no day met the scoring minimum"
+                      : "no agent activity in the last 30 days"
           }
         />
         <StatCard label="Departments" value={liveStats.departments} icon={Building2} hint="across the org" />
@@ -441,7 +498,8 @@ export function EmployeesView() {
           <Input
             value={query}
             onChange={(e) => resetPage(setQuery)(e.target.value)}
-            placeholder="Search by name, email, ID, or title…"
+            placeholder="Search by name, ID, or title…"
+            aria-label="Search employees"
             className="pl-9"
           />
         </div>
@@ -450,7 +508,7 @@ export function EmployeesView() {
         <DepartmentFilter
           value={dept}
           onChange={resetPage(setDept)}
-          options={deptOptions.map((d) => ({ value: d, label: d }))}
+          options={deptOptions}
           ariaLabel="Filter employees by department"
         />
         <FilterDropdown
@@ -469,9 +527,7 @@ export function EmployeesView() {
               <Download className="size-4" /> Download
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => exportEmployeesPdf(filtered, liveStats)}
-              >
+              <DropdownMenuItem onClick={() => exportEmployeesPdf(filtered)}>
                 <FileText className="size-4" /> PDF
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => exportEmployeesCsv(filtered)}>
@@ -534,6 +590,22 @@ export function EmployeesView() {
         </div>
       </div>
 
+      {incomplete ? (
+        // A short roster is said, not shown as the whole org (WP-230).
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-2.5 text-sm"
+        >
+          <span>
+            Part of your organization couldn&apos;t be loaded, so this list and its totals may be
+            missing people.
+          </span>
+          <Button variant="outline" size="sm" onClick={reload}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
       <Card>
         <CardContent className="p-0">
           {rows.length === 0 ? (
@@ -559,24 +631,29 @@ export function EmployeesView() {
                   {rows.map((e) => (
                     <TableRow
                       key={e.id}
-                      className={cn(!customIds.has(e.id) && "cursor-pointer")}
-                      onClick={() =>
-                        customIds.has(e.id)
-                          ? undefined
-                          : router.push(`/employees/${e.id}`)
-                      }
+                      className="cursor-pointer"
+                      // The whole row stays clickable for the mouse; the name below is the real
+                      // link, so a keyboard user can reach the profile too (QA audit 2026-10-08,
+                      // WP-461 — the row was a mouse-only `onClick`).
+                      onClick={() => router.push(`/employees/${e.id}`)}
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <Avatar className="size-8">
-                            <AvatarImage src={e.avatarUrl} alt={e.name} />
-                            <AvatarFallback className="text-xs">
-                              {initials(e.name)}
-                            </AvatarFallback>
-                          </Avatar>
+                          <UserAvatar
+                            userId={e.id}
+                            name={e.name}
+                            className="size-8"
+                            fallbackClassName="text-xs"
+                          />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
-                              <p className="truncate font-medium">{e.name}</p>
+                              <Link
+                                href={`/employees/${e.id}`}
+                                onClick={(ev) => ev.stopPropagation()}
+                                className="truncate font-medium hover:underline focus-visible:underline"
+                              >
+                                {e.name}
+                              </Link>
                               {/* "Cannot sign in" and "invited, hasn't accepted yet" look identical
                                   in this roster and mean opposite things — this is the difference. */}
                               {e.monitored && (
@@ -585,21 +662,23 @@ export function EmployeesView() {
                                 </Badge>
                               )}
                               {e.benched && (
+                                // "Not tracked", like the status filter: "Inactive" is what the
+                                // profile calls a deactivated leaver — the opposite (WP-233).
                                 <Badge className="bg-warning/15 text-warning shrink-0 text-[10px]">
-                                  Inactive
+                                  Not tracked
                                 </Badge>
                               )}
                             </div>
                             {/* Subtitle: the human employee id (e.g. EMP-0001) is the directory's
-                                stable identifier — lead with it. Fall back to job title, then email;
-                                the raw Cognito UUID is never shown. */}
-                            {(e.empId || e.jobTitle || e.email) && (
+                                stable identifier — lead with it, then the job title. The raw
+                                Cognito UUID is never shown. */}
+                            {(e.empId || e.jobTitle) && (
                               <p className="truncate text-xs text-muted-foreground">
                                 {e.empId ? (
                                   <span className="font-mono tabular-nums">{e.empId}</span>
                                 ) : null}
-                                {e.empId && (e.jobTitle || e.email) ? " · " : ""}
-                                {e.jobTitle || e.email}
+                                {e.empId && e.jobTitle ? " · " : ""}
+                                {e.jobTitle}
                               </p>
                             )}
                           </div>
@@ -608,12 +687,14 @@ export function EmployeesView() {
                       <TableCell className="text-muted-foreground">
                         {e.roleName}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {e.department}
-                        {e.team ? ` · ${e.team}` : ""}
+                      <TableCell
+                        className="text-muted-foreground"
+                        title={e.department ? undefined : "No department"}
+                      >
+                        {e.department || "—"}
                       </TableCell>
                       <TableCell>
-                        <ProductivityCell value={e.productivityScore} />
+                        <ProductivityCell value={e.productivityScore} status={scoreStatus} />
                       </TableCell>
                       {canManage && (
                         // Stop the row's navigate-to-profile click when using the menu.
@@ -623,7 +704,15 @@ export function EmployeesView() {
                         >
                           <DropdownMenu>
                             <DropdownMenuTrigger
-                              render={<Button variant="ghost" size="icon" className="size-8" />}
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8"
+                                  // An icon-only trigger had no name — "button", six times (WP-461).
+                                  aria-label={`Actions for ${e.name}`}
+                                />
+                              }
                             >
                               <MoreVertical className="size-4" />
                             </DropdownMenuTrigger>
@@ -702,12 +791,12 @@ export function EmployeesView() {
             <div className="divide-y">
               {benchedEmployees.map((e) => (
                 <div key={e.id} className="flex items-center gap-3 py-2">
-                  <Avatar className="size-8">
-                    <AvatarImage src={e.avatarUrl} alt={e.name} />
-                    <AvatarFallback className="text-xs">
-                      {initials(e.name)}
-                    </AvatarFallback>
-                  </Avatar>
+                  <UserAvatar
+                    userId={e.id}
+                    name={e.name}
+                    className="size-8"
+                    fallbackClassName="text-xs"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{e.name}</p>
                     <p className="truncate text-xs text-muted-foreground">

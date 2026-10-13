@@ -105,11 +105,15 @@ describe("tour data", () => {
    * and hang — with the guard above waved through, which is the worst of both.
    */
   it("the runtime still filters on `dashboard`, which the exemption above relies on", () => {
-    const src = readFileSync("src/components/layout/product-tour.tsx", "utf8");
+    // The step filter lives in `use-tour-steps.ts`, shared by the runner and the Help Center cards
+    // (WP-070); the runner must keep using it.
+    const filter = readFileSync("src/modules/help/lib/use-tour-steps.ts", "utf8");
+    const runner = readFileSync("src/components/layout/product-tour.tsx", "utf8");
     expect(
-      /s\.dashboard/.test(src),
-      "product-tour.tsx no longer reads `s.dashboard`. Either restore the filter or delete the " +
-        "`dashboard` exemption in the previous test — scoped steps are unsafe without it.",
+      /s\.dashboard/.test(filter) && /useTourStepFilter\(\)/.test(runner),
+      "the tour step filter no longer reads `s.dashboard` (or the runner stopped using it). Either " +
+        "restore it or delete the `dashboard` exemption in the previous test — scoped steps are " +
+        "unsafe without it.",
     ).toBe(true);
   });
 

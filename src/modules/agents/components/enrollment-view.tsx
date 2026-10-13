@@ -18,12 +18,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Check,
   Copy,
   Eye,
   EyeOff,
+  Info,
   KeyRound,
   Loader2,
   RefreshCw,
@@ -33,6 +35,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -48,7 +51,8 @@ import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { useDirectory } from "@/hooks/use-directory";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useTrackingMode } from "@/hooks/use-features";
+import { useEntitlementsSettled, useTrackingMode } from "@/hooks/use-features";
+import { useEntitlementsStore } from "@/stores/entitlements.store";
 import { personName } from "@/lib/format";
 import {
   getUninstallPasscode,
@@ -60,12 +64,27 @@ import {
   type PendingCode,
   type UninstallPasscode,
 } from "../services/fleet.service";
-
-/** The MSI filename the download link + install command reference. Kept in one place. */
-const MSI_NAME = "WorkPulseAgentService_x64.msi";
+import { MANAGED_AGENT_MSI_URL } from "@/lib/agent-release";
 
 /**
- * Build the paste-ready install command. The code carries the tenant, so nothing else is needed.
+ * The installer file the commands name. The managed agent's release builds `WorkPulse-<version>.msi`
+ * (monitoring-agent `.github/workflows/release.yml`) and nothing publishes it for download yet, so the
+ * page can't know which version a technician was handed: the commands use one fixed name and the page
+ * says to save the installer under it. They used to name `WorkPulseAgentService_x64.msi`, a file
+ * nothing builds (QA audit 2026-10-08, WP-250).
+ */
+const MSI_NAME = "WorkPulse.msi";
+
+/**
+ * Where the agent enrols and reports: the same API this page talks to. The MSI has **no default**
+ * for it — installed without `INGESTURL`, the service logs "no ingest URL — cannot enrol" and never
+ * enrols (monitoring-agent `crates/agentd/src/enroll.rs`) — so the command must carry it.
+ */
+const INGEST_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
+
+/**
+ * Build the paste-ready install command. The code carries the tenant; the ingest URL says where to
+ * send it.
  *
  * The passcode is passed **at install time or not at all**: the MSI writes it to the machine on the
  * way in, and that stored copy is what a later `msiexec /x` is checked against. A device installed
@@ -74,7 +93,7 @@ const MSI_NAME = "WorkPulseAgentService_x64.msi";
  */
 function installCommand(code: string, passcode?: string): string {
   const pass = passcode ? ` UNINSTALLPASSCODE=${passcode}` : "";
-  return `msiexec /i ${MSI_NAME} /qn ENROLLTOKEN=${code}${pass}`;
+  return `msiexec /i ${MSI_NAME} /qn ENROLLTOKEN=${code} INGESTURL=${INGEST_URL}${pass}`;
 }
 
 /** What IT runs to take the agent off a machine. */
@@ -113,6 +132,15 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 export function EnrollmentView() {
   const { can } = usePermissions();
   const mode = useTrackingMode();
+  /**
+   * The mode reads `project` until the org's entitlements arrive, so deciding on it earlier told a
+   * machine-mode admin who deep-linked here that enrolment "isn't available in this mode" (WP-467).
+   * Wait for the read to settle; if it gave up, the mode is unknown — show the page, since a mint in
+   * a project-mode org is refused by the server with a typed 409 that renders inline below.
+   */
+  const settled = useEntitlementsSettled();
+  const modeKnown = useEntitlementsStore((s) => s.loaded);
+  const managedMode = settled && (!modeKnown || mode !== "project");
   const { employees, loading: dirLoading } = useDirectory(true);
 
   const [userId, setUserId] = useState("");
@@ -125,6 +153,12 @@ export function EnrollmentView() {
 
   const [codes, setCodes] = useState<PendingCode[]>([]);
   const [codesLoading, setCodesLoading] = useState(true);
+  /** A failed list read — not "no codes waiting", which is what it used to say (WP-467). */
+  const [codesFailed, setCodesFailed] = useState(false);
+  /** Codes with a revoke in flight (a double click sent two DELETEs, and the second toasted an error). */
+  const [revoking, setRevoking] = useState<ReadonlySet<string>>(new Set());
+  /** The code whose Revoke was pressed once and awaits confirmation. */
+  const [revokeArmed, setRevokeArmed] = useState<string | null>(null);
 
   /** The org's uninstall passcode. `null` while loading or if the read failed (see `passFailed`). */
   const [pass, setPass] = useState<UninstallPasscode | null>(null);
@@ -138,10 +172,7 @@ export function EnrollmentView() {
 
   // Employees who already have a pending code — so the picker can flag them rather than let IT mint
   // a second code that will just sit unused beside the first.
-  const pendingByUser = useMemo(
-    () => new Set(codes.map((c) => c.user_id)),
-    [codes],
-  );
+  const pendingByUser = useMemo(() => new Set(codes.map((c) => c.user_id)), [codes]);
 
   const nameOf = useCallback(
     // Never the raw sub: this page lists the whole directory, so a miss means the employee was
@@ -152,24 +183,27 @@ export function EnrollmentView() {
 
   const reloadCodes = useCallback(() => {
     setCodesLoading(true);
+    setCodesFailed(false);
     listEnrollmentCodes()
       .then(setCodes)
-      .catch(() => setCodes([]))
+      .catch(() => setCodesFailed(true))
       .finally(() => setCodesLoading(false));
   }, []);
 
+  // Only once the org is known to run the managed agent — a project-mode org has nothing to enrol.
   useEffect(() => {
-    if (canManage) reloadCodes();
-  }, [canManage, reloadCodes]);
+    if (canManage && managedMode) reloadCodes();
+  }, [canManage, managedMode, reloadCodes]);
 
   // The GET mints the passcode if the org hasn't one yet, so this is also what creates it — there is
-  // deliberately no "generate" button for a value that must simply always exist.
+  // deliberately no "generate" button for a value that must simply always exist. Not in project mode,
+  // where reading it used to mint a passcode for an agent the org doesn't run.
   useEffect(() => {
-    if (!canManage) return;
+    if (!canManage || !managedMode) return;
     getUninstallPasscode()
       .then(setPass)
       .catch(() => setPassFailed(true));
-  }, [canManage]);
+  }, [canManage, managedMode]);
 
   const rotate = useCallback(() => {
     setRotating(true);
@@ -179,10 +213,13 @@ export function EnrollmentView() {
         setPassShown(true);
         setRotateArmed(false);
         toast.success("Passcode rotated", {
-          description: "Devices already installed keep the passcode they were installed with.",
+          description:
+            "Devices already installed keep the passcode they were installed with.",
         });
       })
-      .catch((e) => toast.error("Couldn't rotate the passcode", { description: friendlyError(e) }))
+      .catch((e) =>
+        toast.error("Couldn't rotate the passcode", { description: friendlyError(e) }),
+      )
       .finally(() => setRotating(false));
   }, []);
 
@@ -191,7 +228,10 @@ export function EnrollmentView() {
     setMinting(true);
     setConflict(null);
     setMinted(null);
-    mintEnrollmentCode({ user_id: userId, ...(upn.trim() ? { assign_upn: upn.trim() } : {}) })
+    mintEnrollmentCode({
+      user_id: userId,
+      ...(upn.trim() ? { assign_upn: upn.trim() } : {}),
+    })
       .then((code) => {
         setMinted(code);
         setUpn("");
@@ -216,12 +256,21 @@ export function EnrollmentView() {
 
   const revoke = useCallback(
     (codeId: string) => {
+      setRevokeArmed(null);
+      setRevoking((s) => new Set(s).add(codeId));
       revokeEnrollmentCode(codeId)
         .then(() => {
           toast.success("Code revoked");
           reloadCodes();
         })
-        .catch((e) => toast.error("Couldn't revoke", { description: friendlyError(e) }));
+        .catch((e) => toast.error("Couldn't revoke", { description: friendlyError(e) }))
+        .finally(() =>
+          setRevoking((s) => {
+            const next = new Set(s);
+            next.delete(codeId);
+            return next;
+          }),
+        );
     },
     [reloadCodes],
   );
@@ -236,9 +285,17 @@ export function EnrollmentView() {
     );
   }
 
+  if (!settled) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Loader label="Checking your organization's tracking mode…" />
+      </div>
+    );
+  }
+
   // Hidden in project mode — the managed agent isn't deployed there, and the server 409s a mint
   // (`tracking_mode_not_managed`) anyway. Offering a button that cannot succeed is a dead end.
-  if (mode === "project") {
+  if (!managedMode) {
     return (
       <EmptyState
         icon={KeyRound}
@@ -254,6 +311,33 @@ export function EnrollmentView() {
         title="Enrol a device"
         description="Mint a one-time code for an employee, then install the agent on their computer with it."
       />
+
+      {/* Said before a code is minted, so a technician has the file before copying a command for
+          it. Each signed release is published to the public download bucket (QA audit 2026-10-08,
+          WP-250); support stays the fallback if the download fails. */}
+      <p className="bg-muted/30 text-muted-foreground flex items-start gap-2 rounded-lg border p-3 text-sm">
+        <Info className="mt-0.5 size-4 shrink-0" />
+        <span>
+          You&apos;ll need the WorkPulse agent installer.{" "}
+          <a
+            href={MANAGED_AGENT_MSI_URL}
+            className="text-foreground font-medium underline-offset-2 hover:underline"
+            download
+          >
+            Download WorkPulse.msi
+          </a>{" "}
+          — it&apos;s signed, and installed agents keep themselves up to date when
+          automatic updates are on. If the download doesn&apos;t work, contact WorkPulse
+          support through{" "}
+          <Link
+            href="/help"
+            className="text-foreground font-medium underline-offset-2 hover:underline"
+          >
+            Help → Submit a ticket
+          </Link>
+          .
+        </span>
+      </p>
 
       <Card>
         <CardContent className="space-y-4 p-5">
@@ -294,31 +378,35 @@ export function EnrollmentView() {
                 placeholder="ACME\p.nair or p.nair@acme.test"
                 autoComplete="off"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 If you know it, only this account is tracked on the device.
               </p>
             </div>
           </div>
 
           {conflict && (
-            <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/5 p-3 text-sm">
-              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+            <p className="border-warning/40 bg-warning/5 flex items-start gap-2 rounded-lg border p-3 text-sm">
+              <TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" />
               {conflict}
             </p>
           )}
 
           <Button onClick={mint} disabled={!userId || minting}>
-            {minting ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+            {minting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <KeyRound className="size-4" />
+            )}
             Generate code
           </Button>
 
           {minted && (
-            <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+            <div className="border-primary/30 bg-primary/5 space-y-3 rounded-lg border p-4">
               <p className="text-sm font-medium">
                 Code for {nameOf(minted.user_id)} — this is the only time it&apos;s shown.
               </p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 break-all rounded bg-background px-3 py-2 font-mono text-sm">
+                <code className="bg-background flex-1 rounded px-3 py-2 font-mono text-sm break-all">
                   {minted.code}
                 </code>
                 <CopyButton text={minted.code} label="Copy code" />
@@ -326,17 +414,28 @@ export function EnrollmentView() {
               <div className="space-y-1.5">
                 <Label>Install command</Label>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 break-all rounded bg-background px-3 py-2 font-mono text-xs">
-                    {installCommand(minted.code, pass?.passcode)}
+                  {/* The passcode is masked here exactly as it is in its own card below — the copy
+                      still carries the real value (WP-467). */}
+                  <code className="bg-background flex-1 rounded px-3 py-2 font-mono text-xs break-all">
+                    {installCommand(
+                      minted.code,
+                      pass
+                        ? passShown
+                          ? pass.passcode
+                          : masked(pass.passcode)
+                        : undefined,
+                    )}
                   </code>
                   <CopyButton
                     text={installCommand(minted.code, pass?.passcode)}
                     label="Copy install command"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Run this on {nameOf(minted.user_id)}&apos;s computer as an administrator. The code
-                  expires in a few hours and works once.
+                <p className="text-muted-foreground text-xs">
+                  Save the agent installer on {nameOf(minted.user_id)}&apos;s computer as{" "}
+                  {MSI_NAME} (or change the file name in the command), then run this as an
+                  administrator in that folder. The code expires in a few hours and works
+                  once.
                   {pass
                     ? " It also sets the uninstall passcode below, so the agent can't be removed without it."
                     : " The uninstall passcode couldn't be loaded, so this install won't be protected against removal."}
@@ -351,31 +450,32 @@ export function EnrollmentView() {
           *later*, to remove an agent, often by someone who wasn't there for the install — so it is
           readable as often as required rather than revealed once. */}
       <div className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Uninstall passcode</h2>
+        <h2 className="text-muted-foreground text-sm font-medium">Uninstall passcode</h2>
         <Card>
           <CardContent className="space-y-4 p-5">
-            <p className="flex items-start gap-2 text-sm text-muted-foreground">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+            <p className="text-muted-foreground flex items-start gap-2 text-sm">
+              <ShieldCheck className="text-primary mt-0.5 size-4 shrink-0" />
               <span>
-                The agent hides itself from Add/Remove Programs, and this passcode is what stops it
-                being uninstalled by anyone with local admin. It is the same for every device in this
-                organization, and it is included in the install command above.
+                The agent hides itself from Add/Remove Programs, and this passcode is what
+                stops it being uninstalled by anyone with local admin. It is the same for
+                every device in this organization, and it is included in the install
+                command above.
               </span>
             </p>
 
             {passFailed ? (
-              <p className="text-sm text-muted-foreground">
-                Couldn&apos;t load the passcode. Reload the page — until it loads, installs made from
-                this page won&apos;t be protected against removal.
+              <p className="text-muted-foreground text-sm">
+                Couldn&apos;t load the passcode. Reload the page — until it loads,
+                installs made from this page won&apos;t be protected against removal.
               </p>
             ) : !pass ? (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <p className="text-muted-foreground flex items-center gap-2 text-sm">
                 <Loader2 className="size-4 animate-spin" /> Loading…
               </p>
             ) : (
               <>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 break-all rounded bg-muted px-3 py-2 font-mono text-sm tracking-wider">
+                  <code className="bg-muted flex-1 rounded px-3 py-2 font-mono text-sm tracking-wider break-all">
                     {passShown ? pass.passcode : masked(pass.passcode)}
                   </code>
                   <Button
@@ -384,7 +484,11 @@ export function EnrollmentView() {
                     onClick={() => setPassShown((s) => !s)}
                     aria-label={passShown ? "Hide passcode" : "Show passcode"}
                   >
-                    {passShown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    {passShown ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
                     {passShown ? "Hide" : "Show"}
                   </Button>
                   <CopyButton text={pass.passcode} label="Copy uninstall passcode" />
@@ -393,16 +497,19 @@ export function EnrollmentView() {
                 <div className="space-y-1.5">
                   <Label>Uninstall command</Label>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 break-all rounded bg-background px-3 py-2 font-mono text-xs">
-                      {uninstallCommand(passShown ? pass.passcode : masked(pass.passcode))}
+                    <code className="bg-background flex-1 rounded px-3 py-2 font-mono text-xs break-all">
+                      {uninstallCommand(
+                        passShown ? pass.passcode : masked(pass.passcode),
+                      )}
                     </code>
                     <CopyButton
                       text={uninstallCommand(pass.passcode)}
                       label="Copy uninstall command"
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Run as an administrator on the device. Without the passcode the removal is
+                  <p className="text-muted-foreground text-xs">
+                    Run as an administrator on the device, in a folder holding the same
+                    installer saved as {MSI_NAME}. Without the passcode the removal is
                     refused.
                   </p>
                 </div>
@@ -410,7 +517,12 @@ export function EnrollmentView() {
                 <div className="flex flex-wrap items-center gap-2 border-t pt-4">
                   {rotateArmed ? (
                     <>
-                      <Button variant="destructive" size="sm" onClick={rotate} disabled={rotating}>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={rotate}
+                        disabled={rotating}
+                      >
                         {rotating ? (
                           <Loader2 className="size-4 animate-spin" />
                         ) : (
@@ -418,21 +530,29 @@ export function EnrollmentView() {
                         )}
                         Yes, rotate it
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setRotateArmed(false)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRotateArmed(false)}
+                      >
                         Cancel
                       </Button>
-                      <p className="text-xs text-muted-foreground">
-                        Devices already installed keep the old passcode — you will need both until
-                        they are replaced. Anyone holding an install command copied before now will
-                        also still be using the old one.
+                      <p className="text-muted-foreground text-xs">
+                        Devices already installed keep the old passcode — you will need
+                        both until they are replaced. Anyone holding an install command
+                        copied before now will also still be using the old one.
                       </p>
                     </>
                   ) : (
                     <>
-                      <Button variant="outline" size="sm" onClick={() => setRotateArmed(true)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRotateArmed(true)}
+                      >
                         <RefreshCw className="size-4" /> Rotate
                       </Button>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-muted-foreground text-xs">
                         {pass.rotated_by
                           ? `Rotated by ${nameOf(pass.rotated_by)} on ${new Date(pass.rotated_at).toLocaleDateString()}.`
                           : `Created on ${new Date(pass.rotated_at).toLocaleDateString()}.`}{" "}
@@ -449,34 +569,72 @@ export function EnrollmentView() {
 
       {/* Pending worklist — codes issued but not yet installed. */}
       <div className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Pending codes</h2>
+        <h2 className="text-muted-foreground text-sm font-medium">Pending codes</h2>
         {codesLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-muted-foreground text-sm">Loading…</p>
+        ) : codesFailed ? (
+          <div className="text-muted-foreground flex items-center gap-3 text-sm">
+            <span>Couldn&apos;t load the pending codes.</span>
+            <Button variant="outline" size="sm" onClick={reloadCodes}>
+              Retry
+            </Button>
+          </div>
         ) : codes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             No codes waiting to be installed. Generate one above.
           </p>
         ) : (
           <Card>
             <CardContent className="divide-y p-0">
               {codes.map((c) => (
-                <div key={c.code_id} className="flex items-center justify-between gap-3 p-4">
+                <div
+                  key={c.code_id}
+                  className="flex items-center justify-between gap-3 p-4"
+                >
                   <div className="min-w-0">
                     <p className="truncate font-medium">{nameOf(c.user_id)}</p>
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="text-muted-foreground truncate text-xs">
                       Issued by {nameOf(c.created_by)} · expires{" "}
                       {new Date(c.expires_at * 1000).toLocaleString()}
                       {c.assign_upn ? ` · ${c.assign_upn}` : ""}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => revoke(c.code_id)}
-                    aria-label={`Revoke code for ${nameOf(c.user_id)}`}
-                  >
-                    <Trash2 className="size-4" /> Revoke
-                  </Button>
+                  {/* Two steps, like Rotate above: a revoked code is dead even if it was already
+                      handed to a technician. */}
+                  {revokeArmed === c.code_id ? (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => revoke(c.code_id)}
+                        aria-label={`Confirm revoking the code for ${nameOf(c.user_id)}`}
+                      >
+                        Yes, revoke
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRevokeArmed(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRevokeArmed(c.code_id)}
+                      disabled={revoking.has(c.code_id)}
+                      aria-label={`Revoke code for ${nameOf(c.user_id)}`}
+                    >
+                      {revoking.has(c.code_id) ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-4" />
+                      )}{" "}
+                      Revoke
+                    </Button>
+                  )}
                 </div>
               ))}
             </CardContent>

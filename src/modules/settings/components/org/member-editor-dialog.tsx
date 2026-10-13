@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Search, UserPlus, X, Users } from "lucide-react";
+import { Search, TriangleAlert, UserPlus, X, Users } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +45,11 @@ interface MemberEditorDialogProps {
   onSaved?: (memberCount: number) => void;
   /** Shown under the candidate column — e.g. the one-department-per-person rule. */
   hint?: string;
+  /**
+   * Why a new name can't be used (e.g. another department already has it), or `null` when it can.
+   * Checked before anything is written.
+   */
+  validateName?: (next: string) => string | null;
 }
 
 /**
@@ -75,6 +80,7 @@ export function MemberEditorDialog({
   applyRemove,
   onSaved,
   hint,
+  validateName,
 }: MemberEditorDialogProps) {
   const [members, setMembers] = useState<EditablePerson[]>([]);
   const [everyone, setEveryone] = useState<EditablePerson[]>([]);
@@ -84,6 +90,8 @@ export function MemberEditorDialog({
   const [pendingAdd, setPendingAdd] = useState<Set<string>>(new Set());
   const [pendingRemove, setPendingRemove] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  /** Closing was asked for with staged changes — confirm before throwing them away. */
+  const [confirmClose, setConfirmClose] = useState(false);
 
   useEffect(() => setName(initialName), [initialName]);
 
@@ -135,6 +143,15 @@ export function MemberEditorDialog({
   const nameDirty =
     Boolean(onRename) && name.trim() !== initialName && name.trim().length > 0;
   const dirty = pendingAdd.size > 0 || pendingRemove.size > 0 || nameDirty;
+  // Duplicate names were refused on create but not on rename, and the server checks neither — so a
+  // rename could leave two indistinguishable entries in every picker (QA audit 2026-10-08, WP-533).
+  const nameError = nameDirty && validateName ? validateName(name.trim()) : null;
+
+  /** Every way out (X, Escape, outside click, Close) — staged changes are confirmed, not dropped. */
+  function requestClose() {
+    if (dirty && !saving) setConfirmClose(true);
+    else onClose();
+  }
 
   function stageAdd(p: EditablePerson) {
     if (pendingRemove.has(p.user_id)) {
@@ -168,6 +185,10 @@ export function MemberEditorDialog({
 
   async function save() {
     if (!dirty || saving) return;
+    if (nameError) {
+      toast.error(nameError);
+      return;
+    }
     setSaving(true);
     try {
       // Removes before adds: a membership limit must not fail on the add half and leave the
@@ -197,7 +218,7 @@ export function MemberEditorDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => !v && requestClose()}>
       <DialogContent className="sm:max-w-[58rem]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -205,6 +226,26 @@ export function MemberEditorDialog({
           </DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+
+        {/* An outside click or Close used to drop every staged add and remove without a word
+            (QA audit 2026-10-08, WP-348). */}
+        {confirmClose && dirty ? (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm"
+          >
+            <TriangleAlert className="size-4 shrink-0 text-warning" />
+            <span className="min-w-0 flex-1">
+              Your changes haven&apos;t been saved. Closing now discards them.
+            </span>
+            <Button size="sm" variant="outline" onClick={() => setConfirmClose(false)}>
+              Keep editing
+            </Button>
+            <Button size="sm" variant="destructive" onClick={onClose}>
+              Discard and close
+            </Button>
+          </div>
+        ) : null}
 
         {onRename ? (
           <div className="space-y-1.5">
@@ -226,8 +267,15 @@ export function MemberEditorDialog({
                 if (e.key === "Escape") setName(initialName);
               }}
               disabled={saving}
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? "entity-name-error" : undefined}
               className="h-9"
             />
+            {nameError ? (
+              <p id="entity-name-error" className="text-destructive text-xs">
+                {nameError}
+              </p>
+            ) : null}
           </div>
         ) : null}
 
@@ -351,7 +399,7 @@ export function MemberEditorDialog({
               <Button variant="ghost" onClick={discard} disabled={saving}>
                 Discard
               </Button>
-              <Button onClick={save} disabled={saving}>
+              <Button onClick={save} disabled={saving || Boolean(nameError)}>
                 {saving ? "Saving…" : "Save changes"}
               </Button>
             </>

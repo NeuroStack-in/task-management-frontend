@@ -32,7 +32,7 @@ export function PlanDetailsDialog({
   onSelect: (planId: string) => void;
 }) {
   return (
-    <MModal open={open} onClose={onClose} maxW="max-w-2xl">
+    <MModal open={open} onClose={onClose} maxW="max-w-2xl" labelledBy="plan-details-title">
       <div className="shrink-0 border-b p-5 pr-12" style={{ borderColor: "var(--m-border)" }}>
         <h2 className="m-display text-lg font-semibold" id="plan-details-title">
           Compare plans

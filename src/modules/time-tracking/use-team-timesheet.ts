@@ -16,8 +16,9 @@
  *    hazard this project already hit); `apiFetch` retries transient 503/429 on its own.
  *  - **Skip-on-failure** — one employee whose timesheet errors (non-403) drops out; the rest load.
  *    A single bad row must never blank the whole team.
- *  - **403 is the whole view's** — if the timesheet endpoint forbids the caller (`TimeReadTeam`
- *    missing), that is surfaced as an access error, not a silently empty grid.
+ *  - **Reach first, then 403s per person** — a department-scoped reader is only asked about their
+ *    own department, and a 403 drops that one row. Only when every read is refused is it surfaced
+ *    as an access error, not a silently empty grid.
  *
  * Everything is honest-or-absent: no fabricated hours. Activity is `0` when the agent hasn't scored
  * (`days_scored === 0`), tracked hours are exactly what the grid returns, idle has no real source
@@ -26,8 +27,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  listEmployees,
+  listAllEmployees,
   departmentMap,
+  UNASSIGNED_DEPT,
   type ApiEmployee,
 } from "@/modules/employees/services/employees.service";
 import { UNKNOWN_DEPARTMENT, UNKNOWN_PROJECT } from "@/lib/format";
@@ -40,12 +42,13 @@ import {
   type ApiGridResponse,
 } from "./services/timesheet.service";
 import type {
-  DailyHours,
   ProjectTimesheet,
   TeamMemberTime,
   TimesheetDayEntry,
   TimesheetStatus,
 } from "./types";
+import { useAuthStore } from "@/stores/auth.store";
+import { hasPermissionBit, TIME_READ_ORG_BIT } from "@/lib/permission-bits";
 
 /** Run `fn` over `items` with at most `limit` in flight. Mirrors `use-month-attendance`. */
 async function mapWithConcurrency<T, R>(
@@ -76,7 +79,6 @@ function isForbidden(e: unknown): boolean {
   );
 }
 
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTHS = [
   "Jan",
   "Feb",
@@ -95,7 +97,13 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 /** Local `YYYY-MM-DD` (not `toISOString()`, which shifts to UTC and can hand back yesterday). */
 const isoLocal = (d: Date) =>
   `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const round1 = (n: number) => Math.round(n * 10) / 10;
+/**
+ * Hours as they are — **not** rounded. These were rounded to one decimal (6-minute steps) and
+ * then shown, summed and exported as `HH:MM:SS`, so every cell was a multiple of 00:06:00, a
+ * day under 3 minutes read as untracked, and totals did not equal their parts (WP-056). The
+ * formatters round to the second when they display.
+ */
+const exactHours = (n: number) => n;
 
 /**
  * Mon–Sun of the week `offset` weeks from the one containing `now` (local).
@@ -192,11 +200,15 @@ interface Fetched {
 export interface TeamTimesheet {
   teamRows: TeamMemberTime[];
   projectRows: ProjectTimesheet[];
-  teamWeekly: DailyHours[];
-  /** The 7 iso dates (Mon→Sun) the rows' `days` arrays are aligned to. */
+  /**
+   * The iso dates the rows' `days` arrays are aligned to — those of the period the rows were **read
+   * for**. While another period loads, the previous rows stay on screen against their own dates.
+   */
   dates: string[];
   /** Human range for the **selected** week, e.g. "Jun 23 – 29, 2026". */
   weekLabel: string;
+  /** Some period has been read — the grid can stay on screen (dimmed) while the next one loads. */
+  loaded: boolean;
   loading: boolean;
   /** Set on a hard failure; a `403` on the team endpoint reads as an access problem. */
   error: string | null;
@@ -204,30 +216,41 @@ export interface TeamTimesheet {
   forbidden: boolean;
   /** Manual refetch of the current week's fan-out (for a Refresh button). Does not start a poll. */
   reload: () => void;
+  /**
+   * Names of the people whose period held more sessions than the server returns in one read — their
+   * hours here are a floor, not the whole period (WP-434). Empty in any ordinary week.
+   */
+  truncated: string[];
 }
 
-const EMPTY_WEEK: DailyHours[] = DAY_LABELS.map((day) => ({
-  day,
-  hours: 0,
-  billable: 0,
-}));
+/** A department label that is never a raw id — and "No department" for the directory's own bucket. */
+function deptLabelOf(depts: Map<string, string>, id: string): string {
+  if (!id) return "—";
+  if (id === UNASSIGNED_DEPT) return "No department";
+  return depts.get(id) ?? UNKNOWN_DEPARTMENT;
+}
 
 /**
- * @param enabled Only fetch when the caller can actually see the team view — a pure employee never
- *   triggers the fan-out.
+ * @param enabled Only fetch when the caller is actually looking at the team view — a pure employee
+ *   never triggers the fan-out, and nor does a manager looking at "My time".
  * @param weekOffset Which week to read: `0` = this week, `-1` = last week, and so on. Each change
  *   re-runs the whole fan-out for that week — the per-user endpoints take an arbitrary `from`/`to`,
  *   so no week is privileged, but a step back costs one round of (employees × 2) requests.
+ * @param readActivity Whether per-person activity scores can be read at all (`monitoring.activity`
+ *   in effect). Off, each person's activity read would only 403, so it is not made.
  */
 export function useTeamTimesheet(
   enabled: boolean,
   offset = 0,
   period: Period = "week",
+  readActivity = true,
 ): TeamTimesheet {
   const [data, setData] = useState<{
     fetched: Fetched[];
     depts: Map<string, string>;
     projects: Map<string, { name: string; key: string }>;
+    /** The period these rows were read for — not necessarily the one selected now. */
+    range: { from: string; to: string; dates: string[] };
   } | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
@@ -263,7 +286,7 @@ export function useTeamTimesheet(
     (async () => {
       // Directory + label maps + the project catalog — one call each, before the fan-out.
       const [employees, depts, projectList, contributors] = await Promise.all([
-        listEmployees(),
+        listAllEmployees(),
         departmentMap().catch(() => new Map<string, string>()),
         listProjects().catch(() => []),
         // A failed roles read must not empty the grid — fall back to "everyone is a contributor",
@@ -285,27 +308,46 @@ export function useTeamTimesheet(
           (contributors === null || (e.role_id ? contributors.has(e.role_id) : true)),
       );
 
-      const results = await mapWithConcurrency(active, 4, (emp) =>
+      // **Only the people the caller can reach.** The server lets `TimeReadOrg` (or an owner) read
+      // anyone and `TimeReadTeam` only their own department. Asking for everyone meant a team lead's
+      // first out-of-department read came back 403, and that one 403 blanked the whole page as
+      // "no access" (QA audit 2026-10-08, WP-055). No `perm` claim (an old session) is no verdict:
+      // ask for everyone and let the per-person 403s below sort it out.
+      const me = useAuthStore.getState().user;
+      const orgBit = hasPermissionBit(me?.perm, TIME_READ_ORG_BIT);
+      const orgWide = Boolean(me?.isOwner) || orgBit !== false;
+      const myDept = employees.find((e) => e.user_id === me?.id)?.department_id;
+      const reachable = orgWide
+        ? active
+        : active.filter((e) => Boolean(myDept) && e.department_id === myDept);
+
+      let forbiddenCount = 0;
+      const results = await mapWithConcurrency(reachable, 4, (emp) =>
         (async (): Promise<Fetched | null> => {
+          // A run the viewer has already stepped past stops asking — discarding its answer was not
+          // enough to stop its whole fan-out from still going out.
+          if (!live) return null;
           // The timesheet read gates the whole view — a 403 here is propagated below.
           const grid = await getUserTimesheet(emp.user_id, from, to);
-          // Activity is secondary: if it errors (incl. a 403 on activity:read), degrade to 0.
+          // Activity is secondary: if it errors (incl. a 403 on activity:read), it is "not scored".
           let avgScore: number | null = null;
           let daysScored = 0;
-          try {
-            const act = await getUserActivity(emp.user_id, from, to);
-            avgScore = act.trend.avg_score;
-            daysScored = act.trend.days_scored;
-          } catch {
-            /* no honest activity number → 0 */
+          if (readActivity) {
+            try {
+              const act = await getUserActivity(emp.user_id, from, to);
+              avgScore = act.trend.avg_score;
+              daysScored = act.trend.days_scored;
+            } catch {
+              /* no honest activity number → unscored */
+            }
           }
           return { emp, grid, avgScore, daysScored };
         })().then(
           (r) => r,
-          // A 403 on the timesheet endpoint is the caller's access problem for the whole team —
-          // re-throw so it becomes the forbidden state. Any other per-employee error is skipped.
+          // A 403 is about that one person being out of reach, not about the whole team: skip the
+          // row. Only when every read was refused is it the caller's access, below.
           (e) => {
-            if (isForbidden(e)) throw e;
+            if (isForbidden(e)) forbiddenCount += 1;
             return null;
           },
         ),
@@ -313,7 +355,16 @@ export function useTeamTimesheet(
 
       if (!live) return;
       const fetched = results.filter((r): r is Fetched => r !== null);
-      setData({ fetched, depts, projects });
+      if (
+        fetched.length === 0 &&
+        reachable.length > 0 &&
+        forbiddenCount === reachable.length
+      ) {
+        setForbidden(true);
+        setError("You don't have access to team time.");
+        return;
+      }
+      setData({ fetched, depts, projects, range: week });
     })()
       .catch((e) => {
         if (!live) return;
@@ -331,18 +382,19 @@ export function useTeamTimesheet(
     return () => {
       live = false;
     };
-  }, [enabled, week, nonce]);
+  }, [enabled, week, nonce, readActivity]);
 
   const derived = useMemo(() => {
     if (!data) {
       return {
         teamRows: [] as TeamMemberTime[],
         projectRows: [] as ProjectTimesheet[],
-        teamWeekly: EMPTY_WEEK,
       };
     }
     const { fetched, depts, projects } = data;
-    const { dates } = week;
+    // The period the rows were READ for. Mapping them onto the newly selected one while it loads put
+    // last week's sessions in no column at all (QA audit 2026-10-08, WP-200).
+    const { dates } = data.range;
     // Weekday index for an iso date; -1 for anything outside the current week.
     const dateIndex = new Map(dates.map((d, i) => [d, i] as const));
     const projectName = (pid: string | undefined) => {
@@ -354,17 +406,18 @@ export function useTeamTimesheet(
     // ── teamRows ──────────────────────────────────────────────────────────
     const teamRows: TeamMemberTime[] = fetched.map(
       ({ emp, grid, avgScore, daysScored }) => {
-        const trackedHrs = round1(grid.total_secs / 3600);
+        const trackedHrs = exactHours(grid.total_secs / 3600);
         const billablePct =
           grid.total_secs > 0
             ? Math.round((grid.billable_secs / grid.total_secs) * 100)
             : 0;
-        // No agent score this week → 0, never a guess.
-        const activity = daysScored === 0 ? 0 : Math.round(avgScore ?? 0);
-        // Only flag on a *real* low score for someone who tracked time. Missing agent data
-        // (activity 0) is not evidence of a problem, so it must not fabricate a flag.
+        // No agent score this week → `null` (unscored), never a guess and never a 0.
+        const activity =
+          daysScored === 0 || avgScore === null ? null : Math.round(avgScore);
+        // Only flag on a *real* low score for someone who tracked time. Missing agent data is not
+        // evidence of a problem, so it must not fabricate a flag.
         const status: TimesheetStatus =
-          daysScored > 0 && trackedHrs > 0 && activity < 50 ? "flagged" : "on-track";
+          activity !== null && trackedHrs > 0 && activity < 50 ? "flagged" : "on-track";
 
         // Real per-day hours + entries, aligned to `dates` — **7 for a week, 28–31 for a month**.
         // Sizing these to a hardcoded 7 crashed the whole page the moment Month was selected: a
@@ -378,11 +431,11 @@ export function useTeamTimesheet(
         for (const day of grid.days) {
           const di = dateIndex.get(day.date);
           if (di === undefined) continue;
-          days[di] = round1(day.total_secs / 3600);
+          days[di] = exactHours(day.total_secs / 3600);
           for (const entry of day.entries) {
             dayEntries[di].push({
               label: projectName(entry.project_id),
-              hours: round1((entry.duration_secs ?? 0) / 3600),
+              hours: exactHours((entry.duration_secs ?? 0) / 3600),
               // Carry the session itself, not just its project and length: the drill-down shows an
               // admin what was worked on, which a per-project roll-up cannot answer.
               session: {
@@ -407,11 +460,12 @@ export function useTeamTimesheet(
         return {
           id: emp.user_id,
           name: emp.name,
-          department: depts.get(emp.department_id) ?? (emp.department_id ? UNKNOWN_DEPARTMENT : "—"),
+          department: deptLabelOf(depts, emp.department_id),
           trackedHrs,
           days,
           dayEntries,
           idleHrs: 0, // no honest source for idle time yet
+          billableHrs: exactHours(grid.billable_secs / 3600),
           billablePct,
           activity,
           status,
@@ -419,24 +473,10 @@ export function useTeamTimesheet(
       },
     );
 
-    // ── teamWeekly (Mon–Sun, summed across everyone) ──────────────────────
-    const byDate = new Map<string, { hours: number; billable: number }>();
-    for (const { grid } of fetched) {
-      for (const day of grid.days) {
-        const slot = byDate.get(day.date) ?? { hours: 0, billable: 0 };
-        slot.hours += day.total_secs / 3600;
-        slot.billable += day.billable_secs / 3600;
-        byDate.set(day.date, slot);
-      }
-    }
-    const teamWeekly: DailyHours[] = dates.map((date, i) => {
-      const slot = byDate.get(date) ?? { hours: 0, billable: 0 };
-      return {
-        day: DAY_LABELS[i],
-        hours: round1(slot.hours),
-        billable: round1(slot.billable),
-      };
-    });
+    // (There was a `teamWeekly` series here, summed over everyone fetched. The cards above the grid
+    // totalled it while the grid totalled the rows in view plus their running sessions, so the two
+    // read 00:00:00 and 20:00:00 one above the other. The cards now total the grid's own rows —
+    // QA audit 2026-10-08, WP-196.)
 
     // ── projectRows (aggregate every entry by project) ────────────────────
     interface Agg {
@@ -459,7 +499,7 @@ export function useTeamTimesheet(
     });
     const byProject = new Map<string, Agg>();
     for (const { emp, grid } of fetched) {
-      const dept = depts.get(emp.department_id) ?? (emp.department_id ? UNKNOWN_DEPARTMENT : "—");
+      const dept = deptLabelOf(depts, emp.department_id);
       for (const day of grid.days) {
         const di = dateIndex.get(day.date);
         for (const entry of day.entries) {
@@ -471,10 +511,12 @@ export function useTeamTimesheet(
           agg.users.add(emp.user_id);
           agg.deptCounts.set(dept, (agg.deptCounts.get(dept) ?? 0) + 1);
           if (di !== undefined) {
-            agg.days[di] = round1(agg.days[di] + secs / 3600);
+            agg.days[di] = exactHours(agg.days[di] + secs / 3600);
             agg.dayEntries[di].push({
               label: emp.name,
-              hours: round1(secs / 3600),
+              hours: exactHours(secs / 3600),
+              // So the grid's live top-up ticks a project row too, as it does the person's row.
+              ...(entry.end === undefined ? { runningSinceMs: entry.start } : {}),
             });
           }
           byProject.set(pid, agg);
@@ -493,7 +535,7 @@ export function useTeamTimesheet(
           dept = d;
         }
       }
-      const trackedHrs = round1(agg.secs / 3600);
+      const trackedHrs = exactHours(agg.secs / 3600);
       return {
         id: pid,
         name: meta?.name ?? UNKNOWN_PROJECT,
@@ -507,15 +549,30 @@ export function useTeamTimesheet(
       };
     });
 
-    return { teamRows, projectRows, teamWeekly };
-    // `week` is a real input: the rows are mapped onto its 7 dates, so a week change must re-derive
-    // them. (It was a ref before the week became selectable, which is why it wasn't listed.)
-  }, [data, week]);
+    return { teamRows, projectRows };
+  }, [data]);
 
-  const { dates, weekLabel } = useMemo(() => {
-    const d = week.dates;
-    return { dates: d, weekLabel: weekLabelOf(d) };
-  }, [week]);
+  // The stepper names the period being asked for; the columns are the period the rows were read for.
+  const weekLabel = useMemo(() => weekLabelOf(week.dates), [week]);
+  const dates = data?.range.dates ?? week.dates;
 
-  return { ...derived, dates, weekLabel, loading, error, forbidden, reload };
+  const truncated = useMemo(
+    () =>
+      (data?.fetched ?? [])
+        .filter(({ grid }) => grid.truncated === true)
+        .map(({ emp }) => emp.name),
+    [data],
+  );
+
+  return {
+    ...derived,
+    dates,
+    weekLabel,
+    loaded: data !== null,
+    loading,
+    error,
+    forbidden,
+    reload,
+    truncated,
+  };
 }

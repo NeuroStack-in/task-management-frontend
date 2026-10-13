@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   CreditCard,
   ListTodo,
+  ShieldAlert,
   TrendingDown,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -22,6 +23,13 @@ export const NOTIFICATION_TYPE_META: Record<
     label: "Approvals",
     icon: CheckCircle2,
     className: "bg-success/15 text-success",
+  },
+  // The server's `security` category (a two-factor reset) — it used to fold into System with the
+  // generic bell, although Settings has a "Security alerts" toggle (WP-381).
+  security: {
+    label: "Security",
+    icon: ShieldAlert,
+    className: "bg-destructive/10 text-destructive",
   },
   productivity: {
     label: "Productivity",

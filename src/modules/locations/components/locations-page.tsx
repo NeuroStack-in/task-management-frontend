@@ -15,5 +15,7 @@ import { MyLocationView } from "./my-location-view";
 import { LocationsView } from "./locations-board";
 
 export function LocationsPage() {
-  return useIsSelfScoped() ? <MyLocationView /> : <LocationsView />;
+  // The board reads `GET /v1/insights/locations` (`ActivityReadTeam` → `locations:view`); a team-only
+  // reader was sent to the personal view by the old directory/activity proxy (QA audit 2026-10-08, WP-322).
+  return useIsSelfScoped(["locations:view"]) ? <MyLocationView /> : <LocationsView />;
 }

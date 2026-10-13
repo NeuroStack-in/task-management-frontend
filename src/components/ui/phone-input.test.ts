@@ -42,6 +42,20 @@ describe("phone parsing", () => {
     expect(countryFromDial("919941469980")?.iso).toBe("IN");
     expect(countryFromDial("971501234567")?.dial).toBe("971");
   });
+
+  /** WP-362: a shared code resolved to whichever sharer came first alphabetically (the Bahamas). */
+  it("resolves a shared dial code to the right country", () => {
+    expect(countryFromDial("1")?.iso).toBe("US");
+    expect(countryFromDial("12025550123")?.iso).toBe("US");
+    expect(countryFromDial("12423221234")?.iso).toBe("BS");
+    expect(countryFromDial("18765551234")?.iso).toBe("JM");
+    expect(countryFromDial("74951234567")?.iso).toBe("RU");
+    expect(countryFromDial("77011234567")?.iso).toBe("KZ");
+    expect(parse("+12025550123")).toEqual({
+      country: expect.objectContaining({ iso: "US" }),
+      national: "2025550123",
+    });
+  });
 });
 
 describe("country list", () => {

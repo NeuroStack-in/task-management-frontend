@@ -2,10 +2,10 @@
 
 import { useAuthStore } from "@/stores/auth.store";
 import { useCallback, useEffect } from "react";
-import { getEntitlements } from "@/lib/api";
+import { ApiError, getEntitlements } from "@/lib/api";
 import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store";
 import type { FeatureKey } from "@/stores/features.store";
-import { MODE_HIDDEN_FEATURES } from "@/constants/features";
+import { MODE_HIDDEN_FEATURES, featureForPath } from "@/constants/features";
 import type { TrackingMode } from "@/lib/tracking-mode";
 
 /**
@@ -119,42 +119,109 @@ export function useIsFeatureOffForOthers(): (
 }
 
 /**
- * Load the org's entitlements once, as soon as there is a session to load them for.
+ * Quick retries for a failed entitlements read, then a slow heal-loop. A single failed read used to
+ * leave every hidden page and mode-hidden section open for the rest of the session — it was never
+ * retried (QA audit 2026-10-08, WP-317).
+ */
+const QUICK_RETRY_MS = [1_000, 3_000, 8_000];
+const SLOW_RETRY_MS = 60_000;
+
+/** A refusal no retry will change (bar a timeout or a throttle) — stop asking. */
+function isPermanent(e: unknown): boolean {
+  return (
+    e instanceof ApiError &&
+    e.status >= 400 &&
+    e.status < 500 &&
+    e.status !== 408 &&
+    e.status !== 429
+  );
+}
+
+/**
+ * Load the org's entitlements as soon as there is a session to load them for.
  *
  * Mounted by `AuthGuard`, which is the first thing inside the authenticated tree — the nav and the
- * route guard both read the result. A failure is swallowed: entitlements are a UX gate, so an
- * unreachable endpoint must degrade to "show everything" rather than lock the user out of their
- * own app. The server still refuses anything the org isn't entitled to.
+ * route guard both read the result. Every field is hydrated, not a hand-picked subset: anything
+ * omitted is simply absent for every surface outside Settings (omitting `pages` once meant page
+ * toggles took effect nowhere else).
+ *
+ * A failed read is retried, quickly at first. Once the quick retries are spent the store is marked
+ * `failed`: the gates run **fail-open** — entitlements are a UX gate, so an unreachable endpoint must
+ * not lock someone out of their own app, and the server still refuses any feature the org isn't
+ * entitled to — while a slow retry keeps trying, so a transient fault no longer lasts the session.
  */
 export function useEntitlementsSync(active: boolean): void {
   const hydrate = useEntitlementsStore((s) => s.hydrate);
+  const markFailed = useEntitlementsStore((s) => s.markFailed);
 
   useEffect(() => {
     if (!active) return;
     let live = true;
-    getEntitlements()
-      .then((e) => {
-        if (live)
-          // Every field, not a hand-picked subset. This is the ONLY app-wide hydrate — the
-          // Settings page has its own local copy — so anything omitted here is simply absent for
-          // every surface outside Settings. Omitting `pages` meant page toggles took effect on the
-          // page that set them and nowhere else, which is the whole feature not working.
-          hydrate({
-            allowed: e.allowed,
-            enabled: e.enabled,
-            disabled_by: e.disabled_by,
-            pages: e.pages,
-            pages_disabled_by: e.pages_disabled_by,
-            tracking_mode: e.tracking_mode,
-          });
-      })
-      .catch(() => {
-        /* Stay fail-open — see the doc comment. */
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = (n: number) => {
+      getEntitlements()
+        .then((e) => {
+          if (live) hydrate(e);
+        })
+        .catch((e) => {
+          if (!live) return;
+          const permanent = isPermanent(e);
+          if (permanent || n >= QUICK_RETRY_MS.length) markFailed();
+          if (!permanent) {
+            timer = setTimeout(() => attempt(n + 1), QUICK_RETRY_MS[n] ?? SLOW_RETRY_MS);
+          }
+        });
+    };
+    attempt(0);
     return () => {
       live = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [active, hydrate]);
+  }, [active, hydrate, markFailed]);
+}
+
+/**
+ * Has the entitlements gate settled — loaded, or given up and running fail-open?
+ *
+ * Until it has, `AuthGuard` holds back any page a feature, mode or page toggle could close, rather
+ * than mounting it: a gated page used to mount, fire its requests and paint real data before being
+ * swapped for "This page is turned off" (QA audit 2026-10-08, WP-317).
+ */
+export function useEntitlementsSettled(): boolean {
+  return useEntitlementsStore((s) => s.loaded || s.failed);
+}
+
+/**
+ * Could the org's entitlements close this path — a plan feature, the tracking mode, or a page toggle?
+ * Everything outside {@link ALWAYS_VISIBLE} can be hidden by a page toggle; under it, only a route
+ * with its own feature key (e.g. `/settings/integrations`).
+ */
+export function isEntitlementGated(pathname: string): boolean {
+  if (featureForPath(pathname)) return true;
+  return !ALWAYS_VISIBLE.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/**
+ * Re-read the org's entitlements into the shared store — after a write that changes them, so the
+ * sidebar, route guard and upgrade walls follow at once instead of at the next full page load.
+ *
+ * With `untilPlan`, keeps asking until the server reports that plan: a plan change reaches the
+ * entitlements item asynchronously (`billing.plan_changed` → identity), so the first read can still
+ * carry the old one. Resolves whether the store now reflects it.
+ */
+export async function refreshEntitlements(untilPlan?: string): Promise<boolean> {
+  const waits = untilPlan ? [0, 1_000, 2_000, 4_000, 8_000] : [0];
+  for (const wait of waits) {
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    try {
+      const e = await getEntitlements();
+      useEntitlementsStore.getState().hydrate(e);
+      if (!untilPlan || e.plan === untilPlan) return true;
+    } catch {
+      // Keep the copy we have; a later attempt (or the next page load) catches up.
+    }
+  }
+  return false;
 }
 
 /**

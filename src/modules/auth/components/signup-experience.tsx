@@ -25,13 +25,21 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Info, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
 // `createOrg` and `slugify` live in `lib/api` on this branch, not in a per-module service — the
 // signup contract is kept beside the other public identity calls (`lookupInvite`, `acceptInvite`).
-import { ApiError, createOrg, empPrefixCandidates, slugify } from "@/lib/api";
+import {
+  ApiError,
+  createOrg,
+  EMP_PREFIX_MAX,
+  empPrefixCandidates,
+  normalizeEmpPrefix,
+  slugify,
+} from "@/lib/api";
 import { requestOrg } from "@/modules/onboarding/services/onboarding.service";
 import {
   COUNTRIES,
@@ -59,8 +67,11 @@ import {
 import { PhoneInput } from "@/components/ui/phone-input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { todayIso } from "@/lib/format";
+import { COUNTRIES as COUNTRY_CODES } from "@/lib/countries";
 import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { safeLandingPath } from "@/lib/rbac";
+import { handOffEmail } from "@/modules/auth/email-handoff";
+import { legalHref } from "@/modules/legal/documents";
 
 type Errors = Record<string, string | undefined>;
 
@@ -70,6 +81,19 @@ const LAST = STEP_LABELS.length - 1;
 
 /** `CURRENCIES` are display strings like `"USD — US Dollar"`; the server wants the code. */
 const codeOf = (s: string) => s.split("—")[0]?.trim() || undefined;
+
+/**
+ * The picked country's ISO code — what the org-request contract documents — not its display name.
+ * "Other" has none and is sent as nothing (QA audit 2026-10-08, WP-392).
+ */
+const isoOf = (name: string) => COUNTRY_CODES.find((c) => c.name === name)?.iso;
+
+/**
+ * The workspace ID while it is being typed: `slugify` without its trailing-dash trim, which removed
+ * a dash or space the moment it was typed — `acme-inc` came out `acmeinc` (QA audit 2026-10-08,
+ * WP-384). The full `slugify` still runs on what is shown as the result and on what is sent.
+ */
+const slugDraft = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "");
 
 /**
  * @param authenticated Render for a caller who has **already signed in** and has no organization —
@@ -107,9 +131,17 @@ export function SignupExperience({
   const [submitting, setSubmitting] = useState(false);
 
   const [acct, setAcct] = useState({ name: "", email: "", password: "", confirm: "" });
-  const [agree, setAgree] = useState(false);
-  const [org, setOrg] = useState({ name: "", slug: "", industry: "", size: "", website: "" });
+  const [org, setOrg] = useState({
+    name: "",
+    slug: "",
+    industry: "",
+    size: "",
+    website: "",
+    prefix: "",
+  });
   const [slugTouched, setSlugTouched] = useState(false);
+  /** Set once the employee-ID prefix is typed — after that the org name no longer rewrites it. */
+  const [prefixTouched, setPrefixTouched] = useState(false);
   const [region, setRegion] = useState({ country: "", currency: "", timezone: "" });
   const [profile, setProfile] = useState({
     fullName: "",
@@ -123,6 +155,8 @@ export function SignupExperience({
   const [billing, setBilling] = useState<"monthly" | "annual">("annual");
   const [plan, setPlan] = useState("free");
   const [consent, setConsent] = useState(false);
+  /** The Terms of Service + Privacy Policy agreement, on the last step. See the note there. */
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [planInfoOpen, setPlanInfoOpen] = useState(false);
 
   const [errors, setErrors] = useState<Errors>({});
@@ -164,11 +198,15 @@ export function SignupExperience({
       if (!passwordMeetsPolicy(acct.password))
         e["signup-password"] = "Your password doesn't meet all the requirements yet";
       if (acct.confirm !== acct.password) e["signup-confirm"] = "Both passwords must match";
-      if (!agree) e["signup-agree"] = "Accept the Terms of Service to continue";
     }
     if (s === 1) {
       if (!org.name.trim()) e["org-name"] = "Enter your organization's name";
-      if (!slugify(org.slug || org.name)) e["org-slug"] = "Enter a valid workspace address";
+      // Only the public flow chooses a workspace ID; a request is given one at approval.
+      if (!authenticated && !slugify(org.slug || org.name))
+        e["org-slug"] = "Enter a valid workspace ID";
+      // Only the public flow claims a prefix; an approved request gets one assigned at approval.
+      if (!authenticated && !normalizeEmpPrefix(org.prefix))
+        e["org-prefix"] = `Enter an employee ID prefix (1–${EMP_PREFIX_MAX} letters or digits)`;
       if (!org.industry) e["org-industry"] = "Choose your industry";
       if (!org.size) e["org-size"] = "Choose your organization size";
     }
@@ -194,6 +232,8 @@ export function SignupExperience({
     if (s === 4) {
       if (!plan) e["org-plan"] = "Choose a plan";
       if (!consent) e["org-consent"] = "Confirm the monitoring authorization to continue";
+      if (!termsAccepted)
+        e["signup-terms"] = "Agree to the Terms of Service and Privacy Policy to continue";
     }
     return e;
   };
@@ -243,8 +283,10 @@ export function SignupExperience({
     // Every field the wizard collected is carried through — `POST /v1/org/requests` stores them and
     // replays them into the org at approval — so the applicant fills this in once and none of it is
     // quietly dropped between asking and the workspace being built. No account block: the identity
-    // came from Google, and no `slug`/`emp_id_prefix`, both of which are derived and claimed
-    // server-side at approval rather than reserved by a request that may never be granted.
+    // came from Google. No `slug`/`emp_id_prefix`, and no plan: the request has no field for them —
+    // the server derives the first two at approval and starts every approved org on Free — so this
+    // variant no longer asks for a workspace ID or a plan it would then drop (QA audit 2026-10-08,
+    // WP-128).
     if (authenticated) {
       try {
         await requestOrg({
@@ -253,7 +295,7 @@ export function SignupExperience({
           industry: org.industry || undefined,
           size: org.size || undefined,
           website: org.website.trim() || undefined,
-          country: region.country || undefined,
+          country: isoOf(region.country),
           currency: codeOf(region.currency),
           timezone:
             region.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
@@ -263,6 +305,8 @@ export function SignupExperience({
           phone: profile.phone.trim() || undefined,
           date_of_birth: profile.dateOfBirth || undefined,
           work_mode: profile.workMode || undefined,
+          // The authorisation tick was required and then sent nowhere (QA audit 2026-10-08, WP-128).
+          monitoring_consent: consent,
         });
         onSubmitted?.();
       } catch (e) {
@@ -279,14 +323,16 @@ export function SignupExperience({
         org: {
           name: org.name.trim(),
           slug: slugify(org.slug || org.name),
-          // Required by the server, which claims it globally (`SYS#EMPPFX`). This flow has no
-          // prefix field, so it takes the first deterministic candidate from the org name — the
-          // same list the wizard offers as suggestions. A collision surfaces as `emp_prefix_taken`.
-          emp_id_prefix: empPrefixCandidates(org.name)[0] ?? "",
+          // Required by the server, which claims it globally (`SYS#EMPPFX`). The field on the
+          // organization step is prefilled from the org name and editable: it used to be derived
+          // silently, so "Tesla Robotics" after "Test Org" collided on `TES` with nothing to change,
+          // and a name with no ASCII letters produced no prefix at all (QA audit WP-031).
+          emp_id_prefix: normalizeEmpPrefix(org.prefix),
+          monitoring_consent: consent,
           industry: org.industry || undefined,
           size: org.size || undefined,
           website: org.website.trim() || undefined,
-          country: region.country || undefined,
+          country: isoOf(region.country),
           currency: codeOf(region.currency),
           timezone:
             region.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
@@ -308,7 +354,8 @@ export function SignupExperience({
       // bouncing to /login to ask for a password they set thirty seconds ago.
       //
       // A failure here is NOT a signup failure — the account is real either way — so it never
-      // surfaces as an error. It falls back to the sign-in page with the email prefilled.
+      // surfaces as an error. It falls back to the sign-in page with the email prefilled (handed
+      // over in sessionStorage, not as `?email=` in the URL — WP-390).
       try {
         await login(acct.email.trim().toLowerCase(), acct.password);
         toast.success("Workspace created", {
@@ -322,7 +369,8 @@ export function SignupExperience({
         toast.success("Workspace created", {
           description: "Sign in with your new password to continue.",
         });
-        router.replace(`/login?email=${encodeURIComponent(acct.email.trim().toLowerCase())}`);
+        handOffEmail(acct.email.trim().toLowerCase());
+        router.replace("/login");
       }
     } catch (e) {
       setSubmitting(false);
@@ -332,11 +380,19 @@ export function SignupExperience({
       // round the loop forever. (`email_taken` is new: create_org used to adopt an existing login
       // instead of refusing, which is the account-takeover this replaced.)
       const emailTaken = e instanceof ApiError && e.code === "email_taken";
+      // The prefix and the address are separate claims with separate fixes. The server now names
+      // which one is taken; `slug_or_emp_prefix_taken` remains for the rare race it can't attribute.
+      const prefixTaken = e instanceof ApiError && e.code === "emp_prefix_taken";
+      const eitherTaken = e instanceof ApiError && e.code === "slug_or_emp_prefix_taken";
       const msg =
         e instanceof ApiError && e.status === 409
           ? emailTaken
             ? "An account already uses that email. Sign in instead, or use a different address."
-            : "That workspace address is already taken — go back and try another."
+            : prefixTaken
+              ? "Another organization already uses that employee ID prefix — go back and choose another."
+              : eitherTaken
+                ? "That workspace ID or employee ID prefix was just taken — go back and change one of them."
+                : "That workspace ID is already taken — go back and try another."
           : e instanceof ApiError
             ? e.message
             : "Couldn't create your workspace. Try again.";
@@ -344,13 +400,26 @@ export function SignupExperience({
       // key regardless of step, so this shows either way — but keying it to `signup-email` also
       // marks the input itself, and stepping back to 0 is what makes that visible. Wizard state is
       // all held in this component, so nothing entered on steps 1-4 is lost going back.
-      setErrors({ [emailTaken ? "signup-email" : "org-plan"]: msg });
+      const field = emailTaken
+        ? "signup-email"
+        : prefixTaken
+          ? "org-prefix"
+          : e instanceof ApiError && e.status === 409
+            ? "org-slug"
+            : "org-plan";
+      setErrors({ [field]: msg });
       if (emailTaken) setStep(0);
+      else if (field !== "org-plan") setStep(1);
       requestAnimationFrame(() => summaryRef.current?.focus());
     }
   };
 
-  if (hydrated && isAuthenticated) return null;
+  // The signed-in variant is FOR an authenticated caller, so it must not blank itself the way the
+  // public form does while its redirect lands. The effect above was exempted for it and this guard
+  // was not, so every "Continue with Google" user with no organization — and every rejected
+  // applicant pressing "Submit a new request" — got a page with a logo and nothing else
+  // (QA audit 2026-10-08, WP-029).
+  if (hydrated && isAuthenticated && !authenticated) return null;
 
   const summary = Object.entries(errors).filter(([, v]) => Boolean(v)) as [string, string][];
   const previewSlug = slugify(org.slug || org.name);
@@ -359,10 +428,15 @@ export function SignupExperience({
     authenticated
       ? ["Request your workspace", "A member of the WorkPulse team reviews each request."]
       : ["Create your workspace", "You'll be the owner — you can invite your team next."],
-    ["About your organization", "This names your workspace and its web address."],
+    [
+      "About your organization",
+      authenticated ? "This names your workspace." : "This names your workspace and sets its ID.",
+    ],
     ["Region & localization", "How WorkPulse formats time and currency for your teams."],
     ["Your profile", "How your team sees you. Everything here is editable later."],
-    ["Choose a plan", "Free while in beta — no card required."],
+    authenticated
+      ? ["Your plan", "Every approved workspace starts on the Free plan."]
+      : ["Choose a plan", "Free while in beta — no card required."],
   ];
 
   return (
@@ -446,22 +520,12 @@ export function SignupExperience({
 
               <AuthPasswordRules value={acct.password} confirm={acct.confirm} showMatch />
 
-              <label className="m-check mt-3">
-                <input
-                  type="checkbox"
-                  id="signup-agree"
-                  name="signup-agree"
-                  checked={agree}
-                  onChange={(e) => {
-                    setAgree(e.target.checked);
-                    clear("signup-agree");
-                  }}
-                  {...(errors["signup-agree"] ? { "aria-invalid": true as const } : {})}
-                />
-                <span className="m-check__text">
-                  I agree to the Terms of Service and Privacy Policy.
-                </span>
-              </label>
+              {/* The "I agree to the Terms of Service and Privacy Policy" box used to sit here. It was
+                  required but linked to nothing, so people agreed to text nobody could read (QA audit
+                  2026-10-08, WP-115). It is back, linked to the drafts at /legal/*, on the LAST step
+                  beside the monitoring authorization rather than here. There it also covers the Google
+                  returnee, who skips this step, and it sits next to the button that actually creates
+                  the account or request. */}
             </>
           ) : null}
 
@@ -473,28 +537,61 @@ export function SignupExperience({
                 label="Organization name"
                 value={org.name}
                 onChange={(v) => {
-                  setOrg((s) => ({ ...s, name: v, slug: slugTouched ? s.slug : slugify(v) }));
+                  setOrg((s) => ({
+                    ...s,
+                    name: v,
+                    slug: slugTouched ? s.slug : slugify(v),
+                    prefix: prefixTouched ? s.prefix : (empPrefixCandidates(v)[0] ?? ""),
+                  }));
                   clear("org-name");
                 }}
                 error={errors["org-name"]}
                 autoComplete="organization"
               />
-              <AuthField
-                id="org-slug"
-                label="Workspace address"
-                value={org.slug}
-                onChange={(v) => {
-                  setSlugTouched(true);
-                  setOrg((s) => ({ ...s, slug: slugify(v) }));
-                  clear("org-slug");
-                }}
-                error={errors["org-slug"]}
-                hint={previewSlug ? `${previewSlug}.workpulse.io` : "Letters, numbers and dashes."}
-              />
+              {/* Public flow only — a request is given its ID at approval. Named an ID, not an
+                  address: there is no `<id>.workpulse.io`, which the hint used to promise (WP-128). */}
+              {!authenticated ? (
+                <AuthField
+                  id="org-slug"
+                  label="Workspace ID"
+                  value={org.slug}
+                  onChange={(v) => {
+                    setSlugTouched(true);
+                    setOrg((s) => ({ ...s, slug: slugDraft(v) }));
+                    clear("org-slug");
+                  }}
+                  error={errors["org-slug"]}
+                  hint={
+                    previewSlug
+                      ? `Your workspace's unique ID: ${previewSlug}`
+                      : "Letters, numbers and dashes."
+                  }
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+              ) : null}
+              {!authenticated ? (
+                <AuthField
+                  id="org-prefix"
+                  label="Employee ID prefix"
+                  value={org.prefix}
+                  onChange={(v) => {
+                    setPrefixTouched(true);
+                    setOrg((s) => ({ ...s, prefix: normalizeEmpPrefix(v) }));
+                    clear("org-prefix");
+                  }}
+                  error={errors["org-prefix"]}
+                  hint={`Starts every employee ID, like ${normalizeEmpPrefix(org.prefix) || "INF"}-0001. Up to ${EMP_PREFIX_MAX} letters or digits, unique to your organization.`}
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                />
+              ) : null}
               <div className="m-arow">
                 <div className="m-afield">
                   <span className="m-acap">Industry</span>
+                  {/* Ids, so the error summary's links land on the control (WP-389). */}
                   <MSelect
+                    id="org-industry"
                     value={org.industry}
                     onChange={(v) => {
                       setOrg((s) => ({ ...s, industry: v }));
@@ -507,6 +604,7 @@ export function SignupExperience({
                 <div className="m-afield">
                   <span className="m-acap">Organization size</span>
                   <MSelect
+                    id="org-size"
                     value={org.size}
                     onChange={(v) => {
                       setOrg((s) => ({ ...s, size: v }));
@@ -536,6 +634,7 @@ export function SignupExperience({
               <div className="m-afield">
                 <span className="m-acap">Headquarters country</span>
                 <MSelect
+                  id="org-country"
                   value={region.country}
                   onChange={(v) => {
                     // Picking a country pre-fills the matching billing currency.
@@ -564,6 +663,7 @@ export function SignupExperience({
                 <div className="m-afield">
                   <span className="m-acap">Billing currency</span>
                   <MSelect
+                    id="org-currency"
                     value={region.currency}
                     onChange={(v) => {
                       setRegion((s) => ({ ...s, currency: v }));
@@ -661,6 +761,8 @@ export function SignupExperience({
                   error={errors["me-dob"]}
                   control={
                     <DatePicker
+                      // The id the label and the error summary point at — the picker had none (WP-389).
+                      id="me-dob"
                       value={profile.dateOfBirth}
                       onChange={(v) => {
                         setProfile((s) => ({ ...s, dateOfBirth: v }));
@@ -708,12 +810,32 @@ export function SignupExperience({
           {/* ---------------- 5 · Plan ---------------- */}
           {step === 4 ? (
             <>
+              {authenticated ? (
+                // The request has no plan field and approval creates every org on Free, so this
+                // variant states that instead of offering a choice it would drop (WP-128).
+                <p className="m-anote">
+                  Your workspace starts on the Free plan. Once it&apos;s approved, you can change plan
+                  any time in Settings → Billing.
+                </p>
+              ) : (
+              <>
               <div className="m-planbar">
+                {/* `aria-pressed`: the selected period was signalled only by a `data-on` style (WP-389). */}
                 <div className="m-billtoggle" role="group" aria-label="Billing period">
-                  <button type="button" data-on={billing === "monthly"} onClick={() => setBilling("monthly")}>
+                  <button
+                    type="button"
+                    data-on={billing === "monthly"}
+                    aria-pressed={billing === "monthly"}
+                    onClick={() => setBilling("monthly")}
+                  >
                     Monthly
                   </button>
-                  <button type="button" data-on={billing === "annual"} onClick={() => setBilling("annual")}>
+                  <button
+                    type="button"
+                    data-on={billing === "annual"}
+                    aria-pressed={billing === "annual"}
+                    onClick={() => setBilling("annual")}
+                  >
                     Annual <span>−17%</span>
                   </button>
                 </div>
@@ -738,6 +860,8 @@ export function SignupExperience({
                       <input
                         type="radio"
                         name="plan"
+                        // The error summary's `#org-plan` lands on the chosen radio.
+                        id={plan === pl.id ? "org-plan" : undefined}
                         value={pl.id}
                         checked={plan === pl.id}
                         onChange={() => {
@@ -760,6 +884,8 @@ export function SignupExperience({
                   );
                 })}
               </fieldset>
+              </>
+              )}
 
               <label className="m-check mt-2">
                 <input
@@ -778,6 +904,50 @@ export function SignupExperience({
                   <span className="m-check__note">
                     You&apos;re responsible for telling your team what is tracked.
                   </span>
+                </span>
+              </label>
+
+              {/* Required in both variants (WP-115). The links sit inside the label: clicking one
+                  opens the document and does not toggle the box, because a label ignores clicks on
+                  interactive content. They open in a new tab, because leaving this page would lose
+                  every step entered so far. The box's accessible name is the whole sentence, note
+                  included. The acceptance is not sent to the server yet: neither `POST /v1/org/create`
+                  nor `POST /v1/org/requests` has a field for it. */}
+              <label className="m-check">
+                <input
+                  type="checkbox"
+                  id="signup-terms"
+                  name="signup-terms"
+                  checked={termsAccepted}
+                  onChange={(e) => {
+                    setTermsAccepted(e.target.checked);
+                    clear("signup-terms");
+                  }}
+                  {...(errors["signup-terms"] ? { "aria-invalid": true as const } : {})}
+                />
+                <span className="m-check__text">
+                  I agree to the{" "}
+                  <Link
+                    href={legalHref("terms")}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold underline underline-offset-2"
+                    style={{ color: "var(--m-accent-ink)" }}
+                  >
+                    Terms of Service
+                  </Link>{" "}
+                  and{" "}
+                  <Link
+                    href={legalHref("privacy")}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold underline underline-offset-2"
+                    style={{ color: "var(--m-accent-ink)" }}
+                  >
+                    Privacy Policy
+                  </Link>
+                  .
+                  <span className="m-check__note">Both open in a new tab.</span>
                 </span>
               </label>
             </>
@@ -813,12 +983,20 @@ export function SignupExperience({
         {step === 0 && !authenticated ? (
           <>
             <div className="m-authdiv">or</div>
-            {/* Inline social sign-in (no modal). On signup these route to sign-IN via Google
-                — social is invited-users-only, so it joins an existing org rather than creating a
-                workspace here; the backend accepts or rejects. */}
-            <SsoProviderButtons
-              onError={(m) => setErrors(m ? { "signup-email": m } : {})}
-            />
+            {/* Inline social sign-in (no modal). This doesn't run the form above: a known address
+                signs in to its account, and an address WorkPulse doesn't know gets an account with
+                no organization, which then asks for a workspace from /onboarding. The id is the
+                target of the `signup-sso` error link. */}
+            <div id="signup-sso" tabIndex={-1}>
+              <SsoProviderButtons
+                onError={(m) => {
+                  // Its own key, not the email field's, and visible at once — it was attached,
+                  // screen-reader-only, to an email field it had nothing to do with (WP-107).
+                  setErrors(m ? { "signup-sso": m } : {});
+                  if (m) setSubmitted(true);
+                }}
+              />
+            </div>
             <AuthSwitch prompt="Already have an account?" href="/login" label="Sign in" />
           </>
         ) : null}

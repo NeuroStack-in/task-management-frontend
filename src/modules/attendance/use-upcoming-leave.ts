@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { getQueue } from "@/modules/approvals/services/approvals.service";
 import { getTypes } from "@/modules/leave/services/leave.service";
 import { employeeNameMap } from "@/modules/employees/services/employees.service";
+import { isoOfDay, useToday } from "./use-today";
 
 export interface UpcomingLeaveItem {
   userId: string;
@@ -43,11 +44,8 @@ export function useUpcomingLeave(enabled: boolean): UpcomingLeaveData {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const todayIso = useMemo(() => {
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  }, []);
+  // Re-read at midnight: leave starting "tomorrow" is today's roster by then (WP-258).
+  const todayIso = isoOfDay(useToday());
 
   useEffect(() => {
     if (!enabled) return;

@@ -22,6 +22,12 @@ import {
 export interface PayrollState {
   runs: ApiPayrollRun[];
   deductions: ApiDeduction[];
+  /**
+   * Set when the deduction rules could not be read. Kept apart from an empty list on purpose: the
+   * card used to show a failed read as "No deduction rules configured", and since saving replaces
+   * the whole document, the first edit from there wiped every real rule (WP-075).
+   */
+  deductionsError: string | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -34,6 +40,7 @@ export interface PayrollState {
 export function usePayroll(): PayrollState {
   const [runs, setRuns] = useState<ApiPayrollRun[]>([]);
   const [deductions, setDeductions] = useState<ApiDeduction[]>([]);
+  const [deductionsError, setDeductionsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -44,12 +51,27 @@ export function usePayroll(): PayrollState {
     let live = true;
     setLoading(true);
     setError(null);
-    Promise.all([listRuns(), getDeductions().catch(() => [])])
+    setDeductionsError(null);
+    // A failed deductions read must not look like "no rules" — the runs list stays usable either way.
+    const deductionsRead = getDeductions().then(
+      (d) => ({ ok: true as const, d }),
+      // The rules need `payroll:manage` on the server; a view-only role was told "No deduction
+      // rules configured" beside run totals that plainly include deductions (WP-268).
+      (e: unknown) => ({
+        ok: false as const,
+        message:
+          e instanceof ApiError && e.status === 403
+            ? "only payroll managers can see the deduction rules — the run totals above already include them."
+            : messageOf(e),
+      }),
+    );
+    Promise.all([listRuns(), deductionsRead])
       .then(([r, d]) => {
         if (!live) return;
         // Newest period first.
         setRuns([...r].sort((a, b) => b.period.localeCompare(a.period)));
-        setDeductions(d);
+        if (d.ok) setDeductions(d.d);
+        else setDeductionsError(d.message);
       })
       .catch((e) => {
         if (live) setError(messageOf(e));
@@ -93,7 +115,18 @@ export function usePayroll(): PayrollState {
     return setCompensation(userId, body);
   }, []);
 
-  return { runs, deductions, loading, error, reload, draft, finalize, saveDeductions, setComp };
+  return {
+    runs,
+    deductions,
+    deductionsError,
+    loading,
+    error,
+    reload,
+    draft,
+    finalize,
+    saveDeductions,
+    setComp,
+  };
 }
 
 function messageOf(e: unknown): string {

@@ -23,11 +23,14 @@ import {
   confirmTotpEnrollment,
   disableTotp,
   fetchTotpEnabled,
+  reauthenticate,
   SessionExpiredError,
   type TotpEnrollment,
 } from "@/modules/auth/services/account-security.service";
 import { cn } from "@/lib/utils";
 import { friendlyError } from "@/lib/errors";
+import { sessionCanSelfManage } from "@/lib/oauth";
+import { useAuthStore } from "@/stores/auth.store";
 
 const MFA = "Multi-factor authentication";
 
@@ -41,7 +44,9 @@ function formatSecret(secret: string): string {
  *
  * **MFA is optional and user-managed** (product decision 2026-07-23): the Cognito pool enforces
  * nothing, so this card is the only way anyone turns it on. Once enabled, Cognito issues a
- * `SOFTWARE_TOKEN_MFA` challenge at every subsequent sign-in (handled by /mfa).
+ * `SOFTWARE_TOKEN_MFA` challenge at every subsequent **password** sign-in (handled by /mfa). The
+ * Google path (`lib/oauth.ts`) swaps its code for tokens with no challenge step, so the card says
+ * which sign-ins it protects.
  *
  * Shared deliberately: employees reach it on /settings/login-security, Owner/Admin inside the org
  * Security Center — which previously showed them a read-only posture row, leaving them with no way
@@ -53,16 +58,27 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  /** Cognito session died mid-action → back to sign in, returning here after. */
+  const logout = useAuthStore((s) => s.logout);
+
+  /**
+   * Cognito session died mid-action → back to sign in, returning here after.
+   *
+   * Signs out **first**. With the store still "authenticated", `/login` sent the user straight back
+   * to `from`, which re-mounted this card, which redirected again — an endless bounce with a toast
+   * per lap (QA audit 2026-10-08, WP-095).
+   */
   const expireToLogin = useCallback(() => {
     toast.error("Session expired", { description: "Please sign in again." });
+    logout();
     router.push(`/login?from=${encodeURIComponent(pathname)}`);
-  }, [router, pathname]);
+  }, [logout, router, pathname]);
 
   /* ── Status (real, from getUserData) ── */
-  const [mfaStatus, setMfaStatus] = useState<"loading" | "on" | "off" | "error">(
-    "loading",
-  );
+  // `federated`: a Google (Hosted-UI) session, whose token can't use Cognito's self-service APIs —
+  // not an error a reload could fix, which is what this card used to say (WP-337).
+  const [mfaStatus, setMfaStatus] = useState<
+    "loading" | "on" | "off" | "error" | "federated"
+  >("loading");
   useEffect(() => {
     let cancelled = false;
     fetchTotpEnabled()
@@ -71,8 +87,10 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
       })
       .catch((err) => {
         if (cancelled) return;
-        if (err instanceof SessionExpiredError) expireToLogin();
-        else setMfaStatus("error");
+        if (err instanceof SessionExpiredError) return expireToLogin();
+        void sessionCanSelfManage().then((ok) => {
+          if (!cancelled) setMfaStatus(ok === false ? "federated" : "error");
+        });
       });
     return () => {
       cancelled = true;
@@ -88,7 +106,16 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
   const [codeError, setCodeError] = useState<string | null>(null);
   // QR encodes the secret — hidden until revealed to avoid screen-share exposure.
   const [qrShown, setQrShown] = useState(false);
+  // …and so is the same secret as text. It was printed in clear under the hidden QR the whole time,
+  // which defeated the point of hiding the QR (QA audit 2026-10-08, WP-522).
+  const [secretShown, setSecretShown] = useState(false);
   const [disabling, setDisabling] = useState(false);
+  /** Turning MFA off weakens the account; it asks first instead of acting on one click (WP-393). */
+  const [confirmOff, setConfirmOff] = useState(false);
+  /** The step-up proof (WP-393): the password and the current authenticator code. */
+  const [offPassword, setOffPassword] = useState("");
+  const [offCode, setOffCode] = useState("");
+  const [offError, setOffError] = useState<string | null>(null);
 
   const startEnrollment = async () => {
     setStarting(true);
@@ -113,6 +140,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
     setCode("");
     setCodeError(null);
     setQrShown(false);
+    setSecretShown(false);
   };
 
   const verify = async () => {
@@ -125,29 +153,37 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
       setMfaStatus("on");
       closeSetup();
       toast.success(`${MFA} enabled`, {
-        description: "You'll be asked for a code at your next sign-in.",
+        description:
+          "You'll be asked for a code the next time you sign in with your email and password.",
       });
     } catch (err) {
       if (err instanceof SessionExpiredError) return expireToLogin();
-      setCodeError(
-        friendlyError(err, "That code isn't right. Check it and try again."),
-      );
+      setCodeError(friendlyError(err, "That code isn't right. Check it and try again."));
     } finally {
       setVerifying(false);
     }
   };
 
+  const closeOff = () => {
+    setConfirmOff(false);
+    setOffPassword("");
+    setOffCode("");
+    setOffError(null);
+  };
+
   const disable = async () => {
     setDisabling(true);
+    setOffError(null);
     try {
+      // Prove it's the account holder first — password and the current code (WP-393).
+      await reauthenticate(offPassword, offCode);
       await disableTotp();
       setMfaStatus("off");
+      closeOff();
       toast.success(`${MFA} turned off`);
     } catch (err) {
       if (err instanceof SessionExpiredError) return expireToLogin();
-      toast.error("Couldn't turn off MFA", {
-        description: friendlyError(err, "Try again in a moment."),
-      });
+      setOffError(friendlyError(err, "Couldn't turn off MFA. Try again in a moment."));
     } finally {
       setDisabling(false);
     }
@@ -158,7 +194,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
   const row = (
     <>
       <div className="flex gap-3">
-        <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-feature-tint text-primary">
+        <span className="bg-feature-tint text-primary mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl">
           <ShieldCheck className="size-5" />
         </span>
         <div className="space-y-0.5">
@@ -166,26 +202,48 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
             {MFA}
             <Badge
               className={cn(
-                enabled
-                  ? "bg-success/12 text-success"
-                  : "bg-muted text-muted-foreground",
+                enabled ? "bg-success/12 text-success" : "bg-muted text-muted-foreground",
               )}
             >
               {mfaStatus === "loading"
                 ? "…"
                 : mfaStatus === "error"
                   ? "Unknown"
-                  : enabled
-                    ? "On"
-                    : "Off"}
+                  : mfaStatus === "federated"
+                    ? "Not available here"
+                    : enabled
+                      ? "On"
+                      : "Off"}
             </Badge>
           </p>
-          <p className="text-sm text-muted-foreground">
-            Require a code from your authenticator app when you sign in.
+          {/* "When you sign in with your email and password": the Google path exchanges its code for
+              tokens with no challenge step, so this code is never asked for there (WP-131). */}
+          {/* Owner decision 2026-10-09 (WP-131): a Google sign-in is protected by the Google account's
+              own two-step verification; WorkPulse's code covers password sign-ins. Google is the only
+              social provider (Microsoft was removed 2026-09-30). */}
+          <p className="text-muted-foreground text-sm">
+            Require a code from your authenticator app when you sign in with your email
+            and password. If you sign in with Google, your Google account&apos;s own
+            two-step verification protects you — turn it on in your{" "}
+            <a
+              href="https://myaccount.google.com/signinoptions/two-step-verification"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              Google account
+            </a>
+            .
           </p>
           {mfaStatus === "error" ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               Couldn&apos;t load your MFA status — reload to retry.
+            </p>
+          ) : mfaStatus === "federated" ? (
+            <p className="text-muted-foreground text-sm">
+              You signed in with Google, so your Google account&apos;s two-step
+              verification protects this sign-in. To use a WorkPulse authenticator code
+              too, sign in with your email and password and turn it on here.
             </p>
           ) : null}
         </div>
@@ -199,23 +257,17 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
           variant="outline"
           size="sm"
           className="shrink-0"
-          onClick={disable}
+          onClick={() => setConfirmOff(true)}
           disabled={disabling}
         >
-          {disabling ? (
-            <>
-              <Loader2 className="size-4 animate-spin" /> Turning off…
-            </>
-          ) : (
-            "Turn off"
-          )}
+          Turn off
         </Button>
       ) : (
         <Button
           size="sm"
           className="shrink-0"
           onClick={startEnrollment}
-          disabled={starting || mfaStatus === "error"}
+          disabled={starting || mfaStatus === "error" || mfaStatus === "federated"}
         >
           {starting ? (
             <>
@@ -254,8 +306,8 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
           <DialogHeader>
             <DialogTitle>Set up {MFA.toLowerCase()}</DialogTitle>
             <DialogDescription>
-              Scan the QR code with your authenticator app, then enter the
-              6-digit code it shows.
+              Scan the QR code with your authenticator app, then enter the 6-digit code it
+              shows.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -268,7 +320,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
                   onClick={() => setQrShown(false)}
                   aria-label="Hide QR code"
                   title="Click to hide"
-                  className="rounded-lg border border-border bg-white p-3 transition hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
+                  className="border-border hover:ring-primary/40 focus-visible:ring-primary/50 rounded-lg border bg-white p-3 transition hover:ring-2 focus-visible:ring-2 focus-visible:outline-none"
                 >
                   <QRCodeSVG
                     value={enrollment.otpauthUri}
@@ -282,27 +334,39 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
                 <button
                   type="button"
                   onClick={() => setQrShown(true)}
-                  className="flex size-[218px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted hover:text-foreground"
+                  className="border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground flex size-[218px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed transition-colors"
                 >
                   <QrCode className="size-8" />
                   <span className="text-sm font-medium">Show QR code</span>
                 </button>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 {qrShown
                   ? "Scan with Google Authenticator, Authy, or 1Password · click to hide"
                   : "Reveal the code to scan it with your authenticator app."}
               </p>
             </div>
 
-            {/* Manual fallback for anyone who can't scan */}
-            <div className="rounded-lg border border-border bg-muted/40 p-3 text-center">
-              <p className="text-xs text-muted-foreground">
-                Can&apos;t scan? Enter this secret manually
-              </p>
-              <p className="mt-1 break-all font-mono text-sm font-semibold tracking-widest">
-                {enrollment ? formatSecret(enrollment.secret) : "…"}
-              </p>
+            {/* Manual fallback for anyone who can't scan — the same secret, so hidden the same way. */}
+            <div className="border-border bg-muted/40 rounded-lg border p-3 text-center">
+              {secretShown ? (
+                <>
+                  <p className="text-muted-foreground text-xs">
+                    Enter this key in your authenticator app
+                  </p>
+                  <p className="mt-1 font-mono text-sm font-semibold tracking-widest break-all">
+                    {enrollment ? formatSecret(enrollment.secret) : "…"}
+                  </p>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setSecretShown(true)}
+                  className="text-muted-foreground hover:text-foreground text-xs font-medium underline-offset-2 hover:underline"
+                >
+                  Can&apos;t scan? Show the setup key
+                </button>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="otp">6-digit code</Label>
@@ -319,9 +383,7 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
                 aria-invalid={!!codeError}
                 className="tracking-[0.4em]"
               />
-              {codeError ? (
-                <p className="text-xs text-destructive">{codeError}</p>
-              ) : null}
+              {codeError ? <p className="text-destructive text-xs">{codeError}</p> : null}
             </div>
           </div>
           <DialogFooter showCloseButton>
@@ -332,6 +394,76 @@ export function MfaCard({ embedded = false }: { embedded?: boolean }) {
                 </>
               ) : (
                 "Verify & enable"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Turn off — confirmed, never one click (WP-393). */}
+      <Dialog
+        open={confirmOff}
+        onOpenChange={(v) => {
+          if (!v && !disabling) closeOff();
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Turn off {MFA.toLowerCase()}?</DialogTitle>
+            <DialogDescription>
+              You&apos;ll sign in with your password alone. Turning it back on later means
+              scanning a new QR code. To confirm it&apos;s you, enter your password and
+              the current code from your authenticator app.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (offPassword && offCode.length === 6 && !disabling) void disable();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="mfa-off-password">Password</Label>
+              <Input
+                id="mfa-off-password"
+                type="password"
+                autoComplete="current-password"
+                value={offPassword}
+                onChange={(e) => setOffPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="mfa-off-code">Authenticator code</Label>
+              <Input
+                id="mfa-off-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={offCode}
+                onChange={(e) =>
+                  setOffCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+              />
+            </div>
+            {offError ? (
+              <p role="alert" className="text-destructive text-sm">
+                {offError}
+              </p>
+            ) : null}
+          </form>
+          <DialogFooter showCloseButton>
+            <Button
+              variant="destructive"
+              onClick={disable}
+              disabled={disabling || !offPassword || offCode.length !== 6}
+            >
+              {disabling ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Turning off…
+                </>
+              ) : (
+                "Turn off"
               )}
             </Button>
           </DialogFooter>

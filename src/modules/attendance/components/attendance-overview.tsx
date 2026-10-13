@@ -26,9 +26,12 @@ import type {
   OversightCounts,
 } from "../use-oversight-attendance";
 
+const NO_COUNTS: OversightCounts = { present: 0, partial: 0, late: 0, leave: 0, total: 0 };
+
 const RANGE_OPTIONS: { value: AttendanceRange; label: string }[] = [
   { value: "today", label: "Today" },
-  { value: "week", label: "Week" },
+  // The seven days before today, not the calendar week (WP-475).
+  { value: "week", label: "7 days" },
   { value: "month", label: "Month" },
   { value: "custom", label: "Custom" },
 ];
@@ -50,11 +53,13 @@ export function AttendanceOverview({
   benchmarkRate,
   label,
   loading,
+  error,
   note,
 }: {
   range: AttendanceRange;
   onRangeChange: (r: AttendanceRange) => void;
   date: AttendanceDate;
+  /** A day was picked; the page decides its range (today's date is the live Today view). */
   onDateChange: (d: AttendanceDate) => void;
   start: string;
   end: string;
@@ -68,6 +73,8 @@ export function AttendanceOverview({
   benchmarkRate: number | null;
   label: string;
   loading: boolean;
+  /** The window's data could not be read — every figure renders "—", never a confident zero. */
+  error?: string | null;
   note: string | null;
 }) {
   // Attendance is a record of what already happened, so neither end of a custom range may reach
@@ -78,23 +85,33 @@ export function AttendanceOverview({
   // Attendance = present + partial, from the shared definition (lib/attended) rather than a local
   // reading of it. This used to fold partial into `present` here while the calendar folded it into
   // absent, so the same day read 38% on this card and 31% there. `late` is always 0 from oversight.
-  const total = counts.total || 1;
+  //
+  // No `|| 1` on the denominator: with nobody counted (a weekend, a holiday, Custom before dates are
+  // picked, an empty department) it invented one absentee and a 100 % red bar (QA audit 2026-10-08,
+  // WP-112). Every share below is guarded instead, and the figures read "—". A failed read draws as
+  // no data at all — not the previous window's split, not a confident zero (WP-113).
+  const shown = error ? NO_COUNTS : counts;
+  const total = shown.total;
   // `attended()` only — NOT `+ counts.late`. Oversight hard-wires `late` to 0 (the index carries no
   // per-person late flag), so adding it was inert here, but it is the same shape as the bug that
   // printed "25/20" on the personal calendar: late is a qualifier ON an attended day, never an extra
   // day. Left as it was, it would have started double-counting the moment `late` was populated.
-  const attendedCount = attended(counts);
-  const leave = counts.leave;
+  const attendedCount = attended(shown);
+  const leave = shown.leave;
   const absent = Math.max(0, total - attendedCount - leave);
 
-  const rate = attendanceRate1dp(counts, total);
+  const rate = attendanceRate1dp(shown, total);
+  const share = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
 
   // Partial gets its own band: counting it as attendance is not the same as hiding it, and a
   // reviewer needs to see that four of five "attended" were only partly there.
-  const presentPct = Math.round((counts.present / total) * 100);
-  const partialPct = Math.round((counts.partial / total) * 100);
-  const leavePct = Math.round((leave / total) * 100);
-  const absentPct = Math.max(0, 100 - presentPct - partialPct - leavePct);
+  const presentPct = share(shown.present);
+  const partialPct = share(shown.partial);
+  const leavePct = share(leave);
+  const absentPct = total > 0 ? Math.max(0, 100 - presentPct - partialPct - leavePct) : 0;
+
+  const blank = loading || Boolean(error) || total === 0;
+  const figure = (n: number) => (loading || error ? "—" : `${n}`);
 
   const context = `${label} · ${dept === "all" ? "All departments" : dept}`;
 
@@ -111,9 +128,10 @@ export function AttendanceOverview({
                 className={cn(
                   "font-display text-3xl font-semibold tabular-nums",
                   loading && "animate-pulse text-muted-foreground",
+                  !loading && blank && "text-muted-foreground",
                 )}
               >
-                {loading ? "—" : `${rate}%`}
+                {blank ? "—" : `${rate}%`}
               </span>
               <span className="text-xs text-muted-foreground">
                 {/* Today counts everyone who has clocked in at all, not who happens to be running a
@@ -132,6 +150,7 @@ export function AttendanceOverview({
                   <button
                     key={r.value}
                     type="button"
+                    aria-pressed={range === r.value}
                     onClick={() => onRangeChange(r.value)}
                     className={cn(
                       "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
@@ -145,14 +164,9 @@ export function AttendanceOverview({
                 ))}
               </div>
 
-              {/* Pick a specific day — switches the overview to that date. */}
-              <LogDatePicker
-                value={date}
-                onChange={(d) => {
-                  onDateChange(d);
-                  onRangeChange("day");
-                }}
-              />
+              {/* Pick a specific day — the page switches the overview to that date (or to the live
+                  Today view when the pick is today; forcing "day" here emptied the roster, WP-255). */}
+              <LogDatePicker value={date} onChange={onDateChange} />
 
               <DepartmentFilter
                 value={dept}
@@ -188,19 +202,21 @@ export function AttendanceOverview({
           </div>
         </div>
 
-        {note ? (
+        {error ? (
+          <p className="text-xs text-destructive">{error}</p>
+        ) : note ? (
           <p className="text-xs text-muted-foreground">{note}</p>
         ) : null}
 
         {/* Distribution graph — a multi-day range shows the per-day trend; a single day / Today shows
             the present·leave·absent split plus a "vs recent" delta. Dimmed while loading. */}
         <div className={cn(loading && "opacity-40")}>
-          {series.length > 1 ? (
+          {series.length > 1 && !error ? (
             <TrendBars series={series} benchmarkRate={benchmarkRate} />
           ) : (
             <StackedDistribution
-              present={counts.present}
-              partial={counts.partial}
+              present={shown.present}
+              partial={shown.partial}
               leave={leave}
               absent={absent}
               total={total}
@@ -219,18 +235,10 @@ export function AttendanceOverview({
 
         {/* Legend */}
         <div className="grid grid-cols-2 gap-2 border-t pt-3 sm:grid-cols-4">
-          <LegendItem
-            dot="bg-success"
-            label="Present"
-            value={loading ? "—" : `${counts.present}`}
-          />
-          <LegendItem
-            dot="bg-warning"
-            label="Partial"
-            value={loading ? "—" : `${counts.partial}`}
-          />
-          <LegendItem dot="bg-primary" label="On leave" value={loading ? "—" : `${leave}`} />
-          <LegendItem dot="bg-destructive" label="Absent" value={loading ? "—" : `${absent}`} />
+          <LegendItem dot="bg-success" label="Present" value={figure(shown.present)} />
+          <LegendItem dot="bg-warning" label="Partial" value={figure(shown.partial)} />
+          <LegendItem dot="bg-primary" label="On leave" value={figure(leave)} />
+          <LegendItem dot="bg-destructive" label="Absent" value={figure(absent)} />
         </div>
       </CardContent>
     </Card>
@@ -359,9 +367,11 @@ function TrendBars({
           <div
             key={p.iso}
             className="flex flex-1 items-end overflow-hidden rounded-t-md bg-muted/50"
-            title={`${fmtDay(p.iso)} — ${p.rate}% present (${p.present}/${p.total}${
-              p.leave ? `, ${p.leave} on leave` : ""
-            })`}
+            // The rate counts partial days as attended (lib/attended), so the fraction beside it
+            // must too — "75% present (2/4)" paired a rate with a count that disagreed (WP-476).
+            title={`${fmtDay(p.iso)} — ${p.rate}% attended (${p.present + p.partial}/${p.total}${
+              p.partial ? `, ${p.partial} partial` : ""
+            }${p.leave ? `, ${p.leave} on leave` : ""})`}
           >
             <div
               className={cn(

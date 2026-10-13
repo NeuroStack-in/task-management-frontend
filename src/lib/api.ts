@@ -6,8 +6,35 @@
  * JWT authorizer verifies it and the Lambda reads the RBAC claims from it. A 401 means the session
  * is gone/expired; a 403 means the server denied the permission (the server is the real gate).
  */
-import { getIdToken } from "@/lib/cognito";
+import { getIdToken, sessionStatus } from "@/lib/cognito";
 import { apiErrorMessage } from "@/lib/errors";
+
+type SessionListener = () => void;
+const sessionListeners = new Set<SessionListener>();
+
+/**
+ * Be told when the API refuses a request because the sign-in behind it is gone. The auth store
+ * subscribes and signs out, which sends the user to /login. Returns an unsubscribe.
+ */
+export function onSessionExpired(listener: SessionListener): () => void {
+  sessionListeners.add(listener);
+  return () => sessionListeners.delete(listener);
+}
+
+/**
+ * A 401 is only "your session is gone" when Cognito agrees. The public invite routes answer 401 for
+ * a wrong link too, and a signed-in person opening a stale invite must not be signed out over it — so
+ * the session is checked, not assumed. Nothing reacted to a 401 before: the shell kept rendering with
+ * every panel failing and /login bounced back to it (QA audit 2026-10-08, WP-011).
+ */
+async function reportIfSessionGone(): Promise<void> {
+  try {
+    if ((await sessionStatus()) !== "gone") return;
+  } catch {
+    return;
+  }
+  for (const listener of sessionListeners) listener();
+}
 
 /**
  * A failed request, carrying **display-ready** text.
@@ -56,11 +83,33 @@ interface Envelope<T> {
 const TRANSIENT = new Set([429, 503]);
 const MAX_RETRIES = 2;
 
-export async function apiFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+/**
+ * How long one attempt may take, response body included. There was **no** limit: a stalled request
+ * (captive portal, VPN reconnect, a hung connection) left every page on its spinner forever, with a
+ * reload the only way out (QA audit 2026-10-08, WP-370). API Gateway gives up on an integration at
+ * 30 s, so nothing legitimate takes longer than this.
+ */
+export const REQUEST_TIMEOUT_MS = 35_000;
+
+/** What a person reads when a request timed out — retryable, and about the connection. */
+export const TIMEOUT_MESSAGE =
+  "The server took too long to answer. Check your connection and try again.";
+
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await getIdToken();
+  // **No token because the refresh couldn't reach Cognito** is a connection problem, not a signed-out
+  // one. The request used to go out unauthenticated, 401, and read "Your session has expired" to
+  // someone whose train had just entered a tunnel (QA audit 2026-10-08, WP-391). Only checked when
+  // there is no token, so a signed-in request pays nothing; a logged-out caller (an invite page)
+  // reads "gone" and proceeds as before.
+  if (!token && (await sessionStatus()) === "offline") {
+    throw new ApiError(
+      apiErrorMessage(0),
+      0,
+      "network",
+      "the session refresh could not reach the sign-in service",
+    );
+  }
   // Only **idempotent** requests may be retried. Retrying a POST/PATCH on a 503 could double-apply
   // it (the request may have reached the handler before the gateway gave up), so writes never retry
   // — only GET (the default when no method is set).
@@ -68,17 +117,43 @@ export async function apiFetch<T>(
   const retryable = method === "GET";
 
   let res: Response | null = null;
+  let raw = "";
   for (let attempt = 0; ; attempt++) {
+    // One controller per attempt: the timeout aborts it, and so does the caller's own signal.
+    const ctl = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ctl.abort();
+    }, REQUEST_TIMEOUT_MS);
+    const callerAbort = () => ctl.abort();
+    init.signal?.addEventListener("abort", callerAbort, { once: true });
+    if (init.signal?.aborted) ctl.abort();
     try {
       res = await fetch(`${baseUrl()}${path}`, {
         ...init,
+        signal: ctl.signal,
         headers: {
           "content-type": "application/json",
           ...(token ? { authorization: `Bearer ${token}` } : {}),
           ...init.headers,
         },
       });
+      // Read as text first so an empty body and an unparseable one stay distinguishable.
+      // `res.json()` collapses both to the same failure, which is what made a successful
+      // no-content write look broken. Inside the timeout: a body can stall too.
+      raw = await res.text();
     } catch (e) {
+      if (timedOut) {
+        throw new ApiError(
+          TIMEOUT_MESSAGE,
+          0,
+          "timeout",
+          `no answer within ${REQUEST_TIMEOUT_MS} ms`,
+        );
+      }
+      // The caller gave up (unmount, superseded read) — theirs to handle, not a network fault.
+      if (init.signal?.aborted) throw e;
       // `fetch` rejects (rather than resolving with a status) when the request never reached a
       // server: offline, DNS failure, CORS refusal. That surfaced as the browser's raw
       // "Failed to fetch". Status 0 marks "no response", and `apiErrorMessage` turns it into a
@@ -89,6 +164,9 @@ export async function apiFetch<T>(
         "network",
         e instanceof Error ? e.message : undefined,
       );
+    } finally {
+      clearTimeout(timer);
+      init.signal?.removeEventListener("abort", callerAbort);
     }
     if (res.ok || !retryable || !TRANSIENT.has(res.status) || attempt >= MAX_RETRIES) {
       break;
@@ -97,9 +175,6 @@ export async function apiFetch<T>(
     await new Promise((r) => setTimeout(r, 200 * 2 ** attempt + Math.random() * 100));
   }
 
-  // Read as text first so an empty body and an unparseable one stay distinguishable. `res.json()`
-  // collapses both to the same failure, which is what made a successful no-content write look broken.
-  const raw = await res.text();
   let body: unknown = null;
   if (raw) {
     try {
@@ -110,11 +185,12 @@ export async function apiFetch<T>(
   }
 
   if (!res.ok) {
+    if (res.status === 401) await reportIfSessionGone();
     const err = (body as { error?: { code?: string; message?: string } })?.error;
     // The user-facing sentence is decided once, here — not at each of the ~26 places that show
     // `e.message` in a toast. `Request failed (500).` never reaches a person again.
     throw new ApiError(
-      apiErrorMessage(res.status, err?.message),
+      apiErrorMessage(res.status, err?.message, err?.code),
       res.status,
       err?.code,
       err?.message,
@@ -187,9 +263,15 @@ export function getEntitlements(): Promise<Entitlements> {
 /**
  * Flip one feature's owner-activation flag — `PATCH /v1/org/entitlements` (identity). Layer 2 of the
  * gate; the server enforces `enabled ⊆ allowed`, so enabling a key the plan doesn't include is
- * rejected. Returns the full, updated entitlements (both layers) so callers re-sync to server truth.
+ * rejected.
+ *
+ * **Resolves to nothing on purpose.** The response is the server's *stored* payload, not what `GET`
+ * returns — attributed entries in `enabled` / `pages` are objects rather than booleans, and there is
+ * no `disabled_by`, `pages_disabled_by` or `tracking_mode` — so it was typed as `Entitlements` and
+ * documented as "re-sync to server truth" while reading every toggled key as off (QA audit
+ * 2026-10-08, WP-523). Re-read with {@link getEntitlements} to hydrate anything.
  */
-export function toggleFeature(
+export async function toggleFeature(
   key: string,
   enabled: boolean,
   /**
@@ -197,8 +279,8 @@ export function toggleFeature(
    * `"feature"`, matching the server's default, so every existing call site is unaffected.
    */
   scope?: "feature" | "page",
-): Promise<Entitlements> {
-  return apiFetch<Entitlements>("/v1/org/entitlements", {
+): Promise<void> {
+  await apiFetch<unknown>("/v1/org/entitlements", {
     method: "PATCH",
     body: JSON.stringify({ key, enabled, scope }),
   });
@@ -286,6 +368,8 @@ export interface CreateOrgBody {
      * a second signup path silently omitted it, which the server would have rejected at runtime.
      */
     emp_id_prefix: string;
+    /** The "authorised to monitor" tick — recorded on the org with who and when (WP-128). */
+    monitoring_consent?: boolean;
   };
   owner: {
     email: string;

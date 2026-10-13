@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { todayIso } from "@/lib/format";
@@ -19,7 +19,7 @@ import {
   AuthPasswordField,
 } from "./auth-frame";
 import { AuthShell } from "./auth-shell";
-import { useAuthStore } from "@/stores/auth.store";
+import { landAfterSignIn, useAuthStore } from "@/stores/auth.store";
 import {
   ApiError,
   acceptInvite,
@@ -96,6 +96,7 @@ export function InviteAcceptForm() {
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const summaryRef = useRef<HTMLDivElement>(null);
 
   const {
     control,
@@ -168,7 +169,9 @@ export function InviteAcceptForm() {
         toast.success("Welcome to WorkPulse", {
           description: "Your account is ready.",
         });
-        router.replace("/dashboard");
+        // This page has no signed-in guard, so the link may have been opened in someone else's
+        // session — then a full page load, so none of their state rides along (WP-387).
+        landAfterSignIn(router, "/dashboard");
       } catch {
         toast.success("Account created", {
           description: "Sign in with your new password to continue.",
@@ -231,6 +234,12 @@ export function InviteAcceptForm() {
       ["iv-otp", errors.otp?.message],
       ["iv-password", errors.password?.message],
       ["iv-confirm", errors.confirm?.message],
+      // The four profile fields are required too. Left out of this list, a missing one failed
+      // validation with nothing on screen: "Create account" just did nothing (WP-030).
+      ["iv-phone", errors.phone?.message],
+      ["iv-location", errors.location?.message],
+      ["iv-dob", errors.dateOfBirth?.message],
+      ["iv-workmode", errors.workMode?.message],
     ] as [string, string | undefined][]
   ).filter((e): e is [string, string] => Boolean(e[1]));
 
@@ -243,8 +252,13 @@ export function InviteAcceptForm() {
         subtitle={`You've been invited to ${preview?.org_name ?? "this workspace"} as ${preview?.role_name}. Set up your account for ${preview?.email}.`}
       />
 
-      <form onSubmit={handleSubmit(onSubmit)} noValidate>
-        <AuthErrorSummary errors={summary} />
+      <form
+        onSubmit={handleSubmit(onSubmit, () =>
+          requestAnimationFrame(() => summaryRef.current?.focus()),
+        )}
+        noValidate
+      >
+        <AuthErrorSummary errors={summary} summaryRef={summaryRef} />
 
         <Controller
           control={control}
@@ -366,6 +380,7 @@ export function InviteAcceptForm() {
                 onChange={field.onChange}
                 control={
                   <DatePicker
+                    id="iv-dob"
                     value={field.value ?? ""}
                     onChange={field.onChange}
                     max={todayIso()}
@@ -482,7 +497,70 @@ function describeAcceptError(err: unknown): {
           title: "Invite already used",
           description: "This account already exists — try signing in instead.",
         };
+      // The three refusals below come from a WorkPulse login that already exists for this address,
+      // which the server will not take over (QA audit 2026-10-08, BEPM-01).
+      case "already_member":
+        return {
+          title: "You're already a member",
+          description: "This email already belongs to someone in this organization. Sign in instead.",
+        };
+      case "email_in_other_org":
+        return {
+          title: "This email belongs to another organization",
+          description:
+            "A WorkPulse account can belong to only one organization. Ask your admin to invite a different email address.",
+        };
+      case "seat_limit_reached":
+        return {
+          title: "This organization is out of seats",
+          description:
+            "Its plan has no seat left for you yet. Ask your admin to free a seat or upgrade the plan, then try again.",
+        };
+      case "existing_login_needs_emailed_invite":
+        return {
+          title: "Ask for an emailed invite",
+          description:
+            "This email already has a WorkPulse sign-in. Ask your admin to resend the invite by email, then use the code from that email.",
+        };
+      // Two refusals that retrying can never get past, which used to read "Something went wrong.
+      // Please try again." (QA audit 2026-10-08, WP-125).
+      case "promotion_not_supported":
+        return {
+          title: "This email can't get a sign-in yet",
+          description:
+            "Your organization already records this address as an employee without a sign-in, and that record can't be turned into an account yet. Ask your admin to invite a different email address.",
+        };
+      case "role_not_grantable":
+        return {
+          title: "This invite needs to be sent again",
+          description:
+            "It offers a role the person who invited you can no longer grant. Ask an admin to send you a new invite.",
+        };
+      case "email_taken":
+        return {
+          title: "This email already has an account",
+          description: "Try signing in instead.",
+        };
     }
+    // A rejected detail ("Date of birth …", the password policy). `apiFetch` has already made the
+    // server's words display-ready, and they name the one thing to fix.
+    if (err.status === 400)
+      return { title: "Check your details", description: err.message };
+    if (err.status === 404)
+      return {
+        title: "Invite unavailable",
+        description: "This invite link is invalid or has been revoked. Ask an admin to resend it.",
+      };
+    // A server fault can land after the account was already created, and a blind retry then reads
+    // "Invite already used". Point at the way to find out instead.
+    if (err.status >= 500)
+      return {
+        title: "Couldn't finish creating your account",
+        description:
+          "Your account may have been created anyway. Try signing in with the password you just chose before submitting again.",
+      };
+    if (err.status === 0)
+      return { title: "Couldn't create your account", description: err.message };
   }
   return {
     title: "Couldn't create your account",

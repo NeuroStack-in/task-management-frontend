@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderKanban, Search, X, type LucideIcon } from "lucide-react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUiStore } from "@/stores/ui.store";
+import { useUnsavedStore } from "@/stores/unsaved.store";
 import { isNavItemVisible } from "@/lib/rbac";
-import { useIsFeatureOn, useTrackingMode } from "@/hooks/use-features";
+import { useIsFeatureOn, useIsPageOn, useTrackingMode } from "@/hooks/use-features";
 import { isPathModeHidden } from "@/constants/features";
 import { INSIGHTS_TABS, ADMIN_SECTIONS, ACCOUNT_SECTIONS, SETTINGS_SUBSECTIONS } from "@/constants/navigation";
-import { searchAll, type SearchResults } from "@/lib/search";
+import { searchAll, type SearchHit, type SearchResults } from "@/lib/search";
 
 import { scrollToHashAfterNav } from "@/lib/scroll-to-hash";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,24 @@ const MAX_PEOPLE = 5;
 const MAX_PROJECTS = 5;
 const MAX_PAGES = 6;
 
+const LIST_ID = "sidebar-search-results";
+const optionId = (i: number) => `sidebar-search-option-${i}`;
+
+/**
+ * The last focus request (`searchFocusNonce`) any SidebarSearch acted on. Module-level, so a remount
+ * doesn't act on it again: the collapsed and expanded rails are separate subtrees, and every
+ * collapse→expand remounted this input with the old counter still above 0 — so once the rail's
+ * Search button had been used, the box stole focus on every later expand (QA audit 2026-10-08,
+ * WP-540).
+ */
+let focusHandled = 0;
+
+/** Does every typed word start some word of `label`? (The server's match is a prefix match.) */
+function matchesWords(label: string, q: string): boolean {
+  const words = label.toLowerCase().split(/\s+/);
+  return q.split(/\s+/).every((t) => words.some((w) => w.startsWith(t)));
+}
+
 /**
  * Inline global search for the sidebar. Type to get live suggestions (people,
  * projects, pages) in a dropdown right under the field — no modal. Keyboard:
@@ -44,15 +63,27 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   const { can, role, nav } = usePermissions();
   const isFeatureOn = useIsFeatureOn();
   const mode = useTrackingMode();
-  const hideHref = (href: string) => isPathModeHidden(href, mode);
+  // Page-visibility toggles too: a page the org hid was still offered here — and people results
+  // linked into a hidden Employees page — each leading to "This page is turned off"
+  // (QA audit 2026-10-08, WP-326). Owners are exempt inside `isPageOn`.
+  const isPageOn = useIsPageOn();
+  const hideHref = useCallback(
+    (href: string) => isPathModeHidden(href, mode) || !isPageOn(href),
+    [mode, isPageOn],
+  );
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   // People + projects come from the real backend (`GET /v1/search`, prefix-scoped, perm-gated
   // server-side). Pages stay client-side (they're the static nav tree). Debounced so a type-ahead
-  // doesn't fire a request per keystroke.
-  const [remote, setRemote] = useState<SearchResults>(EMPTY_REMOTE);
+  // doesn't fire a request per keystroke. Kept **with the query it answered**: the previous query's
+  // people used to sit under a new query until its response arrived, and Enter opened one of them —
+  // type "anna", then "bob" + Enter, and Anna's profile opened (WP-365).
+  const [remote, setRemote] = useState<{ q: string; r: SearchResults }>({
+    q: "",
+    r: EMPTY_REMOTE,
+  });
   const wrapRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,13 +95,13 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   useEffect(() => {
     const q = query.trim();
     if (!q || !canSearchRemote) {
-      setRemote(EMPTY_REMOTE);
+      setRemote({ q: "", r: EMPTY_REMOTE });
       return;
     }
     let live = true;
     const t = setTimeout(() => {
       searchAll(q).then((r) => {
-        if (live) setRemote(r);
+        if (live) setRemote({ q, r });
       });
     }, 180);
     return () => {
@@ -79,11 +110,14 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     };
   }, [query, canSearchRemote]);
 
-  // Focus the field when the collapsed rail's search button asks for it (after
-  // it expands the sidebar). Skips the initial mount (nonce starts at 0).
+  // Focus the field when the collapsed rail's search button asks for it (after it expands the
+  // sidebar) — once per request, however many times this input mounts (see `focusHandled`).
   const searchFocusNonce = useUiStore((s) => s.searchFocusNonce);
   useEffect(() => {
-    if (searchFocusNonce > 0) inputRef.current?.focus();
+    if (searchFocusNonce > focusHandled) {
+      focusHandled = searchFocusNonce;
+      inputRef.current?.focus();
+    }
   }, [searchFocusNonce]);
 
   // Close the suggestions when clicking outside the search.
@@ -104,9 +138,14 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
 
     // People + projects are already prefix-matched and permission-scoped by the server; render them
     // straight through (the server's shape is `{ id, label }` only — no title/department/avatar).
-    if (can("employees:view")) {
+    // Until the answer for *this* query arrives, only the previous answer's hits that still match
+    // what's typed are shown — never one that doesn't.
+    const current = remote.q.toLowerCase() === q;
+    const hits = (list: SearchHit[]) =>
+      current ? list : list.filter((h) => matchesWords(h.label, q));
+    if (can("employees:view") && !hideHref("/employees")) {
       out.push(
-        ...remote.employees.slice(0, MAX_PEOPLE).map<Result>((h) => ({
+        ...hits(remote.r.employees).slice(0, MAX_PEOPLE).map<Result>((h) => ({
           id: `u-${h.id}`,
           label: h.label,
           group: "People",
@@ -120,7 +159,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     // Projects are hidden entirely in machine mode — don't surface their deep-links either.
     if (can("projects:view") && !hideHref("/projects")) {
       out.push(
-        ...remote.projects.slice(0, MAX_PROJECTS).map<Result>((h) => ({
+        ...hits(remote.r.projects).slice(0, MAX_PROJECTS).map<Result>((h) => ({
           id: `p-${h.id}`,
           label: h.label,
           group: "Projects",
@@ -185,7 +224,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     // `isFeatureOn` belongs here: it changes identity when entitlements land, and without it the
     // results stay computed against the fail-open default — search would keep offering sections the
     // org has switched off.
-  }, [query, can, role, nav, remote, isFeatureOn, mode]);
+  }, [query, can, role, nav, remote, isFeatureOn, hideHref]);
 
   const activeIdx = results.length ? Math.min(active, results.length - 1) : 0;
 
@@ -200,8 +239,12 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   }, [activeIdx]);
 
   const select = (href: string) => {
-    router.push(href);
-    scrollToHashAfterNav(href);
+    // Unsaved settings edits ask first; the settings layout navigates once the user confirms
+    // (QA audit 2026-10-08, WP-347).
+    if (useUnsavedStore.getState().requestLeave(href)) {
+      router.push(href);
+      scrollToHashAfterNav(href);
+    }
     setQuery("");
     setOpen(false);
     onNavigate?.();
@@ -233,6 +276,8 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     <div ref={wrapRef} className="relative">
       <div className="flex items-center gap-2.5 rounded-full border border-sidebar-border bg-sidebar-accent/40 px-3.5 transition-colors focus-within:border-primary/40">
         <Search className="size-4 shrink-0 text-muted-foreground" />
+        {/* A combobox over the results listbox, so arrowing through them is announced — the
+            selection used to be a background colour only (QA audit 2026-10-08, WP-546). */}
         <input
           ref={inputRef}
           value={query}
@@ -244,6 +289,13 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           onKeyDown={onKeyDown}
           placeholder="Search…"
           aria-label="Search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={showPanel}
+          aria-controls={showPanel ? LIST_ID : undefined}
+          aria-activedescendant={
+            showPanel && results.length > 0 ? optionId(activeIdx) : undefined
+          }
           className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
         {query ? (
@@ -264,10 +316,13 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
       {showPanel ? (
         <div
           ref={listRef}
+          id={LIST_ID}
+          role="listbox"
+          aria-label="Search results"
           className="absolute inset-x-0 top-full z-50 mt-2 max-h-[24rem] overflow-y-auto rounded-2xl border border-border bg-popover p-1.5 shadow-soft"
         >
           {results.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            <p role="presentation" className="px-3 py-6 text-center text-sm text-muted-foreground">
               No results for “{query.trim()}”.
             </p>
           ) : (
@@ -276,14 +331,25 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
               const showHeader = !prev || prev.group !== r.group;
               const Icon = r.icon;
               return (
-                <div key={r.id}>
+                <div key={r.id} role="presentation">
                   {showHeader ? (
-                    <p className="px-2.5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground first:pt-1">
+                    <p
+                      role="presentation"
+                      className="px-2.5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground first:pt-1"
+                    >
                       {r.group}
                     </p>
                   ) : null}
+                  {/* An option, not a tab stop: focus stays in the input and moves through the
+                      list by `aria-activedescendant`. The group rides in the name, since the
+                      header above it is presentational. */}
                   <button
                     type="button"
+                    id={optionId(i)}
+                    role="option"
+                    aria-selected={i === activeIdx}
+                    aria-label={`${r.label}, ${r.group}`}
+                    tabIndex={-1}
                     data-row={i}
                     onMouseMove={() => setActive(i)}
                     onClick={() => select(r.href)}

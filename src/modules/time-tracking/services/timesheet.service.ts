@@ -57,6 +57,11 @@ export interface ApiEntryRow {
   end?: number;
   /** Seconds. Absent while running; never negative (clamped server-side). */
   duration_secs?: number;
+  /**
+   * How the session ended: the agent's `user` / `idle` / `logout` / `shutdown`. A session the server
+   * closed itself (`abandoned` by the reaper, `superseded` by a heartbeat) is stored as `end_reason`,
+   * which `EntryRow` does not serve yet — so those read as an ordinary stop until it does.
+   */
   stop_reason?: string;
   /** Frozen at fold — reflects what the project was when the work happened. */
   billable: boolean;
@@ -73,6 +78,19 @@ export interface ApiTodayResponse {
   billable_secs: number;
   /** A session is open. The web shows this read-only — it cannot start or stop it (LLD §4). */
   running: boolean;
+  /**
+   * The day's **logon session** — a managed laptop's Windows sign-in, the time a `machine`-mode
+   * employee has (WP-366). Absent when none was recorded (project-mode orgs, older servers).
+   */
+  logon?: {
+    /** Epoch ms first and last seen signed in that day. */
+    first_seen: number;
+    last_seen: number;
+    /** Awake minutes between them (sleep excluded). */
+    minutes: number;
+    /** Seen within the last ~12 minutes — signed in now. */
+    active: boolean;
+  };
 }
 
 export interface ApiDayRow {
@@ -88,6 +106,11 @@ export interface ApiGridResponse {
   days: ApiDayRow[];
   total_secs: number;
   billable_secs: number;
+  /**
+   * The range held more sessions than one read returns, so `days` and the totals cover only the
+   * earliest of them (WP-434). Absent from servers that predate it.
+   */
+  truncated?: boolean;
 }
 
 /**
@@ -142,21 +165,4 @@ export function clockOf(ms: number): string {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-/**
- * What a timesheet row should call its task.
- *
- * Preference order: the **description** the fold recorded (what the person actually typed), then the
- * **task title**, then — only if neither is reachable — the raw id.
- *
- * The id used to be the *second* step, justified as "an obviously-technical string invites the
- * question why isn't there a title here". That reasoning expired: `GET /v1/me/tasks` returns
- * `title` now (backend `757971a`), so the id is no longer the honest answer, just an unresolved one.
- * Pass `titles` and it will be used; omit it and behaviour is unchanged.
- */
-export function taskLabel(e: ApiEntryRow, titles?: Map<string, string>): string {
-  const described = e.description?.trim();
-  if (described) return described;
-  return titles?.get(e.task_id)?.trim() || e.task_id;
 }

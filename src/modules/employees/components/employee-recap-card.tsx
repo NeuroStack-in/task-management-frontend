@@ -3,11 +3,10 @@
 /**
  * One employee's AI recap on their profile, over a selectable period.
  *
- * **This is the same cached narrative the employee reads about themselves.** There is no
- * manager-only variant, by design (`insights::shared::subject`): one artifact means there is no
- * private, model-written characterisation of someone, and no way for the two audiences to be told
- * different things about the same week. Regenerating overwrites the paragraph *both* of them see —
- * which the button says out loud.
+ * **One cached narrative per person and period** (`insights::shared::subject`) — there is no
+ * manager-only variant, by design, so no audience can be told a different story about the same week.
+ * The person themselves does not see it today: no screen calls their own recap route, and the
+ * Employee role lacks `AiInsightsRead`. This card used to say they did (QA audit 2026-10-08, WP-512).
  *
  * Needs `AiInsightsRead` **and** `ActivityReadOrg`; a 403 hides the card rather than showing an
  * error, because plenty of roles can open a profile without being entitled to this.
@@ -16,7 +15,7 @@
  * period whose children were never generated has nothing to summarise — the server says so in
  * `reason`, and this renders that instead of an empty card.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, RefreshCw } from "lucide-react";
 import {
   Card,
@@ -155,15 +154,33 @@ export function EmployeeRecapCard({
   }, [userId, period, dailyDate]);
   useEffect(() => load(), [load]);
 
+  // What the card is showing now. A regenerate answers for the period and day it was started on;
+  // if those changed meanwhile, its answer isn't for this view — it used to land anyway, so the
+  // Weekly tab could end up showing a daily narrative (QA audit 2026-10-08, WP-458).
+  const shown = useRef({ userId, period, dailyDate });
+  useEffect(() => {
+    shown.current = { userId, period, dailyDate };
+  });
+
   async function regenerate() {
     if (regenerating || loading) return;
+    const asked = { userId, period, dailyDate };
+    const stillShown = () =>
+      shown.current.userId === asked.userId &&
+      shown.current.period === asked.period &&
+      shown.current.dailyDate === asked.dailyDate;
     setRegenerating(true);
     setError(null);
     try {
-      setRecap(await regenerateUserRecap(userId, period, paramFor(period, dailyDate)));
+      const fresh = await regenerateUserRecap(
+        asked.userId,
+        asked.period,
+        paramFor(asked.period, asked.dailyDate),
+      );
+      if (stillShown()) setRecap(fresh);
     } catch {
       // Keep the previous narrative on screen — a failed re-run shouldn't blank a good summary.
-      setError("Couldn't regenerate the summary.");
+      if (stillShown()) setError("Couldn't regenerate the summary.");
     } finally {
       setRegenerating(false);
     }
@@ -186,9 +203,7 @@ export function EmployeeRecapCard({
     <Card>
       <CardHeader>
         {/* NOT `flex-wrap`. With wrapping, the button's position depended on how long the
-            description happened to be: "Mon 24 Aug · recapped after the day closed · the same recap
-            Rahul sees about themselves" pushed it onto a second line, while the shorter Overall
-            copy left it top-right — so switching tabs made the control jump. `min-w-0` lets the
+            description happened to be, so switching tabs made the control jump. `min-w-0` lets the
             description wrap inside its own column instead of shoving the button anywhere. */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1.5">
@@ -197,8 +212,8 @@ export function EmployeeRecapCard({
             </CardTitle>
             <CardDescription>
               {period === "daily"
-                ? `${dayLabel(dailyDate)} · recapped after the day closed · the same recap ${first} sees about themselves`
-                : `${PERIOD_HINT[period]} · the same recap ${first} sees about themselves`}
+                ? `${dayLabel(dailyDate)} · recapped after the day closed`
+                : PERIOD_HINT[period]}
             </CardDescription>
           </div>
           <Button
@@ -207,8 +222,8 @@ export function EmployeeRecapCard({
             className="shrink-0"
             onClick={regenerate}
             disabled={loading || regenerating}
-            // Said plainly: this is not a private re-roll.
-            title={`Rewrite the summary ${first} also sees`}
+            // Said plainly: this is not a private re-roll — it replaces the stored summary.
+            title={`Rewrite ${first}'s stored summary for this period`}
           >
             <RefreshCw className={cn("size-3.5", regenerating && "animate-spin")} />
             {regenerating ? "Regenerating…" : "Regenerate"}
@@ -227,6 +242,8 @@ export function EmployeeRecapCard({
               key={p.key}
               type="button"
               onClick={() => setPeriod(p.key)}
+              // Held while a regenerate is out, so its answer stays for the period it was asked for.
+              disabled={regenerating}
               aria-pressed={period === p.key}
               className={cn(
                 "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",

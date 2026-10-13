@@ -7,14 +7,17 @@ import {
   Clock,
   Camera,
   CalendarCheck,
+  CalendarRange,
+  TriangleAlert,
   UserPlus,
 } from "lucide-react";
-import { formatDuration, formatHours } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatCard } from "@/components/shared/stat-card";
 import { UpgradeStatCard } from "@/components/shared/upgrade-stat-card";
-import { useIsFeatureAllowed } from "@/hooks/use-features";
+import { useIsFeatureAllowed, useIsFeatureOn } from "@/hooks/use-features";
 import { useNow } from "@/hooks/use-now";
+import { useDashboardStore } from "@/stores/dashboard.store";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { PageHeader } from "@/components/shared/page-header";
@@ -30,7 +33,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { useIsOpsOnly } from "@/modules/ops/use-platform-admin";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { ATTENDANCE_LOG_ANCHOR } from "@/modules/attendance/components/attendance-log";
-import { useDashboardData } from "../use-dashboard-data";
+import { MAX_DAYS, useDashboardData } from "../use-dashboard-data";
 import type { DashboardRange } from "../lib/dashboard-data";
 
 export function DashboardView() {
@@ -93,6 +96,9 @@ function OrgDashboard() {
   // buried today's numbers in a week's average. The LLD does not fix a page-level default (§3 is
   // layout persistence; `date-range` there is per-widget config), so this is a product choice.
   const isFeatureAllowed = useIsFeatureAllowed();
+  // The server's own gate on the monitoring routes (plan + the org's toggle, owner exempt from the
+  // toggle) — what decides whether a read would be refused, as opposed to which tile to show.
+  const isFeatureOn = useIsFeatureOn();
   // Ticks every ~30s so "Hours Tracked" accrues live while timers run (see useNow / data.hoursLive).
   const now = useNow();
   const [range, setRange] = useState<DashboardRange>("today");
@@ -101,23 +107,51 @@ function OrgDashboard() {
   const [end, setEnd] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
 
-  const { data, teams, loading, error, reload } = useDashboardData({
-    range,
-    team,
-    start,
-    end,
-  });
+  // **Only read what this board can show.** Screenshot pages feed the "today" tile and the heatmap
+  // widget, billing feeds its widget — so a hidden widget, a plan without the feature or a viewer
+  // without the permission costs no request (QA audit 2026-10-08, WP-193).
+  const widgets = useDashboardStore((s) => s.widgets);
+  const isShown = (type: string) => widgets.some((w) => w.type === type && w.visible);
+  const awaitingDates = range === "range" && (!start || !end);
+  const { data, teams, loading, error, reload } = useDashboardData(
+    { range, team, start, end },
+    {
+      // The org rollup needs `ActivityReadOrg`, the screenshot grid `ScreenshotsRead` — without
+      // them each read is a certain 403, which already rendered as "nothing", every 30 s.
+      activity: isFeatureOn("monitoring.activity") && can("activity:view"),
+      screenshots:
+        isFeatureOn("monitoring.screenshots") &&
+        can("screenshots:view") &&
+        (range === "today" || isShown("org_activity.heatmap")),
+      billing: can("billing:view") && isShown("billing_summary"),
+    },
+  );
 
-  // Stamp the refresh time on the client (and whenever the data/filters change) so the SSR HTML never
-  // diverges from the client render.
+  // Stamp the time of the last load that **landed** — keyed on the data alone. It also moved on a
+  // filter change, so a switch that failed still read "Updated 3:45 PM" (QA audit 2026-10-08, WP-198).
+  // Set on the client so the SSR HTML never diverges from the client render.
   useEffect(() => {
+    if (!data) return;
     setLastUpdated(
       new Date().toLocaleTimeString(undefined, {
         hour: "numeric",
         minute: "2-digit",
       }),
     );
-  }, [range, team, start, end, data]);
+  }, [data]);
+
+  // Live "Hours Tracked": settled tracked time + elapsed of each currently-running session, ticking
+  // via `useNow`. Rendered `HH:MM:SS` like every other duration in the product — which also retires
+  // the tenth-of-an-hour rounding this used to need so that a live morning read "0.4h" and not a
+  // floored "0h". A clock has no such floor: it reads `00:24:31` from the first minute. Computed
+  // here, above the early returns, because the assistant is told this same figure.
+  const liveHoursSec = data
+    ? data.hoursLive.closedSec +
+      (data.hoursLive.includesToday
+        ? data.hoursLive.runningStarts.reduce((s, st) => s + Math.max(0, (now - st) / 1000), 0)
+        : 0)
+    : 0;
+  const liveHoursText = formatDuration(liveHoursSec);
 
   // Publish the board's on-screen figures to the assistant so "explain this dashboard" and questions
   // about the numbers here resolve against the same values the user sees. Called unconditionally
@@ -150,20 +184,24 @@ function OrgDashboard() {
                   label: "Working now",
                   value: `${data.kpis.active.value} of ${data.kpis.active.value + data.kpis.inactive.value}`,
                 },
-                {
-                  label: "Hours tracked today",
-                  value: formatHours(data.kpis.hours.value),
-                },
-                {
-                  label: "Screenshots today",
-                  value: `${data.screenshotCount.toLocaleString()}${data.screenshotCountPartial && data.screenshotCount > 0 ? "+" : ""}`,
-                },
+                // The tile's own live figure. This published `kpis.hours`, rounded to whole hours
+                // above ten, so the assistant was told "12:00:00" beside a tile reading 12:29:40.
+                ...(data.hoursAvailable
+                  ? [{ label: "Hours tracked today", value: liveHoursText }]
+                  : []),
+                ...(isFeatureAllowed("monitoring.screenshots")
+                  ? [
+                      {
+                        label: "Screenshots today",
+                        value: data.screenshotCountPartial
+                          ? `at least ${data.screenshotCount.toLocaleString()}`
+                          : data.screenshotCount.toLocaleString(),
+                      },
+                    ]
+                  : []),
               ]
             : [
-                {
-                  label: "Hours tracked",
-                  value: formatHours(data.kpis.hours.value),
-                },
+                ...(data.hoursAvailable ? [{ label: "Hours tracked", value: liveHoursText }] : []),
                 {
                   label: "Attendance rate",
                   value:
@@ -173,7 +211,15 @@ function OrgDashboard() {
                 },
               ]),
           ...(data.screenshotsFlagged > 0
-            ? [{ label: "Screenshots needing review", value: String(data.screenshotsFlagged) }]
+            ? [
+                {
+                  label: "Screenshots needing review",
+                  // Counted over the one page read per day — a floor when the day held more.
+                  value: data.screenshotsSampled
+                    ? `at least ${data.screenshotsFlagged}`
+                    : String(data.screenshotsFlagged),
+                },
+              ]
             : []),
           ...(top
             ? [{ label: "Top performer", value: `${top.name} (${top.productivityScore}%)` }]
@@ -204,40 +250,73 @@ function OrgDashboard() {
     );
   }
 
-  if (!data) return null;
+  const controls = (
+    <DashboardControls
+      range={range}
+      onRangeChange={setRange}
+      team={team}
+      onTeamChange={setTeam}
+      teams={teams}
+      lastUpdated={lastUpdated}
+      loading={loading}
+      onRefresh={reload}
+      start={start}
+      end={end}
+      onStartChange={setStart}
+      onEndChange={setEnd}
+    />
+  );
+
+  // "Custom" with a date still missing is not a range yet. Nothing is read for it, and the board is
+  // not shown: it used to load zero days and present all-zero KPIs for "selected range", beside an
+  // AI summary of some other day (QA audit 2026-10-08, WP-432).
+  if (awaitingDates || !data) {
+    return (
+      <div className="space-y-4">
+        {controls}
+        {awaitingDates ? (
+          <div className="flex flex-col items-center gap-2 rounded-[1.4rem] border border-dashed px-6 py-14 text-center">
+            <span className="bg-muted flex size-10 items-center justify-center rounded-md">
+              <CalendarRange className="text-muted-foreground size-5" />
+            </span>
+            <p className="text-sm font-medium">Choose a start and an end date</p>
+            <p className="text-muted-foreground max-w-sm text-xs">
+              The dashboard shows the range once both dates are set — up to {MAX_DAYS} days.
+            </p>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   const { kpis, rangeLabel } = data;
 
-  // Live "Hours Tracked": settled tracked time + elapsed of each currently-running session, ticking
-  // via `useNow`. Rendered `HH:MM:SS` like every other duration in the product — which also retires
-  // the tenth-of-an-hour rounding this used to need so that a live morning read "0.4h" and not a
-  // floored "0h". A clock has no such floor: it reads `00:24:31` from the first minute.
-  const liveHoursSec =
-    data.hoursLive.closedSec +
-    (data.hoursLive.includesToday
-      ? data.hoursLive.runningStarts.reduce(
-          (s, st) => s + Math.max(0, (now - st) / 1000),
-          0,
-        )
-      : 0);
-  const liveHoursText = formatDuration(liveHoursSec);
-
   return (
     <div className="space-y-4">
-      <DashboardControls
-        range={range}
-        onRangeChange={setRange}
-        team={team}
-        onTeamChange={setTeam}
-        teams={teams}
-        lastUpdated={lastUpdated}
-        loading={loading}
-        onRefresh={reload}
-        start={start}
-        end={end}
-        onStartChange={setStart}
-        onEndChange={setEnd}
-      />
+      {controls}
+
+      {/* A load that failed after the board had data. The board stays — it is still true of the
+          window it was read for — but it no longer pretends to be the one now selected. */}
+      {error ? (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-xl border border-dashed px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span className="flex items-start gap-2">
+            <TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" />
+            <span>
+              {error}{" "}
+              <span className="text-muted-foreground">
+                Still showing the figures for {data.rangeLabel}
+                {data.teamLabel ? ` · ${data.teamLabel}` : ""}.
+              </span>
+            </span>
+          </span>
+          <Button variant="outline" size="sm" onClick={reload} className="shrink-0">
+            Retry
+          </Button>
+        </div>
+      ) : null}
 
       {/* While a range switch refetches, dim the stale numbers (with the "Updating…" flag in the
           controls) so the change isn't silent — the old data lingering with no signal read as "did my
@@ -315,51 +394,55 @@ function OrgDashboard() {
             {/* Two genuinely distinct dimensions the trio never showed: total effort (active hours)
                 and monitoring volume (screenshots) — both real, today-scoped, and drilling to their
                 canonical pages. */}
-            {!isFeatureAllowed("monitoring.activity") ? (
-              <UpgradeStatCard
-                label="Hours Tracked"
-                description="Logged time is measured by the desktop timer."
-              />
-            ) : (
-              <StatCard
-                label="Hours Tracked"
-                value={liveHoursText}
-                icon={Clock}
-                hint="logged today"
-                href="/time-tracking"
-              />
-            )}
+            {/* Not plan-gated: logged hours are `time.tracking`, which every plan has. It was an
+                "Upgrade to see" card on Free while Time Tracking showed the same hours one click
+                away (QA audit 2026-10-08, WP-199). Today is always readable — see `hoursAvailable`. */}
+            <StatCard
+              label="Hours Tracked"
+              value={liveHoursText}
+              icon={Clock}
+              hint="logged today"
+              href="/time-tracking"
+            />
             {!isFeatureAllowed("monitoring.screenshots") ? (
               <UpgradeStatCard
                 label="Screenshots"
-                description="Periodic blurred captures, with AI review."
+                description="Periodic screen captures, with AI review."
               />
             ) : (
               <StatCard
                 label="Screenshots"
+                // With a department filter the count is a floor — one page per day is read, and
+                // the department's frames may sit past it. Said even at 0, the case that used to
+                // read as a confident "none" (QA audit 2026-10-08, WP-197).
                 value={`${data.screenshotCount.toLocaleString()}${
-                  data.screenshotCountPartial && data.screenshotCount > 0 ? "+" : ""
+                  data.screenshotCountPartial ? "+" : ""
                 }`}
                 icon={Camera}
-                hint="captured today"
+                hint={data.screenshotCountPartial ? "at least · captured today" : "captured today"}
                 href="/insights/screenshots"
               />
             )}
           </>
         ) : (
           <>
-            {/* Same gate as the "today" branch — the range changes, the entitlement doesn't. */}
-            {!isFeatureAllowed("monitoring.activity") ? (
-              <UpgradeStatCard
-                label="Hours Tracked"
-                description="Logged time is measured by the desktop timer."
-              />
-            ) : (
+            {/* Logged hours are on every plan, so never an upgrade card. A window longer than today
+                on a plan without the activity rollup has no source on this board: say where the
+                hours are rather than print a zero (QA audit 2026-10-08, WP-199). */}
+            {data.hoursAvailable ? (
               <StatCard
                 label="Hours Tracked"
                 value={liveHoursText}
                 icon={Clock}
                 hint={rangeLabel}
+                href="/time-tracking"
+              />
+            ) : (
+              <StatCard
+                label="Hours Tracked"
+                value="—"
+                icon={Clock}
+                hint={`${rangeLabel} · open Time Tracking`}
                 href="/time-tracking"
               />
             )}

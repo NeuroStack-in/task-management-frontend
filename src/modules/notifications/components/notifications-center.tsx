@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 const TYPES: NotificationType[] = [
   "task",
   "approval",
+  "security",
   "productivity",
   "billing",
   "system",
@@ -56,26 +57,28 @@ const TYPES: NotificationType[] = [
  *      approver fan-out shipped: the bell counted it, this page filtered it).
  * Both times the server had already targeted the notification correctly and the client's second
  * guess broke it. `approval` is therefore ungated: whatever the server addressed to you — your own
- * lifecycle as a requester, or a decision request as an approver — is yours to see.
+ * lifecycle as a requester, or a decision request as an approver — is yours to see. So is
+ * `security` (your own two-factor reset).
  *
- * `productivity` and `billing` are not produced by any consumer today; their gates are unexercised
- * and should be re-checked against the real category the day something starts emitting them.
+ * `billing` goes to whoever changed the plan, who held `BillingManage` to do it — which lights
+ * `billing:view` — so its gate never hides a receipt from its addressee. `productivity` is not
+ * produced by any consumer today; its gate is unexercised.
  */
 const TYPE_PERMISSION: Record<NotificationType, PermissionId | null> = {
   task: null,
   system: null,
   approval: null,
+  security: null,
   productivity: "reports:view",
   billing: "billing:view",
 };
 
 export function NotificationsCenter() {
   const notifications = useNotificationStore((s) => s.notifications);
-  // Real feed + persisting mark-read (`GET /v1/notifications`). `remove` stays store-local:
-  // the backend serves read / read-all / prefs and has no delete, so a dismissed notification
-  // comes back on reload. See the module note.
-  const { markRead, markAllRead, loading, error, reload } = useNotifications();
-  const remove = useNotificationStore((s) => s.remove);
+  // Real feed + persisting mark-read (`GET /v1/notifications`). The backend serves read / read-all /
+  // prefs and has no delete, so `dismiss` hides an item on this browser and marks it read — see the
+  // note on `DISMISSED_KEY` in use-notifications.
+  const { markRead, markAllRead, dismiss, loading, error, reload } = useNotifications();
   const { can } = usePermissions();
 
   const [filter, setFilter] = useState<NotificationType | "all" | "unread">(
@@ -188,23 +191,18 @@ export function NotificationsCenter() {
                   const meta = NOTIFICATION_TYPE_META[n.type];
                   const Icon = meta.icon;
                   return (
+                    // A click anywhere on the row opens it, for the mouse. The row is not itself a
+                    // button any more: it held three real ones, and its Enter/Space handler swallowed
+                    // their keyboard activation — Enter on Dismiss opened the dialog instead (QA
+                    // audit 2026-10-08, WP-244). Keyboard users reach View / Mark read / Dismiss.
                     <li
                       key={n.id}
-                      role="button"
-                      tabIndex={0}
                       onClick={() => {
                         markRead(n.id);
                         setSelected(n);
                       }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          markRead(n.id);
-                          setSelected(n);
-                        }
-                      }}
                       className={cn(
-                        "flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none",
+                        "flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50",
                         !n.read && "bg-feature-tint/40",
                       )}
                     >
@@ -263,10 +261,11 @@ export function NotificationsCenter() {
                         variant="ghost"
                         size="icon"
                         className="size-7 shrink-0 text-muted-foreground"
-                        aria-label="Dismiss"
+                        aria-label={`Dismiss “${n.title}” on this device`}
+                        title="Dismiss on this device"
                         onClick={(e) => {
                           e.stopPropagation();
-                          remove(n.id);
+                          dismiss(n.id);
                         }}
                       >
                         <X className="size-4" />

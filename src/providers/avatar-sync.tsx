@@ -24,10 +24,9 @@ import { getAvatarUrl } from "@/modules/profile/services/profile.service";
  * exactly the pre-upload state, never an error surface. A 404 is the documented "no avatar"
  * answer, not a fault.
  *
- * Scope note: this covers the caller's **own** avatar only. Other people's photos (the employee
- * directory, project members, timesheet rows) still render initials, because the backend exposes
- * no route that returns another user's avatar — `GET /v1/me/avatar` is self-scoped and the
- * directory DTO carries no avatar field. That needs a server change, not a client one.
+ * Scope note: this covers the caller's **own** avatar only. Other people's photos come from
+ * `GET /v1/users/{id}/avatar` and `GET /v1/users/avatars`, through the shared avatar store
+ * (`stores/avatars.store.ts`) that `<UserAvatar>` reads.
  */
 export function AvatarSync() {
   const userId = useAuthStore((s) => s.user?.id);

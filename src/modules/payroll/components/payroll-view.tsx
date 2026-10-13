@@ -13,6 +13,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   TableBody,
   TableCell,
   TableHead,
@@ -21,7 +29,9 @@ import {
 } from "@/components/ui/table";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
+import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/currency";
+import { useOrgCurrency } from "@/hooks/use-org";
 import { cn } from "@/lib/utils";
 import { usePayroll } from "../use-payroll";
 import { DeductionsCard } from "./deductions-card";
@@ -42,14 +52,28 @@ function periodLabel(period: string): string {
 }
 
 export function PayrollView() {
+  // Every amount in the org's own currency (WP-078).
+  const currency = useOrgCurrency() ?? undefined;
   const { can } = usePermissions();
   const canManage = can("payroll:manage");
-  const { runs, deductions, loading, error, reload, draft, finalize, saveDeductions, setComp } =
-    usePayroll();
+  const {
+    runs,
+    deductions,
+    deductionsError,
+    loading,
+    error,
+    reload,
+    draft,
+    finalize,
+    saveDeductions,
+    setComp,
+  } = usePayroll();
 
   const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null);
   const [newPeriod, setNewPeriod] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The period awaiting a confirmed Finalize — finalizing is not reversible (WP-270). */
+  const [confirmPeriod, setConfirmPeriod] = useState<string | null>(null);
 
   const selected: ApiPayrollRun | null = useMemo(() => {
     if (!runs.length) return null;
@@ -64,9 +88,9 @@ export function PayrollView() {
         ? [
             { label: "Selected period", value: periodLabel(selected.period) },
             { label: "Status", value: selected.status === "final" ? "Final" : "Draft" },
-            { label: "Net pay", value: formatCurrency(selected.net) },
-            { label: "Gross pay", value: formatCurrency(selected.gross) },
-            { label: "Deductions", value: formatCurrency(selected.deductions) },
+            { label: "Net pay", value: formatCurrency(selected.net, currency) },
+            { label: "Gross pay", value: formatCurrency(selected.gross, currency) },
+            { label: "Deductions", value: formatCurrency(selected.deductions, currency) },
           ]
         : []),
     ],
@@ -74,7 +98,9 @@ export function PayrollView() {
 
   async function handleDraft() {
     const p = newPeriod.trim();
-    if (!/^\d{4}-\d{2}$/.test(p)) {
+    // A real month only — "2026-13" used to pass, sort above December, read as "January 2027" and
+    // stay forever (no delete route). The server now checks too (WP-269).
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(p)) {
       toast.error("Enter a period as YYYY-MM, e.g. 2026-09.");
       return;
     }
@@ -84,10 +110,18 @@ export function PayrollView() {
       setSelectedPeriod(run.period);
       setNewPeriod("");
       toast.success(`Drafted ${periodLabel(run.period)}`, {
-        description: `Gross ${formatCurrency(run.gross)} · net ${formatCurrency(run.net)}`,
+        description: `Gross ${formatCurrency(run.gross, currency)} · net ${formatCurrency(run.net, currency)}`,
       });
-    } catch {
-      toast.error("Couldn't draft the run. It may already exist.");
+    } catch (e) {
+      // An existing *draft* is simply recomputed — only a finalized period refuses, so "It may
+      // already exist" sent people looking for a problem that isn't one (QA audit 2026-10-08, WP-480).
+      toast.error(
+        e instanceof ApiError && e.status === 409
+          ? `${periodLabel(p)} is already finalized — a finalized run can't be redrafted.`
+          : e instanceof ApiError
+            ? e.message
+            : "Couldn't draft the run.",
+      );
     } finally {
       setBusy(false);
     }
@@ -142,9 +176,9 @@ export function PayrollView() {
       {/* Selected run totals */}
       {selected ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Net pay" value={formatCurrency(selected.net)} icon={Wallet} hint={periodLabel(selected.period)} featured />
-          <StatCard label="Gross pay" value={formatCurrency(selected.gross)} icon={Banknote} hint={`${formatCurrency(selected.deductions)} deductions`} />
-          <StatCard label="Deductions" value={formatCurrency(selected.deductions)} icon={Receipt} hint={`${deductions.length} rules`} />
+          <StatCard label="Net pay" value={formatCurrency(selected.net, currency)} icon={Wallet} hint={periodLabel(selected.period)} featured />
+          <StatCard label="Gross pay" value={formatCurrency(selected.gross, currency)} icon={Banknote} hint={`${formatCurrency(selected.deductions, currency)} deductions`} />
+          <StatCard label="Deductions" value={formatCurrency(selected.deductions, currency)} icon={Receipt} hint={`${deductions.length} rules`} />
           <StatCard label="Status" value={selected.status === "final" ? "Final" : "Draft"} icon={CheckCircle2} hint={selected.status === "final" ? "settled" : "not settled"} />
         </div>
       ) : null}
@@ -163,6 +197,7 @@ export function PayrollView() {
               value={newPeriod}
               onChange={(e) => setNewPeriod(e.target.value)}
               placeholder="2026-09"
+              aria-label="Pay period (YYYY-MM)"
               className="w-32"
             />
             <Button onClick={handleDraft} disabled={busy}>
@@ -205,15 +240,30 @@ export function PayrollView() {
                       className={cn("cursor-pointer", r.period === selected?.period && "bg-muted/40")}
                       onClick={() => setSelectedPeriod(r.period)}
                     >
-                      <TableCell className="pl-6 font-medium">{periodLabel(r.period)}</TableCell>
+                      {/* A real toggle, so a run can be selected by keyboard and the selection is
+                          announced — the row's click and its tint were mouse- and colour-only
+                          (WP-478). */}
+                      <TableCell className="pl-6 font-medium">
+                        <button
+                          type="button"
+                          aria-pressed={r.period === selected?.period}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPeriod(r.period);
+                          }}
+                          className="text-left hover:underline focus-visible:underline focus-visible:outline-none"
+                        >
+                          {periodLabel(r.period)}
+                        </button>
+                      </TableCell>
                       <TableCell>
                         <Badge className={cn("capitalize", statusMeta(r.status))}>{r.status}</Badge>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(r.gross)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(r.gross, currency)}</TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {formatCurrency(r.deductions)}
+                        {formatCurrency(r.deductions, currency)}
                       </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">{formatCurrency(r.net)}</TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">{formatCurrency(r.net, currency)}</TableCell>
                       {canManage ? (
                         <TableCell className="pr-6 text-right">
                           {r.status === "draft" ? (
@@ -223,7 +273,7 @@ export function PayrollView() {
                               disabled={busy}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleFinalize(r.period);
+                                setConfirmPeriod(r.period);
                               }}
                             >
                               Finalize
@@ -246,14 +296,51 @@ export function PayrollView() {
       {canManage ? <SetCompensationCard onSave={setComp} /> : null}
 
       {/* Deductions — editable for payroll:manage, read-only otherwise */}
-      <DeductionsCard deductions={deductions} canManage={canManage} onSave={saveDeductions} />
+      <DeductionsCard
+        deductions={deductions}
+        loadError={deductionsError}
+        onRetry={reload}
+        canManage={canManage}
+        onSave={saveDeductions}
+      />
 
-      {/* Honest gap */}
+      {/* How the totals are made — the server does include hourly pay, from billable timer hours only,
+          which this note used to deny (QA audit 2026-10-08, WP-271). */}
       <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">
         <MonitorSmartphone className="size-4 shrink-0" />
-        Totals are comp-based. Per-employee payslips and hours-based pay need tracked-hours data from
-        the desktop agent, which isn&apos;t flowing yet — so they aren&apos;t shown.
+        Salaried staff count at their monthly salary. Hourly staff count at their rate × the billable
+        hours their timer recorded that month — time on non-billable projects isn&apos;t paid. Totals
+        are org-wide; per-employee payslips aren&apos;t produced.
       </div>
+      {/* A finalized run is the pay record of the period — it cannot be edited or regenerated
+          afterwards, so one stray click on a row must not produce one (QA audit 2026-10-08, WP-270). */}
+      <Dialog open={confirmPeriod !== null} onOpenChange={(open) => !open && setConfirmPeriod(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Finalize {confirmPeriod ? periodLabel(confirmPeriod) : ""}?</DialogTitle>
+            <DialogDescription>
+              Finalizing locks this run as the period&apos;s pay record. It can&apos;t be edited or
+              regenerated afterwards.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmPeriod(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={async () => {
+                const p = confirmPeriod;
+                if (!p) return;
+                await handleFinalize(p);
+                setConfirmPeriod(null);
+              }}
+            >
+              Finalize
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

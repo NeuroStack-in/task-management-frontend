@@ -24,6 +24,7 @@
  * unpermitted widget can't 403 the whole layout PUT.
  */
 import { apiFetch } from "@/lib/api";
+import { hasPermissionBit } from "@/lib/permission-bits";
 import type { PermissionId } from "@/types/rbac";
 import type { FeatureKey } from "@/stores/features.store";
 import {
@@ -65,21 +66,12 @@ export interface SaveLayoutRequest {
   version: number;
 }
 
-/** `GET /v1/me/dashboard-layouts` — both layouts, read-time perm-filtered. */
+/**
+ * `GET /v1/me/dashboard-layouts` — both layouts, read-time perm-filtered. There is no per-type GET
+ * route; callers pick `oversight` (absent without an oversight bit) off the combined document.
+ */
 export function getDashboardLayouts(): Promise<ApiDashboardLayouts> {
   return apiFetch<ApiDashboardLayouts>("/v1/me/dashboard-layouts");
-}
-
-/**
- * One dashboard's stored layout, or `null` when the server has none for this caller (the server
- * returns an empty version-0 layout when nothing is stored; `oversight` is absent entirely without
- * an oversight bit). There is no per-type GET route, so this reads the combined document.
- */
-export async function getDashboardLayout(
-  type: DashboardLayoutType,
-): Promise<ApiLayoutView | null> {
-  const layouts = await getDashboardLayouts();
-  return (type === "personal" ? layouts.personal : layouts.oversight) ?? null;
 }
 
 /** `PUT /v1/me/dashboard-layouts/{type}` — whole-document save; echoes the new `{widgets, version}`. */
@@ -106,6 +98,7 @@ export const CATALOG_REQUIRED_PERMISSION: Record<string, PermissionId> = {
   team_attendance: "attendance:view", // AttendanceReadTeam
   org_attendance: "attendance:view", // AttendanceReadOrg
   payroll_summary: "payroll:view", // PayrollRead
+  billing_summary: "billing:view", // BillingRead
   reports: "reports:view", // ReportsRead
   attention_list: "ai:view", // AiInsightsRead
 };
@@ -113,6 +106,55 @@ export const CATALOG_REQUIRED_PERMISSION: Record<string, PermissionId> = {
 /** The frontend permission gating a widget, from its catalog entry's `required_perm`. */
 export function widgetPermission(type: WidgetType): PermissionId | null {
   return CATALOG_REQUIRED_PERMISSION[catalogIdOf(type)] ?? null;
+}
+
+/**
+ * The **server bit** of each oversight entry's `required_perm` (`wp-contracts::permissions`).
+ *
+ * The frontend ids above are coarser than the server: `activity:view` and `attendance:view` are lit
+ * by the Team and the Org bits alike (and `attendance:view` by Self too), while the server checks
+ * the one exact bit per entry. Pre-filtering on the id therefore let a team-level manager place the
+ * `org_*` widgets, and every layout save then 403'd as a whole (QA audit 2026-10-08, WP-194).
+ */
+const CATALOG_REQUIRED_BIT: Record<string, number> = {
+  team_activity: 1, // ActivityReadTeam
+  org_activity: 2, // ActivityReadOrg
+  team_attendance: 34, // AttendanceReadTeam
+  org_attendance: 35, // AttendanceReadOrg
+  payroll_summary: 50, // PayrollRead
+  billing_summary: 52, // BillingRead
+  reports: 60, // ReportsRead
+  attention_list: 62, // AiInsightsRead
+};
+
+/**
+ * Whether the caller holds a widget's catalog permission **exactly as the server checks it**
+ * (`AuthContext::can(required_perm)`): the owner holds every one of these bits; anyone else needs
+ * the bit itself in their `perm` claim. A session minted before the claim existed has no bitset to
+ * read, so it falls back to the coarse frontend id — the server stays the real gate either way.
+ */
+export function holdsWidgetPermission(
+  type: WidgetType,
+  user: { isOwner: boolean; perm?: string },
+  can: (permission: PermissionId | null) => boolean,
+): boolean {
+  const bit = CATALOG_REQUIRED_BIT[catalogIdOf(type)];
+  if (bit === undefined) return can(widgetPermission(type));
+  if (user.isOwner) return true;
+  return hasPermissionBit(user.perm, bit) ?? can(widgetPermission(type));
+}
+
+/**
+ * A permission a widget's **data** needs beyond its catalog entry's. Empty since "Billing overview"
+ * got its own `billing_summary` entry gated on `BillingRead` — it used to ride `payroll_summary`
+ * (PayrollRead), so a billing-only Admin could never place it and a payroll-only role could place a
+ * card it could never fill (QA audit 2026-10-08, WP-110). Kept for the next widget that needs it.
+ */
+const WIDGET_DATA_PERMISSION: Partial<Record<WidgetType, PermissionId>> = {};
+
+/** The extra permission a widget's data needs, or `null` when its catalog permission is enough. */
+export function widgetDataPermission(type: WidgetType): PermissionId | null {
+  return WIDGET_DATA_PERMISSION[type] ?? null;
 }
 
 /**
@@ -179,8 +221,11 @@ function typeOfPlacement(p: ApiWidgetPlacement): WidgetType | null {
   }
   // Current shape: `widget_id` is the catalog id; a many-to-one entry carries `config.variant`.
   const variant = p.config?.variant;
-  const type =
+  const raw =
     typeof variant === "string" ? `${p.widget_id}.${variant}` : p.widget_id;
+  // A placement saved under an id the card has since moved off (`payroll_summary` → its own
+  // `billing_summary`, WP-110) keeps the card.
+  const type = LEGACY_WIDGET_TYPE[raw] ?? raw;
   return KNOWN_TYPES.has(type) ? (type as WidgetType) : null;
 }
 

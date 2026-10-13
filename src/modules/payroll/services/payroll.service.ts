@@ -2,10 +2,11 @@
  * Payroll — the real backend (`payroll-billing` context, LLD §20).
  *
  * What the server serves is **org totals per run** plus the **deduction rules** — not per-employee
- * payslips. A run is `{period, status, gross, deductions, net}`; totals are computed from each
- * employee's configured comp minus the deduction rules at draft time. Hours-based pay (per-person
- * tracked hours → gross) is deliberately **not** here — it needs Dev A's `TimeEntry`, which this
- * context can't read — so the view shows comp-based totals honestly, not invented payslips.
+ * payslips. A run is `{period, status, gross, deductions, net}`; totals are computed at draft time
+ * from each employee's comp minus the deduction rules. **Hourly staff are included**: their gross is
+ * `rate × billable hours the timer recorded that month` (`payroll_runs::compute_totals`) — time on
+ * non-billable projects pays nothing. (This header used to say hours-based pay was not part of the
+ * totals; QA audit 2026-10-08, WP-271.)
  */
 import { apiFetch } from "@/lib/api";
 
@@ -26,12 +27,13 @@ export interface ApiDeduction {
   value: number;
 }
 
+/**
+ * `GET /v1/payroll/runs` — every run's totals. The page reads only this; the per-period
+ * `GET /v1/payroll/runs/{period}` returns the same totals and is not wrapped (its wrapper's only
+ * caller was a test — QA audit 2026-10-08, WP-480).
+ */
 export function listRuns(): Promise<ApiPayrollRun[]> {
   return apiFetch<{ runs: ApiPayrollRun[] }>("/v1/payroll/runs").then((r) => r.runs);
-}
-
-export function getRun(period: string): Promise<ApiPayrollRun> {
-  return apiFetch<ApiPayrollRun>(`/v1/payroll/runs/${encodeURIComponent(period)}`);
 }
 
 /** `POST /v1/payroll/runs` — draft a run for `period` (YYYY-MM); computes totals from comp+deductions. */

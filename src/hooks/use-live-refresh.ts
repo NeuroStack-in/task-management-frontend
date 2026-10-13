@@ -37,10 +37,19 @@ export const LIVE_REFRESH_MS = 30_000;
  * agent's, not the UI's. Polling faster spends requests on an answer that has not changed. A
  * *running* session is the exception: it ticks locally via {@link useRunningSeconds} rather than
  * being fetched.
+ *
+ * Pass `options.isBusy` when a load can outlast the interval — see {@link LiveRefreshOptions}.
  */
-export function useLiveRefresh(intervalMs: number | null = LIVE_REFRESH_MS) {
+export function useLiveRefresh(
+  intervalMs: number | null = LIVE_REFRESH_MS,
+  options: LiveRefreshOptions = {},
+) {
   const [nonce, setNonce] = useState(0);
   const backgroundRef = useRef(false);
+  const busyRef = useRef(options.isBusy);
+  useEffect(() => {
+    busyRef.current = options.isBusy;
+  });
 
   /** A visible reload — Retry buttons, filter changes. Shows the loading state. */
   const reload = useCallback(() => {
@@ -61,9 +70,26 @@ export function useLiveRefresh(intervalMs: number | null = LIVE_REFRESH_MS) {
     return bg;
   }, []);
 
-  usePoll(refresh, intervalMs);
+  /** The poll's tick: a quiet refresh, unless the consumer says its last load is still running. */
+  const tick = useCallback(() => {
+    if (busyRef.current?.()) return;
+    refresh();
+  }, [refresh]);
+
+  usePoll(tick, intervalMs);
 
   return { nonce, reload, refresh, isBackground };
+}
+
+export interface LiveRefreshOptions {
+  /**
+   * The consumer's own "a load is still in flight" signal. While it returns `true`, a poll tick
+   * (and the refetch-on-return) is skipped: the load in flight already answers it. Without this,
+   * every tick restarted the whole load, so one slower than the interval never landed at all — each
+   * run was superseded before it finished (QA audit 2026-10-08, WP-193). `reload()` and `refresh()`
+   * are never skipped: those are explicit asks.
+   */
+  isBusy?: () => boolean;
 }
 
 /**

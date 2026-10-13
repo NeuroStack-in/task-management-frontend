@@ -9,8 +9,8 @@ export const metadata: Metadata = { title: "Reset password" };
 export default function ResetPasswordPage() {
   return (
     <AuthShell>
-      {/* ResetPasswordForm reads the `email` query param via useSearchParams — needs a Suspense
-          boundary to prerender. */}
+      {/* ResetPasswordForm no longer reads the query string (the email is handed over in
+          sessionStorage); the boundary stays as a harmless loading fallback. */}
       <Suspense fallback={<Loader />}>
         <ResetPasswordForm />
       </Suspense>

@@ -53,7 +53,9 @@ const TRUST_SERVER_TEXT = new Set([400, 409, 422]);
  */
 const MACHINE_TEXT = [
   /exception/i,
-  /\bpanic|unwrap|nil|null pointer|undefined\b/i,
+  // Grouped, so `\b` bounds every alternative — ungrouped, `nil` matched inside "Sunil" and
+  // "Manila" and a perfectly human 400/409 was swapped for the generic sentence (QA audit 2026-10-08, WP-385).
+  /\b(?:panic|unwrap|nil|null pointer|undefined)\b/i,
   /\bstack\b|\bat [A-Za-z]+\.[a-z]+:\d+/i,
   /0x[0-9a-f]{4,}/i,
   /\b(dynamodb|lambda|cognito|serde|aws|sdk|axum|s3|sqs)\b/i,
@@ -92,7 +94,20 @@ function polish(msg: string): string {
  * the 26 call sites that pass `e.message` through to a toast keep working and become friendly for
  * free.
  */
-export function apiErrorMessage(status: number, serverMessage?: string): string {
+/**
+ * Server error **codes** that deserve their own sentence. A 409's own text is `conflict: <code>`,
+ * written for a developer; these say what actually happened. Unknown codes fall through to the
+ * status rules below.
+ */
+const BY_CODE: Record<string, string> = {
+  department_name_taken: "A department with that name already exists.",
+  team_name_taken: "A team with that name already exists.",
+  holiday_date_taken: "There's already a holiday on that date.",
+  connection_changed: "This connection changed while you were editing. Refresh and try again.",
+};
+
+export function apiErrorMessage(status: number, serverMessage?: string, code?: string): string {
+  if (code && BY_CODE[code]) return BY_CODE[code];
   if (status === 0) return OFFLINE_MESSAGE;
   const raw = serverMessage?.trim();
   if (raw && TRUST_SERVER_TEXT.has(status) && looksHuman(raw)) return polish(raw);

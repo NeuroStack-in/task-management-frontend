@@ -20,6 +20,7 @@ import {
 } from "./content";
 import { Visual } from "./visuals";
 import { Reveal, CountUp, UseCaseMarquee, RoleSelector, FaqItem } from "./client";
+import { LEGAL_DOCS, legalHref } from "@/modules/legal/documents";
 
 /* ---------------- Use-case marquee band ---------------- */
 export function MarqueeSection() {
@@ -394,10 +395,16 @@ export function Footer() {
       </div>
       <div className="mx-auto mt-12 flex max-w-6xl flex-col items-center justify-between gap-3 border-t pt-6 sm:flex-row" style={{ borderColor: "var(--wp-border)" }}>
         <p className="text-xs" style={{ color: "var(--wp-faint)" }}>© 2026 WorkPulse. All rights reserved.</p>
-        <div className="flex gap-5 text-xs" style={{ color: "var(--wp-faint)" }}>
-          <Link href="/#faq" className="hover:opacity-70">Privacy</Link>
-          <Link href="/#faq" className="hover:opacity-70">Terms</Link>
+        {/* The legal links pointed at the FAQ until the documents existed (QA audit 2026-10-08,
+            WP-541 / WP-115). They now come from the registry that generates `/legal/*`, the same
+            one `MarketingFooter` reads, so the two footers can't drift apart. */}
+        <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs" style={{ color: "var(--wp-faint)" }}>
           <Link href="/#security" className="hover:opacity-70">Security</Link>
+          {LEGAL_DOCS.map((d) => (
+            <Link key={d.slug} href={legalHref(d.slug)} className="hover:opacity-70">
+              {d.label}
+            </Link>
+          ))}
         </div>
       </div>
     </footer>

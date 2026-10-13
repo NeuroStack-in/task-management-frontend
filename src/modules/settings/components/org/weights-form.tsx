@@ -8,14 +8,15 @@
  * Validation (React Hook Form + Zod): each term 0–100, and the four must total exactly 100 before
  * the Save button enables. A live "must total 100%" helper tracks the running sum as you type.
  */
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Check } from "lucide-react";
+import { Check, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
 import { cn } from "@/lib/utils";
 import {
   WEIGHT_META,
@@ -48,7 +49,8 @@ export function WeightsForm({
   busy = false,
   submitLabel = "Save weights",
   onSubmit,
-  footerLeft,
+  resetTo,
+  onDirtyChange,
 }: {
   /** Baseline percentages (from the server or the inherited defaults). Reseeds the form on change. */
   values: PercentWeights;
@@ -56,9 +58,12 @@ export function WeightsForm({
   busy?: boolean;
   submitLabel?: string;
   onSubmit: (fractions: ProductivityWeights) => void | Promise<void>;
-  /** Extra controls at the left of the footer (e.g. reset-to-defaults). */
-  footerLeft?: React.ReactNode;
+  /** A footer button that fills the form with `values` — an unsaved edit, saved like any other. */
+  resetTo?: { values: PercentWeights; label: string };
+  /** Told whenever the form gains or loses unsaved edits (e.g. to confirm before a dialog closes). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const ids = useId();
   const {
     register,
     handleSubmit,
@@ -71,10 +76,25 @@ export function WeightsForm({
     mode: "onChange",
   });
 
-  // Reseed when the baseline changes (a fresh server load, or a reset-to-defaults from the parent).
+  // Reseed when the baseline changes (a fresh server load, or a save).
   useEffect(() => {
     reset(values);
   }, [values, reset]);
+
+  const unsaved = canManage && isDirty;
+  useUnsavedGuard(unsaved);
+  useEffect(() => {
+    onDirtyChange?.(unsaved);
+  }, [unsaved, onDirtyChange]);
+
+  /**
+   * Fill in `resetTo` as an **edit** against the unchanged baseline. The parent used to replace the
+   * baseline itself, which reseeded the form as pristine: the defaults showed with a green 100% and a
+   * disabled Save, and nothing reached the server (QA audit 2026-10-08, WP-341).
+   */
+  const applyReset = () => {
+    if (resetTo) reset(resetTo.values, { keepDefaultValues: true });
+  };
 
   const live = watch();
   const liveSum = percentsSum({
@@ -102,12 +122,15 @@ export function WeightsForm({
         {WEIGHT_TERMS.map((t) => (
           <div key={t} className="space-y-1.5 rounded-lg border border-border bg-card p-3">
             <div className="flex items-center justify-between gap-2">
-              <Label htmlFor={`weight-${t}`} className="text-sm font-medium">
+              {/* Ids are per form instance: the department dialog renders a second form over the
+                  org card's, and fixed `weight-u…r` ids sent its labels to the inputs behind it
+                  (WP-537). */}
+              <Label htmlFor={`${ids}-${t}`} className="text-sm font-medium">
                 {WEIGHT_META[t].label}
               </Label>
               <div className="flex items-center gap-1">
                 <Input
-                  id={`weight-${t}`}
+                  id={`${ids}-${t}`}
                   type="number"
                   min={0}
                   max={100}
@@ -116,7 +139,9 @@ export function WeightsForm({
                   disabled={!canManage || busy}
                   className="w-20 text-right tabular-nums"
                   aria-invalid={!!errors[t]}
-                  {...register(t)}
+                  // Numbers, like the baseline — typed strings never compared equal to it, so a
+                  // field retyped to its saved value still counted as a change.
+                  {...register(t, { valueAsNumber: true })}
                 />
                 <span className="text-sm text-muted-foreground">%</span>
               </div>
@@ -146,7 +171,13 @@ export function WeightsForm({
 
       {canManage && (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">{footerLeft}</div>
+          <div className="flex items-center gap-2">
+            {resetTo ? (
+              <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={applyReset}>
+                <RotateCcw className="size-3.5" /> {resetTo.label}
+              </Button>
+            ) : null}
+          </div>
           <Button type="submit" size="sm" disabled={busy || !sumOk || !isDirty}>
             {busy ? "Saving…" : submitLabel}
           </Button>

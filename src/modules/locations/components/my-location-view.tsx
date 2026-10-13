@@ -39,9 +39,11 @@ export function MyLocationView() {
   useEffect(() => setDate(isoOf(new Date())), []);
   const today = isoOf(new Date());
 
-  const [points, setPoints] = useState<LocationPoint[] | null>(null);
+  /** The points, with the day they belong to — another day's never stand in for this one's. */
+  const [loaded, setLoaded] = useState<{ date: string; points: LocationPoint[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const points = loaded && loaded.date === date ? loaded.points : null;
 
   useEffect(() => {
     if (!date) return;
@@ -49,10 +51,9 @@ export function MyLocationView() {
     setLoading(true);
     setError(null);
     getMyLocations(date)
-      .then((d) => live && setPoints(d.points))
+      .then((d) => live && setLoaded({ date, points: d.points }))
       .catch((e) => {
         if (!live) return;
-        setPoints(null);
         setError(
           e instanceof ApiError && e.status === 403
             ? "You don't have access to location data."
@@ -66,6 +67,11 @@ export function MyLocationView() {
   }, [date]);
 
   const { markers, path, center } = useMemo(() => build(points ?? []), [points]);
+  // Where the map last pointed, so it can stay mounted while the next day loads.
+  const [mapCenter, setMapCenter] = useState<GeoPoint | null>(null);
+  useEffect(() => {
+    if (center) setMapCenter(center);
+  }, [center]);
 
   const summary = useMemo(() => {
     const ps = points ?? [];
@@ -116,15 +122,18 @@ export function MyLocationView() {
         </div>
       </div>
 
-      {loading ? (
+      {/* Only a first read (or a day after an empty one) shows the bare loader. Stepping between
+          days with fixes keeps the map mounted and loads under it — swapping it out rebuilt the
+          WebGL map, its style and tiles every time (QA audit 2026-10-08, WP-287). */}
+      {error ? (
+        <EmptyState icon={MapPin} title="Couldn't load locations" description={error} />
+      ) : loading && (loaded === null || loaded.points.length === 0) ? (
         <Card>
           <CardContent className="p-2">
             <Loader label="Loading location history…" />
           </CardContent>
         </Card>
-      ) : error ? (
-        <EmptyState icon={MapPin} title="Couldn't load locations" description={error} />
-      ) : !summary || !center ? (
+      ) : (points !== null && (!summary || !center)) || !(center ?? mapCenter) ? (
         <EmptyState
           icon={MonitorSmartphone}
           title="No location reported"
@@ -132,11 +141,11 @@ export function MyLocationView() {
         />
       ) : (
         <>
-          {/* Summary strip */}
+          {/* Summary strip — "—" while the next day loads under the map. */}
           <div className="grid grid-cols-3 gap-3">
-            <Stat label="Fixes" value={String(summary.count)} />
-            <Stat label="Span" value={summary.span} />
-            <Stat label="Avg accuracy" value={accuracy(summary.avg)} />
+            <Stat label="Fixes" value={summary ? String(summary.count) : "—"} />
+            <Stat label="Span" value={summary ? summary.span : "—"} />
+            <Stat label="Avg accuracy" value={summary ? accuracy(summary.avg) : "—"} />
           </div>
 
           <Card>
@@ -144,9 +153,9 @@ export function MyLocationView() {
               <LiveMap
                 markers={markers}
                 path={path}
-                center={center}
+                center={(center ?? mapCenter)!}
                 zoom={13}
-                recenterKey={`${date}-${markers.length}`}
+                recenterKey={`${date}-${points === null ? "loading" : "ready"}`}
                 className="h-[420px] w-full overflow-hidden rounded-xl"
               />
             </CardContent>
@@ -155,6 +164,11 @@ export function MyLocationView() {
           {/* Timeline — newest first. */}
           <Card>
             <CardContent className="p-0">
+              {points === null ? (
+                <div className="p-4">
+                  <Loader label="Loading location history…" />
+                </div>
+              ) : null}
               <ul className="divide-y divide-border">
                 {(points ?? [])
                   .slice()
@@ -209,6 +223,8 @@ function build(points: LocationPoint[]): {
     id: String(p.captured_at),
     point: { lat: p.lat, lng: p.lon },
     variant: i === 0 ? "login" : i === points.length - 1 ? "current" : "default",
+    // The latest fix's accuracy only — a radius on every heartbeat would bury the trail.
+    accuracyM: i === points.length - 1 ? p.accuracy_m : undefined,
   }));
   return { markers, path, center: path[path.length - 1] };
 }

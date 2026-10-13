@@ -20,8 +20,9 @@
  */
 import "./landing.css";
 import "./marketing.css";
+import type { CSSProperties } from "react";
 import type { Metadata } from "next";
-import { Fraunces, Space_Grotesk } from "next/font/google";
+import { Space_Grotesk } from "next/font/google";
 import { AuthGate, Hero } from "@/modules/marketing/landing/client";
 import { MarketingNav } from "@/modules/marketing/marketing-nav";
 import {
@@ -39,14 +40,10 @@ import {
   Footer,
 } from "@/modules/marketing/landing/sections";
 
-// Editorial display serif — landing-scoped only (applied to the .wp wrapper).
-const display = Fraunces({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
-  variable: "--wp-display",
-  display: "swap",
-});
+// Editorial display serif: the root layout's Fraunces (`--font-fraunces`, the same weights and
+// styles), exposed to the landing CSS as `--wp-display`. Loading it again here under a second
+// variable fetched the same files twice (QA audit 2026-10-08, WP-544).
+const displayVar = { "--wp-display": "var(--font-fraunces)" } as CSSProperties;
 
 // Bold grotesk — hero title only.
 const sansDisplay = Space_Grotesk({
@@ -78,7 +75,9 @@ export const metadata: Metadata = {
     siteName: "WorkPulse",
   },
   twitter: {
-    card: "summary_large_image",
+    // "summary", not "summary_large_image": no preview image exists, and the large card announced
+    // one (QA audit 2026-10-08, WP-379). Switch back once an image is added to `openGraph.images`.
+    card: "summary",
     title: "WorkPulse — Run your whole workforce on one calm pulse",
     description:
       "One platform for time, attendance, activity, projects, and AI insights. Calm, not clinical.",
@@ -92,7 +91,10 @@ export default function LandingPage() {
         Skip to content
       </a>
       <AuthGate>
-        <div className={`wp min-h-screen overflow-x-clip ${display.variable} ${sansDisplay.variable}`}>
+        <div
+          className={`wp min-h-screen overflow-x-clip ${sansDisplay.variable}`}
+          style={displayVar}
+        >
           {/* `onDark` because the hero behind it is the dark clock section: the bar stays
               transparent over it and turns into a frosted light bar once you scroll past.
 

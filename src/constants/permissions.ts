@@ -42,10 +42,9 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
   {
     module: "dashboard",
     label: "Dashboard",
-    permissions: [
-      p("dashboard", "view", "View Dashboard"),
-      p("dashboard", "edit", "Customize Dashboard"),
-    ],
+    // No `dashboard:edit`: no server bit produces it and no gate reads it (QA audit 2026-10-08,
+    // WP-511). Every member arranges their own dashboard.
+    permissions: [p("dashboard", "view", "View Dashboard")],
   },
   {
     module: "time-tracking",
@@ -86,6 +85,8 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       p("employees", "view", "View Employees"),
       p("employees", "manage", "Manage Employees"),
+      // `OrgManage` (bit 12) — department and team CRUD, apart from `settings:manage` (bit 13).
+      p("departments", "manage", "Manage Departments & Teams"),
     ],
   },
   {
@@ -93,7 +94,10 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     label: "Attendance",
     permissions: [
       p("attendance", "view", "View Attendance"),
-      p("attendance", "manage", "Manage Attendance"),
+      // Team/org oversight read (bits 34/35) — the roster view, like `time-tracking:manage`.
+      p("attendance", "manage", "Oversee Team Attendance"),
+      // `AttendanceManage` (bit 36) — recompute and day overrides, the write path.
+      p("attendance", "edit", "Edit Attendance (recompute & day overrides)"),
     ],
   },
   {
@@ -112,6 +116,15 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
       p("activity", "view", "View Activity"),
       p("screenshots", "view", "View Screenshots"),
       p("locations", "view", "View Employee Locations"),
+      // Both are read by live gates (Monitoring settings, office perimeter, Capture now; the
+      // per-person app panel) but were missing here (QA audit 2026-10-08, WP-511).
+      p("monitoring", "manage", "Manage Monitoring Settings"),
+      {
+        id: "activity:apps:person",
+        module: "activity",
+        action: "view",
+        label: "See Which Apps a Person Used",
+      },
     ],
   },
   {

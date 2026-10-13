@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/cognito", () => ({ getIdToken: vi.fn(async () => "id-token") }));
+const session = vi.hoisted(() => ({ status: "active" as "active" | "gone" | "offline" }));
+vi.mock("@/lib/cognito", () => ({
+  getIdToken: vi.fn(async () => "id-token"),
+  sessionStatus: vi.fn(async () => session.status),
+}));
 
 process.env.NEXT_PUBLIC_API_URL = "https://api.test";
 
-import { ApiError, apiFetch } from "./api";
+import { ApiError, apiFetch, onSessionExpired } from "./api";
 
 /** A `fetch` stub returning one canned response. `text()` is what `apiFetch` reads. */
 function reply(status: number, raw: string) {
@@ -13,6 +17,20 @@ function reply(status: number, raw: string) {
 }
 
 beforeEach(() => vi.restoreAllMocks());
+
+describe("apiFetch without a token", () => {
+  /** WP-391: a refresh that failed on the network is a connection error, never a silent 401. */
+  it("reports a connection problem instead of sending the request unauthenticated", async () => {
+    const { getIdToken } = await import("@/lib/cognito");
+    vi.mocked(getIdToken).mockResolvedValueOnce(null);
+    session.status = "offline";
+    const f = reply(200, JSON.stringify({ data: {} }));
+    vi.stubGlobal("fetch", f);
+    await expect(apiFetch("/v1/me/profile")).rejects.toMatchObject({ status: 0, code: "network" });
+    expect(f).not.toHaveBeenCalled();
+    session.status = "active";
+  });
+});
 
 describe("apiFetch response handling", () => {
   it("unwraps the success envelope", async () => {
@@ -91,5 +109,46 @@ describe("apiFetch response handling", () => {
   it("rejects an OK response whose body is not an envelope", async () => {
     vi.stubGlobal("fetch", reply(200, JSON.stringify({ projects: [] })));
     await expect(apiFetch("/v1/projects")).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+/**
+ * WP-011 (QA audit 2026-10-08): nothing reacted to a 401, so a dead session left the shell rendering
+ * with every panel failing. A 401 now signs the user out — but only when Cognito confirms the session
+ * is gone, because the public invite routes also answer 401 for a bad link.
+ */
+describe("apiFetch and a dead session", () => {
+  it("reports a 401 when the Cognito session is gone", async () => {
+    session.status = "gone";
+    const expired = vi.fn();
+    const off = onSessionExpired(expired);
+    vi.stubGlobal("fetch", reply(401, JSON.stringify({ error: { code: "unauthorized" } })));
+    await expect(apiFetch("/v1/projects")).rejects.toMatchObject({ status: 401 });
+    expect(expired).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it("does not sign anyone out over a 401 while the session is alive or unknown", async () => {
+    const expired = vi.fn();
+    const off = onSessionExpired(expired);
+    vi.stubGlobal("fetch", reply(401, JSON.stringify({ error: { code: "unauthorized" } })));
+    for (const status of ["active", "offline"] as const) {
+      session.status = status;
+      await expect(apiFetch("/v1/invites/inv-1?tenant_id=t&token=x")).rejects.toMatchObject({
+        status: 401,
+      });
+    }
+    expect(expired).not.toHaveBeenCalled();
+    off();
+  });
+
+  it("does not check the session for other failures", async () => {
+    session.status = "gone";
+    const expired = vi.fn();
+    const off = onSessionExpired(expired);
+    vi.stubGlobal("fetch", reply(403, JSON.stringify({ error: { code: "forbidden" } })));
+    await expect(apiFetch("/v1/projects")).rejects.toMatchObject({ status: 403 });
+    expect(expired).not.toHaveBeenCalled();
+    off();
   });
 });

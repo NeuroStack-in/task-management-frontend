@@ -6,9 +6,9 @@
  * (`/v1/leave/types`) and balances are **computed server-side** (`/v1/me/leave/balances`), so this
  * module takes the type catalog and the balances from the server rather than inventing them.
  *
- * Status values are the server's: `pending | approved | cancelled` (the mock's `rejected` isn't a
- * state this backend produces — a manager's rejection is Phase 3). Cancel is a real transition
- * (`pending → cancelled`), not a client-side delete.
+ * Status values are the server's: `pending | approved | rejected | cancelled` — an approver's
+ * decision moves a request to `approved` or `rejected`. Cancel is a real transition (`pending →
+ * cancelled`, or an approved request that hasn't started, credited back), not a client-side delete.
  */
 import { apiFetch } from "@/lib/api";
 
@@ -88,8 +88,9 @@ export function getTypeCatalog(): Promise<ApiTypeCatalog> {
 /**
  * `PUT /v1/leave/types` — **replace** the whole type catalog (`leave_types::dto::SetTypesRequest`).
  * Needs `leave:manage`. Version-locked: send the version from the last read; a concurrent edit
- * surfaces as `409 version_conflict`. Server validation: non-empty list, unique non-empty
- * `type_id`/`name`, `annual_allowance <= 366`. Archive/unarchive a type by flipping `active`.
+ * surfaces as `409 version_conflict`. Server validation: non-empty list, non-empty `type_id` and
+ * `name`, unique `type_id` (names are **not** checked for duplicates), `annual_allowance <= 366`.
+ * Archive/unarchive a type by flipping `active`.
  */
 export function setTypes(
   types: ApiLeaveType[],
@@ -109,25 +110,9 @@ export function restoreDefaultTypes(): Promise<ApiTypeCatalog> {
   return apiFetch<ApiTypeCatalog>("/v1/leave/types/restore", { method: "POST" });
 }
 
-/** `seed_balances::SeedResult`. */
-export interface ApiSeedResult {
-  year: string;
-  seeded_users: number;
-}
-
-/**
- * `POST /v1/leave/seed-balances` — materialize the org's leave balances for a year (default: the
- * current year): one balance per employee per **active** type at its annual allowance. Needs
- * `leave:manage`. Idempotent — an existing balance (and its `used` days) is left untouched, so
- * re-running is safe. In the LLD this runs automatically on join / Jan-1 rollover; that trigger
- * infra isn't built yet, so it's exposed as this admin action (balances also lazy-seed on first use).
- */
-export function seedBalances(year?: string): Promise<ApiSeedResult> {
-  return apiFetch<ApiSeedResult>("/v1/leave/seed-balances", {
-    method: "POST",
-    body: JSON.stringify(year ? { year } : {}),
-  });
-}
+// `POST /v1/leave/seed-balances` (an admin bulk-seed for a year) is deliberately not wrapped: no
+// screen offers it, and balances lazy-seed on first use. Its wrapper had no caller but a test, which
+// made a seeding action look finished that the UI never exercised (QA audit 2026-10-08, WP-480).
 
 export function getBalances(): Promise<BalancesResponse> {
   return apiFetch<BalancesResponse>("/v1/me/leave/balances");
@@ -178,10 +163,12 @@ export const LEAVE_DOC_MAX_COUNT = 5;
 export function presignLeaveDocument(
   filename: string,
   contentType: string,
+  /** Signed into the slot, so S3 refuses a bigger body (WP-170). */
+  size?: number,
 ): Promise<{ attachment_id: string; upload_url: string }> {
   return apiFetch("/v1/me/leave/attachments/presign", {
     method: "POST",
-    body: JSON.stringify({ filename, content_type: contentType }),
+    body: JSON.stringify({ filename, content_type: contentType, size }),
   });
 }
 

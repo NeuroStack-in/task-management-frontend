@@ -39,7 +39,9 @@
   --m-surface-2: #e9eef1;
   --m-text: #16202b;
   --m-muted: #5a6573;
-  --m-faint: #8b96a3;
+  /* Was #8b96a3 (3.0:1 on white). Same slate, darkened to pass 4.5:1 on every auth surface (QA
+     audit 2026-10-08, WP-114; owner decision 2026-10-09). */
+  --m-faint: #5f6b78;
   --m-accent: #0f766e;
   --m-accent-ink: #0b5d54;
   --m-accent-2: #2f9d92;
@@ -619,7 +621,8 @@
   outline-offset: 2px;
   border-color: var(--m-accent);
 }
-.m-authinput[aria-invalid="true"] {
+.m-authinput[aria-invalid="true"],
+.m-afield__wrap[data-invalid="true"] .m-authinput {
   border-color: #b42318;
 }
 .m-authinput:disabled {

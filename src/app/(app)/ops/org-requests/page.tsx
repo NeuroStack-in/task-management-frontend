@@ -6,6 +6,7 @@ import { OrgRequestsQueue } from "@/modules/ops/components/org-requests-queue";
 import { PageHeader } from "@/components/shared/page-header";
 import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Button } from "@/components/ui/button";
 
 /**
  * Organization-creation review queue. Same shape and same guard as the support desk beside it:
@@ -15,13 +16,29 @@ import { EmptyState } from "@/components/shared/empty-state";
  * Approving on this page is what creates an organization — until an operator does, no tenant exists.
  */
 export default function Page() {
-  const { isAdmin, loading } = usePlatformAdmin();
+  const { isAdmin, loading, failed, retry } = usePlatformAdmin();
 
   if (loading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader label="Checking access…" />
       </div>
+    );
+  }
+
+  // A failed check is not a "no" — it used to read "Not authorized", with no way to ask again.
+  if (failed) {
+    return (
+      <EmptyState
+        icon={ShieldOff}
+        title="Couldn't check your access"
+        description="Something went wrong confirming you're a platform-support operator. Try again in a moment."
+        action={
+          <Button variant="outline" size="sm" onClick={retry}>
+            Retry
+          </Button>
+        }
+      />
     );
   }
 

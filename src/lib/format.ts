@@ -48,15 +48,22 @@ export function personName(
   return n && !isUuid(n) ? n : fallback;
 }
 
-/** Two-letter uppercase initials from a full name. */
+/**
+ * Two-letter uppercase initials from a full name.
+ *
+ * Taken per **code point** (`Array.from`), not per UTF-16 unit: `part[0]` split an emoji or an astral
+ * CJK character in half and the avatar drew a replacement glyph. Never `""` either — an empty string
+ * switched the avatar's monogram off and left a blank circle (QA audit 2026-10-08, WP-547).
+ */
 export function initials(name: string): string {
-  return name
-    .split(" ")
-    .map((part) => part[0])
+  const out = name
+    .split(/\s+/)
+    .map((part) => Array.from(part)[0])
     .filter(Boolean)
     .slice(0, 2)
     .join("")
     .toUpperCase();
+  return out || "?";
 }
 
 /** Deterministic 32-bit FNV-1a hash of a string. */

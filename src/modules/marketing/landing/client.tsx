@@ -116,7 +116,7 @@ export function Hero() {
         <ClockBg />
         <div className="wp-hero-scrim" aria-hidden="true" />
         <div className="relative z-10 mx-auto max-w-3xl text-center">
-          <p className="wp-kicker mb-6" style={{ color: "var(--wp-accent-glow)", opacity: 0, animation: "wp-rise 0.7s var(--wp-ease) 60ms forwards" }}>
+          <p className="wp-kicker wp-rise-in mb-6" style={{ color: "var(--wp-accent-glow)", opacity: 0, animation: "wp-rise 0.7s var(--wp-ease) 60ms forwards" }}>
             The workforce platform
           </p>
           <h1 className="wp-hero-title text-[clamp(2.6rem,7.5vw,5.2rem)]">
@@ -139,13 +139,13 @@ export function Hero() {
               </span>
             ))}
           </h1>
-          <p className="mx-auto mt-7 max-w-xl text-lg font-semibold sm:text-xl" style={{ color: "#fff", opacity: 0, animation: `wp-rise 0.7s var(--wp-ease) ${total + 120}ms forwards` }}>
+          <p className="wp-rise-in mx-auto mt-7 max-w-xl text-lg font-semibold sm:text-xl" style={{ color: "#fff", opacity: 0, animation: `wp-rise 0.7s var(--wp-ease) ${total + 120}ms forwards` }}>
             {HERO_LEAD}
           </p>
-          <p className="wp-hero-muted mx-auto mt-3 max-w-lg text-base leading-relaxed" style={{ opacity: 0, animation: `wp-rise 0.7s var(--wp-ease) ${total + 240}ms forwards` }}>
+          <p className="wp-hero-muted wp-rise-in mx-auto mt-3 max-w-lg text-base leading-relaxed" style={{ opacity: 0, animation: `wp-rise 0.7s var(--wp-ease) ${total + 240}ms forwards` }}>
             {HERO_SUB}
           </p>
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-3" style={{ opacity: 0, animation: `wp-rise 0.7s var(--wp-ease) ${total + 360}ms forwards` }}>
+          <div className="wp-rise-in mt-9 flex flex-wrap items-center justify-center gap-3" style={{ opacity: 0, animation: `wp-rise 0.7s var(--wp-ease) ${total + 360}ms forwards` }}>
             <Link href="/register" className="wp-btn wp-btn-primary">
               Start free <ArrowRight className="size-4" />
             </Link>
@@ -153,7 +153,7 @@ export function Hero() {
               <Play className="size-4" /> See it in action
             </a>
           </div>
-          <p className="mx-auto mt-4 text-sm" style={{ color: "rgb(224 236 238 / 0.5)", opacity: 0, animation: `wp-rise 0.7s var(--wp-ease) ${total + 480}ms forwards` }}>
+          <p className="wp-rise-in mx-auto mt-4 text-sm" style={{ color: "rgb(224 236 238 / 0.5)", opacity: 0, animation: `wp-rise 0.7s var(--wp-ease) ${total + 480}ms forwards` }}>
             {HERO_MICRO}
           </p>
         </div>

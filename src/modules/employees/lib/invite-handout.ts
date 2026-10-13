@@ -3,11 +3,12 @@
  *
  * ## Why this exists, and why it downloads without being asked
  *
- * `token` and `otp` come back from `POST /v1/employees/invites` **exactly once**. The server keeps
- * only their hashes and cannot reproduce either — not for support, not for the admin who created
- * them, not ever. So the few seconds after a bulk run are the only moment these values exist
- * anywhere outside the recipient's email, and a button someone might not press is the wrong way to
- * hold something unrecoverable. The file is produced automatically when a run succeeds.
+ * `token` and `otp` come back from `POST /v1/employees/invites` **exactly once**, and only on this
+ * path (`notify: false`) — an emailed invite's codes are never returned at all. The server keeps only
+ * their hashes and cannot reproduce either — not for support, not for the admin who created them, not
+ * ever. So the few seconds after a bulk run are the only moment these values exist anywhere, and a
+ * button someone might not press is the wrong way to hold something unrecoverable. The file is
+ * produced automatically when a run succeeds.
  *
  * It also decouples onboarding from email entirely. Five hundred invites is five hundred emails
  * against a provider quota, and if any bounce the codes are gone with them. With this file an admin
@@ -22,9 +23,20 @@
  */
 import type { ApiInviteCreated } from "../services/employees.service";
 
+/** A created invite that carries its codes — what the no-email path (`notify: false`) returns. */
+export type InviteWithCodes = ApiInviteCreated & { token: string; otp: string };
+
+/**
+ * Whether the server handed this invite's codes back. It does on the no-email path and only there; a
+ * row without them would put a blank code into the one copy that exists, so callers check first.
+ */
+export function hasCodes(invite: ApiInviteCreated): invite is InviteWithCodes {
+  return Boolean(invite.token) && Boolean(invite.otp);
+}
+
 /** One created invite, plus the name we knew for them from the imported file. */
 export interface HandoutRow {
-  invite: ApiInviteCreated;
+  invite: InviteWithCodes;
   /** From the file's name column; absent for a pasted list, which carries addresses only. */
   name?: string;
 }
@@ -33,7 +45,7 @@ export interface HandoutRow {
  * The link the invitee opens. Mirrors `notifications::consumers` exactly — if the two ever disagree,
  * the emailed link and the handed-out link stop being the same invite.
  */
-export function joinLink(base: string, tenantId: string, invite: ApiInviteCreated): string {
+export function joinLink(base: string, tenantId: string, invite: InviteWithCodes): string {
   const q = new URLSearchParams({
     tenant_id: tenantId,
     invite_id: invite.invite_id,

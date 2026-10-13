@@ -21,9 +21,11 @@ export const SYSTEM_ROLES: Role[] = [
     description: "Organization administration across most modules.",
     system: true,
     scope: "org",
+    // Equal to `wp-contracts::roles::admin()` decoded through `lib/permission-bits.ts` — pinned by
+    // `roles.test.ts`. It had drifted (no `billing:manage` / `monitoring:manage`, a `dashboard:edit`
+    // nothing produces), which mattered in the fallback path (QA audit 2026-10-08, WP-511).
     permissions: [
       "dashboard:view",
-      "dashboard:edit",
       "time-tracking:view",
       "time-tracking:manage",
       "tasks:view",
@@ -36,14 +38,17 @@ export const SYSTEM_ROLES: Role[] = [
       "projects:manage",
       "employees:view",
       "employees:manage",
+      "departments:manage",
       "attendance:view",
       "attendance:manage",
+      "attendance:edit",
       // No payroll ids: `wp-contracts::roles::admin()` grants neither PayrollRead nor PayrollManage
       // ("payroll stays a deliberately narrow grant"). Listing them here rendered a Payroll menu
       // that 403s on click. An org that wants an admin on payroll grants it a custom role.
       "activity:view",
       "screenshots:view",
       "locations:view",
+      "monitoring:manage",
       "reports:view",
       "reports:export",
       // Mirrors `wp-contracts::roles::admin()` granting AppUsageReadPerson (bit 6).
@@ -59,6 +64,7 @@ export const SYSTEM_ROLES: Role[] = [
       "integrations:view",
       "integrations:manage",
       "billing:view",
+      "billing:manage",
       "agents:view",
       "agents:manage",
       "roles:view",

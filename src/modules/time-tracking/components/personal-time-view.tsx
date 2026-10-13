@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Papa from "papaparse";
 import {
   CalendarDays,
   BadgeDollarSign,
@@ -48,6 +47,7 @@ import { WeeklyHoursChart } from "./weekly-hours-chart";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { PageActions } from "@/components/shared/page-actions";
 import { PayrollWidget } from "./payroll-widget";
+import { toCsv } from "@/lib/csv";
 
 /**
  * Today's timesheet — **the first screen on the real backend** (`GET /v1/me/timesheet/today`).
@@ -57,10 +57,9 @@ import { PayrollWidget } from "./payroll-widget";
  *   - the **Activity %** column — no built read joins activity samples onto a time entry;
  *   - the **focus** summary derived from it.
  *
- * The timer above is still local demo state. LLD §4 is explicit that the timer is a desktop-agent
- * module and every entry is `source: agent` — there is no manual write path, so time started here
- * cannot reach the server and will not survive a reload. That gap is a product decision, not
- * something to paper over; the table below shows only what the backend actually has.
+ * The timer above is a **read-only mirror** of the session the server has folded (LLD §4): the timer
+ * itself is a desktop-agent module and every entry is `source: agent`, so there is no Start/Stop
+ * here and no manual write path. The table below shows only what the backend actually has.
  */
 export function PersonalTimeView({ canExport }: { canExport: boolean }) {
   const { rows, totalSec: settledSec, billableSec, running, loading, error, reload } =
@@ -98,7 +97,8 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
         Math.max(rows.reduce((m, e) => Math.max(m, e.durationSec), 0), liveSec),
       ),
       projects: String(new Set(rows.map((e) => e.project)).size),
-      tasks: String(new Set(rows.map((e) => e.task)).size),
+      // Distinct task ids: a project-only session has none, and the subtasks of one task are one task.
+      tasks: String(new Set(rows.map((e) => e.taskId).filter(Boolean)).size),
     }),
     [rows, billableSec, liveSec, runningRow],
   );
@@ -143,7 +143,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
 
   const exportCsv = () => {
     // Machine mode drops Project/Task/Billable (they don't exist for a device) — one union header.
-    const csv = Papa.unparse(
+    const csv = toCsv(
       rows.map((e) =>
         isMachine
           ? {
@@ -185,16 +185,19 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                 }
               : {
                   kind: "task",
-                  // Same precedence as the table: the typed description is what the person
-                  // recognises; the task title is the fallback, and only then a neutral placeholder.
-                  task: runningRow.description || runningRow.task || "No description",
+                  // Same precedence as the table below — the task, then what was typed about it — so
+                  // one session is not named two ways on one page (QA audit 2026-10-08, WP-366).
+                  task: runningRow.task || runningRow.description || "No description",
                   project: runningRow.project,
                   start: runningRow.start,
                   startMs: runningRow.startMs,
                 }
             : null
         }
-        todayTotalSec={totalSec}
+        // The **settled** figure: the hero adds the open session's elapsed time itself, so passing
+        // `totalSec` (settled + live) counted the running session twice (WP-012).
+        todayTotalSec={settledSec}
+        machine={isMachine}
       />
 
       {/* `time:sessions` is marked in BOTH branches of /time-tracking — PersonalTimeView here and
@@ -320,7 +323,10 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                     ) : (
                       rows.map((e) => (
                         <TableRow key={e.id}>
-                          <TableCell className="pl-6">
+                          {/* Wraps: `TableCell` is `whitespace-nowrap`, so one long task title
+                              widened the table past its card and pushed Project, Time and Duration
+                              behind a sideways scroll (QA audit 2026-10-08, WP-117). */}
+                          <TableCell className="min-w-48 pl-6 whitespace-normal wrap-anywhere">
                             {/* Two distinct facts, stacked rather than competing for one label — but
                             the **task** leads now, not the description. The task is what the work
                             *is*; the description is what was said about it. With the description on
@@ -329,7 +335,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                             showing. A project-only session still has no task, so the description
                             remains the fallback. */}
                             <div className="flex items-center gap-2">
-                              <span className="font-medium">
+                              <span className="min-w-0 font-medium">
                                 {e.task || e.description || "No description"}
                               </span>
                               {e.billable ? (
@@ -345,7 +351,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                             </div>
                             {/* Only when it adds something the line above doesn't already say. */}
                             {e.task && e.description && e.description !== e.task ? (
-                              <span className="text-muted-foreground mt-0.5 block truncate text-xs">
+                              <span className="text-muted-foreground mt-0.5 block text-xs">
                                 {e.description}
                               </span>
                             ) : null}
@@ -395,7 +401,9 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
 
       {/* Weekly hours (stacked bar + week arrows) alongside personal payroll */}
       <div className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
-        <WeeklyHoursChart />
+        <WeeklyHoursChart
+          running={runningRow ? { sec: liveSec, billable: runningRow.billable } : null}
+        />
         <PayrollWidget />
       </div>
     </div>

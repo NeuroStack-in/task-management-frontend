@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ArrowUpRight, ShieldCheck } from "lucide-react"
+import { ArrowUpRight, MonitorSmartphone, ShieldCheck } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -40,9 +40,11 @@ export function SecurityEventsFeed() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1.5">
             <CardTitle>Security Events</CardTitle>
+            {/* Only what the server records under `security`: no sign-ins and no role or permission
+                changes are written (QA audit 2026-10-08, WP-336). */}
             <CardDescription>
-              Sign-in and access changes recorded for this organization — authenticator
-              resets, role and permission changes — newest first.
+              Authenticator resets, ownership changes, device enrolments and removals, and
+              on-demand screenshots — newest first.
             </CardDescription>
           </div>
           <Button
@@ -69,19 +71,26 @@ export function SecurityEventsFeed() {
           <EmptyState
             icon={ShieldCheck}
             title="No security events yet"
-            description="Sign-in and access changes — authenticator resets, role changes, permission updates — will appear here as they happen."
+            description="Authenticator resets, ownership changes and device enrolments will appear here as they happen."
           />
         ) : (
           <>
             <ol className="divide-y divide-border/60">
               {shown.map((e) => (
                 <li key={e.key} className="flex items-center gap-3 py-2.5">
-                  <UserAvatar
-                    userId={e.actorId}
-                    name={e.actorName}
-                    className="size-8 shrink-0"
-                    fallbackClassName="text-[10px]"
-                  />
+                  {/* A device actor gets a monitor glyph, not person-initials (as in Audit Logs). */}
+                  {e.actorIsDevice ? (
+                    <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full">
+                      <MonitorSmartphone className="size-4" />
+                    </span>
+                  ) : (
+                    <UserAvatar
+                      userId={e.actorId}
+                      name={e.actorName}
+                      className="size-8 shrink-0"
+                      fallbackClassName="text-[10px]"
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm">
                       <span className="font-medium">{e.actorName}</span>{" "}

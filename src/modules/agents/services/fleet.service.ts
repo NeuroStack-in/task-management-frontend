@@ -103,8 +103,9 @@ export interface TrackingPolicy {
 
 /**
  * The org's **legal capture gate** (`wp_agent_contract::CaptureGateConfig`, MANAGED-AGENT.md §9.2) —
- * what the managed agent enforces before any capture. Its own `version` is the optimistic-lock token,
- * exactly like `TrackingPolicy.version`. Every field is fail-closed when absent (heartbeat only).
+ * what the managed agent enforces before any capture. Read-only here: it arrives inside
+ * `GET /v1/agent/config`, and no screen edits it. An org that never stored a gate is served
+ * `capture_policy_active: true` with no window (`fleet::serve_config`), at `version` 0.
  */
 export interface CaptureWindow {
   /** Permitted weekdays, ISO Mon=1 … Sun=7. Empty ⇒ every day. */
@@ -117,7 +118,7 @@ export interface CaptureWindow {
 
 export interface CaptureGate {
   version: number;
-  /** Org-level authorisation to capture at all — off by default. */
+  /** Org-level authorisation to capture at all — on unless the org stored a gate turning it off. */
   capture_policy_active: boolean;
   /** The permitted hours (device-local). `null` ⇒ no time restriction. */
   capture_window: CaptureWindow | null;
@@ -131,14 +132,6 @@ export interface AgentConfig {
   rules: unknown;
   /** The legal capture gate (§9.2). */
   capture_gate: CaptureGate;
-}
-
-/** The write payload for `PUT /v1/fleet/capture-gate` (D16). */
-export interface UpdateCaptureGateInput {
-  capture_policy_active: boolean;
-  capture_window: CaptureWindow | null;
-  /** The `capture_gate.version` last loaded — a 409 (`version_conflict`) means it moved on. */
-  expected_version: number;
 }
 
 /** The exact write payload for `PUT /v1/fleet/update-policy`. */
@@ -157,7 +150,6 @@ export interface UpdateTrackingPolicyInput {
   expected_version: number;
 }
 
-/** Load the org's current agent config, including the tracking policy this screen edits. */
 /** Result of `POST /v1/fleet/{id}/capture-now`. */
 export interface CaptureRequested {
   agent_id: string;
@@ -182,19 +174,9 @@ export function captureNow(agentId: string): Promise<CaptureRequested> {
   );
 }
 
+/** Load the org's current agent config, including the tracking policy the monitoring screen edits. */
 export function getTrackingPolicy(): Promise<AgentConfig> {
   return apiFetch<AgentConfig>("/v1/agent/config");
-}
-
-/**
- * `PUT /v1/fleet/capture-gate` (D16) — set the org's legal capture gate. Needs `monitoring:manage`.
- * Optimistic-locked on `expected_version`; a 409 (`version_conflict`) means reload and retry.
- */
-export function updateCaptureGate(body: UpdateCaptureGateInput): Promise<CaptureGate> {
-  return apiFetch<CaptureGate>("/v1/fleet/capture-gate", {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
 }
 
 // ── Managed-agent enrolment (MANAGED-AGENT.md §6.2, Ph3-4) ────────────────────────────────────────
@@ -282,17 +264,11 @@ export function rotateUninstallPasscode(): Promise<UninstallPasscode> {
 /**
  * `POST /v1/fleet/{id}/release` — free the employee's 1:1 claim, revoke the credential, clear the
  * assignment. The agent stops on its next batch; the employee can then be assigned a replacement.
- * History stays on the employee's record.
+ * History stays on the employee's record. (The server's `/revoke` — lost/stolen, claim kept — has
+ * no screen, so it has no client function either.)
  */
 export async function releaseDevice(deviceId: string): Promise<void> {
   await apiFetch(`/v1/fleet/${encodeURIComponent(deviceId)}/release`, {
-    method: "POST",
-  });
-}
-
-/** `POST /v1/fleet/{id}/revoke` — kill the credential without freeing the employee (lost/stolen). */
-export async function revokeDevice(deviceId: string): Promise<void> {
-  await apiFetch(`/v1/fleet/${encodeURIComponent(deviceId)}/revoke`, {
     method: "POST",
   });
 }

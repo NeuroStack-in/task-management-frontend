@@ -25,6 +25,7 @@ import { Loader } from "@/components/shared/loader"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useTrackingMode } from "@/hooks/use-features"
+import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store"
 import { ApiError } from "@/lib/api"
 import {
   getTrackingPolicy,
@@ -33,6 +34,7 @@ import {
 } from "@/modules/agents/services/fleet.service"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils"
+import { ScreenshotExclusionsCard } from "./screenshot-exclusions-card"
 
 /**
  * The cadence *choice* the dropdown offers. The four presets map straight to the wire strings;
@@ -47,19 +49,21 @@ const CUSTOM_DEFAULT = 7
 /**
  * The form fields (agent `TrackingConfig`, sans `version`), with cadence split into choice + minutes.
  *
- * `blur_level` and `silent` have no control any more but stay in the shape: the PUT sends the whole
- * config, so dropping them would write a default over whatever is stored. They are carried through
- * load → save untouched.
+ * `blur_level` and `silent` have no control any more but stay in the shape, because the PUT sends
+ * the whole config. Every save **pins** them to `0` / `false` (see `onSave`): they used to be
+ * round-tripped from whatever was stored, so an org that had silent mode or blur on before the
+ * controls were removed kept it for good, with nothing on screen to say so (QA audit 2026-10-08,
+ * WP-331).
  */
 type PolicyForm = {
   cadence: CadenceChoice
   /** Minutes for the `"custom"` choice; ignored otherwise. */
   customMinutes: number
-  /** No UI. Screenshots are meant to be legible; sent back exactly as loaded. */
+  /** No UI. Screenshots are meant to be legible; saved as `0`. */
   blur_level: number
   retention_days: number
   /**
-   * No UI, and pinned `false`. The agent's capture indicator is the only notice an employee gets
+   * No UI, and saved as `false`. The agent's capture indicator is the only notice an employee gets
    * that monitoring is running, so switching it off is not an admin-facing setting.
    */
   silent: boolean
@@ -154,13 +158,37 @@ export function MonitoringTab() {
   // The idle window only applies to the managed Windows service, so the card is hidden for
   // `project` orgs rather than shown as a setting that changes nothing.
   const trackingMode = useTrackingMode()
+  // The server refuses any save whose cadence isn't Off unless `monitoring.activity` is effective for
+  // the org — the plain plan ∩ toggle check, with no owner exemption (`fleet::update_policy`). The
+  // page used to send the stored cadence (`min5` for an org that never saved one) with every edit,
+  // so on Free, or with Activity monitoring off, no setting here could be saved at all and the error
+  // blamed the plan (QA audit 2026-10-08, WP-330). While capture can't run, it is shown — and saved —
+  // as Off, so the other settings save.
+  const captureAllowed = useEntitlementsStore((s) =>
+    effectiveFromState(s, "monitoring.activity"),
+  )
+  const captureInPlan = useEntitlementsStore(
+    (s) => !s.loaded || s.allowed.includes("monitoring.activity"),
+  )
 
   const {
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { isDirty },
   } = useForm<PolicyForm>({ defaultValues: EMPTY })
+
+  // Stored values the page no longer offers (silent capture, blur). Every save pins them back, and
+  // the form starts dirty so a manager can do that without changing anything else.
+  const [legacyOverride, setLegacyOverride] = useState<{ silent: boolean; blur: boolean } | null>(
+    null,
+  )
+  useEffect(() => {
+    if (!legacyOverride || !canManage) return
+    setValue("silent", false, { shouldDirty: true })
+    setValue("blur_level", 0, { shouldDirty: true })
+  }, [legacyOverride, canManage, setValue])
 
   // Leaving via the settings rail now asks before discarding these edits.
   useUnsavedGuard(isDirty)
@@ -197,6 +225,9 @@ export function MonitoringTab() {
         },
         cfg.tracking.version,
       )
+      const silent = cfg.tracking.silent === true
+      const blur = cfg.tracking.blur_level > 0
+      setLegacyOverride(silent || blur ? { silent, blur } : null)
     } catch (e) {
       setLoadError(loadMessage(e))
     } finally {
@@ -211,16 +242,20 @@ export function MonitoringTab() {
   const onSave = handleSubmit(async (values) => {
     if (saving) return
     setSaving(true)
+    const cadence = captureAllowed ? formToCadence(values.cadence, values.customMinutes) : "off"
     try {
       const next = await updateTrackingPolicy({
-        cadence: formToCadence(values.cadence, values.customMinutes),
-        blur_level: values.blur_level,
-        retention_days: values.retention_days,
-        silent: values.silent,
+        cadence,
+        // Pinned, never round-tripped — see `PolicyForm` (WP-331).
+        blur_level: 0,
+        // Whole days: the server field is a `u16` and rejects a fraction (WP-361).
+        retention_days: Math.round(values.retention_days),
+        silent: false,
         auto_update: values.auto_update,
         idle_end_secs: Math.round(values.idleMinutes) * 60,
         expected_version: version,
       })
+      setLegacyOverride(null)
       seed(
         {
           ...cadenceToForm(next.cadence),
@@ -239,8 +274,12 @@ export function MonitoringTab() {
           action: { label: "Reload", onClick: () => void load() },
         })
       } else if (e instanceof ApiError && e.status === 403) {
+        // The server refuses capture for the entitlement only when the cadence isn't Off; with Off
+        // a 403 is the permission. Say which, instead of blaming the plan for both.
         toast.error(
-          "Monitoring capture isn't included in your plan — you can't enable screenshot capture. Upgrade to turn it on.",
+          cadence !== "off"
+            ? "Screenshot capture needs Activity monitoring, which isn't available to this organization right now. Set capture to Off to save your other changes."
+            : "You don't have permission to change monitoring settings.",
         )
       } else {
         toast.error(
@@ -261,11 +300,13 @@ export function MonitoringTab() {
         description="Configure how the desktop agent captures screenshots and how long they are retained across your organization."
       />
 
+      {/* The permission's own name, as Roles & permissions lists it — it said "Manage Settings",
+          which a role can hold without being able to save here (WP-521). */}
       {!canManage && (
         <div className="flex items-center gap-2.5 rounded-md border border-border bg-muted px-5 py-3 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" />
           You can view these settings, but saving requires the{" "}
-          <span className="font-medium text-foreground">Manage Settings</span>{" "}
+          <span className="font-medium text-foreground">Manage monitoring settings</span>{" "}
           permission.
         </div>
       )}
@@ -290,15 +331,34 @@ export function MonitoringTab() {
             <CardHeader>
               <CardTitle>Screenshot capture</CardTitle>
               <CardDescription>
-                Control how often the desktop agent captures screenshots, how they are blurred, and
-                how long they are retained.
+                Control how often the desktop agent captures screenshots and how long they are
+                retained.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-0 pb-2">
+              {!captureAllowed ? (
+                <p className="mb-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  Screenshot capture is off because Activity monitoring{" "}
+                  {captureInPlan
+                    ? "is switched off in Settings → Features"
+                    : "isn't included in your plan"}
+                  . Your other settings here still save.
+                </p>
+              ) : null}
+              {legacyOverride ? (
+                <p className="mb-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
+                  {legacyOverride.silent
+                    ? "These settings hide the agent's capture indicator, which is the only notice employees get that monitoring is running. "
+                    : ""}
+                  {legacyOverride.blur ? "Screenshots are blurred. " : ""}
+                  Neither can be set here any more — saving turns the indicator back on and stops
+                  blurring.
+                </p>
+              ) : null}
               <SettingRow
                 label="Capture cadence"
                 description="How often a screenshot is taken while a session is active."
-                disabled={!canManage}
+                disabled={!canManage || !captureAllowed}
               >
                 <Controller
                   control={control}
@@ -306,13 +366,13 @@ export function MonitoringTab() {
                   render={({ field }) => (
                     <div className="flex flex-col items-end gap-2">
                       <Select
-                        value={field.value}
+                        value={captureAllowed ? field.value : "off"}
                         onValueChange={(v) =>
                           field.onChange(v as CadenceChoice)
                         }
-                        disabled={!canManage}
+                        disabled={!canManage || !captureAllowed}
                       >
-                        <SelectTrigger className="w-56">
+                        <SelectTrigger className="w-56" aria-label="Capture cadence">
                           <SelectValue>
                             {(v) =>
                               CADENCE_OPTIONS.find((o) => o.value === v)
@@ -328,7 +388,7 @@ export function MonitoringTab() {
                           ))}
                         </SelectContent>
                       </Select>
-                      {field.value === "custom" ? (
+                      {field.value === "custom" && captureAllowed ? (
                         <Controller
                           control={control}
                           name="customMinutes"
@@ -338,6 +398,7 @@ export function MonitoringTab() {
                               min={CUSTOM_MIN}
                               max={CUSTOM_MAX}
                               suffix="min"
+                              aria-label="Minutes between screenshots"
                               disabled={!canManage}
                               onChange={mf.onChange}
                             />
@@ -350,7 +411,7 @@ export function MonitoringTab() {
               </SettingRow>
               {/* No Blur control. Screenshots are meant to be legible — a blurred one costs the
                   same to capture, store and retain while answering nothing. `blur_level` stays in
-                  the wire type (the agent reads it) and is sent unchanged at 0. */}
+                  the wire type (the agent reads it) and every save sends 0. */}
               <SettingRow
                 label="Retention period"
                 description="Days to keep screenshots before they are deleted automatically."
@@ -365,6 +426,7 @@ export function MonitoringTab() {
                       min={1}
                       max={365}
                       suffix="days"
+                      aria-label="Retention period in days"
                       disabled={!canManage}
                       onChange={field.onChange}
                     />
@@ -402,6 +464,7 @@ export function MonitoringTab() {
                         min={IDLE_MIN_MINUTES}
                         max={IDLE_MAX_MINUTES}
                         suffix="min"
+                        aria-label="Stop after this many minutes of inactivity"
                         disabled={!canManage}
                         onChange={field.onChange}
                       />
@@ -434,6 +497,7 @@ export function MonitoringTab() {
                       checked={field.value}
                       disabled={!canManage}
                       onCheckedChange={field.onChange}
+                      aria-label="Automatic updates"
                     />
                   )}
                 />
@@ -441,11 +505,14 @@ export function MonitoringTab() {
             </CardContent>
           </Card>
 
+          {/* Who is excluded from screenshots: its own document, saved on its own (WP-146). */}
+          {canManage && <ScreenshotExclusionsCard />}
+
           {/* No Employee-disclosure card, and no capture-authorisation card.
-              `silent` is pinned to `false` (see EMPTY) and sent unchanged, so the agent keeps
-              showing its capture indicator — that indicator is what tells an employee monitoring is
-              running, and it is the only notice the product gives. It is deliberately not something
-              an admin can switch off from a settings page.
+              Every save sends `silent: false` (see `onSave`), so the agent keeps showing its capture
+              indicator — that indicator is what tells an employee monitoring is running, and it is
+              the only notice the product gives. It is deliberately not something an admin can switch
+              off from a settings page.
               Capture authorisation is gone with it: these are company-managed machines and the org
               has already decided. `fleet::serve_config` now treats an absent gate as capture-allowed
               (it used to fail closed, which is why managed devices had been capturing nothing at

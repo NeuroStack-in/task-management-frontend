@@ -36,6 +36,8 @@ export interface OpsThread {
   status: OpsStatus;
   created_at: number;
   updated_at?: number;
+  /** What the customer wrote when filing — `messages` holds replies only. */
+  description?: string;
   attachments: string[];
   messages: OpsMessage[];
 }

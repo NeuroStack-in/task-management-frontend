@@ -11,7 +11,8 @@
  *
  * The document is opaque server-side, but the agent expects specific keys, so we normalize to them:
  * `apps[]` (classification), `urls[]`, `blocked/exceptions {apps,urls}`, and `category_weights`.
- * (Effects are agent-gated — the agent isn't running yet — but the config is real and persisted.)
+ * The agents apply it on their devices (the server signals them to pull it after a save); the
+ * category weights are read only by the server's scorer, from the org document.
  *
  * `useRulesDoc(path)` is the generic hook (org **or** department); `useOrgRules()` is the org-scoped
  * shorthand. Both go through the `org.service` rules helpers rather than `apiFetch` directly.
@@ -86,7 +87,10 @@ function normalize(raw: unknown): RulesDoc {
   const blocked = (d.blocked ?? {}) as Record<string, unknown>;
   const exceptions = (d.exceptions ?? {}) as Record<string, unknown>;
   const weights = (d.category_weights ?? {}) as Record<string, unknown>;
-  const num = (v: unknown, dflt: number) => (typeof v === "number" ? v : dflt);
+  // Into 0–1, as the scorer clamps them (`CategoryWeights::clamped`): a stored 2 scores as 1, so it
+  // shows as 1 (WP-355).
+  const num = (v: unknown, dflt: number) =>
+    typeof v === "number" && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : dflt;
   return {
     apps,
     urls,

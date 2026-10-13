@@ -4,14 +4,15 @@
  * Org-wide **default** productivity score weights — `GET`/`PUT /v1/org/productivity-weights`.
  *
  * These are the weights every department inherits until it sets its own (per-department overrides
- * live in the Departments manager's "Productivity" sheet). A 404 on GET means the org has never set
- * them, so the card falls back to the product defaults (`GLOBAL_DEFAULT_WEIGHTS`) and says so.
+ * live in the Departments manager's "Productivity" sheet). When the org has never set them the GET
+ * answers with `configured: false` and the product defaults (`GLOBAL_DEFAULT_WEIGHTS`), and the card
+ * says so.
  *
  * List/read is open to members; saving needs `settings:manage` (server `OrgSettingsManage`).
  */
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { RotateCcw, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
@@ -49,7 +50,8 @@ export function OrgProductivityWeightsCard() {
       .then((w) => {
         if (!live) return;
         setPercents(toPercents(w));
-        setUsingDefaults(false);
+        // The server answers 200 even when nothing is stored — `configured` says which (WP-100).
+        setUsingDefaults(!w.configured);
       })
       .catch((e) => {
         if (!live) return;
@@ -131,19 +133,8 @@ export function OrgProductivityWeightsCard() {
               busy={saving}
               submitLabel="Save default weights"
               onSubmit={save}
-              footerLeft={
-                canManage ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={saving}
-                    onClick={() => setPercents({ ...DEFAULT_PERCENTS })}
-                  >
-                    <RotateCcw className="size-3.5" /> Reset to defaults
-                  </Button>
-                ) : null
-              }
+              // Fills in the built-in weights as an edit; Save stores them (WP-341).
+              resetTo={{ values: DEFAULT_PERCENTS, label: "Use built-in defaults" }}
             />
           </>
         ) : null}

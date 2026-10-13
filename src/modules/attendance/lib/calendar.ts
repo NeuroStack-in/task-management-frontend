@@ -1,10 +1,11 @@
 /**
  * Presentational calendar date-math for the Attendance module.
  *
- * Pure functions only — explicit `new Date(y, m, d)` args (no `Date.now()` /
- * `Math.random()`), so the month grid is stable across renders. **No attendance
- * data lives here**: the calendar just lays out the grid; the wired views overlay
- * the real records from `GET /v1/me/attendance` / `GET /v1/attendance/day`.
+ * Pure functions over explicit `new Date(y, m, d)` args — the one clock read is
+ * `today()`, which the grid takes as a parameter, so the month grid is stable across
+ * renders. **No attendance data lives here**: the calendar just lays out the grid; the
+ * wired views overlay the real records from `GET /v1/me/attendance` /
+ * `GET /v1/attendance/day`.
  *
  * (Relocated verbatim out of the deleted `lib/mock-attendance.ts`, which mixed
  * these helpers with fabricated data. The data died with that file; the math
@@ -14,21 +15,26 @@ export { isCounted, type DayStatus } from "@/types/attendance";
 
 import { DEFAULT_WORKDAYS, type IsoWeekday } from "@/lib/workdays";
 
+/** A calendar date with a **0-indexed** month. */
+export interface CalendarDay {
+  year: number;
+  month: number;
+  day: number;
+}
+
 /**
- * "Today" and the month the calendar opens on — the **real current date**.
+ * The **real current date**, read from the local clock on every call.
  *
- * (Was a hardcoded demo clock, `2026-06-25`, which pinned every calendar to June and made real
- * months look empty/future. Computed once at module load from the local clock; the wired views only
- * render their calendars client-side — after a mount effect resolves the selected date — so this
- * matches the browser's day and never hydrates against a stale server value.)
+ * It used to be a constant evaluated once at module load, so a tab left open past midnight kept the
+ * load day as "today": yesterday's closed record read as the future, the Today buttons jumped back a
+ * day and the date pickers refused the real today (QA audit 2026-10-08, WP-258). Components read it
+ * through `useToday()`, which re-renders them when the date turns over. The views render only after
+ * `AuthGuard` hydrates, so a client clock here never meets a server render.
  */
-const _now = new Date();
-export const TODAY = {
-  year: _now.getFullYear(),
-  month: _now.getMonth(),
-  day: _now.getDate(),
-};
-export const REFERENCE_MONTH = { year: TODAY.year, month: TODAY.month };
+export function today(): CalendarDay {
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() };
+}
 
 /** One cell in the six-week month grid. Carries layout only — no attendance data. */
 export interface DayCell {
@@ -49,11 +55,16 @@ export function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
 
-/** Is the date in the future relative to the demo "today"? (No records yet.) */
-export function isFutureDate(year: number, month: number, day: number): boolean {
+/** Is the date after `now` (default: the real today)? Such a day has no record yet. */
+export function isFutureDate(
+  year: number,
+  month: number,
+  day: number,
+  now: CalendarDay = today(),
+): boolean {
   return (
     new Date(year, month, day).getTime() >
-    new Date(TODAY.year, TODAY.month, TODAY.day).getTime()
+    new Date(now.year, now.month, now.day).getTime()
   );
 }
 
@@ -64,11 +75,15 @@ export function isFutureDate(year: number, month: number, day: number): boolean 
  * `workdays` are the org's scheduled ISO weekdays (1 = Mon … 7 = Sun) — pass `useWorkdays()` so the
  * grid greys out the same days the backend treats as off. Defaults to Mon–Fri, which is what the
  * server assumes for an org that has never configured a schedule.
+ *
+ * `now` decides which cell is `isToday` — pass `useToday()` (and list it in the memo's deps) so the
+ * highlight moves at midnight.
  */
 export function monthMatrix(
   year: number,
   month: number,
   workdays: readonly IsoWeekday[] = DEFAULT_WORKDAYS,
+  now: CalendarDay = today(),
 ): DayCell[][] {
   const firstWeekday = mondayIndex(new Date(year, month, 1).getDay());
   const total = daysInMonth(year, month);
@@ -85,7 +100,7 @@ export function monthMatrix(
       inMonth,
       weekday,
       isWorkday,
-      isToday: inMonth && y === TODAY.year && m === TODAY.month && d === TODAY.day,
+      isToday: inMonth && y === now.year && m === now.month && d === now.day,
     };
   };
 

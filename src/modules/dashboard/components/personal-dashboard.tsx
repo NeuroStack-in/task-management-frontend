@@ -20,11 +20,9 @@ import { useWeekTracked } from "../use-week-tracked";
 import { useMyAttendance, ymd, type DayRecord } from "@/modules/attendance/use-my-attendance";
 import { useIsSurfaceOn } from "@/hooks/use-features";
 import { useAssistantPageContext } from "@/stores/page-context.store";
-import { formatDuration, formatHours } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useWorkingHours } from "@/hooks/use-working-hours";
-import { usePoll } from "@/hooks/use-poll";
-import { LIVE_REFRESH_MS } from "@/hooks/use-live-refresh";
 
 const ATTENDANCE: Record<string, { dot: string; label: string }> = {
   present: { dot: "bg-success", label: "Present" },
@@ -54,18 +52,26 @@ type LiveStatus = DayRecord["status"] | "in_progress" | "tracked_today";
 type LiveRecord = Omit<DayRecord, "status"> & { status: LiveStatus };
 
 export function PersonalDashboard() {
-  const { openTasks, doneCount, myProjects, loading } = useMyWork();
   const isSurfaceOn = useIsSurfaceOn();
   // These surfaces are gated: Time Tracking (the timer tile) and Projects (task/project cards + the
   // work sections below). Hidden when the org switched the feature off, or its tracking mode hides
   // it (MANAGED-AGENT.md §8). Grid children auto-flow, so dropping cards leaves no hole.
   const showTimer = isSurfaceOn("time.tracking");
   const showProjects = isSurfaceOn("projects");
+  // Nothing is read for Projects when it is off for the org.
+  const work = useMyWork(showProjects);
+  const { openTasks, doneCount, myProjects, loading } = work;
+  // A failed read with nothing loaded: the counts are unknown, not zero (QA audit 2026-10-08, WP-198).
+  const workUnknown = Boolean(work.error) && !work.loaded;
 
-  // Compute the trailing 7-day window on the client (real "today"); render it only after mount to
-  // avoid an SSR/client date mismatch.
+  // Compute the calendar week on the client (real "today"); render it only after mount to avoid an
+  // SSR/client date mismatch.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // Keyed on today's date, recomputed each render (cheap): the week was memoised once, so a tab left
+  // open from Sunday into Monday kept last week's rows while today's time was added to last week's
+  // total (QA audit 2026-10-08, WP-430).
+  const todayKey = ymd(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
   const week = useMemo(() => {
     // **The calendar week, Monday→Sunday** — not a trailing 7 days ending today.
     //
@@ -92,7 +98,9 @@ export function PersonalDashboard() {
         jsDay: d.getDay(),
       };
     });
-  }, []);
+    // `todayKey` is what moves the week; the body reads the clock itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayKey]);
   const att = useMyAttendance(week[0].key, week[6].key);
   // Logged timer time across the window, **including the session running right now**.
   //
@@ -102,19 +110,14 @@ export function PersonalDashboard() {
   // live timer counting up: two numbers about the same work, disagreeing on screen.
   const tracked = useWeekTracked(week[0].key, week[6].key);
 
-  const todayKeyRef = ymd(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  // (The card stays live without a poll here: `useMyAttendance` polls itself in the background.
+  // This also polled its `reload` — the foreground path, spinner and all — so attendance was read
+  // twice every 30 s; QA audit 2026-10-08, WP-434.)
 
-  // Keep the card live. Attendance changes while someone is working — a clock-in flips "No record"
-  // to Present, and today's hours climb — so a card rendered once at page load goes stale in front
-  // of whoever is looking at it, and the number beside a running timer stops matching it.
-  //
-  // `usePoll` is the sanctioned primitive: it pauses while the tab is hidden and re-fetches on
-  // return, so a dashboard left open overnight does not spend the night polling. `reload` refreshes
-  // in place rather than showing a spinner, which is what makes a 30-second cadence unobtrusive.
-  usePoll(att.reload, LIVE_REFRESH_MS);
-
-  // **Working days only.** A weekend row that says "Non-working day" is a line telling you nothing
-  // happened on a day nothing was meant to happen — two of seven rows spent saying so.
+  // **Working days — and any day with time on it.** A weekend row that says "Non-working day" is a
+  // line telling you nothing happened on a day nothing was meant to happen — two of seven rows spent
+  // saying so. But a Saturday that *was* worked is shown: hiding it made the rows add up to less
+  // than the total beneath them (QA audit 2026-10-08, WP-430).
   //
   // Driven by the org's configured `workdays`, not by a weekend assumption: an org that works
   // Sunday-to-Thursday gets its own days, and the same config decides `non_workday` server-side, so
@@ -125,6 +128,7 @@ export function PersonalDashboard() {
   const attRows = week
     .map((w) => ({ ...w, record: att.recordFor(w.y, w.m, w.day) }))
     .filter((w) => {
+      if (tracked.daySec(w.key) > 0) return true;
       if (w.record?.status === "non_workday") return false;
       if (!workdays) return true;
       // `IsoWeekday` is 1=Mon…7=Sun; JS `getDay()` is 0=Sun.
@@ -143,7 +147,6 @@ export function PersonalDashboard() {
   // Today's seconds and whether a session is open, from the SAME hook instance that totals the
   // week — it already reads today's sheet for its live top-up. A second instance over a one-day
   // range would have polled the same endpoint twice for the same answer.
-  const todayKey = todayKeyRef;
   const todaySec = tracked.todaySec;
   const attRowsLive: Array<Omit<(typeof attRows)[number], "record"> & {
     record: LiveRecord | null;
@@ -165,25 +168,29 @@ export function PersonalDashboard() {
       : w,
   );
   const daysPresent = attRowsLive.filter((w) => w.record?.status === "present").length;
+  // Each row's time is the timesheet's for that day (today's live) — the source the total beneath
+  // them is summed from. The rows showed attendance hours, rounded to tenths, over a footer summed
+  // from the timesheet, so the two disagreed (QA audit 2026-10-08, WP-430).
+  const rowsTotalSec = attRowsLive.reduce((s, w) => s + tracked.daySec(w.key), 0);
 
   // Publish the viewer's own at-a-glance figures to the assistant.
   useAssistantPageContext({
     facts: [
-      ...(showProjects
+      ...(showProjects && !workUnknown
         ? [
             { label: "My open tasks", value: String(openTasks.length) },
             { label: "Completed tasks", value: String(doneCount) },
             { label: "My projects", value: String(myProjects.length) },
           ]
         : []),
-      ...(showTimer
-        ? [{ label: "Hours (last 7 days)", value: formatDuration(tracked.totalSec) }]
+      ...(showTimer && tracked.loaded
+        ? [{ label: "Hours this week", value: formatDuration(tracked.totalSec) }]
         : []),
       { label: "Days present this week", value: String(daysPresent) },
     ],
   });
 
-  if (loading && openTasks.length === 0 && myProjects.length === 0) {
+  if (showProjects && loading && !work.loaded && !work.error) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <Loader label="Loading your work…" />
@@ -195,7 +202,9 @@ export function PersonalDashboard() {
     <>
       {/* Personal KPI strip */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
-        {showTimer && <TimerStatCard />}
+        {showTimer && (
+          <TimerStatCard running={tracked.runningRow} settledSec={tracked.todaySettledSec} />
+        )}
         <MeetingHoursCard />
         <StatCard
           label="Hours this week"
@@ -212,29 +221,41 @@ export function PersonalDashboard() {
           <>
             <StatCard
               label="Open Tasks"
-              value={openTasks.length}
+              value={workUnknown ? "—" : openTasks.length}
               icon={ListChecks}
-              hint={`${doneCount} completed`}
+              hint={workUnknown ? "couldn't load" : `${doneCount} completed`}
               href="/projects"
             />
             <StatCard
               label="My Projects"
-              value={myProjects.length}
+              value={workUnknown ? "—" : myProjects.length}
               icon={FolderKanban}
-              hint="you're a member of"
+              hint={workUnknown ? "couldn't load" : "you're a member of"}
               href="/projects"
             />
           </>
         )}
       </div>
 
-      {showProjects && (
+      {/* The week card is attendance and logged time — nothing to do with Projects — so it no longer
+          disappears with them (an org with Projects off, or in `machine` mode, lost it; QA audit
+          2026-10-08, WP-430). */}
       <div className="grid gap-4 xl:grid-cols-3">
         {/* My tasks. Shared with the org dashboard — see `my-tasks-card.tsx`. */}
-        <MyTasksCard tasks={openTasks} className="xl:col-span-2" />
+        {showProjects && (
+          <MyTasksCard
+            tasks={openTasks}
+            className="xl:col-span-2"
+            error={work.error}
+            onRetry={work.reload}
+          />
+        )}
 
         {/* This week's attendance */}
-        <Card data-tour="dash:week" className="gap-0 p-0 [--card-spacing:0px]">
+        <Card
+          data-tour="dash:week"
+          className={cn("gap-0 p-0 [--card-spacing:0px]", !showProjects && "xl:col-span-3")}
+        >
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">This week</h2>
             <Link
@@ -269,13 +290,9 @@ export function PersonalDashboard() {
                       )}
                     >
                       {/* Running and finished days read in the same notation; only the colour
-                          above separates them. A running row still moves every second — it is fed
-                          `todaySec`, which ticks — while a settled day holds still on its own. */}
-                      {w.record?.status === "in_progress"
-                        ? formatDuration(todaySec)
-                        : w.record && w.record.hours > 0
-                          ? formatHours(w.record.hours)
-                          : "—"}
+                          above separates them. A running row still moves every second — today is
+                          fed `todaySec`, which ticks — while a settled day holds still on its own. */}
+                      {tracked.daySec(w.key) > 0 ? formatDuration(tracked.daySec(w.key)) : "—"}
                     </span>
                   </div>
                 );
@@ -288,25 +305,22 @@ export function PersonalDashboard() {
                   to match the rows above it. */}
               {mounted ? `${daysPresent}/${attRowsLive.length} days present` : "—"}
             </span>
-            {/* **Same notation as the rows above it.** While a session is open the running row
-                shows a clock (`2:28:05`) and this showed `2.5h` — the same number, and they agree,
-                but `2:28` reads like "2.28" so `2.5h` looks like a different figure sitting right
-                underneath it. One notation at a time removes the question.
-
-                Once nothing is running there is no ticking row to match, and decimal hours are the
-                easier form to compare across weeks — so it goes back to `2.5h`. */}
+            {/* **Same notation as the rows above it** — `HH:MM:SS`, running or not. A clock row
+                (`2:28:05`) over a `2.5h` total read as two different figures for the same time. */}
             <span
               className={cn(
                 "font-medium tabular-nums",
                 tracked.running && "text-primary",
               )}
             >
-              {!mounted ? "—" : `${formatDuration(tracked.totalSec)} total`}
+              {/* The sum of the rows above it — every day with time on it is a row. */}
+              {!mounted || !tracked.loaded ? "—" : `${formatDuration(rowsTotalSec)} total`}
             </span>
           </div>
         </Card>
 
         {/* My projects */}
+        {showProjects && (
         <Card className="gap-0 p-0 [--card-spacing:0px] xl:col-span-3">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <h2 className="font-display text-base font-semibold tracking-tight">My projects</h2>
@@ -317,7 +331,11 @@ export function PersonalDashboard() {
               View all <ArrowRight className="size-3.5" />
             </Link>
           </div>
-          {myProjects.length === 0 ? (
+          {myProjects.length === 0 && workUnknown ? (
+            <p className="px-5 py-8 text-center text-sm text-muted-foreground">
+              Your projects couldn&apos;t be loaded. {work.error}
+            </p>
+          ) : myProjects.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted-foreground">
               You&apos;re not assigned to any projects yet.
             </p>
@@ -339,8 +357,8 @@ export function PersonalDashboard() {
             </ul>
           )}
         </Card>
+        )}
       </div>
-      )}
     </>
   );
 }

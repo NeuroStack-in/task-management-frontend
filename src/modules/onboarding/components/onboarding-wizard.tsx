@@ -14,10 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
 import { ONBOARDING_STEPS } from "@/modules/onboarding/steps";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
+import { canAccess } from "@/lib/rbac";
+import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { getOrg, updateOrg } from "@/modules/settings/services/org.service";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
@@ -28,6 +29,7 @@ import {
 import {
   getTrackingPolicy,
   updateTrackingPolicy,
+  type TrackingPolicy,
 } from "@/modules/agents/services/fleet.service";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -68,32 +70,6 @@ function ToggleRow({
   );
 }
 
-function CheckRow({
-  label,
-  checked,
-  onCheckedChange,
-}: {
-  label: string;
-  checked: boolean;
-  onCheckedChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center gap-2.5 rounded-lg border p-3 text-sm">
-      <Checkbox checked={checked} onCheckedChange={(v) => onCheckedChange(v === true)} />
-      {label}
-    </label>
-  );
-}
-
-const WIDGETS = [
-  "Activity heatmap",
-  "Attendance",
-  "Department comparison",
-  "Top employees",
-  "Recent alerts",
-  "Billing overview",
-] as const;
-
 export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) {
   const router = useRouter();
   const [step, setStep] = useState(initialStep);
@@ -107,22 +83,20 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
 
   // Step 2 — team
   const [emails, setEmails] = useState<string[]>(["", "", ""]);
+  /** Indices of entries that aren't email addresses — shown, not silently dropped (WP-127). */
+  const [badEmails, setBadEmails] = useState<number[]>([]);
   const [roles, setRoles] = useState<ApiRole[]>([]);
 
-  // Step 3 — tracking
-  const [idle, setIdle] = useState(true); // agent-side only — never sent to the server
-  const [screenshots, setScreenshots] = useState(true);
+  // Step 3 — tracking. The switches start from the org's CURRENT policy, and only a change is
+  // written. They used to start at fixed defaults and be written back unconditionally, so walking
+  // through this again turned an org's "off" or 3-minute cadence into every 5 minutes (WP-127). The
+  // "Idle detection" switch is gone: nothing ever sent it anywhere. `null` policy = not loaded (or
+  // not this person's to change) — the step then writes nothing.
+  const canMonitor = canAccess(currentRoleSnapshot(), "monitoring:manage");
+  const [policy, setPolicy] = useState<TrackingPolicy | null>(null);
+  const [policyFailed, setPolicyFailed] = useState(false);
+  const [screenshots, setScreenshots] = useState(false);
   const [silent, setSilent] = useState(false);
-
-  // Step 4 — dashboard (local only — no backend for widget prefs)
-  const [widgets, setWidgets] = useState<Record<string, boolean>>({
-    "Activity heatmap": true,
-    Attendance: true,
-    "Department comparison": true,
-    "Top employees": false,
-    "Recent alerts": true,
-    "Billing overview": false,
-  });
 
   // Prefill the org step from the details already captured at signup, so this is a confirm/refine
   // rather than blank re-entry. Best-effort — a 404 (org not provisioned) leaves the fields empty.
@@ -142,6 +116,26 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
       alive = false;
     };
   }, []);
+
+  // The tracking policy as it stands, to seed the step's switches. Only for someone who may change it.
+  useEffect(() => {
+    if (!canMonitor) return;
+    let alive = true;
+    getTrackingPolicy()
+      .then((cfg) => {
+        if (!alive) return;
+        setPolicy(cfg.tracking);
+        setScreenshots(cfg.tracking.cadence !== "off");
+        setSilent(cfg.tracking.silent);
+      })
+      .catch(() => {
+        // Unreadable → `policy` stays null and the step writes nothing rather than guess.
+        if (alive) setPolicyFailed(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [canMonitor]);
 
   // Load roles once so the team step can pick a default role for invites. Best-effort.
   useEffect(() => {
@@ -183,11 +177,16 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
     }
   }
 
-  async function saveTeam() {
-    const valid = emails.map((e) => e.trim()).filter((e) => EMAIL_RE.test(e));
+  /** Resolves whether the wizard may move on — `false` while an entry isn't an email address. */
+  async function saveTeam(): Promise<boolean> {
+    // An address that isn't one is pointed out, not dropped without a word (WP-127).
+    const bad = emails.flatMap((e, i) => (e.trim() && !EMAIL_RE.test(e.trim()) ? [i] : []));
+    setBadEmails(bad);
+    if (bad.length > 0) return false;
+    const valid = emails.map((e) => e.trim()).filter(Boolean);
     if (valid.length === 0) {
       await markStep("invite_team", "skipped");
-      return;
+      return true;
     }
     const role = defaultRole(roles);
     if (!role) {
@@ -195,21 +194,25 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         description: "Roles weren't available. Invite teammates later from Employees.",
       });
       await markStep("invite_team", "skipped");
-      return;
+      return true;
     }
-    // Invites now require a department + title (server 400s without them). A fresh org has no
-    // departments yet, so ensure a starter one exists; joiners land there with a generic title,
-    // both refinable later from Employees (edit employee). Real placement, not a bypass.
-    let departmentId: string;
+    // Invites require a department + title (server 400s without them). Orgs are created with a set
+    // of departments, so use "General" if it exists, else the first one, else create "General" — and
+    // say which one, rather than claiming "General" while filing under whatever came first (WP-127).
+    // Joiners land there with a generic title, both refinable later from Employees.
+    let department: { id: string; name: string };
     try {
       const depts = await listDepartments();
-      departmentId = depts[0]?.id ?? (await createDepartment("General")).id;
+      department =
+        depts.find((d) => d.name.trim().toLowerCase() === "general") ??
+        depts[0] ??
+        (await createDepartment("General"));
     } catch {
       toast.error("Couldn't prepare a department for invites", {
         description: "Invite teammates later from Employees.",
       });
       await markStep("invite_team", "skipped");
-      return;
+      return true;
     }
     let invited = 0;
     let failed = 0;
@@ -218,7 +221,7 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         await createInvite({
           email,
           role_id: role.id,
-          department_id: departmentId,
+          department_id: department.id,
           title: "Team member",
         });
         invited++;
@@ -231,7 +234,7 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         description:
           failed > 0
             ? `${failed} invite${failed === 1 ? "" : "s"} failed.`
-            : "Filed under General with a placeholder title — refine from Employees.",
+            : `Filed under ${department.name} with a placeholder title — refine from Employees.`,
       });
     } else if (failed > 0) {
       toast.error("Couldn't send invites", {
@@ -239,41 +242,54 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
       });
     }
     await markStep("invite_team", invited > 0 ? "done" : "skipped");
+    return true;
   }
 
   async function saveTracking() {
+    // Not this person's to change, or the current policy couldn't be read: write nothing. Writing
+    // anyway is what produced a 403 blamed on the plan, or a blind overwrite (WP-127).
+    if (!policy) {
+      await markStep("tracking", "skipped");
+      return;
+    }
+    const wasOn = policy.cadence !== "off";
+    if (screenshots === wasOn && silent === policy.silent) {
+      await markStep("tracking", wasOn || silent ? "done" : "skipped");
+      return;
+    }
     try {
-      const cfg = await getTrackingPolicy();
-      const t = cfg.tracking;
       await updateTrackingPolicy({
-        cadence: screenshots ? "min5" : "off",
-        blur_level: t.blur_level,
-        retention_days: t.retention_days,
+        // Keep the org's own interval while screenshots stay on; switching them on starts at every
+        // 5 minutes, adjustable in Settings → Monitoring.
+        cadence: screenshots ? (wasOn ? policy.cadence : "min5") : "off",
+        blur_level: policy.blur_level,
+        retention_days: policy.retention_days,
         silent,
-        auto_update: t.auto_update,
-        expected_version: t.version,
+        auto_update: policy.auto_update,
+        ...(policy.idle_end_secs !== undefined ? { idle_end_secs: policy.idle_end_secs } : {}),
+        expected_version: policy.version,
       });
     } catch (err) {
-      if (err instanceof ApiError && err.status === 403) {
-        toast.message("Monitoring isn't in your plan", {
-          description: "Tracking preferences were skipped. You can enable it later.",
+      if (err instanceof ApiError && err.status === 403 && screenshots && !wasOn) {
+        // This role may manage monitoring (checked before the step is offered), so refusing to turn
+        // capture on is the plan's ceiling — the one case the server answers this way.
+        toast.message("Screenshots aren't in your plan", {
+          description: "Tracking was left as it was. You can change plans in Settings → Billing.",
         });
       } else if (err instanceof ApiError && err.status === 409) {
         toast.message("Tracking policy changed elsewhere", {
-          description: "Your changes weren't applied. Review it later in Agents.",
+          description: "Your changes weren't applied. Review it in Settings → Monitoring.",
         });
       } else {
         toast.error("Couldn't save tracking preferences", {
-          description: "You can configure tracking later in Agents.",
+          description: "You can configure tracking later in Settings → Monitoring.",
         });
       }
     }
-    // Mark progress regardless — "skipped" only when nothing was turned on.
     await markStep("tracking", screenshots || silent ? "done" : "skipped");
   }
 
   async function finishDashboard() {
-    // No backend for widget preferences — selection stays local. Just record the milestone.
     await markStep("personalize", "done");
   }
 
@@ -283,8 +299,9 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
     try {
       const key = ONBOARDING_STEPS[step].key;
       if (key === "org") await saveOrg();
-      else if (key === "team") await saveTeam();
-      else if (key === "tracking") await saveTracking();
+      else if (key === "team") {
+        if (!(await saveTeam())) return;
+      } else if (key === "tracking") await saveTracking();
       else if (key === "dashboard") await finishDashboard();
 
       if (step < last) {
@@ -347,10 +364,18 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
                   type="email"
                   placeholder="teammate@acme.com"
                   value={email}
-                  onChange={(e) =>
-                    setEmails((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))
-                  }
+                  aria-invalid={badEmails.includes(i) || undefined}
+                  aria-describedby={badEmails.includes(i) ? `ob-invite-${i}-error` : undefined}
+                  onChange={(e) => {
+                    setEmails((prev) => prev.map((v, j) => (j === i ? e.target.value : v)));
+                    setBadEmails((prev) => prev.filter((j) => j !== i));
+                  }}
                 />
+                {badEmails.includes(i) ? (
+                  <p id={`ob-invite-${i}-error`} className="text-xs text-destructive">
+                    That isn&apos;t an email address — fix it or clear it to continue.
+                  </p>
+                ) : null}
               </div>
             ))}
             <Button
@@ -364,14 +389,19 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
           </div>
         );
       case "tracking":
+        if (!policy) {
+          return (
+            <p className="text-sm text-muted-foreground">
+              {!canMonitor
+                ? "Tracking settings are changed by whoever manages monitoring in your organization, from Settings → Monitoring."
+                : policyFailed
+                  ? "Couldn't load your current tracking settings. Continue — you can set them any time in Settings → Monitoring."
+                  : "Loading your current tracking settings…"}
+            </p>
+          );
+        }
         return (
           <div className="space-y-3">
-            <ToggleRow
-              label="Idle detection"
-              description="Pause timers after inactivity."
-              checked={idle}
-              onCheckedChange={setIdle}
-            />
             <ToggleRow
               label="Screenshots"
               description="Capture periodic screenshots."
@@ -387,17 +417,13 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
           </div>
         );
       case "dashboard":
+        // There was a widget checklist here that saved nothing. The dashboard's own Customize does
+        // this for real, and keeps the layout on the account.
         return (
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            {WIDGETS.map((label) => (
-              <CheckRow
-                key={label}
-                label={label}
-                checked={Boolean(widgets[label])}
-                onCheckedChange={(v) => setWidgets((prev) => ({ ...prev, [label]: v }))}
-              />
-            ))}
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Your dashboard shows the cards you pick. Use <strong>Customize</strong> on the Dashboard to
+            add, hide or reorder them — the layout is saved to your account.
+          </p>
         );
       default:
         return null;

@@ -107,8 +107,19 @@ describe("Analytics is closed to an individual contributor", () => {
   it("a manager and the owner still reach Analytics", () => {
     for (const r of [manager, owner]) {
       expect(canAccessPath(r, "/insights")).toBe(true);
-      expect(canAccessPath(r, "/insights/activity")).toBe(true);
+      expect(canAccessPath(r, "/insights/locations")).toBe(true);
     }
+    expect(canAccessPath(owner, "/insights/activity")).toBe(true);
+  });
+
+  /**
+   * WP-094 (QA audit 2026-10-08): the Activity tab reads the org-wide route, which needs the Org
+   * bit. A team-only manager was shown the tab and every read 403'd; the team Locations board they
+   * can load was hidden instead.
+   */
+  it("a team-only manager gets the team board, not the org-wide Activity tab", () => {
+    expect(canAccessPath(manager, "/insights/activity")).toBe(false);
+    expect(canAccessPath(manager, "/insights/locations")).toBe(true);
   });
 
   /** What an Employee legitimately has must be untouched by this change. */

@@ -21,21 +21,32 @@ import {
 import { usePermissions } from "@/hooks/use-permissions";
 import { getDevice, type ApiDevice } from "../services/fleet.service";
 import { ReleaseDeviceButton } from "./release-device-button";
+import { deviceStateLabel, isLiveDevice } from "../lib/device-state";
+import { effectiveUserId } from "../lib/presence";
 import { connMeta, lastSeen, Info, Meter } from "./fleet-view";
+import { REMOVED_PERSON } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
  * One device, one page — `/settings/agents/[agentId]`, the fleet analogue of the employee
  * profile. Two independent reads:
  *   - the device (`GET /v1/fleet/{id}`) — everything here is the device's own last heartbeat;
- *   - its **owner** (`GET /v1/employees/{user_id}`) — resolving the raw Cognito sub the heartbeat
+ *   - its **owner** (`GET /v1/employees/{id}`) — resolving the raw Cognito sub the heartbeat
  *     carries into the person's actual name/title. Best-effort: a viewer without `employees:view`
- *     keeps the id (never a guessed name), and the device page still renders.
+ *     never sees a guessed name, and the device page — Release included — still renders.
  */
 export function DeviceDetailView({ agentId }: { agentId: string }) {
   const [device, setDevice] = useState<ApiDevice | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** `retry` is false only for a device that doesn't exist — retrying can't change that. */
+  const [error, setError] = useState<{ text: string; retry: boolean } | null>(null);
   const [owner, setOwner] = useState<ApiEmployeeProfile | null>(null);
+  /**
+   * Why there is no owner to show. Release used to render only inside the owner-resolved branch, so
+   * a role without View employees, a removed employee, or one failed lookup left the device with no
+   * way to be released (QA audit 2026-10-08, WP-240). Release stands on its own now; this only picks
+   * the words beside it.
+   */
+  const [ownerMiss, setOwnerMiss] = useState<"hidden" | "gone" | "failed" | null>(null);
   const [nonce, setNonce] = useState(0);
   const { can } = usePermissions();
 
@@ -45,13 +56,27 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
       .then((d) => {
         if (!alive) return;
         setDevice(d);
-        if (d.user_id) {
-          getEmployeeProfile(d.user_id)
+        // A managed device attributes to its assigned employee (MANAGED-AGENT.md §8 Ph2).
+        const ownerId = effectiveUserId(d);
+        if (ownerId) {
+          getEmployeeProfile(ownerId)
             .then((p) => {
-              if (alive) setOwner(p);
+              if (!alive) return;
+              setOwner(p);
+              setOwnerMiss(null);
             })
-            .catch(() => {
-              /* no employees:view or no User item — the id stays, honestly */
+            .catch((e) => {
+              if (!alive) return;
+              setOwner(null);
+              // 403: no `employees:view` (the route allows only self-reads without it); 404: the
+              // employee's record is gone. Anything else is a failed read worth retrying.
+              setOwnerMiss(
+                e instanceof ApiError && e.status === 403
+                  ? "hidden"
+                  : e instanceof ApiError && e.status === 404
+                    ? "gone"
+                    : "failed",
+              );
             });
         }
       })
@@ -59,8 +84,10 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
         if (!alive) return;
         setError(
           e instanceof ApiError && e.status === 404
-            ? "This device isn't enrolled (or was removed)."
-            : "Couldn't load this device. Try again shortly.",
+            ? { text: "This device isn't enrolled (or was removed).", retry: false }
+            : e instanceof ApiError && e.status === 403
+              ? { text: "You don't have access to device agents.", retry: false }
+              : { text: "Couldn't load this device. Check your connection and try again.", retry: true },
         );
       });
     return () => {
@@ -68,12 +95,22 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
     };
   }, [agentId, nonce]);
 
+  const reload = () => {
+    setError(null);
+    setNonce((n) => n + 1);
+  };
+
   if (error) {
     return (
       <div className="space-y-4">
         <BackLink />
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="text-sm text-muted-foreground">{error.text}</p>
+          {error.retry ? (
+            <Button variant="outline" size="sm" onClick={reload}>
+              Retry
+            </Button>
+          ) : null}
         </div>
       </div>
     );
@@ -115,8 +152,10 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
             <span className={cn("mr-1.5 size-1.5 rounded-full", meta.onDot)} />
             {meta.label}
           </Badge>
-          {device.state === "deactivated" && (
-            <Badge className="bg-destructive/10 font-medium text-destructive">Deactivated</Badge>
+          {!isLiveDevice(device.state) && (
+            <Badge className="bg-destructive/10 font-medium text-destructive">
+              {deviceStateLabel(device.state)}
+            </Badge>
           )}
         </div>
       </section>
@@ -131,8 +170,8 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {owner ? (
-                <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {owner ? (
                   <div className="flex min-w-0 items-center gap-3">
                     {/* `UserAvatar`, so an uploaded photo shows here as it does elsewhere. The monogram
                         gradient was a nice fallback but it was the ONLY thing this could ever render —
@@ -150,7 +189,21 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {!effectiveUserId(device)
+                      ? "No signed-in user reported."
+                      : ownerMiss === "hidden"
+                        ? "Outside your directory"
+                        : ownerMiss === "gone"
+                          ? REMOVED_PERSON
+                          : ownerMiss === "failed"
+                            ? "Couldn't load who this device belongs to."
+                            : "Loading…"}
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  {owner ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -159,23 +212,22 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                     >
                       View employee profile
                     </Button>
-                    {/* Release the 1:1 binding — only meaningful for a live managed device. */}
-                    {can("agents:manage") && device.state !== "deactivated" && (
-                      <ReleaseDeviceButton
-                        deviceId={device.agent_id}
-                        employeeName={owner.name}
-                        onReleased={() => setNonce((n) => n + 1)}
-                      />
-                    )}
-                  </div>
+                  ) : ownerMiss === "failed" ? (
+                    <Button variant="outline" size="sm" onClick={reload}>
+                      Retry
+                    </Button>
+                  ) : null}
+                  {/* Release — for any live device, whether or not its owner resolved for this viewer. */}
+                  {can("agents:manage") && isLiveDevice(device.state) && (
+                    <ReleaseDeviceButton
+                      deviceId={device.agent_id}
+                      employeeName={owner?.name}
+                      managed={device.variant === "service"}
+                      onReleased={() => setNonce((n) => n + 1)}
+                    />
+                  )}
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  {device.user_id
-                    ? "Outside your directory"
-                    : "No signed-in user reported."}
-                </p>
-              )}
+              </div>
             </CardContent>
           </Card>
 
@@ -191,7 +243,7 @@ export function DeviceDetailView({ agentId }: { agentId: string }) {
                 <Info label="Agent id" value={device.agent_id} mono />
                 <Info
                   label="State"
-                  value={device.state === "deactivated" ? "Deactivated" : "Active"}
+                  value={deviceStateLabel(device.state)}
                 />
                 <Info label="Last heartbeat" value={lastSeen(device.last_heartbeat)} />
               </div>

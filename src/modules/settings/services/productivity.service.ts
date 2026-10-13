@@ -29,9 +29,20 @@ export interface ProductivityWeights {
   r: number;
 }
 
-/** `GET /v1/org/productivity-weights` — the org's default term weights. May 404 when unset. */
-export function getOrgProductivityWeights(): Promise<ProductivityWeights> {
-  return apiFetch<ProductivityWeights>("/v1/org/productivity-weights");
+/**
+ * A weights **read** — the server's `WeightsView`. It does not 404 when nothing is stored: it answers
+ * 200 with `configured: false` and the weights that apply instead. The UI used to ignore the flag and
+ * read every successful response as "this department overrides the org", showing product defaults
+ * as an override for every department (QA audit 2026-10-08, WP-100).
+ */
+export interface ProductivityWeightsView extends ProductivityWeights {
+  /** `true` when an override is stored at this scope; `false` when these are inherited defaults. */
+  configured: boolean;
+}
+
+/** `GET /v1/org/productivity-weights` — the org's default term weights (`configured: false` when unset). */
+export function getOrgProductivityWeights(): Promise<ProductivityWeightsView> {
+  return apiFetch<ProductivityWeightsView>("/v1/org/productivity-weights");
 }
 
 /**
@@ -53,9 +64,23 @@ export function updateOrgProductivityWeights(
  */
 export function getDeptProductivityWeights(
   deptId: string,
-): Promise<ProductivityWeights> {
-  return apiFetch<ProductivityWeights>(
+): Promise<ProductivityWeightsView> {
+  return apiFetch<ProductivityWeightsView>(
     `/v1/org/departments/${encodeURIComponent(deptId)}/productivity-weights`,
+  );
+}
+
+/**
+ * `DELETE /v1/org/departments/{id}/productivity-weights` — drop the department's override so it
+ * inherits the org defaults again (and follows later changes to them). Needs `settings:manage`.
+ * Answers with the weights the department now scores under (`configured: false`).
+ */
+export function deleteDeptProductivityWeights(
+  deptId: string,
+): Promise<ProductivityWeightsView> {
+  return apiFetch<ProductivityWeightsView>(
+    `/v1/org/departments/${encodeURIComponent(deptId)}/productivity-weights`,
+    { method: "DELETE" },
   );
 }
 

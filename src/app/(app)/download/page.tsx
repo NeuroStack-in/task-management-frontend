@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   Clock,
@@ -14,6 +15,8 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useTrackingMode } from "@/hooks/use-features";
+import { usePermissions } from "@/hooks/use-permissions";
+import { useAgentRelease } from "@/hooks/use-agent-release";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,12 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AGENT_MANIFEST_URL,
-  AGENT_PLATFORMS,
-  AGENT_RELEASE_VERSION,
-  type AgentPlatform,
-} from "@/lib/agent-release";
+import { AGENT_PLATFORMS, type AgentPlatform } from "@/lib/agent-release";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
@@ -79,31 +77,14 @@ const MAC_STEPS = [
 export default function DownloadPage() {
   const [macHelpOpen, setMacHelpOpen] = useState(false);
   const isMachine = useTrackingMode() === "machine";
+  const { can } = usePermissions();
 
   /**
-   * The version actually being served, read from the release manifest rather than a constant.
-   *
-   * `agent/latest/*` is overwritten by every release, so the files move whether or not anyone
-   * remembers to edit the constant — which had already gone stale twice in a day, telling people
-   * they were downloading 0.1.3 while the button handed them 0.1.4. The constant remains as the
-   * fallback: if the fetch fails, a slightly old number beats an empty space.
+   * The version actually being served, from the release manifest (`agent/latest/*` is overwritten by
+   * every release). `null` until it answers — the badge waits rather than showing a hard-coded
+   * number that had gone stale (WP-367).
    */
-  const [version, setVersion] = useState(AGENT_RELEASE_VERSION);
-
-  useEffect(() => {
-    let live = true;
-    fetch(AGENT_MANIFEST_URL, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((m: { version?: string } | null) => {
-        if (live && m?.version) setVersion(m.version);
-      })
-      .catch(() => {
-        // Offline, or the bucket is unreachable — the fallback constant is already displayed.
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
+  const { version } = useAgentRelease();
 
   function triggerDownload(url: string, file: string) {
     const a = document.createElement("a");
@@ -124,21 +105,32 @@ export default function DownloadPage() {
 
   // Machine-mode orgs don't self-install — IT deploys the login-less managed agent to company
   // laptops centrally (there is nothing for an employee to download or sign into). Point there.
+  //
+  // "Go to Devices" is for those who can open Devices (`agents:view`): it was offered to everyone,
+  // so an employee landed on "Access denied" — and as a raw `<a>` to the `/agents` redirect it also
+  // forced a full reload (QA audit 2026-10-08, WP-466).
   if (isMachine) {
+    const canSeeDevices = can("agents:view");
     return (
       <div className="flex min-h-[calc(100dvh-7rem)] flex-col gap-4 pt-1">
         <PageHeader
           title="WorkPulse agent"
-          description="On this plan the agent is deployed to company devices by IT — there's nothing to install here."
+          description="In your organization the agent is deployed to company devices by IT — there's nothing to install here."
         />
         <EmptyState
           icon={MonitorSmartphone}
           title="Managed by IT"
-          description="Your organisation tracks company-owned devices with the managed agent, installed centrally. Ask your administrator to enrol a device, then it appears under Devices."
+          description={
+            canSeeDevices
+              ? "Your organization tracks company-owned devices with the managed agent, installed by IT. Enrol a device and it appears under Device agents."
+              : "Your organization tracks company-owned devices with the managed agent, installed by IT. If your computer needs it, ask your administrator."
+          }
           action={
-            <Button render={<a href="/agents" />} nativeButton={false}>
-              Go to Devices
-            </Button>
+            canSeeDevices ? (
+              <Button render={<Link href="/settings/agents" />} nativeButton={false}>
+                Go to Device agents
+              </Button>
+            ) : undefined
           }
         />
       </div>
@@ -166,38 +158,42 @@ export default function DownloadPage() {
             in sync — no manual entry.
           </p>
         </div>
-        <Badge className="ml-auto hidden shrink-0 self-start bg-background/70 font-normal text-muted-foreground sm:inline-flex">
-          v{version}
-        </Badge>
+        {version ? (
+          <Badge className="ml-auto hidden shrink-0 self-start bg-background/70 font-normal text-muted-foreground sm:inline-flex">
+            v{version}
+          </Badge>
+        ) : null}
       </section>
 
-      {/* Re-install notice. The sign-in fix is compiled into the binary and the old builds' updater
-          pointed at a private repo that 404s, so neither could deliver itself — everyone on an
-          earlier build has to download once, and this page is the only place they'd find that out.
-          The second paragraph is the point: from this version on, it is self-updating, so this
-          notice can be deleted once the old builds have aged out of the fleet. */}
+      {/* Re-install notice, for the first builds only. The sign-in fix (desktop v0.1.1) is compiled
+          into the binary, and builds before v0.1.2 had an updater pointed at a private repo that
+          404s, so neither could deliver itself — anyone still on one of those has to download once,
+          and this page is the only place they'd find that out. Everything from v0.1.2 updates itself.
+          It used to say "Version {current} fixes the … error", which claimed every new release was
+          that one fix (QA audit 2026-10-08, WP-367). Delete the notice once those builds have aged
+          out of the fleet. */}
       <section className="flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/5 p-4">
         <RefreshCw className="mt-0.5 size-4 shrink-0 text-warning" />
         <div className="min-w-0 text-sm">
           <p className="font-medium">
-            Already have WorkPulse installed? Please download it once more.
+            Installed WorkPulse before version 0.1.2? Please download it once more.
           </p>
           <p className="mt-1 leading-relaxed text-muted-foreground">
-            Version {version} fixes the{" "}
+            Those early builds can show{" "}
             <span className="font-medium text-foreground">
               &ldquo;This agent isn&apos;t configured for your organization
               yet&rdquo;
             </span>{" "}
-            error at sign-in. Run the new installer over your existing copy —
-            there&apos;s no need to uninstall first, nothing is lost, and your
-            device keeps its history.
+            at sign-in, and they can&apos;t update themselves. Run the new
+            installer over your existing copy — there&apos;s no need to uninstall
+            first, nothing is lost, and your device keeps its history.
           </p>
           <p className="mt-1.5 leading-relaxed text-muted-foreground">
             <span className="font-medium text-foreground">
-              This is the last time you&apos;ll download it by hand.
+              It&apos;s the last time you&apos;ll download it by hand.
             </span>{" "}
-            From this version on the agent updates itself in the background — new
-            releases arrive automatically, with nothing for you to do.
+            From version 0.1.2 on, the agent updates itself in the background —
+            unless your organization has switched automatic updates off.
           </p>
         </div>
       </section>

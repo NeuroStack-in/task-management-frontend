@@ -40,7 +40,12 @@ function TrendTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: Array<{ name?: string; value?: number; color?: string; payload?: ScoreTrendPoint }>;
+  payload?: Array<{
+    name?: string;
+    value?: number;
+    color?: string;
+    payload?: ScoreTrendPoint;
+  }>;
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload;
@@ -97,10 +102,12 @@ export function ProductivityTrendChart({
                     A 0–100 score for the day, blended from four parts:
                     <ul className="mt-1 list-disc space-y-0.5 pl-4">
                       <li>
-                        <strong>Utilisation (25%)</strong> — how much of the day was active
+                        <strong>Utilisation (25%)</strong> — how much of the time on the
+                        timer was active at the computer
                       </li>
                       <li>
-                        <strong>Quality (40%)</strong> — active time spent in productive apps
+                        <strong>Quality (40%)</strong> — active time spent in productive
+                        apps
                       </li>
                       <li>
                         <strong>Focus (15%)</strong> — steady work vs. constant switching

@@ -67,6 +67,7 @@ export function ProjectsList({
             <button
               type="button"
               onClick={() => toggle(status)}
+              aria-expanded={open}
               className="flex w-full items-center gap-2 px-4 py-3 transition-colors hover:bg-muted/40"
             >
               <ChevronDown
@@ -114,7 +115,8 @@ export function ProjectsList({
                   const members = p.memberIds
                     .map((id) => userMap[id])
                     .filter(Boolean) as UserMini[];
-                  const due = dueLabel(p.dueDate);
+                  // A completed project past its end date finished — it isn't late (WP-377).
+                  const due = dueLabel(p.dueDate, p.status === "completed");
                   const summary = taskSummary[p.id] ?? { done: 0, total: 0 };
 
                   return (
@@ -139,9 +141,12 @@ export function ProjectsList({
                         ) : null}
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="rounded bg-accent px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold text-accent-foreground">
-                              {p.key}
-                            </span>
+                            {/* Optional on the server — no empty pill (WP-305). */}
+                            {p.key ? (
+                              <span className="rounded bg-accent px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold text-accent-foreground">
+                                {p.key}
+                              </span>
+                            ) : null}
                             <span className="truncate text-sm font-medium">
                               {p.name}
                             </span>
@@ -169,7 +174,7 @@ export function ProjectsList({
                           {summary.done}
                           <span className="text-muted-foreground">
                             {" "}
-                            / {summary.total} done
+                            / {summary.total} signed off
                           </span>
                         </p>
                       </div>

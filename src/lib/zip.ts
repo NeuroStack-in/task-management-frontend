@@ -5,9 +5,23 @@
  * ~three record types, and STORE needs no deflate.
  *
  * Layout written: [local header + data]* → [central directory]* → end-of-central-directory. No
- * Zip64, so keep archives < 4 GB and < 65k entries — orders of magnitude above what an org export
- * bundle is.
+ * Zip64, so an archive holds fewer than 65,535 entries and under 4 GiB — past either, the 16- and
+ * 32-bit header fields wrap and the archive is silently corrupt, so `buildZip` refuses instead
+ * (QA audit 2026-10-08, WP-351). An org export with every screenshot can reach both.
  */
+
+/** The archive would pass a limit the non-Zip64 format can record. */
+export class ZipTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ZipTooLargeError";
+  }
+}
+
+/** Entry counts are 16-bit; 0xFFFF itself is the Zip64 marker. */
+export const ZIP_MAX_ENTRIES = 0xfffe;
+/** Offsets and sizes are 32-bit; 0xFFFFFFFF itself is the Zip64 marker. */
+const ZIP_MAX_BYTES = 0xffffffff;
 
 /** CRC-32 (IEEE 802.3), table-driven — the checksum ZIP requires per entry. */
 const CRC_TABLE = (() => {
@@ -42,8 +56,14 @@ export interface ZipEntry {
   data: Uint8Array;
 }
 
-/** Build a STORE-only ZIP from `entries`. Returns a Blob ready for a download link. */
+/**
+ * Build a STORE-only ZIP from `entries`. Returns a Blob ready for a download link. Throws
+ * {@link ZipTooLargeError} rather than write an archive the format can't describe.
+ */
 export function buildZip(entries: ZipEntry[]): Blob {
+  if (entries.length > ZIP_MAX_ENTRIES) {
+    throw new ZipTooLargeError(`${entries.length} files is more than one archive can hold.`);
+  }
   const encoder = new TextEncoder();
   const { time, date } = dosDateTime(new Date());
   const parts: Uint8Array[] = [];
@@ -88,9 +108,15 @@ export function buildZip(entries: ZipEntry[]): Blob {
     central.push(new Uint8Array(cd.buffer), name);
 
     offset += 30 + name.length + size;
+    if (offset >= ZIP_MAX_BYTES) {
+      throw new ZipTooLargeError("The files add up to more than one archive can hold (4 GB).");
+    }
   }
 
   const centralSize = central.reduce((n, p) => n + p.length, 0);
+  if (offset + centralSize >= ZIP_MAX_BYTES) {
+    throw new ZipTooLargeError("The files add up to more than one archive can hold (4 GB).");
+  }
   const eocd = new DataView(new ArrayBuffer(22));
   eocd.setUint32(0, 0x06054b50, true);
   eocd.setUint16(8, entries.length, true); // entries on this disk
@@ -99,13 +125,9 @@ export function buildZip(entries: ZipEntry[]): Blob {
   eocd.setUint32(16, offset, true); // central directory starts where the data ended
   eocd.setUint16(20, 0, true); // comment length
 
-  // One contiguous buffer (also sidesteps TS 5.7's Uint8Array<ArrayBufferLike> vs BlobPart nit).
+  // Handed to the Blob as parts. Copying them all into one contiguous buffer first doubled the
+  // memory a large bundle needed, on top of the copy the Blob makes. (The cast is TS 5.7's
+  // Uint8Array<ArrayBufferLike> vs BlobPart nit: every part here is backed by a plain ArrayBuffer.)
   const all = [...parts, ...central, new Uint8Array(eocd.buffer)];
-  const out = new Uint8Array(all.reduce((n, p) => n + p.length, 0));
-  let pos = 0;
-  for (const p of all) {
-    out.set(p, pos);
-    pos += p.length;
-  }
-  return new Blob([out.buffer], { type: "application/zip" });
+  return new Blob(all as BlobPart[], { type: "application/zip" });
 }

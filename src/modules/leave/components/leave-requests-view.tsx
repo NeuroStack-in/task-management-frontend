@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useLeave } from "../use-leave";
+import { formatDays } from "../lib/days";
 import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
@@ -71,15 +72,54 @@ const fmtSubmitted = (ms?: number) => {
  *
  * The route is reachable by both because the nav entry pairs `anyPermissions` with
  * `permission: null` (see `constants/navigation.ts`); this is where the two audiences actually part.
+ *
+ * **Someone who holds both** — an Admin, or the "manager who also takes leave" custom role that
+ * LEAVES.md recommends — gets both, behind a My leave / Manage leave switch. The page used to be
+ * either/or on `leave:manage`, so those people could never request leave or see their own balance
+ * anywhere in the product (QA audit 2026-10-08, WP-264).
  */
 export function LeaveRequestsView() {
   const { can } = usePermissions();
-  if (can("leave:manage")) return <AdminLeaveView />;
+  const manages = can("leave:manage");
+  const requests = can("leave:request");
+  const [view, setView] = useState<"mine" | "manage">("manage");
+  if (manages && requests) {
+    return (
+      <div className="flex min-h-full flex-col gap-3">
+        <div role="tablist" aria-label="Leave views" className="inline-flex w-fit gap-1 rounded-lg border p-1">
+          <Button
+            size="sm"
+            role="tab"
+            aria-selected={view === "mine"}
+            variant={view === "mine" ? "default" : "ghost"}
+            onClick={() => setView("mine")}
+          >
+            My leave
+          </Button>
+          <Button
+            size="sm"
+            role="tab"
+            aria-selected={view === "manage"}
+            variant={view === "manage" ? "default" : "ghost"}
+            onClick={() => setView("manage")}
+          >
+            Manage leave
+          </Button>
+        </div>
+        {view === "mine" ? <EmployeeLeaveView /> : <AdminLeaveView />}
+      </div>
+    );
+  }
+  if (manages) return <AdminLeaveView />;
   return <EmployeeLeaveView />;
 }
 
 /** Sections 1–3: the type catalog, the org ledger, and per-person adjustments. */
 function AdminLeaveView() {
+  // A catalog save rewrites this year's balances and can add or archive a column, so the ledger
+  // below remounts (and reloads) after one. It loaded once and kept showing "/ 20" after Annual
+  // was raised to 25, until a full page reload (QA audit 2026-10-08, WP-266).
+  const [ledgerKey, setLedgerKey] = useState(0);
   return (
     <div className="flex min-h-full flex-col gap-5">
       <PageHeader
@@ -88,9 +128,9 @@ function AdminLeaveView() {
       />
       {/* 1 — the catalog: types and how many days a year each carries. Editing an allowance here
           applies to everyone's current-year balance, except figures an admin has hand-set. */}
-      <LeaveTypesManager />
+      <LeaveTypesManager onCatalogChanged={() => setLedgerKey((k) => k + 1)} />
       {/* 2 + 3 — who has used what, and the editor for one person's allowance. */}
-      <OrgBalancesTable />
+      <OrgBalancesTable key={ledgerKey} />
     </div>
   );
 }
@@ -171,10 +211,10 @@ function EmployeeLeaveView() {
                   <Card key={b.type_id} className="gap-2 p-5">
                     <p className="text-sm text-muted-foreground">{b.name}</p>
                     <p className="font-display text-3xl font-semibold tabular-nums">
-                      {b.remaining}
+                      {formatDays(b.remaining)}
                       <span className="text-base font-normal text-muted-foreground">
                         {" "}
-                        / {b.allowance} days
+                        / {formatDays(b.allowance)} days
                       </span>
                     </p>
                     <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -184,7 +224,7 @@ function EmployeeLeaveView() {
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {b.used} taken · {b.remaining} available
+                      {formatDays(b.used)} taken · {formatDays(b.remaining)} available
                     </p>
                   </Card>
                 );
@@ -212,6 +252,16 @@ function EmployeeLeaveView() {
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-10 w-full" />
             ))}
+          </div>
+        ) : requests.length === 0 && error ? (
+          // A failed read is not "no requests" — under the error banner it used to say "No leave
+          // requests yet" as if that were known (QA audit 2026-10-08, WP-113).
+          <div className="flex flex-1 items-center justify-center p-5">
+            <EmptyState
+              icon={TriangleAlert}
+              title="Your requests couldn't be loaded"
+              description="They're still on file — use Retry above to load them again."
+            />
           </div>
         ) : requests.length === 0 ? (
           <div className="flex flex-1 items-center justify-center p-5">
@@ -248,9 +298,20 @@ function EmployeeLeaveView() {
                     onClick={() => setSelectedId(r.request_id)}
                     className="cursor-pointer"
                   >
-                      {/* Type, when, and how long — one question, one cell. */}
+                      {/* Type, when, and how long — one question, one cell. The type is a real
+                          button, so the detail (full reason, documents) opens by keyboard too —
+                          the row's click alone was mouse-only (WP-478). */}
                       <TableCell className="pl-5 align-top">
-                        <p className="font-medium">{typeName(r.type_id)}</p>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedId(r.request_id);
+                          }}
+                          className="text-left font-medium hover:underline focus-visible:underline focus-visible:outline-none"
+                        >
+                          {typeName(r.type_id)}
+                        </button>
                         <p className="text-muted-foreground text-sm">
                           {fmtRange(r.from, r.to)}
                           {" · "}
@@ -294,7 +355,12 @@ function EmployeeLeaveView() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleCancel(r.request_id)}
+                          onClick={(e) => {
+                            // The row opens the request; withdrawing must not also open the
+                            // drawer for a request that no longer exists (WP-263).
+                            e.stopPropagation();
+                            void handleCancel(r.request_id);
+                          }}
                         >
                           <X className="size-4" /> Withdraw
                         </Button>

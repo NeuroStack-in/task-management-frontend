@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAssistantStore } from "@/stores/assistant.store";
+import { useAssistantAccess } from "@/hooks/use-assistant-access";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/shared/markdown";
 
@@ -50,6 +51,8 @@ export function AiReportCard({
   action,
   onRegenerate,
   regenerating = false,
+  onRetry,
+  notice,
 }: {
   title?: string;
   summary: string;
@@ -67,8 +70,14 @@ export function AiReportCard({
    *  Omit to hide the button — e.g. while locked behind the add-on or before data loads. */
   onRegenerate?: () => void;
   regenerating?: boolean;
+  /** Shown as "Try again" when the summary failed to **load** — a plain re-read, not a re-run. */
+  onRetry?: () => void;
+  /** A one-line status under the summary, e.g. a failed re-run that kept the previous text. */
+  notice?: string | null;
 }) {
   const openAssistant = useAssistantStore((s) => s.openAssistant);
+  // The floating assistant's own gate — a button it can't answer is a button that does nothing.
+  const canAsk = useAssistantAccess().chat;
   return (
     <Card className="border-0 bg-feature text-feature-foreground shadow-none">
       <CardHeader className="pb-0">
@@ -82,6 +91,11 @@ export function AiReportCard({
       <CardContent className="space-y-3 pt-3">
         {/* The model writes Markdown; printed raw it arrived as literal `**` and pipes. */}
         <Markdown className="text-feature-foreground/90">{summary}</Markdown>
+        {notice ? (
+          <p className="text-xs text-feature-foreground/75" role="status">
+            {notice}
+          </p>
+        ) : null}
 
         {metrics.length ? (
           <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-white/15 pt-3">
@@ -140,13 +154,25 @@ export function AiReportCard({
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => openAssistant()}
-          >
-            Ask the assistant <ArrowUpRight className="size-4" />
-          </Button>
+          {canAsk ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openAssistant()}
+            >
+              Ask the assistant <ArrowUpRight className="size-4" />
+            </Button>
+          ) : null}
+          {onRetry ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRetry}
+              className="bg-white/15 text-white hover:bg-white/25"
+            >
+              <RefreshCw className="size-4" /> Try again
+            </Button>
+          ) : null}
           {onRegenerate ? (
             // Each press is a fresh, billed model run over the period's current data — the
             // narrative is otherwise served from cache, so this is the deliberate re-spend.

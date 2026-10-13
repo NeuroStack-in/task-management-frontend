@@ -33,8 +33,9 @@ import {
   type Task,
   type TaskStatus,
 } from "../types";
-import { isTaskOverdue, projectStats, selectablePeople, taskTotals, toneDot, type UserMini } from "../lib";
+import { isTaskOverdue, projectStats, selectablePeople, toneDot, type UserMini } from "../lib";
 import { useProjectsData } from "../use-projects-data";
+import { useQueryState } from "../use-query-state";
 import { ProjectCard } from "./project-card";
 import { ProjectsList } from "./projects-list";
 import { ProjectsStatBand } from "./projects-stat-band";
@@ -45,6 +46,13 @@ import { Segmented } from "./parts";
 type View = "projects" | "tasks";
 type Layout = "grid" | "list";
 type StatusFilter = ProjectStatus | "all" | "overdue";
+type TaskFilter = TaskStatus | "all" | "overdue";
+
+// The values each URL parameter may take — anything else in a link falls back to the default.
+const VIEWS: readonly View[] = ["projects", "tasks"];
+const LAYOUTS: readonly Layout[] = ["grid", "list"];
+const STATUS_FILTERS: readonly StatusFilter[] = ["all", ...PROJECT_STATUS_ORDER, "overdue"];
+const TASK_FILTERS: readonly TaskFilter[] = ["all", ...TASK_STATUS_ORDER, "overdue"];
 
 export function ProjectsView() {
   const router = useRouter();
@@ -52,17 +60,38 @@ export function ProjectsView() {
 
   // Real backend. The server scopes the list (oversight sees all, members see theirs), so there's
   // no client-side member filter anymore.
-  const { projects, tasks, userMap, loading, error, reload, createProject } =
-    useProjectsData();
+  const {
+    projects,
+    tasks,
+    taskSummary,
+    userMap,
+    departments,
+    directoryAvailable,
+    loading,
+    tasksLoading,
+    error,
+    failedProjects,
+    hiddenProjects,
+    failedBoards,
+    reload,
+    createProject,
+  } = useProjectsData();
   const visibleTasks = tasks;
+  // The boards load after the projects (WP-315). Until they have, task-derived counts are unknown,
+  // not zero.
+  const tasksPending = tasksLoading && tasks.length === 0;
 
-  const [view, setView] = useState<View>("projects");
-  const [layout, setLayout] = useState<Layout>("grid");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [taskFilter, setTaskFilter] = useState<TaskStatus | "all" | "overdue">(
+  // Tab, layout, filters and search live in the URL, so Back from a project, a refresh and a shared
+  // link all return to the same view (QA audit 2026-10-08, WP-502).
+  const [view, setView] = useQueryState<View>("view", "projects", VIEWS);
+  const [layout, setLayout] = useQueryState<Layout>("layout", "grid", LAYOUTS);
+  const [statusFilter, setStatusFilter] = useQueryState<StatusFilter>(
+    "status",
     "all",
+    STATUS_FILTERS,
   );
-  const [query, setQuery] = useState("");
+  const [taskFilter, setTaskFilter] = useQueryState<TaskFilter>("tasks", "all", TASK_FILTERS);
+  const [query, setQuery] = useQueryState<string>("q", "");
   const [newOpen, setNewOpen] = useState(false);
 
   const stats = useMemo(() => projectStats(projects), [projects]);
@@ -83,20 +112,11 @@ export function ProjectsView() {
     return map;
   }, [projects]);
 
-  const taskSummary = useMemo(() => {
-    const map: Record<string, { done: number; total: number }> = {};
-    for (const p of projects) {
-      const list = tasksByProject.get(p.id) ?? [];
-      // This pair sits under the card's progress bar, which is the SERVER's weighted
-      // `completion_pct` — a task in review counts 75%, so the bar can read 75% with nothing signed
-      // off. The pair therefore counts signed-off work against everything deliverable (blocked is
-      // out of the denominator, being unadvanceable), and the label beside it says "signed off"
-      // rather than "done" so the two are visibly answering different questions.
-      const { completed, deliverable } = taskTotals(list);
-      map[p.id] = { done: completed, total: deliverable };
-    }
-    return map;
-  }, [projects, tasksByProject]);
+  // `taskSummary` (from the hook) is the pair under each card's progress bar, which is the SERVER's
+  // weighted `completion_pct` — a task in review counts 90%, so the bar can read 90% with nothing
+  // signed off. The pair counts signed-off work against everything deliverable (blocked is out of
+  // the denominator, being unadvanceable), from the same KPI read as the bar, and the label beside
+  // it says "signed off" rather than "done" so the two are visibly answering different questions.
 
   // Projects carrying at least one open, past-due task.
   const overdueProjectIds = useMemo(() => {
@@ -128,10 +148,11 @@ export function ProjectsView() {
       { label: "Total projects", value: String(stats.total) },
       { label: "Active", value: String(stats.active) },
       { label: "On hold", value: String(statusCounts.on_hold) },
-      { label: "At risk", value: String(stats.atRisk) },
-      { label: "Overdue", value: String(overdueProjectIds.size) },
+      // Named as the tile and the chip name them (WP-497).
+      { label: "Past deadline", value: String(stats.atRisk) },
+      { label: "With overdue tasks", value: tasksPending ? "loading" : String(overdueProjectIds.size) },
       { label: "Avg progress", value: `${stats.avgProgress}%` },
-      { label: "Total tasks", value: String(visibleTasks.length) },
+      { label: "Total tasks", value: tasksPending ? "loading" : String(visibleTasks.length) },
       ...(statusFilter !== "all" ? [{ label: "Status filter", value: statusFilter }] : []),
       ...(query.trim() ? [{ label: "Search", value: query.trim() }] : []),
     ],
@@ -201,20 +222,35 @@ export function ProjectsView() {
   const openProject = (id: string) => router.push(`/projects/${id}`);
 
   const handleCreate = async (values: ProjectFormValues) => {
+    let created;
     try {
-      const id = await createProject(values);
-      toast.success(`Project “${values.name}” created`);
-      router.push(`/projects/${id}`);
+      created = await createProject(values);
     } catch (err) {
-      // Surface the server's own message. The API returns specific, actionable validation errors
-      // ("manager_user_id is required", "billable is required", "end_date precedes start_date");
-      // a bare `catch` swallowed all of them into one generic line, which is indistinguishable
-      // from a network failure and leaves the user with nothing to act on.
+      // The project wasn't created: the dialog stays open with everything typed (WP-300). Surface
+      // the server's own message — the API returns specific, actionable validation errors ("end
+      // date precedes start date"), and a generic line is indistinguishable from a network failure.
       toast.error("Couldn't create the project", {
         description:
           err instanceof ApiError ? err.message : "Something went wrong. Please try again.",
       });
+      return;
     }
+    // Created — so the dialog closes and the page moves on whatever happened to the team. A team
+    // that only partly went on is said so, not hidden under "Project created" (WP-311).
+    setNewOpen(false);
+    if (created.notAdded === 0) {
+      toast.success(`Project “${values.name}” created`);
+    } else if (created.denied) {
+      const manager = userMap[values.managerId]?.name;
+      toast.warning(`Project “${values.name}” created — without its team`, {
+        description: `Only its manager${manager ? `, ${manager},` : ""} can add people to it now. Ask them to add the ${created.requested === 1 ? "person" : `${created.requested} people`} you picked.`,
+      });
+    } else {
+      toast.warning(`Project “${values.name}” created`, {
+        description: `${created.notAdded} of the ${created.requested} people you picked couldn't be added. Add them from Edit project.`,
+      });
+    }
+    router.push(`/projects/${created.id}`);
   };
 
   const canCreate = can("projects:create");
@@ -260,7 +296,11 @@ export function ProjectsView() {
           <Segmented
             options={[
               { value: "projects", label: "Projects", count: projects.length },
-              { value: "tasks", label: "Tasks", count: visibleTasks.length },
+              {
+                value: "tasks",
+                label: "Tasks",
+                count: tasksPending ? undefined : visibleTasks.length,
+              },
             ]}
             value={view}
             onChange={setView}
@@ -284,11 +324,12 @@ export function ProjectsView() {
                   dot={toneDot[PROJECT_STATUS_META[s].tone]}
                 />
               ))}
+              {/* Projects with an overdue *task* — read from the boards, so unknown until they load. */}
               <FilterChip
                 active={statusFilter === "overdue"}
                 onClick={() => setStatusFilter("overdue")}
                 label="Overdue"
-                count={statusCounts.overdue}
+                count={tasksPending ? undefined : statusCounts.overdue}
                 dot="bg-destructive"
               />
             </div>
@@ -298,7 +339,7 @@ export function ProjectsView() {
                 active={taskFilter === "all"}
                 onClick={() => setTaskFilter("all")}
                 label="All"
-                count={taskCounts.all}
+                count={tasksPending ? undefined : taskCounts.all}
               />
               {TASK_STATUS_ORDER.map((s) => (
                 <FilterChip
@@ -306,7 +347,7 @@ export function ProjectsView() {
                   active={taskFilter === s}
                   onClick={() => setTaskFilter(s)}
                   label={TASK_STATUS_META[s].label}
-                  count={taskCounts[s]}
+                  count={tasksPending ? undefined : taskCounts[s]}
                   dot={toneDot[TASK_STATUS_META[s].tone]}
                 />
               ))}
@@ -314,7 +355,7 @@ export function ProjectsView() {
                 active={taskFilter === "overdue"}
                 onClick={() => setTaskFilter("overdue")}
                 label="Overdue"
-                count={taskCounts.overdue}
+                count={tasksPending ? undefined : taskCounts.overdue}
                 dot="bg-destructive"
               />
             </div>
@@ -356,14 +397,80 @@ export function ProjectsView() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by project, task, or ID…"
+            aria-label="Search projects and tasks"
             className="pl-8"
           />
         </div>
       </div>
 
+      {/* What wasn't loaded, said rather than left out in silence (WP-302). A 404 is a project this
+          person may list but not open — the server opens a project only to its members or to
+          someone who manages projects — so "retry" would not help there. */}
+      {failedProjects > 0 || hiddenProjects > 0 || failedBoards > 0 ? (
+        <div
+          role="status"
+          className="border-warning/40 bg-warning/10 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-sm"
+        >
+          <span className="space-y-0.5">
+            {failedProjects > 0 ? (
+              <span className="block">
+                {failedProjects} {failedProjects === 1 ? "project" : "projects"} couldn&apos;t be
+                loaded and {failedProjects === 1 ? "isn't" : "aren't"} shown.
+              </span>
+            ) : null}
+            {hiddenProjects > 0 ? (
+              <span className="block">
+                {hiddenProjects} {hiddenProjects === 1 ? "project" : "projects"} in your
+                organization {hiddenProjects === 1 ? "isn't" : "aren't"} shown — you can open only
+                the projects you&apos;re a member of.
+              </span>
+            ) : null}
+            {failedBoards > 0 ? (
+              <span className="block">
+                Tasks from {failedBoards} {failedBoards === 1 ? "project" : "projects"}{" "}
+                couldn&apos;t be loaded — they&apos;re missing from Tasks, the Overdue filter and
+                search.
+              </span>
+            ) : null}
+          </span>
+          {failedProjects > 0 || failedBoards > 0 ? (
+            <Button size="sm" variant="outline" onClick={reload}>
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Content */}
       {view === "projects" ? (
-        filteredProjects.length > 0 ? (
+        projects.length === 0 ? (
+          // Nothing to filter. "No projects match — try a different status" with a reset button that
+          // did nothing was what a brand-new organization saw (QA audit 2026-10-08, WP-498).
+          <EmptyState
+            icon={FolderKanban}
+            title={failedProjects > 0 ? "No projects to show" : "No projects yet"}
+            description={
+              failedProjects > 0
+                ? "None of your projects could be loaded."
+                : canCreate
+                  ? "Create a project to start tracking its work."
+                  : "When you're added to a project, it appears here."
+            }
+            action={
+              canCreate && failedProjects === 0 ? (
+                <Button onClick={() => setNewOpen(true)} className="gap-1.5">
+                  <Plus />
+                  New project
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : statusFilter === "overdue" && tasksPending ? (
+          // The Overdue filter reads the boards; until they're in, it has nothing to say yet.
+          <div className="flex min-h-[30vh] items-center justify-center">
+            <Loader label="Loading tasks…" />
+          </div>
+        ) : filteredProjects.length > 0 ? (
           layout === "grid" ? (
             <div className="grid gap-4 md:grid-cols-2">
               {filteredProjects.map((p) => {
@@ -406,6 +513,10 @@ export function ProjectsView() {
             }
           />
         )
+      ) : tasksPending ? (
+        <div className="flex min-h-[30vh] items-center justify-center">
+          <Loader label="Loading tasks…" />
+        </div>
       ) : (
         <TasksView
           tasks={searchedTasks}
@@ -422,6 +533,12 @@ export function ProjectsView() {
           open={newOpen}
           onOpenChange={setNewOpen}
           leads={leads}
+          departments={departments}
+          peopleNote={
+            directoryAvailable
+              ? undefined
+              : "Only people on projects you can see are listed — you don't have access to the employee directory. An admin can add anyone else."
+          }
           onSubmit={handleCreate}
         />
       ) : null}
@@ -469,13 +586,16 @@ function FilterChip({
   active: boolean;
   onClick: () => void;
   label: string;
-  count: number;
+  /** Omitted while the number isn't known yet — a "0" there would be a claim. */
+  count?: number;
   dot?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      // The active filter was told by colour alone (WP-508).
+      aria-pressed={active}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
         active
@@ -492,14 +612,16 @@ function FilterChip({
         />
       ) : null}
       {label}
-      <span
-        className={cn(
-          "tabular-nums",
-          active ? "text-primary-foreground/80" : "text-muted-foreground/70",
-        )}
-      >
-        {count}
-      </span>
+      {count !== undefined ? (
+        <span
+          className={cn(
+            "tabular-nums",
+            active ? "text-primary-foreground" : "text-muted-foreground",
+          )}
+        >
+          {count}
+        </span>
+      ) : null}
     </button>
   );
 }

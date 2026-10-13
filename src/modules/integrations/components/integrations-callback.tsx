@@ -76,7 +76,8 @@ export function IntegrationsCallback() {
     completeConnect(provider, code, state)
       .then(() => {
         setDone(true);
-        router.replace("/settings/integrations?connected=1");
+        // No `?connected=1`: nothing read it, and this page has already said so (WP-471).
+        router.replace("/settings/integrations");
       })
       .catch((e) => {
         setError(

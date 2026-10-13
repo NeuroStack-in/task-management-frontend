@@ -16,14 +16,22 @@
  *    Summary, Utilization, and the per-project hour rollup) from a single set of requests.
  *
  * ## Window
- * Monitoring/timesheet data lives on completed workdays, so we compose over the **most recent
- * workday** (single-day reports: productivity, leaderboard, anomalies) and the **Mon–Fri week** that
- * ends on it (weekly reports: timesheet, utilization, project, attendance).
+ * Monitoring/timesheet data lives on completed workdays, so we compose over the org's **most recent
+ * scheduled day** before today (single-day reports: productivity, leaderboard, anomalies) and the
+ * scheduled days of the org's week up to it (weekly reports: timesheet, utilization, project,
+ * attendance). The schedule is the org's own (`GET /v1/org/working-hours`), not Mon–Fri.
  */
 import { useCallback, useEffect, useState } from "react";
 import { getAttention, getOrgActivity, type OrgActivity } from "./services/insights.service";
 import { OMITTED, type ReportDef } from "./lib/report-def";
+import { lastWorkdayBefore, weekWorkdays } from "./lib/week";
 import { UNKNOWN_DEPARTMENT } from "@/lib/format";
+import { safeWorkdays } from "@/lib/workdays";
+import { useAuthStore } from "@/stores/auth.store";
+import {
+  getWorkingHours,
+  type OrgWorkingHours,
+} from "@/modules/settings/services/org.service";
 import {
   getUserTimesheet,
   type ApiGridResponse,
@@ -34,11 +42,12 @@ import {
 } from "@/modules/attendance/services/attendance.service";
 import {
   departmentMap,
-  listEmployees,
+  listAllEmployees,
 } from "@/modules/employees/services/employees.service";
 import {
   getProject,
   listProjects,
+  type ApiProject,
   type ApiProjectDetail,
 } from "@/modules/projects/services/projects.service";
 import { contributorRoleIds } from "@/modules/roles/services/roles.service";
@@ -67,25 +76,24 @@ async function mapWithConcurrency<T>(
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const isWeekday = (d: Date) => d.getDay() >= 1 && d.getDay() <= 5;
 
-/** The most recent completed workday (strictly before today). */
-function mostRecentWorkday(from: Date): Date {
-  const d = new Date(from);
-  d.setDate(d.getDate() - 1);
-  while (!isWeekday(d)) d.setDate(d.getDate() - 1);
-  return d;
+/** `"HH:MM"` → minutes past midnight, `null` when unparseable. */
+function hhmmMinutes(v: string | undefined): number | null {
+  const m = v ? /^(\d{1,2}):(\d{2})$/.exec(v.trim()) : null;
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
-/** The Mon–Fri workdays from the Monday of `day`'s week up to and including `day`. */
-function workweek(day: Date): string[] {
-  const monday = new Date(day);
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-  const out: string[] = [];
-  for (const cur = new Date(monday); cur <= day; cur.setDate(cur.getDate() + 1)) {
-    if (isWeekday(cur)) out.push(isoOf(cur));
-  }
-  return out;
+/**
+ * The org's expected working day in hours — `(work_end − work_start) − break`, the same figure the
+ * scorer uses (`backend/docs/PRODUCTIVITY.md` §1.2). 8 h when the schedule is unknown or nonsensical,
+ * which is also the server's default.
+ */
+function expectedDayHours(h: OrgWorkingHours | null): number {
+  const start = hhmmMinutes(h?.work_start);
+  const end = hhmmMinutes(h?.work_end);
+  if (h == null || start === null || end === null) return 8;
+  const minutes = end - start - (h.break_minutes ?? 0);
+  return minutes > 0 ? Math.round((minutes / 60) * 10) / 10 : 8;
 }
 
 function prettyShort(iso: string): string {
@@ -115,21 +123,45 @@ const humanize = (s: string): string => {
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : s;
 };
 
+/**
+ * The last composed library, reused for a few minutes.
+ *
+ * Composing is a request per measured person plus one per project — about 70 for a 50-person org,
+ * well over 100 at 150 — and it ran again on every visit to the tab (QA audit 2026-10-08, WP-492).
+ * Keyed by user and day, so another sign-in in the same tab or a new day never sees it; "Try again"
+ * drops it.
+ */
+let composed: { key: string; at: number; reports: ReportDef[] } | null = null;
+const COMPOSE_TTL_MS = 5 * 60_000;
+
 export function useReportsData(): ReportsData {
   const [reports, setReports] = useState<ReportDef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const userId = useAuthStore((s) => s.user?.id ?? "");
 
   useEffect(() => {
     let live = true;
+    const todayIso = isoOf(new Date());
+    const cacheKey = `${userId}|${todayIso}`;
+    if (composed && composed.key === cacheKey && Date.now() - composed.at < COMPOSE_TTL_MS) {
+      setReports(composed.reports);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
 
     (async () => {
-      const day = mostRecentWorkday(new Date());
-      const dayIso = isoOf(day);
-      const weekIsos = workweek(day);
+      // The org's own schedule, not Mon–Fri: a Sun–Thu org got Friday as its "most recent workday"
+      // and an empty report, and a six-day org never saw a Saturday (QA audit 2026-10-08, WP-283).
+      // A failed read falls back to Mon–Fri — what the server assumes for an unconfigured org.
+      const hours = await getWorkingHours().catch(() => null);
+      const workdays = safeWorkdays(hours?.workdays);
+      const dayIso = lastWorkdayBefore(todayIso, workdays);
+      const weekIsos = weekWorkdays(dayIso, workdays).filter((d) => d <= dayIso);
       const from = weekIsos[0] ?? dayIso;
       const to = weekIsos[weekIsos.length - 1] ?? dayIso;
       const weekLabel = `Week of ${prettyShort(from)}`;
@@ -137,7 +169,7 @@ export function useReportsData(): ReportsData {
 
       // ── base reads (independent; each degrades to empty, not a total failure) ──
       const [empRes, deptRes, projRes, orgRes, attnRes, contribRes] = await Promise.allSettled([
-        listEmployees(),
+        listAllEmployees(),
         departmentMap(),
         listProjects(),
         getOrgActivity(dayIso),
@@ -196,9 +228,11 @@ export function useReportsData(): ReportsData {
       const measuredEmployees = activeEmployees.filter((e) => isMeasured(e.user_id));
 
       // ── fan-outs (bounded concurrency 3, skip-on-fail) ──
-      // Per-employee timesheets for the week — reused by three reports.
+      // Per-employee timesheets for the week — reused by three reports. Measured people only: a
+      // role without `time-tracking:self` cannot log a timer, so its timesheet is a request for a
+      // row no report shows (QA audit 2026-10-08, WP-492).
       const timesheets = new Map<string, ApiGridResponse>();
-      await mapWithConcurrency(activeEmployees, 3, (e) =>
+      await mapWithConcurrency(measuredEmployees, 3, (e) =>
         getUserTimesheet(e.user_id, from, to).then(
           (g) => void timesheets.set(e.user_id, g),
           () => {},
@@ -223,9 +257,13 @@ export function useReportsData(): ReportsData {
       // Per-day org activity across the week — the day-over-day series the productivity report's
       // Trend column needs. Each person's trend is the report day's score vs their average on the
       // preceding days (real, not fabricated; "—" when there's nothing to compare against).
+      // The report day was already read above; only the earlier days are fetched here.
       const activityByDay = new Map<string, OrgActivity>();
-      await mapWithConcurrency(weekIsos, 3, (iso) =>
-        getOrgActivity(iso).then((r) => void activityByDay.set(iso, r), () => {}),
+      if (org) activityByDay.set(dayIso, org);
+      await mapWithConcurrency(
+        weekIsos.filter((iso) => iso !== dayIso),
+        3,
+        (iso) => getOrgActivity(iso).then((r) => void activityByDay.set(iso, r), () => {}),
       );
       const priorScores = new Map<string, number[]>();
       for (const [iso, act] of activityByDay) {
@@ -311,12 +349,17 @@ export function useReportsData(): ReportsData {
         }),
       });
 
-      // utilization — reuses the same timesheets. Capacity is a stated 40h assumption.
+      // utilization — reuses the same timesheets. Capacity is the org's scheduled hours over the days
+      // the window actually covers: a partial week was measured against a full 40 h, so a fully
+      // billable Tuesday read 20% (QA audit 2026-10-08, WP-283).
+      const dayHours = expectedDayHours(hours);
+      const capacityHrs = round1(dayHours * weekIsos.length);
       out.push({
         id: "utilization",
         name: "Utilization Report",
-        description:
-          "Billable hours against a standard 40-hour weekly capacity (an assumption, not a per-person contract).",
+        description: `Billable hours against the organization's scheduled hours for the ${weekIsos.length} ${
+          weekIsos.length === 1 ? "workday" : "workdays"
+        } covered (${dayHours} h a day) — an org-wide assumption, not a per-person contract.`,
         category: "time",
         timeframe: weekLabel,
         columns: ["Employee", "Capacity hrs", "Billable hrs", "Utilization %"],
@@ -325,9 +368,11 @@ export function useReportsData(): ReportsData {
           const billableHrs = g ? g.billable_secs / 3600 : null;
           return [
             e.name,
-            40,
+            capacityHrs,
             billableHrs === null ? OMITTED : round1(billableHrs),
-            billableHrs === null ? OMITTED : Math.round((billableHrs / 40) * 100),
+            billableHrs === null || capacityHrs <= 0
+              ? OMITTED
+              : Math.round((billableHrs / capacityHrs) * 100),
           ];
         }),
       });
@@ -341,10 +386,26 @@ export function useReportsData(): ReportsData {
               entry.project_id,
               (hoursByProject.get(entry.project_id) ?? 0) + (entry.duration_secs ?? 0),
             );
+      /**
+       * "On track" from the signals the server actually has — overdue tasks and the end date. It
+       * read "Yes" for every active project whatever its schedule (QA audit 2026-10-08, WP-283);
+       * without the project's KPIs there is nothing to judge, so it says so.
+       */
+      const onTrack = (p: ApiProject, detail?: ApiProjectDetail): string => {
+        if (p.status !== "active") return humanize(p.status);
+        const kpi = detail?.kpi;
+        if (!kpi) return OMITTED;
+        if (kpi.overdue_count > 0) return `No — ${kpi.overdue_count} overdue`;
+        if (detail?.end_date && detail.end_date < todayIso && kpi.completion_pct < 100) {
+          return "No — past end date";
+        }
+        return "Yes";
+      };
       out.push({
         id: "project",
         name: "Project Time Allocation",
-        description: "Hours tracked per project this week, with active members and status.",
+        description:
+          "Hours tracked per project this week, with active members. On track means no overdue tasks and not past its end date.",
         category: "projects",
         timeframe: weekLabel,
         columns: ["Project", "Hours", "Members", "On track"],
@@ -359,7 +420,7 @@ export function useReportsData(): ReportsData {
             p.name,
             round1((hoursByProject.get(p.id) ?? 0) / 3600),
             members,
-            p.status === "active" ? "Yes" : humanize(p.status),
+            onTrack(p, detail),
           ];
         }),
       });
@@ -417,6 +478,7 @@ export function useReportsData(): ReportsData {
           ]),
       });
 
+      composed = { key: cacheKey, at: Date.now(), reports: out };
       if (!live) return;
       setReports(out);
       setLoading(false);
@@ -429,8 +491,11 @@ export function useReportsData(): ReportsData {
     return () => {
       live = false;
     };
-  }, [nonce]);
+  }, [nonce, userId]);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  const reload = useCallback(() => {
+    composed = null;
+    setNonce((n) => n + 1);
+  }, []);
   return { reports, loading, error, reload };
 }

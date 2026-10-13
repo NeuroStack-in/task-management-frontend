@@ -63,6 +63,42 @@ describe("PeopleAttentionCard", () => {
     expect(await screen.findByText(/isn't closed yet/i)).toBeInTheDocument();
   });
 
+  /** A failed read is a failure — never "this day isn't closed yet" for a day long closed. */
+  it("says the read failed, with a retry, when attendance can't be loaded", async () => {
+    mockDay.mockRejectedValue(new Error("503"));
+    render(<PeopleAttentionCard date="2026-07-10" onDateChange={vi.fn()} />);
+    expect(await screen.findByText(/Couldn't read attendance/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Try again/i })).toBeInTheDocument();
+    expect(screen.queryByText(/isn't closed yet/i)).not.toBeInTheDocument();
+    // No counts for a day that was never read.
+    expect(screen.queryByText(/0 absent/i)).not.toBeInTheDocument();
+  });
+
+  /** A Sunday is not "everyone was present for a full day". */
+  it("calls a day nobody was scheduled for a non-working day", async () => {
+    mockDay.mockResolvedValue(
+      day([
+        { user_id: "u1", status: "non_workday" },
+        { user_id: "u2", status: "non_workday" },
+      ]),
+    );
+    render(<PeopleAttentionCard date="2026-07-12" onDateChange={vi.fn()} />);
+    expect(await screen.findByText(/Not a working day/i)).toBeInTheDocument();
+    expect(screen.queryByText(/full day/i)).not.toBeInTheDocument();
+  });
+
+  it("describes an unflagged day from its rows, including leave", async () => {
+    mockDay.mockResolvedValue(
+      day([
+        { user_id: "u1", status: "present" },
+        { user_id: "u2", status: "leave" },
+      ]),
+    );
+    render(<PeopleAttentionCard date="2026-07-13" onDateChange={vi.fn()} />);
+    expect(await screen.findByText(/Everyone's accounted for/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 present, 1 on approved leave/i)).toBeInTheDocument();
+  });
+
   /**
    * The AI reports tab owns the date and passes it down. It used to have two pagers, so the
    * executive summary could describe one day while the list below described another — with

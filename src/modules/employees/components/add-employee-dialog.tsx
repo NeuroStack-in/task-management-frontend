@@ -110,20 +110,22 @@ export function AddEmployeeDialog({
       setSubmitting(true);
       setFailures([]);
       const all: MonitoredRowResult[] = [];
-      try {
-        for (let offset = 0; offset < rows.length; offset += CHUNK) {
-          const slice = rows.slice(offset, offset + CHUNK);
-          setProgress({ done: offset, total: rows.length });
+      /** Where a whole request failed, and why — the import stops there. */
+      let stopped: { at: number; error: unknown } | null = null;
+      for (let offset = 0; offset < rows.length; offset += CHUNK) {
+        const slice = rows.slice(offset, offset + CHUNK);
+        setProgress({ done: offset, total: rows.length });
+        try {
           const res = await createMonitoredEmployees(slice);
           all.push(...res.results.map((r) => ({ ...r, index: r.index + offset })));
+        } catch (e) {
+          // A whole request failed (auth, network, a 503 — writes are never retried), distinct from
+          // per-row failures, which come back inside a 200. The chunks before it are real records:
+          // they used to be thrown away with a "nothing added" toast and no roster reload, so the
+          // retry then reported them as "Already in your directory" (QA audit 2026-10-08, WP-222).
+          stopped = { at: offset, error: e };
+          break;
         }
-      } catch (e) {
-        // A thrown error means a whole request failed (auth, network, a 400 on the batch itself) —
-        // distinct from per-row failures, which come back inside a 200.
-        toast.error("Couldn't add employees", { description: friendlyError(e) });
-        setSubmitting(false);
-        setProgress(null);
-        return;
       }
       setSubmitting(false);
       setProgress(null);
@@ -133,6 +135,18 @@ export function AddEmployeeDialog({
       setFailures(failed);
 
       if (created > 0) onCreated?.();
+
+      if (stopped) {
+        const unsent = rows.length - stopped.at;
+        toast.error(created > 0 ? `${created} added, then the import stopped` : "Couldn't add employees", {
+          description:
+            rows.length <= CHUNK
+              ? friendlyError(stopped.error)
+              : `${friendlyError(stopped.error)} The last ${unsent} ${unsent === 1 ? "row was" : "rows were"} not sent. Import the file again — anyone already added will be listed as "Already in your directory".`,
+          duration: 15000,
+        });
+        return;
+      }
 
       if (failed.length === 0) {
         toast.success(created === 1 ? "Employee added" : `${created} employees added`, {
@@ -208,7 +222,7 @@ export function AddEmployeeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-1 rounded-lg bg-muted p-1">
+        <div className="flex gap-1 rounded-lg bg-muted p-1" role="group" aria-label="How to add">
           {(
             [
               ["one", "One person"],
@@ -219,6 +233,8 @@ export function AddEmployeeDialog({
               key={value}
               type="button"
               onClick={() => setTab(value)}
+              // The selected half was shown only by its styling (QA audit 2026-10-08, WP-461).
+              aria-pressed={tab === value}
               className={cn(
                 "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                 tab === value
@@ -275,7 +291,12 @@ export function AddEmployeeDialog({
               type="file"
               accept=".csv,text/csv"
               className="sr-only"
-              onChange={(e) => onFile(e.target.files?.[0])}
+              onChange={(e) => {
+                  onFile(e.target.files?.[0]);
+                  // Clear it, so picking the same file again — after fixing it — fires `change`
+                  // again instead of silently doing nothing (WP-220).
+                  e.currentTarget.value = "";
+                }}
             />
             <div className="flex items-center gap-2">
               <Button

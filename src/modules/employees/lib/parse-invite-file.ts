@@ -1,5 +1,5 @@
 import { isEmail } from "@/lib/validation";
-import { cell, readSheet, resolveColumns } from "./spreadsheet";
+import { cell, isSampleAddress, readSheet, resolveColumns } from "./spreadsheet";
 
 /**
  * Turn an uploaded `.csv` or `.xlsx` into invite rows (`POST /v1/employees/invites`).
@@ -83,23 +83,6 @@ const HEADER_ALIASES = {
 } as const;
 
 type Field = keyof typeof HEADER_ALIASES;
-
-/**
- * Domains RFC 2606 reserves for documentation. They can never receive mail, so an invite to one is
- * always a mistake — and in practice it is one specific mistake: the template's own sample rows,
- * left in place while real people were typed underneath them. Rejecting them by name turns the most
- * likely way to misuse a template into a message that says exactly what to do.
- *
- * Only the three reserved *second-level* domains. The `.test` TLD is reserved too, but this app uses
- * `acme.test` for its own demo data and placeholders, so refusing it would reject addresses the
- * product itself suggests.
- */
-const SAMPLE_DOMAINS = ["example.com", "example.net", "example.org"];
-
-function isSampleAddress(email: string): boolean {
-  const domain = email.split("@")[1] ?? "";
-  return SAMPLE_DOMAINS.includes(domain);
-}
 
 export async function parseInviteFile(file: File): Promise<ParsedInviteFile> {
   const empty: ParsedInviteFile = { rows: [], errors: [], duplicates: 0 };

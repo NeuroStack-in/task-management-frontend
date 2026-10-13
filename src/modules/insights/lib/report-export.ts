@@ -6,21 +6,59 @@
  * rows from `../use-reports-data.ts`, so every exported file is honest.
  *
  * Functions run in click handlers only (they touch `document` / `URL`).
+ *
+ * PDF text goes through the `PdfText` writer: rows carry people's and projects' names, and one
+ * character outside Latin-1 used to garble its whole cell. A report with such text loads a Unicode
+ * font from `/fonts/` first (QA audit 2026-10-08, WP-225); a Latin-only one renders as before.
  */
-import Papa from "papaparse";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { downloadBlob } from "@/lib/download";
+import { buildPdf, type PdfText } from "@/modules/employees/lib/pdf-text";
 import type { ReportDef } from "./report-def";
+import { CSV_BOM, csvBody, toCsv } from "@/lib/csv";
 
 /** The subtitle line under each report title in a PDF. */
 function subtitle(report: ReportDef): string {
   return report.timeframe ? `${report.timeframe} · WorkPulse` : "WorkPulse";
 }
 
+/** One report as a landscape table, starting on the current page. */
+function drawReport(doc: jsPDF, t: PdfText, report: ReportDef) {
+  const margin = 14;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const usable = pageW - margin * 2;
+  const colW = usable / Math.max(1, report.columns.length);
+
+  doc.setFontSize(16);
+  t.text(report.name, margin, 18);
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  t.text(subtitle(report), margin, 25);
+
+  let y = 36;
+  doc.setTextColor(20);
+  doc.setFont("helvetica", "bold");
+  report.columns.forEach((c, i) => t.text(String(c), margin + i * colW, y));
+  doc.setDrawColor(210);
+  doc.line(margin, y + 2, margin + usable, y + 2);
+  doc.setFont("helvetica", "normal");
+  y += 9;
+
+  for (const row of report.rows) {
+    row.forEach((cell, i) => t.text(String(cell), margin + i * colW, y));
+    y += 8;
+    if (y > pageH - 14) {
+      doc.addPage();
+      y = 20;
+    }
+  }
+}
+
 /** A single report → CSV file. */
 export function exportCsv(report: ReportDef) {
-  const csv = Papa.unparse({ fields: report.columns, data: report.rows });
+  const csv = toCsv({ fields: report.columns, data: report.rows });
   downloadBlob(
     new Blob([csv], { type: "text/csv;charset=utf-8;" }),
     `${report.id}-report.csv`,
@@ -29,99 +67,58 @@ export function exportCsv(report: ReportDef) {
 }
 
 /** A single report → one-page (landscape) PDF table. */
-export function exportPdf(report: ReportDef) {
-  const doc = new jsPDF({ orientation: "landscape" });
-  const margin = 14;
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const usable = pageW - margin * 2;
-  const colW = usable / Math.max(1, report.columns.length);
-
-  doc.setFontSize(16);
-  doc.text(report.name, margin, 18);
-  doc.setFontSize(10);
-  doc.setTextColor(120);
-  doc.text(subtitle(report), margin, 25);
-
-  let y = 36;
-  doc.setTextColor(20);
-  doc.setFont("helvetica", "bold");
-  report.columns.forEach((c, i) => doc.text(String(c), margin + i * colW, y));
-  doc.setDrawColor(210);
-  doc.line(margin, y + 2, margin + usable, y + 2);
-  doc.setFont("helvetica", "normal");
-  y += 9;
-
-  for (const row of report.rows) {
-    row.forEach((cell, i) => doc.text(String(cell), margin + i * colW, y));
-    y += 8;
-    if (y > pageH - 14) {
-      doc.addPage();
-      y = 20;
-    }
+export async function exportPdf(report: ReportDef) {
+  try {
+    const doc = await buildPdf((text) => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      drawReport(doc, text(doc), report);
+      return doc;
+    });
+    doc.save(`${report.id}-report.pdf`);
+    toast.success("PDF exported", { description: `${report.name}.pdf` });
+  } catch {
+    toast.error("Couldn't export the PDF. Try again.");
   }
-
-  doc.save(`${report.id}-report.pdf`);
-  toast.success("PDF exported", { description: `${report.name}.pdf` });
 }
 
 /** One combined PDF containing every report — the "overall reports" export. */
-export function exportAllPdf(reports: ReportDef[]) {
-  const doc = new jsPDF({ orientation: "landscape" });
-  const margin = 14;
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const usable = pageW - margin * 2;
+export async function exportAllPdf(reports: ReportDef[]) {
+  try {
+    const doc = await buildPdf((text) => {
+      const doc = new jsPDF({ orientation: "landscape" });
+      const t = text(doc);
+      const margin = 14;
 
-  // Cover page
-  doc.setFontSize(24);
-  doc.text("WorkPulse", margin, 28);
-  doc.setFontSize(14);
-  doc.setTextColor(80);
-  doc.text("Reports Pack", margin, 38);
-  doc.setFontSize(10);
-  doc.setTextColor(120);
-  doc.text(`${reports.length} reports · generated from WorkPulse`, margin, 48);
-  reports.forEach((r, i) =>
-    doc.text(`${i + 1}.  ${r.name}${r.timeframe ? `  —  ${r.timeframe}` : ""}`, margin, 62 + i * 7),
-  );
+      // Cover page
+      doc.setFontSize(24);
+      t.text("WorkPulse", margin, 28);
+      doc.setFontSize(14);
+      doc.setTextColor(80);
+      t.text("Reports Pack", margin, 38);
+      doc.setFontSize(10);
+      doc.setTextColor(120);
+      t.text(`${reports.length} reports · generated from WorkPulse`, margin, 48);
+      reports.forEach((r, i) =>
+        t.text(`${i + 1}.  ${r.name}${r.timeframe ? `  —  ${r.timeframe}` : ""}`, margin, 62 + i * 7),
+      );
 
-  for (const report of reports) {
-    doc.addPage();
-    const colW = usable / Math.max(1, report.columns.length);
-    doc.setFontSize(16);
-    doc.setTextColor(20);
-    doc.text(report.name, margin, 18);
-    doc.setFontSize(10);
-    doc.setTextColor(120);
-    doc.text(subtitle(report), margin, 25);
-
-    let y = 36;
-    doc.setTextColor(20);
-    doc.setFont("helvetica", "bold");
-    report.columns.forEach((c, i) => doc.text(String(c), margin + i * colW, y));
-    doc.setDrawColor(210);
-    doc.line(margin, y + 2, margin + usable, y + 2);
-    doc.setFont("helvetica", "normal");
-    y += 9;
-
-    for (const row of report.rows) {
-      row.forEach((cell, i) => doc.text(String(cell), margin + i * colW, y));
-      y += 8;
-      if (y > pageH - 14) {
+      for (const report of reports) {
         doc.addPage();
-        y = 20;
+        doc.setTextColor(20);
+        drawReport(doc, t, report);
       }
-    }
+      return doc;
+    });
+    doc.save("workpulse-reports.pdf");
+    toast.success(
+      `${reports.length} report${reports.length > 1 ? "s" : ""} exported`,
+      {
+        description: "workpulse-reports.pdf",
+      },
+    );
+  } catch {
+    toast.error("Couldn't export the PDF. Try again.");
   }
-
-  doc.save("workpulse-reports.pdf");
-  toast.success(
-    `${reports.length} report${reports.length > 1 ? "s" : ""} exported`,
-    {
-      description: "workpulse-reports.pdf",
-    },
-  );
 }
 
 /** One CSV file with each selected report as a labelled section. */
@@ -129,12 +126,12 @@ export function exportSelectedCsv(reports: ReportDef[]) {
   if (reports.length === 1) return exportCsv(reports[0]);
   const csv = reports
     .map((r) => {
-      const body = Papa.unparse({ fields: r.columns, data: r.rows });
+      const body = csvBody({ fields: r.columns, data: r.rows });
       return `# ${r.name}${r.timeframe ? ` — ${r.timeframe}` : ""}\n${body}`;
     })
     .join("\n\n");
   downloadBlob(
-    new Blob([csv], { type: "text/csv;charset=utf-8;" }),
+    new Blob([CSV_BOM + csv], { type: "text/csv;charset=utf-8;" }),
     "workpulse-reports.csv",
   );
   toast.success(`${reports.length} reports exported`, {

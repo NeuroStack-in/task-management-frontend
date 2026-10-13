@@ -121,12 +121,19 @@ export function AssigneePicker({
   value,
   onChange,
   disabled,
+  max = Infinity,
 }: {
   members: UserMini[];
   /** Selected user ids, in the order they were picked — the first is served as the legacy single. */
   value: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
+  /**
+   * The most people a task can hold (the server's `MAX_ASSIGNEES`). At the cap, unpicked people
+   * can't be ticked, and "Select all" appears only while everyone shown still fits — on a big
+   * project it used to pick past the cap, and the save was refused (QA audit 2026-10-08, WP-300).
+   */
+  max?: number;
 }) {
   const [query, setQuery] = useState("");
   const searchable = members.length > 6;
@@ -160,6 +167,8 @@ export function AssigneePicker({
    */
   const unselectedShown = filtered.filter((m) => !value.includes(m.id));
   const selectAllShown = () => onChange([...value, ...unselectedShown.map((m) => m.id)]);
+  const full = value.length >= max;
+  const allFit = value.length + unselectedShown.length <= max;
 
   return (
     <DropdownMenu>
@@ -210,7 +219,7 @@ export function AssigneePicker({
         <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs font-medium">
           <span>Assignees</span>
           <span className="flex items-center gap-3">
-            {unselectedShown.length > 0 && filtered.length > 1 ? (
+            {unselectedShown.length > 0 && filtered.length > 1 && allFit ? (
               <button
                 type="button"
                 onClick={selectAllShown}
@@ -256,6 +265,7 @@ export function AssigneePicker({
             <DropdownMenuCheckboxItem
               key={u.id}
               checked={value.includes(u.id)}
+              disabled={full && !value.includes(u.id)}
               // Keep the menu open: picking three people should be three clicks, not three
               // open-pick-reopen cycles.
               closeOnClick={false}
@@ -292,7 +302,14 @@ export function AssignedByLine({
   // Assignments made before the server recorded this carry an empty `assignedBy`. Saying nothing
   // beats "Assigned by —", and beats guessing that the task's creator did it.
   if (!assignee.assignedBy) return null;
-  const by = personName(userMap[assignee.assignedBy]?.name);
+  // Someone the map doesn't hold is not thereby a deleted employee: to a viewer who can't read the
+  // directory, an admin acting from outside the team, or a teammate who has since left it, is just
+  // not on this project. "Removed employee" was asserting what nobody here knew (QA audit
+  // 2026-10-08, WP-503). A member whose account is gone is still in the map, marked as removed.
+  const by = personName(
+    userMap[assignee.assignedBy]?.name,
+    "someone outside this project",
+  );
   return (
     <span className="truncate text-xs text-muted-foreground">
       Assigned by {by}

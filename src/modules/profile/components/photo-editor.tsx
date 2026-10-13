@@ -123,7 +123,12 @@ export function PhotoEditor({ open, onClose, onApply, onRemove, hasPhoto }: Phot
         x: (VIEWPORT - img.naturalWidth * base) / 2,
         y: (VIEWPORT - img.naturalHeight * base) / 2,
       })
-      setSrc(url)
+      // Let go of the previous pick's blob. Only `reset` revoked, so each "choose a different photo"
+      // kept up to 10 MB alive until the tab closed (QA audit 2026-10-08, WP-525).
+      setSrc((prev) => {
+        if (prev && prev !== url) URL.revokeObjectURL(prev)
+        return url
+      })
       setFileName(f.name)
     }
     img.onerror = () => {

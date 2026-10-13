@@ -12,7 +12,6 @@ import {
   draftRun,
   finalizeRun,
   getDeductions,
-  getRun,
   listRuns,
   setCompensation,
   updateDeductions,
@@ -27,11 +26,6 @@ describe("payroll.service route contract", () => {
     mock.mockResolvedValueOnce({ runs: [] });
     await listRuns();
     expect(mock).toHaveBeenCalledWith("/v1/payroll/runs");
-  });
-
-  it("getRun GETs the period-scoped run, encoded", async () => {
-    await getRun("2026-08");
-    expect(mock).toHaveBeenCalledWith("/v1/payroll/runs/2026-08");
   });
 
   it("draftRun POSTs the period body to the runs collection", async () => {

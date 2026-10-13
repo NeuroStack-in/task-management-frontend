@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuthStore } from "@/stores/auth.store";
+import { landAfterSignIn, useAuthStore } from "@/stores/auth.store";
 import { Loader } from "@/components/shared/loader";
 import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { safeLandingPath } from "@/lib/rbac";
@@ -26,7 +26,8 @@ export function SsoCallback() {
     ran.current = true;
     completeSso()
       .then(() => {
-        router.replace(safeLandingPath(currentRoleSnapshot(), params.get("from")));
+        // A full page load when this replaced someone else's session (WP-387).
+        landAfterSignIn(router, safeLandingPath(currentRoleSnapshot(), params.get("from")));
       })
       .catch(() => {
         setFailed(true);
@@ -39,6 +40,8 @@ export function SsoCallback() {
 
   return (
     <div className="flex min-h-[40vh] items-center justify-center">
+      {/* The page's heading for assistive tech; the loader below says the same visually (WP-368). */}
+      <h1 className="sr-only">{failed ? "Sign-in failed" : "Completing sign-in"}</h1>
       <Loader label={failed ? "Sign-in failed — taking you back…" : "Completing sign-in…"} />
     </div>
   );

@@ -91,7 +91,7 @@ function Row({
           </span>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{detail}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground/80">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           {coords(point)} · {fmtAccuracy(point.accuracy_m)}
         </p>
       </div>
@@ -193,7 +193,7 @@ export function LocationTimeline({
                 : ""}
               {moment.distM !== null ? ` · ${moment.distM} m from office` : ""}
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground/80">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {coords(moment.point)} · {fmtAccuracy(moment.point.accuracy_m)}
             </p>
           </div>

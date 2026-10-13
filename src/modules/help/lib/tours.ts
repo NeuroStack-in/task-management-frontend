@@ -353,8 +353,9 @@ export const TOURS: Record<string, Tour> = {
         route: "/settings/monitoring",
         target: "settings:capture",
         title: "What gets captured",
+        // No blur here: the Monitoring page has no blur control (QA audit 2026-10-08, WP-247).
         content:
-          "Screenshot cadence, blur level and retention, all in one card. Blur is the lever for reducing what's legible — per-frame and auditable, unlike quietly lowering quality.",
+          "How often the desktop app captures screenshots, and how long they're kept before they're deleted automatically — both in this card.",
         permission: "settings:view",
       },
       {
@@ -363,7 +364,8 @@ export const TOURS: Record<string, Tour> = {
         title: "What counts as productive",
         content:
           "Each category carries a score weight — productive 1, neutral 0.5, distracting 0. These multiply the tracked minutes, so changing them changes how days are graded from that point on.",
-        permission: "settings:view",
+        // The page (and its server routes) need `MonitoringManage` (WP-346).
+        permission: "monitoring:manage",
       },
       {
         route: "/settings/monitoring",

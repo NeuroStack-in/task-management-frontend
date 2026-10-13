@@ -128,22 +128,7 @@ export async function sendAssistantMessage(
   return { reply: res.reply, sources: res.sources ?? [] };
 }
 
-/**
- * Mirrors `assistant::features::list_threads::ThreadsResponse` — the server's thread summaries are
- * **bare strings** (no id / title / timestamp / messages). Because the chat is session-only (LLD
- * §19), the deployed handler always returns `[]` today; the route exists so history can light up
- * without a client change if the server ever starts persisting threads.
- */
-interface ThreadsResponse {
-  threads: string[];
-}
-
-/**
- * List past assistant threads — `GET /v1/assistant/threads` (gated by `ai_assistant:use`, 403 →
- * `ApiError`). Note there is **no** route to fetch a thread's messages, so a summary from this list
- * can never be resumed server-side — callers may only start a new conversation about it.
- */
-export async function listAssistantThreads(): Promise<string[]> {
-  const res = await apiFetch<ThreadsResponse>("/v1/assistant/threads");
-  return res.threads;
-}
+// There is no thread-history client. The chat is session-only (LLD §19): the server's
+// `GET /v1/assistant/threads` always answers `{ threads: [] }` and nothing fetches a thread's
+// messages, so the old `listAssistantThreads` had no caller but its own test (QA audit 2026-10-08,
+// WP-548).
