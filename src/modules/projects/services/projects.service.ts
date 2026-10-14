@@ -545,12 +545,24 @@ export interface ProjectDirectory {
  */
 export async function readProjectDirectory(
   projectId?: string,
+  access?: DirectoryAccess,
 ): Promise<ProjectDirectory> {
-  let roster: Awaited<ReturnType<typeof readRoster>>;
-  try {
-    roster = await readRoster();
-  } catch (e) {
-    if (!(e instanceof ApiError && e.status === 403)) throw e;
+  let roster: Awaited<ReturnType<typeof readRoster>> | null = null;
+  // Skip a read the caller is known not to hold, rather than collecting its 403 — an org Employee
+  // opening Projects used to make three refused requests per visit (live crawl, 2026-10-14).
+  if (access?.directory !== false) {
+    try {
+      roster = await readRoster();
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 403)) throw e;
+    }
+  }
+  if (!roster) {
+    if (access?.picker === false) {
+      // Neither read is open to this caller: answer as the server would, without asking it. The
+      // hooks treat a 403 as "use the names the project itself carries".
+      throw new ApiError("You can't view the employee list.", 403, "forbidden");
+    }
     return readPickerDirectory(projectId);
   }
   const people: Record<string, UserMini> = {};
@@ -568,6 +580,16 @@ export async function readProjectDirectory(
       ? roster.departments.map((d) => d.name).sort((a, b) => a.localeCompare(b))
       : null,
   };
+}
+
+/**
+ * What the caller may read, so `readProjectDirectory` can skip a request bound to be refused.
+ * Mirrors the server: the roster needs `employees:view`; the picker needs `projects:create` (bare) or
+ * the right to manage that project (`?project_id=`). Omitted ⇒ try both, as before.
+ */
+export interface DirectoryAccess {
+  directory: boolean;
+  picker: boolean;
 }
 
 /** Mirrors `projects::features::people::PeopleResponse`. */

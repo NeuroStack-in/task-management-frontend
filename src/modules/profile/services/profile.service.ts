@@ -94,13 +94,14 @@ export function beginAvatarUpload(): Promise<AvatarUploadTicket> {
 
 /**
  * `GET /v1/me/avatar` — a **short-lived presigned view URL** for the caller's avatar, or `null`
- * when none has been uploaded (the server's 404 is the empty state, not an error — render
- * initials). Don't cache the URL beyond the session; re-fetch on mount, it expires.
+ * when none has been uploaded (render initials). The server answers `{url: null}` for that; an
+ * older server's 404 means the same. Don't cache the URL beyond the session; re-fetch on mount,
+ * it expires.
  */
 export async function getAvatarUrl(): Promise<string | null> {
   try {
-    const { url } = await apiFetch<{ url: string }>("/v1/me/avatar");
-    return url;
+    const { url } = await apiFetch<{ url: string | null }>("/v1/me/avatar");
+    return url ?? null;
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;

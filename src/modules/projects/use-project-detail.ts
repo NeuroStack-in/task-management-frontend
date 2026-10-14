@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 import { friendlyError } from "@/lib/errors";
 import {
   getProject,
@@ -71,6 +72,9 @@ export interface ProjectDetailData {
 }
 
 export function useProjectDetail(id: string): ProjectDetailData {
+  const { can } = usePermissions();
+  const readsDirectory = can("employees:view");
+  const managesAll = can("projects:manage");
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [members, setMembers] = useState<ApiProjectMember[]>([]);
@@ -93,9 +97,16 @@ export function useProjectDetail(id: string): ProjectDetailData {
   // review re-reads the project, and walking every department partition again to redraw a board was
   // most of what a re-read cost (QA audit 2026-10-08, WP-315).
   useEffect(() => {
+    // Without the roster, only this project's Manager (or an org-wide manager) may use the picker —
+    // and whether the caller manages it is known once the project has loaded. Wait for that rather
+    // than asking and collecting a 403 (live crawl, 2026-10-14).
+    if (!readsDirectory && !managesAll && !authority) return;
     let live = true;
     // The project id lets a Manager without `employees:view` use the project's own picker (WP-308).
-    readProjectDirectory(id).then(
+    readProjectDirectory(id, {
+      directory: readsDirectory,
+      picker: managesAll || authority === "manager",
+    }).then(
       (d) => live && setDirectory(d),
       (e: unknown) =>
         live &&
@@ -104,7 +115,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
     return () => {
       live = false;
     };
-  }, [id]);
+  }, [id, readsDirectory, managesAll, authority]);
 
   useEffect(() => {
     let live = true;

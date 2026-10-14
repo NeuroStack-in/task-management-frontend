@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   listProjects,
@@ -80,6 +81,11 @@ export interface ProjectsData {
 }
 
 export function useProjectsData(): ProjectsData {
+  // Which directory reads this caller holds, so none is made only to be refused (see
+  // `readProjectDirectory`): the roster needs employees:view, the bare picker projects:create.
+  const { can } = usePermissions();
+  const readsDirectory = can("employees:view");
+  const usesPicker = can("projects:create");
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskSummary, setTaskSummary] = useState<Record<string, TaskSummary>>({});
@@ -106,7 +112,7 @@ export function useProjectsData(): ProjectsData {
       try {
         const [list, directory] = await Promise.all([
           listProjects(),
-          readProjectDirectory().then(
+          readProjectDirectory(undefined, { directory: readsDirectory, picker: usesPicker }).then(
             (d) => ({ d, denied: false }),
             (e: unknown) => ({ d: null, denied: e instanceof ApiError && e.status === 403 }),
           ),
@@ -174,7 +180,7 @@ export function useProjectsData(): ProjectsData {
     return () => {
       live = false;
     };
-  }, [nonce]);
+  }, [nonce, readsDirectory, usesPicker]);
 
   const createProject = useCallback(
     async (v: ProjectFormValues): Promise<CreatedProject> => {
