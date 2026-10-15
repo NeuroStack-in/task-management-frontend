@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Maximize2, X } from "lucide-react";
-import { Reveal } from "@/modules/marketing/reveal";
+import { Reveal } from "@/modules/marketing/landing/client";
 
 interface GalleryItem {
   src: string;
@@ -36,7 +36,7 @@ export function ProductGallery({ items }: { items: GalleryItem[] }) {
           <Reveal key={g.src}>
             <div className={`grid items-center gap-8 lg:grid-cols-2 ${i % 2 ? "lg:[&>*:first-child]:order-2" : ""}`}>
               <div>
-                <h3 className="m-display text-xl font-semibold text-white sm:text-2xl">{g.title}</h3>
+                <h3 className="wp-display text-2xl text-white sm:text-3xl">{g.title}</h3>
                 <p className="mt-3 text-base leading-relaxed" style={{ color: "rgb(255 255 255 / 0.72)" }}>
                   {g.body}
                 </p>
@@ -44,7 +44,7 @@ export function ProductGallery({ items }: { items: GalleryItem[] }) {
                   type="button"
                   onClick={() => setActive(g)}
                   className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium transition-opacity hover:opacity-80"
-                  style={{ color: "#7fd1c5" }}
+                  style={{ color: "var(--wp-accent-glow)" }}
                 >
                   <Maximize2 className="size-4" /> View full length
                 </button>
@@ -69,9 +69,9 @@ export function ProductGallery({ items }: { items: GalleryItem[] }) {
                 {/* hover overlay */}
                 <span
                   className="absolute inset-2 flex items-center justify-center rounded-xl opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-                  style={{ background: "rgb(8 30 28 / 0.4)", backdropFilter: "blur(1px)" }}
+                  style={{ background: "rgb(8 20 27 / 0.4)", backdropFilter: "blur(1px)" }}
                 >
-                  <span className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold shadow-lg" style={{ background: "rgb(255 255 255 / 0.92)", color: "var(--m-accent-ink)" }}>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold shadow-lg" style={{ background: "rgb(255 255 255 / 0.92)", color: "var(--wp-accent-ink)" }}>
                     <Maximize2 className="size-4" /> View full length
                   </span>
                 </span>
@@ -84,8 +84,8 @@ export function ProductGallery({ items }: { items: GalleryItem[] }) {
       {/* Lightbox */}
       {active ? (
         <div
-          className="m-enter-scale fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto p-4 sm:p-8"
-          style={{ background: "rgb(6 20 18 / 0.88)", backdropFilter: "blur(8px)" }}
+          className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto p-4 sm:p-8"
+          style={{ background: "rgb(8 20 27 / 0.9)", backdropFilter: "blur(8px)" }}
           onClick={() => setActive(null)}
           role="dialog"
           aria-modal="true"

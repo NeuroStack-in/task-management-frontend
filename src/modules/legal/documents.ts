@@ -1,6 +1,6 @@
 /**
- * The four legal documents: one registry for their routes (`app/legal/[slug]`), both marketing
- * footers and the sign-up consent box.
+ * The four legal documents: one registry for their routes (`app/legal/[slug]`), the public footer
+ * and the sign-up consent box.
  *
  * The links were removed in the QA audit (2026-10-08, WP-115 / WP-541) because they pointed at `#`,
  * and the sign-up box asked people to agree to documents nobody could open. Everything that links

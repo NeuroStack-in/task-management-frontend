@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PLANS as SIGNUP_PLANS } from "@/modules/auth/components/auth-modals";
 import { PRICING as LANDING_PRICING } from "@/modules/marketing/landing/content";
+import { PUBLIC_PLANS } from "@/modules/marketing/pricing/content";
 import { membersLabel, PLAN_TIERS, tierOf } from "./plans";
 
 /**
@@ -34,11 +35,20 @@ describe("one pricing catalog", () => {
     }
   });
 
+  it("is what /pricing promises", () => {
+    expect(PUBLIC_PLANS.map((p) => p.id)).toEqual(PLAN_TIERS.map((t) => t.id));
+    for (const p of PUBLIC_PLANS) {
+      expect(p.name).toBe(tierOf(p.id).name);
+      expect(p.features).toContain(membersLabel(p.id));
+    }
+  });
+
   /** Free and Starter cannot switch screenshots or AI on (`Plan::allowed`), so nothing may sell them. */
   it("never sells an Enterprise-only capability on a lower plan", () => {
     const lower = [
       ...SIGNUP_PLANS.filter((p) => p.id !== "enterprise").flatMap((p) => p.features),
       ...LANDING_PRICING.filter((p) => p.name !== "Enterprise").flatMap((p) => p.features),
+      ...PUBLIC_PLANS.filter((p) => p.id !== "enterprise").flatMap((p) => p.features),
     ];
     for (const f of lower) {
       expect(f).not.toMatch(/screenshot|\bAI\b|anomal|unlimited members/i);

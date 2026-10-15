@@ -21,6 +21,7 @@ import {
 import { Visual } from "./visuals";
 import { Reveal, CountUp, UseCaseMarquee, RoleSelector, FaqItem } from "./client";
 import { LEGAL_DOCS, legalHref } from "@/modules/legal/documents";
+import { PRODUCTS, productHref } from "@/modules/marketing/products";
 
 /* ---------------- Use-case marquee band ---------------- */
 export function MarqueeSection() {
@@ -357,8 +358,18 @@ export function CtaSection() {
   );
 }
 
-/* ---------------- Footer (warm, landing-only) ---------------- */
-export function Footer() {
+/* ---------------- Footer (warm) ----------------
+ * The landing's footer, and since 2026-10-15 the footer of every inner public page too (via
+ * `PublicShell`). `allProducts` lists all ten product pages instead of the first four — the inner
+ * pages' old footer did, and a product page should be able to reach its siblings. */
+export function Footer({ allProducts = false }: { allProducts?: boolean }) {
+  const columns = allProducts
+    ? FOOTER_COLUMNS.map((c) =>
+        c.title === "Product"
+          ? { ...c, links: PRODUCTS.map((p) => ({ label: p.name, href: productHref(p.slug) })) }
+          : c,
+      )
+    : FOOTER_COLUMNS;
   return (
     <footer className="border-t px-5 py-14" style={{ borderColor: "var(--wp-border)", background: "var(--wp-bg-2)" }}>
       <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
@@ -380,7 +391,7 @@ export function Footer() {
               transit and at rest is a plain fact about the infrastructure, so that stays. */}
           <p className="mt-4 text-xs" style={{ color: "var(--wp-faint)" }}>Encrypted in transit &amp; at rest · Free while in beta</p>
         </div>
-        {FOOTER_COLUMNS.map((col) => (
+        {columns.map((col) => (
           <div key={col.title}>
             <p className="text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--wp-ink-2)" }}>{col.title}</p>
             <ul className="mt-4 space-y-2.5">
@@ -396,8 +407,9 @@ export function Footer() {
       <div className="mx-auto mt-12 flex max-w-6xl flex-col items-center justify-between gap-3 border-t pt-6 sm:flex-row" style={{ borderColor: "var(--wp-border)" }}>
         <p className="text-xs" style={{ color: "var(--wp-faint)" }}>© 2026 WorkPulse. All rights reserved.</p>
         {/* The legal links pointed at the FAQ until the documents existed (QA audit 2026-10-08,
-            WP-541 / WP-115). They now come from the registry that generates `/legal/*`, the same
-            one `MarketingFooter` reads, so the two footers can't drift apart. */}
+            WP-541 / WP-115). They now come from the registry that generates `/legal/*`, so none of
+            them can point at a page that doesn't exist. This is the only public footer now — the
+            inner pages' separate `MarketingFooter` went with their dark theme (2026-10-15). */}
         <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs" style={{ color: "var(--wp-faint)" }}>
           <Link href="/#security" className="hover:opacity-70">Security</Link>
           {LEGAL_DOCS.map((d) => (

@@ -457,3 +457,169 @@
   --m-border-strong: #cdd6dc;
   --m-shadow: 18 28 40;
 }
+
+/* ============================================================= *
+ *  Inner public pages — /pricing, /product/*, /legal/*, 404
+ *
+ *  They used to be a separate dark-petrol site (marketing.css):
+ *  leaving the homepage felt like landing on another product. They
+ *  now wear the landing's own surface — the dark clock hero on top,
+ *  the warm cream page below — through `PublicShell` and `PageHero`
+ *  in `modules/marketing/public/`. Everything here is scoped to
+ *  `.wp`, like the rest of this file.
+ * ============================================================= */
+
+/* The landing hero title is a heavy grotesk; the inner pages keep the
+   editorial serif, lifted off the dial with the same dark halo. */
+.wp-page-title {
+  font-family: var(--wp-display, "Fraunces", Georgia, serif);
+  font-weight: 500;
+  letter-spacing: -0.022em;
+  line-height: 1.04;
+  color: #fff;
+  text-shadow:
+    0 1px 2px rgb(8 20 27 / 0.8),
+    0 4px 24px rgb(8 20 27 / 0.6);
+}
+.wp-page-title em {
+  font-style: italic;
+  color: var(--wp-accent-glow);
+}
+
+/* Split heroes (copy left, visual right) scrim the copy side, not the dial centre. */
+.wp-hero-scrim[data-align="split"] {
+  background: radial-gradient(
+    58% 70% at 26% 48%,
+    rgb(8 20 27 / 0.7) 0%,
+    rgb(8 20 27 / 0.42) 52%,
+    rgb(8 20 27 / 0) 86%
+  );
+}
+.wp-hero-scrim[data-align="start"] {
+  background: linear-gradient(90deg, rgb(8 20 27 / 0.72) 0%, rgb(8 20 27 / 0.35) 55%, rgb(8 20 27 / 0) 85%);
+}
+
+/* Hero entrance — the landing's `wp-rise`, fill-mode `both` so nothing needs an inline
+   `opacity: 0` (and so nothing can be stranded invisible when motion is reduced). */
+.wp-enter {
+  animation: wp-rise 0.8s var(--wp-ease) both;
+  animation-delay: var(--d, 0ms);
+}
+
+/* Light-on-dark secondary button, as on the landing's final CTA. */
+.wp-btn-glass {
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 0.26);
+}
+.wp-btn-glass:hover {
+  background: rgb(255 255 255 / 0.16);
+  border-color: rgb(255 255 255 / 0.5);
+}
+
+/* A minute ruler — the dial's ticks laid flat. Minor tick every 12px, an
+   hour tick every 60px; fades out at both ends. Decorative only. */
+.wp-ticks {
+  height: 14px;
+  background:
+    repeating-linear-gradient(90deg, var(--wp-border-strong) 0 1px, transparent 1px 60px) bottom / 100% 14px no-repeat,
+    repeating-linear-gradient(90deg, var(--wp-border) 0 1px, transparent 1px 12px) bottom / 100% 7px no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+/* Cards that lift on hover (links). */
+.wp-lift {
+  transition:
+    transform 0.25s var(--wp-ease),
+    box-shadow 0.25s ease,
+    border-color 0.2s ease;
+}
+.wp-lift:hover {
+  transform: translateY(-3px);
+  border-color: var(--wp-border-strong);
+  box-shadow: var(--wp-shadow);
+}
+
+/* Legal documents: the prose components are written against the `--m-*` names
+   (modules/legal/prose.tsx). Inside the warm page they resolve to the warm palette,
+   so the documents themselves needed no change. */
+.wp .wp-mtokens {
+  --m-bg: var(--wp-bg);
+  --m-surface: var(--wp-surface-2);
+  --m-surface-2: var(--wp-bg-2);
+  --m-text: var(--wp-ink);
+  --m-muted: var(--wp-muted);
+  --m-faint: var(--wp-faint);
+  --m-accent: var(--wp-accent);
+  --m-accent-ink: var(--wp-accent-ink);
+  --m-accent-tint: var(--wp-accent-soft);
+  --m-border: var(--wp-border);
+  --m-border-strong: var(--wp-border-strong);
+  --m-danger: var(--wp-danger);
+  --font-display: var(--wp-display, "Fraunces"), Georgia, serif;
+}
+
+/* 404: the dial fills the screen. */
+.wp-lost {
+  min-height: 100svh;
+}
+
+/* An `<em>` inside a serif heading on the cream page: the italic teal accent. */
+.wp-display em {
+  font-style: italic;
+  color: var(--wp-accent);
+}
+
+/* Monthly / annual switch on /pricing — glass, because it sits on the dark hero. */
+.wp-seg {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.18);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.wp-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgb(255 255 255 / 0.78);
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+.wp-seg button:hover {
+  color: #fff;
+}
+.wp-seg button[aria-checked="true"] {
+  background: #fff;
+  color: var(--wp-ink);
+}
+.wp-seg-save {
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--wp-accent-soft);
+  color: var(--wp-accent-ink);
+}
+
+/* On a phone the split and start heroes stack their copy across the full width, right over the
+   dial, so the copy-side scrim alone isn't enough: dim the whole dial instead. */
+@media (max-width: 1023px) {
+  .wp-hero-scrim[data-align="split"] {
+    background: rgb(8 20 27 / 0.5);
+  }
+}
+@media (max-width: 639px) {
+  .wp-hero-scrim[data-align="start"] {
+    background: rgb(8 20 27 / 0.55);
+  }
+}

@@ -2,15 +2,21 @@
  * The shell every legal document renders in. It follows the wireframe (Docs/wireframes/01, §1.7–1.8):
  * an in-page contents list on the left, the prose on the right, and the dates at the top.
  *
- * It is a server component on the same dark marketing surface as `/pricing` and `/product/*`, with
- * the shared nav and footer. The text is deliberately not wrapped in `Reveal`: content that fades in
- * as you scroll is wrong for a document people read closely, and wrong for anyone jumping to a section
- * from the contents list.
+ * Since 2026-10-15 it sits on the landing's surface, like `/pricing` and `/product/*`: a dark clock
+ * hero carrying the title, the dates and the four-document switcher, then the document itself as a
+ * sheet of paper riding up over the hero's edge. The dial is held still on these pages
+ * (`PageHero align="start"`). The prose components in `prose.tsx` are written against the `--m-*`
+ * names; `.wp-mtokens` (landing.css) points those at the warm palette, so the documents needed no
+ * change.
+ *
+ * The text is deliberately not wrapped in `Reveal`: content that fades in as you scroll is wrong for
+ * a document people read closely, and wrong for anyone jumping to a section from the contents list.
  */
 import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
-import { MarketingNav } from "@/modules/marketing/marketing-nav";
-import { MarketingFooter } from "@/modules/marketing/marketing-footer";
+import type { CSSProperties } from "react";
+import { PublicShell } from "@/modules/marketing/public/public-shell";
+import { PageHero } from "@/modules/marketing/public/page-hero";
 import {
   DRAFT_DATE,
   LEGAL_DOCS,
@@ -22,68 +28,73 @@ import {
 import { Ph } from "./prose";
 import type { LegalDocument, LegalSection } from "./types";
 
+/** "Privacy Policy" → "Privacy *Policy*": the hero's italic accent on the last word. */
+function titleWithAccent(title: string) {
+  const at = title.lastIndexOf(" ");
+  if (at < 0) return title;
+  return (
+    <>
+      {title.slice(0, at)} <em>{title.slice(at + 1)}</em>
+    </>
+  );
+}
+
 export function LegalPage({ meta, doc }: { meta: LegalDocMeta; doc: LegalDocument }) {
   return (
-    <div className="m-root min-h-screen overflow-x-hidden">
-      <MarketingNav />
+    <PublicShell>
+      <PageHero
+        align="start"
+        kicker="Legal"
+        title={titleWithAccent(meta.title)}
+        lede={meta.summary}
+        actions={<DocSwitcher current={meta.slug} />}
+        micro={
+          // `Ph` marks an unfilled placeholder in the `--m-*` accent; on the dark hero that has to be
+          // the light teal, or the mark reads dark-on-dark.
+          <span
+            className="wp-mono text-xs"
+            style={{ "--m-accent": "var(--wp-accent-glow)", "--m-accent-ink": "#fff" } as CSSProperties}
+          >
+            Effective date: <Ph k="effectiveDate" />
+            {LEGAL_DRAFT ? <> · Draft of {DRAFT_DATE}</> : null}
+          </span>
+        }
+        overlap="md"
+      />
 
-      <main id="main" className="px-5 pt-28 pb-20 sm:pt-36 sm:pb-28">
-        <div className="mx-auto max-w-6xl">
-          {LEGAL_DRAFT ? <DraftBanner /> : null}
-
-          <header className="max-w-3xl">
-            <p
-              className="text-sm font-medium tracking-wide uppercase"
-              style={{ color: "var(--m-accent-ink)" }}
-            >
-              Legal
-            </p>
-            <h1 className="m-display mt-3 text-[clamp(2rem,4.5vw,3rem)] leading-tight font-semibold">
-              {meta.title}
-            </h1>
-            <p
-              className="mt-4 text-base leading-relaxed sm:text-lg"
-              style={{ color: "var(--m-muted)" }}
-            >
-              {meta.summary}
-            </p>
-            <p className="mt-4 text-sm" style={{ color: "var(--m-muted)" }}>
-              Effective date: <Ph k="effectiveDate" />
-              {LEGAL_DRAFT ? <> · Draft of {DRAFT_DATE}</> : null}
-            </p>
-          </header>
-
-          <DocSwitcher current={meta.slug} />
-
-          <div className="mt-10 grid gap-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-14">
-            <Contents sections={doc.sections} />
-            <article className="max-w-3xl min-w-0">
+      <div className="wp-mtokens relative z-10 -mt-20 px-5 pb-24 sm:-mt-24 sm:pb-32">
+        <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[16rem_minmax(0,1fr)] lg:gap-8">
+          <Contents sections={doc.sections} />
+          <article className="wp-card min-w-0 p-6 sm:p-10 lg:p-14" style={{ boxShadow: "var(--wp-shadow)" }}>
+            {LEGAL_DRAFT ? <DraftBanner /> : null}
+            <div className="max-w-3xl">
               {doc.sections.map((s, i) => (
                 <section
                   key={s.id}
                   id={s.id}
                   aria-labelledby={`${s.id}-title`}
                   // Clears the fixed nav (h-16) when a contents link jumps here.
-                  className="mt-10 scroll-mt-24 border-t pt-10 first:mt-0 first:border-t-0 first:pt-0"
-                  style={{ borderColor: "var(--m-border)" }}
+                  className="mt-12 scroll-mt-24 border-t pt-12 first:mt-0 first:border-t-0 first:pt-0"
+                  style={{ borderColor: "var(--wp-border)" }}
                 >
                   <h2
                     id={`${s.id}-title`}
-                    className="m-display text-xl font-semibold sm:text-2xl"
+                    className="wp-display flex items-baseline gap-3 text-2xl sm:text-[1.7rem]"
+                    style={{ color: "var(--wp-ink)" }}
                   >
-                    <span style={{ color: "var(--m-accent-ink)" }}>{i + 1}.</span>{" "}
-                    {s.title}
+                    <span className="wp-mono shrink-0 text-sm font-medium" style={{ color: "var(--wp-accent-ink)" }}>
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span>{s.title}</span>
                   </h2>
-                  <div className="mt-4">{s.body}</div>
+                  <div className="mt-5 text-[15px] sm:text-base">{s.body}</div>
                 </section>
               ))}
-            </article>
-          </div>
+            </div>
+          </article>
         </div>
-      </main>
-
-      <MarketingFooter />
-    </div>
+      </div>
+    </PublicShell>
   );
 }
 
@@ -96,7 +107,7 @@ function DraftBanner() {
   return (
     <div
       role="note"
-      className="mb-10 flex items-start gap-3 rounded-2xl border p-4 sm:p-5"
+      className="mb-12 flex items-start gap-3 rounded-2xl border p-4 sm:p-5"
       style={{
         borderColor: "color-mix(in srgb, var(--m-danger) 55%, transparent)",
         background: "color-mix(in srgb, var(--m-danger) 12%, transparent)",
@@ -121,10 +132,10 @@ function DraftBanner() {
   );
 }
 
-/** The four documents as a row of links, with the current one marked. */
+/** The four documents as a row of links, with the current one marked — glass pills on the dark hero. */
 function DocSwitcher({ current }: { current: LegalSlug }) {
   return (
-    <nav aria-label="Legal documents" className="mt-8">
+    <nav aria-label="Legal documents">
       <ul className="flex flex-wrap gap-2">
         {LEGAL_DOCS.map((d) => {
           const on = d.slug === current;
@@ -133,15 +144,11 @@ function DocSwitcher({ current }: { current: LegalSlug }) {
               <Link
                 href={legalHref(d.slug)}
                 aria-current={on ? "page" : undefined}
-                className="inline-flex items-center rounded-full border px-3.5 py-1.5 text-sm transition-opacity hover:opacity-80"
+                className="inline-flex items-center rounded-full border px-4 py-2 text-sm font-medium transition-colors"
                 style={
                   on
-                    ? {
-                        background: "var(--m-accent-tint)",
-                        borderColor: "var(--m-accent)",
-                        color: "var(--m-accent-ink)",
-                      }
-                    : { borderColor: "var(--m-border-strong)", color: "var(--m-muted)" }
+                    ? { background: "#fff", borderColor: "#fff", color: "var(--wp-ink)" }
+                    : { background: "rgb(255 255 255 / 0.06)", borderColor: "rgb(255 255 255 / 0.22)", color: "rgb(255 255 255 / 0.82)" }
                 }
               >
                 {d.title}
@@ -181,22 +188,19 @@ function Contents({ sections }: { sections: LegalSection[] }) {
 
   return (
     <>
-      <details className="m-card p-4 lg:hidden">
-        <summary className="cursor-pointer text-sm font-semibold">On this page</summary>
+      <details className="wp-card p-5 lg:hidden">
+        <summary className="cursor-pointer text-sm font-semibold" style={{ color: "var(--wp-ink)" }}>
+          On this page
+        </summary>
         <nav aria-label="On this page" className="mt-3">
           {list}
         </nav>
       </details>
       <nav
         aria-label="On this page"
-        className="hidden lg:sticky lg:top-24 lg:block lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto"
+        className="wp-card hidden p-5 lg:sticky lg:top-24 lg:block lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto"
       >
-        <p
-          className="mb-3 text-xs font-semibold tracking-wide uppercase"
-          style={{ color: "var(--m-text)" }}
-        >
-          On this page
-        </p>
+        <p className="wp-kicker mb-3">On this page</p>
         {list}
       </nav>
     </>
