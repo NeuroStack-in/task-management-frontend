@@ -87,9 +87,6 @@ export const metadata: Metadata = {
 export default function LandingPage() {
   return (
     <>
-      <a href="#main" className="wp-skip">
-        Skip to content
-      </a>
       <AuthGate>
         <div
           className={`wp min-h-screen overflow-x-clip ${sansDisplay.variable}`}

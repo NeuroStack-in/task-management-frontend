@@ -20,9 +20,6 @@ const displayVar = { "--wp-display": "var(--font-fraunces)" } as CSSProperties;
 export function PublicShell({ children }: { children: ReactNode }) {
   return (
     <>
-      <a href="#main" className="wp-skip">
-        Skip to content
-      </a>
       <div className="wp min-h-screen overflow-x-clip" style={displayVar}>
         {/* The landing's nav wiring, unchanged: `.m-root` only to scope the `--m-*` tokens
             (`display: contents`, so it draws no box), `wp-navlight` for the light bar it turns into

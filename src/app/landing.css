@@ -171,26 +171,6 @@
   color: var(--wp-muted);
 }
 
-/* --- Skip link --- */
-.wp-skip {
-  position: absolute;
-  left: 1rem;
-  top: -3.5rem;
-  z-index: 100;
-  border-radius: 999px;
-  background: var(--wp-accent);
-  color: #fff;
-  padding: 0.6rem 1.1rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  transition: top 0.18s ease;
-}
-.wp-skip:focus {
-  top: 1rem;
-  outline: 2px solid var(--wp-ink);
-  outline-offset: 2px;
-}
-
 /* --- Anchor targets clear the fixed nav --- */
 .wp section[id],
 .wp [data-anchor] {
