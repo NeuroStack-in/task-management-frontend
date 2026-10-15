@@ -46,6 +46,20 @@ type Errors = { email?: string; password?: string; form?: string };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * What a failed Google sign-in says, by the code `/callback` sends (`ssoFailureCode`). Fixed copy:
+ * nothing from the URL is ever shown, so a link cannot put its own words on this page (WP-107).
+ * The two specific ones are the pre-sign-up trigger's deliberate refusals.
+ */
+const GOOGLE_FAILURE_COPY: Record<string, string> = {
+  account_exists:
+    "This email already has a WorkPulse account. Sign in with your email and password, or use “Forgot password?” to set one.",
+  email_unverified:
+    "Google hasn't verified this account's email address. Verify it with Google, or sign in with your WorkPulse email and password.",
+  failed:
+    "We couldn't complete your Google sign-in. Try again, or sign in with your email and password.",
+};
+
 export function LoginExperience() {
   const router = useRouter();
   const params = useSearchParams();
@@ -76,10 +90,9 @@ export function LoginExperience() {
     // A failed Google sign-in lands here with `?error=` — which nothing read, so the user got a
     // pristine sign-in page and no explanation (QA audit 2026-10-08, WP-107). The copy is fixed, not
     // echoed from the URL: a link must not be able to put its own words on this page.
-    if (params.get("error")) {
-      setErrors({
-        form: "We couldn't complete your Google sign-in. Try again, or sign in with your email and password.",
-      });
+    const failure = params.get("error");
+    if (failure) {
+      setErrors({ form: GOOGLE_FAILURE_COPY[failure] ?? GOOGLE_FAILURE_COPY.failed });
       setSubmitted(true);
     }
   }, [params]);

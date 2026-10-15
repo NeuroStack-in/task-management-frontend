@@ -12,6 +12,7 @@ import { landAfterSignIn, useAuthStore } from "@/stores/auth.store";
 import { Loader } from "@/components/shared/loader";
 import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { safeLandingPath } from "@/lib/rbac";
+import { ssoFailureCode } from "@/lib/oauth";
 
 export function SsoCallback() {
   const router = useRouter();
@@ -29,12 +30,10 @@ export function SsoCallback() {
         // A full page load when this replaced someone else's session (WP-387).
         landAfterSignIn(router, safeLandingPath(currentRoleSnapshot(), params.get("from")));
       })
-      .catch(() => {
+      .catch((e: unknown) => {
         setFailed(true);
-        setTimeout(
-          () => router.replace("/login?error=We%20couldn%27t%20complete%20your%20sign-in."),
-          1200,
-        );
+        // A code the sign-in page has its own copy for — never the provider's text (WP-107).
+        setTimeout(() => router.replace(`/login?error=${ssoFailureCode(e)}`), 1200);
       });
   }, [completeSso, params, router]);
 

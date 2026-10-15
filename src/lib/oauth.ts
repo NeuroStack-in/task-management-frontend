@@ -149,6 +149,27 @@ export function sessionCanSelfManage(): Promise<boolean | null> {
   });
 }
 
+/**
+ * Why a Google sign-in came back refused, as a fixed code the sign-in page has its own words for.
+ *
+ * The pre-sign-up trigger refuses some sign-ins on purpose and says why ("this email already has an
+ * account", "Google hasn't verified this address"); Cognito hands that back on `/callback` as
+ * `error_description=PreSignUp failed with error <message>`. Every failure used to collapse into one
+ * generic "couldn't complete your sign-in", so someone told to use their password was never told.
+ *
+ * A code, not the text: the sign-in page never shows words taken from its URL, so a crafted link
+ * cannot put its own message there (QA audit 2026-10-08, WP-107).
+ */
+export type SsoFailure = "account_exists" | "email_unverified" | "failed";
+
+export function ssoFailureCode(err: unknown): SsoFailure {
+  const text = err instanceof Error ? err.message : String(err ?? "");
+  if (!/PreSignUp failed/i.test(text)) return "failed";
+  if (/already has a WorkPulse account/i.test(text)) return "account_exists";
+  if (/isn.?t verified/i.test(text)) return "email_unverified";
+  return "failed";
+}
+
 interface TokenResponse {
   id_token: string;
   access_token: string;
