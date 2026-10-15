@@ -267,6 +267,10 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         silent,
         auto_update: policy.auto_update,
         ...(policy.idle_end_secs !== undefined ? { idle_end_secs: policy.idle_end_secs } : {}),
+        // Keep the org's pause allowance; omitting it would reset it to the default.
+        ...(policy.pause_allowance_secs !== undefined
+          ? { pause_allowance_secs: policy.pause_allowance_secs }
+          : {}),
         expected_version: policy.version,
       });
     } catch (err) {

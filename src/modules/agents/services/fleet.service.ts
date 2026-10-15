@@ -99,6 +99,8 @@ export interface TrackingPolicy {
    * the type because a server from before the field simply omits it.
    */
   idle_end_secs?: number;
+  /** Desktop app: daily privacy-pause allowance in seconds (0 = off; absent = 15 min). */
+  pause_allowance_secs?: number;
 }
 
 /**
@@ -141,6 +143,8 @@ export interface UpdateTrackingPolicyInput {
    * a caller that doesn't manage it leaves the stored value alone — the server defaults it.
    */
   idle_end_secs?: number;
+  /** Desktop app: daily privacy-pause allowance in seconds (0 = off; absent = 15 min). */
+  pause_allowance_secs?: number;
   cadence: TrackingCadence;
   blur_level: number;
   retention_days: number;

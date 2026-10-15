@@ -70,6 +70,8 @@ type PolicyForm = {
   auto_update: boolean
   /** Managed agent: minutes of no input before the logon session auto-ends. */
   idleMinutes: number
+  /** Desktop app: each employee's daily privacy-pause allowance, in minutes (0 = no pausing). */
+  pauseMinutes: number
 }
 
 /** The agent's shipped default, in minutes — what an org that never set one keeps. */
@@ -77,6 +79,10 @@ const IDLE_DEFAULT_MINUTES = 45
 /** Server range is 60 … 28800 seconds; expressed here in whole minutes. */
 const IDLE_MIN_MINUTES = 1
 const IDLE_MAX_MINUTES = 480
+/** The privacy-pause allowance an org gets until an admin changes it (owner request 2026-10-15). */
+const PAUSE_DEFAULT_MINUTES = 15
+/** Server range is 0 … 14400 seconds; 0 turns the privacy pause off. */
+const PAUSE_MAX_MINUTES = 240
 
 const EMPTY: PolicyForm = {
   cadence: "off",
@@ -86,6 +92,7 @@ const EMPTY: PolicyForm = {
   silent: false,
   auto_update: true,
   idleMinutes: IDLE_DEFAULT_MINUTES,
+  pauseMinutes: PAUSE_DEFAULT_MINUTES,
 }
 
 const CADENCE_OPTIONS: { value: CadenceChoice; label: string }[] = [
@@ -103,6 +110,12 @@ const CADENCE_OPTIONS: { value: CadenceChoice; label: string }[] = [
 function secsToMinutes(secs: number | undefined): number {
   if (secs == null) return IDLE_DEFAULT_MINUTES
   return Math.min(IDLE_MAX_MINUTES, Math.max(IDLE_MIN_MINUTES, Math.round(secs / 60)))
+}
+
+/** Wire seconds → whole minutes; absent (an older server) means the 15-minute default. */
+function pauseSecsToMinutes(secs: number | undefined): number {
+  if (secs == null) return PAUSE_DEFAULT_MINUTES
+  return Math.min(PAUSE_MAX_MINUTES, Math.max(0, Math.round(secs / 60)))
 }
 
 /** Wire cadence → form fields. A `{ custom: n }` object becomes the `"custom"` choice + its minutes. */
@@ -199,6 +212,10 @@ export function MonitoringTab() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Whether the server knows the privacy-pause allowance. A server older than the setting leaves
+  // `pause_allowance_secs` out of the policy and would silently drop it on save, so the card stays
+  // hidden until the field comes back — it appears by itself once the backend carrying it is live.
+  const [pauseSupported, setPauseSupported] = useState(false)
 
   // Reset both the form values AND the RHF baseline, so `isDirty` reads false right after a load/save.
   const seed = useCallback(
@@ -222,9 +239,11 @@ export function MonitoringTab() {
           silent: cfg.tracking.silent,
           auto_update: cfg.tracking.auto_update,
           idleMinutes: secsToMinutes(cfg.tracking.idle_end_secs),
+          pauseMinutes: pauseSecsToMinutes(cfg.tracking.pause_allowance_secs),
         },
         cfg.tracking.version,
       )
+      setPauseSupported(cfg.tracking.pause_allowance_secs !== undefined)
       const silent = cfg.tracking.silent === true
       const blur = cfg.tracking.blur_level > 0
       setLegacyOverride(silent || blur ? { silent, blur } : null)
@@ -253,9 +272,11 @@ export function MonitoringTab() {
         silent: false,
         auto_update: values.auto_update,
         idle_end_secs: Math.round(values.idleMinutes) * 60,
+        ...(pauseSupported ? { pause_allowance_secs: Math.round(values.pauseMinutes) * 60 } : {}),
         expected_version: version,
       })
       setLegacyOverride(null)
+      setPauseSupported(next.pause_allowance_secs !== undefined)
       seed(
         {
           ...cadenceToForm(next.cadence),
@@ -264,6 +285,7 @@ export function MonitoringTab() {
           silent: next.silent,
           auto_update: next.auto_update,
           idleMinutes: secsToMinutes(next.idle_end_secs),
+          pauseMinutes: pauseSecsToMinutes(next.pause_allowance_secs),
         },
         next.version,
       )
@@ -435,6 +457,46 @@ export function MonitoringTab() {
               </SettingRow>
             </CardContent>
           </Card>
+
+          {/* ── Privacy pause (desktop app) ──
+              The employee's own pause button: capture stops, the timer keeps running. Taken in as
+              many pieces as they like until the day's total is used (owner request 2026-10-15).
+              Hidden in machine-only orgs — the managed service has no pause — and until the server
+              returns the setting (`pauseSupported`). */}
+          {trackingMode !== "machine" && pauseSupported && (
+            <Card id="privacy-pause" className="scroll-mt-24 shadow-none">
+              <CardHeader>
+                <CardTitle>Privacy pause</CardTitle>
+                <CardDescription>
+                  Lets employees pause screenshots, activity and location in the desktop app — for
+                  a private message or a personal call — while their timer keeps running.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-0 pb-2">
+                <SettingRow
+                  label="Pause time per day"
+                  description="Each employee's daily total. They can pause and resume as often as they like; only the time actually paused counts, and it resets every day. Set 0 to turn the pause off."
+                  disabled={!canManage}
+                >
+                  <Controller
+                    control={control}
+                    name="pauseMinutes"
+                    render={({ field }) => (
+                      <NumericStepper
+                        value={field.value}
+                        min={0}
+                        max={PAUSE_MAX_MINUTES}
+                        suffix="min"
+                        aria-label="Privacy pause minutes per day"
+                        disabled={!canManage}
+                        onChange={field.onChange}
+                      />
+                    )}
+                  />
+                </SettingRow>
+              </CardContent>
+            </Card>
+          )}
 
           {/* ── Machine tracking (managed Windows service) ──
               Only shown to orgs that actually run it: the interactive app's timer is started and
