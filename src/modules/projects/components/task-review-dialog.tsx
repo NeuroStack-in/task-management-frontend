@@ -1,20 +1,22 @@
 "use client";
 
 /**
- * Sign a task off: rate it 1–5 and move it to Done.
+ * Review a finished task: sign it off (rate it 1–5, and it moves to Done) or send it back.
  *
  * The second half of the task lifecycle. `in_review` is the assignee saying *I finished it*; this is
- * someone with authority over the project agreeing. On success the task moves to `done` with the
- * rating and the reviewer's name recorded (`review_task`). A Manager or Lead can also drag a card to
- * Done, which records neither; and moving a signed-off task out of Done clears its review.
+ * the project's lead or manager agreeing. Signing off moves the task to `done` with the rating and
+ * the reviewer's name recorded (`review_task`) — and it is the **only** way into Done (owner rule,
+ * 2026-10-16): a drop on the Done column opens this dialog instead of moving the card. Sending it
+ * back returns it to In progress for more work. Moving a signed-off task out of Done clears its
+ * review.
  *
- * Who sees the button is decided by the server (`ProjectRole::Manager | Lead`, which org admins and
- * owners resolve into). The caller passes `canReview`, and the assignee is excluded even when they
- * are a Lead — reviewing your own work is the thing review exists to prevent.
+ * Only the project's own lead or manager reviews — not an org admin (`canReviewTask`, mirroring
+ * `review_task`), and never the assignee, even a lead: reviewing your own work is the thing review
+ * exists to prevent.
  */
 
 import { useState } from "react";
-import { Loader2, Star } from "lucide-react";
+import { Loader2, Star, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +51,7 @@ export function TaskReviewDialog({
   taskId,
   taskTitle,
   onReviewed,
+  onSendBack,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -57,11 +60,14 @@ export function TaskReviewDialog({
   taskTitle: string;
   /** Refresh the board — the task leaves In review and appears under Done. */
   onReviewed: () => void;
+  /** Return the task to In progress — the work isn't finished yet. */
+  onSendBack: () => Promise<void>;
 }) {
   const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const shown = hover || rating;
 
@@ -92,22 +98,39 @@ export function TaskReviewDialog({
           ? "This task isn't in review any more — someone may have just moved it. Check the board."
           : code === "cannot_review_own_task"
             ? "You can't sign off a task you're assigned to."
-            : friendlyError(e, "Couldn't submit the review."),
+            : e instanceof ApiError && e.status === 403
+              ? "Only this project's lead or manager can sign off its tasks."
+              : friendlyError(e, "Couldn't submit the review."),
       );
     } finally {
       setBusy(false);
     }
   }
 
+  async function sendBack() {
+    setSending(true);
+    try {
+      await onSendBack();
+      toast.success("Sent back to In progress", {
+        description: "It comes back here when it's moved to In review again.",
+      });
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(friendlyError(e, "Couldn't send the task back."));
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
+    <Dialog open={open} onOpenChange={(o) => !busy && !sending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Review and sign off</DialogTitle>
+          <DialogTitle>Review task</DialogTitle>
           <DialogDescription>
-            <span className="text-foreground font-medium">{taskTitle}</span> — rate the finished
-            work. Signing off moves the task to Done, with your rating and your name as the
-            reviewer.
+            <span className="text-foreground font-medium">{taskTitle}</span> is waiting for your
+            review. Rate it and sign it off to move it to Done, with your name as the reviewer — or
+            send it back if it needs more work.
           </DialogDescription>
         </DialogHeader>
 
@@ -157,14 +180,20 @@ export function TaskReviewDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            Cancel
+        <DialogFooter className="sm:justify-between">
+          <Button variant="outline" onClick={sendBack} disabled={busy || sending}>
+            {sending ? <Loader2 className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
+            Send back
           </Button>
-          <Button onClick={submit} disabled={busy || !rating}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-            {busy ? "Signing off…" : "Sign off"}
-          </Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy || sending}>
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={busy || sending || !rating}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+              {busy ? "Signing off…" : "Sign off · move to Done"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -93,28 +93,24 @@ describe("canMoveTask / canMoveTaskTo", () => {
     }
   });
 
-  it("gives a lead and a manager both verdicts, on any card and in any column", () => {
-    for (const role of ["lead", "manager"]) {
+  it("lets a lead or manager block any card, and nobody move one to Done", () => {
+    for (const role of ["lead", "manager", "member"]) {
       for (const from of ["todo", "in_progress", "in_review"] as TaskStatus[]) {
         const t = task(from, "u-other");
-        expect(canMoveTaskTo(t, role, "u-me", "done"), `${role}/${from}`).toBe(true);
-        expect(canMoveTaskTo(t, role, "u-me", "blocked"), `${role}/${from}`).toBe(true);
+        // Done is reached only through a review — the board opens it on a drop (2026-10-16).
+        expect(canMoveTaskTo(t, role, "u-me", "done"), `${role}/${from}`).toBe(false);
+        expect(canMoveTaskTo(t, role, "u-me", "blocked"), `${role}/${from}`).toBe(role !== "member");
       }
     }
   });
 
   /**
-   * **Mirroring the server exactly, including where it is looser than the review dialog.**
-   *
-   * `update_task` gates `done`/`blocked` on the role alone, so a lead dragging their own card there
-   * succeeds. Asserting otherwise would make the board refuse a drop the API accepts — a mirror
-   * that lies in the safe-looking direction is still a mirror that lies. "Never review your own
-   * work" is enforced where it carries a rating and a reviewer's name: `canReviewTask`, and the
-   * server's `review_task`.
+   * The only door into Done is the review, so "never review your own work" holds there too: a lead
+   * can neither drag their own card to Done nor sign it off.
    */
-  it("does not re-litigate own-work review in the drag path", () => {
+  it("gives a lead no way to finish their own task", () => {
     const mine = task("in_review", "u-lead");
-    expect(canMoveTaskTo(mine, "lead", "u-lead", "done")).toBe(true);
+    expect(canMoveTaskTo(mine, "lead", "u-lead", "done")).toBe(false);
     expect(canReviewTask(mine, "lead", "u-lead")).toBe(false);
   });
 
@@ -470,8 +466,14 @@ describe("settableStatuses (WP-300)", () => {
     ]);
   });
 
-  it("offers a lead or manager all five", () => {
-    expect(settableStatuses("lead")).toHaveLength(5);
-    expect(settableStatuses("manager")).toHaveLength(5);
+  it("offers a lead or manager everything but Done, which only a review reaches", () => {
+    for (const role of ["lead", "manager"]) {
+      expect(settableStatuses(role)).toEqual(["todo", "in_progress", "in_review", "blocked"]);
+    }
+  });
+
+  it("keeps Done selectable on a task that is already done, so editing it doesn't reopen it", () => {
+    expect(settableStatuses("member", "done")).toContain("done");
+    expect(settableStatuses("lead", "done")).toContain("done");
   });
 });

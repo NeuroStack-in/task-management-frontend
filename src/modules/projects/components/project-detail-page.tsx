@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, ListChecks, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, Hourglass, ListChecks, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCorners, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type Announcements, type CollisionDetection, type DragEndEvent, type KeyboardCoordinateGetter } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -32,6 +32,7 @@ import { TaskFormDialog } from "./task-form-dialog";
 import { ViewTaskDialog } from "./view-task-dialog";
 import { generateProjectReportPdf } from "../report";
 import { ProjectTimeByMember } from "./project-time-by-member";
+import { TaskFlowGuide } from "./task-flow-guide";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
 interface ProjectDetailPageProps {
@@ -105,6 +106,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     moveTask,
     deleteTask,
     authority,
+    reviewerIds,
   } = useProjectDetail(id);
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
 
@@ -130,8 +132,36 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
    * flag, because for a Member the answer genuinely differs card by card.
    */
   const canDelete = (t: Task) => canDeleteTask(t, authority, currentUserId);
-  /** Mirrors the server: Manager|Lead, only on an `in_review` task, never your own. */
-  const canReview = (t: Task) => canReviewTask(t, authority, currentUserId);
+  /**
+   * Your **own** role here, from the member rows — not `authority`, which is `manager` for an org
+   * admin on every project. Only the project's own lead or manager signs work off (owner rule,
+   * 2026-10-16), and `review_task` checks exactly that.
+   */
+  const ownRole =
+    currentUserId && reviewerIds.includes(currentUserId)
+      ? currentUserId === project?.managerId
+        ? "manager"
+        : "lead"
+      : "";
+  /** Mirrors the server: the project's own lead or manager, only on an `in_review` task, never your own. */
+  const canReview = (t: Task) => canReviewTask(t, ownRole, currentUserId);
+  /**
+   * Who an `in_review` task is waiting for, in words — the people who can sign it off (the project's
+   * lead and manager, minus anyone assigned to it). Shown on the card to everyone who can't review it,
+   * so nobody is left wondering what happens next.
+   */
+  const waitingFor = (t: Task): string => {
+    const names = reviewerIds
+      .filter((uid) => !t.assignees.some((a) => a.userId === uid))
+      .map((uid) => (uid === currentUserId ? "you" : userMap[uid]?.name))
+      .filter((n): n is string => Boolean(n));
+    if (names.length === 0) {
+      return reviewerIds.length
+        ? "Nobody can review this: the lead and manager are both assigned to it"
+        : "Waiting for the project lead or manager to review";
+    }
+    return `Waiting for ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`} to review`;
+  };
   /** Any project member — the target column decides the rest (`canMoveTaskTo`, on drop). */
   const canMove = (t: Task) => canMoveTask(t, authority, currentUserId);
   /** `done` and `blocked` take a Manager or Lead — a new task can't start in either for anyone else. */
@@ -253,6 +283,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     name: project.name,
     description: project.description ?? "",
     department: project.department,
+    // Empty for a project created before the lead was required — its next save asks for one.
     leadUserId: project.leadUserId,
     managerId: project.managerId ?? "",
     memberIds: project.memberIds,
@@ -393,6 +424,28 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     const target = over.id as TaskStatus;
     const moved = tasks.find((t) => t.id === active.id);
     if (!moved || moved.status === target || !TASK_STATUS_SETTABLE.includes(target)) return;
+    // **Done is reached only through a review** (owner rule, 2026-10-16). A drop there opens the
+    // review for the people who can sign the task off, and says what has to happen for everyone else
+    // — the card stays where it is either way. The server refuses a move to `done` outright.
+    if (target === "done") {
+      if (canReview(moved)) {
+        setReviewTarget(moved);
+      } else if (moved.status !== "in_review") {
+        toast.error("Move it to In review first", {
+          description:
+            "A task reaches Done when the project lead or manager reviews it. Move it to In review when the work is finished.",
+        });
+      } else if (moved.assignees.some((a) => a.userId === currentUserId)) {
+        toast.error("You can't sign off your own task", {
+          description: `${waitingFor(moved)}.`,
+        });
+      } else {
+        toast.error("Only the project lead or manager can sign off a task", {
+          description: `${waitingFor(moved)}.`,
+        });
+      }
+      return;
+    }
     // **The target column decides** — any member may move any card between the working columns, and
     // only a Manager or Lead may put one in Done or Blocked (`canMoveTaskTo`, the server's
     // `update_task`). Checked before the move so the card doesn't slide in and spring back. The toast
@@ -401,12 +454,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     if (!canMoveTaskTo(moved, authority, currentUserId, target)) {
       toast.error(
         `Only a project lead or manager can move a task to ${TASK_STATUS_META[target].label}`,
-        {
-          description:
-            target === "done"
-              ? "Move it to In review — a lead or manager signs it off from there."
-              : "Ask a project lead or manager to mark it blocked.",
-        },
+        { description: "Ask a project lead or manager to mark it blocked." },
       );
       return;
     }
@@ -415,6 +463,10 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
       // why (QA audit 2026-10-08, WP-303).
       if (err instanceof ApiError && err.status === 404) {
         toast.error("That task no longer exists — someone may have deleted it.");
+      } else if (err instanceof ApiError && err.code === "review_required") {
+        toast.error("Tasks reach Done only through a review.", {
+          description: "Move it to In review — the project lead or manager signs it off from there.",
+        });
       } else if (err instanceof ApiError && err.status === 409) {
         toast.error("Someone else changed that task just now.", {
           description: "The board shows their change — move it again if you still need to.",
@@ -754,6 +806,8 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           </p>
         ) : null}
 
+        <TaskFlowGuide />
+
         {taskView === "board" ? (
           <DndContext
             sensors={sensors}
@@ -784,6 +838,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   canReview={canReview}
                   canMove={canMove}
                   onReview={setReviewTarget}
+                  waitingFor={waitingFor}
                 />
               ))}
             </div>
@@ -857,6 +912,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             setReviewTarget(null);
             void reload();
           }}
+          onSendBack={() => moveTask(reviewTarget.id, "in_progress")}
         />
       ) : null}
 
@@ -1096,6 +1152,7 @@ function KanbanColumn({
   canReview,
   canMove,
   onReview,
+  waitingFor,
 }: {
   col: TaskStatus;
   tasks: Task[];
@@ -1111,6 +1168,8 @@ function KanbanColumn({
   /** False ⇒ the card does not lift — only for a viewer with no project role resolved yet. */
   canMove: (t: Task) => boolean;
   onReview: (t: Task) => void;
+  /** Who an `in_review` task is waiting for — shown to everyone who can't review it themselves. */
+  waitingFor: (t: Task) => string;
 }) {
   const meta = TASK_STATUS_META[col];
   const { setNodeRef, isOver } = useDroppable({ id: col });
@@ -1122,15 +1181,27 @@ function KanbanColumn({
         isOver && "bg-primary/5 ring-primary/40 ring-2",
       )}
     >
-      <div className="mb-3 flex items-center px-1">
+      <div className="mb-3 px-1">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
           <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
           {meta.label}
           <span className="text-muted-foreground tabular-nums">{tasks.length}</span>
         </span>
+        {/* The two columns a first-time viewer can't read off the board: who acts on In review, and
+            what it takes to reach Done. */}
+        {COLUMN_HINT[col] ? (
+          <p className="text-muted-foreground mt-0.5 text-[0.7rem] leading-snug">
+            {COLUMN_HINT[col]}
+          </p>
+        ) : null}
       </div>
 
-      {tasks.length === 0 ? (
+      {tasks.length === 0 && col === "done" ? (
+        <p className="text-muted-foreground rounded-xl border border-dashed px-3 py-6 text-center text-xs">
+          Nothing signed off yet. A task lands here when the project lead or manager approves it
+          from In review.
+        </p>
+      ) : tasks.length === 0 ? (
         <button
           type="button"
           onClick={onAdd}
@@ -1150,6 +1221,7 @@ function KanbanColumn({
               onEdit={onEdit}
               onDelete={canDelete(t) ? onDelete : undefined}
               onReview={canReview(t) ? onReview : undefined}
+              waitingFor={t.status === "in_review" && !canReview(t) ? waitingFor(t) : undefined}
               draggable={canMove(t)}
             />
           ))}
@@ -1158,6 +1230,12 @@ function KanbanColumn({
     </div>
   );
 }
+
+/** One line under a column's name, for the columns whose rule isn't obvious from the name. */
+const COLUMN_HINT: Partial<Record<TaskStatus, string>> = {
+  in_review: "Finished work, waiting for the project lead or manager",
+  done: "Reviewed and signed off",
+};
 
 const stopPropagation = (e: React.SyntheticEvent) => e.stopPropagation();
 
@@ -1171,6 +1249,7 @@ const KEEP_OFF_THE_CARD = {
 function TaskCard({
   task,
   onReview,
+  waitingFor,
   userMap,
   onView,
   onEdit,
@@ -1187,6 +1266,8 @@ function TaskCard({
   onDelete?: (t: Task) => void;
   /** Present only when this person may sign this task off — absent hides the action entirely. */
   onReview?: (t: Task) => void;
+  /** On an `in_review` card this person can't review: who it is waiting for. */
+  waitingFor?: string;
   /** False only before a project role is resolved: the card is inert rather than refused on drop. */
   draggable?: boolean;
 }) {
@@ -1256,21 +1337,6 @@ function TaskCard({
             <Pencil className="size-3.5" />
           </button>
         ) : null}
-        {/* Sign-off, shown only on an `in_review` task this person may review — the assignee never
-            sees it on their own work. Absent rather than disabled: a greyed-out approve button on
-            your own task reads as "ask someone", which is not what it means. */}
-        {onReview ? (
-          <button
-            type="button"
-            {...KEEP_OFF_THE_CARD}
-            onClick={() => onReview(task)}
-            aria-label="Review and sign off task"
-            title="Review and sign off"
-            className="text-muted-foreground hover:bg-warning/10 hover:text-warning flex size-6 items-center justify-center rounded-md"
-          >
-            <Star className="size-3.5" />
-          </button>
-        ) : null}
         {onDelete ? (
           <button
             type="button"
@@ -1284,6 +1350,26 @@ function TaskCard({
         ) : null}
       </div>
       <TaskCardContent task={task} userMap={userMap} />
+      {/* The next step for an `in_review` card, on the card and always visible: a hover-only star
+          was the only way in, and a first-time viewer couldn't tell what would finish a task
+          (owner feedback, 2026-10-16). The reviewer gets the button; everyone else is told who
+          it is waiting for. */}
+      {onReview ? (
+        <button
+          type="button"
+          {...KEEP_OFF_THE_CARD}
+          onClick={() => onReview(task)}
+          className="bg-warning/12 text-warning hover:bg-warning/20 focus-visible:ring-ring mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:outline-none"
+        >
+          <Star className="size-3.5" />
+          Review &amp; sign off
+        </button>
+      ) : waitingFor ? (
+        <p className="text-muted-foreground mt-2.5 flex items-start gap-1.5 border-t pt-2 text-[0.7rem] leading-snug">
+          <Hourglass className="mt-px size-3 shrink-0" aria-hidden="true" />
+          <span>{waitingFor}</span>
+        </p>
+      ) : null}
     </li>
   );
 }

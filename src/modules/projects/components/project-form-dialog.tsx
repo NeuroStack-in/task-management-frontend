@@ -64,9 +64,8 @@ const schema = z.object({
     .trim()
     .refine((k) => !k || /^[A-Za-z0-9]{2,8}$/.test(k), "Use 2–8 letters or digits, e.g. WP")
     .optional(),
-  // Optional: a project can run with just a manager, who outranks a lead. Requiring it pushed people
-  // to pick the manager, and that overwrote the manager's own membership (WP-024).
-  leadUserId: z.string(),
+  // Required, like the manager, and someone else (owner request 2026-10-16) — see `schemaWithMinDue`.
+  leadUserId: z.string().min(1, "Pick a project lead"),
   managerId: z.string().min(1, "Pick a manager"),
   memberIds: z.array(z.string()).min(1, "Select at least one member"),
   dueDate: z.string().min(1, "Pick a deadline"),
@@ -89,10 +88,19 @@ type FormShape = z.infer<typeof schema>;
  * (see `minDue` below) so that editing anything *else* on an overdue project isn't blocked by it.
  */
 function schemaWithMinDue(minDue: string) {
-  return schema.refine((v) => !v.dueDate || v.dueDate >= minDue, {
-    path: ["dueDate"],
-    message: "Deadline can't be in the past",
-  });
+  return schema
+    .refine((v) => !v.dueDate || v.dueDate >= minDue, {
+      path: ["dueDate"],
+      message: "Deadline can't be in the past",
+    })
+    // Two people, not one in both seats. Only the project's own lead or manager signs a task off, and
+    // never on work they're assigned to — so each reviews the other's, and a project where one person
+    // held both roles could never have that person's tasks signed off. It also keeps the lead from
+    // landing on the manager's own membership row (WP-024).
+    .refine((v) => !v.leadUserId || v.leadUserId !== v.managerId, {
+      path: ["leadUserId"],
+      message: "Pick someone other than the manager",
+    });
 }
 
 const fieldClass =
@@ -322,7 +330,7 @@ export function ProjectFormDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <Field
-              label="Project lead (optional)"
+              label="Project lead"
               htmlFor={`${uid}-lead`}
               error={errors.leadUserId?.message}
             >

@@ -52,6 +52,12 @@ export interface ProjectDetailData {
   directoryAvailable: boolean;
   /** The caller's resolved project role (`manager` | `lead` | `member`). */
   authority: string;
+  /**
+   * The people who sign this project's work off — its own Manager and Lead(s), by their member rows.
+   * Not `authority`: an org admin resolves to `manager` on every project, but only the project's own
+   * lead or manager reviews (owner rule, 2026-10-16).
+   */
+  reviewerIds: string[];
   loading: boolean;
   /** The page could not be loaded at all — there is nothing to show. */
   error: string | null;
@@ -254,6 +260,14 @@ export function useProjectDetail(id: string): ProjectDetailData {
     [id, reload],
   );
 
+  const reviewerIds = useMemo(
+    () =>
+      members
+        .filter((m) => m.project_role === "manager" || m.project_role === "lead")
+        .map((m) => m.user_id),
+    [members],
+  );
+
   const moveTask = useCallback(
     async (taskId: string, status: TaskStatus) => {
       // Optimistic: the card should snap columns instantly on drop; the re-read reconciles. A review
@@ -296,6 +310,7 @@ export function useProjectDetail(id: string): ProjectDetailData {
           : null,
     directoryAvailable: directory !== "denied",
     authority,
+    reviewerIds,
     loading,
     error,
     refreshError,

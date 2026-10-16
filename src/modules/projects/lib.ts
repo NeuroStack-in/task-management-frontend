@@ -516,6 +516,9 @@ export function canMoveTaskTo(
   target: TaskStatus,
 ): boolean {
   if (!canMoveTask(task, authority, currentUserId)) return false;
+  // Never by a move: Done is reached only through a review (`canReviewTask`), which the board opens
+  // when a card is dropped there (owner rule, 2026-10-16). The server refuses the PATCH outright.
+  if (target === "done") return false;
   return OVERSIGHT_TARGETS.includes(target)
     ? isReviewer(authority)
     : MEMBER_TARGETS.includes(target);
@@ -523,9 +526,10 @@ export function canMoveTaskTo(
 
 /**
  * The statuses this person may put a task in from the task form — the same rule as a drop on the
- * board ({@link canMoveTaskTo}): the working columns for anyone on the project, `done` and `blocked`
- * for a Manager or Lead. A task already sitting in one of those keeps it as an option, since the
- * server gates only a *change* into them.
+ * board ({@link canMoveTaskTo}): the working columns for anyone on the project, `blocked` for a
+ * Manager or Lead, and **`done` for nobody** — it is reached only through a review (owner rule,
+ * 2026-10-16). A task already sitting in one of those keeps it as an option, since the server gates
+ * only a *change* into them.
  *
  * The form used to offer all five to everyone, so a Member who picked Done lost the whole edit to a
  * 403 (QA audit 2026-10-08, WP-300).
@@ -533,7 +537,8 @@ export function canMoveTaskTo(
 export function settableStatuses(authority: string, current?: TaskStatus): TaskStatus[] {
   const reviewer = isReviewer(authority);
   return [...MEMBER_TARGETS, ...OVERSIGHT_TARGETS].filter(
-    (s) => reviewer || MEMBER_TARGETS.includes(s) || s === current,
+    (s) =>
+      s === current || (s !== "done" && (reviewer || MEMBER_TARGETS.includes(s))),
   );
 }
 
@@ -563,8 +568,10 @@ export function canDeleteTask(
 /**
  * May this person sign off this task?
  *
- * Mirrors the server's `can_review_task()` — Manager|Lead, which org admins and owners resolve
- * into — plus the two row-level rules the role cannot express:
+ * Mirrors `review_task`: `role` is the person's **own** role on the project — their member row, not
+ * the resolved `authority`, because an org admin resolves to `manager` everywhere and only the
+ * project's own lead or manager reviews (owner rule, 2026-10-16). Then the two row-level rules the
+ * role cannot express:
  *
  * - only a task that is **in review** is awaiting review; anything else has nothing to approve.
  *   (This was `done` until 2026-08-31, when `closed` was retired and `done` became the signed-off
@@ -577,11 +584,11 @@ export function canDeleteTask(
  */
 export function canReviewTask(
   task: Pick<Task, "status" | "assignees">,
-  authority: string,
+  role: string,
   currentUserId: string | null | undefined,
 ): boolean {
   if (task.status !== "in_review") return false;
-  if (authority !== "manager" && authority !== "lead") return false;
+  if (role !== "manager" && role !== "lead") return false;
   // *Any* assignee, not just the first: with several people on a task, checking only the one the
   // card happens to show would let the second one approve work they did.
   return !(
