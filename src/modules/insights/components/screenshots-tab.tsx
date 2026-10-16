@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { AlertTriangle, Camera, ChevronLeft, ChevronRight, EyeOff, Flag, ImageOff, Loader2, Search, ShieldOff, Sparkles, Trash2, Users, X } from "lucide-react";
@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { useScreenshots } from "../use-screenshots";
 import { getScreenshotReport, getScreenshotDeptSummary, regenerateScreenshotDeptSummary, runScreenshotReports, type ScreenshotDeptSummary, type ScreenshotReport, type ShotRow } from "../services/insights.service";
+import { EMP_PARAM } from "../lib/employee-scope";
 import { AiReportCard } from "./ai-report-card";
 
 /**
@@ -224,15 +225,15 @@ export function ScreenshotsTab() {
    * on the frames that existed when they were clicked.
    */
   const [openUser, setOpenUser] = useState<string | null>(null);
-  // Deep link from an employee profile (`?emp=<id>`, the same shape the Location button uses):
-  // land straight on that person's day rather than the whole-org gallery. Applied once — after
-  // that the operator's own navigation owns the selection.
+  // `?emp=<id>` scopes the whole Analytics hub to one employee (the profile's Analytics button):
+  // land straight on that person's day rather than the whole-org gallery. It follows the parameter
+  // both ways — "Whole organization" in the scope bar drops it, and this closes the person — while a
+  // tile clicked in the gallery opens a person without scoping the other tabs.
   const searchParams = useSearchParams();
-  const deepLinkedUser = searchParams.get("emp");
-  const appliedDeepLink = useRef(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const deepLinkedUser = searchParams.get(EMP_PARAM);
   useEffect(() => {
-    if (!deepLinkedUser || appliedDeepLink.current) return;
-    appliedDeepLink.current = true;
     setOpenUser(deepLinkedUser);
   }, [deepLinkedUser]);
 
@@ -540,6 +541,8 @@ export function ScreenshotsTab() {
         nameOf={nameOf}
         onBack={() => {
           setOpenUser(null);
+          // Leaving a scoped person leaves the scope too, or the other tabs would stay on them.
+          if (deepLinkedUser) router.replace(pathname);
           // The person's view may have taken new captures; show them in the roster too.
           reloadDay();
         }}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { INSIGHTS_TABS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import {
@@ -13,6 +13,7 @@ import {
 import { isNavItemVisible } from "@/lib/rbac";
 import { isPathModeHidden } from "@/constants/features";
 import { cn } from "@/lib/utils";
+import { EMP_PARAM, withEmp } from "../lib/employee-scope";
 
 /**
  * Tab bar for the merged Insights page. Filtered by **permission, entitlement/mode AND page
@@ -23,6 +24,8 @@ import { cn } from "@/lib/utils";
  */
 export function InsightsTabs() {
   const pathname = usePathname();
+  // Carried across tabs, so a hub scoped to one employee stays on them (see `lib/employee-scope`).
+  const emp = useSearchParams().get(EMP_PARAM);
   const { role } = usePermissions();
   const isFeatureOn = useIsFeatureOn();
   const isFeatureAllowed = useIsFeatureAllowed();
@@ -56,7 +59,7 @@ export function InsightsTabs() {
           return (
             <Link
               key={tab.href}
-              href={tab.href}
+              href={withEmp(tab.href, emp)}
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",

@@ -35,6 +35,8 @@ import { RefreshButton } from "@/components/shared/refresh-button";
 import { PageActions } from "@/components/shared/page-actions";
 import { useHourlyActivity } from "../use-hourly-activity";
 import { getAppUsage, type UsageRow } from "../services/insights.service";
+import { useScopedEmployee } from "./employee-scope-bar";
+import { PersonActivity } from "./person-analytics";
 import {
   CHART_MARGIN,
   CHART_MARGIN_WITH_LEGEND,
@@ -117,7 +119,16 @@ function monthWorkdays(anchor: string, workdays: readonly IsoWeekday[]): string[
   return out;
 }
 
+/**
+ * The Activity tab: one employee's view when the hub is scoped to them (`?emp=`, from the profile's
+ * Analytics button), the organization's otherwise.
+ */
 export function ActivityTab() {
+  const emp = useScopedEmployee();
+  return emp ? <PersonActivity userId={emp} /> : <OrgActivityTab />;
+}
+
+function OrgActivityTab() {
   const [granularity, setGranularity] = useState<Granularity>("daily");
   const [date, setDate] = useState("");
   const [showUsage, setShowUsage] = useState(false);

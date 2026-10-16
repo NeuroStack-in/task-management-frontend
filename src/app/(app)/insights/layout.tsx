@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/shared/page-header";
 import { InsightsTabs } from "@/modules/insights/components/insights-tabs";
+import { EmployeeScopeBar } from "@/modules/insights/components/employee-scope-bar";
 
 /**
  * Shared shell for the merged Insights section: one header + a tab bar, with the
@@ -18,6 +19,8 @@ export default function InsightsLayout({
         title="Analytics"
         description="Activity, screenshots, reports, and AI insights — in one place."
       />
+      {/* Only when the hub is scoped to one employee (`?emp=`, the profile's Analytics button). */}
+      <EmployeeScopeBar />
       <InsightsTabs />
       <div>{children}</div>
     </div>

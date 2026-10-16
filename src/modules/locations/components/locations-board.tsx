@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import {
   AlertTriangle,
@@ -29,6 +29,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { AiReportCard } from "@/modules/insights/components/ai-report-card";
+import { useEmployeeName } from "@/modules/insights/components/employee-scope-bar";
 import { ApiError } from "@/lib/api";
 import {
   getLocationSummary,
@@ -96,9 +97,20 @@ export function LocationsView() {
   const [selected, setSelected] = useState<OversightPersonLocation | null>(null);
   const [date, setDate] = useState<string>("");
   useEffect(() => setDate(isoOf(new Date())), []);
-  // `?emp=<user_id>` — the employee profile's Location button. Read in a Suspense-wrapped child so
-  // the page itself never bails out of static rendering over a query string.
+  // `?emp=<user_id>` — the Analytics hub scoped to one employee (the profile's Analytics button).
+  // Read in a Suspense-wrapped child so the page itself never bails out of static rendering over a
+  // query string.
   const [deepLink, setDeepLink] = useState<string | null>(null);
+  /** The scoped person had no location row for the day, so there was no one to open. */
+  const [missing, setMissing] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  // Dropping the scope ("Whole organization" in the scope bar) closes the person it opened.
+  useEffect(() => {
+    if (!deepLink) setSelected(null);
+    setMissing(false);
+  }, [deepLink]);
+  const scopedName = useEmployeeName(deepLink);
 
   return (
     <>
@@ -110,15 +122,30 @@ export function LocationsView() {
           person={selected}
           date={date}
           onDateChange={setDate}
-          onBack={() => setSelected(null)}
+          onBack={() => {
+            setSelected(null);
+            // Leaving a scoped person leaves the scope: the board would otherwise re-read the deep
+            // link on remount and open the same person again, so Back never left them.
+            if (deepLink) router.replace(pathname);
+          }}
         />
       ) : (
-        <LocationsBoard
-          onSelect={setSelected}
-          date={date}
-          onDateChange={setDate}
-          deepLink={deepLink}
-        />
+        <>
+          {deepLink && missing ? (
+            <p role="status" className="mb-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+              {scopedName ?? "This employee"} has no location data for this day — location is recorded only
+              while their timer runs, and only where the device allows it. Pick another day, or browse
+              everyone below.
+            </p>
+          ) : null}
+          <LocationsBoard
+            onSelect={setSelected}
+            date={date}
+            onDateChange={setDate}
+            deepLink={deepLink}
+            onDeepLinkMissing={() => setMissing(true)}
+          />
+        </>
       )}
     </>
   );
@@ -161,12 +188,15 @@ function LocationsBoard({
   date,
   onDateChange: setDate,
   deepLink = null,
+  onDeepLinkMissing,
 }: {
   onSelect: (p: OversightPersonLocation) => void;
   date: string;
   onDateChange: (iso: string) => void;
   /** A person to open once the day's rows load — the profile's deep link (WP-232). */
   deepLink?: string | null;
+  /** The deep-linked person has no row for the day, so nobody was opened. */
+  onDeepLinkMissing?: () => void;
 }) {
   const { inScope, loading: scopeLoading } = useDataScope();
   const { can } = usePermissions();
@@ -218,7 +248,8 @@ function LocationsBoard({
     appliedDeepLink.current = true;
     const person = rows.find((p) => p.user_id === deepLink);
     if (person) onSelect(person);
-  }, [deepLink, rows, onSelect]);
+    else onDeepLinkMissing?.();
+  }, [deepLink, rows, onSelect, onDeepLinkMissing]);
   // Every row in one pass is judged against the same instant: the moment the rows were read.
   const now = people?.at ?? 0;
 

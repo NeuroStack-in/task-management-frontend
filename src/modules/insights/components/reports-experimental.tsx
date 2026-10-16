@@ -31,6 +31,8 @@ import { ReportsLibrary } from "./reports-library";
 import { useAiReport, type AiReportLock } from "../use-reports";
 import { useWeekPerformers } from "../use-week-performers";
 import type { AiReport, NamedScore } from "../services/insights.service";
+import { useScopedEmployee } from "./employee-scope-bar";
+import { PersonAiReports } from "./person-analytics";
 
 /**
  * AI reports — the AI-first executive surface in the preview's layout, fully live:
@@ -92,7 +94,16 @@ function healthBand(score: number) {
 
 /* -------------------------------- component ------------------------------- */
 
+/**
+ * The AI reports tab: one employee's AI recap when the hub is scoped to them (`?emp=`), the
+ * organization's reports otherwise.
+ */
 export function ReportsExperimental() {
+  const emp = useScopedEmployee();
+  return emp ? <PersonAiReports userId={emp} /> : <OrgReports />;
+}
+
+function OrgReports() {
   // Default to today; client-side to avoid an SSR date mismatch.
   const [date, setDate] = useState<string>("");
   useEffect(() => setDate(isoOf(new Date())), []);

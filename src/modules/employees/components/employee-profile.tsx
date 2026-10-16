@@ -4,19 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkdays } from "@/hooks/use-working-hours";
 import { isWorkday } from "@/lib/workdays";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowLeft,
   Download,
   FileText,
   FolderKanban,
-  MapPin,
   Sheet,
   BarChart2,
   Pencil,
   ShieldCheck,
-  Camera,
+  BarChart3,
   Loader2,
   Users,
 } from "lucide-react";
@@ -86,6 +84,7 @@ import {
 } from "../services/employees.service";
 import { EmployeeRecapCard } from "./employee-recap-card";
 import { EmployeeAppUsageCard } from "./employee-app-usage-card";
+import { withEmp } from "@/modules/insights/lib/employee-scope";
 import { formatHours, isoDay } from "@/lib/format";
 import { useEmployeeProfile, type EmployeeProfileData } from "../use-employee-profile";
 import { collectEmployeeReport } from "../lib/employee-report-data";
@@ -648,7 +647,6 @@ function ProfileView({
   /** True while a refetch is in flight — spins the refresh button. */
   refreshing?: boolean;
 }) {
-  const router = useRouter();
   const { can } = usePermissions();
   const canManage = can("employees:manage");
   // The PDF is built on demand, so the click has to say so: the trigger becomes "Preparing PDF…"
@@ -682,8 +680,9 @@ function ProfileView({
       setPreparingPdf(false);
     }
   }, [data.id]);
-  const canViewLocations = can("locations:view");
-  const canViewScreenshots = can("screenshots:view");
+  // Any Analytics tab this viewer can open for a person — the hub hides the rest.
+  const canViewAnalytics =
+    can("activity:view") || can("screenshots:view") || can("locations:view") || can("ai:view");
   // Separate from `activity:view` on purpose — see the card's own note. The server is the
   // real gate; this keeps a 403 card off a page the viewer is otherwise entitled to.
   const canSeeAppUsage = can("activity:apps:person");
@@ -789,18 +788,18 @@ function ProfileView({
             <span className="text-muted-foreground/50">/</span>
             <span className="font-medium text-foreground">{data.name}</span>
           </nav>
-          {canViewLocations ? (
-            // A real link (it was a click handler), carrying the same `?emp=` deep link the
-            // Screenshots button uses. The Locations page has to read it to open on this person —
-            // until it does, this lands on the board unfiltered (QA audit 2026-10-08, WP-232).
+          {canViewAnalytics ? (
+            // One way into this person's analytics (owner request 2026-10-16): it replaced the
+            // separate Location and Screenshots buttons. `?emp=` scopes the whole Analytics hub to
+            // them, so every tab — Activity, Screenshots, Locations, AI reports — shows this person.
             <Button
               variant="outline"
               size="sm"
-              render={<Link href={`/insights/locations?emp=${encodeURIComponent(data.id)}`} />}
+              render={<Link href={withEmp("/insights", data.id)} />}
               nativeButton={false}
-              title="View live location"
+              title={`Open ${data.name}'s analytics`}
             >
-              <MapPin className="size-4" /> Location
+              <BarChart3 className="size-4" /> Analytics
             </Button>
           ) : null}
           {/* Refetch this profile in place — the page stays put instead of a full reload. Refresh
@@ -809,19 +808,6 @@ function ProfileView({
           <PageActions>
             <RefreshButton onRefresh={reload} refreshing={refreshing} />
           </PageActions>
-          {/* Screenshots live on their own page, and so does "Capture now" — one button, in the
-              place that shows the result. This mirrors the Location button above: the profile
-              points at the surface, it doesn't duplicate it. */}
-          {canViewScreenshots ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/insights/screenshots?emp=${data.id}`)}
-              title="View this employee's screenshots"
-            >
-              <Camera className="size-4" /> Screenshots
-            </Button>
-          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger
               render={<Button variant="outline" size="sm" disabled={preparingPdf} />}

@@ -61,7 +61,9 @@ export default function InsightsIndex() {
     !first && INSIGHTS_TABS.some((t) => isNavItemVisible(role, t, isFeatureOn, modeHidden));
 
   useEffect(() => {
-    if (ready && first) router.replace(first.href);
+    // Keep the query string — `?emp=` from the profile's Analytics button scopes every tab to that
+    // employee, and dropping it here would open the organization's view instead.
+    if (ready && first) router.replace(`${first.href}${window.location.search}`);
   }, [router, first, ready]);
 
   if (!ready) {
