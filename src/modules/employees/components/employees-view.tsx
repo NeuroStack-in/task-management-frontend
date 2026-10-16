@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { DepartmentFilter } from "@/components/shared/department-filter";
 import { useRouter } from "next/navigation";
-import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import {
   Users,
@@ -55,7 +54,8 @@ import { InviteDialog } from "./invite-dialog";
 import { AddEmployeeDialog } from "./add-employee-dialog";
 import { PendingInvites } from "./pending-invites";
 import { useEmployees, type EmployeeRow } from "../use-employees";
-import { buildPdf } from "../lib/pdf-text";
+import { buildPdf, type PdfTextFor } from "../lib/pdf-text";
+import { ReportDoc } from "../lib/report-doc";
 import { toCsv } from "@/lib/csv";
 
 export type { EmployeeRow };
@@ -108,59 +108,112 @@ function exportEmployeesCsv(list: EmployeeRow[]) {
 }
 
 async function exportEmployeesPdf(list: EmployeeRow[]) {
-  // The header describes the rows in this file. It used to put the filtered row count beside
-  // org-wide totals — "12 employees · 87 active" for one department (WP-456).
-  const active = list.filter((e) => e.status === "active").length;
-  const scored = list.filter((e) => e.productivityScore !== null);
-  const avgProductivity = scored.length
-    ? Math.round(scored.reduce((s, e) => s + (e.productivityScore ?? 0), 0) / scored.length)
-    : null;
   try {
-    // Every string through the `PdfText` writer: one character the standard font can't encode
-    // garbled the whole line, and a name in another script printed as gaps (WP-225).
-    const doc = await buildPdf((text) => {
-      const doc = new jsPDF();
-      const t = text(doc);
-      doc.setFontSize(18);
-      t.text("Employee Report", 14, 18);
-      doc.setFontSize(10);
-      doc.setTextColor(120);
-      t.text(
-        `${list.length} employees · ${active} active · ${pct(avgProductivity)} avg productivity · WorkPulse`,
-        14,
-        25,
-      );
-
-      const xs = [14, 92, 140, 178];
-      let y = 36;
-      doc.setTextColor(20);
-      doc.setFont("helvetica", "bold");
-      ["Name", "Department", "Status", "Prod %"].forEach((c, i) => t.text(c, xs[i], y));
-      doc.setDrawColor(210);
-      doc.line(14, y + 2, 196, y + 2);
-      doc.setFont("helvetica", "normal");
-      y += 8;
-
-      for (const e of list) {
-        t.text(e.name, xs[0], y);
-        t.text(e.department || "—", xs[1], y);
-        t.text(e.status, xs[2], y);
-        t.text(pct(e.productivityScore), xs[3], y);
-        y += 7;
-        if (y > 285) {
-          doc.addPage();
-          y = 18;
-        }
-      }
-      return doc;
-    });
-    doc.save("employees-report.pdf");
+    // The same document as the individual employee report — accent band, headline cards, sections,
+    // striped tables, numbered pages (owner request 2026-10-16). Every string goes through the
+    // `PdfText` writer, so a name in any script prints (WP-225).
+    const doc = await buildPdf((text) => drawEmployeesReport(text, list));
+    const file = `employees-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(file);
     toast.success("Report exported", {
-      description: `employees-report.pdf · ${list.length} people`,
+      description: `${file} · ${list.length} people`,
     });
   } catch {
     toast.error("Couldn't build the PDF. Try again.");
   }
+}
+
+/**
+ * The people in this file, as the Employees page showed them when it was exported. Every figure
+ * describes these rows — the header used to put the filtered row count beside org-wide totals,
+ * "12 employees · 87 active" for one department (WP-456).
+ */
+function drawEmployeesReport(text: PdfTextFor, list: EmployeeRow[]) {
+  const stamp = new Date().toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const doc = new ReportDoc(text, {
+    title: "Employees",
+    kind: "employees report",
+    stamp: `Generated ${stamp}`,
+  });
+  const active = list.filter((e) => e.status === "active");
+  const avg = (rows: EmployeeRow[]) => {
+    const scored = rows.filter((e) => e.productivityScore !== null);
+    return scored.length
+      ? Math.round(scored.reduce((s, e) => s + (e.productivityScore ?? 0), 0) / scored.length)
+      : null;
+  };
+  const deptName = (e: EmployeeRow) => e.department || "No department";
+  const departments = new Map<string, EmployeeRow[]>();
+  for (const e of list) departments.set(deptName(e), [...(departments.get(deptName(e)) ?? []), e]);
+
+  doc.cards([
+    { label: "People", value: String(list.length), hint: "in this export" },
+    {
+      label: "Active",
+      value: String(active.length),
+      hint: list.length - active.length ? `${list.length - active.length} deactivated` : "everyone",
+    },
+    {
+      label: "Avg productivity",
+      value: pct(avg(list)),
+      hint: `${list.filter((e) => e.productivityScore !== null).length} people scored`,
+    },
+    { label: "Departments", value: String(departments.size), hint: "represented" },
+  ]);
+  doc.note(`This file lists the ${list.length} people shown on the Employees page when it was exported.`);
+
+  doc.section("By department");
+  doc.table(
+    doc.fitColumns([
+      { header: "Department", width: 80 },
+      { header: "People", width: 25, align: "right" },
+      { header: "Active", width: 25, align: "right" },
+      { header: "Monitored", width: 25, align: "right" },
+      { header: "Avg productivity", width: 35, align: "right" },
+    ]),
+    [...departments.entries()]
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .map(([name, rows]) => [
+        name,
+        rows.length,
+        rows.filter((e) => e.status === "active").length,
+        rows.filter((e) => e.monitored).length || "—",
+        pct(avg(rows)),
+      ]),
+    { empty: "No one to list." },
+  );
+
+  doc.section("People", "by name");
+  doc.table(
+    doc.fitColumns([
+      // Human employee code only — never the opaque UUID.
+      { header: "Emp ID", width: 26 },
+      { header: "Name", width: 35 },
+      { header: "Role", width: 24 },
+      { header: "Job title", width: 30 },
+      { header: "Department", width: 29 },
+      { header: "Status", width: 20 },
+      { header: "Score", width: 16, align: "right" },
+    ]),
+    [...list]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((e) => [
+        e.empId ?? "—",
+        e.name,
+        e.roleName,
+        e.jobTitle,
+        e.department || "—",
+        e.status === "active" ? (e.benched ? "Benched" : "Active") : "Deactivated",
+        pct(e.productivityScore),
+      ]),
+    { empty: "No one to list." },
+  );
+
+  doc.finish(
+    `WorkPulse · employees · generated ${stamp} · score is each person's productivity as on the ` +
+      "Employees page; — means not scored",
+  );
+  return doc.d;
 }
 
 function FilterDropdown({
