@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Building2, SlidersHorizontal, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, SlidersHorizontal, Eye, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,8 @@ import { readRosterShared } from "../lib/shared-reads";
 import { EntityPeopleDialog } from "./org/entity-people-dialog";
 import { DeptProductivityDialog } from "./org/dept-productivity-dialog";
 import { MemberEditorDialog } from "./org/member-editor-dialog";
+import { DepartmentMembers } from "./org/department-members";
+import { cn } from "@/lib/utils";
 
 /**
  * The standard starter set. Kept in step with the backend `create_org` seed (identity crate), so an
@@ -71,6 +73,11 @@ export function DepartmentsManager() {
   const { can } = usePermissions();
   // `OrgManage`, not `OrgSettingsManage` — the server tells them apart (QA audit 2026-10-08, WP-324).
   const canManage = can("departments:manage");
+  // Moving someone between departments is an employee update (`employees:manage`), as in the edit
+  // dialog — not `departments:manage`, which is about the departments themselves.
+  const canMove = can("employees:manage");
+  /** Whose member list is open — one at a time, like the Roles page. */
+  const [openDept, setOpenDept] = useState<string | null>(null);
 
   const [depts, setDepts] = useState<ApiDepartment[]>([]);
   /**
@@ -130,6 +137,24 @@ export function DepartmentsManager() {
     const fresh = await listAllEmployees();
     setPeople(fresh);
     return fresh;
+  }, []);
+
+  const membersOf = useMemo(() => {
+    const by = new Map<string, ApiEmployee[]>();
+    for (const p of people) {
+      if (!p.department_id) continue;
+      const list = by.get(p.department_id);
+      if (list) list.push(p);
+      else by.set(p.department_id, [p]);
+    }
+    return by;
+  }, [people]);
+
+  /** A move landed: re-file that person here, so every count and list follows without a re-read. */
+  const onMoved = useCallback((userId: string, toDepartmentId: string) => {
+    setPeople((ps) =>
+      ps.map((p) => (p.user_id === userId ? { ...p, department_id: toDepartmentId } : p)),
+    );
   }, []);
 
   const countOf = useMemo(() => {
@@ -316,13 +341,27 @@ export function DepartmentsManager() {
               <ul className="divide-y divide-border rounded-lg border">
                 {depts.map((d) => {
                   const count = countOf.get(d.id) ?? 0;
+                  const expanded = openDept === d.id;
                   return (
-                    <li key={d.id} className="flex items-center gap-3 px-3 py-2.5">
+                    <li key={d.id}>
+                    <div className="flex items-center gap-3 px-3 py-2.5">
                       <Building2 className="size-4 shrink-0 text-muted-foreground" />
                       <span className="flex-1 truncate text-sm font-medium">{d.name}</span>
-                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                      {/* A count that opens the list — who is in it, and "Move to …" for each, as the
+                          Roles page does for roles (owner request 2026-10-16). */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 shrink-0 gap-1 rounded-full bg-muted px-2.5 text-xs font-normal tabular-nums text-muted-foreground hover:text-foreground"
+                        aria-expanded={expanded}
+                        aria-label={`${d.name}: ${count} ${count === 1 ? "member" : "members"}`}
+                        onClick={() => setOpenDept(expanded ? null : d.id)}
+                      >
                         {count} {count === 1 ? "member" : "members"}
-                      </span>
+                        <ChevronDown
+                          className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
+                        />
+                      </Button>
                       {/* Productivity config is readable by any member; saving is gated inside. */}
                       <Button
                         size="sm"
@@ -364,6 +403,18 @@ export function DepartmentsManager() {
                           </Button>
                         </>
                       ) : null}
+                    </div>
+                    {expanded ? (
+                      <div className="border-t bg-muted/20">
+                        <DepartmentMembers
+                          department={d}
+                          members={membersOf.get(d.id) ?? []}
+                          departments={depts}
+                          canMove={canMove}
+                          onMoved={onMoved}
+                        />
+                      </div>
+                    ) : null}
                     </li>
                   );
                 })}
