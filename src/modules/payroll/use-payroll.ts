@@ -2,7 +2,7 @@
 
 /**
  * Payroll runs + deduction rules from the live backend, with draft/finalize actions. Totals are real
- * (comp − deductions); there are no per-employee payslips server-side, so the view never shows them.
+ * (comp − deductions); each run's per-employee lines are read by `RunLinesCard`.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";

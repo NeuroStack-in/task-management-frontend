@@ -15,6 +15,7 @@
 import {
   AuthenticationDetails,
   CognitoUser,
+  CognitoUserAttribute,
   CognitoUserSession,
 } from "amazon-cognito-identity-js";
 import {
@@ -370,6 +371,98 @@ export function logout(): void {
 
 /* ------------------------------ Password reset ------------------------------ */
 //
+// ── Email sign-up (owner decision 2026-10-17, UX audit ONB-01) ──────────────────────────────────
+//
+// An email sign-up used to create the organization on the spot (`POST /v1/org/create`), while a
+// Google sign-up waited for staff approval. Now both wait: the email path creates only the *login*
+// here, confirms it with the code Cognito emails, signs in, and submits the same org request a
+// Google returnee does.
+
+/** That email already has a confirmed account — sign in instead. */
+export class EmailTakenError extends AuthError {}
+
+/** Cognito's `LimitExceededException` is two failures; see `requestPasswordReset`. */
+function limitError(err: Error): AuthError {
+  const quota = /daily|limit for the operation|email limit/i.test(err.message ?? "");
+  return new AuthError(
+    quota
+      ? "We can't send confirmation emails right now — the mail service has hit its limit for today. Please try again tomorrow."
+      : "Too many attempts. Wait a few minutes, then try again.",
+    "state",
+  );
+}
+
+/**
+ * Create an email-and-password login. Cognito emails a confirmation code; finish with
+ * {@link confirmEmailSignUp}. Only `email` is sent: the web client may write `email`, `given_name`
+ * and `family_name` and nothing else, and the name travels with the org request instead.
+ *
+ * An unconfirmed account for the same email — this person's own earlier attempt, say a reload before
+ * they typed the code — is not an error: a fresh code is sent and they carry on.
+ */
+export async function signUpWithEmail(email: string, password: string): Promise<void> {
+  const username = email.trim().toLowerCase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      userPool().signUp(
+        username,
+        password,
+        [new CognitoUserAttribute({ Name: "email", Value: username })],
+        [],
+        (err) => (err ? reject(err) : resolve()),
+      );
+    });
+  } catch (e) {
+    const err = e as Error & { code?: string };
+    if (err.code === "UsernameExistsException") {
+      // Unconfirmed → resend works and we continue; confirmed → it fails, and the email is taken.
+      try {
+        await resendSignUpCode(username);
+        return;
+      } catch {
+        throw new EmailTakenError(
+          "An account already uses that email. Sign in instead, or use a different address.",
+          "credentials",
+        );
+      }
+    }
+    if (err.code === "InvalidPasswordException")
+      throw new AuthError("That password doesn't meet the password policy.", "state");
+    if (err.code === "LimitExceededException") throw limitError(err);
+    throw new AuthError(friendlyError(err, "Couldn't create your account. Please try again."), "state");
+  }
+}
+
+/** Confirm the emailed code. An account already confirmed counts as done — a retry lands here. */
+export async function confirmEmailSignUp(email: string, code: string): Promise<void> {
+  const user = new CognitoUser({ Username: email.trim().toLowerCase(), Pool: userPool() });
+  await new Promise<void>((resolve, reject) => {
+    user.confirmRegistration(code.trim(), true, (err) => {
+      if (!err) return resolve();
+      const c = (err as { code?: string }).code ?? "";
+      if (c === "NotAuthorizedException" && /confirmed/i.test(err.message ?? "")) return resolve();
+      if (c === "CodeMismatchException")
+        return reject(new AuthError("That code is incorrect. Check your email and try again."));
+      if (c === "ExpiredCodeException")
+        return reject(new AuthError("That code has expired. Send a new one.", "state"));
+      if (c === "LimitExceededException") return reject(limitError(err));
+      reject(new AuthError("Couldn't confirm your email. Please try again.", "state"));
+    });
+  });
+}
+
+/** Email a fresh confirmation code. Rejects for an account that is already confirmed. */
+export async function resendSignUpCode(email: string): Promise<void> {
+  const user = new CognitoUser({ Username: email.trim().toLowerCase(), Pool: userPool() });
+  await new Promise<void>((resolve, reject) => {
+    user.resendConfirmationCode((err) => {
+      if (!err) return resolve();
+      const c = (err as { code?: string }).code ?? "";
+      reject(c === "LimitExceededException" ? limitError(err) : err);
+    });
+  });
+}
+
 // The logged-out "forgot password" flow — two steps against a fresh CognitoUser (there is no
 // session yet): `forgotPassword` emails a one-time code, then `confirmPassword` sets the new
 // password with that code. This is distinct from the signed-in `changePassword`

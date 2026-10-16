@@ -292,7 +292,9 @@ export function PersonalAttendanceView() {
     <div className="space-y-5 pt-1">
       <PageHeader
         title="My attendance"
-        description="Your own attendance and time off — computed from your synced activity, only you can see this."
+        // Not "only you can see this": managers and admins read the same records and can export them
+        // (UX audit 2026-10-16, TIME-03).
+        description="Your own attendance and time off, computed from your synced activity. Your manager and admins can see it too."
         actions={
           <RefreshButton
             onRefresh={() => {

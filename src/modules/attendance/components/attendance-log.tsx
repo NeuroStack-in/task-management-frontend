@@ -174,8 +174,8 @@ export function AttendanceLog({
   label: string;
   note: string | null;
   /**
-   * The day-correction for a closed past day (`DayOverrideDialog`) — set by the page only for
-   * `attendance:edit` holders in a managed-agent org. Adds a Correct action to absent, partial and
+   * The day-correction for a closed past day (`DayOverrideDialog`) — set by the page for
+   * `attendance:edit` holders, in any tracking mode. Adds a Correct action to absent, partial and
    * excused rows; `onSaved` re-reads the day.
    */
   correction?: { date: string; onSaved: () => void } | null;

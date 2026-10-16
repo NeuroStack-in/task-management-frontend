@@ -41,11 +41,23 @@ import type {
   NewLeaveRequest,
 } from "../services/leave.service";
 
-/** Today as a local `YYYY-MM-DD` — the earliest a leave request may start. */
-function isoToday(): string {
+/** `days` ago as a local `YYYY-MM-DD` (0 = today). */
+function isoDaysAgo(days: number): string {
   const d = new Date();
+  d.setDate(d.getDate() - days);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** The leave type that may be requested for days already past — the platform's default id. */
+export const SICK_TYPE_ID = "sick";
+/** How far back sick leave may start (owner decision 2026-10-17, UX audit TIME-04; the server's
+ *  `SICK_BACKDATE_DAYS`). A sick day is only known afterwards. */
+export const SICK_BACKDATE_DAYS = 7;
+
+/** The earliest day a request of this type may start: today, or a week back for sick leave. */
+export function earliestStart(typeId: string): string {
+  return isoDaysAgo(typeId === SICK_TYPE_ID ? SICK_BACKDATE_DAYS : 0);
 }
 
 /**
@@ -137,8 +149,12 @@ const schema = z
     message: "End date can't be before the start date.",
     path: ["endDate"],
   })
-  .refine((d) => !d.startDate || d.startDate >= isoToday(), {
-    message: "Leave can't start in the past.",
+  .refine((d) => !d.startDate || d.type !== SICK_TYPE_ID || d.startDate >= earliestStart(d.type), {
+    message: `Sick leave can start at most ${SICK_BACKDATE_DAYS} days ago.`,
+    path: ["startDate"],
+  })
+  .refine((d) => !d.startDate || d.type === SICK_TYPE_ID || d.startDate >= earliestStart(d.type), {
+    message: `Leave can't start in the past — only sick leave can, up to ${SICK_BACKDATE_DAYS} days back.`,
     path: ["startDate"],
   });
 
@@ -149,12 +165,23 @@ export function RequestLeaveDialog({
   onOpenChange,
   types,
   onSubmit: submitRequest,
+  employees,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   types: ApiLeaveType[];
-  onSubmit: (req: NewLeaveRequest) => Promise<void>;
+  /** `forUserId` is set when recording on someone's behalf (`employees` given). */
+  onSubmit: (req: NewLeaveRequest, forUserId?: string) => Promise<void>;
+  /**
+   * Record leave **for one of these people** instead of for yourself — the `leave:manage` path
+   * (owner decision 2026-10-17). Adds an Employee picker and drops Documents, which only the
+   * employee can attach.
+   */
+  employees?: { id: string; name: string }[];
 }) {
+  const onBehalf = employees !== undefined;
+  const [employeeId, setEmployeeId] = useState("");
+  const [employeeError, setEmployeeError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -181,6 +208,7 @@ export function RequestLeaveDialog({
   const kind = watch("kind");
   const fromTime = watch("fromTime");
   const toTime = watch("toTime");
+  const type = watch("type");
   const isPermission = kind === "permission";
   const permissionMinutes = isPermission ? minutesBetween(fromTime, toTime) : 0;
   const wholeDays = useMemo(() => requestDays(start, end), [start, end]);
@@ -188,8 +216,8 @@ export function RequestLeaveDialog({
   const days = isPermission
     ? permissionMinutes / WORKDAY_MINUTES
     : wholeDays;
-  // Earliest selectable day — leave can't start in the past (computed once, client-local).
-  const today = useMemo(() => isoToday(), []);
+  // Earliest selectable day: today, or a week back for sick leave (client-local; the server re-checks).
+  const earliest = useMemo(() => earliestStart(type), [type]);
 
   // Documents are uploaded as they are picked, not on submit: the bytes go straight to S3 against
   // a presigned URL, so by the time the form posts there is nothing left to wait for. The cost is
@@ -209,6 +237,8 @@ export function RequestLeaveDialog({
     reset();
     setDocs([]);
     setUploading([]);
+    setEmployeeId("");
+    setEmployeeError(null);
     onOpenChange(false);
   }
 
@@ -275,7 +305,12 @@ export function RequestLeaveDialog({
   }
 
   const onSubmit = handleSubmit(async (data) => {
+    if (onBehalf && !employeeId) {
+      setEmployeeError("Pick the employee this leave is for.");
+      return;
+    }
     const label = types.find((t) => t.type_id === data.type)?.name ?? "Leave";
+    const who = onBehalf ? employees?.find((e) => e.id === employeeId)?.name : undefined;
     try {
       await submitRequest({
         type_id: data.type,
@@ -291,8 +326,8 @@ export function RequestLeaveDialog({
             }
           : {}),
         reason: data.reason,
-        ...(docs.length ? { attachments: docs } : {}),
-      });
+        ...(docs.length && !onBehalf ? { attachments: docs } : {}),
+      }, onBehalf ? employeeId : undefined);
       const mins =
         data.kind === "permission" ? minutesBetween(data.fromTime, data.toTime) : 0;
       const what =
@@ -303,7 +338,7 @@ export function RequestLeaveDialog({
               return `${d} day${d === 1 ? "" : "s"}`;
             })();
       toast.success(
-        mins > 0 ? "Permission requested" : "Leave request submitted",
+        who ? `Leave recorded for ${who}` : mins > 0 ? "Permission requested" : "Leave request submitted",
         { description: `${label} · ${what} — pending approval` },
       );
       close();
@@ -318,13 +353,39 @@ export function RequestLeaveDialog({
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Request leave</DialogTitle>
+          <DialogTitle>{onBehalf ? "Record leave for an employee" : "Request leave"}</DialogTitle>
           <DialogDescription>
-            Submit a leave request — it goes to your manager for approval.
+            {onBehalf
+              ? "For leave someone reported to you — a sick day phoned in, say. It goes into the approval queue like any request."
+              : "Submit a leave request — it goes to your manager for approval."}{" "}
+            Sick leave can be back-dated up to {SICK_BACKDATE_DAYS} days.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {onBehalf ? (
+            <Field label="Employee" htmlFor={`${fieldId}-employee`} error={employeeError ?? undefined}>
+              <Select
+                value={employeeId || null}
+                onValueChange={(v) => {
+                  setEmployeeId((v as string) ?? "");
+                  setEmployeeError(null);
+                }}
+                items={Object.fromEntries((employees ?? []).map((e) => [e.id, e.name]))}
+              >
+                <SelectTrigger id={`${fieldId}-employee`} className="w-full">
+                  <SelectValue placeholder="Select an employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(employees ?? []).map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ) : null}
           {/* The two kinds, chosen first — everything below reads differently depending on this,
               so it cannot be a detail tucked underneath the dates. Picking Permission collapses the
               request to one day, because that is what a permission is. */}
@@ -401,7 +462,7 @@ export function RequestLeaveDialog({
                     id={`${fieldId}-start`}
                     value={field.value}
                     onChange={field.onChange}
-                    min={today}
+                    min={earliest}
                     className="w-full"
                   />
                 )}
@@ -416,7 +477,7 @@ export function RequestLeaveDialog({
                     id={`${fieldId}-end`}
                     value={field.value}
                     onChange={field.onChange}
-                    min={start || today}
+                    min={start || earliest}
                     className="w-full"
                   />
                 )}
@@ -491,7 +552,9 @@ export function RequestLeaveDialog({
             />
           </Field>
 
-          <div className="space-y-2">
+          {/* Documents are the employee's to add: an upload is stored under the uploader's id and
+              could never be opened from someone else's request. */}
+          <div className={cn("space-y-2", onBehalf && "hidden")}>
             <Label htmlFor={`${fieldId}-docs`}>
               Documents <span className="text-muted-foreground">optional</span>
             </Label>
@@ -554,7 +617,7 @@ export function RequestLeaveDialog({
             {/* Submitting mid-upload would post a request missing the document the person just
                 chose, with no sign anything was lost. */}
             <Button type="submit" disabled={isSubmitting || uploading.length > 0}>
-              <CalendarPlus className="size-4" /> Submit request
+              <CalendarPlus className="size-4" /> {onBehalf ? "Record leave" : "Submit request"}
             </Button>
           </DialogFooter>
         </form>

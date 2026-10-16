@@ -158,9 +158,9 @@ export type OverrideStatus = "leave" | "excused" | "non_workday";
 /**
  * `PUT /v1/attendance/user/{id}/day/{date}/override` — correct one person's day (needs
  * `AttendanceManage` → `attendance:edit`). It can only *excuse* a day — `leave`, `excused` or
- * `non_workday` — never mark anyone present. Managed-agent (`machine`/`both`) orgs only: a `project`
- * org keeps the leave workflow and gets `409 tracking_mode_not_managed`. The server records who set
- * it in the audit log and re-closes an already-closed day at once.
+ * `non_workday` — never mark anyone present. Every tracking mode (since 2026-10-17 — no leave
+ * workflow reaches a day already past). The server records who set it in the audit log and
+ * re-closes an already-closed day at once.
  */
 export function overrideDay(
   userId: string,

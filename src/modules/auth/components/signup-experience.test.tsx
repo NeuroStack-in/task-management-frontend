@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
-  createOrg: vi.fn(),
+  signUp: vi.fn(),
+  confirm: vi.fn(),
+  resend: vi.fn(),
   requestOrg: vi.fn(),
   login: vi.fn(),
   auth: {
@@ -21,9 +23,13 @@ vi.mock("@/stores/auth.store", () => ({
   useAuthStore: (select: (s: unknown) => unknown) =>
     select({ ...mocks.auth, login: mocks.login }),
 }));
-vi.mock("@/lib/api", async (orig) => ({
-  ...(await orig<typeof import("@/lib/api")>()),
-  createOrg: (...a: unknown[]) => mocks.createOrg(...a),
+// Every sign-up is a request now (owner decision 2026-10-17, ONB-01): the email path creates a
+// login, confirms the emailed code, then submits the same org request a Google returnee does.
+vi.mock("@/modules/auth/services/auth.service", async (orig) => ({
+  ...(await orig<typeof import("@/modules/auth/services/auth.service")>()),
+  signUpWithEmail: (...a: unknown[]) => mocks.signUp(...a),
+  confirmEmailSignUp: (...a: unknown[]) => mocks.confirm(...a),
+  resendSignUpCode: (...a: unknown[]) => mocks.resend(...a),
 }));
 vi.mock("@/modules/onboarding/services/onboarding.service", () => ({
   requestOrg: (...a: unknown[]) => mocks.requestOrg(...a),
@@ -114,7 +120,8 @@ describe("SignupExperience — Terms of Service and Privacy Policy consent", () 
     vi.clearAllMocks();
     mocks.auth.isAuthenticated = false;
     mocks.auth.user = null;
-    mocks.createOrg.mockResolvedValue({ slug: "acme" });
+    mocks.signUp.mockResolvedValue(undefined);
+    mocks.confirm.mockResolvedValue(undefined);
     mocks.requestOrg.mockResolvedValue(undefined);
     mocks.login.mockResolvedValue(undefined);
   });
@@ -126,7 +133,7 @@ describe("SignupExperience — Terms of Service and Privacy Policy consent", () 
     fill("Password", "Correct9horse");
     fill("Confirm password", "Correct9horse");
     await continueTo("About your organization");
-    await fillOrgRegionProfile("Choose a plan");
+    await fillOrgRegionProfile("Your plan");
 
     const label = termsBox().closest("label");
     expect(label).not.toBeNull();
@@ -140,27 +147,56 @@ describe("SignupExperience — Terms of Service and Privacy Policy consent", () 
     }
   });
 
-  it("won't create the workspace until the box is ticked", async () => {
+  it("won't create the account until the box is ticked", async () => {
     render(<SignupExperience />);
     fill("Full name", "Ada Lovelace");
     fill("Work email", "ada@acme.test");
     fill("Password", "Correct9horse");
     fill("Confirm password", "Correct9horse");
     await continueTo("About your organization");
-    await fillOrgRegionProfile("Choose a plan");
+    await fillOrgRegionProfile("Your plan");
 
     fireEvent.click(monitoringBox());
-    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
 
     expect(await screen.findByText(TERMS_ERROR)).toHaveAttribute("href", "#signup-terms");
     expect(termsBox()).toHaveAttribute("aria-invalid", "true");
-    expect(mocks.createOrg).not.toHaveBeenCalled();
+    expect(mocks.signUp).not.toHaveBeenCalled();
 
     fireEvent.click(termsBox());
     expect(screen.queryByText(TERMS_ERROR)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
 
-    await waitFor(() => expect(mocks.createOrg).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.signUp).toHaveBeenCalledWith("ada@acme.test", "Correct9horse"));
+  });
+
+  /** ONB-01: an email sign-up no longer creates the organization — it waits for approval. */
+  it("sends an email sign-up for approval once the emailed code is confirmed", async () => {
+    render(<SignupExperience />);
+    fill("Full name", "Ada Lovelace");
+    fill("Work email", "ada@acme.test");
+    fill("Password", "Correct9horse");
+    fill("Confirm password", "Correct9horse");
+    await continueTo("About your organization");
+    // No workspace ID or prefix to choose: approval assigns them.
+    expect(screen.queryByLabelText("Workspace ID")).not.toBeInTheDocument();
+    await fillOrgRegionProfile("Your plan");
+    fireEvent.click(monitoringBox());
+    fireEvent.click(termsBox());
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+
+    expect(await screen.findByText("Check your email")).toBeInTheDocument();
+    expect(mocks.requestOrg).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Confirmation code"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and send request" }));
+
+    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/onboarding"));
+    expect(mocks.confirm).toHaveBeenCalledWith("ada@acme.test", "123456");
+    expect(mocks.login).toHaveBeenCalledWith("ada@acme.test", "Correct9horse");
+    expect(mocks.requestOrg).toHaveBeenCalledWith(
+      expect.objectContaining({ org_name: expect.any(String), monitoring_consent: true }),
+    );
   });
 
   it("also gates a signed-in Google returnee's workspace request", async () => {

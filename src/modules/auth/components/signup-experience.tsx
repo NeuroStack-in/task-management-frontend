@@ -1,7 +1,14 @@
 "use client";
 
 /**
- * Create a workspace — the full five-step flow, **inline in the form column**.
+ * Request a workspace — the full five-step flow, **inline in the form column**.
+ *
+ * **Every sign-up is a request** (owner decision 2026-10-17, UX audit ONB-01). The email path used to
+ * create the organization outright through the public `POST /v1/org/create` — on any plan — while a
+ * Google sign-up waited for staff approval. Now the email path creates the login, confirms it with
+ * the emailed code ({@link ConfirmEmailStep}), signs in and submits the same `POST /v1/org/requests`;
+ * the waiting screen at `/onboarding` takes it from there. No workspace ID, prefix or plan is asked
+ * for: approval assigns the first two and starts every org on Free.
  *
  * It used to collect the account here and then throw a four-step modal over the page for the rest.
  * Two problems with that: the dialog covered the brand panel that tells a user what site they are
@@ -27,32 +34,29 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Info, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth.store";
-// `createOrg` and `slugify` live in `lib/api` on this branch, not in a per-module service — the
-// signup contract is kept beside the other public identity calls (`lookupInvite`, `acceptInvite`).
-import {
-  ApiError,
-  createOrg,
-  EMP_PREFIX_MAX,
-  empPrefixCandidates,
-  normalizeEmpPrefix,
-  slugify,
-} from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { requestOrg } from "@/modules/onboarding/services/onboarding.service";
+import {
+  AuthError,
+  EmailTakenError,
+  confirmEmailSignUp,
+  resendSignUpCode,
+  signUpWithEmail,
+} from "@/modules/auth/services/auth.service";
+import { ConfirmEmailStep } from "./confirm-email-step";
 import {
   COUNTRIES,
   COUNTRY_CURRENCY,
   CURRENCIES,
   INDUSTRIES,
   MSelect,
-  PLANS,
   SIZES,
   TIMEZONES,
 } from "@/modules/auth/components/auth-modals";
 import { SsoProviderButtons } from "./sso-provider-buttons";
-import { PlanDetailsDialog } from "./plan-details-dialog";
 import {
   AuthErrorSummary,
   AuthField,
@@ -87,13 +91,6 @@ const codeOf = (s: string) => s.split("—")[0]?.trim() || undefined;
  * "Other" has none and is sent as nothing (QA audit 2026-10-08, WP-392).
  */
 const isoOf = (name: string) => COUNTRY_CODES.find((c) => c.name === name)?.iso;
-
-/**
- * The workspace ID while it is being typed: `slugify` without its trailing-dash trim, which removed
- * a dash or space the moment it was typed — `acme-inc` came out `acmeinc` (QA audit 2026-10-08,
- * WP-384). The full `slugify` still runs on what is shown as the result and on what is sent.
- */
-const slugDraft = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "");
 
 /**
  * @param authenticated Render for a caller who has **already signed in** and has no organization —
@@ -133,15 +130,10 @@ export function SignupExperience({
   const [acct, setAcct] = useState({ name: "", email: "", password: "", confirm: "" });
   const [org, setOrg] = useState({
     name: "",
-    slug: "",
     industry: "",
     size: "",
     website: "",
-    prefix: "",
   });
-  const [slugTouched, setSlugTouched] = useState(false);
-  /** Set once the employee-ID prefix is typed — after that the org name no longer rewrites it. */
-  const [prefixTouched, setPrefixTouched] = useState(false);
   const [region, setRegion] = useState({ country: "", currency: "", timezone: "" });
   const [profile, setProfile] = useState({
     fullName: "",
@@ -152,12 +144,11 @@ export function SignupExperience({
     dateOfBirth: "",
     workMode: "",
   });
-  const [billing, setBilling] = useState<"monthly" | "annual">("annual");
-  const [plan, setPlan] = useState("free");
   const [consent, setConsent] = useState(false);
   /** The Terms of Service + Privacy Policy agreement, on the last step. See the note there. */
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [planInfoOpen, setPlanInfoOpen] = useState(false);
+  /** The email path's last stage: the login exists, waiting for the emailed code (ONB-01). */
+  const [confirming, setConfirming] = useState(false);
 
   const [errors, setErrors] = useState<Errors>({});
   const [submitted, setSubmitted] = useState(false);
@@ -201,12 +192,7 @@ export function SignupExperience({
     }
     if (s === 1) {
       if (!org.name.trim()) e["org-name"] = "Enter your organization's name";
-      // Only the public flow chooses a workspace ID; a request is given one at approval.
-      if (!authenticated && !slugify(org.slug || org.name))
-        e["org-slug"] = "Enter a valid workspace ID";
-      // Only the public flow claims a prefix; an approved request gets one assigned at approval.
-      if (!authenticated && !normalizeEmpPrefix(org.prefix))
-        e["org-prefix"] = `Enter an employee ID prefix (1–${EMP_PREFIX_MAX} letters or digits)`;
+      // No workspace ID or employee-ID prefix: every sign-up is a request, and approval assigns both.
       if (!org.industry) e["org-industry"] = "Choose your industry";
       if (!org.size) e["org-size"] = "Choose your organization size";
     }
@@ -230,7 +216,6 @@ export function SignupExperience({
       if (!profile.workMode) e["me-workmode"] = "Choose how you work";
     }
     if (s === 4) {
-      if (!plan) e["org-plan"] = "Choose a plan";
       if (!consent) e["org-consent"] = "Confirm the monitoring authorization to continue";
       if (!termsAccepted)
         e["signup-terms"] = "Agree to the Terms of Service and Privacy Policy to continue";
@@ -278,36 +263,11 @@ export function SignupExperience({
 
     setSubmitting(true);
 
-    // The signed-in variant creates nothing: it submits a request that WorkPulse staff approve.
-    //
-    // Every field the wizard collected is carried through — `POST /v1/org/requests` stores them and
-    // replays them into the org at approval — so the applicant fills this in once and none of it is
-    // quietly dropped between asking and the workspace being built. No account block: the identity
-    // came from Google. No `slug`/`emp_id_prefix`, and no plan: the request has no field for them —
-    // the server derives the first two at approval and starts every approved org on Free — so this
-    // variant no longer asks for a workspace ID or a plan it would then drop (QA audit 2026-10-08,
-    // WP-128).
+    // Every sign-up ends in a request that WorkPulse staff approve (ONB-01) — the Google returnee
+    // here, the email path once its login is confirmed (`finishEmailSignup`).
     if (authenticated) {
       try {
-        await requestOrg({
-          org_name: org.name.trim(),
-          owner_name: (profile.fullName || acct.name).trim() || undefined,
-          industry: org.industry || undefined,
-          size: org.size || undefined,
-          website: org.website.trim() || undefined,
-          country: isoOf(region.country),
-          currency: codeOf(region.currency),
-          timezone:
-            region.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
-          job_title: profile.jobTitle.trim() || undefined,
-          department: profile.department.trim() || undefined,
-          location: profile.location.trim() || undefined,
-          phone: profile.phone.trim() || undefined,
-          date_of_birth: profile.dateOfBirth || undefined,
-          work_mode: profile.workMode || undefined,
-          // The authorisation tick was required and then sent nowhere (QA audit 2026-10-08, WP-128).
-          monitoring_consent: consent,
-        });
+        await requestOrg(requestBody());
         onSubmitted?.();
       } catch (e) {
         setSubmitting(false);
@@ -318,100 +278,77 @@ export function SignupExperience({
       return;
     }
 
+    // Email path: create the login; Cognito emails a code, and the confirm step takes over.
     try {
-      const created = await createOrg({
-        org: {
-          name: org.name.trim(),
-          slug: slugify(org.slug || org.name),
-          // Required by the server, which claims it globally (`SYS#EMPPFX`). The field on the
-          // organization step is prefilled from the org name and editable: it used to be derived
-          // silently, so "Tesla Robotics" after "Test Org" collided on `TES` with nothing to change,
-          // and a name with no ASCII letters produced no prefix at all (QA audit WP-031).
-          emp_id_prefix: normalizeEmpPrefix(org.prefix),
-          monitoring_consent: consent,
-          industry: org.industry || undefined,
-          size: org.size || undefined,
-          website: org.website.trim() || undefined,
-          country: isoOf(region.country),
-          currency: codeOf(region.currency),
-          timezone:
-            region.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
-        },
-        owner: {
-          email: acct.email.trim().toLowerCase(),
-          password: acct.password,
-          full_name: (profile.fullName || acct.name).trim(),
-          job_title: profile.jobTitle.trim() || undefined,
-          department: profile.department.trim() || undefined,
-          location: profile.location.trim() || undefined,
-          phone: profile.phone.trim() || undefined,
-          date_of_birth: profile.dateOfBirth || undefined,
-          work_mode: profile.workMode || undefined,
-        },
-        plan,
-      });
-      // The org and the owner's Cognito login both exist now, so sign them straight in rather than
-      // bouncing to /login to ask for a password they set thirty seconds ago.
-      //
-      // A failure here is NOT a signup failure — the account is real either way — so it never
-      // surfaces as an error. It falls back to the sign-in page with the email prefilled (handed
-      // over in sessionStorage, not as `?email=` in the URL — WP-390).
-      try {
-        await login(acct.email.trim().toLowerCase(), acct.password);
-        toast.success("Workspace created", {
-          description: `${created.slug} is ready.`,
-        });
-        // Straight to the dashboard — the register flow already collected everything, and the org
-        // now ships with the standard departments seeded server-side (create_org), so there's no
-        // setup wizard left to run. Invites happen from Employees → Invite when the owner is ready.
-        router.replace("/dashboard");
-      } catch {
-        toast.success("Workspace created", {
-          description: "Sign in with your new password to continue.",
-        });
-        handOffEmail(acct.email.trim().toLowerCase());
-        router.replace("/login");
-      }
+      await signUpWithEmail(acct.email.trim().toLowerCase(), acct.password);
+      setSubmitting(false);
+      setConfirming(true);
     } catch (e) {
       setSubmitting(false);
-      // Two different 409s, and they need different instructions — branch on the server's code, not
-      // the status. `slug_taken` means change the workspace address; `email_taken` means this email
-      // already has an account, and telling that person to pick another workspace address sends them
-      // round the loop forever. (`email_taken` is new: create_org used to adopt an existing login
-      // instead of refusing, which is the account-takeover this replaced.)
-      const emailTaken = e instanceof ApiError && e.code === "email_taken";
-      // The prefix and the address are separate claims with separate fixes. The server now names
-      // which one is taken; `slug_or_emp_prefix_taken` remains for the rare race it can't attribute.
-      const prefixTaken = e instanceof ApiError && e.code === "emp_prefix_taken";
-      const eitherTaken = e instanceof ApiError && e.code === "slug_or_emp_prefix_taken";
-      const msg =
-        e instanceof ApiError && e.status === 409
-          ? emailTaken
-            ? "An account already uses that email. Sign in instead, or use a different address."
-            : prefixTaken
-              ? "Another organization already uses that employee ID prefix — go back and choose another."
-              : eitherTaken
-                ? "That workspace ID or employee ID prefix was just taken — go back and change one of them."
-                : "That workspace ID is already taken — go back and try another."
-          : e instanceof ApiError
-            ? e.message
-            : "Couldn't create your workspace. Try again.";
-      // Anchor the message to the field that actually caused it. The error summary collects every
-      // key regardless of step, so this shows either way — but keying it to `signup-email` also
-      // marks the input itself, and stepping back to 0 is what makes that visible. Wizard state is
-      // all held in this component, so nothing entered on steps 1-4 is lost going back.
-      const field = emailTaken
-        ? "signup-email"
-        : prefixTaken
-          ? "org-prefix"
-          : e instanceof ApiError && e.status === 409
-            ? "org-slug"
-            : "org-plan";
-      setErrors({ [field]: msg });
-      if (emailTaken) setStep(0);
-      else if (field !== "org-plan") setStep(1);
-      requestAnimationFrame(() => summaryRef.current?.focus());
+      if (e instanceof EmailTakenError) {
+        setErrors({ "signup-email": e.message });
+        setStep(0);
+        requestAnimationFrame(() => summaryRef.current?.focus());
+        return;
+      }
+      toast.error(
+        e instanceof AuthError ? e.message : "Couldn't create your account. Please try again.",
+      );
     }
+  };
+
+  /**
+   * The request itself, identical for both paths. Every field the wizard collected is carried
+   * through — `POST /v1/org/requests` stores them and replays them into the org at approval — so the
+   * applicant fills this in once. No `slug`/`emp_id_prefix`/plan: the request has no field for them;
+   * approval derives the first two and starts every org on Free (QA audit 2026-10-08, WP-128).
+   */
+  const requestBody = () => ({
+    org_name: org.name.trim(),
+    owner_name: (profile.fullName || acct.name).trim() || undefined,
+    industry: org.industry || undefined,
+    size: org.size || undefined,
+    website: org.website.trim() || undefined,
+    country: isoOf(region.country),
+    currency: codeOf(region.currency),
+    timezone: region.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
+    job_title: profile.jobTitle.trim() || undefined,
+    department: profile.department.trim() || undefined,
+    location: profile.location.trim() || undefined,
+    phone: profile.phone.trim() || undefined,
+    date_of_birth: profile.dateOfBirth || undefined,
+    work_mode: profile.workMode || undefined,
+    // The authorisation tick was required and then sent nowhere (QA audit 2026-10-08, WP-128).
+    monitoring_consent: consent,
+  });
+
+  /**
+   * The email path after the code: confirm, sign in, submit the request, and hand over to the
+   * waiting screen. Safe to retry — an already-confirmed login confirms again as a no-op.
+   */
+  const finishEmailSignup = async (code: string) => {
+    const email = acct.email.trim().toLowerCase();
+    await confirmEmailSignUp(email, code);
+    try {
+      await login(email, acct.password);
+    } catch {
+      // The login exists and is confirmed; only the automatic sign-in failed. Signing in by hand
+      // lands on /onboarding, which asks for the workspace again.
+      toast.success("Email confirmed", { description: "Sign in to send your workspace request." });
+      handOffEmail(email);
+      router.replace("/login");
+      return;
+    }
+    try {
+      await requestOrg(requestBody());
+    } catch (e) {
+      // Already sent (a retry after a slow first attempt) is success; anything else is shown and the
+      // waiting screen offers the form again.
+      if (!(e instanceof ApiError && e.code === "request_already_open")) {
+        toast.error(e instanceof ApiError ? e.message : "Couldn't send your request. Please try again.");
+      }
+    }
+    router.replace("/onboarding");
   };
 
   // The signed-in variant is FOR an authenticated caller, so it must not blank itself the way the
@@ -422,22 +359,24 @@ export function SignupExperience({
   if (hydrated && isAuthenticated && !authenticated) return null;
 
   const summary = Object.entries(errors).filter(([, v]) => Boolean(v)) as [string, string][];
-  const previewSlug = slugify(org.slug || org.name);
 
   const HEADINGS: [string, string][] = [
-    authenticated
-      ? ["Request your workspace", "A member of the WorkPulse team reviews each request."]
-      : ["Create your workspace", "You'll be the owner — you can invite your team next."],
-    [
-      "About your organization",
-      authenticated ? "This names your workspace." : "This names your workspace and sets its ID.",
-    ],
+    ["Request your workspace", "A member of the WorkPulse team reviews each request."],
+    ["About your organization", "This names your workspace."],
     ["Region & localization", "How WorkPulse formats time and currency for your teams."],
     ["Your profile", "How your team sees you. Everything here is editable later."],
-    authenticated
-      ? ["Your plan", "Every approved workspace starts on the Free plan."]
-      : ["Choose a plan", "Free while in beta — no card required."],
+    ["Your plan", "Every approved workspace starts on the Free plan."],
   ];
+
+  if (confirming) {
+    return (
+      <ConfirmEmailStep
+        email={acct.email.trim().toLowerCase()}
+        onConfirm={finishEmailSignup}
+        onResend={() => resendSignUpCode(acct.email.trim().toLowerCase())}
+      />
+    );
+  }
 
   return (
     <>
@@ -537,55 +476,12 @@ export function SignupExperience({
                 label="Organization name"
                 value={org.name}
                 onChange={(v) => {
-                  setOrg((s) => ({
-                    ...s,
-                    name: v,
-                    slug: slugTouched ? s.slug : slugify(v),
-                    prefix: prefixTouched ? s.prefix : (empPrefixCandidates(v)[0] ?? ""),
-                  }));
+                  setOrg((s) => ({ ...s, name: v }));
                   clear("org-name");
                 }}
                 error={errors["org-name"]}
                 autoComplete="organization"
               />
-              {/* Public flow only — a request is given its ID at approval. Named an ID, not an
-                  address: there is no `<id>.workpulse.io`, which the hint used to promise (WP-128). */}
-              {!authenticated ? (
-                <AuthField
-                  id="org-slug"
-                  label="Workspace ID"
-                  value={org.slug}
-                  onChange={(v) => {
-                    setSlugTouched(true);
-                    setOrg((s) => ({ ...s, slug: slugDraft(v) }));
-                    clear("org-slug");
-                  }}
-                  error={errors["org-slug"]}
-                  hint={
-                    previewSlug
-                      ? `Your workspace's unique ID: ${previewSlug}`
-                      : "Letters, numbers and dashes."
-                  }
-                  autoCapitalize="none"
-                  spellCheck={false}
-                />
-              ) : null}
-              {!authenticated ? (
-                <AuthField
-                  id="org-prefix"
-                  label="Employee ID prefix"
-                  value={org.prefix}
-                  onChange={(v) => {
-                    setPrefixTouched(true);
-                    setOrg((s) => ({ ...s, prefix: normalizeEmpPrefix(v) }));
-                    clear("org-prefix");
-                  }}
-                  error={errors["org-prefix"]}
-                  hint={`Starts every employee ID, like ${normalizeEmpPrefix(org.prefix) || "INF"}-0001. Up to ${EMP_PREFIX_MAX} letters or digits, unique to your organization.`}
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                />
-              ) : null}
               <div className="m-arow">
                 <div className="m-afield">
                   <span className="m-acap">Industry</span>
@@ -810,82 +706,12 @@ export function SignupExperience({
           {/* ---------------- 5 · Plan ---------------- */}
           {step === 4 ? (
             <>
-              {authenticated ? (
-                // The request has no plan field and approval creates every org on Free, so this
-                // variant states that instead of offering a choice it would drop (WP-128).
-                <p className="m-anote">
-                  Your workspace starts on the Free plan. Once it&apos;s approved, you can change plan
-                  any time in Settings → Billing.
-                </p>
-              ) : (
-              <>
-              <div className="m-planbar">
-                {/* `aria-pressed`: the selected period was signalled only by a `data-on` style (WP-389). */}
-                <div className="m-billtoggle" role="group" aria-label="Billing period">
-                  <button
-                    type="button"
-                    data-on={billing === "monthly"}
-                    aria-pressed={billing === "monthly"}
-                    onClick={() => setBilling("monthly")}
-                  >
-                    Monthly
-                  </button>
-                  <button
-                    type="button"
-                    data-on={billing === "annual"}
-                    aria-pressed={billing === "annual"}
-                    onClick={() => setBilling("annual")}
-                  >
-                    Annual <span>−17%</span>
-                  </button>
-                </div>
-                {/* The rows below carry a one-line pitch each; the full feature lists don't fit the
-                    column, so they live in the dialog rather than being cut from the product. */}
-                <button
-                  type="button"
-                  className="m-infobtn"
-                  onClick={() => setPlanInfoOpen(true)}
-                  aria-label="Compare plans in detail"
-                >
-                  <Info aria-hidden="true" />
-                </button>
-              </div>
-
-              <fieldset className="m-planlist">
-                <legend className="m-sr">Plan</legend>
-                {PLANS.map((pl) => {
-                  const price = billing === "annual" ? pl.annual : pl.monthly;
-                  return (
-                    <label key={pl.id} className={plan === pl.id ? "is-on" : undefined}>
-                      <input
-                        type="radio"
-                        name="plan"
-                        // The error summary's `#org-plan` lands on the chosen radio.
-                        id={plan === pl.id ? "org-plan" : undefined}
-                        value={pl.id}
-                        checked={plan === pl.id}
-                        onChange={() => {
-                          setPlan(pl.id);
-                          clear("org-plan");
-                        }}
-                      />
-                      <span className="m-planlist__body">
-                        <strong>
-                          {pl.name}
-                          {pl.featured ? <i>Popular</i> : null}
-                        </strong>
-                        <em>{pl.tagline}</em>
-                      </span>
-                      <span className="m-planlist__price">
-                        {price === 0 ? "Free" : `$${price}`}
-                        {price === 0 ? null : <i>/user/mo</i>}
-                      </span>
-                    </label>
-                  );
-                })}
-              </fieldset>
-              </>
-              )}
+              {/* Every sign-up is a request, and approval starts every org on Free — so this states it
+                  instead of offering a choice it would drop (WP-128, ONB-01). */}
+              <p className="m-anote">
+                Your workspace starts on the Free plan, free while WorkPulse is in beta. Once
+                it&apos;s approved, you can change plan any time in Settings → Billing.
+              </p>
 
               <label className="m-check mt-2">
                 <input
@@ -911,8 +737,8 @@ export function SignupExperience({
                   opens the document and does not toggle the box, because a label ignores clicks on
                   interactive content. They open in a new tab, because leaving this page would lose
                   every step entered so far. The box's accessible name is the whole sentence, note
-                  included. The acceptance is not sent to the server yet: neither `POST /v1/org/create`
-                  nor `POST /v1/org/requests` has a field for it. */}
+                  included. The acceptance is not sent to the server yet: `POST /v1/org/requests` has
+                  no field for it. */}
               <label className="m-check">
                 <input
                   type="checkbox"
@@ -963,14 +789,10 @@ export function SignupExperience({
               {submitting ? (
                 <>
                   <Loader2 className="m-spin size-4" />{" "}
-                  {authenticated ? "Sending your request…" : "Creating…"}
+                  {authenticated ? "Sending your request…" : "Creating your account…"}
                 </>
               ) : step === LAST ? (
-                authenticated ? (
-                  "Submit request"
-                ) : (
-                  "Create workspace"
-                )
+                "Submit request"
               ) : (
                 "Continue"
               )}
@@ -1002,16 +824,6 @@ export function SignupExperience({
         ) : null}
       </AuthFrame>
 
-      <PlanDetailsDialog
-        open={planInfoOpen}
-        onClose={() => setPlanInfoOpen(false)}
-        billing={billing}
-        selected={plan}
-        onSelect={(id) => {
-          setPlan(id);
-          clear("org-plan");
-        }}
-      />
     </>
   );
 }

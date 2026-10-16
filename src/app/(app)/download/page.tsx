@@ -27,13 +27,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AGENT_PLATFORMS, type AgentPlatform } from "@/lib/agent-release";
+import { MonitoringDisclosure } from "@/modules/agents/components/monitoring-disclosure";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
   "Download the installer for your OS.",
   "Run it and open the WorkPulse agent.",
   "Sign in with your WorkPulse account.",
-  "Grant the monitoring consent.",
+  "Read what your organization records (below).",
   "Start your timer — tracking begins.",
 ];
 
@@ -50,8 +51,9 @@ const FEATURES = [
   },
   {
     icon: ShieldCheck,
-    title: "Privacy-first",
-    desc: "Consent-gated and timer-bound — nothing is recorded off the clock.",
+    // Not "consent-gated": the app records the org's consent, not the employee's (UX audit EMP-01).
+    title: "Timer-bound",
+    desc: "Nothing is recorded while your timer is off. What's recorded while it runs is listed below.",
   },
 ];
 
@@ -164,6 +166,9 @@ export default function DownloadPage() {
           </Badge>
         ) : null}
       </section>
+
+      {/* What is captured, from the org's own settings — before anyone installs (EMP-01). */}
+      <MonitoringDisclosure />
 
       {/* Re-install notice, for the first builds only. The sign-in fix (desktop v0.1.1) is compiled
           into the binary, and builds before v0.1.2 had an updater pointed at a private repo that

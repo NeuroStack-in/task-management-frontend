@@ -36,6 +36,7 @@ import {
   downloadInviteXlsxTemplate,
 } from "../lib/invite-template";
 import { downloadInviteHandout, hasCodes, type HandoutRow } from "../lib/invite-handout";
+import { NewDepartmentInline } from "./new-department-inline";
 import { useAuthStore } from "@/stores/auth.store";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
@@ -1058,6 +1059,18 @@ export function InviteDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {/* A department is required, so an org without one could invite nobody (PEOPLE-02). */}
+              {departmentsLoaded && !loadFailed.departments ? (
+                <NewDepartmentInline
+                  noneYet={departments.length === 0}
+                  onCreated={(d) => {
+                    setDepartments((prev) =>
+                      [...prev, d].sort((a, b) => a.name.localeCompare(b.name)),
+                    );
+                    setDepartmentId(d.id);
+                  }}
+                />
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label>

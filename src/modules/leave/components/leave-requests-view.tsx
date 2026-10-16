@@ -24,6 +24,7 @@ import { formatDays } from "../lib/days";
 import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
+import { RecordLeaveButton } from "./record-leave-button";
 import { LeaveTypesManager } from "./leave-types-manager";
 import { LeaveDetailDialog } from "./leave-detail-dialog";
 import { useAuthStore } from "@/stores/auth.store";
@@ -125,6 +126,8 @@ function AdminLeaveView() {
       <PageHeader
         title="Leave"
         description="Leave types and allowances, and every employee's balance."
+        // Record leave someone reported — including a sick day already past (TIME-04).
+        actions={<RecordLeaveButton />}
       />
       {/* 1 — the catalog: types and how many days a year each carries. Editing an allowance here
           applies to everyone's current-year balance, except figures an admin has hand-set. */}

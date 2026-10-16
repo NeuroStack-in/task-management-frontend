@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 import { usePayroll } from "../use-payroll";
 import { DeductionsCard } from "./deductions-card";
 import { SetCompensationCard } from "./set-compensation-card";
+import { RunLinesCard } from "./run-lines-card";
 import type { ApiPayrollRun } from "../services/payroll.service";
 
 const STATUS_META: Record<string, string> = {
@@ -43,6 +44,20 @@ const STATUS_META: Record<string, string> = {
   final: "bg-success/12 text-success",
 };
 const statusMeta = (s: string) => STATUS_META[s] ?? "bg-muted text-muted-foreground";
+
+/** This month as `YYYY-MM`, in the viewer's clock — the server re-decides in the org's. */
+function thisMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Whether a period's month is over — only then can it be finalized (owner decision 2026-10-17, UX
+ * audit TIME-02). Finalizing freezes hourly pay at the hours tracked so far, and publishes payslips.
+ */
+export function monthHasEnded(period: string, now: string = thisMonth()): boolean {
+  return period < now;
+}
 
 /** YYYY-MM → "August 2026". */
 function periodLabel(period: string): string {
@@ -74,6 +89,8 @@ export function PayrollView() {
   const [busy, setBusy] = useState(false);
   /** The period awaiting a confirmed Finalize — finalizing is not reversible (WP-270). */
   const [confirmPeriod, setConfirmPeriod] = useState<string | null>(null);
+  /** How many people the selected run pays — from its lines, once loaded. Said in the confirm. */
+  const [linesCount, setLinesCount] = useState<{ period: string; count: number } | null>(null);
 
   const selected: ApiPayrollRun | null = useMemo(() => {
     if (!runs.length) return null;
@@ -131,9 +148,15 @@ export function PayrollView() {
     setBusy(true);
     try {
       await finalize(period);
-      toast.success(`Finalized ${periodLabel(period)}`);
-    } catch {
-      toast.error("Couldn't finalize the run.");
+      toast.success(`Finalized ${periodLabel(period)}`, {
+        description: "Each employee on the run can now open their payslip.",
+      });
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError && e.code === "period_not_ended"
+          ? `${periodLabel(period)} isn't over yet — finalize it once the month has ended.`
+          : "Couldn't finalize the run.",
+      );
     } finally {
       setBusy(false);
     }
@@ -266,17 +289,24 @@ export function PayrollView() {
                       <TableCell className="text-right font-medium tabular-nums">{formatCurrency(r.net, currency)}</TableCell>
                       {canManage ? (
                         <TableCell className="pr-6 text-right">
-                          {r.status === "draft" ? (
+                          {r.status === "draft" && !monthHasEnded(r.period) ? (
+                            // A month still running is a preview, not pay (TIME-02).
+                            <span className="text-xs text-muted-foreground">
+                              Finalize after the month ends
+                            </span>
+                          ) : r.status === "draft" ? (
                             <Button
                               size="sm"
                               variant="outline"
                               disabled={busy}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                // Show the person-by-person lines behind the confirm.
+                                setSelectedPeriod(r.period);
                                 setConfirmPeriod(r.period);
                               }}
                             >
-                              Finalize
+                              Review &amp; finalize
                             </Button>
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
@@ -291,6 +321,15 @@ export function PayrollView() {
           )}
         </CardContent>
       </Card>
+
+      {/* Every employee's line on the selected run — what Finalize publishes, checked first (TIME-02). */}
+      {selected ? (
+        <RunLinesCard
+          run={selected}
+          currency={currency}
+          onLoaded={(count) => setLinesCount({ period: selected.period, count })}
+        />
+      ) : null}
 
       {/* Compensation (write-only surface — the API has no comp GET) */}
       {canManage ? <SetCompensationCard onSave={setComp} /> : null}
@@ -309,8 +348,8 @@ export function PayrollView() {
       <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">
         <MonitorSmartphone className="size-4 shrink-0" />
         Salaried staff count at their monthly salary. Hourly staff count at their rate × the billable
-        hours their timer recorded that month — time on non-billable projects isn&apos;t paid. Totals
-        are org-wide; per-employee payslips aren&apos;t produced.
+        hours their timer recorded that month — time on non-billable projects isn&apos;t paid. Each
+        employee&apos;s payslip is published to them when the run is finalized.
       </div>
       {/* A finalized run is the pay record of the period — it cannot be edited or regenerated
           afterwards, so one stray click on a row must not produce one (QA audit 2026-10-08, WP-270). */}
@@ -318,8 +357,13 @@ export function PayrollView() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Finalize {confirmPeriod ? periodLabel(confirmPeriod) : ""}?</DialogTitle>
+            {/* Say what Finalize actually does: it publishes payslips and notifies people. This said
+                only that it "locks this run" (UX audit 2026-10-16, TIME-02). */}
             <DialogDescription>
-              Finalizing locks this run as the period&apos;s pay record. It can&apos;t be edited or
+              {linesCount && linesCount.period === confirmPeriod
+                ? `${linesCount.count} ${linesCount.count === 1 ? "employee" : "employees"} will receive a payslip and be notified. `
+                : "Every employee on this run will receive a payslip and be notified. "}
+              Check the lines under Pay per employee first — a finalized run can&apos;t be edited or
               regenerated afterwards.
             </DialogDescription>
           </DialogHeader>

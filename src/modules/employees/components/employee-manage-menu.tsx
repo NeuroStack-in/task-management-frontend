@@ -216,12 +216,33 @@ export function EmployeeManageMenu({
             <DialogTitle>
               {isActive ? `Deactivate ${name}?` : `Reactivate ${name}?`}
             </DialogTitle>
+            {/* What the deactivation saga actually does (`projects::release_deactivated_user`, the
+                fleet and seat consumers). This said projects and tasks were "reassigned" and that
+                reactivating undid it — neither is true (UX audit 2026-10-16, PEOPLE-01). */}
             <DialogDescription>
               {isActive
-                ? "Their sign-in is disabled immediately, and their projects and tasks are reassigned. Their record and history stay — you can reactivate them any time."
-                : "They regain access at their next sign-in and can be assigned work again."}
+                ? "Their sign-in stops working immediately. This also happens:"
+                : "They can sign in again. Their old projects, tasks and devices are not given back — add them to projects again, and re-enrol a device if they need tracking."}
             </DialogDescription>
           </DialogHeader>
+          {isActive ? (
+            <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
+              <li>
+                Their tasks are <span className="text-foreground font-medium">unassigned</span>{" "}
+                — nobody is put on them in their place.
+              </li>
+              <li>
+                They are removed from their projects. A project they manage keeps them as manager
+                until you hand it to someone else.
+              </li>
+              <li>Their devices stop tracking, and their seat is freed.</li>
+              <li>Their time, attendance and payroll history stay on record.</li>
+              <li>
+                Reactivating them later restores sign-in only — not their projects, tasks or
+                devices.
+              </li>
+            </ul>
+          ) : null}
           <DialogFooter>
             <Button
               variant="outline"

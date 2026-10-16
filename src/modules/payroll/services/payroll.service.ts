@@ -1,9 +1,9 @@
 /**
  * Payroll — the real backend (`payroll-billing` context, LLD §20).
  *
- * What the server serves is **org totals per run** plus the **deduction rules** — not per-employee
- * payslips. A run is `{period, status, gross, deductions, net}`; totals are computed at draft time
- * from each employee's comp minus the deduction rules. **Hourly staff are included**: their gross is
+ * What the server serves is **totals per run**, each run's **per-employee lines** (the payslips it
+ * publishes on finalize), and the **deduction rules**. A run is `{period, status, gross, deductions,
+ * net}`; totals are computed at draft time from each employee's comp minus the deduction rules. **Hourly staff are included**: their gross is
  * `rate × billable hours the timer recorded that month` (`payroll_runs::compute_totals`) — time on
  * non-billable projects pays nothing. (This header used to say hours-based pay was not part of the
  * totals; QA audit 2026-10-08, WP-271.)
@@ -27,11 +27,33 @@ export interface ApiDeduction {
   value: number;
 }
 
+/** One person's pay on a run — the payslip finalizing publishes to them. */
+export interface ApiRunLine {
+  user_id: string;
+  name: string;
+  /** `hourly` | `salaried`. */
+  pay_type: string;
+  rate: number;
+  /** Billable seconds hourly pay was computed from; absent for salaried pay. */
+  billable_secs?: number;
+  gross: number;
+  deductions: number;
+  net: number;
+}
+
+export interface ApiRunDetail extends ApiPayrollRun {
+  lines: ApiRunLine[];
+}
+
 /**
- * `GET /v1/payroll/runs` — every run's totals. The page reads only this; the per-period
- * `GET /v1/payroll/runs/{period}` returns the same totals and is not wrapped (its wrapper's only
- * caller was a test — QA audit 2026-10-08, WP-480).
+ * `GET /v1/payroll/runs/{period}` — the run with **every employee's line**, so a run can be checked
+ * person by person before it is finalized (UX audit 2026-10-16, TIME-02).
  */
+export function getRunDetail(period: string): Promise<ApiRunDetail> {
+  return apiFetch<ApiRunDetail>(`/v1/payroll/runs/${encodeURIComponent(period)}`);
+}
+
+/** `GET /v1/payroll/runs` — every run's totals. */
 export function listRuns(): Promise<ApiPayrollRun[]> {
   return apiFetch<{ runs: ApiPayrollRun[] }>("/v1/payroll/runs").then((r) => r.runs);
 }

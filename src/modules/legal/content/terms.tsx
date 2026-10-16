@@ -37,7 +37,7 @@ export const TERMS: LegalDocument = {
           {/* REVIEW: only the person creating or requesting a workspace ticks a consent box. People who
               join by invitation are never asked. Decide whether invited users get their own end-user
               terms or are covered by the Customer's acceptance. Acceptance is also not recorded on the
-              server yet: neither POST /v1/org/create nor /v1/org/requests has a field for it. */}
+              server yet: POST /v1/org/requests has no field for it. */}
         </>
       ),
     },

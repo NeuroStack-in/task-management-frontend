@@ -212,6 +212,18 @@ export function createRequest(req: NewLeaveRequest): Promise<ApiLeaveRequest> {
   });
 }
 
+/**
+ * `POST /v1/leave/requests/{user_id}` — record leave **on an employee's behalf** (`leave:manage`;
+ * owner decision 2026-10-17). The same request as their own — balance check, overlap rule, pending
+ * in the approval queue — without attachments, which only the employee can add.
+ */
+export function createRequestFor(userId: string, req: NewLeaveRequest): Promise<ApiLeaveRequest> {
+  return apiFetch<ApiLeaveRequest>(`/v1/leave/requests/${encodeURIComponent(userId)}`, {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
 // ── Admin oversight (`leave:manage`) ───────────────────────────────────────────────────────────
 
 /** One leave type's standing for one employee, for a year. */

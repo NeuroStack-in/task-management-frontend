@@ -350,64 +350,11 @@ export function acceptInvite(body: AcceptInviteBody): Promise<AcceptInviteResult
   });
 }
 
-/** Self-serve org signup — `POST /v1/org/create` (identity, public). Provisions the tenant + the
- * owner's Cognito login (permanent password), so the caller can sign in immediately after. */
-export interface CreateOrgBody {
-  org: {
-    name: string;
-    slug: string;
-    industry?: string;
-    size?: string;
-    website?: string;
-    timezone?: string;
-    country?: string;
-    currency?: string;
-    /**
-     * Employee-id prefix, e.g. `INF` → `INF-0001`. **Required** — the server validates it and
-     * claims it globally (`SYS#EMPPFX`). Typed non-optional deliberately: it was optional once, and
-     * a second signup path silently omitted it, which the server would have rejected at runtime.
-     */
-    emp_id_prefix: string;
-    /** The "authorised to monitor" tick — recorded on the org with who and when (WP-128). */
-    monitoring_consent?: boolean;
-  };
-  owner: {
-    email: string;
-    password: string;
-    full_name: string;
-    job_title?: string;
-    department?: string;
-    location?: string;
-    phone?: string;
-    /** `YYYY-MM-DD`, and `on-site` | `hybrid` | `remote` — see the invite payload. */
-    date_of_birth?: string;
-    work_mode?: string;
-  };
-  /** `free` | `starter` | `enterprise` (the server validates it). */
-  plan: string;
-}
-
-export interface OrgCreatedResult {
-  tenant_id: string;
-  slug: string;
-  owner_user_id: string;
-  plan: string;
-  status: string;
-}
-
-export function createOrg(body: CreateOrgBody): Promise<OrgCreatedResult> {
-  return apiFetch<OrgCreatedResult>("/v1/org/create", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
 /**
  * Mirror of the server's `slugify` (`identity::features::create_org::dto`).
  *
- * It lives beside `createOrg` because it is part of the same contract: the server re-slugifies
- * whatever slug we send, so if this drifts, the workspace URL a user was shown during sign-up is
- * silently not the one they get. Keep the two in step.
+ * Part of the org contract: the server re-slugifies whatever slug it is sent, so if this drifts, a
+ * workspace ID shown in the app is silently not the one stored. Keep the two in step.
  */
 export function slugify(raw: string): string {
   return raw

@@ -9,6 +9,9 @@
  * the Billing page are in dollars. An unknown code degrades to the number and the code, never a throw.
  */
 export function formatCurrency(amount: number, currency: string = "USD"): string {
+  // A missing amount is "—", never "US$NaN". The server removes fields a caller isn't cleared to see,
+  // and an employee's own payslip once arrived without its amounts (UX audit 2026-10-16, TIME-01).
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return "—";
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",

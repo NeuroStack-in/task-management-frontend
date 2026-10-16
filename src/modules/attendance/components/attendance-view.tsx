@@ -19,7 +19,6 @@ import { RefreshButton } from "@/components/shared/refresh-button";
 import { Button } from "@/components/ui/button";
 import { useIsSelfScoped } from "@/hooks/use-self-scope";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useTrackingMode } from "@/hooks/use-features";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
 import { today } from "../lib/calendar";
 import { isoOfDay, useToday } from "../use-today";
@@ -146,12 +145,12 @@ function OversightAttendance() {
     ],
   });
 
-  // Correcting a closed day (the admin day-override): `attendance:edit` holders, in an org whose
-  // people can't file leave themselves — managed agents. A project-mode org keeps the leave
-  // workflow and the server refuses it there (QA audit 2026-10-08, WP-380).
-  const trackingMode = useTrackingMode();
+  // Correcting a closed day (the admin day-override): `attendance:edit` holders, in **every** tracking
+  // mode since 2026-10-17. It was managed-agent orgs only, on the grounds that project orgs have the
+  // leave workflow — which can't reach a day already past, so a sick day stayed "Absent" for good
+  // (UX audit 2026-10-16, TIME-04).
   const correction =
-    range === "day" && data.mode === "day" && can("attendance:edit") && trackingMode !== "project"
+    range === "day" && data.mode === "day" && can("attendance:edit")
       ? { date: iso, onSaved: data.reload }
       : null;
 

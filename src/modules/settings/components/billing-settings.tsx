@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, CreditCard, FileText } from "lucide-react";
+import { BadgeCheck, Check, CreditCard, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
@@ -110,10 +110,31 @@ export function BillingSettings() {
   const overCapNow = overview.seat_cap > 0 && overview.seats_used > overview.seat_cap;
   const overCapAfter = pendingTier !== null && overview.seats_used > pendingTier.seatCap;
   const currentIndex = PLAN_TIERS.findIndex((t) => t.id === overview.plan);
+  // What this plan would cost once billing starts — said beside "free", never instead of it.
+  const seatWord = overview.seats_used === 1 ? "seat" : "seats";
+  const laterCost = !tier
+    ? "The prices below apply only once billing starts."
+    : overview.seats_used > 0
+      ? `Once billing starts, the ${tier.name} plan would be ${overview.seats_used} ${seatWord} × ${formatCurrency(tier.pricePerSeat)} = ${formatCurrency(overview.seats_used * tier.pricePerSeat)} a month.`
+      : `Once billing starts, the ${tier.name} plan would be ${formatCurrency(tier.pricePerSeat)} per seat a month.`;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Billing" description="Manage your plan, payment method, and invoices." />
+
+      {/* Said first, before any price: nothing is charged during the beta. The page used to open on
+          "Enterprise plan · US$22/seat/mo · status: active" beside a red Cancel button, with the only
+          hint at the foot of the card (UX audit 2026-10-16, SET-01). */}
+      <section
+        aria-label="Beta pricing"
+        className="border-success/30 bg-success/[0.06] flex gap-3 rounded-2xl border p-4"
+      >
+        <BadgeCheck className="text-success mt-0.5 size-5 shrink-0" aria-hidden="true" />
+        <div>
+          <p className="font-semibold">Free during the beta. You&apos;re not being charged.</p>
+          <p className="text-muted-foreground mt-0.5 text-sm">{laterCost}</p>
+        </div>
+      </section>
 
       <Card>
         <CardContent className="divide-y p-0">
@@ -181,6 +202,7 @@ export function BillingSettings() {
                         /seat/mo
                       </span>
                     </p>
+                    <p className="text-success text-xs font-medium">Free during the beta</p>
                     <ul className="text-muted-foreground mt-3 space-y-1.5 text-xs">
                       {t.features.map((f) => (
                         <li key={f} className="flex items-center gap-1.5">
@@ -233,10 +255,11 @@ export function BillingSettings() {
                 Self-serve cancellation isn&apos;t available yet. Contact support to cancel.
               </p>
             </div>
+            {/* Neutral, not red: nothing is being paid for, so there is nothing to lose (SET-01). */}
             <Button
               variant="outline"
               size="sm"
-              className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+              className="shrink-0"
               disabled={!canManage}
               onClick={() =>
                 toast.info("Self-serve cancellation isn't enabled yet.", {

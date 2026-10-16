@@ -75,14 +75,10 @@ export function DayOverrideDialog({
       });
       onSaved(target.userId, status);
     } catch (e) {
-      // The only conflict is the org's tracking mode: corrections exist for orgs whose people
-      // cannot file leave themselves.
+      // Corrections work in every tracking mode since 2026-10-17 (TIME-04), so the old 409 for
+      // project-mode orgs no longer exists; anything the server refuses explains itself.
       toast.error(
-        e instanceof ApiError && e.status === 409
-          ? "Day corrections are only available when the organization tracks Machine uptime (or Both). Record time off as leave instead."
-          : e instanceof ApiError
-            ? e.message
-            : "Couldn't save the correction. Try again.",
+        e instanceof ApiError ? e.message : "Couldn't save the correction. Try again.",
       );
     } finally {
       setSaving(false);
