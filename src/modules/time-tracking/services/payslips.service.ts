@@ -17,7 +17,9 @@ export interface MyPayslip {
   gross: number;
   deductions: number;
   net: number;
-  /** Billable seconds an hourly payslip was computed from. */
+  /** Every tracked second an hourly payslip was computed from (since 2026-10-18, TIME-06). */
+  worked_secs?: number;
+  /** The billable part — what older slips' pay was computed from, before every hour was paid. */
   billable_secs?: number;
   /** When the run was finalized (epoch ms). */
   finalized_at?: number;

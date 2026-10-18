@@ -18,10 +18,15 @@ describe("profile completeness", () => {
     expect(complete(full)).toBe(true);
   });
 
-  it("requires every one of the four", () => {
-    for (const k of Object.keys(full) as (keyof Details)[]) {
+  it("requires phone, location and work mode", () => {
+    for (const k of ["phone", "location", "workMode"] as (keyof Details)[]) {
       expect(complete({ ...full, [k]: "" }), k).toBe(false);
     }
+  });
+
+  /** SHELL-02: date of birth is sensitive and optional — leaving it blank never detains anyone. */
+  it("does not require a date of birth", () => {
+    expect(complete({ ...full, dateOfBirth: "" })).toBe(true);
   });
 
   it("does not accept a country code as a phone number", () => {

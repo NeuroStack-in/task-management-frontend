@@ -25,6 +25,7 @@ import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { RequestLeaveDialog } from "./request-leave-dialog";
 import { RecordLeaveButton } from "./record-leave-button";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
 import { LeaveDetailDialog } from "./leave-detail-dialog";
 import { useAuthStore } from "@/stores/auth.store";
@@ -147,6 +148,9 @@ function EmployeeLeaveView() {
   const [open, setOpen] = useState(false);
   /** The request whose detail dialog is open — the requester's counterpart to the approver's. */
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Withdrawing can't be undone — confirmed (XC-07). */
+  const [withdrawId, setWithdrawId] = useState<string | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
   // Only active types are requestable — the server rejects an archived `type_id` anyway.
   const requestableTypes = types.filter((t) => t.active !== false);
 
@@ -169,11 +173,15 @@ function EmployeeLeaveView() {
   const selected = requests.find((r) => r.request_id === selectedId) ?? null;
 
   const handleCancel = async (id: string) => {
+    setWithdrawing(true);
     try {
       await cancel(id);
       toast.success("Request withdrawn");
+      setWithdrawId(null);
     } catch {
       toast.error("Couldn't withdraw the request. Try again.");
+    } finally {
+      setWithdrawing(false);
     }
   };
 
@@ -362,7 +370,7 @@ function EmployeeLeaveView() {
                             // The row opens the request; withdrawing must not also open the
                             // drawer for a request that no longer exists (WP-263).
                             e.stopPropagation();
-                            void handleCancel(r.request_id);
+                            setWithdrawId(r.request_id);
                           }}
                         >
                           <X className="size-4" /> Withdraw
@@ -413,7 +421,7 @@ function EmployeeLeaveView() {
             <Button
               variant="outline"
               onClick={() => {
-                void handleCancel(selected.request_id);
+                setWithdrawId(selected.request_id);
                 setSelectedId(null);
               }}
             >
@@ -428,6 +436,17 @@ function EmployeeLeaveView() {
         onOpenChange={setOpen}
         types={requestableTypes}
         onSubmit={submit}
+      />
+
+      <ConfirmDialog
+        open={withdrawId !== null}
+        onOpenChange={(o) => !o && setWithdrawId(null)}
+        title="Withdraw this request?"
+        description="It leaves your approver's queue. If you still need the time off, you'll have to request it again."
+        confirmLabel="Withdraw request"
+        destructive
+        busy={withdrawing}
+        onConfirm={() => withdrawId && void handleCancel(withdrawId)}
       />
     </div>
   );

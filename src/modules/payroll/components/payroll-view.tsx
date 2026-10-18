@@ -343,13 +343,14 @@ export function PayrollView() {
         onSave={saveDeductions}
       />
 
-      {/* How the totals are made — the server does include hourly pay, from billable timer hours only,
-          which this note used to deny (QA audit 2026-10-08, WP-271). */}
+      {/* How the totals are made. Hourly pay counts every tracked hour since 2026-10-18 — it was billable
+          hours only, so internal work went unpaid (UX audit TIME-06). */}
       <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">
         <MonitorSmartphone className="size-4 shrink-0" />
-        Salaried staff count at their monthly salary. Hourly staff count at their rate × the billable
-        hours their timer recorded that month — time on non-billable projects isn&apos;t paid. Each
-        employee&apos;s payslip is published to them when the run is finalized.
+        Salaried staff count at their monthly salary. Hourly staff are paid their rate × every hour
+        their timer recorded that month, billable or not — approved time corrections included.
+        Billable hours are shown separately, for invoicing. Each employee&apos;s payslip is
+        published to them when the run is finalized.
       </div>
       {/* A finalized run is the pay record of the period — it cannot be edited or regenerated
           afterwards, so one stray click on a row must not produce one (QA audit 2026-10-08, WP-270). */}

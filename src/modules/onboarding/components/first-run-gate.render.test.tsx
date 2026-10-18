@@ -2,7 +2,8 @@ import { StrictMode } from "react";
 import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const auth = { isAuthenticated: true, hydrated: true, user: { id: "u1" } };
+const logout = vi.fn();
+const auth = { isAuthenticated: true, hydrated: true, user: { id: "u1" }, logout };
 vi.mock("@/stores/auth.store", () => ({
   useAuthStore: (select: (s: typeof auth) => unknown) => select(auth),
 }));
@@ -17,7 +18,10 @@ import { FirstRunGate } from "./first-run-gate";
 
 const incomplete = { phone: "", location: "", date_of_birth: "", work_mode: "" };
 
-beforeEach(() => getMyProfile.mockReset());
+beforeEach(() => {
+  getMyProfile.mockReset();
+  sessionStorage.clear();
+});
 
 /**
  * WP-033 (QA audit 2026-10-08): the gate stored "already checked" as state inside its own effect's
@@ -58,5 +62,25 @@ describe("FirstRunGate", () => {
     });
     expect(getMyProfile).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  /** SHELL-02: the gate can be put off for the session, and left — it is no longer a trap. */
+  it("offers Sign out and Remind me later, and stays away for the session after Later", async () => {
+    getMyProfile.mockResolvedValue(incomplete);
+    const { unmount } = render(<FirstRunGate />);
+    expect(await screen.findByRole("button", { name: /Sign out/ })).toBeInTheDocument();
+    await act(async () => {
+      screen.getByRole("button", { name: "Remind me later" }).click();
+    });
+    expect(screen.queryByText("Finish setting up your profile")).not.toBeInTheDocument();
+    unmount();
+
+    // A fresh mount in the same session doesn't ask again.
+    getMyProfile.mockClear();
+    await act(async () => {
+      render(<FirstRunGate />);
+    });
+    expect(getMyProfile).not.toHaveBeenCalled();
+    expect(screen.queryByText("Finish setting up your profile")).not.toBeInTheDocument();
   });
 });

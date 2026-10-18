@@ -62,7 +62,8 @@ const BIT_TO_FRONTEND: Record<number, PermissionId[]> = {
   // AttendanceManage — the WRITE path (recompute, day overrides). Its own id: it used to light
   // `attendance:manage` too, so "View team attendance" was offered the Recompute control and every
   // press 403'd (QA audit 2026-10-08, WP-324).
-  36: ["attendance:view", "attendance:edit"], // AttendanceManage
+  // …and decides time-correction requests, which live on the Approvals page (UX audit TIME-05).
+  36: ["attendance:view", "attendance:edit", "approvals:view"], // AttendanceManage
   // ── leave / approvals · 40–49 ──
   40: ["leave:view", "leave:request"], // LeaveRequest
   41: ["leave:view", "leave:approve", "approvals:view", "approvals:approve"], // LeaveApprove

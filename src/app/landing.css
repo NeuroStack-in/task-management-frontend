@@ -14,7 +14,7 @@
   --wp-surface-2: #f4ede2; /* inset surface */
   --wp-ink: #211a15; /* warm near-black */
   --wp-ink-2: #4a3f37; /* softer heading ink */
-  --wp-muted: #766a5f; /* warm taupe body */
+  --wp-muted: #6a5e53; /* warm taupe body — 5.3:1 on the sand bands; #766a5f was 4.4:1 (XC-01) */
   --wp-faint: #746758; /* captions — was #a89b8c (2.3:1 on the inset sand); now 4.6:1+ (WP-114) */
 
   /* --- Accent (teal) + warm secondary --- */

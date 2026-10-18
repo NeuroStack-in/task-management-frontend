@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/table";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { UNKNOWN_DEPARTMENT, UNKNOWN_ROLE } from "@/lib/format";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
 import {
@@ -94,6 +95,8 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
   const [departments, setDepartments] = useState<ApiDepartment[]>([]);
   /** invite_id currently being acted on — disables just that row's actions, not the whole table. */
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Revoking kills the invite link at once — confirmed, by address (XC-07). */
+  const [revoking, setRevoking] = useState<ApiInvite | null>(null);
 
   const load = useCallback(() => {
     if (!canRead) return;
@@ -148,6 +151,7 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
     setBusyId(invite.invite_id);
     try {
       await revokeInvite(invite.invite_id);
+      setRevoking(null);
       toast.success(`Invite for ${invite.email} revoked`, {
         description: "The link stops working and the address is free to invite again.",
       });
@@ -269,7 +273,7 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
                               <DropdownMenuItem
                                 variant="destructive"
                                 className="gap-2 whitespace-nowrap"
-                                onClick={() => handleRevoke(invite)}
+                                onClick={() => setRevoking(invite)}
                               >
                                 <Trash2 className="size-4" />
                                 Revoke invite
@@ -286,6 +290,16 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
           </Table>
         </div>
       </CardContent>
+      <ConfirmDialog
+        open={revoking !== null}
+        onOpenChange={(o) => !o && setRevoking(null)}
+        title={`Revoke the invite for ${revoking?.email ?? ""}?`}
+        description="Their invite link and code stop working straight away. If they still need to join, you'll have to send a new invite."
+        confirmLabel="Revoke invite"
+        destructive
+        busy={revoking ? busyId === revoking.invite_id : false}
+        onConfirm={() => revoking && void handleRevoke(revoking)}
+      />
     </Card>
   );
 }

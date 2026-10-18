@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ApiError } from "@/lib/api";
 import {
   approveOrgRequest,
@@ -55,6 +56,8 @@ export function OrgRequestsQueue() {
    */
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const [rejecting, setRejecting] = useState<OpsOrgRequest | null>(null);
+  /** Approving creates a real organization and owner login — confirmed, like Reject (XC-07). */
+  const [approving, setApproving] = useState<OpsOrgRequest | null>(null);
   const [reason, setReason] = useState("");
   const isBusy = (id: string | undefined) => !!id && busy.has(id);
   const markBusy = (id: string, on: boolean) =>
@@ -95,6 +98,7 @@ export function OrgRequestsQueue() {
     markBusy(r.id, true);
     try {
       const out = await approveOrgRequest(r.id);
+      setApproving(null);
       toast.success(`${r.org_name} created`, { description: `Workspace: ${out.slug}` });
       load();
     } catch (e) {
@@ -213,7 +217,7 @@ export function OrgRequestsQueue() {
                   <div className="flex shrink-0 gap-2">
                     <Button
                       size="sm"
-                      onClick={() => approve(r)}
+                      onClick={() => setApproving(r)}
                       disabled={isBusy(r.id)}
                       className="gap-1.5"
                     >
@@ -271,6 +275,20 @@ export function OrgRequestsQueue() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={approving !== null}
+        onOpenChange={(o) => !o && setApproving(null)}
+        title={`Approve ${approving?.org_name ?? "this request"}?`}
+        description={
+          approving
+            ? `This creates the ${approving.org_name} organization now, on the Free plan, with ${approving.owner_name} (${approving.owner_email}) as its owner. An organization can't be un-created from here.`
+            : ""
+        }
+        confirmLabel="Approve and create"
+        busy={approving ? isBusy(approving.id) : false}
+        onConfirm={() => approving && void approve(approving)}
+      />
     </div>
   );
 }

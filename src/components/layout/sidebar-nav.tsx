@@ -321,7 +321,7 @@ export function SidebarNav({
               return (
                 <div key={group.label}>
                   <p
-                    className="wp-rail-item text-muted-foreground px-3 pb-1.5 text-[10px] font-semibold tracking-[0.12em] uppercase"
+                    className="wp-rail-item text-muted-foreground px-3 pb-1.5 text-[11px] font-semibold tracking-[0.1em] uppercase"
                     style={{ "--wp-i": groupStart } as React.CSSProperties}
                   >
                     {group.label}

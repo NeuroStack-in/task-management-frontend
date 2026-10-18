@@ -17,6 +17,7 @@
  */
 import { apiFetch } from "@/lib/api";
 import type { ApiLeaveAttachment } from "@/modules/leave/services/leave.service";
+import type { ApiCorrection } from "@/modules/time-tracking/services/time-corrections.service";
 
 /** One queued request (`approvals::dto::ApprovalRow`). */
 export interface ApiApprovalRow {
@@ -96,6 +97,30 @@ export interface DecideResult {
   user_id: string;
   request_id: string;
   status: string;
+}
+
+// ── Time corrections (UX audit TIME-05) ────────────────────────────────────────────────────────
+
+export type { ApiCorrection };
+
+/** `GET /v1/time/corrections?status=` — the time-correction queue (`attendance:edit`). */
+export function getTimeCorrections(status = "pending"): Promise<ApiCorrection[]> {
+  return apiFetch<{ corrections: ApiCorrection[] }>(
+    `/v1/time/corrections?status=${encodeURIComponent(status)}`,
+  ).then((r) => r.corrections);
+}
+
+/** `POST /v1/time/corrections/decide` — approve applies the fix to the timesheet at once. */
+export function decideTimeCorrection(input: {
+  user_id: string;
+  request_id: string;
+  decision: "approve" | "reject";
+  reason?: string;
+}): Promise<ApiCorrection> {
+  return apiFetch<ApiCorrection>("/v1/time/corrections/decide", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function decide(input: DecideInput): Promise<DecideResult> {

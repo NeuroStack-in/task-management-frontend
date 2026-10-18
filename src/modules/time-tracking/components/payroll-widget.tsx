@@ -110,11 +110,15 @@ export function PayrollWidget() {
             <dd className="text-right tabular-nums">{money(latest.gross)}</dd>
             <dt className="text-muted-foreground">Deductions</dt>
             <dd className="text-right tabular-nums">−{money(latest.deductions)}</dd>
-            {latest.pay_type === "hourly" && typeof latest.billable_secs === "number" ? (
+            {/* Every tracked hour is paid since 2026-10-18 (TIME-06); older slips were paid on
+                billable hours, which is what they carry. */}
+            {latest.pay_type === "hourly" &&
+            typeof (latest.worked_secs ?? latest.billable_secs) === "number" ? (
               <>
                 <dt className="text-muted-foreground">Hours paid</dt>
                 <dd className="text-right tabular-nums">
-                  {formatHours(latest.billable_secs / 3600)} × {money(latest.rate)}
+                  {formatHours((latest.worked_secs ?? latest.billable_secs ?? 0) / 3600)} ×{" "}
+                  {money(latest.rate)}
                 </dd>
               </>
             ) : null}

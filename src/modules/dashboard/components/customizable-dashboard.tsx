@@ -47,6 +47,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 /**
  * Makes a widget card fill its tile and distribute its content top-to-bottom:
@@ -149,6 +150,26 @@ function SortableWidget({
 export function CustomizableDashboard({ data }: { data: DashboardData }) {
   const widgets = useDashboardStore((s) => s.widgets);
   const toggleWidget = useDashboardStore((s) => s.toggleWidget);
+  /**
+   * Removing a widget and resetting the layout are reversible, so they act at once and offer Undo
+   * in the toast instead of asking first (UX audit 2026-10-16, XC-07).
+   */
+  const removeWithUndo = (w: DashboardWidget) => {
+    toggleWidget(w.id);
+    toast(`Removed “${w.title}”`, {
+      action: { label: "Undo", onClick: () => toggleWidget(w.id) },
+    });
+  };
+  const resetWithUndo = () => {
+    const before = useDashboardStore.getState().widgets;
+    reset();
+    toast("Dashboard layout reset", {
+      action: {
+        label: "Undo",
+        onClick: () => useDashboardStore.setState({ widgets: before, unsynced: true }),
+      },
+    });
+  };
   const reorder = useDashboardStore((s) => s.reorder);
   const reset = useDashboardStore((s) => s.reset);
 
@@ -217,7 +238,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
         key={w.id}
         id={w.id}
         heroFill={heroFill}
-        onRemove={() => toggleWidget(w.id)}
+        onRemove={() => removeWithUndo(w)}
       >
         {def.render(data)}
       </SortableWidget>
@@ -267,7 +288,7 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
             <DropdownMenuSeparator />
             <button
               type="button"
-              onClick={reset}
+              onClick={resetWithUndo}
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <RotateCcw className="size-4" /> Reset layout

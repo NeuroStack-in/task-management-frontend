@@ -33,6 +33,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader } from "@/components/shared/loader";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ApiError } from "@/lib/api";
 
 import { listOwners, grantOwner, revokeOwner, type OrgOwner } from "../services/org.service";
@@ -52,6 +53,8 @@ export function OrgOwnersCard() {
    */
   const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Adding an owner grants full, unrestricted access — it is confirmed, by name (XC-07). */
+  const [confirmAdd, setConfirmAdd] = useState(false);
   /** The owner awaiting a confirmed removal — ownership is the org's top authority (WP-352). */
   const [confirmRemove, setConfirmRemove] = useState<OrgOwner | null>(null);
   const [addId, setAddId] = useState<string | null>(null);
@@ -109,6 +112,7 @@ export function OrgOwnersCard() {
       const r = await grantOwner(addId);
       setOwners(r.owners);
       setAddId(null);
+      setConfirmAdd(false);
       toast.success("Owner added", {
         description: "They now have full, unrestricted access to this organisation.",
       });
@@ -261,10 +265,19 @@ export function OrgOwnersCard() {
             )}
           </SelectContent>
         </Select>
-        <Button onClick={add} disabled={!addId || busy || loadFailed}>
+        <Button onClick={() => setConfirmAdd(true)} disabled={!addId || busy || loadFailed}>
           <Plus className="size-4" />
           Add owner
         </Button>
+        <ConfirmDialog
+          open={confirmAdd}
+          onOpenChange={setConfirmAdd}
+          title={`Make ${candidates.find((u) => u.id === addId)?.name ?? "this person"} an owner?`}
+          description="Owners have full, unrestricted access: every setting, all monitoring data, payroll, billing, and the power to add or remove other owners and close the organization."
+          confirmLabel="Make owner"
+          busy={busy}
+          onConfirm={() => void add()}
+        />
         {loading || loadFailed ? null : (
           <p className="text-xs text-muted-foreground sm:ml-auto">
             {soleOwner

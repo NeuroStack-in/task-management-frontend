@@ -100,6 +100,8 @@ export function PhoneInput({
    */
   triggerClassName,
   inputClassName,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -109,6 +111,9 @@ export function PhoneInput({
   className?: string;
   triggerClassName?: string;
   inputClassName?: string;
+  /** Passed to the number box, so an error and a hint are read out with it. */
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
 }) {
   const { open, setOpen, toggle, triggerRef, panelRef, pos } = useAnchoredPopup(
     PANEL_W,
@@ -281,6 +286,8 @@ export function PhoneInput({
         type="tel"
         inputMode="tel"
         autoComplete="tel-national"
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         disabled={disabled}
         placeholder={placeholder}
         value={national}

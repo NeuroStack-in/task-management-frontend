@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { TimeCorrectionsQueue } from "./time-corrections-queue";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useApprovals, type ApprovalItem } from "../use-approvals";
@@ -82,6 +84,8 @@ const FILTERS: { value: Filter; label: string }[] = [
 export function ApprovalsView() {
   const { can } = usePermissions();
   const canApprove = can("approvals:approve");
+  // Time corrections are decided by whoever manages attendance (TIME-05).
+  const canDecideTime = can("attendance:edit");
   const { items, counts, loading, error, reload, decide } = useApprovals();
 
   const [filter, setFilter] = useState<Filter>("pending");
@@ -89,6 +93,11 @@ export function ApprovalsView() {
   // Every request with a decision in flight. A single id let row A's buttons re-enable the moment
   // row B was clicked, while A was still being decided (QA audit 2026-10-08, WP-482).
   const [deciding, setDeciding] = useState<ReadonlySet<string>>(new Set());
+  /**
+   * Reject is confirmed — it is final, and the person is told (XC-07 / TIME-10). Approve stays one
+   * click: it is the expected outcome, and the employee can still withdraw leave that hasn't started.
+   */
+  const [rejectTarget, setRejectTarget] = useState<ApprovalItem | null>(null);
 
   const rows = useMemo(
     () => items.filter((a) => filter === "all" || a.status === filter),
@@ -166,8 +175,8 @@ export function ApprovalsView() {
         title="Approvals"
         description={
           failed
-            ? "Review and decide time-off requests"
-            : `${counts.pending ?? 0} pending · review and decide time-off requests`
+            ? "Review and decide time-off requests and time corrections"
+            : `${counts.pending ?? 0} leave pending · review and decide time-off requests and time corrections`
         }
         actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
@@ -182,6 +191,8 @@ export function ApprovalsView() {
           </Button>
         </div>
       ) : null}
+
+      {canDecideTime ? <TimeCorrectionsQueue /> : null}
 
       {/* Status filter */}
       <div className="flex flex-wrap gap-2">
@@ -343,7 +354,7 @@ export function ApprovalsView() {
                               disabled={deciding.has(req.requestId)}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                runDecide(req, "reject");
+                                setRejectTarget(req);
                               }}
                             >
                               <X className="size-4" />
@@ -367,7 +378,29 @@ export function ApprovalsView() {
         canApprove={canApprove}
         busy={selected ? deciding.has(selected.requestId) : false}
         onClose={() => setSelectedId(null)}
-        onDecide={runDecide}
+        onDecide={(req, decision) =>
+          decision === "reject" ? setRejectTarget(req) : void runDecide(req, decision)
+        }
+      />
+
+      <ConfirmDialog
+        open={rejectTarget !== null}
+        onOpenChange={(o) => !o && setRejectTarget(null)}
+        title={`Reject ${rejectTarget?.requesterName ?? "this"}'s request?`}
+        description={
+          rejectTarget
+            ? `${rejectTarget.typeName}${rejectTarget.from ? `, ${rejectTarget.from}${rejectTarget.to && rejectTarget.to !== rejectTarget.from ? ` to ${rejectTarget.to}` : ""}` : ""}. A rejected request can't be reopened — they would have to ask again.`
+            : ""
+        }
+        confirmLabel="Reject request"
+        destructive
+        busy={rejectTarget ? deciding.has(rejectTarget.requestId) : false}
+        onConfirm={async () => {
+          if (!rejectTarget) return;
+          const t = rejectTarget;
+          await runDecide(t, "reject");
+          setRejectTarget(null);
+        }}
       />
     </div>
   );

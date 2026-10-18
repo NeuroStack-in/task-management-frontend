@@ -23,8 +23,20 @@ import { getTrackingPolicy } from "@/modules/agents/services/fleet.service";
 import { personName, UNKNOWN_DEPARTMENT } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
+import { toast } from "sonner";
 import { useScreenshots } from "../use-screenshots";
-import { getScreenshotReport, getScreenshotDeptSummary, regenerateScreenshotDeptSummary, runScreenshotReports, type ScreenshotDeptSummary, type ScreenshotReport, type ShotRow } from "../services/insights.service";
+import {
+  getScreenshotReport,
+  getScreenshotDeptSummary,
+  regenerateScreenshotDeptSummary,
+  runScreenshotReports,
+  type ScreenshotDeptSummary,
+  type ScreenshotReport,
+  type ShotRow,
+  awaitsReview,
+  reviewScreenshot,
+} from "../services/insights.service";
 import { EMP_PARAM } from "../lib/employee-scope";
 import { AiReportCard } from "./ai-report-card";
 
@@ -383,12 +395,16 @@ export function ScreenshotsTab() {
     [shots],
   );
   const total = shots.length;
-  // Real: the model's verdicts plus the server's distracting-app fallback. Deliberately the union —
-  // both warrant a human look; only the badge claims which one judged the frame.
-  const needsReview = useMemo(
-    () => shots.filter((s) => s.flagged).length,
-    [shots],
-  );
+  // Flags nobody has handled yet — the AI's verdicts, minus the ones a reviewer confirmed or
+  // dismissed (MON-02). Never the app name (owner decision 2026-10-13).
+  const needsReview = useMemo(() => shots.filter(awaitsReview).length, [shots]);
+  /**
+   * How many frames the AI has actually looked at. "Nothing flagged" must never stand in for
+   * "nothing checked": minutes after capture, or longer when the provider fails, most of a day can be
+   * unanalysed, and the page used to read that as all clear (UX audit 2026-10-16, MON-01).
+   */
+  const analysed = useMemo(() => shots.filter((s) => s.reviewed === true).length, [shots]);
+  const notYetChecked = shots.length - analysed;
   /**
    * The server's narrative and its on-task figure describe only the frames the vision model has
    * **analysed** — and with none analysed its fallback says no screenshots were captured, over a
@@ -427,10 +443,10 @@ export function ScreenshotsTab() {
   const q = query.trim().toLowerCase();
   const filteredShots = useMemo(() => {
     return shots.filter((s) => {
-      // "Needs review" → every capture worth a look, and *only* those: the vision model's verdicts
-      // plus the captures the server surfaced from the app name alone. It never selects the whole
-      // day. The tile badge is what tells the two kinds apart.
-      if (flag === "flagged" && !s.flagged) return false;
+      // "Needs review" → the AI's flags nobody has handled yet, and only those (MON-01/MON-02). The
+      // app name never flags (owner decision 2026-10-13); a confirmed or dismissed flag has left
+      // the queue.
+      if (flag === "flagged" && !awaitsReview(s)) return false;
       const emp = dirById.get(s.user_id);
       if (dept !== ALL_DEPTS && emp?.department_id !== dept) return false;
       if (q) {
@@ -475,7 +491,9 @@ export function ScreenshotsTab() {
               } on ${dateLabel(date)}. ${
                 needsReview > 0
                   ? `${needsReview} ${needsReview === 1 ? "capture needs" : "captures need"} review — start with those.`
-                  : "None flagged for review."
+                  : notYetChecked > 0
+                    ? `Nothing flagged in the ${analysed.toLocaleString()} the AI has checked so far — ${notYetChecked.toLocaleString()} not checked yet.`
+                    : "Nothing flagged — the AI has checked every capture."
               }`;
 
   // Tell the assistant what this page is actually showing.
@@ -607,7 +625,12 @@ export function ScreenshotsTab() {
             value: countsUnknown ? "—" : total.toLocaleString(),
             hint: hasMore ? "so far" : undefined,
           },
-          { label: "Needs review", value: countsUnknown ? "—" : needsReview },
+          {
+            label: "Needs review",
+            value: countsUnknown ? "—" : needsReview,
+            // Says how much of the day the count covers (MON-01).
+            hint: countsUnknown ? undefined : `AI-checked ${analysed.toLocaleString()} of ${total.toLocaleString()}`,
+          },
           {
             label: "On-task",
             value: aiAnalysed ? `${aiAnalysed.metrics.on_task_pct}%` : "—",
@@ -766,8 +789,12 @@ export function ScreenshotsTab() {
       ) : flag === "flagged" && filteredShots.length === 0 ? (
         <EmptyState
           icon={Flag}
-          title="Nothing flagged for review"
-          description="The AI hasn't judged any capture on this day to be outside the person's work. Captures it flags appear here for review."
+          title="Nothing waiting for review"
+          description={
+            notYetChecked > 0
+              ? `Nothing flagged in the ${analysed.toLocaleString()} captures the AI has checked so far. ${notYetChecked.toLocaleString()} haven't been checked yet — flags appear here as it gets to them.`
+              : "The AI has checked every capture on this day, and nothing needs a look that hasn't had one."
+          }
         />
       ) : filteredShots.length === 0 ? (
         unseenPanel ?? (
@@ -792,7 +819,7 @@ export function ScreenshotsTab() {
                   dept={deptId ? deptLabel(deptId) : "—"}
                   cover={cover}
                   count={g.shots.length}
-                  flaggedCount={g.shots.filter((s) => s.flagged).length}
+                  flaggedCount={g.shots.filter(awaitsReview).length}
                   onOpen={() => setOpenUser(g.userId)}
                   onImageError={onTileImageError}
                 />
@@ -961,6 +988,7 @@ function Lightbox({
   onIndexChange,
   onClose,
   onImageError,
+  onReviewed,
 }: {
   shots: ShotRow[];
   index: number | null;
@@ -971,6 +999,8 @@ function Lightbox({
   onClose: () => void;
   /** The frame failed to load — its presigned URL may have expired. */
   onImageError?: () => void;
+  /** A reviewer confirmed or dismissed this frame's flag — the caller updates its counts. */
+  onReviewed?: (shotId: string, outcome: "confirmed" | "dismissed") => void;
 }) {
   const count = shots.length;
   const shot = index !== null ? (shots[index] ?? null) : null;
@@ -1118,7 +1148,17 @@ function Lightbox({
                     shotId={shot.shot_id}
                     userId={shot.user_id}
                     date={date}
+                    rowFlagged={shot.flagged}
+                    humanReview={shot.human_review}
                   />
+                  {/* A flag a person can act on — the queue shrinks as flags are handled (MON-02). */}
+                  {shot.flagged ? (
+                    <FlagReview
+                      key={`review:${shot.shot_id}`}
+                      shot={shot}
+                      onReviewed={(outcome) => onReviewed?.(shot.shot_id, outcome)}
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -1164,10 +1204,15 @@ function ShotAiReport({
   shotId,
   userId,
   date,
+  rowFlagged,
+  humanReview,
 }: {
   shotId: string;
   userId: string;
   date: string;
+  /** The grid's flag — the confidence-filtered one the counts use, so the panel agrees with them. */
+  rowFlagged: boolean;
+  humanReview?: "confirmed" | "dismissed";
 }) {
   const [state, setState] = useState<AiState>({ kind: "loading" });
   const [running, setRunning] = useState(false);
@@ -1243,7 +1288,9 @@ function ShotAiReport({
         </p>
       )}
 
-      {state.kind === "loaded" && <AiReadBody report={state.report} />}
+      {state.kind === "loaded" && (
+        <AiReadBody report={state.report} rowFlagged={rowFlagged} humanReview={humanReview} />
+      )}
 
       {state.kind === "none" && (
         <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -1277,7 +1324,19 @@ function ShotAiReport({
  * The rendered report — what is on screen, whether it serves the person's role, category /
  * work-related / flag badges, and provenance.
  */
-function AiReadBody({ report }: { report: ScreenshotReport }) {
+function AiReadBody({
+  report,
+  rowFlagged,
+  humanReview,
+}: {
+  report: ScreenshotReport;
+  /**
+   * The flag the grid counts. The report keeps the model's raw flag, below the confidence bar too,
+   * so the panel said "Needs review" for frames the counts left out; it follows the grid now.
+   */
+  rowFlagged: boolean;
+  humanReview?: "confirmed" | "dismissed";
+}) {
   const catTone =
     report.category === "distracting"
       ? "bg-destructive/20 text-destructive"
@@ -1299,19 +1358,101 @@ function AiReadBody({ report }: { report: ScreenshotReport }) {
         <span className="rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/70">
           {report.work_related ? "Work-related" : "Not work-related"}
         </span>
-        {report.flag ? (
+        {rowFlagged && !humanReview ? (
           <span className="inline-flex items-center gap-1 rounded-sm bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive">
             <Flag className="size-3" /> Needs review
           </span>
+        ) : rowFlagged && humanReview ? (
+          <span className="inline-flex items-center gap-1 rounded-sm bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">
+            <Flag className="size-3" /> {humanReview === "confirmed" ? "Flag confirmed" : "Flag dismissed"}
+          </span>
         ) : null}
       </div>
-      {report.flag && report.flag_reason ? (
+      {rowFlagged && report.flag_reason ? (
         <p className="text-[13px] text-destructive/90">{report.flag_reason}</p>
       ) : null}
       <p className="text-[11px] text-white/35">
         AI analysis
         {report.confidence > 0 ? ` · ${Math.round(report.confidence * 100)}% confidence` : ""}
       </p>
+    </div>
+  );
+}
+
+/**
+ * Confirm or dismiss an AI flag, with an optional note (UX audit 2026-10-16, MON-02). Stored on the
+ * frame and audited under the reviewer's name; "Needs review" counts drop as flags are handled. A
+ * decision can be changed — pressing the other button replaces it.
+ */
+function FlagReview({
+  shot,
+  onReviewed,
+}: {
+  shot: ShotRow;
+  onReviewed: (outcome: "confirmed" | "dismissed") => void;
+}) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState<"confirmed" | "dismissed" | null>(null);
+  const done = shot.human_review;
+
+  async function decide(outcome: "confirmed" | "dismissed") {
+    setBusy(outcome);
+    try {
+      await reviewScreenshot(shot, outcome, note);
+      onReviewed(outcome);
+      setNote("");
+      toast.success(outcome === "dismissed" ? "Flag dismissed" : "Flag confirmed", {
+        description: "Recorded in the audit log under your name.",
+      });
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError && e.code === "not_flagged"
+          ? "This screenshot isn't flagged any more."
+          : friendlyError(e, "Couldn't save your review."),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="mt-4 space-y-2 rounded-lg border border-white/15 bg-white/5 p-3">
+      <p className="text-sm font-medium text-white/90">
+        {done === "confirmed"
+          ? "You've confirmed this flag — it needs following up."
+          : done === "dismissed"
+            ? "This flag was dismissed — it was fine."
+            : "Is the AI right to flag this?"}
+      </p>
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={2}
+        maxLength={500}
+        aria-label="Note about this flag (optional)"
+        placeholder="Note (optional) — what you checked or decided"
+        className="w-full resize-none rounded-md border border-white/15 bg-black/30 px-2.5 py-1.5 text-sm text-white placeholder:text-white/40 focus:ring-2 focus:ring-white/30 focus:outline-none"
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={busy !== null || done === "confirmed"}
+          onClick={() => void decide("confirmed")}
+        >
+          {busy === "confirmed" ? <Loader2 className="size-4 animate-spin" /> : <Flag className="size-4" />}
+          Confirm flag
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy !== null || done === "dismissed"}
+          onClick={() => void decide("dismissed")}
+        >
+          {busy === "dismissed" ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+          Dismiss — it&apos;s fine
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1330,6 +1471,10 @@ interface Capture {
   /** Ordered by `display`, so index 0 is always the primary monitor. */
   monitors: ShotRow[];
   flagged: boolean;
+  /** A flag on this capture that no reviewer has handled yet (MON-02). */
+  awaitsReview: boolean;
+  /** The reviewer's decision on the flagged frame, once there is one. */
+  humanReview?: "confirmed" | "dismissed";
   /** `true` when the vision model has judged every monitor in this capture. */
   reviewed: boolean;
   /** The frame the tile shows: the flagged monitor if any, else the primary. */
@@ -1357,6 +1502,8 @@ function groupCaptures(shots: ShotRow[]): Capture[] {
         capturedAt,
         monitors,
         flagged: monitors.some((s) => s.flagged),
+        awaitsReview: monitors.some(awaitsReview),
+        humanReview: monitors.find((s) => s.flagged)?.human_review,
         // Reviewed only when *every* frame of the moment has been analysed — a capture with one
         // judged monitor and one un-judged one has not been fully reviewed, and claiming otherwise
         // is the same over-statement this field exists to stop.
@@ -1410,8 +1557,24 @@ function EmployeeCapturesLoader({
   nameOf: (id: string) => string;
   onBack: () => void;
 }) {
-  const { shots, loading, loadingMore, error, hasMore, loadMore, reload, loadedAt } =
-    useScreenshots(date, userId);
+  const {
+    shots: read,
+    loading,
+    loadingMore,
+    error,
+    hasMore,
+    loadMore,
+    reload,
+    loadedAt,
+  } = useScreenshots(date, userId);
+  // Decisions made here, laid over the last read so "Needs review" drops at once (MON-02). The next
+  // read carries them from the server anyway.
+  const [decided, setDecided] = useState<Record<string, "confirmed" | "dismissed">>({});
+  const shots = useMemo(
+    () =>
+      read.map((s) => (decided[s.shot_id] ? { ...s, human_review: decided[s.shot_id] } : s)),
+    [read, decided],
+  );
   const pages = useRef(0);
   useEffect(() => {
     pages.current = 0;
@@ -1447,6 +1610,7 @@ function EmployeeCapturesLoader({
       loadingMore={loadingMore}
       error={error}
       onImageError={onImageError}
+      onReviewed={(shotId, outcome) => setDecided((d) => ({ ...d, [shotId]: outcome }))}
     />
   );
 }
@@ -1479,6 +1643,7 @@ function EmployeeCaptures({
   loadingMore = false,
   error = null,
   onImageError,
+  onReviewed,
 }: {
   /** Whose captures these are — the target for an on-demand capture (device resolved from it). */
   userId: string;
@@ -1503,6 +1668,8 @@ function EmployeeCaptures({
   error?: string | null;
   /** An image failed to load — its presigned URL may have expired. */
   onImageError?: () => void;
+  /** A flag was confirmed or dismissed in the viewer (MON-02). */
+  onReviewed?: (shotId: string, outcome: "confirmed" | "dismissed") => void;
 }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -1520,7 +1687,7 @@ function EmployeeCaptures({
         const hi = to ? pickerMinutes(to) : null;
         if (lo !== null && t < lo) return false;
         if (hi !== null && t > hi) return false;
-        if (flag === "flagged" && !c.flagged) return false;
+        if (flag === "flagged" && !c.awaitsReview) return false;
         return true;
       }),
     [allCaptures, from, to, flag],
@@ -1557,7 +1724,8 @@ function EmployeeCaptures({
     () => new Set(shots.map((s) => s.display ?? 0)).size,
     [shots],
   );
-  const flaggedCount = allCaptures.filter((c) => c.flagged).length;
+  const flaggedCount = allCaptures.filter((c) => c.awaitsReview).length;
+  const uncheckedCount = allCaptures.filter((c) => !c.reviewed).length;
   const dirty = from !== "" || to !== "" || flag !== "all";
   /** Nothing read yet (first page in flight) or the read failed — the counts would be a false 0. */
   const unread = shots.length === 0 && (Boolean(refreshing) || error !== null);
@@ -1718,14 +1886,16 @@ function EmployeeCaptures({
           icon={flag === "flagged" ? Flag : Camera}
           title={
             flag === "flagged"
-              ? "Nothing flagged for review"
+              ? "Nothing waiting for review"
               : dirty
                 ? "No captures in this range"
                 : "No captures on this day"
           }
           description={
             flag === "flagged"
-              ? "None of this employee's captures on this day were flagged for review."
+              ? uncheckedCount > 0
+                ? `Nothing flagged so far — ${uncheckedCount} of this employee's captures haven't been checked by the AI yet.`
+                : "The AI has checked all of this employee's captures on this day, and nothing is waiting for review."
               : dirty
                 ? "Try widening the time range."
                 : `No screenshots were captured for ${name} on ${dateLabel(date)}.`
@@ -1783,6 +1953,7 @@ function EmployeeCaptures({
         onIndexChange={setViewerIdx}
         onClose={() => setViewerIdx(null)}
         onImageError={onImageError}
+        onReviewed={onReviewed}
       />
     </div>
   );
@@ -1827,7 +1998,7 @@ function CaptureCard({
       onClick={onOpen}
       className={cn(
         "group overflow-hidden rounded-2xl bg-card text-left shadow-soft transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-        capture.flagged && "ring-1 ring-destructive/40",
+        capture.awaitsReview && "ring-1 ring-destructive/40",
       )}
     >
       <div className="relative aspect-video w-full overflow-hidden bg-muted">
@@ -1854,9 +2025,20 @@ function CaptureCard({
           same app can be core work for one department and a distraction for another, so the name
           decides nothing. An unanalysed frame carries no badge; its detail panel says so.
         */}
-        {capture.flagged ? (
+        {capture.awaitsReview ? (
           <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-medium text-white">
             <Flag className="size-3" /> Needs review
+          </span>
+        ) : capture.humanReview ? (
+          // Handled by a reviewer (MON-02) — still marked, no longer asking.
+          <span className="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+            <Flag className="size-3" />
+            {capture.humanReview === "confirmed" ? "Flag confirmed" : "Flag dismissed"}
+          </span>
+        ) : !capture.reviewed ? (
+          // Not looked at yet — so no badge must not read as "clean" (MON-01).
+          <span className="absolute right-2 top-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] font-medium text-white/85">
+            Not checked yet
           </span>
         ) : monitorCount > 1 ? (
           <span className="absolute right-2 top-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">

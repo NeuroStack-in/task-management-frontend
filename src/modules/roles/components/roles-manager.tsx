@@ -45,6 +45,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RoleEditorDialog } from "./role-editor-dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { RoleMembers } from "./role-members";
 import { useRoles } from "../use-roles";
 import { cloneName } from "../lib/role-names";
@@ -88,6 +89,9 @@ export function RolesManager() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<ApiRole | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ApiRole | null>(null);
+  /** Restoring overwrites every edit to a system role, for everyone holding it — confirmed (XC-07). */
+  const [restoreTarget, setRestoreTarget] = useState<ApiRole | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const [busy, setBusy] = useState(false);
   /** Which role's member list is expanded — one at a time; this is a table, not an accordion set. */
   const [openRole, setOpenRole] = useState<string | null>(null);
@@ -153,11 +157,15 @@ export function RolesManager() {
   };
 
   const handleRestore = async (role: ApiRole) => {
+    setRestoring(true);
     try {
       await restore(role.id);
       toast.success(`“${role.name}” restored to its default permissions.`);
+      setRestoreTarget(null);
     } catch (e) {
       toast.error(roleActionError(e, role, "restore"));
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -333,7 +341,7 @@ export function RolesManager() {
                           <Pencil className="size-4" /> Edit
                         </DropdownMenuItem>
                         {role.system && !role.is_owner ? (
-                          <DropdownMenuItem onClick={() => handleRestore(role)}>
+                          <DropdownMenuItem onClick={() => setRestoreTarget(role)}>
                             <RotateCcw className="size-4" /> Restore to default
                           </DropdownMenuItem>
                         ) : null}
@@ -400,6 +408,16 @@ export function RolesManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={restoreTarget !== null}
+        onOpenChange={(o) => !o && setRestoreTarget(null)}
+        title={`Restore “${restoreTarget?.name ?? ""}” to its defaults?`}
+        description="Every change made to this role's permissions is undone, and it applies at once to everyone who has the role — they may gain or lose access to pages and actions."
+        confirmLabel="Restore defaults"
+        busy={restoring}
+        onConfirm={() => restoreTarget && void handleRestore(restoreTarget)}
+      />
     </div>
   );
 }

@@ -200,7 +200,7 @@
   --secondary-foreground: #46423b;
 
   --muted: #f0ede7;
-  --muted-foreground: #7a746b;
+  --muted-foreground: #6e6860;
 
   --accent: #e8e6fb;
   --accent-foreground: #3730a3;
@@ -307,6 +307,28 @@
   --sidebar-accent-foreground: #c7c4ff;
   --sidebar-border: rgb(255 255 255 / 0.07);
   --sidebar-ring: #6d74f4;
+}
+
+/* ---- Status text tones (UX audit 2026-10-16, XC-01) ----
+   `warning`, `success` and `destructive` are fill colours: bars, dots, button backgrounds. As TEXT
+   on their own soft tint (`bg-warning/15 text-warning`, the status and priority badges) they read at
+   2.2:1 (amber) to 3.7:1 (red) — below the 4.5:1 small text needs. These are the same hues pulled
+   towards the page's ink, derived from whatever the active palette sets, so every palette gets them
+   and the fills are untouched. `text-warning` / `text-success` / `text-destructive` use them (see the
+   utilities at the end of this file). */
+:root {
+  --warning-ink: color-mix(in oklab, var(--warning) 58%, black);
+  --success-ink: color-mix(in oklab, var(--success) 66%, black);
+  --destructive-ink: color-mix(in oklab, var(--destructive) 76%, black);
+  --positive-ink: color-mix(in oklab, var(--positive) 66%, black);
+  --negative-ink: color-mix(in oklab, var(--negative) 76%, black);
+}
+:root.dark {
+  --warning-ink: color-mix(in oklab, var(--warning) 78%, white);
+  --success-ink: color-mix(in oklab, var(--success) 78%, white);
+  --destructive-ink: color-mix(in oklab, var(--destructive) 78%, white);
+  --positive-ink: color-mix(in oklab, var(--positive) 78%, white);
+  --negative-ink: color-mix(in oklab, var(--negative) 78%, white);
 }
 
 /* ============================================================= */
@@ -434,7 +456,7 @@
   --secondary: #f1ebe4;
   --secondary-foreground: #5a3c33;
   --muted: #f1ebe4;
-  --muted-foreground: #837469;
+  --muted-foreground: #75675d;
   --accent: #fde0d6;
   --accent-foreground: #b4431f;
   --destructive: #e5544a;
@@ -602,7 +624,7 @@
   --secondary: #efece6;
   --secondary-foreground: #46423b;
   --muted: #f0ede7;
-  --muted-foreground: #7a746b;
+  --muted-foreground: #6e6860;
   --accent: #ece6fc;
   --accent-foreground: #5b21b6;
   --destructive: #e5544a;
@@ -684,7 +706,7 @@
   --secondary: #efece6;
   --secondary-foreground: #46423b;
   --muted: #f0ede7;
-  --muted-foreground: #7a746b;
+  --muted-foreground: #6e6860;
   --accent: #dceafd;
   --accent-foreground: #0c3a82;
   --destructive: #e5544a;
@@ -766,7 +788,7 @@
   --secondary: #f0ebe6;
   --secondary-foreground: #4c1d95;
   --muted: #f1ece7;
-  --muted-foreground: #7e7068;
+  --muted-foreground: #746760;
   --accent: #efe6fb;
   --accent-foreground: #4c1d95;
   --destructive: #e5544a;
@@ -848,7 +870,7 @@
   --secondary: #efece6;
   --secondary-foreground: #374151;
   --muted: #f0ede7;
-  --muted-foreground: #7a746b;
+  --muted-foreground: #6e6860;
   --accent: #ecedf0;
   --accent-foreground: #374151;
   --destructive: #d8443a;
@@ -930,7 +952,7 @@
   --secondary: #eef2f7;
   --secondary-foreground: #3f4654;
   --muted: #eef2f7;
-  --muted-foreground: #6b7280;
+  --muted-foreground: #676d7b;
   --accent: #e6effd;
   --accent-foreground: #1e40af;
   --destructive: #e5544a;
@@ -1012,7 +1034,7 @@
   --secondary: #eef3f0;
   --secondary-foreground: #3c4a45;
   --muted: #eef3f0;
-  --muted-foreground: #6b7771;
+  --muted-foreground: #646f69;
   --accent: #d8f3e9;
   --accent-foreground: #065f46;
   --destructive: #e5544a;
@@ -1094,7 +1116,7 @@
   --secondary: #eef2f7;
   --secondary-foreground: #3f4654;
   --muted: #eef2f7;
-  --muted-foreground: #67707e;
+  --muted-foreground: #646d7a;
   --accent: #dce4f0;
   --accent-foreground: #233f63;
   --destructive: #e5544a;
@@ -1176,7 +1198,7 @@
   --secondary: #edeef2;
   --secondary-foreground: #3d4350;
   --muted: #edeef2;
-  --muted-foreground: #6a6f7a;
+  --muted-foreground: #666b75;
   --accent: #e1e7f5;
   --accent-foreground: #314f8c;
   --destructive: #e5544a;
@@ -1258,7 +1280,7 @@
   --secondary: #f3eceb;
   --secondary-foreground: #5a4549;
   --muted: #f3eceb;
-  --muted-foreground: #7a6b6d;
+  --muted-foreground: #756769;
   --accent: #f1dde0;
   --accent-foreground: #6f2f3b;
   --destructive: #d4514a;
@@ -1440,7 +1462,7 @@
   --secondary: #e9f1f1;
   --secondary-foreground: #38494b;
   --muted: #e9f1f1;
-  --muted-foreground: #5f7173;
+  --muted-foreground: #5d6f71;
   --accent: #d6e9eb;
   --accent-foreground: #145059;
   --destructive: #e5544a;
@@ -2016,4 +2038,25 @@ input[type="date"]::-webkit-inner-spin-button {
 .cn-toast [data-button][data-cancel] {
   background: var(--muted);
   color: var(--muted-foreground);
+}
+
+/* Status colours as text use their ink tones — see "Status text tones" above (XC-01). Same layer and
+   specificity as the generated utilities and later in the file, so these win over them, while
+   variants (`hover:text-…`) and opacity forms (`text-success/70`) behave as before. */
+@layer utilities {
+  .text-warning {
+    color: var(--warning-ink);
+  }
+  .text-success {
+    color: var(--success-ink);
+  }
+  .text-destructive {
+    color: var(--destructive-ink);
+  }
+  .text-positive {
+    color: var(--positive-ink);
+  }
+  .text-negative {
+    color: var(--negative-ink);
+  }
 }

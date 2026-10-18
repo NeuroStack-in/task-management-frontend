@@ -65,10 +65,12 @@ export interface ApiEntryRow {
   stop_reason?: string;
   /** Frozen at fold — reflects what the project was when the work happened. */
   billable: boolean;
-  /** Always `agent`; there is no manual entry path (LLD §4). */
+  /** `agent`, or `correction` for time an approved correction request added (TIME-05). */
   source: string;
   /** The task was gone/unassigned at fold. The entry still counts — the time was really worked. */
   task_invalid?: boolean;
+  /** Changed or added by an approved correction request (TIME-05). */
+  corrected?: boolean;
 }
 
 export interface ApiTodayResponse {

@@ -101,7 +101,8 @@ export function RunLinesCard({
                   <TableHead className="pl-6">Employee</TableHead>
                   <TableHead>Pay type</TableHead>
                   <TableHead className="text-right">Rate</TableHead>
-                  <TableHead className="text-right">Billable hours</TableHead>
+                  <TableHead className="text-right">Hours paid</TableHead>
+                  <TableHead className="text-right">Billable</TableHead>
                   <TableHead className="text-right">Gross</TableHead>
                   <TableHead className="text-right">Deductions</TableHead>
                   <TableHead className="pr-6 text-right">Net</TableHead>
@@ -118,7 +119,14 @@ export function RunLinesCard({
                         {l.pay_type === "hourly" ? "/h" : "/mo"}
                       </span>
                     </TableCell>
+                    {/* Paid on every tracked hour (TIME-06); a run drafted before that was paid
+                        on its billable hours, so those stand in. */}
                     <TableCell className="text-right tabular-nums">
+                      {l.pay_type === "hourly" && (l.worked_secs ?? l.billable_secs) != null
+                        ? formatHours((l.worked_secs ?? l.billable_secs ?? 0) / 3600)
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-right tabular-nums">
                       {l.pay_type === "hourly" && l.billable_secs != null
                         ? formatHours(l.billable_secs / 3600)
                         : "—"}

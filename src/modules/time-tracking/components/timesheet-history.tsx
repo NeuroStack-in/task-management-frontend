@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, Pencil, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Loader } from "@/components/shared/loader";
 import { HolidayBadge } from "@/components/shared/holiday-badge";
 import { formatDuration } from "@/lib/format";
 import { useOrgHolidays } from "@/hooks/use-org-holidays";
-import { useTimesheet } from "../use-timesheet";
+import { useTimesheet, type TimesheetRow } from "../use-timesheet";
 import { todayLocal } from "../services/timesheet.service";
 
 /**
@@ -24,7 +24,15 @@ import { todayLocal } from "../services/timesheet.service";
  * The default is **yesterday**, not today: today is already the whole view above, and defaulting a
  * "previous days" section to the day you are looking at would show the same table twice.
  */
-export function TimesheetHistory() {
+export function TimesheetHistory({
+  canFix = false,
+  onFix,
+}: {
+  /** The viewer tracks time and may ask for corrections (TIME-05). */
+  canFix?: boolean;
+  /** Ask to fix a session (`row`), or to add missing time on `date` (`row` null). */
+  onFix?: (row: TimesheetRow | null, date: string) => void;
+} = {}) {
   // Resolved on the client, never at render. `new Date()` during render is a hydration mismatch (and
   // the CLAUDE.md convention forbids it in render paths) — the empty first pass renders the picker
   // without a value and settles a tick later.
@@ -124,9 +132,14 @@ export function TimesheetHistory() {
         ) : error ? (
           <p className="text-muted-foreground py-6 text-center text-sm">{error}</p>
         ) : rows.length === 0 ? (
-          <p className="text-muted-foreground py-6 text-center text-sm">
-            No time was tracked on {date}.
-          </p>
+          <div className="space-y-3 py-6 text-center">
+            <p className="text-muted-foreground text-sm">No time was tracked on {date}.</p>
+            {canFix && onFix ? (
+              <Button variant="outline" size="sm" onClick={() => onFix(null, date)}>
+                <Plus className="size-4" /> Add time the timer missed
+              </Button>
+            ) : null}
+          </div>
         ) : (
           <>
             <div className="text-muted-foreground mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
@@ -156,6 +169,9 @@ export function TimesheetHistory() {
                     <th className="py-2 pr-3 font-medium">Project</th>
                     <th className="py-2 pr-3 font-medium">Time</th>
                     <th className="py-2 text-right font-medium">Duration</th>
+                    <th className="w-0 py-2">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -188,11 +204,32 @@ export function TimesheetHistory() {
                           formatDuration(r.durationSec)
                         )}
                       </td>
+                      <td className="py-2.5 pl-2 text-right">
+                        {canFix && onFix && r.correctable ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground h-7"
+                            onClick={() => onFix(r, r.date || date)}
+                          >
+                            <Pencil className="size-3.5" /> Fix
+                          </Button>
+                        ) : r.corrected ? (
+                          <span className="text-muted-foreground text-xs">Corrected</span>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            {canFix && onFix ? (
+              <div className="mt-3 flex justify-end">
+                <Button variant="outline" size="sm" onClick={() => onFix(null, date)}>
+                  <Plus className="size-4" /> Add time the timer missed
+                </Button>
+              </div>
+            ) : null}
           </>
         )}
       </CardContent>

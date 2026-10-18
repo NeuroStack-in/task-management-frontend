@@ -63,6 +63,19 @@ export interface TimesheetRow {
   running: boolean;
   /** The task was gone/unassigned at fold. The time still counts; this is a flag for a human. */
   taskInvalid: boolean;
+  /** Epoch ms the session ended, or null while it runs. */
+  endMs: number | null;
+  /** The project id — what a correction request names. "" for the logon row. */
+  projectId: string;
+  /** `YYYY-MM-DD` — the session's day. */
+  date: string;
+  /** Changed or added by an approved correction (TIME-05). */
+  corrected: boolean;
+  /**
+   * A finished timer session the employee may ask to fix. Not a running one (the timer still owns
+   * it), and not the managed agent's logon row (that is sign-in time, not a session).
+   */
+  correctable: boolean;
 }
 
 export interface TimesheetState {
@@ -241,6 +254,11 @@ function logonRow(l: NonNullable<ApiTodayResponse["logon"]>): {
       billable: false,
       running: l.active,
       taskInvalid: false,
+      endMs: l.active ? null : l.last_seen,
+      projectId: "",
+      date: "",
+      corrected: false,
+      correctable: false,
     },
   };
 }
@@ -268,6 +286,11 @@ function toRow(
     billable: e.billable,
     running,
     taskInvalid: e.task_invalid ?? false,
+    endMs: e.end ?? null,
+    projectId: e.project_id ?? "",
+    date: e.date,
+    corrected: e.corrected === true || e.source === "correction",
+    correctable: !running,
   };
 }
 

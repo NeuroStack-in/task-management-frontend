@@ -3,10 +3,9 @@
  *
  * What the server serves is **totals per run**, each run's **per-employee lines** (the payslips it
  * publishes on finalize), and the **deduction rules**. A run is `{period, status, gross, deductions,
- * net}`; totals are computed at draft time from each employee's comp minus the deduction rules. **Hourly staff are included**: their gross is
- * `rate × billable hours the timer recorded that month` (`payroll_runs::compute_totals`) — time on
- * non-billable projects pays nothing. (This header used to say hours-based pay was not part of the
- * totals; QA audit 2026-10-08, WP-271.)
+ * net}`; totals are computed at draft time from each employee's comp minus the deduction rules. **Hourly
+ * staff are included**: their gross is `rate × every hour the timer recorded that month`, billable or
+ * not (owner decision 2026-10-18, UX audit TIME-06 — it used to be billable hours only).
  */
 import { apiFetch } from "@/lib/api";
 
@@ -34,7 +33,10 @@ export interface ApiRunLine {
   /** `hourly` | `salaried`. */
   pay_type: string;
   rate: number;
-  /** Billable seconds hourly pay was computed from; absent for salaried pay. */
+  /** Every tracked second hourly pay was computed from (TIME-06); absent for salaried pay and on
+   *  runs drafted before every hour was paid. */
+  worked_secs?: number;
+  /** The billable part — for invoicing, not pay. Absent for salaried pay. */
   billable_secs?: number;
   gross: number;
   deductions: number;

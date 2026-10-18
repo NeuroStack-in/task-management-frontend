@@ -23,6 +23,7 @@ import {
 import { PageHeader } from "@/components/shared/page-header"
 import { Loader } from "@/components/shared/loader"
 import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
+import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useTrackingMode } from "@/hooks/use-features"
 import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store"
@@ -189,8 +190,15 @@ export function MonitoringTab() {
     handleSubmit,
     reset,
     setValue,
-    formState: { isDirty },
+    getValues,
+    formState: { isDirty, defaultValues },
   } = useForm<PolicyForm>({ defaultValues: EMPTY })
+  /**
+   * A shorter retention is confirmed before it is saved: the next hourly sweep permanently deletes
+   * every screenshot older than the new period — 90 → 1 day saved silently (UX audit 2026-10-16,
+   * SET-04 / XC-07). A longer one needs no question.
+   */
+  const [retentionCut, setRetentionCut] = useState<{ from: number; to: number } | null>(null)
 
   // Stored values the page no longer offers (silent capture, blur). Every save pins them back, and
   // the form starts dirty so a manager can do that without changing anything else.
@@ -584,10 +592,32 @@ export function MonitoringTab() {
             <SettingsSaveBar
               dirty={isDirty}
               saving={saving}
-              onSave={onSave}
+              onSave={() => {
+                const from = defaultValues?.retention_days ?? 0
+                const to = Math.round(getValues("retention_days"))
+                if (from > 0 && to < from) setRetentionCut({ from, to })
+                else void onSave()
+              }}
               onReset={() => reset()}
             />
           )}
+          <ConfirmDialog
+            open={retentionCut !== null}
+            onOpenChange={(o) => !o && setRetentionCut(null)}
+            title={`Keep screenshots for ${retentionCut?.to ?? ""} day${retentionCut?.to === 1 ? "" : "s"}?`}
+            description={
+              retentionCut
+                ? `Screenshots are kept ${retentionCut.from} days today. Saving this permanently deletes every screenshot older than ${retentionCut.to} day${retentionCut.to === 1 ? "" : "s"} within the hour, for everyone in the organization. Deleted screenshots can't be recovered.`
+                : ""
+            }
+            confirmLabel="Delete older screenshots and save"
+            destructive
+            busy={saving}
+            onConfirm={() => {
+              setRetentionCut(null)
+              void onSave()
+            }}
+          />
         </div>
       )}
     </div>

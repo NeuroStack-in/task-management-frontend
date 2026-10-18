@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Loader } from "@/components/shared/loader";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import {
@@ -73,6 +74,8 @@ export function IntegrationsMarketplace() {
   const [channelsOpen, setChannelsOpen] = useState(false);
   /** A Slack reconnect waiting for the admin to confirm that it clears the routing. */
   const [confirmReconnect, setConfirmReconnect] = useState<ApiIntegration | null>(null);
+  /** Disconnecting revokes the token and drops the connection — Slack's channel routing with it (XC-07). */
+  const [confirmDisconnect, setConfirmDisconnect] = useState<{ provider: string; label: string } | null>(null);
 
   const load = useCallback(() => {
     listIntegrations()
@@ -173,10 +176,29 @@ export function IntegrationsMarketplace() {
             onReconnect={() =>
               row.provider === "slack" ? setConfirmReconnect(row) : onConnect(row.provider)
             }
-            onDisconnect={() => onDisconnect(row.provider, row.label)}
+            onDisconnect={() => setConfirmDisconnect({ provider: row.provider, label: row.label })}
           />
         ))}
       </div>
+
+      <ConfirmDialog
+        open={confirmDisconnect !== null}
+        onOpenChange={(o) => !o && setConfirmDisconnect(null)}
+        title={`Disconnect ${confirmDisconnect?.label ?? ""}?`}
+        description={
+          confirmDisconnect?.provider === "slack"
+            ? "WorkPulse's access is revoked at Slack and notifications stop. Your channel routing is deleted too — connecting again starts from scratch."
+            : `WorkPulse's access is revoked at ${confirmDisconnect?.label ?? "the provider"} and anything it sends there stops. Connecting again starts from scratch.`
+        }
+        confirmLabel="Disconnect"
+        destructive
+        busy={confirmDisconnect ? busy === confirmDisconnect.provider : false}
+        onConfirm={async () => {
+          if (!confirmDisconnect) return;
+          await onDisconnect(confirmDisconnect.provider, confirmDisconnect.label);
+          setConfirmDisconnect(null);
+        }}
+      />
 
       <Dialog
         open={confirmReconnect !== null}

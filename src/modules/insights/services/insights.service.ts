@@ -378,6 +378,12 @@ export interface ShotRow {
    */
   reviewed?: boolean;
   /**
+   * A person's decision on an AI flag — `confirmed` (needs following up) or `dismissed` (it was
+   * fine) — once someone has handled it (UX audit 2026-10-16, MON-02). Absent until then; "Needs
+   * review" counts only flags nobody has handled.
+   */
+  human_review?: "confirmed" | "dismissed";
+  /**
    * Which physical monitor this frame came from — **0-based, primary = 0**. A multi-monitor machine
    * emits one row per display in the same batch, all sharing `captured_at`; that is what lets the
    * grid group them into one capture and label them "Monitor 1 of 2".
@@ -388,6 +394,31 @@ export interface ShotRow {
   display?: number;
   /** Machine hostname behind the capture (resolved from the agent). Empty when unknown. */
   device?: string;
+}
+
+/** A flag still waiting for a person — what "Needs review" counts (MON-01 / MON-02). */
+export function awaitsReview(s: Pick<ShotRow, "flagged" | "human_review">): boolean {
+  return s.flagged && !s.human_review;
+}
+
+/**
+ * `POST /v1/insights/screenshots/{id}/review` — confirm or dismiss an AI flag, with an optional
+ * note. Stored on the frame and written to the audit log (MON-02).
+ */
+export function reviewScreenshot(
+  shot: Pick<ShotRow, "shot_id" | "user_id" | "captured_at">,
+  outcome: "confirmed" | "dismissed",
+  note?: string,
+): Promise<{ shot_id: string; human_review: string; human_review_at: number }> {
+  return apiFetch(`/v1/insights/screenshots/${encodeURIComponent(shot.shot_id)}/review`, {
+    method: "POST",
+    body: JSON.stringify({
+      user_id: shot.user_id,
+      captured_at: shot.captured_at,
+      outcome,
+      ...(note?.trim() ? { note: note.trim() } : {}),
+    }),
+  });
 }
 
 export interface ScreenshotGrid {

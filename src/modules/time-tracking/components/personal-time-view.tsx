@@ -9,6 +9,8 @@ import {
   Timer,
   ListChecks,
   TriangleAlert,
+  Pencil,
+  Plus,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -47,6 +49,10 @@ import { WeeklyHoursChart } from "./weekly-hours-chart";
 import { RefreshButton } from "@/components/shared/refresh-button";
 import { PageActions } from "@/components/shared/page-actions";
 import { PayrollWidget } from "./payroll-widget";
+import { TimeCorrectionDialog } from "./time-correction-dialog";
+import { MyCorrections } from "./my-corrections";
+import { usePermissions } from "@/hooks/use-permissions";
+import type { TimesheetRow } from "../use-timesheet";
 import { toCsv } from "@/lib/csv";
 
 /**
@@ -62,8 +68,14 @@ import { toCsv } from "@/lib/csv";
  * here and no manual write path. The table below shows only what the backend actually has.
  */
 export function PersonalTimeView({ canExport }: { canExport: boolean }) {
-  const { rows, totalSec: settledSec, billableSec, running, loading, error, reload } =
+  const { rows, totalSec: settledSec, billableSec, running, loading, error, reload, date: sheetDate } =
     useTimesheet();
+  // Time corrections (UX audit TIME-05): a finished session can be sent for a fix, and missing time
+  // asked for — both take effect only once an approver says yes. Only for someone who tracks time.
+  const { can } = usePermissions();
+  const canFix = can("time-tracking:self");
+  const [fixing, setFixing] = useState<{ row: TimesheetRow | null; date: string } | null>(null);
+  const [filed, setFiled] = useState(0);
 
   // ── One definition of "today", and it ticks ─────────────────────────────────────────────────
   //
@@ -299,13 +311,16 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                       <TableHead className="text-center text-xs font-medium tracking-wide uppercase">
                         Duration
                       </TableHead>
+                      <TableHead className="w-0 pr-4">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {loading ? (
                       Array.from({ length: 3 }).map((_, i) => (
                         <TableRow key={i}>
-                          <TableCell className="pl-6" colSpan={4}>
+                          <TableCell className="pl-6" colSpan={5}>
                             <Skeleton className="h-5 w-full" />
                           </TableCell>
                         </TableRow>
@@ -313,7 +328,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                     ) : rows.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={4}
+                          colSpan={5}
                           className="text-muted-foreground py-10 text-center text-sm"
                         >
                           No time tracked today. Sessions appear here once the desktop
@@ -340,6 +355,11 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                               </span>
                               {e.billable ? (
                                 <Badge variant="secondary">Billable</Badge>
+                              ) : null}
+                              {e.corrected ? (
+                                <Badge variant="outline" className="font-normal">
+                                  Corrected
+                                </Badge>
                               ) : null}
                               {/* The task was deleted or unassigned by the time the session folded.
                               The entry still counts — the time was really worked (LLD §4). */}
@@ -375,6 +395,18 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                               formatDuration(e.durationSec)
                             )}
                           </TableCell>
+                          <TableCell className="pr-4 text-right">
+                            {canFix && e.correctable ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-muted-foreground"
+                                onClick={() => setFixing({ row: e, date: e.date || sheetDate })}
+                              >
+                                <Pencil className="size-3.5" /> Fix
+                              </Button>
+                            ) : null}
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -386,6 +418,7 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
                       <TableCell className="text-center font-mono font-semibold tabular-nums">
                         {formatDuration(totalSec)}
                       </TableCell>
+                      <TableCell />
                     </TableRow>
                   </TableFooter>
                 </Table>
@@ -397,7 +430,30 @@ export function PersonalTimeView({ canExport }: { canExport: boolean }) {
 
       {/* Previous days sit directly under today: today stays the primary view, and history is one
           date-pick away rather than a separate page. */}
-      <TimesheetHistory />
+      {canFix ? (
+        <div className="-mt-2 flex justify-end">
+          <Button variant="outline" size="sm" onClick={() => setFixing({ row: null, date: sheetDate })}>
+            <Plus className="size-4" /> Add time the timer missed today
+          </Button>
+        </div>
+      ) : null}
+
+      <TimesheetHistory
+        canFix={canFix}
+        onFix={(row, date) => setFixing({ row, date })}
+      />
+
+      {canFix ? <MyCorrections refreshKey={filed} /> : null}
+
+      {fixing ? (
+        <TimeCorrectionDialog
+          open
+          onOpenChange={(o) => !o && setFixing(null)}
+          date={fixing.date}
+          row={fixing.row}
+          onFiled={() => setFiled((n) => n + 1)}
+        />
+      ) : null}
 
       {/* Weekly hours (stacked bar + week arrows) alongside personal payroll */}
       <div className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
