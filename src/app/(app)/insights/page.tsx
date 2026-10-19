@@ -10,7 +10,7 @@ import { isNavItemVisible } from "@/lib/rbac";
 import { isPathModeHidden } from "@/constants/features";
 import { useEntitlementsStore } from "@/stores/entitlements.store";
 import { Loader } from "@/components/shared/loader";
-import { EmptyState } from "@/components/shared/empty-state";
+import { AccessWall } from "@/components/shared/access-wall";
 import { FeatureGateNotice } from "@/components/shared/feature-gate-notice";
 
 /**
@@ -76,13 +76,13 @@ export default function InsightsIndex() {
 
   if (!first && hiddenOnly) {
     return (
-      <div className="flex flex-1 items-center justify-center p-6">
-        <EmptyState
-          icon={ShieldX}
-          title="These pages are turned off"
-          description="Your organization has hidden the Analytics pages. An owner or admin can show them again under Settings → Features."
-        />
-      </div>
+      <AccessWall icon={ShieldX} title="Analytics is turned off">
+        <p>Your organization has hidden the Analytics pages.</p>
+        <p>
+          Someone with the Manage Feature Toggles permission — usually an owner or admin — can show
+          them again under Settings → Features.
+        </p>
+      </AccessWall>
     );
   }
 

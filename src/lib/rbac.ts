@@ -168,6 +168,19 @@ export function canAccessPath(
   return canAccess(role, item.permission);
 }
 
+/**
+ * The permissions `pathname` asks for — any one of them opens it — or `null` for an open route.
+ *
+ * Read from the same entry {@link canAccessPath} matches, so the access wall can name exactly what
+ * the check refused (UX audit XC-02) and the two can never disagree.
+ */
+export function requiredPermissionsForPath(pathname: string): PermissionId[] | null {
+  const item = navItemForPath(pathname);
+  if (!item) return null;
+  if (item.anyPermissions) return item.anyPermissions;
+  return item.permission ? [item.permission] : null;
+}
+
 /** The most specific registered nav entry for a path, across every surface that declares one. */
 function navItemForPath(pathname: string): NavItem | null {
   const items: NavItem[] = [

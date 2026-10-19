@@ -1,9 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Lock, ShieldX } from "lucide-react";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Button } from "@/components/ui/button";
+import { AccessWall } from "@/components/shared/access-wall";
+import { PERMISSION_MAP } from "@/constants/permissions";
 import { useIsFeatureAllowed } from "@/hooks/use-features";
 import { usePermissions } from "@/hooks/use-permissions";
 import type { FeatureKey } from "@/stores/features.store";
@@ -13,10 +12,11 @@ import type { FeatureKey } from "@/stores/features.store";
  *
  * - **Not in the plan** (`!isFeatureAllowed`) → an **Upgrade** prompt, linking whoever can see billing
  *   to the plans page. This is the case the free plan hits for Analytics, screenshots, AI, etc.
- * - **Allowed by the plan but toggled off** → a "turned off, enable in Settings → Features" prompt.
+ * - **Allowed by the plan but toggled off** → "turned off", naming who can switch it back on, with a
+ *   link for a viewer who can.
  *
  * Use it anywhere a feature gate blocks a page, so the reason (and the fix) is honest rather than a
- * silent bounce to the dashboard.
+ * silent bounce to the dashboard. It renders inside the app shell (`AccessWall`).
  */
 export function FeatureGateNotice({
   feature,
@@ -26,50 +26,42 @@ export function FeatureGateNotice({
   /** Human name for the message, e.g. "Analytics". */
   label?: string;
 }) {
-  const router = useRouter();
   const isFeatureAllowed = useIsFeatureAllowed();
   const { can } = usePermissions();
 
   if (!isFeatureAllowed(feature)) {
     const canBill = can("billing:view");
     return (
-      <div className="flex flex-1 items-center justify-center p-6">
-        <EmptyState
-          icon={Lock}
-          title="Upgrade to unlock this"
-          description={`${label} isn't included in your current plan. Upgrade your plan to start using it.`}
-          action={
-            canBill ? (
-              <Button onClick={() => router.push("/settings/billing")}>View plans</Button>
-            ) : (
-              <div className="space-y-2 text-center">
-                <p className="text-muted-foreground text-xs">
-                  Ask an owner to upgrade the organization&apos;s plan.
-                </p>
-                <Button variant="outline" onClick={() => router.push("/dashboard")}>
-                  Back to Dashboard
-                </Button>
-              </div>
-            )
-          }
-        />
-      </div>
+      <AccessWall
+        icon={Lock}
+        title={`${label} isn't in your plan`}
+        action={canBill ? { label: "View plans", href: "/settings/billing" } : undefined}
+      >
+        <p>Your organization&apos;s current plan doesn&apos;t include {label}.</p>
+        <p>
+          {canBill
+            ? "Upgrading the plan turns it on for everyone who has access."
+            : "Ask an owner to upgrade the organization's plan."}
+        </p>
+      </AccessWall>
     );
   }
 
-  // In the plan, but the org switched it off.
+  // In the plan, but the org switched it off. Owners are exempt from the toggle, so whoever lands
+  // here is not an owner — but may still hold the toggle permission.
+  const canToggle = can("entitlements:manage");
   return (
-    <div className="flex flex-1 items-center justify-center p-6">
-      <EmptyState
-        icon={ShieldX}
-        title="This feature is turned off"
-        description="Your organization has disabled this feature. An owner can switch it back on under Settings → Features."
-        action={
-          <Button variant="outline" onClick={() => router.push("/dashboard")}>
-            Back to Dashboard
-          </Button>
-        }
-      />
-    </div>
+    <AccessWall
+      icon={ShieldX}
+      title={`${label} is turned off`}
+      action={canToggle ? { label: "Open Settings → Features", href: "/settings/features" } : undefined}
+    >
+      <p>Your organization has switched this feature off.</p>
+      <p>
+        {canToggle
+          ? "You can switch it back on under Settings → Features."
+          : `Someone with the ${PERMISSION_MAP["entitlements:manage"]?.label ?? "Manage Feature Toggles"} permission — usually an owner or admin — can switch it back on under Settings → Features.`}
+      </p>
+    </AccessWall>
   );
 }

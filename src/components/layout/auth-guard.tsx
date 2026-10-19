@@ -2,52 +2,36 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ShieldX } from "lucide-react";
 import { useAuthStore } from "@/stores/auth.store";
-import { useCurrentRole } from "@/hooks/use-permissions";
-import {
-  isEntitlementGated,
-  useEntitlementsSettled,
-  useEntitlementsSync,
-  useIsFeatureOn,
-  useIsPageOn,
-  useTrackingMode,
-} from "@/hooks/use-features";
-import { featureForPath, isPathModeHidden } from "@/constants/features";
-import { canAccessPath } from "@/lib/rbac";
+import { useEntitlementsSync } from "@/hooks/use-features";
 import { getDeviceId, deviceLabel } from "@/lib/device";
 import { heartbeatSession } from "@/modules/security/services/security.service";
 import { useIsOpsOnly } from "@/modules/ops/use-platform-admin";
-import { FeatureGateNotice } from "@/components/shared/feature-gate-notice";
 import { Loader } from "@/components/shared/loader";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Button } from "@/components/ui/button";
 
 /**
- * Client-side route protection (TDD §9). Waits for the persisted auth store to
- * hydrate, redirects unauthenticated users to /login, and blocks access to
- * routes the current role lacks permission for.
+ * Client-side session protection (TDD §9). Waits for the persisted auth store to
+ * hydrate, redirects unauthenticated users to /login, org-less accounts to onboarding
+ * and platform operators to the support desk — all before the app shell mounts.
+ *
+ * Per-route access (permission, plan, toggles, tracking mode) is `RouteGate`'s job, inside
+ * the shell, so a closed page keeps the sidebar and top bar (UX audit XC-02 / SHELL-01).
  */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const hydrated = useAuthStore((s) => s.hydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const role = useCurrentRole();
   // A signed-in user with no organization yet (the "Continue with Google" self-signup) has nothing to
   // see in the app shell — send them to the standalone onboarding flow to create their org first.
   const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
 
-  // Load the org's entitlements once there's a session — the sidebar and the check below read the
+  // Load the org's entitlements once there's a session — the sidebar and RouteGate read the
   // result. This is the first point inside the authenticated tree, so everything downstream has it.
   // Only with an organisation: an org-less account has no entitlements, and the server now refuses
   // it every org route but onboarding (403 org_required — WP-135). The read starts the moment the
   // org is approved and the claims refresh.
   useEntitlementsSync(hydrated && isAuthenticated && hasOrg);
-  const entitlementsSettled = useEntitlementsSettled();
-  const isFeatureOn = useIsFeatureOn();
-  const isPageOn = useIsPageOn();
-  const mode = useTrackingMode();
 
   // A dedicated platform-support operator has no customer console at all — it is not a member of the
   // tenant its login happens to be minted in. Hiding the nav and redirecting the dashboard isn't
@@ -108,79 +92,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }
   if (opsUndecided && !isOpsRoute) {
     return <Loader label="Checking access…" />;
-  }
-
-  // Permission first. Checked last, a role without access to a plan-gated page was told to upgrade
-  // the plan — which would not have let them in (WP-465).
-  if (!canAccessPath(role, pathname)) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-6">
-        <EmptyState
-          icon={ShieldX}
-          title="Access denied"
-          description="Your role doesn't have permission to view this section. Contact your administrator if you believe this is a mistake."
-          action={
-            <Button onClick={() => router.push("/dashboard")}>
-              Back to Dashboard
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-
-  // Until the org's entitlements are known, a page a feature, mode or page toggle could close is not
-  // mounted: it used to render, fire its requests and paint real data (a bookmarked /payroll in a
-  // machine-mode org) before being swapped for the wall below (QA audit 2026-10-08, WP-317).
-  if (!entitlementsSettled && isEntitlementGated(pathname)) {
-    return <Loader label="Checking access…" />;
-  }
-
-  // Hiding the nav entry isn't enough — the URL still works. A feature that's unavailable is closed
-  // here too, so a bookmark or a typed address can't walk straight into it. The notice tells the
-  // honest reason: **not in the plan → Upgrade**, or **in the plan but toggled off → enable it**.
-  const feature = featureForPath(pathname);
-  if (feature && !isFeatureOn(feature)) {
-    return <FeatureGateNotice feature={feature} />;
-  }
-
-  // A route the org's tracking mode hides (e.g. Projects/Payroll in machine mode) is closed the same
-  // way — including the key-less ones a feature check can't catch (MANAGED-AGENT.md §4/§8).
-  if (isPathModeHidden(pathname, mode)) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-6">
-        <EmptyState
-          icon={ShieldX}
-          title="Not available here"
-          description="This section isn't part of your organization's tracking setup. An owner can change how this organization tracks work under Settings → Organization."
-          action={
-            <Button onClick={() => router.push("/dashboard")}>
-              Back to Dashboard
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-
-  // Layer 3 — the org hid this page. Checked alongside the others rather than only in the nav,
-  // because hiding a route in the sidebar while leaving the URL open is the exact gap that let an
-  // Employee reach Analytics earlier today.
-  if (!isPageOn(pathname)) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-6">
-        <EmptyState
-          icon={ShieldX}
-          title="This page is turned off"
-          description="Your organization has hidden this page. An owner or admin can show it again under Settings → Features."
-          action={
-            <Button onClick={() => router.push("/dashboard")}>
-              Back to Dashboard
-            </Button>
-          }
-        />
-      </div>
-    );
   }
 
   return <>{children}</>;
