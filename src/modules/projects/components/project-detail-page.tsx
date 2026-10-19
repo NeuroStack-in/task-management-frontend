@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, Hourglass, ListChecks, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
@@ -196,10 +196,15 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   // a swipe that began on a card dragged it — into the next column — instead of scrolling the page
   // (QA audit 2026-10-08, WP-500). Mouse: a short move picks a card up. Touch: press and hold, so a
   // swipe still scrolls. Keyboard: Space picks up, arrows move a column at a time, Space drops.
+  // **Enter opens the task** instead (UX audit 2026-10-16, PROJ-01): it used to pick the card up too,
+  // so no key — and no click — opened a task; only a 24 px eye icon that appeared on hover did.
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: columnKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: columnKeyboardCoordinates,
+      keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] },
+    }),
   );
 
   // Two different questions, and conflating them broke both in turn.
@@ -1285,6 +1290,18 @@ function TaskCard({
         zIndex: 50,
       }
     : undefined;
+  /**
+   * Where the press began — a click that ends far from it was a drag, not a request to open the
+   * task. A short move (under the mouse sensor's 6 px) is still a click.
+   */
+  const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  const openFromCard = (e: React.MouseEvent) => {
+    // The card's own buttons (view, edit, review, delete) do their own thing.
+    if ((e.target as HTMLElement).closest("button, a")) return;
+    const p = pressedAt.current;
+    if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) return;
+    onView(task);
+  };
 
   return (
     <li
@@ -1297,12 +1314,34 @@ function TaskCard({
       style={style}
       {...attributes}
       {...listeners}
+      // Click, or Enter, opens the task (PROJ-01); dragging still starts on a short move, a long
+      // press, or Space. The drag sensors' own handlers run first, so dragging is unchanged.
+      onMouseDown={(e) => {
+        pressedAt.current = { x: e.clientX, y: e.clientY };
+        listeners?.onMouseDown?.(e);
+      }}
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        pressedAt.current = t ? { x: t.clientX, y: t.clientY } : null;
+        listeners?.onTouchStart?.(e);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && e.target === e.currentTarget) {
+          e.preventDefault();
+          onView(task);
+          return;
+        }
+        listeners?.onKeyDown?.(e);
+      }}
+      onClick={openFromCard}
+      aria-label={`${task.title} — press Enter to open, Space to move`}
       className={cn(
         // `touch-manipulation`, not `touch-none`: a swipe that starts on a card scrolls the page;
         // a press-and-hold picks it up (the touch sensor's delay).
         "group/task bg-card relative touch-manipulation rounded-xl border p-3",
-        // A grab cursor on a card that cannot be grabbed is a promise the board does not keep.
-        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default",
+        // A click opens the task, so every card is pointer-clickable; one that can move shows the
+        // grab cursor once it is held (PROJ-01).
+        draggable ? "cursor-pointer active:cursor-grabbing" : "cursor-pointer",
         isDragging && "ring-primary/30 shadow-xl ring-2",
       )}
     >
