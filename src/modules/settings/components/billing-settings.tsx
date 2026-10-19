@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { BadgeCheck, Check, CreditCard, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/page-header";
@@ -102,10 +103,11 @@ export function BillingSettings() {
   }
 
   const tier = PLAN_TIERS.find((t) => t.id === overview.plan);
-  const seats =
-    overview.seat_cap > 0
-      ? `${overview.seats_used} / ${overview.seat_cap} seats`
-      : `${overview.seats_used} seats in use`;
+  // The server counts active members live now (UX audit SET-02 — the stored counter read "0 / 1000
+  // seats" in an org of real people). Said as people, linked to the list that holds them.
+  const members = `${overview.seats_used} active member${overview.seats_used === 1 ? "" : "s"}`;
+  const seatsOf =
+    overview.seat_cap > 0 ? ` of ${overview.seat_cap.toLocaleString()} seats on this plan` : "";
   // Already over the cap on the CURRENT plan — worth saying before they pick a smaller one.
   const overCapNow = overview.seat_cap > 0 && overview.seats_used > overview.seat_cap;
   const overCapAfter = pendingTier !== null && overview.seats_used > pendingTier.seatCap;
@@ -149,8 +151,18 @@ export function BillingSettings() {
                 <p className="text-muted-foreground text-sm">
                   {tier?.blurb ?? "Your organization's current subscription."}
                 </p>
-                <p className="text-muted-foreground mt-1 text-xs capitalize">
-                  {seats} · {overview.cadence} · status: {overview.status}
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {can("employees:view") ? (
+                    <Link
+                      href="/employees"
+                      className="text-foreground font-medium underline-offset-2 hover:underline"
+                    >
+                      {members}
+                    </Link>
+                  ) : (
+                    <span className="text-foreground font-medium">{members}</span>
+                  )}
+                  {seatsOf} · billed {overview.cadence} · {overview.status.replace(/_/g, " ")}
                 </p>
                 {overCapNow ? (
                   <p className="text-warning mt-1.5 text-xs">
