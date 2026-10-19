@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CalendarPlus, Paperclip, Plane, TriangleAlert, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -23,7 +23,11 @@ import { useLeave } from "../use-leave";
 import { formatDays } from "../lib/days";
 import { formatMinutes } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { RequestLeaveDialog } from "./request-leave-dialog";
+import {
+  RequestLeaveDialog,
+  yearPortions,
+  type BalanceLookup,
+} from "./request-leave-dialog";
 import { RecordLeaveButton } from "./record-leave-button";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
@@ -144,7 +148,24 @@ function EmployeeLeaveView() {
   // The download route is keyed by owner, and on this page the owner is always the viewer.
   const myUserId = useAuthStore((st) => st.user?.id ?? "");
   const leave = useLeave();
-  const { balances, requests, types, typeName, loading, error, submit, cancel } = leave;
+  const { balances, balanceYear, requests, types, typeName, loading, error, submit, cancel } = leave;
+  // What the request dialog shows against the balance (TIME-07): the server's figures for the loaded
+  // year, plus the days this person already has waiting in that type and year.
+  const balanceFor = useMemo<BalanceLookup>(
+    () => (typeId, year) => {
+      if (year !== balanceYear) return null;
+      const b = balances.find((x) => x.type_id === typeId);
+      if (!b) return null;
+      const pending = requests
+        .filter((r) => r.status === "pending" && r.type_id === typeId)
+        .reduce(
+          (sum, r) => sum + (yearPortions(r.from, r.to, r.days).find(([y]) => y === year)?.[1] ?? 0),
+          0,
+        );
+      return { allowance: b.allowance, used: b.used, pending };
+    },
+    [balances, balanceYear, requests],
+  );
   const [open, setOpen] = useState(false);
   /** The request whose detail dialog is open — the requester's counterpart to the approver's. */
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -436,6 +457,7 @@ function EmployeeLeaveView() {
         onOpenChange={setOpen}
         types={requestableTypes}
         onSubmit={submit}
+        balanceFor={balanceFor}
       />
 
       <ConfirmDialog

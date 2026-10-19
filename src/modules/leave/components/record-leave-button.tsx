@@ -10,7 +10,7 @@
  * People and leave types come from the org ledger the view already shows (`GET /v1/leave/balances`),
  * read when the button is pressed.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,20 +19,42 @@ import {
   createRequestFor,
   getOrgBalances,
   type ApiLeaveType,
+  type ApiTypeBalance,
 } from "../services/leave.service";
-import { RequestLeaveDialog } from "./request-leave-dialog";
+import { RequestLeaveDialog, type BalanceLookup } from "./request-leave-dialog";
 
 export function RecordLeaveButton({ onRecorded }: { onRecorded?: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [types, setTypes] = useState<ApiLeaveType[]>([]);
   const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
+  const [ledger, setLedger] = useState<{
+    year: string;
+    byUser: Map<string, ApiTypeBalance[]>;
+  } | null>(null);
+
+  // The chosen employee's standing (TIME-07). The org ledger carries no pending requests, so only
+  // the server's own figures show; an unseeded row (a type added after the year was seeded) is
+  // seeded at request time from the catalog, so it's left to the server.
+  const balanceFor = useMemo<BalanceLookup>(
+    () => (typeId, year, forUserId) => {
+      if (!ledger || year !== ledger.year || !forUserId) return null;
+      const b = ledger.byUser.get(forUserId)?.find((x) => x.type_id === typeId);
+      if (!b || !b.seeded) return null;
+      return { allowance: b.allowance, used: b.used, pending: 0 };
+    },
+    [ledger],
+  );
 
   async function start() {
     setLoading(true);
     try {
       const ledger = await getOrgBalances();
       setTypes(ledger.types.filter((t) => t.active !== false));
+      setLedger({
+        year: ledger.year,
+        byUser: new Map(ledger.employees.map((e) => [e.user_id, e.balances])),
+      });
       setPeople(
         ledger.employees
           .map((e) => ({ id: e.user_id, name: e.name || e.emp_id || "Unnamed employee" }))
@@ -61,6 +83,7 @@ export function RecordLeaveButton({ onRecorded }: { onRecorded?: () => void }) {
         onOpenChange={setOpen}
         types={types}
         employees={people}
+        balanceFor={balanceFor}
         onSubmit={async (req, forUserId) => {
           if (!forUserId) return;
           await createRequestFor(forUserId, req);

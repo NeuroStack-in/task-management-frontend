@@ -20,6 +20,8 @@ import type {
 
 export interface LeaveData {
   balances: ApiBalance[];
+  /** The year `balances` are for (the server's current year unless asked otherwise). */
+  balanceYear: string;
   requests: ApiLeaveRequest[];
   types: ApiLeaveType[];
   /** `type_id → display name`, for labelling requests whose type is just an id. */
@@ -35,6 +37,7 @@ export interface LeaveData {
 
 export function useLeave(): LeaveData {
   const [balances, setBalances] = useState<ApiBalance[]>([]);
+  const [balanceYear, setBalanceYear] = useState("");
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
   const [types, setTypes] = useState<ApiLeaveType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +63,7 @@ export function useLeave(): LeaveData {
         ]);
         if (!live) return;
         setBalances(bal.balances);
+        setBalanceYear(bal.year);
         setRequests(reqs);
         setTypes(tys);
       } catch (e) {
@@ -106,6 +110,7 @@ export function useLeave(): LeaveData {
 
   return {
     balances,
+    balanceYear,
     requests,
     types,
     typeName,

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatMinutes } from "@/lib/format";
+import { formatDays } from "../lib/days";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -80,6 +81,46 @@ export function requestDays(startIso: string, endIso: string): number {
   if (from === null || to === null || to < from) return 0;
   return to - from + 1;
 }
+
+/**
+ * How a request's `days` split across calendar years — `[[year, days]]`, oldest first. Mirrors the
+ * server's `shared::leave::year_portions`: each year's share is checked (and, at approval, debited)
+ * against that year's balance on its own, so 29 Dec – 2 Jan costs the old year 3 and the new year 2.
+ * A request inside one year is that year's alone, at its own `days` (a permission's fraction).
+ */
+export function yearPortions(startIso: string, endIso: string, days: number): [string, number][] {
+  const fy = startIso.slice(0, 4);
+  const ty = endIso.slice(0, 4);
+  if (!/^\d{4}$/.test(fy) || !/^\d{4}$/.test(ty) || ty < fy) return [];
+  if (fy === ty) return [[fy, days]];
+  const out: [string, number][] = [];
+  for (let y = Number(fy); y <= Number(ty); y++) {
+    const lo = y === Number(fy) ? startIso : `${y}-01-01`;
+    const hi = y === Number(ty) ? endIso : `${y}-12-31`;
+    out.push([String(y), requestDays(lo, hi)]);
+  }
+  return out;
+}
+
+/** One leave type's standing in one year — the figures the server's balance check reads. */
+export interface BalanceStanding {
+  allowance: number;
+  used: number;
+  /** Days in this type and year still waiting for approval — not deducted yet. */
+  pending: number;
+}
+
+/**
+ * `(typeId, year, forUserId)` → that standing, or `null` when the caller hasn't loaded it (the
+ * server still checks on submit). `forUserId` is set when recording on someone's behalf.
+ */
+export type BalanceLookup = (
+  typeId: string,
+  year: string,
+  forUserId?: string,
+) => BalanceStanding | null;
+
+const plural = (n: number, word: string) => `${formatDays(n)} ${word}${n === 1 ? "" : "s"}`;
 
 // `type` is a server-configured id (not a fixed enum), so it's validated as a non-empty string and
 // the picker is populated from the org's types. The server recomputes the authoritative day count;
@@ -166,6 +207,7 @@ export function RequestLeaveDialog({
   types,
   onSubmit: submitRequest,
   employees,
+  balanceFor,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -178,6 +220,11 @@ export function RequestLeaveDialog({
    * employee can attach.
    */
   employees?: { id: string; name: string }[];
+  /**
+   * The balance to show against the request (UX audit TIME-07): what's left, what will be left, and
+   * a block when the server would refuse it. Omitted → no balance line, the server still checks.
+   */
+  balanceFor?: BalanceLookup;
 }) {
   const onBehalf = employees !== undefined;
   const [employeeId, setEmployeeId] = useState("");
@@ -218,6 +265,35 @@ export function RequestLeaveDialog({
     : wholeDays;
   // Earliest selectable day: today, or a week back for sick leave (client-local; the server re-checks).
   const earliest = useMemo(() => earliestStart(type), [type]);
+
+  // The balance against this request, per calendar year it touches (UX audit TIME-07). It used to be
+  // shown only as cards on the page behind the dialog, and an over-balance request was refused with
+  // "Insufficient balance." only after Submit. The block mirrors the server's soft check exactly —
+  // `allowance − used ≥ share` per year, a zero allowance never short — so it invents no rule; pending
+  // requests aren't part of that check, so they only warn.
+  const typeLabel = types.find((t) => t.type_id === type)?.name ?? "This leave";
+  const balanceRows = useMemo(() => {
+    if (!balanceFor || !type || (onBehalf && !employeeId)) return [];
+    const until = isPermission ? start : end;
+    const portions =
+      days > 0 && start && until
+        ? yearPortions(start, until, days)
+        : ([[String(new Date().getFullYear()), 0]] as [string, number][]);
+    return portions.map(([year, share]) => {
+      const s = balanceFor(type, year, onBehalf ? employeeId : undefined);
+      const left = s ? s.allowance - s.used : 0;
+      return {
+        year,
+        share,
+        standing: s,
+        left,
+        // Same comparison the server makes (`balance_allows`).
+        over: !!s && s.allowance > 0 && share > 0 && !(left >= share),
+        pendingClash: !!s && s.allowance > 0 && share > 0 && s.pending > 0 && left >= share && left - s.pending < share,
+      };
+    });
+  }, [balanceFor, type, onBehalf, employeeId, isPermission, start, end, days]);
+  const overBalance = balanceRows.some((r) => r.over);
 
   // Documents are uploaded as they are picked, not on submit: the bytes go straight to S3 against
   // a presigned URL, so by the time the form posts there is nothing left to wait for. The cost is
@@ -309,6 +385,7 @@ export function RequestLeaveDialog({
       setEmployeeError("Pick the employee this leave is for.");
       return;
     }
+    if (overBalance) return; // the button is disabled; this covers Enter in a field
     const label = types.find((t) => t.type_id === data.type)?.name ?? "Leave";
     const who = onBehalf ? employees?.find((e) => e.id === employeeId)?.name : undefined;
     try {
@@ -539,9 +616,63 @@ export function RequestLeaveDialog({
             </p>
           ) : !isPermission && days > 0 ? (
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{days}</span> day
-              {days === 1 ? "" : "s"} requested (calendar days, as your balance counts them).
+              <span className="font-medium text-foreground">{plural(days, "day")}</span> requested.
+              Counted in calendar days, so weekends and public holidays inside your dates count too
+              (Fri → Mon is 4 days).
             </p>
+          ) : null}
+
+          {balanceRows.length ? (
+            <div className="space-y-1.5" aria-live="polite">
+              {balanceRows.map((r) =>
+                !r.standing ? (
+                  r.share > 0 ? (
+                    <p key={r.year} className="text-muted-foreground text-xs">
+                      The {r.year} balance is checked when you submit.
+                    </p>
+                  ) : null
+                ) : r.standing.allowance <= 0 ? (
+                  <p key={r.year} className="text-muted-foreground text-sm">
+                    {typeLabel} has no allowance limit — nothing comes off a quota.
+                  </p>
+                ) : r.over ? (
+                  <p key={r.year} role="alert" className="text-destructive text-sm">
+                    Only {plural(Math.max(0, r.left), "day")} of {typeLabel} left in {r.year} — this
+                    needs {formatDays(r.share)}. Shorten the dates or choose another leave type.
+                  </p>
+                ) : (
+                  <div key={r.year} className="space-y-1">
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">
+                        {typeLabel} · {r.year}:
+                      </span>{" "}
+                      <span className="font-medium">{plural(r.left, "day")} left</span>
+                      {r.share > 0 ? (
+                        <>
+                          {" "}
+                          →{" "}
+                          <span className="font-medium">
+                            {formatDays(r.left - r.share)}
+                          </span>{" "}
+                          after this request
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          of {formatDays(r.standing.allowance)}
+                        </span>
+                      )}
+                    </p>
+                    {r.pendingClash ? (
+                      <p className="text-warning text-xs">
+                        {plural(r.standing.pending, "day")} of {typeLabel} already waiting for
+                        approval. If those are approved first, this request won&apos;t fit.
+                      </p>
+                    ) : null}
+                  </div>
+                ),
+              )}
+            </div>
           ) : null}
 
           <Field label="Reason" htmlFor={`${fieldId}-reason`} error={errors.reason?.message}>
@@ -616,7 +747,7 @@ export function RequestLeaveDialog({
             </Button>
             {/* Submitting mid-upload would post a request missing the document the person just
                 chose, with no sign anything was lost. */}
-            <Button type="submit" disabled={isSubmitting || uploading.length > 0}>
+            <Button type="submit" disabled={isSubmitting || uploading.length > 0 || overBalance}>
               <CalendarPlus className="size-4" /> {onBehalf ? "Record leave" : "Submit request"}
             </Button>
           </DialogFooter>

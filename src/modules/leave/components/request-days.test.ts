@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { requestDays } from "./request-leave-dialog";
+import { requestDays, yearPortions } from "./request-leave-dialog";
 
 /**
  * WP-072: the preview must show what the balance loses — inclusive calendar days, as the server
@@ -24,5 +24,25 @@ describe("requestDays", () => {
 
   it("crosses a month boundary", () => {
     expect(requestDays("2026-10-30", "2026-11-02")).toBe(4);
+  });
+});
+
+/** TIME-07: the balance line checks each year's share, the way the server's soft check does. */
+describe("yearPortions", () => {
+  it("keeps a request inside one year whole, fraction included", () => {
+    expect(yearPortions("2026-10-12", "2026-10-15", 4)).toEqual([["2026", 4]]);
+    expect(yearPortions("2026-10-12", "2026-10-12", 0.25)).toEqual([["2026", 0.25]]);
+  });
+
+  it("splits a year-crossing request by calendar days", () => {
+    expect(yearPortions("2026-12-29", "2027-01-02", 5)).toEqual([
+      ["2026", 3],
+      ["2027", 2],
+    ]);
+  });
+
+  it("returns nothing for a backwards or malformed range", () => {
+    expect(yearPortions("2027-01-02", "2026-12-29", 5)).toEqual([]);
+    expect(yearPortions("", "2026-12-29", 1)).toEqual([]);
   });
 });
