@@ -585,11 +585,23 @@ export interface ApiInvite {
   /** Epoch **millis**. */
   created_at: number;
   created_by: string;
+  /**
+   * What became of the invite email (UX audit PEOPLE-07): `queued` · `sent` (the provider accepted
+   * it) · `failed` · `not_emailed` (codes handed out instead). Absent on older invites.
+   */
+  email_status?: "queued" | "sent" | "failed" | "not_emailed";
+  /** Why it failed: `daily_limit` · `rate_limited` · `rejected` · `unreachable` · `not_configured` ·
+   *  `not_sent`. */
+  email_reason?: string;
+  /** Epoch **millis** of the outcome. */
+  email_at?: number;
+  /** Epoch **millis** the current send was requested (create or resend). */
+  email_requested_at?: number;
 }
 
-/** `GET /v1/employees/invites` — the org's invites, sorted newest first. **At most 500, and they
- *  are the oldest 500** (one ascending query, no cursor), so past that the newest are missing.
- *  Requires `employees:read` (same bit as the directory — an invite is a not-yet-employee). */
+/** `GET /v1/employees/invites` — every invite the org has, newest first (the server walks every
+ *  page, up to 20,000). Requires `employees:read` (same bit as the directory — an invite is a
+ *  not-yet-employee). */
 export function listInvites(): Promise<ApiInvite[]> {
   return apiFetch<ApiInvite[]>("/v1/employees/invites");
 }

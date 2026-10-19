@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
+import { cn } from "@/lib/utils";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { parseEmails } from "../lib/parse-emails";
 import {
@@ -79,12 +80,12 @@ const MAX_INVITES = 100;
  *
  * ⚠️ **Email delivery is the lower ceiling now, and it is not enforced here.** Invites are sent
  * through Resend (`notifications::shared::resend`), whose plan carries its own daily quota — 100/day
- * on the free tier. Past it Resend returns 429, the send falls back to SES, SES is sandboxed, and
- * the mail is dropped while the invite is still created and reported as sent. A 500-row import on a
- * small plan therefore creates 500 valid invites that not everyone receives. Making the run
- * resumable, and surfacing per-invite delivery failures, is what would let this number stop
- * mattering.
+ * on the free tier, shared by every org. Past it the email can't go out while the invite is still
+ * created. Since UX audit PEOPLE-07 that is **recorded on the invite** — the Invited list's Email
+ * column says "Not sent — daily email limit" and offers Resend — and the dialog warns before a large
+ * emailed batch. Making the run resumable is what would let this number stop mattering.
  */
+const LARGE_EMAIL_BATCH = 100;
 const MAX_IMPORT_ROWS = 500;
 
 /** How many bytes of spreadsheet to accept. A file much larger than this is not a staff list. */
@@ -111,10 +112,12 @@ function inviteFailureReason(e: unknown): string {
   return friendlyError(e, "Couldn't create this invite.");
 }
 
-/** The success toast's title. A no-email run created its invites — it didn't send any. */
-function createdTitle(n: number, withHandout: boolean): string {
+/** The success toast's title — the same whether the codes are emailed or handed out. */
+function createdTitle(n: number): string {
   const noun = n === 1 ? "invite" : "invites";
-  return withHandout ? `${n} ${noun} created` : `${n} ${noun} sent`;
+  // "Created", not "sent", for both: the emails go out after this, and whether each one did is shown
+  // in the Invited list (UX audit PEOPLE-07).
+  return `${n} ${noun} created`;
 }
 
 /** The body `POST /v1/employees/invites` wants, once names from the file are resolved to ids. */
@@ -466,10 +469,10 @@ export function InviteDialog({
     );
 
     if (sent) {
-      toast.success(createdTitle(sent, withHandout), {
+      toast.success(createdTitle(sent), {
         description: withHandout
           ? "No emails were sent — the downloaded spreadsheet holds every code and join link, and is the only copy."
-          : "They'll each get an email with their link and code.",
+          : "Their emails are on their way. The Invited list shows whether each one was sent.",
       });
       onCreated?.();
     }
@@ -555,12 +558,12 @@ export function InviteDialog({
     if (sent) {
       toast.success(
         sent === 1 && !withHandout
-          ? `Invite sent to ${parsed.emails.find((e) => !failed.some((f) => f.email === e))}`
-          : createdTitle(sent, withHandout),
+          ? `Invite created for ${parsed.emails.find((e) => !failed.some((f) => f.email === e))}`
+          : createdTitle(sent),
         {
           description: withHandout
             ? "No emails were sent — the downloaded spreadsheet holds every code and join link, and is the only copy."
-            : "They'll each get an email with their link and code.",
+            : "Their emails are on their way. The Invited list shows whether each one was sent.",
         },
       );
       onCreated?.();
@@ -1118,6 +1121,22 @@ export function InviteDialog({
             />
           </div>
         </div>
+
+        {/* Said before the run, not after (UX audit PEOPLE-07): the provider's daily limit is shared
+            across WorkPulse, so a big emailed batch can outrun it. Failures are marked in the
+            Invited list either way. */}
+        {!handout && totalToInvite > 1 ? (
+          <p
+            className={cn(
+              "text-xs",
+              totalToInvite > LARGE_EMAIL_BATCH ? "text-warning" : "text-muted-foreground",
+            )}
+          >
+            {totalToInvite > LARGE_EMAIL_BATCH
+              ? `Invite emails go through a provider with a daily sending limit, so some of these ${totalToInvite} may not go out today. Any that don't are marked "Not sent" in the Invited list, where you can resend them — or use Create + download Excel to hand the codes out yourself.`
+              : `If an email can't go out (the provider has a daily limit), the Invited list marks it "Not sent" and you can resend it.`}
+          </p>
+        ) : null}
 
         <DialogFooter className="sm:justify-between">
           <Button

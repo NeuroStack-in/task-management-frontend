@@ -46,10 +46,77 @@ import {
 } from "../services/employees.service";
 
 /**
- * The most invites `GET /v1/employees/invites` returns (`list_invites::data`): one page, the
- * **oldest** first-created, with no cursor. At this size the list may be missing the newest ones.
+ * The most invites `GET /v1/employees/invites` returns (`list_invites::data` walks every page up to
+ * this). At this size the list may be missing some.
  */
-const SERVER_LIST_CAP = 500;
+const SERVER_LIST_CAP = 20_000;
+
+/** A queued email with no outcome after this long never got an answer — say so, not "Sending…". */
+const SEND_GRACE_MS = 15 * 60_000;
+
+/**
+ * The invite email's state, said plainly (UX audit PEOPLE-07). Invites were reported "sent" whatever
+ * happened, so a batch past the provider's daily limit vanished: the invite existed, the email never
+ * left, and nothing on screen said so.
+ */
+function emailMeta(
+  invite: ApiInvite,
+  nowMs: number,
+): { label: string; tone: string; hint?: string; failed?: boolean } | null {
+  switch (invite.email_status) {
+    case "sent":
+      return {
+        label: "Sent",
+        tone: "text-success",
+        hint: invite.email_at
+          ? `Accepted by the email provider ${new Date(invite.email_at).toLocaleString()}`
+          : undefined,
+      };
+    case "not_emailed":
+      return {
+        label: "Not emailed",
+        tone: "text-muted-foreground",
+        hint: "Created for the downloaded spreadsheet — the code is handed out, not emailed.",
+      };
+    case "queued": {
+      const since = invite.email_requested_at ?? invite.created_at;
+      return since && nowMs - since > SEND_GRACE_MS
+        ? {
+            label: "Not confirmed",
+            tone: "text-warning",
+            hint: "No answer from the email provider. Send a new invite if they haven't received it.",
+            failed: true,
+          }
+        : { label: "Sending…", tone: "text-muted-foreground" };
+    }
+    case "failed":
+      switch (invite.email_reason) {
+        case "daily_limit":
+          return {
+            label: "Not sent — daily email limit",
+            tone: "text-destructive",
+            hint: "The email provider's daily limit was reached. Resend tomorrow, or hand the code out with Create + download Excel.",
+            failed: true,
+          };
+        case "rate_limited":
+          return {
+            label: "Not sent — too many at once",
+            tone: "text-destructive",
+            hint: "Sent in a burst the email provider refused. Resending this one should work.",
+            failed: true,
+          };
+        default:
+          return {
+            label: "Not sent",
+            tone: "text-destructive",
+            hint: "The email didn't go out. Check the address, then resend.",
+            failed: true,
+          };
+      }
+    default:
+      return null;
+  }
+}
 
 /** `pending` past its expiry is expired — the server expires lazily, so status alone under-reports. */
 type Derived = "pending" | "locked" | "expired" | "revoked" | "accepted";
@@ -128,16 +195,22 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
   // `Date.now()` is read here rather than in render: expiry only needs re-deriving when the list
   // changes, and pinning it to the fetch keeps rows stable across unrelated re-renders.
   const rows = useMemo(() => {
-    const nowSecs = Math.floor(Date.now() / 1000);
-    return (invites ?? []).map((i) => ({ invite: i, state: derive(i, nowSecs) }));
+    const nowMs = Date.now();
+    const nowSecs = Math.floor(nowMs / 1000);
+    return (invites ?? []).map((i) => ({
+      invite: i,
+      state: derive(i, nowSecs),
+      email: emailMeta(i, nowMs),
+    }));
   }, [invites]);
 
   async function handleResend(invite: ApiInvite) {
     setBusyId(invite.invite_id);
     try {
       await resendInvite(invite.invite_id);
-      toast.success(`New invite sent to ${invite.email}`, {
-        description: "Their previous link and one-time password no longer work.",
+      toast.success(`New invite on its way to ${invite.email}`, {
+        description:
+          "Their previous link and one-time password no longer work. The Email column shows when it's sent.",
       });
       load();
     } catch (e) {
@@ -173,6 +246,9 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
   const outstanding = rows.filter(
     (r) => r.state === "pending" || r.state === "expired" || r.state === "locked",
   ).length;
+  const unsent = rows.filter(
+    (r) => (r.state === "pending" || r.state === "locked") && r.email?.failed,
+  ).length;
 
   return (
     <Card>
@@ -187,13 +263,19 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
               ? `${outstanding} ${outstanding === 1 ? "person hasn't" : "people haven't"} joined yet.`
               : "Everyone invited has joined."}
           </p>
+          {unsent ? (
+            <p className="text-destructive text-sm">
+              {unsent === 1 ? "1 invite email" : `${unsent} invite emails`} didn&apos;t go out — see
+              the Email column.
+            </p>
+          ) : null}
           {/* At the server's cap the newest invites can be the ones left out — a second import of
               a large file lands exactly there — so the counts above are not the whole story
               (QA audit 2026-10-08, WP-219). */}
           {(invites?.length ?? 0) >= SERVER_LIST_CAP ? (
             <p className="text-xs text-warning">
-              This list shows at most {SERVER_LIST_CAP} invites, oldest first-created, so the most
-              recent ones may be missing here. They still work: anyone holding one can still join.
+              This list shows at most {SERVER_LIST_CAP.toLocaleString()} invites, so some may be
+              missing here. They still work: anyone holding one can still join.
             </p>
           ) : null}
         </div>
@@ -208,12 +290,13 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
                 <TableHead>Department</TableHead>
                 <TableHead>Job title</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Email</TableHead>
                 <TableHead>Expires</TableHead>
                 {canManage ? <TableHead className="w-10" /> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(({ invite, state }) => {
+              {rows.map(({ invite, state, email }) => {
                 const meta = STATUS_META[state];
                 // Only an outstanding invite can be acted on — the server guards on `pending` or
                 // `locked` (Resend unlocks it), so offering Resend on a revoked row would just 409.
@@ -226,6 +309,30 @@ export function PendingInvites({ refreshKey = 0 }: { refreshKey?: number }) {
                     <TableCell>{invite.title || "—"}</TableCell>
                     <TableCell>
                       <Badge variant={meta.variant}>{meta.label}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {/* Only while the invite still matters — a joined or revoked one's email is
+                          history. */}
+                      {email && actionable ? (
+                        <span className="flex flex-wrap items-center gap-x-2">
+                          <span className={email.tone} title={email.hint}>
+                            {email.label}
+                          </span>
+                          {email.failed && canManage && state !== "expired" ? (
+                            <Button
+                              variant="link"
+                              size="xs"
+                              className="h-auto px-0"
+                              disabled={busyId === invite.invite_id}
+                              onClick={() => handleResend(invite)}
+                            >
+                              Resend
+                            </Button>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDate(invite.expires_at)}
