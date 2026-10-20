@@ -145,9 +145,10 @@ export function DepartmentScoreFocus({
 
   /**
    * A named person as a link to their Activity — and, for a single day, their screenshots that day
-   * (UX audit 2026-10-16, MON-04). The summary names people without an id, so the name is matched
-   * against the directory and stays plain text when it isn't exactly one person. The hours tracked
-   * go alongside: the one thing behind the score this payload carries.
+   * (UX audit 2026-10-16, MON-04) — by the `user_id` the summary sends. A server that predates the
+   * field sends the name alone; then it is matched against the directory and stays plain text when
+   * it isn't exactly one person. The hours tracked go alongside: the one thing behind the score this
+   * payload carries.
    */
   const { employees } = useDirectory();
   const person = (p: DeptPersonStat | null): Pick<AiMetric, "value" | "hint"> =>
@@ -156,7 +157,7 @@ export function DepartmentScoreFocus({
           value: (
             <>
               <PersonLink
-                userId={resolvePerson(p.name, employees)?.user_id ?? null}
+                userId={p.user_id || resolvePerson(p.name, employees)?.user_id || null}
                 name={p.name}
                 date={from === to ? to : undefined}
                 tone="onFeature"
@@ -196,11 +197,21 @@ export function DepartmentScoreFocus({
         : data?.narrative || "No scored activity in this period yet.";
 
   /**
-   * Who wrote it (MON-08). The fixed line for an unscored period is visible as such; otherwise this
-   * payload can't say whether the model or the server's fallback wrote it, so the card claims
-   * neither — no "AI" in the title, and a line saying it is usually AI and can be wrong.
+   * Who wrote it (MON-08) — the server says, with `ai_generated` / `model`. From a server that
+   * predates those, the fixed line for an unscored period is still visible as such, and otherwise
+   * the card claims neither: no "AI" in the title, and a line saying it is usually AI and can be
+   * wrong.
    */
   const provenance: Provenance = data ? deptSummaryProvenance(data) : { kind: "none" };
+  /**
+   * A re-run can change the text when a model wrote it, when an older payload can't say, or when
+   * the server wrote the line itself over a scored period (the provider was down, or another reader
+   * was generating) — never over an unscored one, whose fixed line is the whole answer.
+   */
+  const canRerun =
+    !!data?.narrative &&
+    (provenance.kind !== "computed" ||
+      (data.ai_generated === false && data.metrics.scored_people > 0));
 
   return (
     <AiReportCard
@@ -220,11 +231,9 @@ export function DepartmentScoreFocus({
           ariaLabel="Summarise which department"
         />
       }
-      // Only once a narrative exists: an empty period has nothing to re-run, and each press is a
-      // fresh billed generation.
-      // The server's fixed line for an unscored period is never generated, so a re-run (a billed
-      // model call) could not change it either (MON-08).
-      onRegenerate={data?.narrative && provenance.kind !== "computed" ? regenerate : undefined}
+      // Only once a narrative exists, and only where a re-run could change it (`canRerun`) — each
+      // press is a fresh billed generation (MON-08).
+      onRegenerate={canRerun ? regenerate : undefined}
       regenerating={regenFor === selection}
     />
   );

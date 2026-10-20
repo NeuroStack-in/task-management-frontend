@@ -3,6 +3,8 @@ import {
   dailyReportProvenance,
   deptSummaryProvenance,
   formatGeneratedAt,
+  fromServer,
+  locationSummaryProvenance,
   provenanceLine,
   screenshotSummaryProvenance,
 } from "./ai-provenance";
@@ -37,6 +39,80 @@ describe("dailyReportProvenance", () => {
   });
 });
 
+/** The server's own `ai_generated` / `model` (2026-10-20) — preferred over any inference. */
+describe("fromServer", () => {
+  it("names the model and the time on text a model wrote", () => {
+    const p = fromServer({ ai_generated: true, model: "openai/gpt-oss-20b", generated_at: OCT_16 });
+    expect(p).toEqual({ kind: "ai", generatedAt: OCT_16, model: "openai/gpt-oss-20b" });
+    expect(provenanceLine(p!)).toMatch(/^AI-generated · openai\/gpt-oss-20b · .+ · may be wrong$/);
+  });
+
+  it("calls the server's own line what it is", () => {
+    expect(fromServer({ ai_generated: false, model: null })).toEqual({ kind: "computed" });
+  });
+
+  it("is AI without a model name when a cached narrative predates the id", () => {
+    expect(fromServer({ ai_generated: true, model: null, generated_at: null })).toEqual({
+      kind: "ai",
+      generatedAt: null,
+    });
+  });
+
+  it("says nothing for a payload without the fields", () => {
+    expect(fromServer({})).toBeNull();
+    expect(fromServer({ ai_generated: null })).toBeNull();
+  });
+});
+
+describe("the server's flag wins over the old inference", () => {
+  it("a scored day's fallback (provider down) is not branded AI", () => {
+    const p = dailyReportProvenance({
+      narrative: "3 of 4 people scored, averaging 71.",
+      generated_at: OCT_16,
+      metrics: { scored_people: 3 },
+      ai_generated: false,
+      model: null,
+    });
+    expect(p.kind).toBe("computed");
+  });
+
+  it("a department summary the model wrote is AI, not 'usually AI'", () => {
+    const p = deptSummaryProvenance({
+      generated_at: OCT_16,
+      metrics: { scored_people: 3 },
+      ai_generated: true,
+      model: "m-1",
+    });
+    expect(p).toEqual({ kind: "ai", generatedAt: OCT_16, model: "m-1" });
+  });
+
+  it("a screenshot summary's fallback over analysed frames is not AI", () => {
+    expect(
+      screenshotSummaryProvenance({ generated_at: OCT_16, metrics: { frames: 12 }, ai_generated: false })
+        .kind,
+    ).toBe("computed");
+  });
+
+  it("an empty narrative is never attributed, whatever the flags say", () => {
+    expect(
+      dailyReportProvenance({ narrative: "", reason: "nothing yet", ai_generated: true, model: "m" }).kind,
+    ).toBe("computed");
+  });
+
+  it("the location summary follows the same rules", () => {
+    expect(locationSummaryProvenance({ generated_at: OCT_16, metrics: { located: 0 } }).kind).toBe(
+      "computed",
+    );
+    expect(locationSummaryProvenance({ generated_at: OCT_16, metrics: { located: 4 } }).kind).toBe(
+      "unknown",
+    );
+    expect(
+      locationSummaryProvenance({ generated_at: OCT_16, metrics: { located: 4 }, ai_generated: true })
+        .kind,
+    ).toBe("ai");
+  });
+});
+
 describe("dept / screenshot summaries", () => {
   it("know the template when nobody was scored or nothing was analysed", () => {
     expect(deptSummaryProvenance({ generated_at: OCT_16, metrics: { scored_people: 0 } }).kind).toBe(
@@ -47,7 +123,7 @@ describe("dept / screenshot summaries", () => {
     );
   });
 
-  it("otherwise claim neither — the payload can't tell model from fallback", () => {
+  it("without the server's flag, otherwise claim neither — model and fallback look alike", () => {
     expect(deptSummaryProvenance({ generated_at: OCT_16, metrics: { scored_people: 3 } }).kind).toBe(
       "unknown",
     );

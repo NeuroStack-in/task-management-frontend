@@ -4,25 +4,23 @@
  *
  * The cards used to put "AI … report" and the sparkle over whatever text came back, including the
  * server's fixed sentence for a day with nothing to narrate, and none of them said AI can be wrong.
- * The rule now: **AI branding only on text we know a model wrote**, with "AI-generated · time · may
- * be wrong"; a known template is labelled "Summary" with no AI mark; and where the payload cannot
- * tell the two apart, the card says so rather than claiming either.
+ * The rule now: **AI branding only on text a model wrote**, with "AI-generated · model · time · may
+ * be wrong"; the template is labelled "Summary" with no AI mark.
  *
- * What each payload can and cannot tell us (read from `backend/crates/insights`, 2026-10-20):
+ * **The server says which** (2026-10-20). Every org summary — the day / week / month executive
+ * reports, the department and screenshot summaries, the attention brief and the location summary —
+ * carries `ai_generated` and `model`: `false` covers every way the server ends up writing the line
+ * itself (nothing to narrate, the provider down or failing, AI insights off, another reader already
+ * generating it). {@link fromServer} reads those, and each helper below prefers it.
  *
- *  - **Daily executive report** (`/v1/insights/reports/ai`): with nobody scored it returns the fixed
- *    line and spends no model call; otherwise a provider failure is an HTTP error, never a silent
- *    fallback — so a report that arrives with people scored was written by the model. (The one
- *    exception is a server with no AI key configured, a deployment error this cannot see.)
- *  - **Department activity summary** (`/reports/dept-summary`) and **screenshot summary**
- *    (`/screenshots/dept-summary`): the fixed line when nobody was scored / no frame was analysed —
- *    that much is visible. But they **also** fall back to the fixed line when the provider fails,
- *    when another reader is generating the same summary, or (screenshots) when AI insights are off,
- *    and the response is identical either way. The server knows (`narrate` returns `from_model`)
- *    and doesn't send it — the field it needs is listed in the audit report.
- *  - **None of them sends the model id.** The server stamps `ai_model` on the cache item for its
- *    own use and deliberately keeps it off the wire, so no card names a model until a DTO carries
- *    it; naming one from a constant here would be a guess that goes stale the day routing moves.
+ * Only a payload **without** the fields — a server that predates them, which is what is live until
+ * the backend ships — falls back to what the payload can show on its own:
+ *
+ *  - **Daily executive report**: the fixed line when nobody was scored; otherwise a provider failure
+ *    was an HTTP error on those servers, so a report with people scored came from the model.
+ *  - **Department / screenshot / location summaries**: the fixed line is visible only when there was
+ *    nothing to narrate. The same servers also fell back silently when the provider failed or
+ *    another reader was generating, with an identical response, so the card claims neither.
  */
 
 export type Provenance =
@@ -34,6 +32,13 @@ export type Provenance =
   | { kind: "unknown"; generatedAt: number | null }
   /** Nothing to attribute yet — loading, or a read that failed. No AI mark, no line. */
   | { kind: "none" };
+
+/** The authorship fields a payload may carry (`insights::shared::provenance::Authorship`). */
+export interface AuthorshipFields {
+  ai_generated?: boolean | null;
+  model?: string | null;
+  generated_at?: number | null;
+}
 
 /**
  * When a summary was written, as local date-time, or `null` when that isn't known.
@@ -54,34 +59,64 @@ export function formatGeneratedAt(ms: number | null | undefined): string | null 
       });
 }
 
-/** The daily executive report — see the module note. */
-export function dailyReportProvenance(r: {
-  narrative: string;
-  reason?: string | null;
-  generated_at?: number | null;
-  metrics?: { scored_people: number };
-}): Provenance {
+/**
+ * What the payload itself says about who wrote it — or `null` when it says nothing (a server, or a
+ * cached response, from before the fields existed), so the caller falls back to inferring.
+ */
+export function fromServer(r: AuthorshipFields): Provenance | null {
+  if (typeof r.ai_generated !== "boolean") return null;
+  if (!r.ai_generated) return { kind: "computed" };
+  const model = r.model?.trim();
+  return { kind: "ai", generatedAt: r.generated_at ?? null, ...(model ? { model } : {}) };
+}
+
+/** The executive report, any resolution (day / week / month) — see the module note. */
+export function dailyReportProvenance(
+  r: AuthorshipFields & {
+    narrative: string;
+    reason?: string | null;
+    metrics?: { scored_people: number };
+  },
+): Provenance {
+  // Nothing written at all — whatever the flags say, there is no text to attribute.
   if (!r.narrative.trim() || r.reason) return { kind: "computed" };
+  const told = fromServer(r);
+  if (told) return told;
   if (r.metrics && r.metrics.scored_people === 0) return { kind: "computed" };
   return { kind: "ai", generatedAt: r.generated_at ?? null };
 }
 
-/** The department activity summary — the template is visible only when nobody was scored. */
-export function deptSummaryProvenance(d: {
-  generated_at: number;
-  metrics: { scored_people: number };
-}): Provenance {
+/** The department activity summary — see the module note. */
+export function deptSummaryProvenance(
+  d: AuthorshipFields & { generated_at: number; metrics: { scored_people: number } },
+): Provenance {
+  const told = fromServer(d);
+  if (told) return told;
   if (d.metrics.scored_people === 0) return { kind: "computed" };
   return { kind: "unknown", generatedAt: d.generated_at };
 }
 
-/** The screenshot summary — the template is visible only when no frame was analysed. */
-export function screenshotSummaryProvenance(s: {
-  generated_at: number;
-  metrics: { frames: number };
-}): Provenance {
+/** The screenshot summary — see the module note. */
+export function screenshotSummaryProvenance(
+  s: AuthorshipFields & { generated_at: number; metrics: { frames: number } },
+): Provenance {
+  const told = fromServer(s);
+  if (told) return told;
   if (s.metrics.frames === 0) return { kind: "computed" };
   return { kind: "unknown", generatedAt: s.generated_at };
+}
+
+/**
+ * The Locations board's summary — the same rules: the fixed line is visible only when nobody was
+ * located; otherwise an older payload can't say whether the model or the fallback wrote it.
+ */
+export function locationSummaryProvenance(
+  l: AuthorshipFields & { generated_at: number; metrics: { located: number } },
+): Provenance {
+  const told = fromServer(l);
+  if (told) return told;
+  if (l.metrics.located === 0) return { kind: "computed" };
+  return { kind: "unknown", generatedAt: l.generated_at };
 }
 
 /** The one line every card prints under its text (empty for `none`). */

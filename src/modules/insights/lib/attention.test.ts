@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AttentionRow, PersonScore, ScoreBreakdown } from "../services/insights.service";
 import {
+  alertsFrom,
   anomalyReason,
   buildAttentionPeople,
   countOpenFlags,
@@ -150,15 +151,66 @@ describe("silentDevices", () => {
   });
 });
 
+describe("alertsFrom (MON-06)", () => {
+  it("takes the complete flagged list, with each rule's own detail and severity", () => {
+    const a = alertsFrom({
+      people: [alert({ user_id: "u2", name: "Bo", score: 40 })],
+      flagged: [
+        {
+          user_id: "u9",
+          name: "Hi Scorer",
+          score: 92,
+          top_severity: "high",
+          flags: [
+            { anomaly_type: "burnout", severity: "high", detail: "5 consecutive overtime days (≥ 4)" },
+            { anomaly_type: "overtime", severity: "medium", detail: "11h 20m worked (≥ 10h overtime threshold)" },
+          ],
+        },
+      ],
+    });
+    expect(a.capped).toBe(false);
+    expect(a.rows).toHaveLength(1);
+    expect(a.rows[0]).toMatchObject({ userId: "u9", severity: "high" });
+    expect(a.rows[0].alerts.map((x) => [x.type, x.severity, x.detail])).toEqual([
+      ["burnout", "high", "5 consecutive overtime days (≥ 4)"],
+      ["overtime", "medium", "11h 20m worked (≥ 10h overtime threshold)"],
+    ]);
+    expect(a.rows[0].alerts[0].label).toBe(anomalyReason("burnout"));
+  });
+
+  it("falls back to an older server's capped ranking, and says when it was full", () => {
+    const eight = Array.from({ length: 8 }, (_, i) =>
+      alert({ user_id: `u${i}`, name: `P${i}`, score: 30 + i, attention: 70 - i }),
+    );
+    eight[0] = alert({ user_id: "u0", name: "P0", anomaly_count: 1, top_severity: "medium", reasons: ["idle", "idle"] });
+    const a = alertsFrom({ people: eight });
+    expect(a.capped).toBe(true);
+    expect(a.rows).toHaveLength(1);
+    expect(a.rows[0].alerts).toEqual([
+      { type: "idle", label: anomalyReason("idle"), severity: null, detail: null },
+    ]);
+    expect(alertsFrom({ people: eight.slice(0, 3) }).capped).toBe(false);
+  });
+
+  it("an empty flagged list is a complete 'nobody', not a fallback", () => {
+    expect(alertsFrom({ people: [alert({ anomaly_count: 1, reasons: ["idle"] })], flagged: [] })).toEqual({
+      rows: [],
+      capped: false,
+    });
+  });
+});
+
 describe("buildAttentionPeople", () => {
   it("merges every signal into one row per person, most urgent first", () => {
     const rows = buildAttentionPeople({
-      alerts: [
-        alert({ user_id: "u1", name: "Ada", anomaly_count: 2, top_severity: "medium", reasons: ["overtime", "idle"] }),
-        alert({ user_id: "u3", name: "Cy", anomaly_count: 1, top_severity: "high", reasons: ["burnout"] }),
-        // A low score with no anomaly: not an alert.
-        alert({ user_id: "u2", name: "Bo", score: 40 }),
-      ],
+      alerts: alertsFrom({
+        people: [
+          alert({ user_id: "u1", name: "Ada", anomaly_count: 2, top_severity: "medium", reasons: ["overtime", "idle"] }),
+          alert({ user_id: "u3", name: "Cy", anomaly_count: 1, top_severity: "high", reasons: ["burnout"] }),
+          // A low score with no anomaly: not an alert.
+          alert({ user_id: "u2", name: "Bo", score: 40 }),
+        ],
+      }).rows,
       people: [
         person("u1", "Ada", b({ score: 80 })),
         person("u2", "Bo", b({ score: 40, u: 10, r: 30 })),
@@ -171,7 +223,7 @@ describe("buildAttentionPeople", () => {
 
     const ada = rows.find((r) => r.userId === "u1")!;
     expect(ada.severity).toBe("medium");
-    expect(ada.reasons).toEqual([anomalyReason("overtime"), anomalyReason("idle")]);
+    expect(ada.alerts.map((x) => x.label)).toEqual([anomalyReason("overtime"), anomalyReason("idle")]);
     expect(ada.lowScore).toBeNull(); // 80 is not low
 
     const bo = rows.find((r) => r.userId === "u2")!;

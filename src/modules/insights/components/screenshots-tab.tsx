@@ -558,7 +558,10 @@ export function ScreenshotsTab() {
 
   const nameOf = (id: string) => personName(dirById.get(id)?.name, OUT_OF_SCOPE);
 
-  /** Who wrote the card's text: the local count line is ours; the server's narrative may be AI. */
+  /**
+   * Who wrote the card's text: the local count line is ours; the server's narrative says whether a
+   * model wrote it (`ai_generated` / `model`, MON-08) — inferred only from a server that predates that.
+   */
   const shotProvenance: Provenance = aiAnalysed
     ? screenshotSummaryProvenance(aiAnalysed)
     : countsUnknown
@@ -633,8 +636,8 @@ export function ScreenshotsTab() {
     <div className="space-y-5" data-tour="shots:review">
       <AiReportCard
         // No "AI" in the title (MON-08): the text below is the local count line until frames are
-        // analysed, and after that the server's payload can't say whether the model or its
-        // fallback wrote it — the provenance line says which is known.
+        // analysed, and after that it may be the model's or the server's own line — the provenance
+        // line under it says which.
         title={
           dept === ALL_DEPTS ? "Screenshot summary" : `Screenshot summary · ${deptLabel(dept)}`
         }

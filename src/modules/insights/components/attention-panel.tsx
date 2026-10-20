@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
 import {
-  anomalyReason,
   buildAttentionPeople,
   LOW_SCORE_BELOW,
   SEVERITY_LABEL,
@@ -102,7 +101,7 @@ export function AttentionPanel({ date, today }: { date: string; today: string })
   const people = useMemo(
     () =>
       buildAttentionPeople({
-        alerts: readyData(state.alerts),
+        alerts: readyData(state.alerts)?.rows ?? null,
         people: readyData(state.people),
         flags: readyData(state.flags),
         silent: readyData(state.agents)?.silent ?? null,
@@ -365,16 +364,14 @@ function FlagsTile({ state, date }: { state: AttentionState; date: string }) {
   );
 }
 
-/** How many of the server's attention rows it returns at most (`attention_list::TOP_N`). */
-const ATTENTION_ROWS_CAP = 8;
-
 function AlertsTile({ state, onSeeWho }: { state: AttentionState; onSeeWho: () => void }) {
   const s = state.alerts;
-  const rows = s.status === "ready" ? s.data : null;
-  const flagged = rows ? rows.filter((r) => r.anomaly_count > 0) : [];
-  const high = flagged.filter((r) => r.top_severity === "high").length;
+  const data = s.status === "ready" ? s.data : null;
+  const rows = data ? data.rows : null;
+  const flagged = rows ?? [];
+  const high = flagged.filter((r) => r.severity === "high").length;
   // The rules that actually fired, not a list of every rule there is.
-  const fired = [...new Set(flagged.flatMap((r) => r.reasons))].map(anomalyReason);
+  const fired = [...new Set(flagged.flatMap((r) => r.alerts.map((a) => a.label)))];
   const firedText =
     fired.length > 2 ? `${fired.slice(0, 2).join("; ")}; and ${fired.length - 2} more.` : `${fired.join("; ")}.`;
   return (
@@ -391,12 +388,9 @@ function AlertsTile({ state, onSeeWho }: { state: AttentionState; onSeeWho: () =
             : "No anomaly rule fired for anyone this day."
           : undefined
       }
-      // The server ranks and caps this list, so a full one may not be everyone (see the report).
-      note={
-        rows && rows.length >= ATTENTION_ROWS_CAP
-          ? `The server sends its ${ATTENTION_ROWS_CAP} most urgent people — there may be more.`
-          : null
-      }
+      // The server now lists everyone a rule fired for (MON-06); only an older server's capped
+      // ranking can leave someone out, and then the tile says so.
+      note={data?.capped ? "Only the most urgent people were sent — there may be more." : null}
       onRetry={state.reload}
       action={flagged.length > 0 ? <TileButton onClick={onSeeWho}>See who</TileButton> : null}
     />
@@ -470,8 +464,17 @@ function PersonRow({ person: p, date }: { person: AttentionPerson; date: string 
     <li className="flex flex-col gap-2 px-5 py-3.5 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 space-y-1">
         <PersonLink userId={p.userId} name={p.name} date={date} className="text-sm font-medium" />
-        {p.reasons.length > 0 ? (
-          <p className="text-sm text-muted-foreground">{p.reasons.join(" · ")}</p>
+        {p.alerts.length > 0 ? (
+          // Each rule with the server's own account of why it fired — the figure and the org's
+          // threshold (MON-06). An older server sends the rule alone.
+          <ul className="space-y-0.5 text-sm text-muted-foreground">
+            {p.alerts.map((a) => (
+              <li key={a.type}>
+                {a.label}
+                {a.detail ? <span className="text-xs"> — {a.detail}</span> : null}
+              </li>
+            ))}
+          </ul>
         ) : null}
         {p.lowScore !== null && weakest.length > 0 ? (
           // What drove the score — the weakest parts of the four the score is built from (MON-04).

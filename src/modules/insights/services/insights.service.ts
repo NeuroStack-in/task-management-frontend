@@ -428,16 +428,26 @@ export interface ScreenshotGrid {
   /** Exact frame count for the day's partition (server `Select=COUNT`), so a caller can show the
    *  real total instead of a page-length floor. Present only on the first page (no `cursor`). */
   total?: number;
+  // The day's review state over **every** frame, counted by the server (UX audit MON-03). Only on
+  // the first page, and only when asked for with `reviewCounts` — the server reads the whole day to
+  // answer, so the polled grid doesn't ask. Absent from servers that predate it: count the rows.
+  /** Frames the AI has analysed, of `total`. */
+  analysed?: number;
+  /** AI flags nobody has confirmed or dismissed (`awaitsReview`), over the whole day. */
+  flagged_open?: number;
+  /** `flagged_open` per person (`user_id → count`); people with none are left out. */
+  flagged_open_by_user?: Record<string, number>;
 }
 
 export function getScreenshots(
   date: string,
-  opts: { userId?: string; cursor?: string; limit?: number } = {},
+  opts: { userId?: string; cursor?: string; limit?: number; reviewCounts?: boolean } = {},
 ): Promise<ScreenshotGrid> {
   const q = new URLSearchParams({ date });
   if (opts.userId) q.set("user_id", opts.userId);
   if (opts.cursor) q.set("cursor", opts.cursor);
   if (opts.limit) q.set("limit", String(opts.limit));
+  if (opts.reviewCounts) q.set("review_counts", "true");
   return apiFetch<ScreenshotGrid>(`/v1/insights/screenshots?${q.toString()}`);
 }
 
@@ -535,11 +545,52 @@ export interface AttentionRow {
   attention: number;
 }
 
-export interface AttentionList {
+/** One anomaly rule that fired for someone (`anomaly_detect::rules`). */
+export interface AnomalyFlag {
+  /** `inactivity` | `overtime` | `idle` | `burnout` | `policy`. */
+  anomaly_type: string;
+  /** `high` | `medium` | `low`. */
+  severity: string;
+  /** The rule's own account, with the figure and the org's threshold — "11h 20m worked (≥ 10h …)". */
+  detail: string;
+}
+
+/** Everyone with an anomaly flag that day (`AttentionList.flagged`). */
+export interface FlaggedPerson {
+  user_id: string;
+  name: string;
+  /** The day's score; `null` when the day was too thin to score — the flags still stand. */
+  score: number | null;
+  top_severity: string;
+  /** Most severe first. */
+  flags: AnomalyFlag[];
+}
+
+/**
+ * Who wrote a summary's text (UX audit MON-08 / XC-08), on every org summary the server narrates.
+ * Absent from servers — and cached payloads — that predate it; `lib/ai-provenance` falls back to
+ * inferring then.
+ */
+export interface Authorship {
+  /** `true` only for text a model wrote; `false` for the server's own line over the figures. */
+  ai_generated?: boolean;
+  /** The model id that wrote it, when known. */
+  model?: string | null;
+}
+
+export interface AttentionList extends Authorship {
   date: string;
+  /** The ranked, capped list the brief narrates (scored people only). */
   people: AttentionRow[];
-  /** AI narrative over the ranked list (factual fallback when no LLM key). */
+  /**
+   * **Every** person with an anomaly flag that day, with each flag's detail (MON-06). Absent from
+   * servers that predate it — `people` is then all there is, and it is capped.
+   */
+  flagged?: FlaggedPerson[];
+  /** AI narrative over the ranked list, or the server's factual line — `ai_generated` says which. */
   narrative: string;
+  /** Epoch ms the narrative was written (absent from older servers). */
+  generated_at?: number;
 }
 
 export function getAttention(date: string): Promise<AttentionList> {
@@ -572,11 +623,13 @@ export function getReportsCatalog(): Promise<{ reports: ReportType[] }> {
 }
 
 export interface NamedScore {
+  /** Absent from servers that predate it (MON-04) — then the name is matched to the roster. */
+  user_id?: string;
   name: string;
   score: number;
 }
 
-export interface AiReport {
+export interface AiReport extends Authorship {
   date: string;
   metrics: {
     total_people: number;
@@ -615,7 +668,7 @@ export function regenerateAiReport(date: string): Promise<AiReport> {
  * `reason` is set (with an empty `narrative`) when there is nothing to reduce yet — an honest
  * "no data" the caller must show instead of prose.
  */
-export interface AiPeriodReport {
+export interface AiPeriodReport extends Authorship {
   narrative: string;
   reason?: string | null;
   generated_at?: number | null;
@@ -653,6 +706,8 @@ export function regenerateAiMonthlyReport(month: string): Promise<AiPeriodReport
 
 /** One ranked person in a department summary — name, tracked hours, mean score. */
 export interface DeptPersonStat {
+  /** Absent from servers that predate it (MON-04) — then the name is matched to the directory. */
+  user_id?: string;
   name: string;
   hours: number;
   score: number;
@@ -663,7 +718,7 @@ export interface DeptPersonStat {
  * on `ai.insights` (not the enterprise `ai_pdf`), so it's available wherever the old attention
  * fallback was. `department` is a department id, or `"all"` for the whole org.
  */
-export interface DeptSummary {
+export interface DeptSummary extends Authorship {
   department: string;
   from: string;
   to: string;
@@ -710,7 +765,7 @@ export function getDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> {
 // Mirrors `LocationSummaryResponse`. Every figure is computed server-side from the same
 // reach-narrowed read the board plots, so the narrative and the map cannot disagree.
 
-export interface LocationSummary {
+export interface LocationSummary extends Authorship {
   date: string;
   metrics: {
     /** Active employees in the caller's reach. */
@@ -773,7 +828,7 @@ export function regenerateDeptSummary(a: DeptSummaryArgs): Promise<DeptSummary> 
 // A day's screen activity for one department, narrated for that department's role. Distinct from
 // getDeptSummary (scores/hours): this summarises what was on screen.
 
-export interface ScreenshotDeptSummary {
+export interface ScreenshotDeptSummary extends Authorship {
   department: string;
   date: string;
   metrics: {

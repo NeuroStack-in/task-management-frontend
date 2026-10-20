@@ -548,24 +548,45 @@ export function useReportsData(date: string): ReportsData {
         }),
       });
 
-      // anomalies — the AI attention ranking; honest empty when nothing fired.
+      // anomalies — everyone a rule fired for, with each rule's own account of why (UX audit
+      // MON-06). From a server that predates `flagged`, the capped attention ranking (no detail).
+      // Honest empty when nothing fired.
+      const flaggedList = attention?.flagged;
       out.push({
         id: "anomalies",
         name: "Anomaly & Risk Report",
-        description: "People flagged by anomaly detection, ranked by attention weight.",
+        description: flaggedList
+          ? "Everyone an anomaly rule flagged, most severe first, with why each rule fired."
+          : "People flagged by anomaly detection, ranked by attention weight.",
         category: "monitoring",
         timeframe: dayLabel,
         window: dayWindow,
-        columns: ["Employee", "Anomalies", "Severity", "Reasons", "Score"],
-        rows: (attention?.people ?? [])
-          .filter((p) => p.anomaly_count > 0)
-          .map((p) => [
-            p.name,
-            p.anomaly_count,
-            p.top_severity ? humanize(p.top_severity) : OMITTED,
-            p.reasons.length ? p.reasons.map(humanize).join(", ") : OMITTED,
-            Math.round(p.score),
-          ]),
+        columns: ["Employee", "Anomalies", "Severity", "Reasons", "Details", "Score"],
+        rows: flaggedList
+          ? flaggedList.map((p) => [
+              p.name,
+              p.flags.length,
+              p.top_severity ? humanize(p.top_severity) : OMITTED,
+              p.flags.length ? p.flags.map((f) => humanize(f.anomaly_type)).join(", ") : OMITTED,
+              p.flags.some((f) => f.detail)
+                ? p.flags
+                    .filter((f) => f.detail)
+                    .map((f) => `${humanize(f.anomaly_type)}: ${f.detail}`)
+                    .join("; ")
+                : OMITTED,
+              // A day too thin to score has no score — not a zero.
+              p.score === null ? OMITTED : Math.round(p.score),
+            ])
+          : (attention?.people ?? [])
+              .filter((p) => p.anomaly_count > 0)
+              .map((p) => [
+                p.name,
+                p.anomaly_count,
+                p.top_severity ? humanize(p.top_severity) : OMITTED,
+                p.reasons.length ? p.reasons.map(humanize).join(", ") : OMITTED,
+                OMITTED,
+                Math.round(p.score),
+              ]),
       });
 
       composed.set(cacheKey, { at: Date.now(), reports: out, window: win });

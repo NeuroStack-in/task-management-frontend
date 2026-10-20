@@ -9,7 +9,8 @@
  *  - **Captures awaiting review** — the AI's flags nobody has confirmed or dismissed
  *    (`awaitsReview`, the Screenshots tab's own rule).
  *  - **Alerts** — the server's anomaly rules (`GET /v1/insights/attention`): overtime, idle time, a
- *    sharp drop below someone's usual, a run of long days, policy.
+ *    sharp drop below someone's usual, a run of long days, policy. Its `flagged` list is everyone
+ *    a rule fired for, each with the rule's own account of why ({@link alertsFrom}).
  *  - **Low scores** — the day's productivity score under {@link LOW_SCORE_BELOW}, from the org day
  *    rollup, which already applies the server's volume floor (a four-minute day has no score).
  *  - **Agents not reporting** — live devices that have been silent since before the last workday.
@@ -17,7 +18,7 @@
  * Every figure is the server's; nothing here estimates a value it doesn't have.
  */
 import type {
-  AttentionRow,
+  AttentionList,
   PersonScore,
   ScoreBreakdown,
   ShotRow,
@@ -68,6 +69,86 @@ export function anomalyReason(type: string): string {
   if (known) return known;
   const t = type.replace(/_/g, " ").trim();
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : "Anomaly";
+}
+
+// ── alerts ───────────────────────────────────────────────────────────────────────────────────────
+
+/** One rule that fired for someone. */
+export interface PersonAlert {
+  /** The server's type slug — `overtime`, `idle`, … */
+  type: string;
+  /** {@link anomalyReason} of `type`. */
+  label: string;
+  /** This rule's own severity; `null` from an older server, which sent only the person's highest. */
+  severity: Severity | null;
+  /** The rule's own account, with the figure and the org's threshold; `null` from an older server. */
+  detail: string | null;
+}
+
+/** One person a rule fired for. */
+export interface AlertRow {
+  userId: string;
+  name: string;
+  /** The highest severity among their alerts. */
+  severity: Severity | null;
+  alerts: PersonAlert[];
+}
+
+export interface AlertsData {
+  rows: AlertRow[];
+  /**
+   * The server's ranking was capped and may have left flagged people out — only from a server that
+   * predates `flagged`, whose list was the eight most urgent of the fifteen lowest scorers.
+   */
+  capped: boolean;
+}
+
+/** How many ranked rows an older server returned at most (`attention_list::TOP_N`). */
+export const ATTENTION_ROWS_CAP = 8;
+
+/**
+ * The day's alerts from `GET /v1/insights/attention` (UX audit MON-06).
+ *
+ * `flagged` is **everyone** a rule fired for, each flag with its detail. A server that predates it
+ * sends only the ranked `people` — scored people, capped, with the rule types but no detail — so
+ * that is used instead and marked `capped` when it is full.
+ */
+export function alertsFrom(list: Pick<AttentionList, "people" | "flagged">): AlertsData {
+  if (Array.isArray(list.flagged)) {
+    return {
+      capped: false,
+      rows: list.flagged
+        .filter((p) => p.flags.length > 0)
+        .map((p) => ({
+          userId: p.user_id,
+          name: p.name,
+          severity: severityOf(p.top_severity) ?? "low",
+          alerts: p.flags.map((f) => ({
+            type: f.anomaly_type,
+            label: anomalyReason(f.anomaly_type),
+            severity: severityOf(f.severity),
+            detail: f.detail.trim() || null,
+          })),
+        })),
+    };
+  }
+  const people = list.people ?? [];
+  return {
+    capped: people.length >= ATTENTION_ROWS_CAP,
+    rows: people
+      .filter((r) => r.anomaly_count > 0)
+      .map((r) => ({
+        userId: r.user_id,
+        name: r.name,
+        severity: severityOf(r.top_severity) ?? "low",
+        alerts: [...new Set(r.reasons)].map((type) => ({
+          type,
+          label: anomalyReason(type),
+          severity: null,
+          detail: null,
+        })),
+      })),
+  };
 }
 
 // ── what drove a score ───────────────────────────────────────────────────────────────────────────
@@ -207,8 +288,8 @@ export interface AttentionPerson {
   name: string;
   /** The highest anomaly severity, or `null` when no anomaly fired for them. */
   severity: Severity | null;
-  /** Anomaly types that fired, in plain words. */
-  reasons: string[];
+  /** The rules that fired, most severe first, each with its detail when the server sent one. */
+  alerts: PersonAlert[];
   /** The day's score, when it was below {@link LOW_SCORE_BELOW}. */
   lowScore: number | null;
   /** What pulled that score down, weakest first — only alongside `lowScore`. */
@@ -220,8 +301,8 @@ export interface AttentionPerson {
 }
 
 export interface AttentionInputs {
-  /** `GET /v1/insights/attention` rows (anomalies + low scores, server-ranked, capped). */
-  alerts?: AttentionRow[] | null;
+  /** The day's alerts — {@link alertsFrom}. */
+  alerts?: AlertRow[] | null;
   /** The org day rollup's people — the complete roster, with a breakdown only for scored days. */
   people?: PersonScore[] | null;
   flags?: FlagCount | null;
@@ -241,7 +322,7 @@ export function buildAttentionPeople(
 ): AttentionPerson[] {
   const nameOf = new Map<string, string>();
   for (const p of people ?? []) if (p.name) nameOf.set(p.user_id, p.name);
-  for (const a of alerts ?? []) if (a.name && !nameOf.has(a.user_id)) nameOf.set(a.user_id, a.name);
+  for (const a of alerts ?? []) if (a.name && !nameOf.has(a.userId)) nameOf.set(a.userId, a.name);
 
   const rows = new Map<string, AttentionPerson>();
   const row = (userId: string): AttentionPerson => {
@@ -251,7 +332,7 @@ export function buildAttentionPeople(
         userId,
         name: nameOf.get(userId) ?? unknownName,
         severity: null,
-        reasons: [],
+        alerts: [],
         lowScore: null,
         drivers: [],
         openFlags: 0,
@@ -263,10 +344,10 @@ export function buildAttentionPeople(
   };
 
   for (const a of alerts ?? []) {
-    if (a.anomaly_count <= 0) continue;
-    const r = row(a.user_id);
-    r.severity = severityOf(a.top_severity) ?? "low";
-    r.reasons = [...new Set(a.reasons)].map(anomalyReason);
+    if (a.alerts.length === 0) continue;
+    const r = row(a.userId);
+    r.severity = a.severity ?? "low";
+    r.alerts = a.alerts;
   }
   for (const p of people ?? []) {
     const b = p.breakdown;
@@ -302,9 +383,10 @@ export function buildAttentionPeople(
  * The one person `name` (and, when given, `score`) can mean — or `null` when it could be more than
  * one, or nobody.
  *
- * Some AI payloads name people without an id (the department summary's `PersonStat`, the executive
- * report's `NamedScore`). A link must point at the right person or not exist, so an ambiguous name
- * stays plain text rather than guessing between two people who share it.
+ * The department summary's `PersonStat` and the executive report's `NamedScore` carry a `user_id`
+ * now (MON-04); this is the fallback for a server that predates it, which named people without one.
+ * A link must point at the right person or not exist, so an ambiguous name stays plain text rather
+ * than guessing between two people who share it.
  */
 export function resolvePerson<T extends { user_id: string; name: string }>(
   name: string,

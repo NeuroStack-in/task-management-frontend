@@ -257,11 +257,13 @@ function ExecutiveOverview({
   // the hook's cross-granularity type rather than papering over a real absence.
   if (!state.data?.metrics) return null;
 
-  const report = {
+  const report: AiReport = {
     date: state.data.date ?? "",
     metrics: state.data.metrics,
     narrative: state.data.narrative,
     generated_at: state.data.generated_at ?? 0,
+    ai_generated: state.data.ai_generated,
+    model: state.data.model,
   };
   const band = healthBand(report.metrics.avg_score ?? 0);
   const provenance = dailyReportProvenance(state.data);
@@ -422,7 +424,7 @@ function AiBriefing({
   report: AiReport;
   /** Who wrote the narrative — the AI mark only when a model did (MON-08). */
   provenance: Provenance;
-  /** The day's people, to link the report's names (it sends names without ids). */
+  /** The day's people — to link a name from a server that predates `NamedScore.user_id`. */
   roster: PersonScore[];
   onRegenerate: () => void;
   regenerating: boolean;
@@ -434,6 +436,16 @@ function AiBriefing({
   const canAsk = useAssistantAccess().chat;
   const attention = report.metrics.needs_attention.slice(0, 3);
   const isAi = provenance.kind === "ai";
+  /**
+   * A re-run can change the text when a model wrote it — or when the server wrote the line itself
+   * over a scored day (the provider was down), which a retry may turn into the model's. Never over
+   * an unscored day: that fixed line is the whole answer.
+   */
+  const canRerun =
+    isAi ||
+    (provenance.kind === "computed" &&
+      report.ai_generated === false &&
+      report.metrics.scored_people > 0);
 
   return (
     <div className="relative flex flex-col overflow-hidden rounded-3xl bg-feature p-6 text-feature-foreground shadow-soft xl:col-span-8">
@@ -473,9 +485,9 @@ function AiBriefing({
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white/15">
                   <TrendingDown className="size-4" aria-hidden="true" />
                 </span>
-                {/* A link to the person and their day (MON-04). The report names people without an
-                    id, so the name is matched to the day's roster — and stays text if it could be
-                    two people. */}
+                {/* A link to the person and their day (MON-04) — by the id the report sends, or, from
+                    a server that predates it, by matching the name to the day's roster (text if it
+                    could be two people). */}
                 <PersonLink
                   userId={resolveNamed(a, roster)}
                   name={a.name}
@@ -513,18 +525,17 @@ function AiBriefing({
                 Ask the assistant <ArrowUpRight className="size-4" />
               </Button>
             ) : null}
-            {/* Only over model output: the fixed line for an unscored day is not generated, so a
-                re-run (a billed model call) could not change it. */}
-            {isAi ? (
+            {/* Only where a re-run (a billed model call) could change the text — see `canRerun`. */}
+            {canRerun ? (
               <Button
                 size="sm"
                 onClick={onRegenerate}
                 disabled={regenerating}
-                title="Regenerate summary"
+                title={isAi ? "Regenerate summary" : "Try writing this summary with AI again"}
                 className="border-transparent bg-white/15 text-feature-foreground ring-1 ring-white/15 ring-inset hover:bg-white/25 disabled:opacity-70"
               >
                 <RefreshCw className={cn("size-3.5", regenerating && "animate-spin")} />
-                {regenerating ? "Regenerating…" : "Regenerate"}
+                {regenerating ? "Regenerating…" : isAi ? "Regenerate" : "Try AI again"}
               </Button>
             ) : null}
           </div>
@@ -704,11 +715,12 @@ function NamedScoreList({
 }
 
 /**
- * The roster id a report's bare name refers to — `null` unless exactly one person on the day's
- * roster has that name (and, when two do, that score). The executive report sends `NamedScore`
- * without a `user_id`; the field it needs is listed in the audit report.
+ * Who a report's named person is: the `user_id` the server sends (MON-04). A server that predates
+ * the field sends the name alone, and then it is matched to the day's roster — `null` unless exactly
+ * one person has that name (and, when two do, that score).
  */
 function resolveNamed(n: NamedScore, roster: PersonScore[]): string | null {
+  if (n.user_id) return n.user_id;
   return (
     resolvePerson(n.name, roster, (p) => p.breakdown?.score ?? null, n.score)?.user_id ?? null
   );

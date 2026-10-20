@@ -32,6 +32,9 @@ export interface AiNarrative {
   metrics?: AiReport["metrics"];
   date?: string;
   generated_at?: number | null;
+  /** Who wrote `narrative` — the server's own word, when it sends it (UX audit MON-08). */
+  ai_generated?: boolean;
+  model?: string | null;
 }
 
 /**

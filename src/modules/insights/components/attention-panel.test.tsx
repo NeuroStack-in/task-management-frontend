@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { alertsFrom } from "../lib/attention";
 import type { AttentionState } from "../use-attention";
 
 // The panel's reads are its hook; mock it so each state can be rendered directly.
@@ -55,17 +56,19 @@ describe("AttentionPanel (UX audit MON-03 / MON-06)", () => {
       base({
         alerts: {
           status: "ready",
-          data: [
-            {
-              user_id: "u1",
-              name: "Ada",
-              score: 70,
-              anomaly_count: 1,
-              top_severity: "high",
-              reasons: ["overtime"],
-              attention: 60,
-            },
-          ],
+          data: alertsFrom({
+            people: [
+              {
+                user_id: "u1",
+                name: "Ada",
+                score: 70,
+                anomaly_count: 1,
+                top_severity: "high",
+                reasons: ["overtime"],
+                attention: 60,
+              },
+            ],
+          }),
         },
       }),
     );
@@ -79,6 +82,66 @@ describe("AttentionPanel (UX audit MON-03 / MON-06)", () => {
     expect(
       within(list).getByRole("link", { name: /Ada's screenshots/ }).getAttribute("href"),
     ).toBe("/insights/screenshots?emp=u1&date=2026-10-16");
+  });
+
+  it("lists everyone a rule fired for, with why — a high scorer's burnout included (MON-06)", () => {
+    mockAttention.mockReturnValue(
+      base({
+        alerts: {
+          status: "ready",
+          data: alertsFrom({
+            people: [],
+            flagged: [
+              {
+                user_id: "u9",
+                name: "Hal",
+                score: 92,
+                top_severity: "high",
+                flags: [
+                  {
+                    anomaly_type: "burnout",
+                    severity: "high",
+                    detail: "5 consecutive overtime days (≥ 4)",
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+      }),
+    );
+    render(<AttentionPanel date="2026-10-16" today="2026-10-20" />);
+    const tile = screen.getByText("Alerts").closest("div.rounded-2xl") as HTMLElement;
+    expect(within(tile).getByText("1")).toBeTruthy();
+    // The complete list carries no "there may be more" caveat.
+    expect(within(tile).queryByText(/may be more/)).toBeNull();
+    const list = document.getElementById("alerts") as HTMLElement;
+    expect(within(list).getByText(/5 consecutive overtime days/)).toBeTruthy();
+    expect(within(list).getByText("Several long days in a row")).toBeTruthy();
+  });
+
+  it("counts captures awaiting review from the server's whole-day figure (MON-03)", () => {
+    mockAttention.mockReturnValue(
+      base({
+        flags: {
+          status: "ready",
+          data: {
+            open: 1234,
+            analysed: 9000,
+            read: 12000,
+            total: 12000,
+            truncated: false,
+            byUser: new Map([["u1", 1234]]),
+          },
+        },
+      }),
+    );
+    render(<AttentionPanel date="2026-10-16" today="2026-10-20" />);
+    const tile = screen.getByText("Awaiting review").closest("div.rounded-2xl") as HTMLElement;
+    // Exact, not a floor: no "+" and no "there may be more".
+    expect(within(tile).getByText("1,234")).toBeTruthy();
+    expect(within(tile).queryByText(/may be more/)).toBeNull();
+    expect(within(tile).getByText("AI-checked 9,000 of 12,000 captures.")).toBeTruthy();
   });
 
   it("renders nothing when the viewer can read none of the signals", () => {

@@ -9,10 +9,13 @@
  * viewer's role can't read is `off` and simply isn't shown.
  *
  * Only existing GET routes, through their module services:
- *  - captures awaiting review — `GET /v1/insights/screenshots?date=` (`screenshots:view`), paged
- *    within a budget; past it the count is "at least" and says how much it read;
- *  - alerts — `GET /v1/insights/attention?date=` (`ai:view` + `anomalies:view`); only its
- *    deterministic `people` are used — its narrative is not shown here;
+ *  - captures awaiting review — `GET /v1/insights/screenshots?date=&review_counts=true`
+ *    (`screenshots:view`): the server counts the whole day's open flags, per person. A server that
+ *    predates the counts gets the old read instead — the grid paged within a budget, and past it the
+ *    count is "at least" and says how much it read;
+ *  - alerts — `GET /v1/insights/attention?date=` (`ai:view` + `anomalies:view`): its `flagged` list,
+ *    everyone a rule fired for (or, from an older server, its capped `people`) — its narrative is
+ *    not shown here;
  *  - low scores — `GET /v1/insights/activity?date=` (`activity:view`), the complete roster;
  *  - agents not reporting — `GET /v1/fleet` (`agents:view`), **today only**: it is a "right now"
  *    fact, and putting it beside a past day's figures would mix two windows on one panel — the
@@ -28,15 +31,17 @@ import { useAuthStore } from "@/stores/auth.store";
 import { listFleet } from "@/modules/agents/services/fleet.service";
 import {
   getScreenshots,
-  type AttentionRow,
   type PersonScore,
+  type ScreenshotGrid,
   type ShotRow,
 } from "./services/insights.service";
 import { attentionFor, orgActivityFor } from "./lib/day-reads";
 import {
+  alertsFrom,
   countOpenFlags,
   silentDevices,
   startOfLocalDay,
+  type AlertsData,
   type FlagCount,
   type SilentDevice,
 } from "./lib/attention";
@@ -64,20 +69,39 @@ export interface AgentSignal {
 
 export interface AttentionState {
   flags: Signal<FlagSignal>;
-  alerts: Signal<AttentionRow[]>;
+  alerts: Signal<AlertsData>;
   people: Signal<PersonScore[]>;
   agents: Signal<AgentSignal>;
   reload: () => void;
 }
 
 /**
- * Frames read for the review count: 6 pages of 200. It is the Screenshots tab's own read (same
- * route, same partition), so the number here is the number that link opens on — but a day larger
- * than this is counted as "at least", never extrapolated. A server-side count is the real fix; it
- * is listed in the audit report.
+ * The fallback review count, for a server without `review_counts`: 6 pages of 200 of the Screenshots
+ * tab's own read (same route, same partition), so the number here is the number that link opens on
+ * — but a day larger than this is counted as "at least", never extrapolated.
  */
 const FLAG_PAGE = 200;
 const FLAG_MAX_PAGES = 6;
+
+/**
+ * The server's whole-day count from the first page, or `null` when this server doesn't send one
+ * (it predates `review_counts`).
+ */
+export function serverFlagCount(grid: ScreenshotGrid): FlagSignal | null {
+  if (typeof grid.flagged_open !== "number") return null;
+  const total = typeof grid.total === "number" ? grid.total : null;
+  return {
+    open: grid.flagged_open,
+    analysed: grid.analysed ?? 0,
+    // Every frame of the day was counted, so "read" is the day's total.
+    read: total ?? grid.analysed ?? 0,
+    byUser: new Map(
+      Object.entries(grid.flagged_open_by_user ?? {}).filter(([, n]) => typeof n === "number" && n > 0),
+    ),
+    total,
+    truncated: false,
+  };
+}
 
 function errorOf(e: unknown, what: string): Signal<never> {
   const denied = e instanceof ApiError && e.status === 403;
@@ -144,27 +168,32 @@ export function useAttention(date: string): AttentionState {
     key,
     "Screenshots",
     async (live) => {
-      const shots: ShotRow[] = [];
-      let cursor: string | undefined;
-      let total: number | null = null;
-      let pages = 0;
+      // The first page asks for the server's whole-day count (MON-03); an older server ignores the
+      // ask, and its page is the first of the fallback read — one request either way.
+      const first = await getScreenshots(date, { limit: FLAG_PAGE, reviewCounts: true });
+      const counted = serverFlagCount(first);
+      if (counted) return counted;
+
+      const shots: ShotRow[] = [...first.shots];
+      const total = first.total ?? null;
+      let cursor = first.cursor;
+      let pages = 1;
       // Sequential: parallel pages against this route are the burst that trips the 503 throttle.
-      do {
+      while (cursor && pages < FLAG_MAX_PAGES && live()) {
         const grid = await getScreenshots(date, { cursor, limit: FLAG_PAGE });
-        if (pages === 0) total = grid.total ?? null;
         shots.push(...grid.shots);
         cursor = grid.cursor;
         pages += 1;
-      } while (cursor && pages < FLAG_MAX_PAGES && live());
+      }
       return { ...countOpenFlags(shots), total, truncated: Boolean(cursor) };
     },
   );
 
-  const alerts = useSignal<AttentionRow[]>(
+  const alerts = useSignal<AlertsData>(
     can("ai:view") && can("anomalies:view"),
     key,
     "Alerts",
-    () => attentionFor(scope, date, fresh).then((r) => r.people),
+    () => attentionFor(scope, date, fresh).then(alertsFrom),
   );
 
   const people = useSignal<PersonScore[]>(
