@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { daysPhrase, formatDays, formatHoursShort, HOURS_OFF_KIND_LABEL } from "../lib/days";
+import { isWorkingDay, workingDays, workingPortions } from "../lib/working-days";
+import { useWorkCalendar } from "../use-work-calendar";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -61,14 +63,13 @@ export function earliestStart(typeId: string): string {
 }
 
 /**
- * Inclusive **calendar**-day count between two ISO dates — exactly what the server stores and, at
- * approval, debits (`shared::leave::days_inclusive`).
+ * Inclusive **calendar**-day span between two ISO dates — how many days the picked range covers,
+ * not what it costs. Leave is charged in working days (owner decision 2026-10-20, UX audit TIME-07;
+ * `../lib/working-days`, mirroring the server); this is what the form compares against to say how
+ * many weekend and holiday days in the range are free.
  *
- * This used to preview Mon–Fri working days, so a Fri→Mon request read "2 days" and cost 4; a
- * Saturday-only request read nothing and cost 1; and with `new Date("YYYY-MM-DD")` parsed as UTC, a
- * viewer west of UTC saw a Monday as Sunday (QA audit 2026-10-08, WP-072). The preview must match
- * the balance. Whether leave *should* skip weekends and holidays is a product rule for the server —
- * change it there, and this follows.
+ * UTC date math, so a viewer west of UTC never sees a Monday as Sunday (QA audit 2026-10-08,
+ * WP-072).
  */
 export function requestDays(startIso: string, endIso: string): number {
   const dayOf = (iso: string) => {
@@ -79,26 +80,6 @@ export function requestDays(startIso: string, endIso: string): number {
   const to = dayOf(endIso);
   if (from === null || to === null || to < from) return 0;
   return to - from + 1;
-}
-
-/**
- * How a request's `days` split across calendar years — `[[year, days]]`, oldest first. Mirrors the
- * server's `shared::leave::year_portions`: each year's share is checked (and, at approval, debited)
- * against that year's balance on its own, so 29 Dec – 2 Jan costs the old year 3 and the new year 2.
- * A request inside one year is that year's alone, at its own `days` (a permission's fraction).
- */
-export function yearPortions(startIso: string, endIso: string, days: number): [string, number][] {
-  const fy = startIso.slice(0, 4);
-  const ty = endIso.slice(0, 4);
-  if (!/^\d{4}$/.test(fy) || !/^\d{4}$/.test(ty) || ty < fy) return [];
-  if (fy === ty) return [[fy, days]];
-  const out: [string, number][] = [];
-  for (let y = Number(fy); y <= Number(ty); y++) {
-    const lo = y === Number(fy) ? startIso : `${y}-01-01`;
-    const hi = y === Number(ty) ? endIso : `${y}-12-31`;
-    out.push([String(y), requestDays(lo, hi)]);
-  }
-  return out;
 }
 
 /** One leave type's standing in one year — the figures the server's balance check reads. */
@@ -123,7 +104,7 @@ const plural = (n: number, word: string) => `${formatDays(n)} ${word}${n === 1 ?
 
 // `type` is a server-configured id (not a fixed enum), so it's validated as a non-empty string and
 // the picker is populated from the org's types. The server recomputes the authoritative day count;
-// the preview below follows the same rule (`requestDays`: inclusive calendar days).
+// the preview below follows the same rule (`workingDays`: the org's working days in the range).
 /** One working day, in minutes — the divisor the server uses (docs/LEAVE.md §2). */
 const WORKDAY_MINUTES = 8 * 60;
 
@@ -257,11 +238,20 @@ export function RequestLeaveDialog({
   const type = watch("type");
   const isPermission = kind === "permission";
   const permissionMinutes = isPermission ? minutesBetween(fromTime, toTime) : 0;
-  const wholeDays = useMemo(() => requestDays(start, end), [start, end]);
+  // Working days, as the server charges them (owner decision 2026-10-20, TIME-07): weekends and the
+  // org's holidays inside the dates are free.
+  const calendar = useWorkCalendar();
+  const span = useMemo(() => requestDays(start, end), [start, end]);
+  const wholeDays = useMemo(() => workingDays(start, end, calendar), [start, end, calendar]);
+  const freeInRange = span - wholeDays;
   // What will actually be deducted, so the preview matches the balance rather than the calendar.
   const days = isPermission
     ? permissionMinutes / WORKDAY_MINUTES
     : wholeDays;
+  // The two requests the server refuses as "no leave needed": a range of only off days, and hours
+  // off on a day nobody is expected to work.
+  const nothingToTake = !isPermission && span > 0 && wholeDays === 0;
+  const hoursOnOffDay = isPermission && !!start && !isWorkingDay(start, calendar);
   // Earliest selectable day: today, or a week back for sick leave (client-local; the server re-checks).
   const earliest = useMemo(() => earliestStart(type), [type]);
 
@@ -276,7 +266,7 @@ export function RequestLeaveDialog({
     const until = isPermission ? start : end;
     const portions =
       days > 0 && start && until
-        ? yearPortions(start, until, days)
+        ? workingPortions(start, until, days, calendar)
         : ([[String(new Date().getFullYear()), 0]] as [string, number][]);
     return portions.map(([year, share]) => {
       const s = balanceFor(type, year, onBehalf ? employeeId : undefined);
@@ -291,8 +281,9 @@ export function RequestLeaveDialog({
         pendingClash: !!s && s.allowance > 0 && share > 0 && s.pending > 0 && left >= share && left - s.pending < share,
       };
     });
-  }, [balanceFor, type, onBehalf, employeeId, isPermission, start, end, days]);
+  }, [balanceFor, type, onBehalf, employeeId, isPermission, start, end, days, calendar]);
   const overBalance = balanceRows.some((r) => r.over);
+  const blocked = overBalance || nothingToTake || hoursOnOffDay;
 
   // Documents are uploaded as they are picked, not on submit: the bytes go straight to S3 against
   // a presigned URL, so by the time the form posts there is nothing left to wait for. The cost is
@@ -384,7 +375,7 @@ export function RequestLeaveDialog({
       setEmployeeError("Pick the employee this leave is for.");
       return;
     }
-    if (overBalance) return; // the button is disabled; this covers Enter in a field
+    if (blocked) return; // the button is disabled; this covers Enter in a field
     const label = types.find((t) => t.type_id === data.type)?.name ?? "Leave";
     const who = onBehalf ? employees?.find((e) => e.id === employeeId)?.name : undefined;
     try {
@@ -410,8 +401,8 @@ export function RequestLeaveDialog({
         mins > 0
           ? `${formatHoursShort(mins)} off, ${data.fromTime}–${data.toTime}`
           : (() => {
-              const d = requestDays(data.startDate, data.endDate);
-              return `${d} day${d === 1 ? "" : "s"}`;
+              const d = workingDays(data.startDate, data.endDate, calendar);
+              return `${d} working day${d === 1 ? "" : "s"}`;
             })();
       toast.success(
         // "Permission" was HR jargon for this (UX audit 2026-10-16, TIME-08).
@@ -623,9 +614,20 @@ export function RequestLeaveDialog({
             </p>
           ) : !isPermission && days > 0 ? (
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{plural(days, "day")}</span> requested.
-              Counted in calendar days, so weekends and public holidays inside your dates count too
-              (Fri → Mon is 4 days).
+              <span className="font-medium text-foreground">{plural(days, "working day")}</span>{" "}
+              requested.{" "}
+              {freeInRange > 0
+                ? `The ${freeInRange} weekend or holiday day${freeInRange === 1 ? "" : "s"} in your dates ${freeInRange === 1 ? "doesn't" : "don't"} count.`
+                : "Weekends and holidays inside your dates don't count."}
+            </p>
+          ) : null}
+          {nothingToTake ? (
+            <p role="alert" className="text-destructive text-sm">
+              Those dates are all weekends or holidays, so no leave is needed.
+            </p>
+          ) : hoursOnOffDay ? (
+            <p role="alert" className="text-destructive text-sm">
+              That day isn&apos;t a working day for your organisation, so no time off is needed.
             </p>
           ) : null}
 
@@ -754,7 +756,7 @@ export function RequestLeaveDialog({
             </Button>
             {/* Submitting mid-upload would post a request missing the document the person just
                 chose, with no sign anything was lost. */}
-            <Button type="submit" disabled={isSubmitting || uploading.length > 0 || overBalance}>
+            <Button type="submit" disabled={isSubmitting || uploading.length > 0 || blocked}>
               <CalendarPlus className="size-4" /> {onBehalf ? "Record leave" : "Submit request"}
             </Button>
           </DialogFooter>

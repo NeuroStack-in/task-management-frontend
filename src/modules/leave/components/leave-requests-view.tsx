@@ -27,9 +27,10 @@ import { todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   RequestLeaveDialog,
-  yearPortions,
   type BalanceLookup,
 } from "./request-leave-dialog";
+import { workingPortions } from "../lib/working-days";
+import { useWorkCalendar } from "../use-work-calendar";
 import { RecordLeaveButton } from "./record-leave-button";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { LeaveTypesManager } from "./leave-types-manager";
@@ -184,6 +185,7 @@ function EmployeeLeaveView() {
   const { balances, balanceYear, requests, types, typeName, loading, error, submit, cancel } = leave;
   // What the request dialog shows against the balance (TIME-07): the server's figures for the loaded
   // year, plus the days this person already has waiting in that type and year.
+  const calendar = useWorkCalendar();
   const balanceFor = useMemo<BalanceLookup>(
     () => (typeId, year) => {
       if (year !== balanceYear) return null;
@@ -192,12 +194,14 @@ function EmployeeLeaveView() {
       const pending = requests
         .filter((r) => r.status === "pending" && r.type_id === typeId)
         .reduce(
-          (sum, r) => sum + (yearPortions(r.from, r.to, r.days).find(([y]) => y === year)?.[1] ?? 0),
+          (sum, r) =>
+            sum +
+            (workingPortions(r.from, r.to, r.days, calendar).find(([y]) => y === year)?.[1] ?? 0),
           0,
         );
       return { allowance: b.allowance, used: b.used, pending };
     },
-    [balances, balanceYear, requests],
+    [balances, balanceYear, requests, calendar],
   );
   const [open, setOpen] = useState(false);
   /** The request whose detail dialog is open — the requester's counterpart to the approver's. */

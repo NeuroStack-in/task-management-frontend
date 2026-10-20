@@ -28,7 +28,8 @@ import {
   type ApiLeaveAttachment,
   type ApiOrgBalances,
 } from "@/modules/leave/services/leave.service";
-import { yearPortions } from "@/modules/leave/components/request-leave-dialog";
+import { workingDays, workingPortions, type WorkCalendar } from "@/modules/leave/lib/working-days";
+import { useWorkCalendar } from "@/modules/leave/use-work-calendar";
 import * as api from "./services/approvals.service";
 import type { ApiApprovalRow, DecideInput } from "./services/approvals.service";
 import {
@@ -105,9 +106,32 @@ export interface ApprovalsData {
   alsoOffFor: (item: ApprovalItem) => ApprovalItem[];
 }
 
+
+/**
+ * What approving charges, per calendar year: the server re-costs a full-day request in working days
+ * with the calendar as it stands at approval (owner decision 2026-10-20, TIME-07) — a request filed
+ * while leave still cost calendar days drops to its working days — and hours off keep their stored
+ * fraction.
+ */
+function yearsOf(from: string, to: string): string[] {
+  const fy = Number(from.slice(0, 4));
+  const ty = Number(to.slice(0, 4));
+  if (!Number.isFinite(fy) || !Number.isFinite(ty) || ty < fy) return [];
+  return Array.from({ length: ty - fy + 1 }, (_, n) => String(fy + n));
+}
+
+function chargedPortions(
+  r: { from: string; to: string; days: number; permissionMinutes?: number },
+  cal: WorkCalendar,
+): [string, number][] {
+  const days = r.permissionMinutes ? r.days : workingDays(r.from, r.to, cal);
+  return workingPortions(r.from, r.to, days, cal);
+}
 export function useApprovals({
   withBalances = false,
 }: { withBalances?: boolean } = {}): ApprovalsData {
+  // What approving will charge is counted in working days (TIME-07) — see `chargedPortions`.
+  const calendar = useWorkCalendar();
   const [rows, setRows] = useState<ApiApprovalRow[]>([]);
   const [typeName, setTypeName] = useState<Map<string, string>>(new Map());
   const [people, setPeople] = useState<
@@ -147,7 +171,8 @@ export function useApprovals({
         const years = new Set<string>();
         for (const r of merged) {
           if (r.status !== "pending") continue;
-          for (const [y] of yearPortions(r.from, r.to, r.days)) years.add(y);
+          // Calendar-independent: the years a range touches don't depend on which days are worked.
+          for (const y of yearsOf(r.from, r.to)) years.add(y);
         }
 
         // Side joins, all best-effort. A directory or ledger a role can't read must not fail the
@@ -270,18 +295,17 @@ export function useApprovals({
           o.requestId !== item.requestId,
       );
       return balanceAfter(
-        yearPortions(item.from, item.to, item.days),
+        chargedPortions(item, calendar),
         (year) => standing(year, item.userId, item.typeId),
         (year) =>
           others.reduce(
             (sum, o) =>
-              sum +
-              (yearPortions(o.from, o.to, o.days).find(([y]) => y === year)?.[1] ?? 0),
+              sum + (chargedPortions(o, calendar).find(([y]) => y === year)?.[1] ?? 0),
             0,
           ),
       );
     },
-    [balanceAvailability, items, standing],
+    [balanceAvailability, items, standing, calendar],
   );
 
   const alsoOffFor = useCallback((item: ApprovalItem) => alsoOff(item, items), [items]);
