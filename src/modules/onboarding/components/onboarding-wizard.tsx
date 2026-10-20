@@ -94,16 +94,13 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
   // setting and pins it off on every save (WP-331), so this was the one place left to turn it on,
   // and the next Monitoring save would have quietly turned it off again. This step pins it off too.
   //
-  // The two switches that decide whether the interval can change (SET-03, `captureLock`).
+  // Features → Screenshots decides whether capture runs and whether the interval can change (SET-03,
+  // `captureLock` — the server checks the same switch).
   const screenshotsOn = useEntitlementsStore((s) => effectiveFromState(s, "monitoring.screenshots"));
   const screenshotsInPlan = useEntitlementsStore(
     (s) => !s.loaded || s.allowed.includes("monitoring.screenshots"),
   );
-  const activityOn = useEntitlementsStore((s) => effectiveFromState(s, "monitoring.activity"));
-  const activityInPlan = useEntitlementsStore(
-    (s) => !s.loaded || s.allowed.includes("monitoring.activity"),
-  );
-  const lock = captureLock({ screenshotsOn, screenshotsInPlan, activityOn, activityInPlan });
+  const lock = captureLock({ screenshotsOn, screenshotsInPlan });
   // Which agents run decides whether employees see any indicator at all (see `TrackingStep`).
   const trackingMode = useTrackingMode();
 
@@ -422,15 +419,11 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
             screenshots={screenshots}
             onScreenshots={setScreenshots}
             lockReason={
-              !lock
+              capturing(lock)
                 ? null
-                : !capturing(lock)
-                  ? lock.kind === "screenshots-off"
-                    ? "Screenshots are switched off in Settings → Features, so nothing is captured whatever this says. Turn them on there first."
-                    : "Screenshots aren't included in your plan."
-                  : lock.kind === "activity-off"
-                    ? "Changing this needs Activity monitoring, which is switched off in Settings → Features."
-                    : "Changing this needs Activity monitoring, which isn't included in your plan."
+                : lock?.kind === "screenshots-off"
+                  ? "Screenshots are switched off in Settings → Features, so nothing is captured whatever this says. Turn them on there first."
+                  : "Screenshots aren't included in your plan."
             }
           />
         );
