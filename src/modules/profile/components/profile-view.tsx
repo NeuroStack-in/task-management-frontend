@@ -216,7 +216,7 @@ export function ProfileView() {
 
   if (!user) return <Loader label="Loading profile…" />;
 
-  // One unified profile pattern for every role — identity hero, productivity, and (for tracked
+  // One unified profile pattern for every role — identity hero, account details, and (for tracked
   // roles) the time-based panels. Org leadership (Owner/Admin/HR/Finance) aren't time-tracked, so
   // both the attendance card **and** the "avg. hours / day" tile are dropped for them: neither can
   // ever be anything but a dash, and an owner's profile led with an empty statistic reading "no
@@ -229,7 +229,7 @@ export function ProfileView() {
 
 /* ──────────────────────────── Profile ──────────────────────────── */
 
-/** The full profile — identity band + productivity + (optionally) attendance.
+/** The full profile — identity band + account details + (optionally) hours, attendance, tasks.
  *  Identity comes from `GET /v1/me/profile`; edits persist via `PATCH /v1/me/profile`. */
 function RichProfile({
   user,
@@ -542,7 +542,15 @@ function RichProfile({
     <div className="flex flex-col gap-5 pb-2">
       <PageHeader
         title="Profile"
-        description="Your account, role, and personal productivity."
+        // Says what the page shows. It promised "personal productivity" while showing hours,
+        // attendance and tasks — employees don't see their own activity, screenshots or score
+        // anywhere in the app (owner decision 2026-10-20; UX audit 2026-10-16, EMP-04). Help's
+        // "What data does the desktop app collect?" says the same.
+        description={
+          tracksTime
+            ? "Your account and role, with your tracked hours, attendance and tasks."
+            : "Your account and role."
+        }
       />
 
       {profileFailed ? (

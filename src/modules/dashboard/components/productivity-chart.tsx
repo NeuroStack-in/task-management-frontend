@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import {
@@ -25,22 +26,26 @@ import { formatHours } from "@/lib/format";
 import { ChartLegendInfo } from "@/components/shared/chart-legend-info";
 
 /**
- * The stack, bottom → top. Order is fixed and meaningful (good → neutral → bad → absent), which is
- * itself the secondary encoding that keeps Productive (green) and Distracting (red) readable under
- * colour-vision deficiency — Neutral (blue) sits between them, so the two never touch, and every
- * segment is also legend- and tooltip-labelled.
+ * A neutral grey at `pct`% ink — the text colour mixed into the card surface. The same ramp the
+ * Analytics → Activity tab uses for app rules (`activity-tab.tsx`), so the two pages agree.
+ */
+const ink = (pct: number) => `color-mix(in srgb, var(--foreground) ${pct}%, var(--card))`;
+
+/**
+ * The stack, bottom → top, in one neutral hue stepped by lightness — an ordered scale, not a
+ * green/red verdict (UX audit 2026-10-16, XC-08 / MON-07). These categories come from the org's
+ * **app-name rules**, and the owner's decision of 2026-10-13 is that app names decide nothing: the
+ * AI judges screenshots against each person's role. Painting a rule-matched app red "Distracting"
+ * passed a verdict nobody made. Every segment is still legend- and tooltip-labelled.
  *
- * Neutral uses `--info` (a reliably blue token in every theme), NOT `--chart-3`: the teal-branded
- * themes remap `--chart-3` to a teal (#0f766e) that sits right next to the success green, which made
- * Productive and Neutral read as the same colour. `--info` keeps the intended green/blue/red triad.
+ * Unclassified is hatched rather than a fourth grey, so it can never be mistaken for the lightest
+ * rule category: active time no app span covered — "unknown", not "zero".
  */
 const CATEGORIES = [
-  { key: "productiveH", name: "Productive", color: "var(--success)" },
-  { key: "neutralH", name: "Neutral", color: "var(--info)" },
-  { key: "distractingH", name: "Distracting", color: "var(--negative)" },
-  // Faded on purpose: tracked time the agent couldn't classify. Recessive so it never competes with
-  // the real categories, but present so an unclassified day reads as "unknown", not "zero".
-  { key: "unclassifiedH", name: "Unclassified", color: "var(--muted-foreground)", faded: true },
+  { key: "productiveH", name: "Productive", color: ink(80) },
+  { key: "neutralH", name: "Neutral", color: ink(55) },
+  { key: "distractingH", name: "Distracting", color: ink(35) },
+  { key: "unclassifiedH", name: "Unclassified", color: "var(--muted-foreground)", hatched: true },
 ] as const;
 
 const fmtHours = (h: number) => formatHours(h);
@@ -69,7 +74,13 @@ function MixTooltip({
             <li key={p.name} className="flex items-center gap-2">
               <span
                 className="size-2 shrink-0 rounded-[2px]"
-                style={{ background: p.color }}
+                // The hatched band's fill is an SVG pattern reference, which a CSS background can't
+                // draw — the same hatch as a gradient.
+                style={{
+                  background: p.color?.startsWith("url(")
+                    ? "repeating-linear-gradient(45deg, var(--muted-foreground) 0 1.5px, transparent 1.5px 4px)"
+                    : p.color,
+                }}
                 aria-hidden
               />
               <span className="text-muted-foreground flex-1">{p.name}</span>
@@ -99,6 +110,8 @@ export function ProductivityChart({
   const anyClassified = data.some(
     (d) => d.productiveH + d.neutralH + d.distractingH > 0,
   );
+  // One pattern per chart instance — the dashboard can hold more than one.
+  const hatchId = `wp-unclassified-${useId().replace(/:/g, "")}`;
 
   return (
     <Card>
@@ -111,12 +124,12 @@ export function ProductivityChart({
               {
                 term: "Productive / Neutral / Distracting",
                 definition:
-                  "Your active hours, split by how your rules rate each app or site in use.",
+                  "Active hours split by your organization's own app rules, from each app's name — not the AI's judgement. The AI reviews screenshots against each person's role and ignores app names.",
               },
               {
                 term: "Unclassified",
                 definition:
-                  "Active time the agent recorded but hasn't matched to an app category yet — tracked, not yet judged.",
+                  "Active time the agent recorded but couldn't match to an app — tracked, not rated.",
               },
             ]}
           />
@@ -124,7 +137,9 @@ export function ProductivityChart({
         {/* Replaces the old dual-axis "score vs. share" line. Both series there shared one 0–100
             axis (a black-box score and a percentage), and the score sat at ~50 on any day apps
             weren't classified — a partial score shown as if real. Concrete hours can't do that. */}
-        <CardDescription>Active hours by activity type · {rangeLabel}</CardDescription>
+        <CardDescription>
+          Active hours by your app rules (not AI) · {rangeLabel}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {totalHours === 0 ? (
@@ -136,6 +151,18 @@ export function ProductivityChart({
           <div className="h-full min-h-[150px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={CHART_MARGIN} barCategoryGap="28%">
+                <defs>
+                  <pattern
+                    id={hatchId}
+                    width="6"
+                    height="6"
+                    patternUnits="userSpaceOnUse"
+                    patternTransform="rotate(45)"
+                  >
+                    <rect width="6" height="6" fill="var(--card)" />
+                    <line x1="0" y1="0" x2="0" y2="6" stroke="var(--muted-foreground)" strokeWidth="2" />
+                  </pattern>
+                </defs>
                 <CartesianGrid vertical={false} stroke="var(--border)" />
                 {/* Each bar is a week once the month view folds, so the axis has to say what a
                     tick *is* — "8/3" under an axis labelled "this month" reads as a day. */}
@@ -162,6 +189,11 @@ export function ProductivityChart({
                   height={26}
                   iconType="square"
                   wrapperStyle={{ fontSize: 11 }}
+                  // Recharts inks each label in its series colour — the lightest grey step made
+                  // "Distracting" unreadable. The swatch carries the colour; the words stay legible.
+                  formatter={(value) => (
+                    <span style={{ color: "var(--muted-foreground)" }}>{value}</span>
+                  )}
                 />
                 {CATEGORIES.map((c, i) => (
                   <Bar
@@ -169,11 +201,10 @@ export function ProductivityChart({
                     dataKey={c.key}
                     stackId="hours"
                     name={c.name}
-                    fill={c.color}
+                    fill={"hatched" in c && c.hatched ? `url(#${hatchId})` : c.color}
                     // A thin surface-coloured outline is the 2px gap between stacked fills.
                     stroke="var(--card)"
                     strokeWidth={1.5}
-                    fillOpacity={"faded" in c && c.faded ? 0.28 : 1}
                     // Round only the top of the stack (the data-end); baseline stays square.
                     radius={i === CATEGORIES.length - 1 ? [3, 3, 0, 0] : undefined}
                   />
@@ -185,13 +216,13 @@ export function ProductivityChart({
 
         {hasUnclassified && anyClassified && (
           <p className="text-muted-foreground mt-2 text-xs">
-            Faded = time tracked but not yet classified (needs the desktop agent&rsquo;s app data).
+            Hatched = time tracked that couldn&rsquo;t be matched to an app.
           </p>
         )}
         {hasUnclassified && !anyClassified && totalHours > 0 && (
           <p className="text-muted-foreground mt-2 text-xs">
-            Time is being tracked, but no apps are classified yet — install/enable the desktop agent
-            to see the productive/neutral/distracting split.
+            Time is being tracked, but no app data has come with it yet — the split by your app rules
+            appears once the desktop agent reports which apps were in use.
           </p>
         )}
 

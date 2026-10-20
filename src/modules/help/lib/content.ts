@@ -148,7 +148,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     excerpt:
       "How often screenshots are captured, how long they're kept, and who can see them.",
     readMins: 3,
-    body: "The desktop app captures screenshots while it's tracking, at the cadence an admin sets in Settings → Monitoring → Screenshot capture → Capture cadence: off, every 3, 5 or 10 minutes, or a custom interval of 1 to 60 minutes. Every 5 minutes is the default. Screenshots are kept for the Retention period on the same card — 90 days unless it's changed, anywhere from 1 to 365 — and then deleted automatically. They're reviewed in Analytics → Screenshots by people whose role includes it; employees don't see captures in the app.",
+    body: "The desktop app captures screenshots while it's tracking, at the cadence an admin sets in Settings → Monitoring → Screenshot capture → Capture cadence: off, every 3, 5 or 10 minutes, or a custom interval of 1 to 60 minutes. Every 5 minutes is the default. Screenshots are kept for the Retention period on the same card — 7, 30, 90, 180 or 365 days, 90 unless it's changed — and then deleted automatically. They're reviewed in Analytics → Screenshots by people whose role includes it; employees don't see captures in the app.",
   },
   {
     slug: "productivity-scores",
@@ -219,7 +219,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "What data does the desktop app collect?",
-    a: "While it's tracking, the desktop app records which application is active and its window title, how much keyboard and mouse activity there is each minute (counts only — never which keys), screenshots at your organization's cadence, and the computer's location with its regular check-ins. It doesn't record keystrokes, clipboard contents or web addresses. Employees can't yet view this data in the app; it's reviewed in Analytics by people whose role includes it.",
+    a: "While it's tracking, the desktop app records which application is active and its window title, how much keyboard and mouse activity there is each minute (counts only — never which keys), screenshots at your organization's cadence, and the computer's location with its regular check-ins. It doesn't record keystrokes, clipboard contents or web addresses. Employees don't see this data in the app, including their own: it's reviewed in Analytics by people whose role includes it. An employee's Profile shows only their tracked hours, attendance and tasks.",
   },
   {
     q: "Can I add or remove seats?",
@@ -237,7 +237,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: "Is WorkPulse GDPR compliant?",
-    a: "WorkPulse is designed with GDPR in mind. Data is encrypted in transit and at rest; screenshot retention is configurable in Settings → Monitoring, and screenshots are deleted automatically when it runs out; and the Owner can export the organization's data from Settings → Ownership & deletion. Employees can't yet see the activity and screenshots collected about them in the app, and there's no in-app request for deleting someone's data. For a Data Processing Agreement (DPA), contact WorkPulse support.",
+    a: "WorkPulse is designed with GDPR in mind. Data is encrypted in transit and at rest; screenshot retention is configurable in Settings → Monitoring, and screenshots are deleted automatically when it runs out; and the Owner can export the organization's data from Settings → Ownership & deletion. Employees don't see the activity and screenshots collected about them in the app, and there's no in-app request for deleting someone's data. For a Data Processing Agreement (DPA), contact WorkPulse support.",
   },
 ];
 

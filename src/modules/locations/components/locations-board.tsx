@@ -29,6 +29,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { AiReportCard } from "@/modules/insights/components/ai-report-card";
+import type { Provenance } from "@/modules/insights/lib/ai-provenance";
+import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store";
 import { useEmployeeName } from "@/modules/insights/components/employee-scope-bar";
 import { ApiError } from "@/lib/api";
 import {
@@ -413,6 +415,8 @@ function LocationsBoard({
   /** The department's display name for the narrative — undefined for the org-wide view. */
   const deptAiLabel = dept === "all" ? undefined : deptLabel(dept);
   const [aiNarrative, setAiNarrative] = useState<string | null>(null);
+  /** What the narrative was written over — enough to tell model text from the server's own line. */
+  const [aiMeta, setAiMeta] = useState<{ located: number; generatedAt: number } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   /** The (date, department) a Regenerate is running for, or `null`. */
   const [regenFor, setRegenFor] = useState<string | null>(null);
@@ -428,11 +432,16 @@ function LocationsBoard({
     let live = true;
     setAiLoading(true);
     setAiNarrative(null);
+    setAiMeta(null);
     setAiNotice(null);
     // Re-fetches on a department change as well as a date change: the board's counts already
     // follow the filter, and the narrative used to describe the whole org beside them.
     getLocationSummary({ date, department: dept, label: deptAiLabel })
-      .then((s) => live && setAiNarrative(s.narrative))
+      .then((s) => {
+        if (!live) return;
+        setAiNarrative(s.narrative);
+        setAiMeta({ located: s.metrics.located, generatedAt: s.generated_at });
+      })
       .catch(() => live && setAiNarrative(null))
       .finally(() => live && setAiLoading(false));
     return () => {
@@ -453,7 +462,10 @@ function LocationsBoard({
       });
       // A slow re-run must not put one department's (or day's) narrative under another's
       // (QA audit 2026-10-08, WP-278).
-      if (aiCurrent.current === started) setAiNarrative(s.narrative);
+      if (aiCurrent.current === started) {
+        setAiNarrative(s.narrative);
+        setAiMeta({ located: s.metrics.located, generatedAt: s.generated_at });
+      }
     } catch {
       // Keep what's on screen — a failed re-run must not blank the card — but say it failed.
       if (aiCurrent.current === started) {
@@ -468,6 +480,23 @@ function LocationsBoard({
     aiLoading && !aiNarrative
       ? "Reading the day's locations…"
       : aiNarrative || localRecap;
+
+  /**
+   * Who wrote the text on the card (UX audit 2026-10-16, MON-08 / XC-08), read from what
+   * `insights::location_summary` actually does: the server writes its own factual line — no model —
+   * when nobody in view was located, and whenever the org's AI insights are off (the plain
+   * `is_effective` check, no owner exemption — hence the store's own reading, not the owner-exempt
+   * hook). A provider failure is an HTTP error, which leaves our local recap: also not AI.
+   */
+  const aiInsightsOn = useEntitlementsStore((st) =>
+    effectiveFromState(st, "ai.insights"),
+  );
+  const aiProvenance: Provenance =
+    aiLoading && !aiNarrative
+      ? { kind: "none" }
+      : !aiNarrative || !aiMeta || aiMeta.located === 0 || !aiInsightsOn
+        ? { kind: "computed" }
+        : { kind: "ai", generatedAt: aiMeta.generatedAt };
 
   const q = query.trim().toLowerCase();
   const matchesStatus = (p: OversightPersonLocation) => {
@@ -544,8 +573,10 @@ function LocationsBoard({
     <div className="space-y-5">
       {/* AI location report — a factual recap over the day's real fixes + the office perimeter. */}
       <AiReportCard
-        title="AI location report"
+        // "AI" in the title only over text a model wrote (MON-08).
+        title={aiProvenance.kind === "ai" ? "AI location report" : "Location report"}
         summary={aiSummary}
+        provenance={aiProvenance}
         // Only once a real narrative exists: with the local recap showing there is nothing to
         // re-run, and each press is a fresh billed generation.
         onRegenerate={aiNarrative ? regenerateAi : undefined}

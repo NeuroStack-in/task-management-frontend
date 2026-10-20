@@ -33,11 +33,20 @@ function dur(seconds: number): string {
   return formatMinutes(Math.round(seconds / 60));
 }
 
-/** The org's classification, as a tone. Never derived here — the server sends the category. */
-const TONE: Record<string, string> = {
-  productive: "bg-success/15 text-success",
-  distracting: "bg-warning/15 text-warning",
-  neutral: "bg-muted text-muted-foreground",
+/** A neutral grey at `pct`% ink — the ramp Analytics → Activity uses for app rules. */
+const ink = (pct: number) => `color-mix(in srgb, var(--foreground) ${pct}%, var(--card))`;
+
+/**
+ * The org's **app-rule** category, as one neutral grey stepped by lightness — never green "good" or
+ * amber "bad" (UX audit 2026-10-16, XC-08 / MON-07). The category comes from the app's *name*, and
+ * the owner's decision of 2026-10-13 is that app names decide nothing: the AI judges screenshots
+ * against the person's role. The word beside the dot carries the category; the dot only orders it.
+ * Never derived here — the server sends the category.
+ */
+const RULE_DOT: Record<string, string> = {
+  productive: ink(80),
+  neutral: ink(55),
+  distracting: ink(35),
 };
 
 function Rows({ rows }: { rows: AppUsageRow[] }) {
@@ -60,11 +69,12 @@ function Rows({ rows }: { rows: AppUsageRow[] }) {
           <span className="w-16 shrink-0 text-right tabular-nums text-muted-foreground">
             {dur(r.seconds)}
           </span>
-          <span
-            className={`w-20 shrink-0 rounded px-1.5 py-0.5 text-center text-[11px] font-medium ${
-              TONE[r.category] ?? TONE.neutral
-            }`}
-          >
+          <span className="flex w-20 shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className="size-2 shrink-0 rounded-full"
+              style={{ backgroundColor: RULE_DOT[r.category] ?? RULE_DOT.neutral }}
+            />
             {r.category}
           </span>
         </li>
@@ -123,6 +133,11 @@ export function EmployeeAppUsageCard({
         <AppWindow className="size-4 text-muted-foreground" />
         <h3 className="font-medium">App &amp; website usage</h3>
       </div>
+      {/* Says whose verdict the category is — the same label Analytics → Activity carries. */}
+      <p className="mt-1 text-xs text-muted-foreground">
+        Categories by your app rules (not AI) — set from each app&apos;s name in Settings → Tracking
+        rules.
+      </p>
 
       {loading ? (
         <p className="mt-3 text-sm text-muted-foreground">Loading…</p>

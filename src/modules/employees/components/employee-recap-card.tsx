@@ -16,7 +16,7 @@
  * `reason`, and this renders that instead of an empty card.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { FileText, Sparkles, RefreshCw } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -37,6 +37,7 @@ import {
   type PeriodRecap,
   type RecapPeriod,
 } from "@/modules/insights/services/insights.service";
+import { provenanceLine, type Provenance } from "@/modules/insights/lib/ai-provenance";
 
 const PERIODS: { key: RecapPeriod; label: string }[] = [
   // "Last day", not "Daily": a day is recapped only once it has closed, so this tab can never be
@@ -199,6 +200,20 @@ export function EmployeeRecapCard({
     !!dayScore && dayScore.q_measured !== false && dayScore.q_ai_scored === false;
   const first = name.split(" ")[0] || "this employee";
 
+  /**
+   * Who wrote this (UX audit 2026-10-16, MON-08 / XC-08), read from what the recap routes do: a
+   * narrative is stored — and stamped `generated_at` — only after the model wrote it. The server's
+   * own lines (an empty day's one-liner, the placeholder for a role that isn't tracked) come back
+   * with no `generated_at`. So the stamp is the tell, and an unstamped text is never called AI.
+   */
+  const provenance: Provenance =
+    loading || regenerating || !narrative
+      ? { kind: "none" }
+      : generatedAt
+        ? { kind: "ai", generatedAt }
+        : { kind: "computed" };
+  const isAi = provenance.kind === "ai";
+
   return (
     <Card>
       <CardHeader>
@@ -208,7 +223,13 @@ export function EmployeeRecapCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1.5">
             <CardTitle className="flex items-center gap-2">
-              <Sparkles className="size-4 text-primary" /> AI summary
+              {/* The sparkle and "AI" only over text a model wrote (MON-08). */}
+              {isAi ? (
+                <Sparkles className="size-4 text-primary" aria-hidden="true" />
+              ) : (
+                <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+              )}{" "}
+              {isAi ? "AI summary" : "Summary"}
             </CardTitle>
             <CardDescription>
               {period === "daily"
@@ -279,12 +300,12 @@ export function EmployeeRecapCard({
           <>
             {/* Bullet list from the recap prompt — rendered as markdown, not raw text. */}
             <Markdown className="text-sm leading-relaxed">{narrative}</Markdown>
+            {/* "AI-generated · time · may be wrong", or "not written by AI" — the same line every
+                summary card in Analytics carries. */}
             <p className="text-muted-foreground text-xs">
-              {base ? `Based on ${base}` : null}
-              {base && generatedAt ? " · " : null}
-              {generatedAt
-                ? `text written ${new Date(generatedAt).toLocaleString()}`
-                : null}
+              {[base ? `Based on ${base}` : null, provenanceLine(provenance) || null]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
             {scoreEstimated ? (
               <p className="text-warning text-xs">
