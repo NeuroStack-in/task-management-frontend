@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,8 +30,14 @@ import {
 import {
   getTrackingPolicy,
   updateTrackingPolicy,
+  type TrackingCadence,
   type TrackingPolicy,
 } from "@/modules/agents/services/fleet.service";
+import { captureLock, capturing } from "@/modules/settings/lib/monitoring-capture";
+import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store";
+import { legalHref } from "@/modules/legal/documents";
+import { useTrackingMode } from "@/hooks/use-features";
+import type { TrackingMode } from "@/lib/tracking-mode";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -48,26 +55,11 @@ function defaultRole(roles: ApiRole[]): ApiRole | undefined {
   return roles.find((r) => r.name === "Employee") ?? roles[roles.length - 1];
 }
 
-function ToggleRow({
-  label,
-  description,
-  checked,
-  onCheckedChange,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onCheckedChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center justify-between gap-3 rounded-lg border p-3">
-      <span>
-        <span className="block text-sm font-medium">{label}</span>
-        <span className="block text-xs text-muted-foreground">{description}</span>
-      </span>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
-    </label>
-  );
+/** Minutes between screenshots for a stored interval, or `null` when off. */
+function cadenceMinutes(c: TrackingCadence): number | null {
+  if (c === "off") return null;
+  if (typeof c === "object") return c.custom;
+  return { min3: 3, min5: 5, min10: 10 }[c] ?? null;
 }
 
 export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) {
@@ -96,7 +88,24 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
   const [policy, setPolicy] = useState<TrackingPolicy | null>(null);
   const [policyFailed, setPolicyFailed] = useState(false);
   const [screenshots, setScreenshots] = useState(false);
-  const [silent, setSilent] = useState(false);
+  // No "Silent mode" switch (UX audit 2026-10-16, ONB-07). It hid the agent's capture indicator —
+  // the only on-screen notice an employee gets — and could be flipped on in passing, described as
+  // "Track quietly in the background". Settings → Monitoring already removed it as an admin
+  // setting and pins it off on every save (WP-331), so this was the one place left to turn it on,
+  // and the next Monitoring save would have quietly turned it off again. This step pins it off too.
+  //
+  // The two switches that decide whether the interval can change (SET-03, `captureLock`).
+  const screenshotsOn = useEntitlementsStore((s) => effectiveFromState(s, "monitoring.screenshots"));
+  const screenshotsInPlan = useEntitlementsStore(
+    (s) => !s.loaded || s.allowed.includes("monitoring.screenshots"),
+  );
+  const activityOn = useEntitlementsStore((s) => effectiveFromState(s, "monitoring.activity"));
+  const activityInPlan = useEntitlementsStore(
+    (s) => !s.loaded || s.allowed.includes("monitoring.activity"),
+  );
+  const lock = captureLock({ screenshotsOn, screenshotsInPlan, activityOn, activityInPlan });
+  // Which agents run decides whether employees see any indicator at all (see `TrackingStep`).
+  const trackingMode = useTrackingMode();
 
   // Prefill the org step from the details already captured at signup, so this is a confirm/refine
   // rather than blank re-entry. Best-effort — a 404 (org not provisioned) leaves the fields empty.
@@ -126,7 +135,6 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         if (!alive) return;
         setPolicy(cfg.tracking);
         setScreenshots(cfg.tracking.cadence !== "off");
-        setSilent(cfg.tracking.silent);
       })
       .catch(() => {
         // Unreadable → `policy` stays null and the step writes nothing rather than guess.
@@ -253,8 +261,10 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
       return;
     }
     const wasOn = policy.cadence !== "off";
-    if (screenshots === wasOn && silent === policy.silent) {
-      await markStep("tracking", wasOn || silent ? "done" : "skipped");
+    // Nothing to write when the switch didn't move, or while the interval is locked (the switch
+    // is disabled then, so this is belt and braces against a late entitlements read).
+    if (screenshots === wasOn || lock) {
+      await markStep("tracking", wasOn ? "done" : "skipped");
       return;
     }
     try {
@@ -264,7 +274,8 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         cadence: screenshots ? (wasOn ? policy.cadence : "min5") : "off",
         blur_level: policy.blur_level,
         retention_days: policy.retention_days,
-        silent,
+        // Pinned off, as every Monitoring save does (WP-331) — see the note on `screenshots`.
+        silent: false,
         auto_update: policy.auto_update,
         ...(policy.idle_end_secs !== undefined ? { idle_end_secs: policy.idle_end_secs } : {}),
         // Keep the org's pause allowance; omitting it would reset it to the default.
@@ -290,7 +301,7 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         });
       }
     }
-    await markStep("tracking", screenshots || silent ? "done" : "skipped");
+    await markStep("tracking", screenshots ? "done" : "skipped");
   }
 
   async function finishDashboard() {
@@ -405,20 +416,23 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
           );
         }
         return (
-          <div className="space-y-3">
-            <ToggleRow
-              label="Screenshots"
-              description="Capture periodic screenshots."
-              checked={screenshots}
-              onCheckedChange={setScreenshots}
-            />
-            <ToggleRow
-              label="Silent mode"
-              description="Track quietly in the background."
-              checked={silent}
-              onCheckedChange={setSilent}
-            />
-          </div>
+          <TrackingStep
+            policy={policy}
+            trackingMode={trackingMode}
+            screenshots={screenshots}
+            onScreenshots={setScreenshots}
+            lockReason={
+              !lock
+                ? null
+                : !capturing(lock)
+                  ? lock.kind === "screenshots-off"
+                    ? "Screenshots are switched off in Settings → Features, so nothing is captured whatever this says. Turn them on there first."
+                    : "Screenshots aren't included in your plan."
+                  : lock.kind === "activity-off"
+                    ? "Changing this needs Activity monitoring, which is switched off in Settings → Features."
+                    : "Changing this needs Activity monitoring, which isn't included in your plan."
+            }
+          />
         );
       case "dashboard":
         // There was a widget checklist here that saved nothing. The dashboard's own Customize does
@@ -486,5 +500,101 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         </Button>
       </div>
     </Card>
+  );
+}
+
+/**
+ * What employees see while capture runs. The desktop app shows an indicator (this step pins silent
+ * mode off); the managed Windows service runs with none (`legal/content/terms.tsx`, On-screen
+ * notices) — so a `machine` org must not be told employees will see one.
+ */
+const INDICATOR: Record<TrackingMode, string> = {
+  project: "Employees see an indicator in the desktop app while it records.",
+  machine:
+    "The background service on company-managed devices shows employees no indicator while it records.",
+  both: "The desktop app shows employees an indicator while it records; the background service on company-managed devices shows none.",
+};
+
+/**
+ * The tracking step's one switch, with what it actually does spelled out (UX audit ONB-07): it was
+ * "Screenshots — Capture periodic screenshots.", switched on in passing with no word of the interval,
+ * how long images are kept, or the employer's duty to tell people before capture starts.
+ */
+function TrackingStep({
+  policy,
+  trackingMode,
+  screenshots,
+  onScreenshots,
+  lockReason,
+}: {
+  policy: TrackingPolicy;
+  trackingMode: TrackingMode;
+  screenshots: boolean;
+  onScreenshots: (v: boolean) => void;
+  /** Why the switch can't change right now, or `null`. */
+  lockReason: string | null;
+}) {
+  const stored = cadenceMinutes(policy.cadence);
+  // Switching on starts at every 5 minutes (see `saveTracking`); an org already capturing keeps its
+  // own interval.
+  const minutes = stored ?? 5;
+  const days = policy.retention_days;
+  return (
+    <div className="space-y-3">
+      <label
+        className={cn(
+          "flex items-start justify-between gap-3 rounded-lg border p-3",
+          lockReason && "opacity-70",
+        )}
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">Screenshots</span>
+          <span className="block text-xs text-muted-foreground">
+            {screenshots
+              ? `A screenshot of each employee's screen every ${minutes} minute${minutes === 1 ? "" : "s"} while their tracking runs, kept ${days} day${days === 1 ? "" : "s"} and then deleted. Admins with the screenshots permission can view them.`
+              : "Off — no screenshots are taken."}
+          </span>
+        </span>
+        <Switch
+          checked={screenshots}
+          onCheckedChange={onScreenshots}
+          disabled={lockReason !== null}
+          aria-label="Screenshots"
+        />
+      </label>
+      {lockReason ? <p className="text-xs text-muted-foreground">{lockReason}</p> : null}
+
+      <div className="space-y-1.5 rounded-lg border border-warning/30 bg-warning/[0.06] p-3 text-xs text-muted-foreground">
+        <p className="font-medium text-foreground">Before capture starts</p>
+        <p>
+          {INDICATOR[trackingMode]} You are responsible for
+          telling them what is captured, why, who can see it and how long it is kept — and for any
+          consent your local law requires.{" "}
+          <Link
+            href={`${legalHref("terms")}#monitoring`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary underline underline-offset-2 hover:no-underline"
+          >
+            Your monitoring obligations
+          </Link>
+        </p>
+        <p>
+          WorkPulse also lists what your organization records in each invite email and on the
+          Download page.
+        </p>
+      </div>
+
+      {policy.silent ? (
+        <p className="rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
+          Your current settings hide that indicator, so employees get no on-screen notice. Changing
+          screenshots here turns it back on, as does saving Settings → Monitoring.
+        </p>
+      ) : null}
+
+      <p className="text-xs text-muted-foreground">
+        Interval, retention and exclusions are all in Settings → Monitoring.
+      </p>
+    </div>
   );
 }

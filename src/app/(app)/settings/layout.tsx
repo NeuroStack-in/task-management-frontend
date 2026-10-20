@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight, Building2, Lock } from "lucide-react";
+import { ArrowUpRight, Building2, ChevronsUpDown, Lock, Settings2 } from "lucide-react";
 import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useOrgName } from "@/hooks/use-org";
@@ -27,6 +27,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 interface RailItem {
@@ -66,6 +73,70 @@ function accountGroup(opts: { canSecurity: boolean }): RailGroup {
   return { label: "Account", items };
 }
 
+const isActive = (item: RailItem, pathname: string) =>
+  !item.external && (pathname === item.href || pathname.startsWith(`${item.href}/`));
+
+/**
+ * The grouped section list — the desktop rail, and the phone picker's sheet. One renderer for both,
+ * so the two can't drift into listing different sections.
+ */
+function RailList({
+  groups,
+  pathname,
+  onNavigate,
+}: {
+  groups: RailGroup[];
+  pathname: string;
+  /** The phone sheet closes on a pick; the rail has nothing to close. */
+  onNavigate?: () => void;
+}) {
+  return (
+    <>
+      {groups.map((group) => (
+        <div key={group.label} className="space-y-1.5">
+          <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            {group.label}
+          </p>
+          <ul className="flex flex-col gap-0.5">
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item, pathname);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    // Leaving mid-edit (the natural move from a rail beside the pane) is
+                    // confirmed by the link listener in the layout, like every other in-app link.
+                    onClick={onNavigate}
+                    className={cn(
+                      "group flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+                      active
+                        ? "border-l-2 border-primary bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Icon
+                      className={cn(
+                        "size-4 shrink-0 transition-colors",
+                        !active && "group-hover:text-foreground",
+                      )}
+                    />
+                    <span className="flex-1">{item.label}</span>
+                    {item.external && (
+                      <ArrowUpRight className="size-3.5 shrink-0 opacity-50" />
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export default function SettingsLayout({
   children,
 }: {
@@ -80,6 +151,8 @@ export default function SettingsLayout({
   const requestLeave = useUnsavedStore((s) => s.requestLeave);
   const cancelLeave = useUnsavedStore((s) => s.cancelLeave);
   const clearUnsaved = useUnsavedStore((s) => s.clear);
+  /** The phone section picker's sheet (SET-05). */
+  const [sectionsOpen, setSectionsOpen] = useState(false);
 
   // While a draft is unsaved, any in-app link asks first — not just this rail. The sidebar, the
   // navbar and the account menu used to throw the draft away without a word (QA audit 2026-10-08,
@@ -177,59 +250,65 @@ export default function SettingsLayout({
     ...adminGroups,
   ];
 
+  // Where the reader is, for the phone picker's face: the item and the group it sits in.
+  const currentGroup = groups.find((g) => g.items.some((it) => isActive(it, pathname)));
+  const currentItem = currentGroup?.items.find((it) => isActive(it, pathname));
+  const CurrentIcon = currentItem?.icon ?? Settings2;
+
   return (
     // The rail sits in the shell's 24px (sm:px-6) gutter on its left, so the gap
     // on its right matches — otherwise the content pane reads as pushed off-centre.
     <div className="flex flex-col gap-6 pt-1 lg:h-[calc(100vh-7rem)] lg:flex-row lg:gap-6">
-      {/* ── Section rail ── */}
+      {/* ── Section picker, below `lg` (UX audit 2026-10-16, SET-05) ──
+          The rail used to fold into one horizontal strip here: "Profile · Notification preferences
+          · Ap…", with every admin group off-screen, no sign it scrolled, and the current section
+          not scrolled into view. A button that names where you are opens the same grouped list as
+          a sheet instead — every section visible at once, in its group. */}
+      <div className="lg:hidden">
+        <Sheet open={sectionsOpen} onOpenChange={setSectionsOpen}>
+          <SheetTrigger
+            className="flex w-full items-center gap-3 rounded-xl border bg-card px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            aria-label={`Settings section: ${currentItem?.label ?? "choose a section"}. Change section`}
+          >
+            <CurrentIcon className="size-4 shrink-0 text-primary" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                {currentGroup?.label ?? "Settings"}
+              </span>
+              <span className="block truncate text-sm font-medium">
+                {currentItem?.label ?? "Choose a section"}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground">
+              Change
+              <ChevronsUpDown className="size-4" aria-hidden />
+            </span>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="max-h-[85dvh] gap-0 rounded-t-2xl p-0">
+            <SheetHeader className="pb-2">
+              <SheetTitle>Settings sections</SheetTitle>
+            </SheetHeader>
+            <nav
+              aria-label="Settings sections"
+              className="flex min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain px-3 pb-6"
+            >
+              <RailList
+                groups={groups}
+                pathname={pathname}
+                onNavigate={() => setSectionsOpen(false)}
+              />
+            </nav>
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* ── Section rail, `lg` and up ── */}
       <nav
         aria-label="Settings sections"
-        className="lg:h-full lg:w-60 lg:shrink-0"
+        className="hidden lg:block lg:h-full lg:w-60 lg:shrink-0"
       >
-        <div className="wp-rail-scroll flex gap-5 overflow-x-auto pb-1 lg:h-full lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-0 lg:pr-1.5">
-          {groups.map((group) => (
-            <div key={group.label} className="shrink-0 space-y-1.5">
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                {group.label}
-              </p>
-              <ul className="flex gap-1 lg:flex-col lg:gap-0.5">
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const active =
-                    !item.external &&
-                    (pathname === item.href ||
-                      pathname.startsWith(`${item.href}/`));
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        aria-current={active ? "page" : undefined}
-                        // Leaving mid-edit (the natural move from a rail beside the pane) is
-                        // confirmed by the link listener above, like every other in-app link.
-                        className={cn(
-                          "group flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-colors",
-                          active
-                            ? "border-l-2 border-primary bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                        )}
-                      >
-                        <Icon
-                          className={cn(
-                            "size-4 shrink-0 transition-colors",
-                            !active && "group-hover:text-foreground",
-                          )}
-                        />
-                        <span className="flex-1">{item.label}</span>
-                        {item.external && (
-                          <ArrowUpRight className="size-3.5 shrink-0 opacity-50" />
-                        )}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+        <div className="wp-rail-scroll flex h-full min-h-0 flex-col gap-5 overflow-y-auto overflow-x-hidden pr-1.5">
+          <RailList groups={groups} pathname={pathname} />
         </div>
       </nav>
 

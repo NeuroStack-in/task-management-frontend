@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { Controller, useForm } from "react-hook-form"
 import { Lock } from "lucide-react"
 import { toast } from "sonner"
@@ -35,6 +36,13 @@ import {
 } from "@/modules/agents/services/fleet.service"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { cn } from "@/lib/utils"
+import {
+  captureLock,
+  capturing,
+  retentionLabel,
+  retentionOptions,
+  type CaptureLock,
+} from "../lib/monitoring-capture"
 import { ScreenshotExclusionsCard } from "./screenshot-exclusions-card"
 
 /**
@@ -147,7 +155,9 @@ function SettingRow({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-6 py-3 [&+&]:border-t border-border",
+        // Stacked below `sm`: side by side, a 224px control left the label a ~75px column on a
+        // phone, one word per line.
+        "flex flex-col gap-3 py-3 [&+&]:border-t border-border sm:flex-row sm:items-center sm:justify-between sm:gap-6",
         disabled && "opacity-60",
       )}
     >
@@ -172,18 +182,29 @@ export function MonitoringTab() {
   // The idle window only applies to the managed Windows service, so the card is hidden for
   // `project` orgs rather than shown as a setting that changes nothing.
   const trackingMode = useTrackingMode()
-  // The server refuses any save whose cadence isn't Off unless `monitoring.activity` is effective for
-  // the org — the plain plan ∩ toggle check, with no owner exemption (`fleet::update_policy`). The
-  // page used to send the stored cadence (`min5` for an org that never saved one) with every edit,
-  // so on Free, or with Activity monitoring off, no setting here could be saved at all and the error
-  // blamed the plan (QA audit 2026-10-08, WP-330). While capture can't run, it is shown — and saved —
-  // as Off, so the other settings save.
-  const captureAllowed = useEntitlementsStore((s) =>
+  // Two switches decide the interval control (UX audit 2026-10-16, SET-03 — see `captureLock`):
+  // Features → Screenshots is what the agents obey, and `monitoring.activity` is what
+  // `fleet::update_policy` checks before accepting a *changed* non-Off interval. The page used to
+  // read only the second, so with Screenshots off it offered an editable "Every 5 minutes" while
+  // nothing was captured, and its lock message blamed Activity monitoring.
+  //
+  // While either locks the interval, a save sends the stored interval back unchanged, which the
+  // server accepts (`req.cadence == stored_cadence`), so retention and the rest still save. It used
+  // to send Off (WP-330), which quietly threw away the interval an org would get back with the
+  // switch — and with Activity off and Screenshots on, stopped a capture the page said wasn't running.
+  const screenshotsOn = useEntitlementsStore((s) =>
+    effectiveFromState(s, "monitoring.screenshots"),
+  )
+  const screenshotsInPlan = useEntitlementsStore(
+    (s) => !s.loaded || s.allowed.includes("monitoring.screenshots"),
+  )
+  const activityOn = useEntitlementsStore((s) =>
     effectiveFromState(s, "monitoring.activity"),
   )
-  const captureInPlan = useEntitlementsStore(
+  const activityInPlan = useEntitlementsStore(
     (s) => !s.loaded || s.allowed.includes("monitoring.activity"),
   )
+  const lock = captureLock({ screenshotsOn, screenshotsInPlan, activityOn, activityInPlan })
 
   const {
     control,
@@ -217,6 +238,8 @@ export function MonitoringTab() {
   // The optimistic-concurrency token from `tracking.version`. Retained across edits and sent back as
   // `expected_version`; bumped from each successful save's response.
   const [version, setVersion] = useState(0)
+  // The interval as stored — what a save sends while the control is locked (see `lock` above).
+  const [storedCadence, setStoredCadence] = useState<TrackingCadence>("off")
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -251,6 +274,7 @@ export function MonitoringTab() {
         },
         cfg.tracking.version,
       )
+      setStoredCadence(cfg.tracking.cadence)
       setPauseSupported(cfg.tracking.pause_allowance_secs !== undefined)
       const silent = cfg.tracking.silent === true
       const blur = cfg.tracking.blur_level > 0
@@ -269,7 +293,7 @@ export function MonitoringTab() {
   const onSave = handleSubmit(async (values) => {
     if (saving) return
     setSaving(true)
-    const cadence = captureAllowed ? formToCadence(values.cadence, values.customMinutes) : "off"
+    const cadence = lock ? storedCadence : formToCadence(values.cadence, values.customMinutes)
     try {
       const next = await updateTrackingPolicy({
         cadence,
@@ -284,6 +308,7 @@ export function MonitoringTab() {
         expected_version: version,
       })
       setLegacyOverride(null)
+      setStoredCadence(next.cadence)
       setPauseSupported(next.pause_allowance_secs !== undefined)
       seed(
         {
@@ -366,15 +391,7 @@ export function MonitoringTab() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-0 pb-2">
-              {!captureAllowed ? (
-                <p className="mb-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-                  Screenshot capture is off because Activity monitoring{" "}
-                  {captureInPlan
-                    ? "is switched off in Settings → Features"
-                    : "isn't included in your plan"}
-                  . Your other settings here still save.
-                </p>
-              ) : null}
+              {lock ? <CaptureLockNotice lock={lock} /> : null}
               {legacyOverride ? (
                 <p className="mb-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
                   {legacyOverride.silent
@@ -387,20 +404,26 @@ export function MonitoringTab() {
               ) : null}
               <SettingRow
                 label="Capture cadence"
-                description="How often a screenshot is taken while a session is active."
-                disabled={!canManage || !captureAllowed}
+                description={
+                  !lock
+                    ? "How often a screenshot is taken while a session is active."
+                    : capturing(lock)
+                      ? "Screenshots are still taken at this interval; it just can't be changed right now."
+                      : "Kept for when Screenshots is switched back on — nothing is captured meanwhile."
+                }
+                disabled={!canManage || lock !== null}
               >
                 <Controller
                   control={control}
                   name="cadence"
                   render={({ field }) => (
-                    <div className="flex flex-col items-end gap-2">
+                    <div className="flex flex-col items-start gap-2 sm:items-end">
                       <Select
-                        value={captureAllowed ? field.value : "off"}
+                        value={field.value}
                         onValueChange={(v) =>
                           field.onChange(v as CadenceChoice)
                         }
-                        disabled={!canManage || !captureAllowed}
+                        disabled={!canManage || lock !== null}
                       >
                         <SelectTrigger className="w-56" aria-label="Capture cadence">
                           <SelectValue>
@@ -418,7 +441,9 @@ export function MonitoringTab() {
                           ))}
                         </SelectContent>
                       </Select>
-                      {field.value === "custom" && captureAllowed ? (
+                      {/* Shown even while locked, so a stored custom interval reads as its minutes
+                          rather than a bare "Custom…". */}
+                      {field.value === "custom" ? (
                         <Controller
                           control={control}
                           name="customMinutes"
@@ -429,7 +454,7 @@ export function MonitoringTab() {
                               max={CUSTOM_MAX}
                               suffix="min"
                               aria-label="Minutes between screenshots"
-                              disabled={!canManage}
+                              disabled={!canManage || lock !== null}
                               onChange={mf.onChange}
                             />
                           )}
@@ -442,24 +467,36 @@ export function MonitoringTab() {
               {/* No Blur control. Screenshots are meant to be legible — a blurred one costs the
                   same to capture, store and retain while answering nothing. `blur_level` stays in
                   the wire type (the agent reads it) and every save sends 0. */}
+              {/* Presets, not a one-day stepper (UX audit SET-04): 90 → 1 was a few clicks, and a
+                  shorter period permanently deletes older screenshots — the save asks first (see
+                  `retentionCut`). A stored value that isn't a preset stays offered as itself. */}
               <SettingRow
                 label="Retention period"
-                description="Days to keep screenshots before they are deleted automatically."
+                description="How long screenshots are kept before they are deleted automatically."
                 disabled={!canManage}
               >
                 <Controller
                   control={control}
                   name="retention_days"
                   render={({ field }) => (
-                    <NumericStepper
+                    <Select
                       value={field.value}
-                      min={1}
-                      max={365}
-                      suffix="days"
-                      aria-label="Retention period in days"
+                      onValueChange={(v) => field.onChange(Number(v))}
                       disabled={!canManage}
-                      onChange={field.onChange}
-                    />
+                    >
+                      <SelectTrigger className="w-56" aria-label="Retention period">
+                        <SelectValue>{(v) => retentionLabel(Number(v))}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {retentionOptions(defaultValues?.retention_days ?? field.value).map(
+                          (d) => (
+                            <SelectItem key={d} value={d}>
+                              {retentionLabel(d)}
+                            </SelectItem>
+                          ),
+                        )}
+                      </SelectContent>
+                    </Select>
                   )}
                 />
               </SettingRow>
@@ -621,6 +658,53 @@ export function MonitoringTab() {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Why the interval is locked, naming the switch that actually causes it and linking to where it is
+ * changed (UX audit SET-03). Screenshots off means nothing is captured, and says so plainly; with
+ * only Activity off, capture carries on and the notice must not pretend otherwise.
+ */
+function CaptureLockNotice({ lock }: { lock: CaptureLock }) {
+  // Inherits the notice's own (contrast-safe) ink rather than adding a third colour to the box.
+  const linkClass = "font-medium underline underline-offset-2 hover:no-underline"
+  const copy: Record<CaptureLock["kind"], { text: string; href: string; link: string }> = {
+    "screenshots-off": {
+      text: "Screenshots are off in Features — nothing is being captured.",
+      href: "/settings/features",
+      link: "Open Features",
+    },
+    "screenshots-not-in-plan": {
+      text: "Screenshots aren't included in your plan — nothing is being captured.",
+      href: "/settings/billing",
+      link: "See plans",
+    },
+    "activity-off": {
+      text: "Screenshots are still being captured at the interval below. Changing it needs Activity monitoring, which is off in Features; to stop screenshots, switch Screenshots off there.",
+      href: "/settings/features",
+      link: "Open Features",
+    },
+    "activity-not-in-plan": {
+      text: "Screenshots are still being captured at the interval below. Changing it needs Activity monitoring, which isn't included in your plan.",
+      href: "/settings/billing",
+      link: "See plans",
+    },
+  }
+  const c = copy[lock.kind]
+  return (
+    <p
+      role="status"
+      className={cn(
+        "mb-2 rounded-md px-3 py-2 text-xs",
+        capturing(lock) ? "bg-muted text-muted-foreground" : "bg-warning/10 text-warning",
+      )}
+    >
+      {c.text} Your other settings here still save.{" "}
+      <Link href={c.href} className={linkClass}>
+        {c.link}
+      </Link>
+    </p>
   )
 }
 

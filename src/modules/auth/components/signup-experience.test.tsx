@@ -73,6 +73,14 @@ vi.mock("@/components/ui/date-picker", () => ({
   ),
 }));
 vi.mock("./sso-provider-buttons", () => ({ SsoProviderButtons: () => null }));
+// The browser's region, fixed: jsdom's own timezone and languages vary by machine.
+vi.mock("./signup-region", () => ({
+  browserRegion: () => ({
+    country: "India",
+    currency: "INR — Indian Rupee",
+    timezone: "Asia/Kolkata",
+  }),
+}));
 vi.mock("./plan-details-dialog", () => ({ PlanDetailsDialog: () => null }));
 
 import { SignupExperience } from "./signup-experience";
@@ -88,19 +96,11 @@ async function continueTo(heading: string) {
   await screen.findByRole("heading", { name: heading });
 }
 
-/** Steps 2–4 (Organization, Region, Your profile), shared by both variants. */
-async function fillOrgRegionProfile(lastHeading: string) {
+/** Step 2 (Organization), shared by both variants. Region is prefilled from the browser. */
+async function fillOrg(lastHeading: string) {
   fill("Organization name", "Acme");
   fill("Industry", "Software");
   fill("Organization size", "11-50");
-  await continueTo("Region & localization");
-  fill("Headquarters country", "India");
-  await continueTo("Your profile");
-  fill("Job title", "CTO");
-  fill("Work location", "Pune");
-  fill("Contact number", "+919876543210");
-  fill("Date of birth", "1990-01-01");
-  fill("Work mode", "remote");
   await continueTo(lastHeading);
 }
 
@@ -133,7 +133,7 @@ describe("SignupExperience — Terms of Service and Privacy Policy consent", () 
     fill("Password", "Correct9horse");
     fill("Confirm password", "Correct9horse");
     await continueTo("About your organization");
-    await fillOrgRegionProfile("Your plan");
+    await fillOrg("Your plan");
 
     const label = termsBox().closest("label");
     expect(label).not.toBeNull();
@@ -154,7 +154,7 @@ describe("SignupExperience — Terms of Service and Privacy Policy consent", () 
     fill("Password", "Correct9horse");
     fill("Confirm password", "Correct9horse");
     await continueTo("About your organization");
-    await fillOrgRegionProfile("Your plan");
+    await fillOrg("Your plan");
 
     fireEvent.click(monitoringBox());
     fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
@@ -180,7 +180,7 @@ describe("SignupExperience — Terms of Service and Privacy Policy consent", () 
     await continueTo("About your organization");
     // No workspace ID or prefix to choose: approval assigns them.
     expect(screen.queryByLabelText("Workspace ID")).not.toBeInTheDocument();
-    await fillOrgRegionProfile("Your plan");
+    await fillOrg("Your plan");
     fireEvent.click(monitoringBox());
     fireEvent.click(termsBox());
     fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
@@ -203,7 +203,7 @@ describe("SignupExperience — Terms of Service and Privacy Policy consent", () 
     mocks.auth.isAuthenticated = true;
     mocks.auth.user = { name: "Ada Lovelace", email: "ada@acme.test" };
     render(<SignupExperience authenticated />);
-    await fillOrgRegionProfile("Your plan");
+    await fillOrg("Your plan");
 
     fireEvent.click(monitoringBox());
     fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
@@ -215,5 +215,60 @@ describe("SignupExperience — Terms of Service and Privacy Policy consent", () 
     fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
 
     await waitFor(() => expect(mocks.requestOrg).toHaveBeenCalledTimes(1));
+  });
+});
+
+/**
+ * ONB-04 (UX audit 2026-10-16): five steps and about twenty fields before first value. Now three
+ * steps; region comes from the browser, and no personal profile fact is asked for or sent.
+ */
+describe("SignupExperience — three steps", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.auth.isAuthenticated = true;
+    mocks.auth.user = { name: "Ada Lovelace", email: "ada@acme.test" };
+    mocks.requestOrg.mockResolvedValue(undefined);
+  });
+
+  it("goes Organization → Plan, with the region already filled in", async () => {
+    render(<SignupExperience authenticated />);
+    expect(screen.getByText("India · INR · Asia/Kolkata")).toBeInTheDocument();
+    for (const gone of ["Job title", "Contact number", "Date of birth", "Work mode", "Work location"]) {
+      expect(screen.queryByLabelText(gone)).not.toBeInTheDocument();
+    }
+    await fillOrg("Your plan");
+    fireEvent.click(monitoringBox());
+    fireEvent.click(termsBox());
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+
+    await waitFor(() => expect(mocks.requestOrg).toHaveBeenCalledTimes(1));
+    const body = mocks.requestOrg.mock.calls[0][0] as Record<string, unknown>;
+    expect(body).toMatchObject({
+      org_name: "Acme",
+      owner_name: "Ada Lovelace",
+      country: "IN",
+      currency: "INR",
+      timezone: "Asia/Kolkata",
+      monitoring_consent: true,
+    });
+    for (const k of ["job_title", "department", "location", "phone", "date_of_birth", "work_mode"]) {
+      expect(body).not.toHaveProperty(k);
+    }
+  });
+
+  it("lets the region be changed", async () => {
+    render(<SignupExperience authenticated />);
+    fireEvent.click(screen.getByRole("button", { name: "Change region" }));
+    fill("Headquarters country", "Singapore");
+    expect(screen.getByLabelText("Billing currency")).toHaveValue("SGD — Singapore Dollar");
+    await fillOrg("Your plan");
+    fireEvent.click(monitoringBox());
+    fireEvent.click(termsBox());
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+    await waitFor(() =>
+      expect(mocks.requestOrg).toHaveBeenCalledWith(
+        expect.objectContaining({ country: "SG", currency: "SGD" }),
+      ),
+    );
   });
 });

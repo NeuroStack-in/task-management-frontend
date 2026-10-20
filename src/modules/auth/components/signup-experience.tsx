@@ -12,10 +12,23 @@
  *
  * It used to collect the account here and then throw a four-step modal over the page for the rest.
  * Two problems with that: the dialog covered the brand panel that tells a user what site they are
- * on, and a modal over a sign-up form reads as an interruption rather than progress. The same four
- * steps now run in place, after the account step:
+ * on, and a modal over a sign-up form reads as an interruption rather than progress. The steps now
+ * run in place:
  *
- *   1 Account · 2 Organization · 3 Region · 4 Your profile · 5 Plan
+ *   1 Account · 2 Organization · 3 Plan
+ *
+ * ## Three steps, not five (UX audit 2026-10-16, ONB-04)
+ *
+ * It was five steps and about twenty fields before anyone saw the product. Two steps went:
+ *
+ *  - **Region** is folded into Organization and starts from the browser (`signup-region.ts`) — the
+ *    applicant corrects it rather than picks it.
+ *  - **Your profile** (job title, department, location, phone, date of birth, work mode) is gone
+ *    from sign-up. None of it is needed to review or build an organization — `POST /v1/org/requests`
+ *    requires only `org_name` — and it is personal data asked for before the workspace even exists.
+ *    The first-run profile gate (`modules/onboarding/components/first-run-gate.tsx`) asks for
+ *    contact number, location and work mode at the owner's first sign-in, with date of birth
+ *    optional, and the owner's job title is theirs to set on their own employee record.
  *
  * ## What was deliberately dropped from the modal's version
  *
@@ -48,7 +61,6 @@ import {
 } from "@/modules/auth/services/auth.service";
 import { ConfirmEmailStep } from "./confirm-email-step";
 import {
-  COUNTRIES,
   COUNTRY_CURRENCY,
   CURRENCIES,
   INDUSTRIES,
@@ -56,6 +68,7 @@ import {
   SIZES,
   TIMEZONES,
 } from "@/modules/auth/components/auth-modals";
+import { browserRegion } from "./signup-region";
 import { SsoProviderButtons } from "./sso-provider-buttons";
 import {
   AuthErrorSummary,
@@ -68,9 +81,6 @@ import {
   AuthSwitch,
   passwordMeetsPolicy,
 } from "./auth-frame";
-import { PhoneInput } from "@/components/ui/phone-input";
-import { DatePicker } from "@/components/ui/date-picker";
-import { todayIso } from "@/lib/format";
 import { COUNTRIES as COUNTRY_CODES } from "@/lib/countries";
 import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { safeLandingPath } from "@/lib/rbac";
@@ -80,8 +90,14 @@ import { legalHref } from "@/modules/legal/documents";
 type Errors = Record<string, string | undefined>;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const STEP_LABELS = ["Account", "Organization", "Region", "Your profile", "Plan"];
+const STEP_LABELS = ["Account", "Organization", "Plan"];
 const LAST = STEP_LABELS.length - 1;
+
+/**
+ * Every country, not the old ten plus "Other": the default now comes from the browser, and a
+ * default the list can't show would be dropped. Searchable, since it is long.
+ */
+const COUNTRY_NAMES = COUNTRY_CODES.map((c) => c.name);
 
 /** `CURRENCIES` are display strings like `"USD — US Dollar"`; the server wants the code. */
 const codeOf = (s: string) => s.split("—")[0]?.trim() || undefined;
@@ -135,15 +151,8 @@ export function SignupExperience({
     website: "",
   });
   const [region, setRegion] = useState({ country: "", currency: "", timezone: "" });
-  const [profile, setProfile] = useState({
-    fullName: "",
-    jobTitle: "",
-    department: "",
-    location: "",
-    phone: "",
-    dateOfBirth: "",
-    workMode: "",
-  });
+  /** The region pickers are folded behind a one-line summary until someone wants to change them. */
+  const [regionOpen, setRegionOpen] = useState(false);
   const [consent, setConsent] = useState(false);
   /** The Terms of Service + Privacy Policy agreement, on the last step. See the note there. */
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -177,6 +186,18 @@ export function SignupExperience({
     }));
   }, [authenticated, user]);
 
+  // Region starts from the browser (ONB-04). In an effect, not the initial state: the server render
+  // has no browser to ask, and a different first paint on the client is a hydration mismatch. Only
+  // empty fields are filled, so nothing the applicant already chose is overwritten.
+  useEffect(() => {
+    const d = browserRegion();
+    setRegion((r) => ({
+      country: r.country || d.country,
+      currency: r.currency || d.currency,
+      timezone: r.timezone || d.timezone,
+    }));
+  }, []);
+
   /* ---------------- validation, per step ---------------- */
 
   const validateStep = (s: number): Errors => {
@@ -193,29 +214,13 @@ export function SignupExperience({
     if (s === 1) {
       if (!org.name.trim()) e["org-name"] = "Enter your organization's name";
       // No workspace ID or employee-ID prefix: every sign-up is a request, and approval assigns both.
+      // Industry and size stay required: they are two quick picks, and they are what the person
+      // reviewing the request sees beside the name (`OpsRequestRow`). Region is optional — the
+      // server needs none of it, and it already starts from the browser.
       if (!org.industry) e["org-industry"] = "Choose your industry";
       if (!org.size) e["org-size"] = "Choose your organization size";
     }
     if (s === 2) {
-      if (!region.country) e["org-country"] = "Choose your headquarters country";
-      if (!region.currency) e["org-currency"] = "Choose your billing currency";
-    }
-    if (s === 3) {
-      // **Every field on this step is required**, which it was not before: job title was the
-      // only check and the rest were marked "Optional". The result is visible on any profile card
-      // in the product — contact number, date of birth, work mode all reading "—", because nobody
-      // returns to Settings to fill in what they were told they could skip. Asking once, here, is
-      // the only moment the answer is cheap.
-      if (!profile.jobTitle.trim()) e["me-title"] = "Enter your job title";
-      if (!profile.location.trim()) e["me-location"] = "Enter your work location";
-      // Digits only: `PhoneInput` emits `+<dial><national>`, so a country picked with no number
-      // typed leaves a bare `+91` — present, and not a phone number.
-      if (profile.phone.replace(/[^\d]/g, "").length < 6)
-        e["me-phone"] = "Enter your contact number";
-      if (!profile.dateOfBirth) e["me-dob"] = "Enter your date of birth";
-      if (!profile.workMode) e["me-workmode"] = "Choose how you work";
-    }
-    if (s === 4) {
       if (!consent) e["org-consent"] = "Confirm the monitoring authorization to continue";
       if (!termsAccepted)
         e["signup-terms"] = "Agree to the Terms of Service and Privacy Policy to continue";
@@ -236,11 +241,6 @@ export function SignupExperience({
     }
     setSubmitted(false);
     setErrors({});
-    // The owner's display name is already known from step 1 — carry it forward rather than
-    // asking the same question twice.
-    if (step === 2 && !profile.fullName) {
-      setProfile((p) => ({ ...p, fullName: acct.name.trim() }));
-    }
     setStep((s) => s + 1);
   };
 
@@ -302,22 +302,19 @@ export function SignupExperience({
    * through — `POST /v1/org/requests` stores them and replays them into the org at approval — so the
    * applicant fills this in once. No `slug`/`emp_id_prefix`/plan: the request has no field for them;
    * approval derives the first two and starts every org on Free (QA audit 2026-10-08, WP-128).
+   *
+   * No personal profile fields (ONB-04): the request takes them as optional, and they are left out
+   * rather than filled with anything — the first-run gate asks the owner after sign-in.
    */
   const requestBody = () => ({
     org_name: org.name.trim(),
-    owner_name: (profile.fullName || acct.name).trim() || undefined,
+    owner_name: acct.name.trim() || undefined,
     industry: org.industry || undefined,
     size: org.size || undefined,
     website: org.website.trim() || undefined,
     country: isoOf(region.country),
     currency: codeOf(region.currency),
     timezone: region.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
-    job_title: profile.jobTitle.trim() || undefined,
-    department: profile.department.trim() || undefined,
-    location: profile.location.trim() || undefined,
-    phone: profile.phone.trim() || undefined,
-    date_of_birth: profile.dateOfBirth || undefined,
-    work_mode: profile.workMode || undefined,
     // The authorisation tick was required and then sent nowhere (QA audit 2026-10-08, WP-128).
     monitoring_consent: consent,
   });
@@ -362,11 +359,19 @@ export function SignupExperience({
 
   const HEADINGS: [string, string][] = [
     ["Request your workspace", "A member of the WorkPulse team reviews each request."],
-    ["About your organization", "This names your workspace."],
-    ["Region & localization", "How WorkPulse formats time and currency for your teams."],
-    ["Your profile", "How your team sees you. Everything here is editable later."],
+    ["About your organization", "This names your workspace and helps us review your request."],
     ["Your plan", "Every approved workspace starts on the Free plan."],
   ];
+
+  /** The region summary's one line — what the folded pickers currently hold. */
+  const regionSummary =
+    [region.country, codeOf(region.currency), region.timezone].filter(Boolean).join(" · ") ||
+    "Not set";
+  /** The browser's zone is offered first when the fixed list doesn't carry it. */
+  const timezoneOptions =
+    region.timezone && !TIMEZONES.includes(region.timezone)
+      ? [region.timezone, ...TIMEZONES]
+      : TIMEZONES;
 
   if (confirming) {
     return (
@@ -521,190 +526,88 @@ export function SignupExperience({
                 autoCapitalize="none"
                 spellCheck={false}
               />
-            </>
-          ) : null}
 
-          {/* ---------------- 3 · Region ---------------- */}
-          {step === 2 ? (
-            <>
+              {/* Region, from the browser (ONB-04). It was a step of its own; it is now one line
+                  to confirm, opening into the three pickers on "Change". All optional — the
+                  request needs none of them. */}
               <div className="m-afield">
-                <span className="m-acap">Headquarters country</span>
-                <MSelect
-                  id="org-country"
-                  value={region.country}
-                  onChange={(v) => {
-                    // Picking a country pre-fills the matching billing currency.
-                    setRegion((s) => ({
-                      ...s,
-                      country: v,
-                      currency: COUNTRY_CURRENCY[v] ?? s.currency,
-                    }));
-                    clear("org-country");
-                    clear("org-currency");
-                  }}
-                  options={COUNTRIES}
-                  ariaLabel="Headquarters country"
-                />
-              </div>
-              <div className="m-arow">
-                <div className="m-afield">
-                  <span className="m-acap">Default timezone</span>
-                  <MSelect
-                    value={region.timezone}
-                    onChange={(v) => setRegion((s) => ({ ...s, timezone: v }))}
-                    options={TIMEZONES}
-                    ariaLabel="Default timezone"
-                  />
-                </div>
-                <div className="m-afield">
-                  <span className="m-acap">Billing currency</span>
-                  <MSelect
-                    id="org-currency"
-                    value={region.currency}
-                    onChange={(v) => {
-                      setRegion((s) => ({ ...s, currency: v }));
-                      clear("org-currency");
-                    }}
-                    options={CURRENCIES}
-                    ariaLabel="Billing currency"
-                  />
-                </div>
-              </div>
-              <p className="m-anote">
-                Timezone defaults to this browser&apos;s if you leave it blank.
-              </p>
-            </>
-          ) : null}
-
-          {/* ---------------- 4 · Your profile ---------------- */}
-          {step === 3 ? (
-            <>
-              <div className="m-arow m-arow--first">
-                <AuthField
-                  id="me-name"
-                  label="Full name"
-                  value={profile.fullName}
-                  onChange={(v) => setProfile((s) => ({ ...s, fullName: v }))}
-                  autoComplete="name"
-                />
-                <AuthField
-                  id="me-title"
-                  label="Job title"
-                  value={profile.jobTitle}
-                  onChange={(v) => {
-                    setProfile((s) => ({ ...s, jobTitle: v }));
-                    clear("me-title");
-                  }}
-                  error={errors["me-title"]}
-                  autoComplete="organization-title"
-                />
-              </div>
-              <div className="m-arow">
-                <AuthField
-                  id="me-dept"
-                  label="Department"
-                  value={profile.department}
-                  onChange={(v) => setProfile((s) => ({ ...s, department: v }))}
-                  hint="Optional"
-                />
-                <AuthField
-                  id="me-location"
-                  label="Work location"
-                  value={profile.location}
-                  onChange={(v) => {
-                    setProfile((s) => ({ ...s, location: v }));
-                    clear("me-location");
-                  }}
-                  error={errors["me-location"]}
-                />
-              </div>
-              <AuthField
-                id="me-phone"
-                label="Contact number"
-                value={profile.phone}
-                onChange={(v) => {
-                  setProfile((s) => ({ ...s, phone: v }));
-                  clear("me-phone");
-                }}
-                error={errors["me-phone"]}
-                // The country picker replaces the plain input. It borrows this page's own control
-                // styling (`m-authinput`) rather than the app tokens it uses elsewhere — the auth
-                // pages are a separate system, and a 2.25rem token-styled box beside these 2.75rem
-                // fields reads as a rendering fault rather than a different control.
-                control={
-                  <PhoneInput
-                    id="me-phone"
-                    value={profile.phone}
-                    onChange={(v) => {
-                      setProfile((s) => ({ ...s, phone: v }));
-                      clear("me-phone");
-                    }}
-                    className="w-full"
-                    triggerClassName="m-authinput h-11 w-auto rounded-r-none border-r-0"
-                    inputClassName="m-authinput h-11 rounded-l-none"
-                  />
-                }
-              />
-              <div className="m-arow">
-                <AuthField
-                  id="me-dob"
-                  label="Date of birth"
-                  value={profile.dateOfBirth}
-                  onChange={(v) => {
-                    setProfile((s) => ({ ...s, dateOfBirth: v }));
-                    clear("me-dob");
-                  }}
-                  error={errors["me-dob"]}
-                  control={
-                    <DatePicker
-                      // The id the label and the error summary point at — the picker had none (WP-389).
-                      id="me-dob"
-                      value={profile.dateOfBirth}
-                      onChange={(v) => {
-                        setProfile((s) => ({ ...s, dateOfBirth: v }));
-                        clear("me-dob");
+                <span className="m-acap" id="org-region-label">
+                  Region
+                </span>
+                {regionOpen ? (
+                  <div id="org-region-fields">
+                    <div className="m-afield">
+                      <span className="m-acap">Headquarters country</span>
+                      <MSelect
+                        id="org-country"
+                        value={region.country}
+                        onChange={(v) =>
+                          // Picking a country pre-fills the matching billing currency.
+                          setRegion((s) => ({
+                            ...s,
+                            country: v,
+                            currency: COUNTRY_CURRENCY[v] ?? s.currency,
+                          }))
+                        }
+                        options={COUNTRY_NAMES}
+                        ariaLabel="Headquarters country"
+                      />
+                    </div>
+                    <div className="m-arow">
+                      <div className="m-afield">
+                        <span className="m-acap">Default timezone</span>
+                        <MSelect
+                          id="org-timezone"
+                          value={region.timezone}
+                          onChange={(v) => setRegion((s) => ({ ...s, timezone: v }))}
+                          options={timezoneOptions}
+                          ariaLabel="Default timezone"
+                        />
+                      </div>
+                      <div className="m-afield">
+                        <span className="m-acap">Billing currency</span>
+                        <MSelect
+                          id="org-currency"
+                          value={region.currency}
+                          onChange={(v) => setRegion((s) => ({ ...s, currency: v }))}
+                          options={CURRENCIES}
+                          ariaLabel="Billing currency"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 text-sm" style={{ color: "var(--m-text)" }}>
+                      {regionSummary}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegionOpen(true);
+                        // The button goes away with the summary; focus follows to the first picker.
+                        requestAnimationFrame(() => document.getElementById("org-country")?.focus());
                       }}
-                      // Nobody signing up was born after today, and 1900 is the floor the server
-                      // enforces — offering years it will reject is a round trip to learn nothing.
-                      max={todayIso()}
-                      min="1900-01-01"
-                      className="m-authinput h-11 w-full"
-                    />
-                  }
-                />
-                <AuthField
-                  id="me-workmode"
-                  label="Work mode"
-                  value={profile.workMode}
-                  onChange={(v) => {
-                    setProfile((s) => ({ ...s, workMode: v }));
-                    clear("me-workmode");
-                  }}
-                  error={errors["me-workmode"]}
-                  control={
-                    <select
-                      id="me-workmode"
-                      value={profile.workMode}
-                      onChange={(e) => {
-                        setProfile((s) => ({ ...s, workMode: e.target.value }));
-                        clear("me-workmode");
-                      }}
-                      className="m-authinput"
+                      aria-expanded={false}
+                      aria-label="Change region"
+                      className="shrink-0 text-sm font-semibold underline underline-offset-2"
+                      style={{ color: "var(--m-accent-ink)" }}
                     >
-                      <option value="">Select…</option>
-                      {/* The exact strings `shared::profile::WORK_MODES` accepts. */}
-                      <option value="on-site">On-site</option>
-                      <option value="hybrid">Hybrid</option>
-                      <option value="remote">Remote</option>
-                    </select>
-                  }
-                />
+                      Change
+                    </button>
+                  </div>
+                )}
+                <p className="m-anote">
+                  {!regionOpen && region.country
+                    ? "Taken from this browser. It sets how times and currency are shown across your workspace."
+                    : "Optional. It sets how times and currency are shown across your workspace."}
+                </p>
               </div>
             </>
           ) : null}
 
-          {/* ---------------- 5 · Plan ---------------- */}
-          {step === 4 ? (
+          {/* ---------------- 3 · Plan ---------------- */}
+          {step === 2 ? (
             <>
               {/* Every sign-up is a request, and approval starts every org on Free — so this states it
                   instead of offering a choice it would drop (WP-128, ONB-01). */}

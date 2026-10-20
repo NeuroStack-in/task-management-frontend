@@ -20,12 +20,15 @@ import {
 } from "./auth-frame";
 import { AuthShell } from "./auth-shell";
 import { landAfterSignIn, useAuthStore } from "@/stores/auth.store";
+import { legalHref } from "@/modules/legal/documents";
 import {
   ApiError,
   acceptInvite,
   lookupInvite,
   type InvitePreview,
 } from "@/lib/api";
+
+const TERMS_MESSAGE = "Agree to the Terms of Service and Privacy Policy to continue";
 
 const schema = z
   .object({
@@ -36,10 +39,9 @@ const schema = z
       if (m) ctx.addIssue({ code: z.ZodIssueCode.custom, message: m });
     }),
     confirm: z.string(),
-    // **Required, where they used to be optional.** The profile card shows contact number, date
-    // of birth, location and work mode; a joiner told these were optional supplies none of them,
-    // and nobody goes back to Settings to finish a record they were never asked to complete. This
-    // is the one moment the answer costs a few seconds.
+    // Contact number, location and work mode are required: the profile card shows them, and a
+    // joiner told they were optional supplied none of them. Each now says why it is asked
+    // (UX audit 2026-10-16, ONB-08).
     //
     // The phone rule counts DIGITS: `PhoneInput` emits `+<dial><national>`, so picking a country
     // and typing nothing leaves a bare `+91` — non-empty, and not a phone number.
@@ -48,10 +50,14 @@ const schema = z
       .trim()
       .refine((v) => v.replace(/[^\d]/g, "").length >= 6, "Enter your contact number"),
     location: z.string().trim().min(1, "Enter your location"),
-    dateOfBirth: z.string().trim().min(1, "Enter your date of birth"),
+    // **Optional** (ONB-08), as it already is in the first-run profile gate (SHELL-02): it is
+    // sensitive, nothing in the product needs it, and the server never required it.
+    dateOfBirth: z.string().trim(),
     workMode: z.enum(["on-site", "hybrid", "remote"], {
       message: "Choose how you work",
     }),
+    // Sign-up has asked for this since WP-115; an invitee creates an account too (ONB-08).
+    terms: z.boolean().refine((v) => v, TERMS_MESSAGE),
   })
   .refine((d) => d.password === d.confirm, {
     message: "Passwords don't match.",
@@ -60,26 +66,81 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>;
 
-/** Read-only banner explaining a non-pending link, with a route back to sign-in where it helps. */
+/**
+ * A link that can't be used, and every way on from it (UX audit 2026-10-16, ONB-05).
+ *
+ * Four of these states used to be text and nothing else — no button, no way home, no one to ask —
+ * and only "already used" offered sign-in. Every state now offers **Go to sign in** (someone who
+ * already has an account is the commonest visitor to a dead invite) and says who can send a new
+ * one. The invite preview carries no inviter name, so that is "the person who invited you" rather
+ * than a name; the org is named when the link got far enough to know it.
+ */
 function LinkNotice({
   title,
   description,
-  showSignIn,
+  help,
+  helpTitle = "Need a new invite?",
+  retry,
+  primary = "sign-in",
 }: {
   title: string;
   description: string;
-  showSignIn?: boolean;
+  /** Who can fix it and how. Omitted where the visitor needs no new invite. */
+  help?: string;
+  helpTitle?: string;
+  /** A transient failure: offer the same link again, before anything else. */
+  retry?: () => void;
+  primary?: "sign-in" | "retry";
 }) {
   return (
     <>
       <AuthHeading title={title} subtitle={description} />
-      {showSignIn ? (
-        <Link href="/login" className="m-btn m-btn-primary mt-4 w-full">
+      <div className="mt-4 flex flex-col gap-2">
+        {retry ? (
+          <button
+            type="button"
+            onClick={retry}
+            className={`m-btn w-full ${primary === "retry" ? "m-btn-primary" : "m-btn-ghost"}`}
+          >
+            Try again
+          </button>
+        ) : null}
+        <Link
+          href="/login"
+          className={`m-btn w-full ${primary === "sign-in" ? "m-btn-primary" : "m-btn-ghost"}`}
+        >
           Go to sign in
         </Link>
+      </div>
+      {help ? (
+        <div
+          className="mt-5 rounded-lg border p-3.5 text-sm"
+          style={{ borderColor: "var(--m-border)", background: "var(--m-surface-2)" }}
+        >
+          <p className="font-semibold" style={{ color: "var(--m-text)" }}>
+            {helpTitle}
+          </p>
+          <p className="mt-1" style={{ color: "var(--m-muted)" }}>
+            {help}
+          </p>
+        </div>
       ) : null}
+      <p className="mt-4 text-center text-sm">
+        <Link
+          href="/"
+          className="font-medium underline underline-offset-2"
+          style={{ color: "var(--m-accent-ink)" }}
+        >
+          Go to the WorkPulse home page
+        </Link>
+      </p>
     </>
   );
+}
+
+/** "Ask the person who invited you (to Acme) to …" — the org only when the page knows it. */
+function askInviter(org: string | undefined, what: string): string {
+  return `Ask the person who invited you${org ? ` to ${org}` : ""} to ${what}. A new invite email comes with a fresh link and code.`;
 }
 
 export function InviteAcceptForm() {
@@ -94,7 +155,11 @@ export function InviteAcceptForm() {
 
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<InvitePreview | null>(null);
-  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<{ message: string; transient: boolean } | null>(
+    null,
+  );
+  /** Bumped by "Try again" to re-run the lookup after a transient failure. */
+  const [attempt, setAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const summaryRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +178,7 @@ export function InviteAcceptForm() {
       location: "",
       dateOfBirth: "",
       workMode: undefined,
+      terms: false,
     },
   });
 
@@ -122,6 +188,8 @@ export function InviteAcceptForm() {
       return;
     }
     let live = true;
+    setLoading(true);
+    setLinkError(null);
     (async () => {
       try {
         const p = await lookupInvite({ tenantId, inviteId, token });
@@ -131,8 +199,8 @@ export function InviteAcceptForm() {
         if (live)
           setLinkError(
             err instanceof ApiError && err.status !== 404
-              ? "We couldn't load this invite. Try again shortly."
-              : "This invite link is invalid or has been revoked.",
+              ? { message: "We couldn't load this invite. Try again shortly.", transient: true }
+              : { message: "This invite link is invalid or has been revoked.", transient: false },
           );
       } finally {
         if (live) setLoading(false);
@@ -141,7 +209,7 @@ export function InviteAcceptForm() {
     return () => {
       live = false;
     };
-  }, [hasLink, tenantId, inviteId, token]);
+  }, [hasLink, tenantId, inviteId, token, attempt]);
 
   const onSubmit = async (values: FormValues) => {
     if (!preview) return;
@@ -160,6 +228,8 @@ export function InviteAcceptForm() {
         location: values.location?.trim() || undefined,
         date_of_birth: values.dateOfBirth || undefined,
         work_mode: values.workMode,
+        // No terms field: `POST /v1/invites/accept` has none, so the agreement is required here and
+        // not yet recorded server-side (ONB-08) — never sent as a field the server would drop.
       });
 
       // Account exists now. Try to sign them straight in; if that hiccups, send them to /login —
@@ -190,7 +260,8 @@ export function InviteAcceptForm() {
       <AuthShell>
         <LinkNotice
           title="Incomplete invite link"
-          description="This link is missing information. Open the most recent invite email, or ask an admin to resend it."
+          description="This link is missing part of its address — it can get cut off when it's copied. Open it straight from the most recent invite email."
+          help={askInviter(undefined, "send it again")}
         />
       </AuthShell>
     );
@@ -213,7 +284,13 @@ export function InviteAcceptForm() {
   if (linkError) {
     return (
       <AuthShell>
-        <LinkNotice title="Invite unavailable" description={linkError} />
+        <LinkNotice
+          title="Invite unavailable"
+          description={linkError.message}
+          {...(linkError.transient
+            ? { retry: () => setAttempt((n) => n + 1), primary: "retry" as const }
+            : { help: askInviter(undefined, "send you a new invite") })}
+        />
       </AuthShell>
     );
   }
@@ -221,7 +298,7 @@ export function InviteAcceptForm() {
   if (preview && preview.status !== "pending") {
     return (
       <AuthShell>
-        <LinkNotice {...noticeForStatus(preview.status)} />
+        <LinkNotice {...noticeForStatus(preview.status, preview.org_name)} />
       </AuthShell>
     );
   }
@@ -234,14 +311,17 @@ export function InviteAcceptForm() {
       ["iv-otp", errors.otp?.message],
       ["iv-password", errors.password?.message],
       ["iv-confirm", errors.confirm?.message],
-      // The four profile fields are required too. Left out of this list, a missing one failed
-      // validation with nothing on screen: "Create account" just did nothing (WP-030).
+      // The required profile fields too. Left out of this list, a missing one failed validation
+      // with nothing on screen: "Create account" just did nothing (WP-030).
       ["iv-phone", errors.phone?.message],
       ["iv-location", errors.location?.message],
       ["iv-dob", errors.dateOfBirth?.message],
       ["iv-workmode", errors.workMode?.message],
+      ["iv-terms", errors.terms?.message],
     ] as [string, string | undefined][]
   ).filter((e): e is [string, string] => Boolean(e[1]));
+
+  const org = preview?.org_name ?? "your organization";
 
   return (
     <AuthShell>
@@ -327,98 +407,159 @@ export function InviteAcceptForm() {
           )}
         />
 
-        <div className="m-arow">
-          <Controller
-            control={control}
-            name="phone"
-            render={({ field }) => (
-              <AuthField
-                id="iv-phone"
-                label="Contact number"
-                error={errors.phone?.message}
-                value={field.value ?? ""}
-                onChange={field.onChange}
-                control={
-                  <PhoneInput
-                    id="iv-phone"
-                    value={field.value ?? ""}
-                    onChange={field.onChange}
-                    className="w-full"
-                    triggerClassName="m-authinput h-11 w-auto rounded-r-none border-r-0"
-                    inputClassName="m-authinput h-11 rounded-l-none"
-                  />
-                }
-              />
-            )}
-          />
-          <Controller
-            control={control}
-            name="location"
-            render={({ field }) => (
-              <AuthField
-                id="iv-location"
-                label="Location"
-                error={errors.location?.message}
-                value={field.value ?? ""}
-                onChange={field.onChange}
-                onBlur={field.onBlur}
-              />
-            )}
-          />
-        </div>
+        {/* ── Your employee record ──
+            Each personal field says why it is asked (ONB-08). One per row, so each purpose line
+            sits with its own field instead of pushing a paired field out of line. The wording
+            matches the first-run profile gate, which asks the same things of older accounts. */}
+        <p className="mt-5 text-sm font-semibold" style={{ color: "var(--m-text)" }}>
+          Your employee record
+        </p>
+        <p className="m-anote mt-1 mb-3">
+          These go on your employee record at {org}, which its admins and HR can see. WorkPulse
+          uses them for nothing else.
+        </p>
 
-        <div className="m-arow">
-          <Controller
-            control={control}
-            name="dateOfBirth"
-            render={({ field }) => (
-              <AuthField
-                id="iv-dob"
-                label="Date of birth"
-                error={errors.dateOfBirth?.message}
-                value={field.value ?? ""}
-                onChange={field.onChange}
-                control={
-                  <DatePicker
-                    id="iv-dob"
-                    value={field.value ?? ""}
-                    onChange={field.onChange}
-                    max={todayIso()}
-                    min="1900-01-01"
-                    className="m-authinput h-11 w-full"
-                  />
-                }
+        <Controller
+          control={control}
+          name="phone"
+          render={({ field }) => (
+            <AuthField
+              id="iv-phone"
+              label="Contact number"
+              hint="So your organization can reach you about work."
+              error={errors.phone?.message}
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              control={
+                <PhoneInput
+                  id="iv-phone"
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  aria-describedby="iv-phone-hint"
+                  className="w-full"
+                  triggerClassName="m-authinput h-11 w-auto rounded-r-none border-r-0"
+                  inputClassName="m-authinput h-11 rounded-l-none"
+                />
+              }
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="location"
+          render={({ field }) => (
+            <AuthField
+              id="iv-location"
+              label="Location"
+              hint="The city you work from, shown on your profile."
+              error={errors.location?.message}
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="workMode"
+          render={({ field }) => (
+            <AuthField
+              id="iv-workmode"
+              label="Work mode"
+              hint="On-site, hybrid or remote — for your team's planning."
+              error={errors.workMode?.message}
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              control={
+                <select
+                  id="iv-workmode"
+                  value={field.value ?? ""}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  aria-describedby="iv-workmode-hint"
+                  className="m-authinput"
+                >
+                  <option value="">Select…</option>
+                  {/* Exactly `shared::profile::WORK_MODES`. */}
+                  <option value="on-site">On-site</option>
+                  <option value="hybrid">Hybrid</option>
+                  <option value="remote">Remote</option>
+                </select>
+              }
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="dateOfBirth"
+          render={({ field }) => (
+            <AuthField
+              id="iv-dob"
+              label="Date of birth (optional)"
+              hint="For HR records only. Leave it blank if you prefer."
+              error={errors.dateOfBirth?.message}
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              control={
+                <DatePicker
+                  id="iv-dob"
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  aria-describedby="iv-dob-hint"
+                  max={todayIso()}
+                  min="1900-01-01"
+                  className="m-authinput h-11 w-full"
+                />
+              }
+            />
+          )}
+        />
+
+        <MonitoringNotice org={org} />
+
+        {/* Mirrors sign-up's agreement (WP-115): the links sit inside the label, so clicking one
+            opens the document without toggling the box, and they open in a new tab so nothing typed
+            here is lost. Required to continue; not yet recorded by the server (no field on
+            `POST /v1/invites/accept`). */}
+        <Controller
+          control={control}
+          name="terms"
+          render={({ field }) => (
+            <label className="m-check mt-3">
+              <input
+                type="checkbox"
+                id="iv-terms"
+                name="iv-terms"
+                checked={field.value}
+                onChange={(e) => field.onChange(e.target.checked)}
+                onBlur={field.onBlur}
+                {...(errors.terms ? { "aria-invalid": true as const } : {})}
               />
-            )}
-          />
-          <Controller
-            control={control}
-            name="workMode"
-            render={({ field }) => (
-              <AuthField
-                id="iv-workmode"
-                label="Work mode"
-                error={errors.workMode?.message}
-                value={field.value ?? ""}
-                onChange={field.onChange}
-                control={
-                  <select
-                    id="iv-workmode"
-                    value={field.value ?? ""}
-                    onChange={(e) => field.onChange(e.target.value)}
-                    className="m-authinput"
-                  >
-                    <option value="">Select…</option>
-                    {/* Exactly `shared::profile::WORK_MODES`. */}
-                    <option value="on-site">On-site</option>
-                    <option value="hybrid">Hybrid</option>
-                    <option value="remote">Remote</option>
-                  </select>
-                }
-              />
-            )}
-          />
-        </div>
+              <span className="m-check__text">
+                I agree to the{" "}
+                <Link
+                  href={legalHref("terms")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold underline underline-offset-2"
+                  style={{ color: "var(--m-accent-ink)" }}
+                >
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link
+                  href={legalHref("privacy")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold underline underline-offset-2"
+                  style={{ color: "var(--m-accent-ink)" }}
+                >
+                  Privacy Policy
+                </Link>
+                .<span className="m-check__note">Both open in a new tab.</span>
+              </span>
+            </label>
+          )}
+        />
 
         <button
           type="submit"
@@ -438,34 +579,91 @@ export function InviteAcceptForm() {
   );
 }
 
-function noticeForStatus(status: string): {
+/**
+ * What the organization can record, told before the account exists (UX audit ONB-08, EMP-01).
+ *
+ * The org's own policy can't be shown here: `GET /v1/agent/config`, which the Download page's
+ * disclosure reads, needs a signed-in member, and the invite preview carries no policy. So this
+ * names what the agents *can* record — worded like `modules/legal/facts.tsx`, which cites the code
+ * for each claim — and points to the Download page, which lists exactly what this org has on.
+ */
+function MonitoringNotice({ org }: { org: string }) {
+  return (
+    <section
+      aria-labelledby="iv-monitoring-title"
+      className="mt-5 rounded-lg border p-3.5 text-sm"
+      style={{ borderColor: "var(--m-border)", background: "var(--m-surface-2)" }}
+    >
+      <h2 id="iv-monitoring-title" className="font-semibold" style={{ color: "var(--m-text)" }}>
+        What {org} can record
+      </h2>
+      <div className="mt-1 space-y-1.5" style={{ color: "var(--m-muted)" }}>
+        <p>
+          {org} uses WorkPulse to track working time. While tracking is running, and depending on
+          its settings, WorkPulse can also record:
+        </p>
+        <ul className="list-disc space-y-0.5 pl-5">
+          <li>screenshots of your screen, at an interval {org} sets;</li>
+          <li>
+            the apps you use and their window titles, active and idle time, and counts of keyboard
+            and mouse activity — never what you type;
+          </li>
+          <li>your device&apos;s approximate location, if the device allows it.</li>
+        </ul>
+        <p>
+          Administrators with permission can see this. Once you&apos;re signed in, the Download page
+          lists exactly what {org} has turned on. More in the{" "}
+          <Link
+            href={legalHref("privacy")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold underline underline-offset-2"
+            style={{ color: "var(--m-accent-ink)" }}
+          >
+            Privacy Policy
+          </Link>
+          .
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function noticeForStatus(
+  status: string,
+  org: string | undefined,
+): {
   title: string;
   description: string;
-  showSignIn?: boolean;
+  help?: string;
+  helpTitle?: string;
 } {
   switch (status) {
     case "expired":
       return {
         title: "This invite has expired",
-        description:
-          "Invites are valid for 7 days. Ask an admin to send you a new one.",
+        description: "Invites are valid for 7 days, and this one has run out.",
+        helpTitle: "Request a new invite",
+        help: askInviter(org, "send you a new one"),
       };
     case "accepted":
       return {
         title: "This invite was already used",
-        description: "Your account already exists — sign in to continue.",
-        showSignIn: true,
+        description:
+          "Your account already exists — sign in to continue. If you've forgotten your password, the sign-in page can reset it.",
       };
     case "locked":
       return {
         title: "This invite is locked",
-        description:
-          "Too many incorrect codes were entered. Ask an admin to resend the invite.",
+        description: "Too many incorrect codes were entered, so this invite can't be used now.",
+        helpTitle: "Request a new invite",
+        help: askInviter(org, "resend it"),
       };
     default:
       return {
         title: "Invite unavailable",
-        description: "This invite can no longer be used. Ask an admin to resend it.",
+        description: "This invite can no longer be used.",
+        help: askInviter(org, "send you a new invite"),
       };
   }
 }
@@ -485,12 +683,13 @@ function describeAcceptError(err: unknown): {
         return {
           title: "Invite locked",
           description:
-            "Too many incorrect codes. Ask an admin to resend your invite.",
+            "Too many incorrect codes. Ask the person who invited you to resend your invite.",
         };
       case "invite_expired":
         return {
           title: "Invite expired",
-          description: "This invite is past its 7-day window. Ask for a new one.",
+          description:
+            "This invite is past its 7-day window. Ask the person who invited you for a new one.",
         };
       case "invite_not_pending":
         return {

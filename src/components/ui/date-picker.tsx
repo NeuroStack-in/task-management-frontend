@@ -38,6 +38,7 @@ export function DatePicker({
   placeholder = "mm/dd/yyyy",
   className,
   id,
+  "aria-describedby": ariaDescribedBy,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -47,6 +48,8 @@ export function DatePicker({
   className?: string;
   /** Forwarded to the trigger, so a label or an error-summary link can point at it. */
   id?: string;
+  /** Forwarded to the trigger — a hint that says why the date is asked for (UX audit ONB-08). */
+  "aria-describedby"?: string;
 }) {
   const { open, setOpen, toggle, triggerRef, panelRef, pos } =
     useAnchoredPopup(CAL_W, CAL_H);
@@ -55,6 +58,7 @@ export function DatePicker({
     <div ref={triggerRef} className="relative">
       <button
         id={id}
+        aria-describedby={ariaDescribedBy}
         type="button"
         onClick={toggle}
         aria-haspopup="dialog"

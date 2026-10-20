@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useId, useMemo, useState } from "react"
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { updateOrgCache } from "@/hooks/use-org"
-import { AlertCircle, Building2, Lock } from "lucide-react"
+import { AlertCircle, Building2, Loader2, Lock } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
-import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
+import { cn } from "@/lib/utils"
 import { DepartmentsManager } from "./departments-manager"
 import { OrgProductivityWeightsCard } from "./org/org-productivity-weights-card"
 import { TeamsManager } from "./org/teams-manager"
@@ -153,7 +153,7 @@ const sameProfile = (a: OrgProfileForm, b: OrgProfileForm) =>
  *
  * Six inputs under one heading is a form; three named groups of two is a profile. The label is a
  * small-caps rule rather than a second card so the whole thing still reads as one object with one
- * save bar — splitting it into three cards would imply three independent saves, which is exactly
+ * Save — splitting it into three cards would imply three independent saves, which is exactly
  * what the rest of this page does mean and this section does not.
  */
 function FieldGroup({
@@ -176,9 +176,96 @@ function FieldGroup({
   )
 }
 
+/**
+ * The page's sections (UX audit 2026-10-16, SET-06). It was one 4,400 px column of eleven cards with
+ * no way to jump between them. Each card still saves on its own; the tabs only decide which are on
+ * screen.
+ */
+const ORG_SECTIONS = [
+  { key: "profile", label: "Profile", intro: "Who the organization is, and how it tracks work." },
+  { key: "structure", label: "Structure", intro: "Departments, and the teams that span them." },
+  { key: "schedule", label: "Schedule", intro: "The working week, working hours and holidays." },
+  { key: "places", label: "Places", intro: "Office locations and the office perimeter." },
+  {
+    key: "policies",
+    label: "Policies",
+    intro: "How work is scored, and the policies your people can read.",
+  },
+] as const
+
+type OrgSection = (typeof ORG_SECTIONS)[number]["key"]
+
+const sectionFromHash = (hash: string): OrgSection | null => {
+  const k = hash.replace(/^#/, "")
+  return ORG_SECTIONS.some((s) => s.key === k) ? (k as OrgSection) : null
+}
+
 export function OrganizationTab() {
   const { can } = usePermissions()
   const canManage = can("settings:manage")
+
+  /**
+   * The section on screen, mirrored to the URL hash so a section can be linked to and survives a
+   * reload. A hash keeps the same pathname, so switching never trips the unsaved-changes prompt.
+   */
+  const [section, setSection] = useState<OrgSection>("profile")
+  /**
+   * Sections opened so far. A section mounts on its first visit and then **stays mounted, hidden**
+   * while another is shown: unmounting would throw away a half-edited card (working hours, a
+   * perimeter) on a tab switch, with no prompt — the guard only asks when leaving the page. Mounting
+   * on first visit also means the perimeter map is first drawn in a visible box.
+   */
+  const [visited, setVisited] = useState<ReadonlySet<OrgSection>>(() => new Set(["profile"]))
+  const tabRefs = useRef<Partial<Record<OrgSection, HTMLButtonElement | null>>>({})
+  const tabIds = useId()
+
+  const show = useCallback((k: OrgSection) => {
+    setSection(k)
+    setVisited((v) => (v.has(k) ? v : new Set(v).add(k)))
+  }, [])
+
+  useEffect(() => {
+    const follow = () => {
+      const k = sectionFromHash(window.location.hash)
+      if (k) show(k)
+    }
+    follow()
+    window.addEventListener("hashchange", follow)
+    return () => window.removeEventListener("hashchange", follow)
+  }, [show])
+
+  const select = (k: OrgSection, focus = false) => {
+    show(k)
+    window.history.replaceState(window.history.state, "", `#${k}`)
+    if (focus) tabRefs.current[k]?.focus()
+  }
+
+  /** Arrow keys, Home and End move between tabs (the ARIA tabs pattern). */
+  const onTabKey = (e: React.KeyboardEvent) => {
+    const i = ORG_SECTIONS.findIndex((s) => s.key === section)
+    const last = ORG_SECTIONS.length - 1
+    const to =
+      e.key === "ArrowRight"
+        ? i === last ? 0 : i + 1
+        : e.key === "ArrowLeft"
+          ? i === 0 ? last : i - 1
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? last
+              : null
+    if (to === null) return
+    e.preventDefault()
+    select(ORG_SECTIONS[to].key, true)
+  }
+
+  const panelProps = (k: OrgSection) => ({
+    mounted: visited.has(k),
+    active: section === k,
+    labelledBy: `${tabIds}-tab-${k}`,
+    panelId: `${tabIds}-panel-${k}`,
+    intro: ORG_SECTIONS.find((s) => s.key === k)?.intro ?? "",
+  })
 
   // The org meta + optimistic-lock `version` live in ONE shared store, read by both this profile
   // card and the tracking-mode card below. A single fetch, a single version: after either card
@@ -374,10 +461,55 @@ export function OrganizationTab() {
         </div>
       )}
 
+      {/* ── Section tabs (UX audit SET-06) ── */}
+      <div
+        role="tablist"
+        aria-label="Organization sections"
+        onKeyDown={onTabKey}
+        // Tight padding below `sm` so all five fit a 390px phone without a hidden scroll.
+        className="flex overflow-x-auto overflow-y-hidden border-b sm:gap-1"
+      >
+        {ORG_SECTIONS.map((s) => {
+          const active = section === s.key
+          return (
+            <button
+              key={s.key}
+              ref={(el) => {
+                tabRefs.current[s.key] = el
+              }}
+              type="button"
+              role="tab"
+              id={`${tabIds}-tab-${s.key}`}
+              aria-selected={active}
+              // Only once the panel exists — an unvisited section isn't mounted yet.
+              aria-controls={visited.has(s.key) ? `${tabIds}-panel-${s.key}` : undefined}
+              tabIndex={active ? 0 : -1}
+              onClick={() => select(s.key)}
+              className={cn(
+                "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-lg px-2 py-2.5 text-sm font-medium transition-colors sm:px-4",
+                active
+                  ? "border-primary text-foreground -mb-px border-b-2"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {s.label}
+              {/* The one draft this page itself holds; each card shows its own Save. */}
+              {s.key === "profile" && dirty ? (
+                <>
+                  <span className="bg-warning size-1.5 rounded-full" aria-hidden />
+                  <span className="sr-only">(unsaved changes)</span>
+                </>
+              ) : null}
+            </button>
+          )
+        })}
+      </div>
+
       {loading ? (
         <Loader label="Loading organization settings…" />
       ) : (
       <>
+      <OrgPanel id="profile" {...panelProps("profile")}>
       {/* Only once a read has filled it. After a failed first load this used to be an empty,
           editable form under the error — and saving it sent whatever was typed with no lock
           (QA audit 2026-10-08, WP-357). The banner above carries the Retry. */}
@@ -532,40 +664,94 @@ export function OrganizationTab() {
               </p>
             </div>
           </FieldGroup>
+
+          {/* The profile's own Save, inside its card like every other card on this page
+              (UX audit SET-06). A floating "Save changes" used to hover over the whole page, over
+              cards that each have their own Save, and never said which one it saved. */}
+          {canManage && dirty ? (
+            <div className="border-border flex flex-wrap items-center gap-2 border-t pt-4">
+              <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
+                {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+                {saving ? "Saving…" : "Save profile"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleReset} disabled={saving}>
+                Cancel
+              </Button>
+              <span className="text-muted-foreground text-xs">
+                Saves the fields in this card only.
+              </span>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
       ) : null}
 
-      {/* Each of these is its own live-backend CRUD, independent of the org-profile save bar. */}
       {/* `BrandingManager` was here. Removed from the page 2026-08-22 and deleted 2026-10-09:
           **nothing in the app reads any of it.** `logo_url` is never rendered and the stored brand
           colours are read by nothing either (the `accentColor` uses elsewhere are CSS on checkboxes,
           bound to `var(--primary)`). It was a form that saved three values into a void. The server
           routes (`GET`/`PATCH /v1/org/branding`) still exist if branding is ever wired up for real. */}
       <TrackingModeCard />
-      {/* Productivity first: it is the setting that changes what every other number on the product
-          means, so it should not sit buried between two roster editors. Then the structures those
-          numbers are grouped by — departments, then the teams that span them. */}
-      <OrgProductivityWeightsCard />
-      <DepartmentsManager />
-      <TeamsManager />
-      <LocationsManager />
-      <OfficePerimeterCard />
-      <WorkingDaysManager />
-      <WorkingHoursManager />
-      <HolidaysManager />
-      <PoliciesManager />
+      </OrgPanel>
 
-      {canManage && (
-        <SettingsSaveBar
-          dirty={dirty}
-          saving={saving}
-          onSave={handleSave}
-          onReset={handleReset}
-        />
-      )}
+      {/* Each of these is its own live-backend CRUD with its own Save. */}
+      <OrgPanel id="structure" {...panelProps("structure")}>
+        <DepartmentsManager />
+        <TeamsManager />
+      </OrgPanel>
+      <OrgPanel id="schedule" {...panelProps("schedule")}>
+        <WorkingDaysManager />
+        <WorkingHoursManager />
+        <HolidaysManager />
+      </OrgPanel>
+      <OrgPanel id="places" {...panelProps("places")}>
+        <LocationsManager />
+        <OfficePerimeterCard />
+      </OrgPanel>
+      {/* Productivity weights lead here: they change what every score on the product means. */}
+      <OrgPanel id="policies" {...panelProps("policies")}>
+        <OrgProductivityWeightsCard />
+        <PoliciesManager />
+      </OrgPanel>
       </>
       )}
+    </div>
+  )
+}
+
+/**
+ * One section's cards. Rendered once visited and then kept, hidden while another is shown — see
+ * `visited` in `OrganizationTab`.
+ */
+function OrgPanel({
+  id,
+  mounted,
+  active,
+  labelledBy,
+  panelId,
+  intro,
+  children,
+}: {
+  id: OrgSection
+  mounted: boolean
+  active: boolean
+  labelledBy: string
+  panelId: string
+  intro: string
+  children: React.ReactNode
+}) {
+  if (!mounted) return null
+  return (
+    <div
+      role="tabpanel"
+      id={panelId}
+      aria-labelledby={labelledBy}
+      hidden={!active}
+      data-section={id}
+      className="space-y-6"
+    >
+      <p className="text-muted-foreground -mt-2 text-sm">{intro}</p>
+      {children}
     </div>
   )
 }
