@@ -1,15 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/shared/page-header";
-import { SettingsSaveBar } from "@/components/shared/settings-save-bar";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { getPrefs, updatePrefs } from "@/modules/notifications/services/notifications.service";
-import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 
 type Channel = "inApp" | "email";
 
@@ -118,15 +116,22 @@ function toServer(loaded: PrefsDocument, prefs: NotificationPrefs): PrefsDocumen
   return { ...loaded, channels };
 }
 
+/**
+ * Settings → Notification preferences — **a personal preference, so each switch saves the moment
+ * it is flipped**, with a toast saying so (UX audit 2026-10-16, XC-11 / SET-14). It used to hold a
+ * draft behind a floating save bar, the same treatment as an organisation-wide policy, so it was one
+ * more page where nobody could tell whether a change was already live.
+ */
 export function NotificationPreferences() {
-  // Working draft vs. last-saved baseline — the diff drives the save bar.
-  const [saved, setSaved] = useState<NotificationPrefs>(INITIAL_PREFS);
-  const [draft, setDraft] = useState<NotificationPrefs>(INITIAL_PREFS);
-  /** The stored document as loaded — saved back with only our switches changed (see `toServer`). */
-  const [storedDoc, setStoredDoc] = useState<PrefsDocument>({});
-  const [saving, setSaving] = useState(false);
+  const [prefs, setPrefs] = useState<NotificationPrefs>(INITIAL_PREFS);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** The latest switches, for a save that runs after later flips (saves are queued, see `flip`). */
+  const prefsRef = useRef<NotificationPrefs>(INITIAL_PREFS);
+  /** The stored document as last saved — written back with only our switches changed (`toServer`). */
+  const storedRef = useRef<PrefsDocument>({});
+  /** One save at a time, in order, so a quick on-off-on never lands out of sequence. */
+  const queue = useRef<Promise<void>>(Promise.resolve());
 
   const load = useCallback(() => {
     let live = true;
@@ -135,10 +140,10 @@ export function NotificationPreferences() {
     getPrefs()
       .then((doc) => {
         if (!live) return;
-        const prefs = fromServer(doc.prefs);
-        setStoredDoc(isObject(doc.prefs) ? doc.prefs : {});
-        setSaved(prefs);
-        setDraft(prefs);
+        const next = fromServer(doc.prefs);
+        storedRef.current = isObject(doc.prefs) ? doc.prefs : {};
+        prefsRef.current = next;
+        setPrefs(next);
       })
       .catch(() => {
         if (live) setLoadError("Couldn't load your notification preferences.");
@@ -153,42 +158,36 @@ export function NotificationPreferences() {
 
   useEffect(() => load(), [load]);
 
-  const dirty = useMemo(
-    () => JSON.stringify(draft) !== JSON.stringify(saved),
-    [draft, saved],
-  );
-  // Leaving via the settings rail now asks before discarding this draft.
-  useUnsavedGuard(dirty);
-
-  function toggleChannel(key: string, channel: Channel) {
-    setDraft((p) => ({
-      ...p,
-      channels: {
-        ...p.channels,
-        [key]: { ...p.channels[key], [channel]: !p.channels[key][channel] },
-      },
-    }));
-  }
-
-  function handleReset() {
-    setDraft(saved);
-  }
-
-  async function handleSave() {
-    if (!dirty || saving) return;
-    const next = draft;
-    const body = toServer(storedDoc, next);
-    setSaving(true);
-    try {
-      await updatePrefs(body);
-      setStoredDoc(body);
-      setSaved(next);
-      toast.success("Notification preferences saved");
-    } catch {
-      toast.error("Couldn't save your preferences. Try again.");
-    } finally {
-      setSaving(false);
-    }
+  /** Flip one switch and save it straight away. A failed save puts the switches back as stored. */
+  function flip(type: NotificationType) {
+    const before = prefsRef.current;
+    const on = !before.channels[type.key].inApp;
+    const next: NotificationPrefs = {
+      ...before,
+      channels: { ...before.channels, [type.key]: { ...before.channels[type.key], inApp: on } },
+    };
+    prefsRef.current = next;
+    setPrefs(next);
+    queue.current = queue.current.then(async () => {
+      // The newest switches, so a save queued behind another still sends everything flipped.
+      const body = toServer(storedRef.current, prefsRef.current);
+      try {
+        await updatePrefs(body);
+        storedRef.current = body;
+        toast.success(`${type.label}: notifications ${on ? "on" : "off"}`, {
+          id: `notif-pref-${type.key}`,
+          description: "Saved to your account.",
+        });
+      } catch {
+        const stored = fromServer(storedRef.current);
+        prefsRef.current = stored;
+        setPrefs(stored);
+        toast.error("Couldn't save that change", {
+          id: `notif-pref-${type.key}`,
+          description: "Your notification preferences are as they were. Try again.",
+        });
+      }
+    });
   }
 
   if (loading) {
@@ -233,14 +232,14 @@ export function NotificationPreferences() {
               Notification types
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Choose which events notify you in the app.
+              Choose which events notify you in the app. Each switch saves as soon as you flip it.
             </p>
           </div>
         </div>
 
         <div className="divide-y">
           {NOTIFICATION_TYPES.map((type) => {
-            const row = draft.channels[type.key];
+            const row = prefs.channels[type.key];
             return (
               <div
                 key={type.key}
@@ -255,7 +254,7 @@ export function NotificationPreferences() {
                 <div className="flex shrink-0 items-center sm:pl-0">
                   <Switch
                     checked={row.inApp}
-                    onCheckedChange={() => toggleChannel(type.key, "inApp")}
+                    onCheckedChange={() => flip(type)}
                     aria-label={`Notify me in the app about ${type.label}`}
                   />
                 </div>
@@ -268,14 +267,6 @@ export function NotificationPreferences() {
       {/* Delivery preferences (Quiet hours / Email digest) intentionally removed — WorkPulse
           notifications are in-app only, so there is no email timing or digest to control. */}
 
-      {/* Sticky save bar — appears only when there are unsaved changes */}
-      <SettingsSaveBar
-        dirty={dirty}
-        saving={saving}
-        onSave={handleSave}
-        onReset={handleReset}
-        saveLabel="Save preferences"
-      />
     </div>
   );
 }

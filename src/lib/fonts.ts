@@ -20,7 +20,9 @@ export const FONTS: FontDef[] = [
   {
     id: "ibmplex",
     name: "IBM Plex",
-    note: "Current · cohesive corporate",
+    // Not "Current" — that read as the active pick whatever was chosen (UX audit SET-17). The
+    // picker badges the default itself.
+    note: "Cohesive · corporate",
     stack: "IBM Plex Sans · IBM Plex Mono",
     displayVar: "var(--font-ibm-plex-sans)",
     bodyVar: "var(--font-ibm-plex-sans)",

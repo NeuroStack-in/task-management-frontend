@@ -34,7 +34,8 @@ import { TimePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
+import { useCardGuard } from "../../lib/card-guard";
+import { CardSaveFooter } from "../save-footer";
 import { ApiError } from "@/lib/api";
 import { formatMinutes } from "@/lib/format";
 import { invalidateWorkingHours } from "@/hooks/use-working-hours";
@@ -150,7 +151,7 @@ export function WorkingHoursManager() {
     [draft, saved],
   );
   // Its own Save, so its own guard: leaving with unsaved hours asks first (WP-347).
-  useUnsavedGuard(canManage && dirty);
+  useCardGuard(canManage && dirty);
 
   const expected = draft ? expectedMinutes(draft) : null;
   // Mirrored from the server so the reason is visible before the request, not after a 400.
@@ -336,21 +337,14 @@ export function WorkingHoursManager() {
               </p>
             )}
 
-            {canManage && dirty ? (
-              <div className="border-border flex items-center gap-2 border-t pt-4">
-                <Button size="sm" onClick={save} disabled={saving || invalidSpan}>
-                  {saving ? "Saving…" : "Save working hours"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => saved && setDraft(draftOf(saved))}
-                  disabled={saving}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : null}
+            <CardSaveFooter
+              dirty={canManage && dirty}
+              saving={saving}
+              onSave={() => void save()}
+              onCancel={() => saved && setDraft(draftOf(saved))}
+              saveLabel="Save working hours"
+              disabled={invalidSpan}
+            />
 
             {/* Applying a schedule change to *past* days: the nightly close only ever resolves
                 yesterday, so already-closed days keep the status they were closed with until this

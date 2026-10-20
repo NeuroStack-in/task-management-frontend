@@ -13,6 +13,8 @@ import {
   getScreenshotExclusions,
   setScreenshotExclusions,
 } from "../services/screenshot-exclusions.service"
+import { useCardGuard } from "../lib/card-guard"
+import { CardSaveFooter } from "./save-footer"
 
 /**
  * **Excluded from screenshots** — the people whose screenshots are never shown for review, sent for
@@ -21,6 +23,10 @@ import {
  *
  * Saved on its own, not with the policy form above: it is a different document, and a list of people
  * is not a policy field.
+ *
+ * **Unsaved picks are guarded** (UX audit 2026-10-16, SET-14). Ticking people and then leaving the
+ * page threw the selection away without a word — the one card on Monitoring with no leave guard.
+ * It now registers its draft like every other card, and offers Cancel beside Save.
  */
 export function ScreenshotExclusionsCard() {
   const [people, setPeople] = useState<ApiEmployee[] | null>(null)
@@ -58,6 +64,8 @@ export function ScreenshotExclusionsCard() {
     const before = new Set(saved ?? [])
     return before.size !== picked.size || [...picked].some((id) => !before.has(id))
   }, [saved, picked])
+  // Leaving the page with picks not yet saved asks first, like every other settings card.
+  useCardGuard(dirty)
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -146,16 +154,20 @@ export function ScreenshotExclusionsCard() {
                 </li>
               ) : null}
             </ul>
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
-                {picked.size === 0
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {dirty
+                ? `${picked.size === 0 ? "No one" : `${picked.size} ${picked.size === 1 ? "person" : "people"}`} will be excluded once you save.`
+                : picked.size === 0
                   ? "No one is excluded."
                   : `${picked.size} ${picked.size === 1 ? "person is" : "people are"} excluded.`}
-              </p>
-              <Button size="sm" onClick={() => void save()} disabled={!dirty || saving}>
-                {saving ? "Saving…" : "Save exclusions"}
-              </Button>
-            </div>
+            </p>
+            <CardSaveFooter
+              dirty={dirty}
+              saving={saving}
+              onSave={() => void save()}
+              onCancel={() => setPicked(new Set(saved ?? []))}
+              saveLabel="Save exclusions"
+            />
           </>
         )}
       </CardContent>

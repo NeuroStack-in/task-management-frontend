@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/shared/page-header"
 import { Loader } from "@/components/shared/loader"
-import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { ConfirmDialog } from "@/components/shared/confirm-dialog"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useTrackingMode } from "@/hooks/use-features"
@@ -34,7 +33,7 @@ import {
   updateTrackingPolicy,
   type TrackingCadence,
 } from "@/modules/agents/services/fleet.service"
-import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
+import { useCardGuard } from "../lib/card-guard"
 import { cn } from "@/lib/utils"
 import {
   captureLock,
@@ -44,6 +43,7 @@ import {
   type CaptureLock,
 } from "../lib/monitoring-capture"
 import { ScreenshotExclusionsCard } from "./screenshot-exclusions-card"
+import { CardSaveFooter } from "./save-footer"
 
 /**
  * The cadence *choice* the dropdown offers. The four presets map straight to the wire strings;
@@ -141,6 +141,50 @@ function formToCadence(cadence: CadenceChoice, customMinutes: number): TrackingC
   return { custom: Math.min(CUSTOM_MAX, Math.max(CUSTOM_MIN, Number.isFinite(m) ? m : CUSTOM_DEFAULT)) }
 }
 
+/**
+ * Which form fields each card owns (UX audit 2026-10-16, XC-11 / SET-14).
+ *
+ * The four cards used to share one floating "Save changes", so changing retention and the update
+ * switch went out as one save nobody had asked for, and "Reset" threw away edits in cards off screen.
+ * Each card now saves its own fields; the PUT still carries the whole policy, so the others go back
+ * exactly as stored. `blur_level`/`silent` ride the capture card, whose notice explains them.
+ */
+type CardKey = "capture" | "pause" | "machine" | "updates"
+const CARD_FIELDS: Record<CardKey, (keyof PolicyForm)[]> = {
+  capture: ["cadence", "customMinutes", "retention_days", "blur_level", "silent"],
+  pause: ["pauseMinutes"],
+  machine: ["idleMinutes"],
+  updates: ["auto_update"],
+}
+const CARD_KEYS = Object.keys(CARD_FIELDS) as CardKey[]
+const CARD_SAVED: Record<CardKey, string> = {
+  capture: "Screenshot capture saved",
+  pause: "Privacy pause saved",
+  machine: "Machine tracking saved",
+  updates: "Agent updates saved",
+}
+
+/** A policy response → the form's fields. */
+function formFromPolicy(t: {
+  cadence: TrackingCadence
+  blur_level: number
+  retention_days: number
+  silent: boolean
+  auto_update: boolean
+  idle_end_secs?: number
+  pause_allowance_secs?: number
+}): PolicyForm {
+  return {
+    ...cadenceToForm(t.cadence),
+    blur_level: t.blur_level,
+    retention_days: t.retention_days,
+    silent: t.silent,
+    auto_update: t.auto_update,
+    idleMinutes: secsToMinutes(t.idle_end_secs),
+    pauseMinutes: pauseSecsToMinutes(t.pause_allowance_secs),
+  }
+}
+
 function SettingRow({
   label,
   description,
@@ -200,12 +244,14 @@ export function MonitoringTab() {
 
   const {
     control,
-    handleSubmit,
     reset,
     setValue,
     getValues,
-    formState: { isDirty, defaultValues },
+    getFieldState,
+    formState: { isDirty, dirtyFields, defaultValues },
   } = useForm<PolicyForm>({ defaultValues: EMPTY })
+  /** Whether one card's fields differ from what is saved. */
+  const cardDirty = (k: CardKey) => CARD_FIELDS[k].some((f) => Boolean(dirtyFields[f]))
   /**
    * A shorter retention is confirmed before it is saved: the next hourly sweep permanently deletes
    * every screenshot older than the new period — 90 → 1 day saved silently (UX audit 2026-10-16,
@@ -225,7 +271,7 @@ export function MonitoringTab() {
   }, [legacyOverride, canManage, setValue])
 
   // Leaving via the settings rail now asks before discarding these edits.
-  useUnsavedGuard(isDirty)
+  useCardGuard(isDirty)
 
   // The optimistic-concurrency token from `tracking.version`. Retained across edits and sent back as
   // `expected_version`; bumped from each successful save's response.
@@ -234,7 +280,9 @@ export function MonitoringTab() {
   const [storedCadence, setStoredCadence] = useState<TrackingCadence>("off")
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  /** The card whose Save is in flight — one at a time, since each carries the version lock. */
+  const [savingCard, setSavingCard] = useState<CardKey | null>(null)
+  const saving = savingCard !== null
   // Whether the server knows the privacy-pause allowance. A server older than the setting leaves
   // `pause_allowance_secs` out of the policy and would silently drop it on save, so the card stays
   // hidden until the field comes back — it appears by itself once the backend carrying it is live.
@@ -254,18 +302,7 @@ export function MonitoringTab() {
     setLoadError(null)
     try {
       const cfg = await getTrackingPolicy()
-      seed(
-        {
-          ...cadenceToForm(cfg.tracking.cadence),
-          blur_level: cfg.tracking.blur_level,
-          retention_days: cfg.tracking.retention_days,
-          silent: cfg.tracking.silent,
-          auto_update: cfg.tracking.auto_update,
-          idleMinutes: secsToMinutes(cfg.tracking.idle_end_secs),
-          pauseMinutes: pauseSecsToMinutes(cfg.tracking.pause_allowance_secs),
-        },
-        cfg.tracking.version,
-      )
+      seed(formFromPolicy(cfg.tracking), cfg.tracking.version)
       setStoredCadence(cfg.tracking.cadence)
       setPauseSupported(cfg.tracking.pause_allowance_secs !== undefined)
       const silent = cfg.tracking.silent === true
@@ -282,39 +319,50 @@ export function MonitoringTab() {
     void load()
   }, [load])
 
-  const onSave = handleSubmit(async (values) => {
+  /**
+   * Save one card: its own fields from the form, every other field exactly as stored (the PUT takes
+   * the whole policy). Edits waiting in the other cards survive the save — they are put back on top
+   * of the fresh values — so saving one card never discards another.
+   */
+  const saveCard = async (k: CardKey) => {
     if (saving) return
-    setSaving(true)
-    const cadence = lock ? storedCadence : formToCadence(values.cadence, values.customMinutes)
+    const stored = (defaultValues ?? EMPTY) as PolicyForm
+    const values = getValues()
+    const pick = <F extends keyof PolicyForm>(f: F): PolicyForm[F] =>
+      CARD_FIELDS[k].includes(f) ? values[f] : stored[f]
+    // Only the capture card sends a changed interval — and not while it is locked (see `lock`).
+    const cadence =
+      k === "capture" && !lock ? formToCadence(values.cadence, values.customMinutes) : storedCadence
+    setSavingCard(k)
     try {
       const next = await updateTrackingPolicy({
         cadence,
         // Pinned, never round-tripped — see `PolicyForm` (WP-331).
         blur_level: 0,
         // Whole days: the server field is a `u16` and rejects a fraction (WP-361).
-        retention_days: Math.round(values.retention_days),
+        retention_days: Math.round(pick("retention_days")),
         silent: false,
-        auto_update: values.auto_update,
-        idle_end_secs: Math.round(values.idleMinutes) * 60,
-        ...(pauseSupported ? { pause_allowance_secs: Math.round(values.pauseMinutes) * 60 } : {}),
+        auto_update: pick("auto_update"),
+        idle_end_secs: Math.round(pick("idleMinutes")) * 60,
+        ...(pauseSupported
+          ? { pause_allowance_secs: Math.round(pick("pauseMinutes")) * 60 }
+          : {}),
         expected_version: version,
       })
+      // The other cards' drafts, read now so an edit made while this was saving is kept too.
+      const kept: [keyof PolicyForm, PolicyForm[keyof PolicyForm]][] = []
+      for (const c of CARD_KEYS) {
+        if (c === k) continue
+        for (const f of CARD_FIELDS[c]) {
+          if (getFieldState(f).isDirty) kept.push([f, getValues(f)])
+        }
+      }
       setLegacyOverride(null)
       setStoredCadence(next.cadence)
       setPauseSupported(next.pause_allowance_secs !== undefined)
-      seed(
-        {
-          ...cadenceToForm(next.cadence),
-          blur_level: next.blur_level,
-          retention_days: next.retention_days,
-          silent: next.silent,
-          auto_update: next.auto_update,
-          idleMinutes: secsToMinutes(next.idle_end_secs),
-          pauseMinutes: pauseSecsToMinutes(next.pause_allowance_secs),
-        },
-        next.version,
-      )
-      toast.success("Monitoring settings saved")
+      seed(formFromPolicy(next), next.version)
+      for (const [f, v] of kept) setValue(f, v as never, { shouldDirty: true })
+      toast.success(CARD_SAVED[k])
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         toast.error("Settings changed elsewhere — reload to get the latest.", {
@@ -336,9 +384,39 @@ export function MonitoringTab() {
         )
       }
     } finally {
-      setSaving(false)
+      setSavingCard(null)
     }
-  })
+  }
+
+  /** Put one card back to what is saved. Nothing was applied, so nothing needs confirming. */
+  const cancelCard = (k: CardKey) => {
+    const stored = (defaultValues ?? EMPTY) as PolicyForm
+    for (const f of CARD_FIELDS[k]) {
+      // The pinned legacy values stay pinned: they are what the notice above says a save fixes.
+      if (legacyOverride && (f === "silent" || f === "blur_level")) continue
+      setValue(f, stored[f] as never, { shouldDirty: true })
+    }
+  }
+
+  /** The capture card's Save: a shorter retention asks first (SET-04). */
+  const saveCapture = () => {
+    const from = defaultValues?.retention_days ?? 0
+    const to = Math.round(getValues("retention_days"))
+    if (from > 0 && to < from) setRetentionCut({ from, to })
+    else void saveCard("capture")
+  }
+
+  const footer = (k: CardKey, saveLabel: string, onSave: () => void = () => void saveCard(k)) => (
+    <CardSaveFooter
+      dirty={canManage && cardDirty(k)}
+      saving={savingCard === k}
+      disabled={saving && savingCard !== k}
+      onSave={onSave}
+      onCancel={() => cancelCard(k)}
+      saveLabel={saveLabel}
+      className="mt-2"
+    />
+  )
 
   return (
     <div className="space-y-6">
@@ -492,6 +570,7 @@ export function MonitoringTab() {
                   )}
                 />
               </SettingRow>
+              {footer("capture", "Save capture settings", saveCapture)}
             </CardContent>
           </Card>
 
@@ -531,6 +610,7 @@ export function MonitoringTab() {
                     )}
                   />
                 </SettingRow>
+                {footer("pause", "Save privacy pause")}
               </CardContent>
             </Card>
           )}
@@ -570,6 +650,7 @@ export function MonitoringTab() {
                     )}
                   />
                 </SettingRow>
+                {footer("machine", "Save machine tracking")}
               </CardContent>
             </Card>
           )}
@@ -601,6 +682,7 @@ export function MonitoringTab() {
                   )}
                 />
               </SettingRow>
+              {footer("updates", "Save agent updates")}
             </CardContent>
           </Card>
 
@@ -617,19 +699,6 @@ export function MonitoringTab() {
               (it used to fail closed, which is why managed devices had been capturing nothing at
               all). "Don't capture" is still expressible — set the cadence to Off. */}
 
-          {canManage && (
-            <SettingsSaveBar
-              dirty={isDirty}
-              saving={saving}
-              onSave={() => {
-                const from = defaultValues?.retention_days ?? 0
-                const to = Math.round(getValues("retention_days"))
-                if (from > 0 && to < from) setRetentionCut({ from, to })
-                else void onSave()
-              }}
-              onReset={() => reset()}
-            />
-          )}
           <ConfirmDialog
             open={retentionCut !== null}
             onOpenChange={(o) => !o && setRetentionCut(null)}
@@ -644,7 +713,7 @@ export function MonitoringTab() {
             busy={saving}
             onConfirm={() => {
               setRetentionCut(null)
-              void onSave()
+              void saveCard("capture")
             }}
           />
         </div>

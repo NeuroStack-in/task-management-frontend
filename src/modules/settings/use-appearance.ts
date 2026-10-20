@@ -36,6 +36,11 @@ export interface AppearanceState {
   saveTheme: (theme: AppearanceTheme) => Promise<void>;
   /** Persist the chosen palette to the account. Rejects (caught by caller) on failure. */
   savePalette: (palette: string) => Promise<void>;
+  /**
+   * Persist the chosen font to the account (SET-17). Resolves `true` when the server kept it, `false`
+   * when it's an older server with no font field (the choice then stays on this browser).
+   */
+  saveFont: (font: string) => Promise<boolean>;
 }
 
 export function useAppearance(): AppearanceState {
@@ -76,7 +81,13 @@ export function useAppearance(): AppearanceState {
     apply(await saveAppearance({ palette }));
   }, []);
 
-  return { serverTheme, serverPalette, loading, error, saveTheme, savePalette };
+  const saveFont = useCallback(async (font: string) => {
+    const v = await saveAppearance({ font });
+    apply(v);
+    return v.font === font;
+  }, []);
+
+  return { serverTheme, serverPalette, loading, error, saveTheme, savePalette, saveFont };
 }
 
 function messageOf(e: unknown): string {

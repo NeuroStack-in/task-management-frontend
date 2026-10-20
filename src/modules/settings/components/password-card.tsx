@@ -24,8 +24,8 @@ import { friendlyError } from "@/lib/errors";
  * features and just make the card ambiguous. The emailed code proves identity at least as well as
  * the old password, and it still works for the far more common case — someone who can't recall it.
  *
- * Shared: employees reach it on /settings/login-security, Owner/Admin inside the org Security
- * Center — one implementation, so the two can't drift.
+ * Lives on /settings/login-security, which every role's rail lists. It used to render inside the
+ * org Security page for Owner/Admin as well (UX audit SET-08 removed that duplicate).
  */
 export function PasswordCard() {
   const email = useAuthStore((s) => s.user?.email) ?? "";

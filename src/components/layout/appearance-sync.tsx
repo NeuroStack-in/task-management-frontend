@@ -20,6 +20,7 @@
 import { useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import { applyPalette, coercePalette, currentPalette } from "@/lib/palette";
+import { FONTS, applyFont, currentFont } from "@/lib/fonts";
 import { hasChosenTheme } from "@/lib/theme";
 import { explicitTheme, getAppearance } from "@/modules/settings/services/appearance.service";
 
@@ -45,6 +46,7 @@ export function AppearanceSync() {
     // saved to the account, so it wins over this older answer.
     const themeAtStart = themeRef.current;
     const paletteAtStart = currentPalette();
+    const fontAtStart = currentFont();
 
     getAppearance()
       .then((v) => {
@@ -53,6 +55,16 @@ export function AppearanceSync() {
         const palette = coercePalette(v.palette);
         const shown = currentPalette();
         if (shown === paletteAtStart && palette !== shown) applyPalette(palette);
+        // Font, the same way (SET-17): the account's choice, unless a pick landed meanwhile; an id
+        // this build doesn't ship is ignored.
+        if (
+          v.font &&
+          FONTS.some((f) => f.id === v.font) &&
+          currentFont() === fontAtStart &&
+          v.font !== fontAtStart
+        ) {
+          applyFont(v.font);
+        }
         if (themeRef.current !== themeAtStart) return;
         // Theme, in priority order (see lib/theme.ts):
         //   1. the account's stored light / dark / system — a real choice (the server serves

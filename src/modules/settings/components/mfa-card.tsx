@@ -48,9 +48,9 @@ function formatSecret(secret: string): string {
  * Google path (`lib/oauth.ts`) swaps its code for tokens with no challenge step, so the card says
  * which sign-ins it protects.
  *
- * Shared deliberately: employees reach it on /settings/login-security, Owner/Admin inside the org
- * Security Center — which previously showed them a read-only posture row, leaving them with no way
- * to enrol themselves at all. One implementation, so the two can't drift.
+ * Lives on /settings/login-security, which every role's rail lists. Owner/Admin used to get it
+ * embedded in the org Security page instead, a second copy of the same control on a page about
+ * organisation policy (UX audit SET-08).
  *
  * @param embedded render only the status row (no `Card` shell), for hosting inside an existing card.
  */

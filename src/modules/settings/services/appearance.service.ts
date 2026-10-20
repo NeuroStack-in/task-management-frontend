@@ -1,9 +1,9 @@
 /**
  * Per-user appearance preferences — `GET/PUT /v1/me/appearance` (identity, LLD §17).
  *
- * The server stores `theme` (`light|dark|system`) + `palette` + a `version`, so both follow the
- * account across devices and origins. **Font is deliberately not synced** — there is no server field
- * for it, so it stays a per-browser preference (and the UI says so).
+ * The server stores `theme` (`light|dark|system`) + `palette` + `font` + a `version`, so all three
+ * follow the account across devices and origins (the font joined them for UX audit SET-17; an older
+ * server without the field just leaves it per-browser).
  *
  * Two consumers, one path: `useAppearance` (the Settings → Appearance pickers) and
  * `components/layout/appearance-sync` (the app-wide one-shot hydration).
@@ -16,6 +16,8 @@ export type AppearanceTheme = "light" | "dark" | "system";
 export interface ApiAppearance {
   theme: string;
   palette: string;
+  /** The interface font id; absent until the account has chosen one (or from an older server). */
+  font?: string;
   version: number;
 }
 
@@ -30,6 +32,7 @@ export function getAppearance(): Promise<ApiAppearance> {
 export function saveAppearance(patch: {
   theme?: AppearanceTheme;
   palette?: string;
+  font?: string;
 }): Promise<ApiAppearance> {
   return apiFetch<ApiAppearance>("/v1/me/appearance", {
     method: "PUT",

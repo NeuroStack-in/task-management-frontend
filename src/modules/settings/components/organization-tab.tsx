@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
 import { updateOrgCache } from "@/hooks/use-org"
-import { AlertCircle, Building2, Loader2, Lock } from "lucide-react"
+import { AlertCircle, AlertTriangle, Building2, Lock } from "lucide-react"
 import { toast } from "sonner"
 import {
   Card,
@@ -22,6 +22,10 @@ import {
 import { PageHeader } from "@/components/shared/page-header"
 import { cn } from "@/lib/utils"
 import { DepartmentsManager } from "./departments-manager"
+import { CardSaveFooter } from "./save-footer"
+import { TimezonePicker } from "./org/timezone-picker"
+import { SectionDirtyContext, withOwner, type SectionDirtyReporter } from "../lib/card-guard"
+import { browserZone, pickerZones, serverResolves, zoneParts } from "../lib/timezones"
 import { OrgProductivityWeightsCard } from "./org/org-productivity-weights-card"
 import { TeamsManager } from "./org/teams-manager"
 import { LocationsManager } from "./org/locations-manager"
@@ -55,37 +59,8 @@ import {
  * keep an empty editable form.
  */
 
-// Local, self-contained timezone options (no mock import). IANA zones the picker offers.
-const TIMEZONE_OPTIONS = [
-  "UTC",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "America/Sao_Paulo",
-  "Europe/London",
-  "Europe/Berlin",
-  "Europe/Paris",
-  "Europe/Madrid",
-  "Asia/Dubai",
-  "Asia/Kolkata",
-  "Asia/Singapore",
-  "Asia/Tokyo",
-  "Australia/Sydney",
-] as const
-
-/**
- * The picker's zones, with the org's saved one first when it is not among them. Sign-up stores
- * fixed-offset labels (`(GMT+05:30) India Standard`) that this list does not contain; without this
- * the select showed an empty placeholder for every such org, inviting an admin to "set" a timezone
- * that was already set. The server reads both forms (`wp_platform::tz`, QA audit WP-028).
- */
-function timezoneOptions(saved: string): readonly string[] {
-  const current = saved.trim()
-  return current && !(TIMEZONE_OPTIONS as readonly string[]).includes(current)
-    ? [current, ...TIMEZONE_OPTIONS]
-    : TIMEZONE_OPTIONS
-}
+// The timezone picker's zones live in `lib/timezones.ts` — the ones the server can resolve, searchable
+// (UX audit SET-16). It used to be a fixed list of fifteen here.
 
 // Industry + company-size pickers. `__none__` is the "unset" sentinel (Base UI selects need a value).
 const INDUSTRY_OPTIONS = [
@@ -259,12 +234,40 @@ export function OrganizationTab() {
     select(ORG_SECTIONS[to].key, true)
   }
 
+  /**
+   * The cards on each tab that hold unsaved edits, reported by `useCardGuard` through the panel's
+   * {@link SectionDirtyContext}. Only the Profile tab used to carry the unsaved dot — a half-edited
+   * card on any other tab was invisible from the rest of the page (UX audit XC-11 / SET-14).
+   */
+  const [dirtyCards, setDirtyCards] = useState<Record<OrgSection, string[]>>(() => ({
+    profile: [],
+    structure: [],
+    schedule: [],
+    places: [],
+    policies: [],
+  }))
+  const reporters = useMemo(
+    () =>
+      Object.fromEntries(
+        ORG_SECTIONS.map((s) => [
+          s.key,
+          ((owner, isDirty) =>
+            setDirtyCards((prev) => {
+              const next = withOwner(prev[s.key], owner, isDirty)
+              return next === prev[s.key] ? prev : { ...prev, [s.key]: next }
+            })) satisfies SectionDirtyReporter,
+        ]),
+      ) as Record<OrgSection, SectionDirtyReporter>,
+    [],
+  )
+
   const panelProps = (k: OrgSection) => ({
     mounted: visited.has(k),
     active: section === k,
     labelledBy: `${tabIds}-tab-${k}`,
     panelId: `${tabIds}-panel-${k}`,
     intro: ORG_SECTIONS.find((s) => s.key === k)?.intro ?? "",
+    report: reporters[k],
   })
 
   // The org meta + optimistic-lock `version` live in ONE shared store, read by both this profile
@@ -329,6 +332,23 @@ export function OrganizationTab() {
   // Checked before the request, because the server stores any string and the pages that show it
   // use it as a link (WP-356).
   const websiteInvalid = draft.website.trim() !== "" && toWebUrl(draft.website) === null
+
+  /**
+   * What a missing or unreadable timezone actually does (UX audit SET-16): the server closes the
+   * org's days on UTC (`wp_platform::tz`), so "which day was this" and "was this late" are answered
+   * in the wrong timezone for any org away from Greenwich.
+   */
+  const tz = draft.timezone.trim()
+  const tzWarning = serverResolves(tz)
+    ? null
+    : tz
+      ? `WorkPulse doesn't recognise “${tz}”, so it uses UTC. Choose a timezone from the list.`
+      : "No timezone set, so WorkPulse uses UTC. Attendance, lateness and reports decide which day something happened — and who was late — in this timezone."
+  // Offered in the warning: the browser's own zone, when the server can resolve it. Read after
+  // mount (the server render has no browser zone).
+  const [browserTz, setBrowserTz] = useState<string | null>(null)
+  useEffect(() => setBrowserTz(browserZone()), [])
+  const suggestedZone = browserTz && pickerZones().includes(browserTz) ? browserTz : null
 
   const update = (patch: Partial<OrgProfileForm>) =>
     setDraft((d) => ({ ...d, ...patch }))
@@ -471,6 +491,8 @@ export function OrganizationTab() {
       >
         {ORG_SECTIONS.map((s) => {
           const active = section === s.key
+          // The profile form lives in this component; every other card reports through its panel.
+          const unsaved = dirtyCards[s.key].length > 0 || (s.key === "profile" && dirty)
           return (
             <button
               key={s.key}
@@ -493,8 +515,8 @@ export function OrganizationTab() {
               )}
             >
               {s.label}
-              {/* The one draft this page itself holds; each card shows its own Save. */}
-              {s.key === "profile" && dirty ? (
+              {/* Any card on this tab with unsaved edits — each card shows its own Save. */}
+              {unsaved ? (
                 <>
                   <span className="bg-warning size-1.5 rounded-full" aria-hidden />
                   <span className="sr-only">(unsaved changes)</span>
@@ -573,23 +595,37 @@ export function OrganizationTab() {
 
           <FieldGroup label="Locale">
             <div className="space-y-1.5">
-              <Label>Primary timezone</Label>
-              <Select
+              <Label htmlFor={`${ids}-timezone`}>Primary timezone</Label>
+              <TimezonePicker
+                id={`${ids}-timezone`}
                 value={draft.timezone}
-                onValueChange={(v) => update({ timezone: v as string })}
+                onChange={(tz) => update({ timezone: tz })}
                 disabled={!canManage}
-              >
-                <SelectTrigger className="w-full" aria-label="Primary timezone">
-                  <SelectValue placeholder="Select a timezone…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {timezoneOptions(saved.timezone).map((tz) => (
-                    <SelectItem key={tz} value={tz}>
-                      {tz}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                warn={tzWarning !== null}
+                aria-describedby={tzWarning ? `${ids}-timezone-warning` : undefined}
+              />
+              {/* An unset (or unrecognised) timezone used to sit there as "Select a timezone…" with
+                  no hint that every org-local day was quietly running on UTC (UX audit SET-16). */}
+              {tzWarning ? (
+                <div
+                  id={`${ids}-timezone-warning`}
+                  className="bg-warning/10 text-warning flex items-start gap-2 rounded-md px-3 py-2 text-xs"
+                >
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <span className="min-w-0">
+                    {tzWarning}{" "}
+                    {canManage && suggestedZone ? (
+                      <button
+                        type="button"
+                        onClick={() => update({ timezone: suggestedZone })}
+                        className="font-medium underline underline-offset-2 hover:no-underline"
+                      >
+                        Use {zoneParts(suggestedZone).city}, this browser&apos;s timezone
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label>Industry</Label>
@@ -668,20 +704,14 @@ export function OrganizationTab() {
           {/* The profile's own Save, inside its card like every other card on this page
               (UX audit SET-06). A floating "Save changes" used to hover over the whole page, over
               cards that each have their own Save, and never said which one it saved. */}
-          {canManage && dirty ? (
-            <div className="border-border flex flex-wrap items-center gap-2 border-t pt-4">
-              <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-                {saving ? "Saving…" : "Save profile"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={handleReset} disabled={saving}>
-                Cancel
-              </Button>
-              <span className="text-muted-foreground text-xs">
-                Saves the fields in this card only.
-              </span>
-            </div>
-          ) : null}
+          <CardSaveFooter
+            dirty={canManage && dirty}
+            saving={saving}
+            onSave={() => void handleSave()}
+            onCancel={handleReset}
+            saveLabel="Save profile"
+            hint="Saves the fields in this card only."
+          />
         </CardContent>
       </Card>
       ) : null}
@@ -730,6 +760,7 @@ function OrgPanel({
   labelledBy,
   panelId,
   intro,
+  report,
   children,
 }: {
   id: OrgSection
@@ -738,6 +769,8 @@ function OrgPanel({
   labelledBy: string
   panelId: string
   intro: string
+  /** Where this panel's cards report unsaved edits — the tab's marker. */
+  report: SectionDirtyReporter
   children: React.ReactNode
 }) {
   if (!mounted) return null
@@ -751,7 +784,7 @@ function OrgPanel({
       className="space-y-6"
     >
       <p className="text-muted-foreground -mt-2 text-sm">{intro}</p>
-      {children}
+      <SectionDirtyContext.Provider value={report}>{children}</SectionDirtyContext.Provider>
     </div>
   )
 }

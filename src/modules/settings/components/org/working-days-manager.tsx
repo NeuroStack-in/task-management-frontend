@@ -24,7 +24,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
+import { useCardGuard } from "../../lib/card-guard";
+import { CardSaveFooter } from "../save-footer";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { invalidateWorkingHours } from "@/hooks/use-working-hours";
@@ -91,7 +92,7 @@ export function WorkingDaysManager() {
     [draft, saved],
   );
   // Its own Save, so its own guard: leaving with an unsaved selection asks first (WP-347).
-  useUnsavedGuard(canManage && dirty);
+  useCardGuard(canManage && dirty);
   // The server rejects an empty list; mirror that here so the reason is visible before the request.
   const empty = draft.length === 0;
 
@@ -190,21 +191,14 @@ export function WorkingDaysManager() {
               </p>
             )}
 
-            {canManage && dirty ? (
-              <div className="border-border flex items-center gap-2 border-t pt-4">
-                <Button size="sm" onClick={save} disabled={saving || empty}>
-                  {saving ? "Saving…" : "Save working days"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => saved && setDraft(saved.workdays)}
-                  disabled={saving}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : null}
+            <CardSaveFooter
+              dirty={canManage && dirty}
+              saving={saving}
+              onSave={() => void save()}
+              onCancel={() => saved && setDraft(saved.workdays)}
+              saveLabel="Save working days"
+              disabled={empty}
+            />
           </>
         )}
       </CardContent>

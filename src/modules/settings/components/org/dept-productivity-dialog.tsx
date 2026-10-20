@@ -16,6 +16,7 @@
  * (`MonitoringManage`) to read *and* to save (WP-346).
  */
 import { useCallback, useEffect, useId, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Info, Lock, TriangleAlert } from "lucide-react";
 import {
@@ -231,7 +232,16 @@ function DeptRulesSection({
           <span className="text-foreground font-medium">override</span> the organization
           rules for this department. Where this department has no rule, the organization
           rules apply as the fallback. Category score weights are organization-wide — set
-          them in Tracking rules.
+          them in{" "}
+          {/* A real link (UX audit SET-15). This section only mounts with `monitoring:manage`,
+              which is what the Tracking rules page needs. Leaving with edits here still asks. */}
+          <Link
+            href="/settings/tracking-rules"
+            className="text-primary font-medium underline-offset-2 hover:underline"
+          >
+            Tracking rules
+          </Link>
+          .
         </span>
       </div>
       <RulesEditor

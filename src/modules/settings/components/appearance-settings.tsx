@@ -63,7 +63,29 @@ const THEME_OPTIONS: ThemeOption[] = [
   },
 ];
 
-/** The "this is what you get by default" pill, used on the default theme + palette. */
+/** The font a new browser starts on — `lib/fonts.ts` applies it when nothing is stored. */
+const DEFAULT_FONT = "ibmplex";
+
+/**
+ * The palettes the picker offers (UX audit 2026-10-16, SET-17): eight that look different from one
+ * another. It listed fifteen, several near-copies — three teals, four blues, two purples, two reds —
+ * so choosing meant squinting at swatches. The others stay valid in `lib/palette.ts` and
+ * `globals.css`, so an account that already uses one keeps it, and it stays on the picker for them
+ * (see `keptPalette`).
+ */
+const OFFERED_PALETTES = [
+  "teal",
+  "evergreen",
+  "corporate",
+  "indigo",
+  "violet",
+  "crimson",
+  "fireopal",
+  "iron",
+] as const;
+const OFFERED = new Set<string>(OFFERED_PALETTES);
+
+/** The "this is what you get by default" pill, used on the default theme, palette and font. */
 function DefaultBadge() {
   return (
     <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -106,10 +128,18 @@ export function AppearanceSettings() {
   const [mounted, setMounted] = useState(false);
   const [font, setFont] = useState("ibmplex");
   const [palette, setPalette] = useState(DEFAULT_PALETTE);
+  /**
+   * A palette this account uses that the picker no longer offers. Shown for the whole visit, so
+   * someone who tries another colour can still go back to theirs.
+   */
+  const [keptPalette, setKeptPalette] = useState<string | null>(null);
+  const keep = (id: string) => {
+    if (!OFFERED.has(id) && PALETTES.some((p) => p.id === id)) setKeptPalette(id);
+  };
 
   // The server holds the account-wide theme + palette; they apply instantly per browser and sync
   // across the account's devices.
-  const { serverPalette, saveTheme, savePalette } = useAppearance();
+  const { serverPalette, saveTheme, savePalette, saveFont } = useAppearance();
 
   // next-themes + the persisted font resolve on the client; avoid an
   // SSR/hydration mismatch by reading them after mount.
@@ -117,6 +147,7 @@ export function AppearanceSettings() {
     setMounted(true);
     setFont(currentFont());
     setPalette(currentPalette());
+    keep(currentPalette());
   }, []);
   const active = mounted ? theme : undefined;
 
@@ -138,45 +169,82 @@ export function AppearanceSettings() {
       if (p !== currentPalette()) applyPalette(p);
     }
     setPalette(currentPalette());
+    keep(currentPalette());
   }, [serverPalette]);
 
+  // Personal preferences apply the moment they're picked and say where they were saved
+  // (UX audit XC-11 / SET-17). One toast id per control, so quick clicks replace rather than stack.
   const chooseTheme = (value: AppearanceTheme) => {
     setTheme(value); // instant, local
     // Record the deliberate pick in this browser (lib/theme.ts): it stands in for the account's
     // theme whenever that can't be read.
     markThemeChosen();
-    saveTheme(value).catch(() =>
-      toast.error("Theme applied here, but couldn't save it to your account."),
+    saveTheme(value).then(
+      () =>
+        toast.success("Theme saved to your account", {
+          id: "appearance-theme",
+          description: "It follows you to every device you sign in on.",
+        }),
+      () =>
+        toast.error("Theme applied here, but couldn't save it to your account.", {
+          id: "appearance-theme",
+        }),
     );
   };
 
   const chooseFont = (id: string) => {
-    applyFont(id);
+    applyFont(id); // instant, local
     setFont(id);
+    // Saved to the account like the theme and palette (SET-17); an older server without the field
+    // keeps it on this browser, and the toast says which happened.
+    saveFont(id).then(
+      (synced) =>
+        toast.success(synced ? "Font saved to your account" : "Font saved on this browser", {
+          id: "appearance-font",
+          description: synced
+            ? "It follows you to every device you sign in on."
+            : "Your other devices keep their own font.",
+        }),
+      () =>
+        toast.error("Font applied here, but couldn't save it to your account.", {
+          id: "appearance-font",
+        }),
+    );
   };
 
   const choosePalette = (id: string) => {
     pickedHere.current = true;
     applyPalette(id); // instant, local
     setPalette(id);
-    savePalette(id).catch(() =>
-      toast.error("Palette applied here, but couldn't save it to your account."),
+    savePalette(id).then(
+      () =>
+        toast.success("Color theme saved to your account", {
+          id: "appearance-palette",
+          description: "It follows you to every device you sign in on.",
+        }),
+      () =>
+        toast.error("Color theme applied here, but couldn't save it to your account.", {
+          id: "appearance-palette",
+        }),
     );
   };
+
+  // The offered eight, plus the account's own palette when it is one no longer offered.
+  const shownPalettes = PALETTES.filter((p) => OFFERED.has(p.id) || p.id === keptPalette);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Appearance"
-        description="Choose how WorkPulse looks on this device."
+        description="Choose how WorkPulse looks for you. Theme, color theme and font are saved to your account and follow you to every device. Changes apply as you pick them."
       />
 
       <Card>
         <CardHeader>
           <CardTitle>Theme</CardTitle>
           <CardDescription>
-            Applies to your account across your devices. It does not change the
-            theme for other members.
+            Saved to your account, so it follows you to every device you sign in on.
+            Other members aren&apos;t affected.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -235,8 +303,8 @@ export function AppearanceSettings() {
         <CardHeader>
           <CardTitle>Color theme</CardTitle>
           <CardDescription>
-            Pick the accent palette used across WorkPulse. Applies to your account across your
-            devices; only the brand colors change — the neutrals stay put.
+            The accent colors used across WorkPulse — the neutrals stay put. Saved to your
+            account, so it follows you to every device you sign in on.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -245,8 +313,9 @@ export function AppearanceSettings() {
             aria-label="Color theme"
             className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"
           >
-            {PALETTES.map((p) => {
+            {shownPalettes.map((p) => {
               const selected = mounted && palette === p.id;
+              const retired = !OFFERED.has(p.id);
               return (
                 <button
                   key={p.id}
@@ -272,7 +341,9 @@ export function AppearanceSettings() {
                       <span className="truncate">{p.name}</span>
                       {p.id === DEFAULT_PALETTE ? <DefaultBadge /> : null}
                     </p>
-                    <p className="truncate text-xs text-muted-foreground">{p.note}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {retired ? "Yours — no longer offered" : p.note.replace(/^Default · /, "")}
+                    </p>
                   </div>
                   <span
                     className={cn(
@@ -295,7 +366,7 @@ export function AppearanceSettings() {
         <CardHeader>
           <CardTitle>Font</CardTitle>
           <CardDescription>
-            Choose the type pairing used across WorkPulse. Saved on this browser.
+            The type pairing used across WorkPulse. Saved to your account, like the theme.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -342,7 +413,12 @@ export function AppearanceSettings() {
                   </div>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 space-y-0.5">
-                      <p className="truncate text-sm font-medium">{f.name}</p>
+                      {/* "Default", like the theme and palette — it said "Current" whatever was
+                          picked (UX audit SET-17). */}
+                      <p className="flex items-center gap-1.5 text-sm font-medium">
+                        <span className="truncate">{f.name}</span>
+                        {f.id === DEFAULT_FONT ? <DefaultBadge /> : null}
+                      </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {f.note}
                       </p>

@@ -22,6 +22,12 @@ import { ApiError } from "@/lib/api";
  */
 const PROVIDER_KEY = "wp-integration-pending-provider";
 
+/**
+ * Query parameter the marketplace reads to open a provider's setup straight after connecting —
+ * `?setup=slack` opens Slack's channel routing (UX audit 2026-10-16, SET-21).
+ */
+export const SETUP_PARAM = "setup";
+
 /** Called by the marketplace immediately before it navigates to the provider. */
 export function rememberPendingProvider(provider: string) {
   try {
@@ -76,8 +82,13 @@ export function IntegrationsCallback() {
     completeConnect(provider, code, state)
       .then(() => {
         setDone(true);
-        // No `?connected=1`: nothing read it, and this page has already said so (WP-471).
-        router.replace("/settings/integrations");
+        // Slack posts nothing until a channel is chosen, so the marketplace opens its routing on
+        // arrival (SET-21). Other providers have nothing to set up and just land on the page.
+        router.replace(
+          provider === "slack"
+            ? `/settings/integrations?${SETUP_PARAM}=slack`
+            : "/settings/integrations",
+        );
       })
       .catch((e) => {
         setError(
@@ -111,7 +122,7 @@ export function IntegrationsCallback() {
         <EmptyState
           icon={CheckCircle2}
           title="Connected"
-          description="Taking you back to Integrations…"
+          description="Taking you back to Integrations to finish setting it up…"
         />
       </div>
     );

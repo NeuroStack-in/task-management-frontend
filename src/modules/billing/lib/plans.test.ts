@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 import { PLANS as SIGNUP_PLANS } from "@/modules/auth/components/auth-modals";
 import { PRICING as LANDING_PRICING } from "@/modules/marketing/landing/content";
 import { PUBLIC_PLANS } from "@/modules/marketing/pricing/content";
-import { membersLabel, PLAN_TIERS, tierOf } from "./plans";
+import {
+  annualSaving,
+  cadenceOf,
+  downgradeLoss,
+  FEATURE_LABELS,
+  membersLabel,
+  PLAN_TIERS,
+  priceFor,
+  tierOf,
+} from "./plans";
 
 /**
  * WP-105 (QA audit 2026-10-08): the public pricing, the landing page, the sign-up picker and in-app
@@ -53,5 +62,38 @@ describe("one pricing catalog", () => {
     for (const f of lower) {
       expect(f).not.toMatch(/screenshot|\bAI\b|anomal|unlimited members/i);
     }
+  });
+});
+
+/** UX audit 2026-10-16, SET-09 / SET-10. */
+describe("cadence and downgrades", () => {
+  it("prices a tier for its cadence, and reads anything but annual as monthly", () => {
+    const starter = tierOf("starter");
+    expect(priceFor(starter, "monthly")).toBe(12);
+    expect(priceFor(starter, "annual")).toBe(10);
+    expect(annualSaving(starter)).toBe(17);
+    expect(annualSaving(tierOf("free"))).toBe(0);
+    expect(cadenceOf("annual")).toBe("annual");
+    expect(cadenceOf("yearly")).toBe("monthly");
+    expect(cadenceOf(undefined)).toBe("monthly");
+  });
+
+  it("mirrors Plan::allowed — each plan contains the one below it", () => {
+    expect(tierOf("enterprise").allowed).toEqual(Object.keys(FEATURE_LABELS));
+    for (const k of tierOf("free").allowed) expect(tierOf("starter").allowed).toContain(k);
+    expect(tierOf("starter").allowed).not.toContain("monitoring.screenshots");
+  });
+
+  it("names what a downgrade switches off, apart from what was never on", () => {
+    const on = new Set(["monitoring.screenshots", "ai.assistant", "monitoring.activity"]);
+    const loss = downgradeLoss(tierOf("enterprise"), tierOf("starter"), (k) => on.has(k));
+    expect(loss.switchedOff).toEqual(["monitoring.screenshots", "ai.assistant"]);
+    expect(loss.unavailable).toEqual(["insights.reports.ai_pdf", "ai.insights", "anomalies"]);
+    expect(loss.seatCap).toBe(25);
+  });
+
+  it("loses nothing on an upgrade", () => {
+    const loss = downgradeLoss(tierOf("free"), tierOf("enterprise"), () => true);
+    expect(loss).toEqual({ switchedOff: [], unavailable: [], seatCap: null });
   });
 });

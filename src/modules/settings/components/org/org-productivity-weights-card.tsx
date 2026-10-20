@@ -11,8 +11,9 @@
  * List/read is open to members; saving needs `settings:manage` (server `OrgSettingsManage`).
  */
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { SlidersHorizontal } from "lucide-react";
+import { Info, SlidersHorizontal } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
@@ -35,6 +36,9 @@ const DEFAULT_PERCENTS = toPercents(GLOBAL_DEFAULT_WEIGHTS);
 export function OrgProductivityWeightsCard() {
   const { can } = usePermissions();
   const canManage = can("settings:manage");
+  // Tracking rules is gated on `monitoring:manage` (read and write), so link there only for roles
+  // the page will open for — anyone else gets its name.
+  const canRules = can("monitoring:manage");
 
   const [percents, setPercents] = useState<PercentWeights | null>(null);
   const [usingDefaults, setUsingDefaults] = useState(false);
@@ -100,13 +104,59 @@ export function OrgProductivityWeightsCard() {
           <div className="space-y-1.5">
             <CardTitle>Productivity score weights</CardTitle>
             <CardDescription>
-              How the four score terms blend into each person&apos;s 0–100 productivity score. These
-              are the organization defaults; individual departments can override them.
+              How much each of the four parts counts towards each person&apos;s daily 0–100
+              productivity score. These are the organization&apos;s defaults.
             </CardDescription>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* How the two "weights" controls combine (UX audit 2026-10-16, SET-07). Admins met a
+            percentage mix here and 0–1 category weights in Tracking rules with nothing saying
+            which one moves the score. The truth, from the scorer (`score_compute`, resolve order in
+            `insights::shared::org::productivity_weights`): these four percentages are the mix —
+            a department's own mix wins, then these, then the built-in 25/40/15/20 — and the
+            category weights only feed Quality, and only on a day the AI rated no screenshots. */}
+        <div className="border-border bg-muted/40 text-muted-foreground flex items-start gap-2 rounded-md border px-3 py-2.5 text-xs">
+          <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <div className="space-y-1.5">
+            <p>
+              <span className="text-foreground font-medium">How the score is worked out.</span>{" "}
+              Each day, the four parts below are each scored 0–100 and blended using these
+              percentages.
+            </p>
+            <ul className="list-disc space-y-1 pl-4">
+              <li>
+                A department can have its own percentages, set from its{" "}
+                <span className="text-foreground font-medium">Productivity</span> button under{" "}
+                {/* A plain anchor: a hash on this same page switches the tab (the page follows
+                    `hashchange`, which a router push doesn't fire). */}
+                <a
+                  href="#structure"
+                  className="text-primary font-medium underline-offset-2 hover:underline"
+                >
+                  Structure → Departments
+                </a>
+                . A department without its own uses these.
+              </li>
+              <li>
+                The productive / neutral / distracting weights in{" "}
+                {canRules ? (
+                  <Link
+                    href="/settings/tracking-rules"
+                    className="text-primary font-medium underline-offset-2 hover:underline"
+                  >
+                    Tracking rules
+                  </Link>
+                ) : (
+                  <span className="text-foreground font-medium">Tracking rules</span>
+                )}{" "}
+                don&apos;t change this mix. They only decide the Quality part, and only on days the
+                AI rated none of the person&apos;s screenshots.
+              </li>
+            </ul>
+          </div>
+        </div>
         {loading ? (
           <div className="flex min-h-[8rem] items-center justify-center">
             <Loader label="Loading weights…" />

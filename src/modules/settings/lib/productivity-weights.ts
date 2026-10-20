@@ -20,15 +20,30 @@ export type WeightTerm = (typeof WEIGHT_TERMS)[number];
 /** Whole-percent form of the four weights (what the UI edits). */
 export type PercentWeights = Record<WeightTerm, number>;
 
-/** Human labels + one-line meanings, kept in step with the Productivity-trends popover. */
+/**
+ * Human labels + one-line meanings, worded from the scorer (`score_compute/score.rs`, `docs/PRODUCTIVITY.md` §1) and in step
+ * with the Activity tab's "Productivity score" definition (UX audit SET-07). Focus used to read
+ * "steady work vs. constant switching" — it is the share of active time with real input — and Quality
+ * "active time in productive apps", which is only its fallback.
+ */
 export const WEIGHT_META: Record<
   WeightTerm,
   { label: string; blurb: string }
 > = {
-  u: { label: "Utilisation", blurb: "How much of the day was active." },
-  q: { label: "Quality", blurb: "Active time spent in productive apps." },
-  f: { label: "Focus", blurb: "Steady work vs. constant switching." },
-  r: { label: "Reliability", blurb: "Showing up consistently." },
+  // Against time on the timer; the working day (Schedule tab) only when no timer ran — the scorer's
+  // `u_denominator` (`score_compute/score.rs`), newer than PRODUCTIVITY.md §1's formula.
+  u: {
+    label: "Utilisation",
+    blurb:
+      "How much of the time on the timer was active at the computer — or of the working day, when no timer ran.",
+  },
+  q: {
+    label: "Quality",
+    blurb:
+      "How well the time was spent: the AI's rating of the day's screenshots, or — when none were rated — the app category weights from Tracking rules.",
+  },
+  f: { label: "Focus", blurb: "How much of the active time had real keyboard or mouse input." },
+  r: { label: "Reliability", blurb: "Starting on time and working the expected hours." },
 };
 
 /**

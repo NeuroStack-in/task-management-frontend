@@ -1,131 +1,78 @@
 "use client";
 
-import { Laptop } from "lucide-react";
+import Link from "next/link";
+import { Building2, Laptop } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useDeviceId } from "@/hooks/use-device-id";
-import { useSessions } from "@/modules/security/use-sessions";
+import { SessionsList } from "@/modules/security/components/sessions-list";
 import { MfaCard } from "./mfa-card";
 import { PasswordCard } from "./password-card";
 
 /**
- * Epoch ms → a short relative label. Real sessions carry `{session_id, last_seen}` only —
- * Cognito exposes no device / IP / location without its paid advanced-security tier, and there is
- * no per-session revoke endpoint (§15), so this section is honestly lean and read-only.
- */
-function timeAgo(ms: number | null): string {
-  if (!ms) return "Unknown";
-  const diff = Date.now() - ms;
-  if (diff < 0) return "Just now";
-  const min = Math.floor(diff / 60_000);
-  if (min < 1) return "Active now";
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const d = Math.floor(hr / 24);
-  return d === 1 ? "Yesterday" : `${d}d ago`;
-}
-
-/**
- * The personal account-security page (/settings/login-security).
+ * **Login & security** — your own sign-in, for every role (/settings/login-security).
  *
- * MFA and password are **shared components** — Owner/Admin get the same two controls inside the org
- * Security Center, which is the only security destination in their rail. Keeping one implementation
- * each is what stops the personal and org views drifting apart.
+ * Personal and organisation security used to be tangled (UX audit 2026-10-16, SET-08): Owner/Admin
+ * had no entry here, so their own authenticator, password and sessions sat inside the org Security
+ * page beside the platform policies, while employees got the same three controls on this page — two
+ * pages rendering the same components, and global search sending owners to a page their rail didn't
+ * list. Now this page is the one place for *your* sign-in, in every rail, and Settings → Security
+ * holds only what applies to the whole organisation.
  */
 export function AccountSecuritySettings() {
-  // Roles WITH the org Security Center (Owner/Admin) reach this page directly rather than via the
-  // rail, so the heading matches whichever label brought them here.
   const { can } = usePermissions();
-  const heading = can("security:view") ? "Login & security" : "Security";
-
-  // Active sessions — real, from GET /v1/me/sessions (sorted newest-first). Lean + read-only.
-  const {
-    sessions,
-    loading: sessionsLoading,
-    error: sessionsError,
-  } = useSessions();
-
-  // "This device" is the row whose id matches THIS browser's stable device id. Fall back to the
-  // newest row when the id isn't among them yet (its heartbeat hasn't landed, or storage is blocked)
-  // so the badge always marks something sensible rather than vanishing.
-  const deviceId = useDeviceId();
-  const currentIdx = deviceId ? sessions.findIndex((s) => s.session_id === deviceId) : -1;
-  const thisDeviceIdx = currentIdx >= 0 ? currentIdx : 0;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={heading}
-        description="Protect your account with multi-factor authentication and a strong password."
+        title="Login & security"
+        description="Your own sign-in: multi-factor authentication, your password, and where you're signed in."
       />
 
-      {/* ── Multi-factor authentication (shared with the org Security Center) ── */}
-      <MfaCard />
+      {/* `id`s so global search and notifications can land on the exact card. */}
+      <div id="mfa" className="scroll-mt-24">
+        <MfaCard />
+      </div>
 
-      {/* Password + active sessions, side by side on large screens. */}
+      {/* Password + your sessions, side by side on large screens. */}
       <div className="grid items-start gap-6 lg:grid-cols-2">
-        {/* ── Password: update via emailed code (shared with the org Security Center) ── */}
-        <PasswordCard />
+        <div id="password" className="scroll-mt-24">
+          <PasswordCard />
+        </div>
 
-        {/* ── Active sessions ── */}
-        <Card>
+        {/* The list itself is the shared `SessionsList` (security module, UX audit SET-18). */}
+        <Card id="sessions" className="scroll-mt-24">
           <CardContent className="space-y-3 p-5">
             <div className="flex items-center gap-2">
-              <Laptop className="size-4 text-muted-foreground" />
-              <p className="font-medium">Active sessions</p>
+              <Laptop className="size-4 text-muted-foreground" aria-hidden />
+              <h2 className="font-medium">Your sessions</h2>
             </div>
             <p className="-mt-1 text-sm text-muted-foreground">
-              Devices currently signed in to your account. Per-session sign-out
-              isn&apos;t available yet.
+              Browsers signed in to your account. Signing one out from here isn&apos;t available
+              yet.
             </p>
-            {/* Show ~3 sessions; the rest scroll within this fixed height so the
-                card never grows tall. */}
-            <div className="max-h-56 space-y-2.5 overflow-y-auto pr-1">
-              {sessionsLoading ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  Loading sessions…
-                </p>
-              ) : sessionsError ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  {sessionsError}
-                </p>
-              ) : sessions.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No active sessions recorded.
-                </p>
-              ) : (
-                sessions.map((s, i) => (
-                  <div
-                    key={s.session_id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <Laptop className="size-4" />
-                      </span>
-                      <div>
-                        <p className="flex items-center gap-2 text-sm font-medium">
-                          {s.user_agent || "Web session"}
-                          {i === thisDeviceIdx ? (
-                            <span className="rounded-full bg-success/12 px-1.5 py-0.5 text-[10px] font-medium text-success">
-                              This device
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="font-mono text-xs text-muted-foreground">
-                          {s.session_id} · {timeAgo(s.last_seen)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+            <SessionsList />
           </CardContent>
         </Card>
       </div>
+
+      {/* Where the organisation's side lives, for the roles that have it. */}
+      {can("security:view") ? (
+        <p className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-xs text-muted-foreground">
+          <Building2 className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            Security for the whole organization — the password policy, session lifetimes,
+            resetting a member&apos;s authenticator and security events — is in{" "}
+            <Link
+              href="/settings/security"
+              className="font-medium text-primary underline-offset-2 hover:underline"
+            >
+              Settings → Security
+            </Link>
+            .
+          </span>
+        </p>
+      ) : null}
     </div>
   );
 }

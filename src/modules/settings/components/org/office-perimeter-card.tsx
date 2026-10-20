@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
+import { useCardGuard } from "../../lib/card-guard";
+import { CardSaveFooter } from "../save-footer";
 import { LiveMap } from "@/modules/locations/components/live-map";
 import { useGeofenceStore } from "@/stores/geofence.store";
 
@@ -60,7 +61,7 @@ export function OfficePerimeterCard() {
   // Its own Save, so its own guard (WP-347). Unsaved perimeter edits live in the shared store and
   // survive moving around the app (the Save stays up when you come back), so only closing or
   // reloading the tab — which does lose them — asks first.
-  useUnsavedGuard(canManage && dirty, { keptOnLeave: true });
+  useCardGuard(canManage && dirty, { keptOnLeave: true });
 
   const fence = { center, radiusM };
 
@@ -138,40 +139,25 @@ export function OfficePerimeterCard() {
             </>
           ) : null}
 
-          {/* Explicit save, offered only when something changed — an org-wide autosave would move
-              everyone's on-site status on a stray drag. Outside the enabled-only block on purpose:
-              un-ticking "Enable perimeter" is itself a change, and with Save inside that block it
-              vanished the moment the box was cleared, so turning the perimeter off could never be
-              saved (QA audit 2026-10-08, WP-101). Reset sits beside it for the same reason: it undoes
-              the unsaved edits — back to the saved perimeter, not the shipped placeholder — so it
-              belongs wherever there are edits to undo, the off switch included (WP-535). */}
-          {canManage && dirty ? (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7"
-                disabled={saving}
-                onClick={() => {
-                  reset();
-                  setEditing(false);
-                }}
-              >
-                Reset
-              </Button>
-              <Button
-                size="sm"
-                className="h-7"
-                disabled={saving}
-                onClick={() => void save().then((ok) => ok && setEditing(false))}
-              >
-                {saving ? "Saving…" : "Save perimeter"}
-              </Button>
-            </>
-          ) : null}
-
           {error ? <span className="text-destructive">{error}</span> : null}
         </div>
+
+        {/* Explicit save, offered only when something changed — an org-wide autosave would move
+            everyone's on-site status on a stray drag. Shown whenever there are edits, the off switch
+            included: with Save inside the enabled-only controls it vanished the moment the box was
+            cleared, so turning the perimeter off could never be saved (QA audit 2026-10-08, WP-101).
+            Cancel goes back to the saved perimeter, not the shipped placeholder (WP-535). The same
+            footer as every other organisation card (UX audit XC-11). */}
+        <CardSaveFooter
+          dirty={canManage && dirty}
+          saving={saving}
+          onSave={() => void save().then((ok) => ok && setEditing(false))}
+          onCancel={() => {
+            reset();
+            setEditing(false);
+          }}
+          saveLabel="Save perimeter"
+        />
 
         <p className="text-xs text-muted-foreground">
           {canManage

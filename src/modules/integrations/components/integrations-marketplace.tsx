@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
-  Eye,
+  CheckCircle2,
   Link2,
   Loader2,
   Plug,
   Send,
+  SlidersHorizontal,
   Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -53,7 +54,8 @@ import {
   type ApiIntegration,
   type SlackConfig,
 } from "@/modules/integrations/services/integrations.service";
-import { rememberPendingProvider } from "./integrations-callback";
+import { CardSaveFooter } from "@/modules/settings/components/save-footer";
+import { rememberPendingProvider, SETUP_PARAM } from "./integrations-callback";
 import { ProviderLogo } from "./provider-logo";
 
 /**
@@ -72,6 +74,15 @@ export function IntegrationsMarketplace() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [channelsOpen, setChannelsOpen] = useState(false);
+  /**
+   * Opened straight after connecting Slack (UX audit 2026-10-16, SET-21). Connecting used to land
+   * back on this page with nothing more to do, while nothing is posted until a channel is chosen —
+   * so the routing step was easy never to find.
+   */
+  const [setupMode, setSetupMode] = useState(false);
+  /** The routing editor holds unsaved changes — closing the dialog asks first (XC-11). */
+  const [routingDirty, setRoutingDirty] = useState(false);
+  const [confirmCloseRouting, setConfirmCloseRouting] = useState(false);
   /** A Slack reconnect waiting for the admin to confirm that it clears the routing. */
   const [confirmReconnect, setConfirmReconnect] = useState<ApiIntegration | null>(null);
   /** Disconnecting revokes the token and drops the connection — Slack's channel routing with it (XC-07). */
@@ -88,6 +99,43 @@ export function IntegrationsMarketplace() {
   }, []);
 
   useEffect(load, [load]);
+
+  // `?setup=slack` — the callback's hand-off after a fresh Slack connection. Read from the URL, not
+  // `useSearchParams`, so this page needs no Suspense boundary; dropped from the URL once read so a
+  // reload doesn't reopen it.
+  const [setupRequested, setSetupRequested] = useState(false);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get(SETUP_PARAM) !== "slack") return;
+    setSetupRequested(true);
+    url.searchParams.delete(SETUP_PARAM);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+  useEffect(() => {
+    if (!setupRequested || !rows) return;
+    setSetupRequested(false);
+    const s = rows.find((r) => r.provider === "slack");
+    if (canManage && (s?.status === "connected" || s?.status === "error")) {
+      setSetupMode(true);
+      setChannelsOpen(true);
+    }
+  }, [setupRequested, rows, canManage]);
+
+  /** Close the routing dialog — asking first if the routing has unsaved changes. */
+  const requestCloseRouting = () => {
+    if (routingDirty) {
+      setConfirmCloseRouting(true);
+      return;
+    }
+    setChannelsOpen(false);
+    setSetupMode(false);
+  };
+  const discardRouting = () => {
+    setConfirmCloseRouting(false);
+    setRoutingDirty(false);
+    setChannelsOpen(false);
+    setSetupMode(false);
+  };
 
   const onConnect = async (provider: string) => {
     setBusy(provider);
@@ -241,20 +289,49 @@ export function IntegrationsMarketplace() {
         </DialogContent>
       </Dialog>
 
-      {/* Routing lives in a dialog now, opened from the Slack card's eye button, so the card grid
-          stays compact instead of a tall panel always hanging below it. */}
-      <Dialog open={channelsOpen} onOpenChange={setChannelsOpen}>
+      {/* Routing lives in a dialog, opened from the Slack card's "Channel routing" button — and
+          straight after connecting (`setupMode`) — so the card grid stays compact. X, Escape and an
+          outside click all arrive at `onOpenChange`; none of them discards unsaved routing silently. */}
+      <Dialog
+        open={channelsOpen}
+        onOpenChange={(open) => (open ? setChannelsOpen(true) : requestCloseRouting())}
+      >
         {/* `sm:max-w-2xl` (not plain max-w) — DialogContent's base sets `sm:max-w-sm`, and a
             `sm:` variant only loses to another `sm:` variant. */}
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Slack channels</DialogTitle>
+            <DialogTitle>{setupMode ? "Choose your Slack channels" : "Slack channel routing"}</DialogTitle>
             <DialogDescription>
               Choose where each update is posted. Anything left on the default falls back to the
               default channel; with no default, that update isn&apos;t posted at all.
             </DialogDescription>
           </DialogHeader>
-          {hasConnection(slack) ? <SlackRouting /> : null}
+          {setupMode ? (
+            <p className="border-success/30 bg-success/[0.06] flex items-start gap-2 rounded-lg border px-3 py-2 text-sm">
+              <CheckCircle2 className="text-success mt-0.5 size-4 shrink-0" aria-hidden />
+              <span>
+                Slack is connected{slack?.external_account ? ` to ${slack.external_account}` : ""}.
+                Nothing is posted until you choose a channel — pick a default below, then invite the
+                WorkPulse app to that channel in Slack.
+              </span>
+            </p>
+          ) : null}
+          {confirmCloseRouting ? (
+            <div
+              role="alertdialog"
+              aria-label="Discard unsaved routing?"
+              className="border-warning/40 bg-warning/10 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+            >
+              <span className="min-w-0 flex-1">Your routing changes aren&apos;t saved.</span>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmCloseRouting(false)}>
+                Keep editing
+              </Button>
+              <Button size="sm" variant="destructive" onClick={discardRouting}>
+                Discard changes
+              </Button>
+            </div>
+          ) : null}
+          {hasConnection(slack) ? <SlackRouting onDirtyChange={setRoutingDirty} /> : null}
         </DialogContent>
       </Dialog>
     </div>
@@ -289,7 +366,7 @@ function ProviderCard({
   busy: boolean;
   /** A provider no longer offered ({@link HIDDEN_PROVIDERS}) but still connected: disconnect only. */
   retired?: boolean;
-  /** When set (Slack, connected or errored), an eye button that opens the channel-routing dialog. */
+  /** When set (Slack, connected or errored), the "Channel routing" button that opens its dialog. */
   onViewChannels?: () => void;
   onConnect: () => void;
   onReconnect: () => void;
@@ -381,17 +458,12 @@ function ProviderCard({
               <Unplug className="size-4" />
               Disconnect
             </Button>
-            {/* Opens the channel-routing dialog. Present for a Slack card with a connection. */}
+            {/* Opens the channel-routing dialog. Present for a Slack card with a connection. A
+                labelled button — routing used to hide behind an icon-only eye (UX audit SET-21). */}
             {onViewChannels ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="View channel routing"
-                title="Channel routing"
-                onClick={onViewChannels}
-                className="ml-auto"
-              >
-                <Eye className="size-4" />
+              <Button variant="outline" onClick={onViewChannels} className="sm:ml-auto">
+                <SlidersHorizontal className="size-4" />
+                Channel routing
               </Button>
             ) : null}
           </div>
@@ -420,8 +492,10 @@ const USE_DEFAULT = "__default__";
 // picker mode (WP-471).
 const NO_DEFAULT = "__none__";
 
-function SlackRouting() {
+function SlackRouting({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
   const [config, setConfig] = useState<SlackConfig | null>(null);
+  /** The routing as last loaded or saved — what Cancel goes back to, and what "unsaved" compares. */
+  const [savedConfig, setSavedConfig] = useState<SlackConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [channels, setChannels] = useState<string[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -430,13 +504,18 @@ function SlackRouting() {
   const loadConfig = useCallback(() => {
     setLoadError(null);
     getSlackConfig()
-      .then(setConfig)
+      .then((c) => {
+        setConfig(c);
+        setSavedConfig(c);
+      })
       .catch((e) => {
         // Only a 404 means "connected, but never configured" — an empty editor. Any other failure
         // is a read that did not happen: showing the empty editor then let Save overwrite the org's
         // real routing with nothing (QA audit 2026-10-08, WP-069).
         if (e instanceof ApiError && e.status === 404) {
-          setConfig({ default_channel: "", channels: {} });
+          const empty = { default_channel: "", channels: {} };
+          setConfig(empty);
+          setSavedConfig(empty);
         } else {
           setLoadError(e instanceof ApiError ? e.message : "Couldn't load the channel routing.");
         }
@@ -451,6 +530,21 @@ function SlackRouting() {
       .then(setChannels)
       .catch(() => setChannels([]));
   }, [loadConfig]);
+
+  // Unsaved: what is on screen differs from what was loaded or last saved. An event set back to
+  // "default" ("") counts the same as one never set.
+  const norm = (c: SlackConfig | null) =>
+    c
+      ? JSON.stringify({
+          d: c.default_channel,
+          c: Object.fromEntries(Object.entries(c.channels).filter(([, v]) => v)),
+        })
+      : "";
+  const dirty = config !== null && savedConfig !== null && norm(config) !== norm(savedConfig);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   if (loadError) {
     return (
@@ -474,7 +568,9 @@ function SlackRouting() {
   const save = async () => {
     setSaving(true);
     try {
-      setConfig(await setSlackConfig(config));
+      const next = await setSlackConfig(config);
+      setConfig(next);
+      setSavedConfig(next);
       toast.success("Channel routing saved");
     } catch (e) {
       toast.error("Couldn't save routing", {
@@ -598,14 +694,19 @@ function SlackRouting() {
           })}
         </div>
 
-        <div className="flex gap-2">
-          <Button onClick={save} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-            Save routing
-          </Button>
-          {/* Without this, the first sign that routing is wrong is a leave request that silently
-              never appeared — noticed days later, if at all. */}
-          <Button variant="outline" onClick={test} disabled={testing}>
+        {/* The same Save / Cancel as every organisation setting (UX audit XC-11). */}
+        <CardSaveFooter
+          dirty={dirty}
+          saving={saving}
+          onSave={() => void save()}
+          onCancel={() => savedConfig && setConfig(savedConfig)}
+          saveLabel="Save routing"
+        />
+        {/* Without this, the first sign that routing is wrong is a leave request that silently
+            never appeared — noticed days later, if at all. It posts to the *saved* routing, so it
+            waits for a save. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={test} disabled={testing || dirty}>
             {testing ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
@@ -613,6 +714,9 @@ function SlackRouting() {
             )}
             Send test message
           </Button>
+          {dirty ? (
+            <span className="text-muted-foreground text-xs">Save first — the test uses the saved routing.</span>
+          ) : null}
         </div>
     </div>
   );

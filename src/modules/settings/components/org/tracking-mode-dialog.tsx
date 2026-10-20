@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePermissions } from "@/hooks/use-permissions";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -43,6 +45,8 @@ export function TrackingModeDialog({
   onConfirm: (next: TrackingMode) => void;
 }) {
   const [choice, setChoice] = useState<TrackingMode>(current);
+  // Device agents needs `agents:view`; link there only for roles it opens for (UX audit SET-15).
+  const canAgents = usePermissions().can("agents:view");
   const [ack, setAck] = useState(false);
 
   // Reset to the current mode whenever the dialog re-opens.
@@ -130,8 +134,18 @@ export function TrackingModeDialog({
             <p>
               ⚠️ Any devices already running keep tracking. Changing this hides
               or shows surfaces in the web app; it does not stop an installed
-              agent — revoke devices under Settings → Device agents if that
-              isn&apos;t what you want.
+              agent — revoke devices under{" "}
+              {canAgents ? (
+                <Link
+                  href="/settings/agents"
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  Settings → Device agents
+                </Link>
+              ) : (
+                "Settings → Device agents"
+              )}{" "}
+              if that isn&apos;t what you want.
             </p>
             <p className="mt-2">This change is recorded in your audit log.</p>
           </div>

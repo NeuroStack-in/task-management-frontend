@@ -11,6 +11,7 @@
  * data is org-wide, so it's off for the department scope.
  */
 import { useEffect, useId, useMemo, useState } from "react";
+import Link from "next/link";
 import { Globe, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -31,11 +32,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { SettingsSaveBar } from "@/components/shared/settings-save-bar";
 import { Loader } from "@/components/shared/loader";
 import { ApiError } from "@/lib/api";
 import { isDomain } from "@/lib/validation";
-import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
+import { usePermissions } from "@/hooks/use-permissions";
+import { useCardGuard } from "../../lib/card-guard";
+import { CardSaveFooter } from "../save-footer";
 import { cn } from "@/lib/utils";
 import { UnclassifiedAppsPanel } from "./unclassified-apps-panel";
 import { insertRule, matchesAnyRule, shadowedBy, unshadow } from "../../lib/rule-order";
@@ -148,6 +150,10 @@ function CategoriesPanel({
   onWeights: (next: Record<RuleCategory, number>) => void;
   canManage: boolean;
 }) {
+  // The four-part mix lives on the Organization page (`settings:view`); link there only for roles
+  // that page opens for.
+  const { can } = usePermissions();
+  const canOrg = can("settings:view");
   return (
     <div className="space-y-3" data-tour="settings:weights">
       {CATEGORIES.map((cat) => (
@@ -191,6 +197,25 @@ function CategoriesPanel({
         How much a minute in each category counts towards the Quality part of the productivity
         score, from 0 (not at all) to 1 (fully); distracting time typically weighs 0. On days the AI
         has scored screenshots, Quality comes from those scores instead.
+      </p>
+      {/* Which of the product's two "weights" controls does what (UX audit 2026-10-16, SET-07):
+          these feed Quality only; the mix of the four parts is the Organization page's. */}
+      <p className="text-xs text-muted-foreground">
+        These don&apos;t decide how much Quality counts in the score. That mix — Utilisation,
+        Quality, Focus and Reliability as percentages — is set in{" "}
+        {canOrg ? (
+          <Link
+            href="/settings/organization#policies"
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            Organization → Policies → Productivity score weights
+          </Link>
+        ) : (
+          <span className="font-medium text-foreground">
+            Organization → Policies → Productivity score weights
+          </span>
+        )}
+        , and a department can have its own.
       </p>
     </div>
   );
@@ -614,7 +639,7 @@ export function RulesEditor({
     () => Boolean(doc && draft && JSON.stringify(doc) !== JSON.stringify(draft)),
     [doc, draft],
   );
-  useUnsavedGuard(dirty);
+  useCardGuard(dirty);
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
@@ -790,14 +815,18 @@ export function RulesEditor({
       )}
       </div>
 
-      {canManage && (
-        <SettingsSaveBar
-          dirty={dirty}
-          saving={saving}
-          onSave={handleSave}
-          onReset={() => doc && setDraft(structuredClone(doc))}
-        />
-      )}
+      {/* One document across all three tabs, so one Save for all of them — pinned to the bottom
+          of the pane so it stays in sight of whichever tab was edited (UX audit XC-11). */}
+      <CardSaveFooter
+        dirty={canManage && dirty}
+        saving={saving}
+        onSave={() => void handleSave()}
+        onCancel={() => doc && setDraft(structuredClone(doc))}
+        saveLabel="Save rules"
+        hint="Saves every tab here together."
+        sticky
+        className="mx-0 rounded-lg border bg-card px-4 py-3 shadow-sm"
+      />
     </div>
   );
 }

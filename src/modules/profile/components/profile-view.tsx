@@ -826,31 +826,39 @@ function RichProfile({
 
           {/* Fields — exactly what `PATCH /v1/me/profile` accepts, all persisted server-side. */}
           <div className="grid gap-4 sm:grid-cols-2">
-            <DialogField label="Full name">
-              <Input value={form.name} onChange={(e) => set("name")(e.target.value)} />
+            {/* Each label names its control (UX audit SET-20): they were bare text beside the
+                inputs, so a screen reader announced six unlabelled fields. */}
+            <DialogField label="Full name" htmlFor="profile-edit-name">
+              <Input
+                id="profile-edit-name"
+                value={form.name}
+                onChange={(e) => set("name")(e.target.value)}
+              />
             </DialogField>
-            <DialogField label="Email">
+            <DialogField label="Email" htmlFor="profile-edit-email">
               {/* Sign-in identity — not self-editable (`PATCH /v1/me/profile` doesn't accept it). */}
-              <Input type="email" value={form.email} disabled />
+              <Input id="profile-edit-email" type="email" value={form.email} disabled />
             </DialogField>
-            <DialogField label="Contact number">
-              <PhoneInput value={form.phone} onChange={set("phone")} />
+            <DialogField label="Contact number" htmlFor="profile-edit-phone">
+              <PhoneInput id="profile-edit-phone" value={form.phone} onChange={set("phone")} />
             </DialogField>
-            <DialogField label="Date of birth">
+            <DialogField label="Date of birth" htmlFor="profile-edit-dob">
               <DatePicker
+                id="profile-edit-dob"
                 value={form.dob}
                 onChange={set("dob")}
                 max={todayIso()}
                 className="w-full"
               />
             </DialogField>
-            <DialogField label="Location">
+            <DialogField label="Location" htmlFor="profile-edit-location">
               <Input
+                id="profile-edit-location"
                 value={form.location}
                 onChange={(e) => set("location")(e.target.value)}
               />
             </DialogField>
-            <DialogField label="Work mode">
+            <DialogField label="Work mode" htmlFor="profile-edit-work-mode">
               {/* `items`, so the trigger shows "On-site" rather than the raw `on-site`; and a "Not
                   set" option, so a work mode can be cleared ("" clears, per the PATCH contract) —
                   once set, it couldn't be (WP-524). */}
@@ -864,7 +872,7 @@ function RichProfile({
                   ...Object.fromEntries(WORK_MODES.map((m) => [m.value, m.label])),
                 }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="profile-edit-work-mode" className="w-full">
                   <SelectValue placeholder="Select…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -954,16 +962,21 @@ function ManagerGroup({ label, rows }: { label: string; rows: DetailRow[] }) {
 
 function DialogField({
   label,
+  htmlFor,
   className,
   children,
 }: {
   label: string;
+  /** The control's id, so the label names it and clicking the label focuses it. */
+  htmlFor?: string;
   className?: string;
   children: ReactNode;
 }) {
   return (
     <div className={cn("space-y-1.5", className)}>
-      <Label className="text-sm">{label}</Label>
+      <Label htmlFor={htmlFor} className="text-sm">
+        {label}
+      </Label>
       {children}
     </div>
   );

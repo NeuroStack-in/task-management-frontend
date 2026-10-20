@@ -50,6 +50,7 @@ import {
   type OrgPolicy,
 } from "@/modules/settings/services/org.service";
 import type { IsoWeekday } from "@/lib/workdays";
+import { CompanyTrackingCard } from "./company-tracking-card";
 
 /** Mon→Sun in ISO order, so the pill row always renders a full week in a familiar order. */
 const ISO_WEEK: IsoWeekday[] = [1, 2, 3, 4, 5, 6, 7];
@@ -245,7 +246,7 @@ export function CompanyOverview() {
     <div className="space-y-6">
       <PageHeader
         title="Company"
-        description="Your organization's details, schedule, holidays and policies."
+        description="Your organization's details, how tracking works, schedule, holidays and policies."
       />
 
       {/* ── Identity ────────────────────────────────────────────────────────────────
@@ -308,6 +309,11 @@ export function CompanyOverview() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── How tracking works here (UX audit EMP-11) ─────────────────────────────
+          Right after who the company is: for an employee this is the question the page most
+          needs to answer, and it was the one it didn't. */}
+      <CompanyTrackingCard trackingMode={org?.tracking_mode} />
 
       {/* ── Working hours ───────────────────────────────────────────────────────── */}
       {failed.hours ? (

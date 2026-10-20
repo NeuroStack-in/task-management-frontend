@@ -16,7 +16,8 @@ import { Check, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useUnsavedGuard } from "@/hooks/use-unsaved-guard";
+import { useCardGuard } from "../../lib/card-guard";
+import { CardSaveFooter } from "../save-footer";
 import { cn } from "@/lib/utils";
 import {
   WEIGHT_META,
@@ -82,7 +83,7 @@ export function WeightsForm({
   }, [values, reset]);
 
   const unsaved = canManage && isDirty;
-  useUnsavedGuard(unsaved);
+  useCardGuard(unsaved);
   useEffect(() => {
     onDirtyChange?.(unsaved);
   }, [unsaved, onDirtyChange]);
@@ -169,20 +170,24 @@ export function WeightsForm({
         </span>
       </div>
 
-      {canManage && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            {resetTo ? (
-              <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={applyReset}>
-                <RotateCcw className="size-3.5" /> {resetTo.label}
-              </Button>
-            ) : null}
-          </div>
-          <Button type="submit" size="sm" disabled={busy || !sumOk || !isDirty}>
-            {busy ? "Saving…" : submitLabel}
+      {canManage && resetTo ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={applyReset}>
+            <RotateCcw className="size-3.5" /> {resetTo.label}
           </Button>
         </div>
-      )}
+      ) : null}
+
+      {/* Save and Cancel together, like every organisation card (UX audit XC-11). There was no
+          Cancel: undoing an edit meant retyping the four numbers or leaving the page. */}
+      <CardSaveFooter
+        dirty={unsaved}
+        saving={busy}
+        onSave={() => void submit()}
+        onCancel={() => reset(values)}
+        saveLabel={submitLabel}
+        disabled={!sumOk}
+      />
     </form>
   );
 }

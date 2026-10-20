@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRight, Building2, ChevronsUpDown, Lock, Settings2 } from "lucide-react";
+import { ArrowUpRight, Building2, ChevronsUpDown, KeyRound, Settings2 } from "lucide-react";
 import { ACCOUNT_SECTIONS, ADMIN_SECTIONS } from "@/constants/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useOrgName } from "@/hooks/use-org";
@@ -51,23 +51,21 @@ interface RailGroup {
 
 /**
  * Personal account sections, rendered in-pane. Sourced from the shared catalog
- * (kept in sync with global search). The personal "Security" entry (after Profile)
- * shows for roles WITHOUT the org Security Center — Owner/Admin reach security
- * there instead. (Billing is org-level and lives in the admin groups, gated there.)
+ * (kept in sync with global search), plus **Login & security after Profile, for every role**.
+ * (Billing is org-level and lives in the admin groups, gated there.)
+ *
+ * Owner/Admin used to get no such entry: their own authenticator, password and sessions were folded
+ * into the org Security page, so the same controls rendered on two pages, Security mixed personal and
+ * organisation settings, and search sent owners to a page their rail didn't list (UX audit
+ * 2026-10-16, SET-08). Personal sign-in is here for everyone now; Access & security → Security is
+ * organisation policy only.
  */
-function accountGroup(opts: { canSecurity: boolean }): RailGroup {
+function accountGroup(): RailGroup {
   const items: RailItem[] = [];
   for (const it of ACCOUNT_SECTIONS) {
     items.push({ label: it.label, href: it.href, icon: it.icon });
-    // Personal security sits after Profile for roles WITHOUT the org Security Center. Owner/Admin
-    // don't get a second entry — their own password + reset lives inside that centre instead, so
-    // there is exactly one "Security" destination per role.
-    if (it.href === "/settings/profile" && !opts.canSecurity) {
-      items.push({
-        label: "Security",
-        href: "/settings/login-security",
-        icon: Lock,
-      });
+    if (it.href === "/settings/profile") {
+      items.push({ label: "Login & security", href: "/settings/login-security", icon: KeyRound });
     }
   }
   return { label: "Account", items };
@@ -245,7 +243,7 @@ export default function SettingsLayout({
   };
 
   const groups: RailGroup[] = [
-    accountGroup({ canSecurity: can("security:view") }),
+    accountGroup(),
     ...(showCompany ? [companyGroup] : []),
     ...adminGroups,
   ];

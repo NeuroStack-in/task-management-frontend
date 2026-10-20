@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import {
   Plug,
   Activity,
@@ -34,7 +35,6 @@ import {
 } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { PageHeader } from "@/components/shared/page-header"
-import { SettingsSaveBar } from "@/components/shared/settings-save-bar"
 import { usePermissions } from "@/hooks/use-permissions"
 import { type FeatureKey } from "@/stores/features.store"
 import { toggleFeature } from "@/lib/api"
@@ -44,7 +44,8 @@ import { isOwnerOf, useTrackingMode } from "@/hooks/use-features"
 import { featureForHref, isPathModeHidden } from "@/constants/features"
 import { TRACKING_MODE_META } from "@/lib/tracking-mode"
 import { Loader } from "@/components/shared/loader"
-import { useUnsavedGuard } from "@/hooks/use-unsaved-guard"
+import { useCardGuard } from "../lib/card-guard"
+import { CardSaveFooter } from "./save-footer"
 import { cn } from "@/lib/utils"
 import { useEntitlements } from "../use-entitlements"
 import { Button } from "@/components/ui/button"
@@ -279,8 +280,12 @@ export function FeaturesTab() {
   const [draft, setDraft] = useState<Record<FeatureKey, boolean>>(() => draftFromServer({}))
   const [pageDraft, setPageDraft] = useState<Record<string, boolean>>(() => pageDraftFrom({}))
   const [saving, setSaving] = useState(false)
-  /** Which confirmation is open, if any. Toggles reach the agents, so neither action is silent. */
-  const [confirm, setConfirm] = useState<"save" | "reset" | null>(null)
+  /**
+   * Whether the save confirmation is open. Toggles reach the agents and the model bill, so Save
+   * names what changes first. Cancel doesn't ask: nothing has been applied, so there is nothing to
+   * confirm — every organisation card cancels the same way (UX audit XC-11).
+   */
+  const [confirm, setConfirm] = useState<"save" | null>(null)
   const server = draftFromServer(enabled)
   const serverPageDraft = pageDraftFrom(serverPages)
   // Both halves. A row's single switch can change either or both, so comparing only the feature
@@ -290,7 +295,7 @@ export function FeaturesTab() {
   )
   const dirty = JSON.stringify(draft) !== JSON.stringify(server) || pagesDirty
   // Leaving via the settings rail now asks before discarding this draft.
-  useUnsavedGuard(dirty)
+  useCardGuard(dirty)
 
   // Adopt server state when it (re)loads, both halves together. `serverKey` changes only when the
   // server value actually does, so a reload that changed nothing keeps edits in flight — unless a
@@ -441,7 +446,9 @@ export function FeaturesTab() {
         </div>
       )}
 
-      <Card>
+      {/* `overflow-visible` so the save footer can stay pinned to the bottom of the pane while the
+          eighteen rows scroll past it (`overflow-hidden` would pin it to the card instead). */}
+      <Card className="overflow-visible">
         <CardHeader>
           <CardTitle>Features</CardTitle>
           <CardDescription>
@@ -505,7 +512,16 @@ export function FeaturesTab() {
                     ) : modeHidden ? (
                       <p className="mt-1 text-xs text-muted-foreground">
                         Hidden for everyone in {TRACKING_MODE_META[mode].label} tracking, whatever
-                        this switch says. The tracking mode is set under Settings → Organization.
+                        this switch says. The tracking mode is set under{" "}
+                        {/* A real link (UX audit SET-15) to the tab that holds the tracking-mode
+                            card. This page needs `settings:view`, as Organization does. */}
+                        <Link
+                          href="/settings/organization#profile"
+                          className="font-medium text-primary underline-offset-2 hover:underline"
+                        >
+                          Settings → Organization
+                        </Link>
+                        .
                       </p>
                     ) : hiddenNote ? (
                       <p className="mt-1 text-xs text-muted-foreground">{hiddenNote}</p>
@@ -558,17 +574,17 @@ export function FeaturesTab() {
             })}
           </div>
         </CardContent>
-      </Card>
-
-      {canManage && (
-        <SettingsSaveBar
-          dirty={dirty}
+        <CardSaveFooter
+          dirty={canManage && dirty}
           saving={saving}
           onSave={() => setConfirm("save")}
-          onReset={() => setConfirm("reset")}
-          saveLabel="Save changes"
+          onCancel={handleReset}
+          saveLabel="Review and save"
+          hint="You'll see what turns on and off before anything is applied."
+          sticky
+          className="mx-6 px-0"
         />
-      )}
+      </Card>
 
       {/* Confirmation, not a courtesy. These switches reach the desktop agents and the model bill,
           so the dialog NAMES what is about to change rather than asking "are you sure?" — the
@@ -618,23 +634,6 @@ export function FeaturesTab() {
           <DialogFooter showCloseButton>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : "Apply changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={confirm === "reset"} onOpenChange={(v) => !v && setConfirm(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Discard your changes?</DialogTitle>
-            <DialogDescription>
-              Every switch goes back to what is currently saved. Nothing has been applied yet, so
-              nobody has been affected.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter showCloseButton>
-            <Button variant="destructive" onClick={handleReset}>
-              Discard changes
             </Button>
           </DialogFooter>
         </DialogContent>
