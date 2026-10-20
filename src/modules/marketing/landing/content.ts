@@ -309,13 +309,13 @@ export interface Step {
 export const STEPS: Step[] = [
   {
     n: "01",
-    title: "Create your workspace",
-    body: "Set up your organization, then invite your team by email. Everyone joins with a role, so access is right from the first sign-in.",
+    title: "Request your workspace",
+    body: "Tell us about your organization — we review every request within one business day. Then invite your team by email; everyone joins with a role, so access is right from the first sign-in.",
   },
   {
     n: "02",
-    title: "Install the desktop agent",
-    body: "Your team installs the agent and accepts on-device consent. From then on, hours arrive on their own and build into timesheets.",
+    title: "Install the desktop app",
+    body: "Your team installs the WorkPulse desktop app and signs in. From then on, hours arrive on their own and build into timesheets.",
   },
   {
     n: "03",
@@ -429,7 +429,7 @@ export const PRICING: PricingTier[] = [
     features: [
       "Everything in Free",
       "Activity insight (beta)",
-      "Slack & Google Calendar integrations",
+      "Slack integration",
       membersLabel("starter"),
     ],
     cta: "Choose Starter",

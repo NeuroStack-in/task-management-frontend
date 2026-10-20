@@ -1,24 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+/**
+ * The owner's first-run setup — organization, team, tracking, dashboard.
+ *
+ * UX audit 2026-10-16, ONB-14: it was a grey app card under a hand-drawn logo, with no headings and a
+ * free-text timezone ("America/New_York" typed by hand) — another product from the sign-up the owner
+ * had just come through. It now renders inside the same split frame (`OnboardingExperience` puts it
+ * in `AuthFrame`) on the same field primitives: an H1 for the page, an H2 per step, the step
+ * indicator sign-up uses, labelled fields, and the organization timezone picker Settings uses
+ * (searchable; every zone the server can resolve, and a search for any other zone says it isn't
+ * supported rather than saving something the server would read as UTC). Where a step points at a
+ * Settings page the owner can open, it's a link (SET-15).
+ */
+
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { ONBOARDING_STEPS } from "@/modules/onboarding/steps";
-import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
-import { canAccess } from "@/lib/rbac";
+import { canAccess, canAccessPath } from "@/lib/rbac";
 import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { getOrg, updateOrg } from "@/modules/settings/services/org.service";
 import { listRoles, type ApiRole } from "@/modules/roles/services/roles.service";
@@ -34,10 +36,36 @@ import {
   type TrackingPolicy,
 } from "@/modules/agents/services/fleet.service";
 import { captureLock, capturing } from "@/modules/settings/lib/monitoring-capture";
+import { TimezonePicker } from "@/modules/settings/components/org/timezone-picker";
+import { browserZone, pickerZones, serverResolves } from "@/modules/settings/lib/timezones";
 import { effectiveFromState, useEntitlementsStore } from "@/stores/entitlements.store";
 import { legalHref } from "@/modules/legal/documents";
 import { useTrackingMode } from "@/hooks/use-features";
 import type { TrackingMode } from "@/lib/tracking-mode";
+import {
+  AuthErrorSummary,
+  AuthField,
+  AuthHeading,
+  AuthSteps,
+} from "@/modules/auth/components/auth-frame";
+
+/**
+ * "Settings → Monitoring" as a link when this person can open the page, plain text when they can't
+ * (UX audit SET-15). The wizard saves each step as it goes, so following one loses only the step on
+ * screen.
+ */
+function SettingsLink({ href, children }: { href: string; children: React.ReactNode }) {
+  if (!canAccessPath(currentRoleSnapshot(), href)) return <>{children}</>;
+  return (
+    <Link
+      href={href}
+      className="font-semibold underline underline-offset-2"
+      style={{ color: "var(--m-accent-ink)" }}
+    >
+      {children}
+    </Link>
+  );
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -78,6 +106,7 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
   /** Indices of entries that aren't email addresses — shown, not silently dropped (WP-127). */
   const [badEmails, setBadEmails] = useState<number[]>([]);
   const [roles, setRoles] = useState<ApiRole[]>([]);
+  const summaryRef = useRef<HTMLDivElement>(null);
 
   // Step 3 — tracking. The switches start from the org's CURRENT policy, and only a change is
   // written. They used to start at fixed defaults and be written back unconditionally, so walking
@@ -112,7 +141,10 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
       .then((org) => {
         if (!alive) return;
         setOrgName((v) => v || org.name || "");
-        setTimezone((v) => v || org.timezone || "");
+        // No zone on the org: start from this browser's, when the server can resolve it.
+        const mine = browserZone();
+        const fallback = mine && pickerZones().includes(mine) ? mine : "";
+        setTimezone((v) => v || org.timezone || fallback);
         setWebsite((v) => v || org.website || "");
       })
       .catch(() => {
@@ -187,7 +219,10 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
     // An address that isn't one is pointed out, not dropped without a word (WP-127).
     const bad = emails.flatMap((e, i) => (e.trim() && !EMAIL_RE.test(e.trim()) ? [i] : []));
     setBadEmails(bad);
-    if (bad.length > 0) return false;
+    if (bad.length > 0) {
+      requestAnimationFrame(() => summaryRef.current?.focus());
+      return false;
+    }
     const valid = emails.map((e) => e.trim()).filter(Boolean);
     if (valid.length === 0) {
       await markStep("invite_team", "skipped");
@@ -329,86 +364,118 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
 
   function renderStep() {
     switch (ONBOARDING_STEPS[step].key) {
-      case "org":
+      case "org": {
+        const tzUnusable = timezone.trim() !== "" && !serverResolves(timezone);
         return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="ob-company">Organization name</Label>
-              <Input
-                id="ob-company"
-                placeholder="Acme Inc."
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="ob-tz">Timezone</Label>
-                <Input
-                  id="ob-tz"
-                  placeholder="America/New_York"
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ob-site">Website</Label>
-                <Input
-                  id="ob-site"
-                  placeholder="acme.com"
-                  value={website}
-                  onChange={(e) => setWebsite(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
+          <>
+            <AuthField
+              id="ob-company"
+              label="Organization name"
+              value={orgName}
+              onChange={setOrgName}
+              autoComplete="organization"
+            />
+            <AuthField
+              id="ob-tz"
+              label="Timezone"
+              hint="Sets when your organization's day starts and ends — attendance, lateness and daily reports follow it."
+              value={timezone}
+              onChange={setTimezone}
+              control={
+                <div className="m-tz">
+                  <TimezonePicker
+                    id="ob-tz"
+                    value={timezone}
+                    onChange={setTimezone}
+                    warn={tzUnusable || !timezone.trim()}
+                    aria-describedby={`ob-tz-hint${tzUnusable || !timezone.trim() ? " ob-tz-note" : ""}`}
+                  />
+                </div>
+              }
+            />
+            {tzUnusable || !timezone.trim() ? (
+              <p id="ob-tz-note" className="m-anote">
+                {tzUnusable
+                  ? "WorkPulse can't use this timezone yet, so your organization's day would close on UTC. Choose a city on the same time."
+                  : "Not set — your organization's day closes on UTC until you choose one."}
+              </p>
+            ) : null}
+            <AuthField
+              id="ob-site"
+              label="Website"
+              hint="Optional"
+              value={website}
+              onChange={setWebsite}
+              inputMode="text"
+              autoCapitalize="none"
+              spellCheck={false}
+            />
+          </>
         );
+      }
       case "team":
         return (
-          <div className="space-y-3">
+          <>
+            <AuthErrorSummary
+              errors={badEmails.map((i) => [
+                `ob-invite-${i}`,
+                `Teammate ${i + 1}: that isn't an email address — fix it or clear it to continue`,
+              ])}
+              summaryRef={summaryRef}
+            />
+            <p className="m-anote mb-3">
+              Each person gets an email with a link and a code to join as an Employee. You can change
+              their role, department and title later from{" "}
+              <SettingsLink href="/employees">Employees</SettingsLink>.
+            </p>
             {emails.map((email, i) => (
-              <div key={i} className="space-y-1.5">
-                <Label htmlFor={`ob-invite-${i}`} className="sr-only">
-                  Teammate email {i + 1}
-                </Label>
-                <Input
-                  id={`ob-invite-${i}`}
-                  type="email"
-                  placeholder="teammate@acme.com"
-                  value={email}
-                  aria-invalid={badEmails.includes(i) || undefined}
-                  aria-describedby={badEmails.includes(i) ? `ob-invite-${i}-error` : undefined}
-                  onChange={(e) => {
-                    setEmails((prev) => prev.map((v, j) => (j === i ? e.target.value : v)));
-                    setBadEmails((prev) => prev.filter((j) => j !== i));
-                  }}
-                />
-                {badEmails.includes(i) ? (
-                  <p id={`ob-invite-${i}-error`} className="text-xs text-destructive">
-                    That isn&apos;t an email address — fix it or clear it to continue.
-                  </p>
-                ) : null}
-              </div>
+              <AuthField
+                key={i}
+                id={`ob-invite-${i}`}
+                label={`Teammate ${i + 1} — work email`}
+                type="email"
+                value={email}
+                error={
+                  badEmails.includes(i)
+                    ? "That isn't an email address — fix it or clear it to continue"
+                    : undefined
+                }
+                onChange={(v) => {
+                  setEmails((prev) => prev.map((x, j) => (j === i ? v : x)));
+                  setBadEmails((prev) => prev.filter((j) => j !== i));
+                }}
+                inputMode="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
             ))}
-            <Button
+            <button
               type="button"
-              variant="outline"
-              size="sm"
+              className="m-btn m-btn-ghost m-btn--sm mt-3"
               onClick={() => setEmails((prev) => [...prev, ""])}
             >
               + Add another
-            </Button>
-          </div>
+            </button>
+          </>
         );
       case "tracking":
         if (!policy) {
           return (
-            <p className="text-sm text-muted-foreground">
-              {!canMonitor
-                ? "Tracking settings are changed by whoever manages monitoring in your organization, from Settings → Monitoring."
-                : policyFailed
-                  ? "Couldn't load your current tracking settings. Continue — you can set them any time in Settings → Monitoring."
-                  : "Loading your current tracking settings…"}
+            <p className="m-anote" role="status">
+              {!canMonitor ? (
+                <>
+                  Tracking settings are changed by whoever manages monitoring in your organization,
+                  from <SettingsLink href="/settings/monitoring">Settings → Monitoring</SettingsLink>.
+                </>
+              ) : policyFailed ? (
+                <>
+                  Couldn&apos;t load your current tracking settings. Continue — you can set them any
+                  time in <SettingsLink href="/settings/monitoring">Settings → Monitoring</SettingsLink>.
+                </>
+              ) : (
+                "Loading your current tracking settings…"
+              )}
             </p>
           );
         }
@@ -419,11 +486,18 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
             screenshots={screenshots}
             onScreenshots={setScreenshots}
             lockReason={
-              capturing(lock)
-                ? null
-                : lock?.kind === "screenshots-off"
-                  ? "Screenshots are switched off in Settings → Features, so nothing is captured whatever this says. Turn them on there first."
-                  : "Screenshots aren't included in your plan."
+              capturing(lock) ? null : lock?.kind === "screenshots-off" ? (
+                <>
+                  Screenshots are switched off in{" "}
+                  <SettingsLink href="/settings/features">Settings → Features</SettingsLink>, so
+                  nothing is captured whatever this says. Turn them on there first.
+                </>
+              ) : (
+                <>
+                  Screenshots aren&apos;t included in your plan — see{" "}
+                  <SettingsLink href="/settings/billing">Settings → Billing</SettingsLink>.
+                </>
+              )
             }
           />
         );
@@ -431,9 +505,9 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
         // There was a widget checklist here that saved nothing. The dashboard's own Customize does
         // this for real, and keeps the layout on the account.
         return (
-          <p className="text-sm text-muted-foreground">
-            Your dashboard shows the cards you pick. Use <strong>Customize</strong> on the Dashboard to
-            add, hide or reorder them — the layout is saved to your account.
+          <p className="m-anote">
+            Your dashboard shows the cards you pick. Use <strong>Customize</strong> on the Dashboard
+            to add, hide or reorder them — the layout is saved to your account.
           </p>
         );
       default:
@@ -441,58 +515,60 @@ export function OnboardingWizard({ initialStep = 0 }: { initialStep?: number }) 
     }
   }
 
+  const current = ONBOARDING_STEPS[step];
+
   return (
-    <Card className="w-full max-w-xl">
-      <CardHeader className="gap-3">
-        {/* Stepper */}
-        <div className="flex items-center gap-1.5">
-          {ONBOARDING_STEPS.map((s, i) => (
-            <span
-              key={s.key}
-              className={cn(
-                "h-1.5 flex-1 rounded-full transition-colors",
-                i <= step ? "bg-primary" : "bg-muted",
-              )}
-            />
-          ))}
-        </div>
-        <div className="flex items-center justify-between">
-          <CardTitle>{ONBOARDING_STEPS[step].title}</CardTitle>
-          <span className="text-xs text-muted-foreground">
-            Step {step + 1} of {ONBOARDING_STEPS.length}
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground">{ONBOARDING_STEPS[step].hint}</p>
-      </CardHeader>
+    <>
+      <AuthHeading
+        title="Set up your workspace"
+        subtitle="A few choices to get your organization started. Each step saves as you continue, and everything can be changed later."
+      />
+      <AuthSteps steps={ONBOARDING_STEPS.map((s) => s.title)} current={step} />
 
-      <CardContent>{renderStep()}</CardContent>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void handleNext();
+        }}
+        noValidate
+        aria-labelledby="ob-step-title"
+      >
+        <h2 id="ob-step-title" className="m-obstep__title">
+          {current.title}
+        </h2>
+        <p className="m-obstep__hint">{current.hint}</p>
 
-      <div className="flex items-center justify-between px-(--card-spacing)">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => setStep((s) => Math.max(0, s - 1))}
-          disabled={step === 0 || saving}
-        >
-          <ArrowLeft className="size-4" /> Back
-        </Button>
-        <Button type="button" onClick={handleNext} disabled={saving}>
-          {saving ? (
-            <>
-              <Loader2 className="size-4 animate-spin" /> Saving
-            </>
-          ) : step === last ? (
-            <>
-              Finish <Check className="size-4" />
-            </>
-          ) : (
-            <>
-              Continue <ArrowRight className="size-4" />
-            </>
-          )}
-        </Button>
-      </div>
-    </Card>
+        {renderStep()}
+
+        <div className="m-authactions">
+          {step > 0 ? (
+            <button
+              type="button"
+              className="m-btn m-btn-ghost"
+              onClick={() => setStep((s) => Math.max(0, s - 1))}
+              disabled={saving}
+            >
+              <ArrowLeft className="size-4" /> Back
+            </button>
+          ) : null}
+          <button type="submit" className="m-btn m-btn-primary flex-1" disabled={saving}>
+            {saving ? (
+              <>
+                <Loader2 className="m-spin size-4" /> Saving
+              </>
+            ) : step === last ? (
+              <>
+                Finish <Check className="size-4" />
+              </>
+            ) : (
+              <>
+                Continue <ArrowRight className="size-4" />
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </>
   );
 }
 
@@ -525,7 +601,7 @@ function TrackingStep({
   screenshots: boolean;
   onScreenshots: (v: boolean) => void;
   /** Why the switch can't change right now, or `null`. */
-  lockReason: string | null;
+  lockReason: React.ReactNode | null;
 }) {
   const stored = cadenceMinutes(policy.cadence);
   // Switching on starts at every 5 minutes (see `saveTracking`); an org already capturing keeps its
@@ -533,61 +609,60 @@ function TrackingStep({
   const minutes = stored ?? 5;
   const days = policy.retention_days;
   return (
-    <div className="space-y-3">
-      <label
-        className={cn(
-          "flex items-start justify-between gap-3 rounded-lg border p-3",
-          lockReason && "opacity-70",
-        )}
-      >
-        <span className="min-w-0">
-          <span className="block text-sm font-medium">Screenshots</span>
-          <span className="block text-xs text-muted-foreground">
+    <>
+      <label className={`m-check m-obswitch${lockReason ? " is-locked" : ""}`}>
+        <input
+          type="checkbox"
+          role="switch"
+          checked={screenshots}
+          onChange={(e) => onScreenshots(e.target.checked)}
+          disabled={lockReason !== null}
+          aria-describedby="ob-shots-what"
+        />
+        <span className="m-check__text">
+          Take screenshots
+          <span className="m-check__note" id="ob-shots-what">
             {screenshots
               ? `A screenshot of each employee's screen every ${minutes} minute${minutes === 1 ? "" : "s"} while their tracking runs, kept ${days} day${days === 1 ? "" : "s"} and then deleted. Admins with the screenshots permission can view them.`
               : "Off — no screenshots are taken."}
           </span>
         </span>
-        <Switch
-          checked={screenshots}
-          onCheckedChange={onScreenshots}
-          disabled={lockReason !== null}
-          aria-label="Screenshots"
-        />
       </label>
-      {lockReason ? <p className="text-xs text-muted-foreground">{lockReason}</p> : null}
+      {lockReason ? <p className="m-anote">{lockReason}</p> : null}
 
-      <div className="space-y-1.5 rounded-lg border border-warning/30 bg-warning/[0.06] p-3 text-xs text-muted-foreground">
-        <p className="font-medium text-foreground">Before capture starts</p>
+      <section className="m-obnotice" aria-labelledby="ob-notice-title">
+        <h3 id="ob-notice-title">Before capture starts</h3>
         <p>
-          {INDICATOR[trackingMode]} You are responsible for
-          telling them what is captured, why, who can see it and how long it is kept — and for any
-          consent your local law requires.{" "}
+          {INDICATOR[trackingMode]} You are responsible for telling them what is captured, why, who
+          can see it and how long it is kept — and for any consent your local law requires.{" "}
           <Link
             href={`${legalHref("terms")}#monitoring`}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-medium text-primary underline underline-offset-2 hover:no-underline"
+            className="font-semibold underline underline-offset-2"
+            style={{ color: "var(--m-accent-ink)" }}
           >
             Your monitoring obligations
-          </Link>
+          </Link>{" "}
+          (opens in a new tab)
         </p>
         <p>
           WorkPulse also lists what your organization records in each invite email and on the
           Download page.
         </p>
-      </div>
+      </section>
 
       {policy.silent ? (
-        <p className="rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
+        <p className="m-obwarn">
           Your current settings hide that indicator, so employees get no on-screen notice. Changing
           screenshots here turns it back on, as does saving Settings → Monitoring.
         </p>
       ) : null}
 
-      <p className="text-xs text-muted-foreground">
-        Interval, retention and exclusions are all in Settings → Monitoring.
+      <p className="m-anote">
+        Interval, retention and exclusions are all in{" "}
+        <SettingsLink href="/settings/monitoring">Settings → Monitoring</SettingsLink>.
       </p>
-    </div>
+    </>
   );
 }

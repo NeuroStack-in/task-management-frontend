@@ -132,6 +132,49 @@ describe("InviteAcceptForm", () => {
   });
 });
 
+/**
+ * ONB-10: the invitee saw the password policy only after a failed submit, and the server's refusal
+ * was a toast that vanished without taking focus.
+ */
+describe("InviteAcceptForm — password checklist and server refusals", () => {
+  it("ticks the password requirements off as they are typed", async () => {
+    render(<InviteAcceptForm />);
+    await screen.findByText("Create account");
+    expect(screen.getByText("Password requirements")).toBeInTheDocument();
+    const row = (label: string) => screen.getByText(label).closest("li")!;
+    expect(row("One number")).not.toHaveClass("is-ok");
+    type("Password", "abcdefg1");
+    expect(row("One number")).toHaveClass("is-ok");
+    expect(row("One uppercase letter")).not.toHaveClass("is-ok");
+    expect(row("Passwords match")).not.toHaveClass("is-ok");
+    type("Confirm password", "abcdefg1");
+    expect(row("Passwords match")).toHaveClass("is-ok");
+  });
+
+  it("keeps a wrong invite code on screen, linked to the code field and focused", async () => {
+    const { ApiError } = await import("@/lib/api");
+    mocks.acceptInvite.mockRejectedValueOnce(new ApiError("bad otp", 401, "unauthorized"));
+    render(<InviteAcceptForm />);
+    await screen.findByText("Create account");
+    fillAccount();
+    type("Contact number", "+919876543210");
+    type("Location", "Pune");
+    type("Work mode", "remote");
+    fireEvent.click(termsBox());
+    fireEvent.click(screen.getByText("Create account"));
+
+    const link = await screen.findByRole("link", {
+      name: "That code didn't match. Check the invite code from your email and try again.",
+    });
+    expect(link).toHaveAttribute("href", "#iv-otp");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("alert")));
+
+    // Editing the form clears it — it described the values that were sent.
+    type("Invite code", "654321");
+    await waitFor(() => expect(screen.queryByText(/That code didn't match/)).not.toBeInTheDocument());
+  });
+});
+
 /** ONB-05: four link states were text only — no button, no way home, no one to ask. */
 describe("InviteAcceptForm — a link that can't be used", () => {
   it("an incomplete link offers sign-in and says who can resend it", async () => {

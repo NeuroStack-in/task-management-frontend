@@ -571,7 +571,14 @@
    the label on focus, defeats error checking, and rarely clears 4.5:1; there is
    no format hint worth giving for an email or a password, so fields carry
    none. */
-.m-afield + .m-afield {
+.m-afield + .m-afield,
+/* A field after a two-up row sat flush against it (sign-up's Website under the
+   Industry/Size pickers). */
+.m-arow + .m-afield,
+/* A password field is followed by its visually-hidden show/hide announcement, so
+   the next field's sibling is that span, not a field — and two stacked password
+   fields (reset, invite) touched with no gap at all. */
+.m-sr + .m-afield {
   margin-top: 0.75rem;
 }
 .m-afield label {
@@ -832,6 +839,19 @@
 .m-arow .m-afield + .m-afield,
 .m-arow .m-afield {
   margin-top: 0;
+}
+/* One column on a phone (UX audit 2026-10-16, ONB-12). Two-up at 390px left each
+   input about 145px wide — too narrow for an email address or a password with its
+   show/hide toggle. Below `sm` (40rem) every pair stacks, with the normal field
+   spacing between the two. */
+@media (max-width: 39.999rem) {
+  .m-arow {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .m-arow .m-afield ~ .m-afield {
+    margin-top: 0.75rem;
+  }
 }
 /* The password field renders a visually-hidden live region as a sibling of its
    input. It is `position: absolute` (see `.m-sr`), so it is never auto-placed
@@ -1102,6 +1122,258 @@
   font-size: 0.65rem;
   font-weight: 500;
   color: var(--m-muted);
+}
+
+/* ---- Plan step: what applies now, and later (UX audit ONB-15) ---- */
+.m-planinfo {
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  background: var(--m-surface-2);
+  border: 1px solid var(--m-border);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--m-muted);
+}
+.m-planinfo__lead {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--m-accent-ink);
+}
+.m-planinfo ul {
+  margin: 0.4rem 0 0.55rem;
+  padding-left: 1rem;
+  list-style: disc;
+  display: grid;
+  gap: 0.3rem;
+}
+.m-planinfo strong {
+  color: var(--m-text);
+  font-weight: 600;
+}
+.m-planinfo__note {
+  font-size: 0.75rem;
+  color: var(--m-muted);
+}
+
+/* ---- Persistent status line (AuthStatus) ----
+   A sent code or a saved change is said here, where the user is looking, rather
+   than in a toast that disappears and never takes focus (UX audit ONB-10). */
+.m-authstatus {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #146c43;
+  background: #ecf6f0;
+  border: 1px solid #b7dcc6;
+}
+
+/* ---- One-time code (MFA) ----
+   One input, not six boxes: `autocomplete="one-time-code"` and paste then work
+   as the platform intends, and a screen reader hears one field (ONB-11). The
+   spacing keeps the digits as legible as the boxes were. */
+.m-authinput--code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 1.35rem;
+  letter-spacing: 0.4em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Disclosure inside the auth card ("Can't use your app?") ---- */
+.m-adisclose {
+  margin-top: 1rem;
+  border-top: 1px solid var(--m-border);
+  padding-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--m-text);
+}
+.m-adisclose > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--m-accent-ink);
+  list-style-position: inside;
+}
+.m-adisclose > summary:focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.m-adisclose__body {
+  margin-top: 0.5rem;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--m-muted);
+}
+.m-adisclose__body strong {
+  color: var(--m-text);
+  font-weight: 600;
+}
+
+/* ============================================================
+ *  /onboarding — the request, waiting screen and owner setup,
+ *  all inside the same frame (UX audit 2026-10-16, ONB-13/14)
+ * ============================================================ */
+
+/* "Signed in as … · Sign out" at the foot of the card. */
+.m-signedin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--m-border);
+  font-size: 0.8rem;
+  color: var(--m-muted);
+}
+.m-signedin strong {
+  color: var(--m-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.m-signedin button {
+  min-height: 2.75rem;
+  padding: 0 0.25rem;
+  font-weight: 600;
+  color: var(--m-accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* A compact button for in-card secondary actions. */
+.m-btn.m-btn--sm {
+  padding: 0.55rem 0.95rem;
+  font-size: 0.82rem;
+}
+
+/* Waiting-screen status mark. */
+.m-reqicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: 0.75rem;
+  border-radius: 12px;
+  color: var(--m-accent-ink);
+  background: var(--m-accent-tint);
+}
+.m-reqicon--bad {
+  color: #b42318;
+  background: #fef3f2;
+}
+.m-reqreason {
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--m-text);
+  background: var(--m-surface-2);
+  border: 1px solid var(--m-border);
+}
+
+/* Pending invites. */
+.m-invitelist {
+  display: grid;
+  gap: 0.5rem;
+}
+.m-invitelist li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--m-border-strong);
+}
+.m-invitelist__org {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--m-text);
+}
+.m-invitelist__meta {
+  font-size: 0.75rem;
+  color: var(--m-muted);
+}
+
+/* Owner setup wizard: a heading per step under the page's H1. */
+.m-obstep__title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--m-text);
+}
+.m-obstep__hint {
+  margin: 0.15rem 0 0.85rem;
+  font-size: 0.85rem;
+  color: var(--m-muted);
+}
+.m-obswitch {
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--m-border-strong);
+}
+.m-obswitch.is-locked {
+  opacity: 0.7;
+}
+.m-obnotice {
+  margin-top: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid #f0d9a8;
+  background: #fdf8ec;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--m-muted);
+}
+.m-obnotice h3 {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--m-text);
+}
+.m-obwarn {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: #8a5300;
+  background: #fdf3e1;
+}
+
+/* The organization timezone picker (shared with Settings, app-styled) wears the
+   auth field's box here, so it lines up with the inputs around it. Unlayered, so
+   it outranks the picker's Tailwind utilities without touching its markup. */
+.m-tz button[aria-haspopup="dialog"] {
+  height: 2.75rem;
+  padding: 0 0.875rem;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  color: var(--m-text);
+  background: var(--m-surface);
+  border: 1px solid #8b96a3;
+}
+/* The picker's own "needs attention" outline (its `warn` prop). */
+.m-tz button[aria-haspopup="dialog"].border-warning {
+  border-color: #b26a00;
+}
+.m-tz button[aria-haspopup="dialog"]:hover:not(:disabled) {
+  border-color: #5a6573;
+  background: var(--m-surface);
+}
+.m-tz button[aria-haspopup="dialog"]:focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
+  border-color: var(--m-accent);
+  box-shadow: none;
 }
 
 /* ---- Step actions ---- */

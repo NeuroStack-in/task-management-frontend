@@ -415,13 +415,13 @@ export const PRODUCT_CONTENT: Record<string, ProductPageData> = {
     eyebrow: "Integrations & API",
     icon: Plug,
     title: "Connect the tools your team already uses.",
-    lede: "Connect Slack for leave, joiner and payroll updates in your channels, and Google Calendar to count meeting time.",
+    lede: "Connect Slack for leave, joiner and payroll updates in the channels your team already reads.",
     problem: {
       heading: "A workforce platform that won't connect is just another silo.",
       body: "Point tools that don't integrate create swivel-chair work and stale data. WorkPulse is API-first, so it fits the stack you already run instead of replacing it.",
     },
     capabilities: [
-      { icon: Plug, title: "Connectors", body: "Slack and Google Calendar today, connected in a click from Settings → Integrations." },
+      { icon: Plug, title: "Connectors", body: "Slack today, connected in a click from Settings → Integrations." },
       { icon: Webhook, title: "Event updates in Slack", body: "Leave decisions, new joiners and payroll runs post to the Slack channels you choose as they happen." },
       { icon: Database, title: "Exports", body: "Timesheets, attendance and reports export to CSV and PDF." },
       { icon: KeyRound, title: "Scoped OAuth connections", body: "Each integration connects through the provider's own OAuth consent, and its tokens are encrypted at rest." },
@@ -431,8 +431,8 @@ export const PRODUCT_CONTENT: Record<string, ProductPageData> = {
     how: {
       heading: "Connected in a click.",
       steps: [
-        { title: "Connect", body: "Authorize Slack or Google Calendar through the provider's own OAuth consent." },
-        { title: "Sync", body: "Updates post to Slack as they happen and meeting time arrives from your calendar; people import in bulk from CSV or Excel." },
+        { title: "Connect", body: "Authorize Slack through its own OAuth consent screen." },
+        { title: "Sync", body: "Updates post to Slack as they happen; people import in bulk from CSV or Excel." },
         { title: "Disconnect", body: "Revoke a connection from Settings → Integrations at any time." },
       ],
     },
@@ -441,16 +441,16 @@ export const PRODUCT_CONTENT: Record<string, ProductPageData> = {
       { label: "Auth", value: "Provider OAuth consent" },
       { label: "Events", value: "Posted to Slack" },
       { label: "Provisioning", value: "Email invites · CSV / Excel import" },
-      { label: "Connectors", value: "Slack · Google Calendar" },
+      { label: "Connectors", value: "Slack" },
       { label: "Tokens", value: "Encrypted at rest" },
     ],
     related: ["security", "workforce", "reports"],
     faqs: [
       { q: "Is there a public API?", a: "Not yet. Data leaves WorkPulse through CSV and PDF exports and the Slack integration today." },
       { q: "How do users provision?", a: "Invite people by email, or bulk-import them from a CSV or Excel sheet. There is no directory sync (SCIM) or API provisioning." },
-      { q: "Which tools connect natively?", a: "Slack and Google Calendar today." },
+      { q: "Which tools connect natively?", a: "Slack today. There is no calendar integration yet." },
     ],
-    cta: { title: "Fit the stack you already run.", body: "Connect Slack and Google Calendar in a click." },
+    cta: { title: "Fit the stack you already run.", body: "Connect Slack in a click." },
   },
 
   security: {

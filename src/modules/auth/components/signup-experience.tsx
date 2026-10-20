@@ -49,6 +49,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import type { ReactNode } from "react";
 import { useAuthStore } from "@/stores/auth.store";
 import { ApiError } from "@/lib/api";
 import { requestOrg } from "@/modules/onboarding/services/onboarding.service";
@@ -86,6 +87,8 @@ import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import { safeLandingPath } from "@/lib/rbac";
 import { handOffEmail } from "@/modules/auth/email-handoff";
 import { legalHref } from "@/modules/legal/documents";
+import { membersLabel, tierOf } from "@/modules/billing/lib/plans";
+import { SIGNUP_PANEL } from "@/modules/auth/signup-panel";
 
 type Errors = Record<string, string | undefined>;
 
@@ -119,9 +122,15 @@ const isoOf = (name: string) => COUNTRY_CODES.find((c) => c.name === name)?.iso;
 export function SignupExperience({
   authenticated = false,
   onSubmitted,
+  footer,
 }: {
   authenticated?: boolean;
   onSubmitted?: () => void;
+  /**
+   * Rendered at the foot of the card — the signed-in host puts "Signed in as … · Sign out" here, so
+   * leaving the account sits inside the card rather than loose below the page (UX audit ONB-13).
+   */
+  footer?: ReactNode;
 } = {}) {
   const router = useRouter();
   const params = useSearchParams();
@@ -271,9 +280,11 @@ export function SignupExperience({
         onSubmitted?.();
       } catch (e) {
         setSubmitting(false);
-        toast.error(
-          e instanceof ApiError ? e.message : "Couldn't submit your request. Please try again.",
-        );
+        // In the summary, focused and kept, rather than a toast that vanished (UX audit ONB-10).
+        setErrors({
+          "": e instanceof ApiError ? e.message : "Couldn't submit your request. Please try again.",
+        });
+        requestAnimationFrame(() => summaryRef.current?.focus());
       }
       return;
     }
@@ -291,9 +302,11 @@ export function SignupExperience({
         requestAnimationFrame(() => summaryRef.current?.focus());
         return;
       }
-      toast.error(
-        e instanceof AuthError ? e.message : "Couldn't create your account. Please try again.",
-      );
+      // In the summary, focused and kept, rather than a toast that vanished (UX audit ONB-10).
+      setErrors({
+        "": e instanceof AuthError ? e.message : "Couldn't create your account. Please try again.",
+      });
+      requestAnimationFrame(() => summaryRef.current?.focus());
     }
   };
 
@@ -359,9 +372,10 @@ export function SignupExperience({
   const summary = Object.entries(errors).filter(([, v]) => Boolean(v)) as [string, string][];
 
   const HEADINGS: [string, string][] = [
-    ["Request your workspace", "A member of the WorkPulse team reviews each request."],
+    // The review time is said here too: below 64rem the brand panel that carries it is hidden.
+    ["Request your workspace", "A member of the WorkPulse team reviews each request, usually within one business day."],
     ["About your organization", "This names your workspace and helps us review your request."],
-    ["Your plan", "Every approved workspace starts on the Free plan."],
+    ["Your plan", "How plans work for a new workspace."],
   ];
 
   /** The region summary's one line — what the folded pickers currently hold. */
@@ -386,11 +400,7 @@ export function SignupExperience({
 
   return (
     <>
-      <AuthFrame
-        headline="Set your organization"
-        headlineAccent="in motion today"
-        copy="Free while in beta, no card required. Create your workspace, invite your team, and have time and attendance running the same afternoon."
-      >
+      <AuthFrame {...SIGNUP_PANEL}>
         <AuthHeading title={HEADINGS[step][0]} subtitle={HEADINGS[step][1]} />
         {/* Drop the skipped step from the indicator entirely rather than showing it greyed: a
             "Step 2 of 5" that can never reach step 1 reads as something the user failed to do. */}
@@ -611,11 +621,40 @@ export function SignupExperience({
           {step === 2 ? (
             <>
               {/* Every sign-up is a request, and approval starts every org on Free — so this states it
-                  instead of offering a choice it would drop (WP-128, ONB-01). */}
-              <p className="m-anote">
-                Your workspace starts on the Free plan, free while WorkPulse is in beta. Once
-                it&apos;s approved, you can change plan any time in Settings → Billing.
-              </p>
+                  instead of offering a choice it would drop (WP-128, ONB-01). It leads with the
+                  beta and says what applies later, worded like Settings → Billing (UX audit
+                  ONB-15): prices are what a paid plan would cost once billing starts, never a
+                  charge now. "Settings → Billing" stays plain text: an applicant has no workspace
+                  yet, so there is no page to link to (SET-15). */}
+              <div className="m-planinfo">
+                <p className="m-planinfo__lead">Free during the beta — nothing is charged, no card needed</p>
+                <ul>
+                  <li>
+                    Your workspace starts on the <strong>Free plan</strong> —{" "}
+                    {membersLabel("free").toLowerCase()}, and it has no price.
+                  </li>
+                  <li>
+                    <strong>Starter</strong> and <strong>Enterprise</strong> add members and
+                    features. They&apos;re free during the beta too; their prices (from $
+                    {tierOf("starter").pricePerSeat} per member a month) apply only once billing
+                    starts.
+                  </li>
+                  <li>
+                    Once your workspace is approved, you choose the plan in Settings → Billing,
+                    which also shows what it would cost once billing starts.
+                  </li>
+                </ul>
+                <Link
+                  href="/pricing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold underline underline-offset-2"
+                  style={{ color: "var(--m-accent-ink)" }}
+                >
+                  Compare plans
+                </Link>{" "}
+                <span className="m-planinfo__note">(opens in a new tab)</span>
+              </div>
 
               <label className="m-check mt-2">
                 <input
@@ -726,6 +765,7 @@ export function SignupExperience({
             <AuthSwitch prompt="Already have an account?" href="/login" label="Sign in" />
           </>
         ) : null}
+        {footer}
       </AuthFrame>
 
     </>

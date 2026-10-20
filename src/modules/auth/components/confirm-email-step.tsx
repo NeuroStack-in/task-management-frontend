@@ -8,11 +8,11 @@
  * before it can sign in. The host does the rest on confirm (sign in, submit the request, open the
  * waiting screen).
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
 import { AuthError } from "@/modules/auth/services/auth.service";
-import { AuthField, AuthFrame, AuthHeading } from "./auth-frame";
+import { REVIEW_TIME } from "@/modules/onboarding/review-time";
+import { AuthErrorSummary, AuthField, AuthFrame, AuthHeading, AuthStatus } from "./auth-frame";
 
 export function ConfirmEmailStep({
   email,
@@ -27,10 +27,14 @@ export function ConfirmEmailStep({
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
+  const [status, setStatus] = useState("");
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const focusSummary = () => requestAnimationFrame(() => summaryRef.current?.focus());
 
   async function confirm() {
     if (!/^\d{6}$/.test(code.trim())) {
       setError("Enter the 6-digit code from the email.");
+      focusSummary();
       return;
     }
     setBusy(true);
@@ -44,20 +48,25 @@ export function ConfirmEmailStep({
           : "Couldn't confirm your email. Please try again.",
       );
       setBusy(false);
+      focusSummary();
     }
   }
 
+  // Both outcomes stay on the card (UX audit ONB-10): a toast vanished and never took focus.
   async function resend() {
     setResending(true);
+    setStatus("");
     try {
       await onResend();
-      toast.success("A new code is on its way", { description: email });
+      setError(undefined);
+      setStatus(`A new code is on its way to ${email}. Codes from earlier emails no longer work.`);
     } catch (e) {
-      toast.error(
+      setError(
         e instanceof AuthError
           ? e.message
           : "Couldn't send a new code. Please try again.",
       );
+      focusSummary();
     } finally {
       setResending(false);
     }
@@ -66,8 +75,8 @@ export function ConfirmEmailStep({
   return (
     <AuthFrame
       headline="Set your organization"
-      headlineAccent="in motion today"
-      copy="One last step: confirm your email, and your workspace request goes to the WorkPulse team."
+      headlineAccent="in motion"
+      copy={`One last step: confirm your email, and your workspace request goes to the WorkPulse team. ${REVIEW_TIME}`}
     >
       <AuthHeading
         title="Check your email"
@@ -80,6 +89,9 @@ export function ConfirmEmailStep({
         }}
         noValidate
       >
+        {/* The field's own message is screen-reader-only by design (AuthField); without this
+            summary a wrong code showed nothing but a red border. */}
+        <AuthErrorSummary errors={error ? [["signup-code", error]] : []} summaryRef={summaryRef} />
         <AuthField
           id="signup-code"
           label="Confirmation code"
@@ -117,6 +129,7 @@ export function ConfirmEmailStep({
           {resending ? "Sending…" : "Send a new code"}
         </button>
       </p>
+      <AuthStatus>{status}</AuthStatus>
     </AuthFrame>
   );
 }

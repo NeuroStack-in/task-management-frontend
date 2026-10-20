@@ -30,11 +30,19 @@ import { AGENT_PLATFORMS, type AgentPlatform } from "@/lib/agent-release";
 import { MonitoringDisclosure } from "@/modules/agents/components/monitoring-disclosure";
 import { cn } from "@/lib/utils";
 
+/*
+ * Plain words for a new employee (UX audit 2026-10-16, EMP-10): "the WorkPulse desktop app", not
+ * "the agent", and sign-in advice that also fits people who sign in with Google — the desktop app
+ * has offered "Continue with Google" since v0.1.19. "Use the same email and password" told a Google
+ * user to type a password they don't have.
+ */
+const SIGN_IN = "Sign in the same way you sign in here — your work email and password, or Continue with Google.";
+
 const STEPS = [
-  "Download the installer for your OS.",
-  "Run it and open the WorkPulse agent.",
-  "Sign in with your WorkPulse account.",
-  "Read what your organization records (below).",
+  "Download the installer for your computer.",
+  "Run it and open WorkPulse.",
+  SIGN_IN,
+  "Read what your organization records (above).",
   "Start your timer — tracking begins.",
 ];
 
@@ -53,7 +61,7 @@ const FEATURES = [
     icon: ShieldCheck,
     // Not "consent-gated": the app records the org's consent, not the employee's (UX audit EMP-01).
     title: "Timer-bound",
-    desc: "Nothing is recorded while your timer is off. What's recorded while it runs is listed below.",
+    desc: "Nothing is recorded while your timer is off. What's recorded while it runs is listed above.",
   },
 ];
 
@@ -70,7 +78,7 @@ const MAC_STEPS = [
   "Open WorkPulse from Applications. macOS will say it can't verify the app — that's expected, our app isn't registered with Apple yet. Click Done.",
   "Open System Settings → Privacy & Security and scroll to the Security section.",
   "You'll see a line saying WorkPulse was blocked. Click Open Anyway and confirm with your password or Touch ID.",
-  "Sign in with the same email and password you use here.",
+  SIGN_IN,
   "Still in Privacy & Security, turn WorkPulse ON under Screen & System Audio Recording, and under Accessibility.",
   "Quit WorkPulse completely and open it again — macOS only applies those permissions after a restart.",
   "Pick a project and press Start.",
@@ -116,16 +124,16 @@ export default function DownloadPage() {
     return (
       <div className="flex min-h-[calc(100dvh-7rem)] flex-col gap-4 pt-1">
         <PageHeader
-          title="WorkPulse agent"
-          description="In your organization the agent is deployed to company devices by IT — there's nothing to install here."
+          title="WorkPulse on company devices"
+          description="In your organization, IT installs WorkPulse on company devices — there's nothing to install here."
         />
         <EmptyState
           icon={MonitorSmartphone}
           title="Managed by IT"
           description={
             canSeeDevices
-              ? "Your organization tracks company-owned devices with the managed agent, installed by IT. Enrol a device and it appears under Device agents."
-              : "Your organization tracks company-owned devices with the managed agent, installed by IT. If your computer needs it, ask your administrator."
+              ? "Your organization tracks company-owned devices with a background service that IT installs. Enrol a device and it appears under Device agents."
+              : "Your organization tracks company-owned devices with a background service that IT installs. If your computer needs it, ask your administrator."
           }
           action={
             canSeeDevices ? (
@@ -142,8 +150,8 @@ export default function DownloadPage() {
   return (
     <div className="flex min-h-[calc(100dvh-7rem)] flex-col gap-4 pt-1">
       <PageHeader
-        title="Download the WorkPulse agent"
-        description="Install it on your device and sign in with your account to start time tracking."
+        title="Download the WorkPulse desktop app"
+        description="Install it on your computer and sign in to start tracking your time."
       />
 
       {/* Hero */}
@@ -156,8 +164,8 @@ export default function DownloadPage() {
             Automatic, accurate time tracking
           </h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            The agent tracks time against your projects and keeps your timesheet
-            in sync — no manual entry.
+            The desktop app tracks time against your projects and keeps your
+            timesheet in sync — no manual entry.
           </p>
         </div>
         {version ? (
@@ -169,39 +177,6 @@ export default function DownloadPage() {
 
       {/* What is captured, from the org's own settings — before anyone installs (EMP-01). */}
       <MonitoringDisclosure />
-
-      {/* Re-install notice, for the first builds only. The sign-in fix (desktop v0.1.1) is compiled
-          into the binary, and builds before v0.1.2 had an updater pointed at a private repo that
-          404s, so neither could deliver itself — anyone still on one of those has to download once,
-          and this page is the only place they'd find that out. Everything from v0.1.2 updates itself.
-          It used to say "Version {current} fixes the … error", which claimed every new release was
-          that one fix (QA audit 2026-10-08, WP-367). Delete the notice once those builds have aged
-          out of the fleet. */}
-      <section className="flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/5 p-4">
-        <RefreshCw className="mt-0.5 size-4 shrink-0 text-warning" />
-        <div className="min-w-0 text-sm">
-          <p className="font-medium">
-            Installed WorkPulse before version 0.1.2? Please download it once more.
-          </p>
-          <p className="mt-1 leading-relaxed text-muted-foreground">
-            Those early builds can show{" "}
-            <span className="font-medium text-foreground">
-              &ldquo;This agent isn&apos;t configured for your organization
-              yet&rdquo;
-            </span>{" "}
-            at sign-in, and they can&apos;t update themselves. Run the new
-            installer over your existing copy — there&apos;s no need to uninstall
-            first, nothing is lost, and your device keeps its history.
-          </p>
-          <p className="mt-1.5 leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">
-              It&apos;s the last time you&apos;ll download it by hand.
-            </span>{" "}
-            From version 0.1.2 on, the agent updates itself in the background —
-            unless your organization has switched automatic updates off.
-          </p>
-        </div>
-      </section>
 
       {/* Platforms */}
       <section className="flex flex-col gap-3">
@@ -286,7 +261,7 @@ export default function DownloadPage() {
       <div className="grid flex-1 gap-4 lg:grid-cols-[1fr_360px] lg:grid-rows-1">
         {/* What the agent does */}
         <section className="flex min-h-0 flex-col justify-center rounded-2xl border bg-card/40 p-6">
-          <h2 className="text-sm font-semibold">What the agent does</h2>
+          <h2 className="text-sm font-semibold">What the app does</h2>
           <div className="mt-5 grid gap-6 sm:grid-cols-3">
             {FEATURES.map((f) => (
               <div key={f.title} className="flex flex-col gap-2.5">
@@ -316,11 +291,54 @@ export default function DownloadPage() {
             ))}
           </ol>
           <p className="mt-5 border-t pt-4 text-xs text-muted-foreground">
-            Use the same email and password you use to sign in here — no separate
-            setup needed.
+            There&apos;s no separate account to create — the desktop app uses your
+            WorkPulse sign-in.
           </p>
         </aside>
       </div>
+
+      {/* Re-install notice, for the first builds only. The sign-in fix (desktop v0.1.1) is compiled
+          into the binary, and builds before v0.1.2 had an updater pointed at a private repo that
+          404s, so neither could deliver itself — anyone still on one of those has to download once,
+          and this page is the only place they'd find that out. Everything from v0.1.2 updates itself.
+          It used to say "Version {current} fixes the … error", which claimed every new release was
+          that one fix (QA audit 2026-10-08, WP-367).
+
+          It used to sit at the top of the page as a warning, read first by every new employee who
+          had never installed anything (UX audit 2026-10-16, EMP-10). It is folded here, below the
+          downloads and setup steps, for the few who need it. Delete it once those builds have aged
+          out of the fleet. */}
+      <details className="group rounded-2xl border p-4 text-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-2 font-medium">
+          <RefreshCw className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          Installed WorkPulse before version 0.1.2?
+          <span className="ml-auto text-xs font-normal text-muted-foreground group-open:hidden">
+            Show
+          </span>
+          <span className="ml-auto hidden text-xs font-normal text-muted-foreground group-open:inline">
+            Hide
+          </span>
+        </summary>
+        <div className="mt-2 space-y-1.5 pl-6 leading-relaxed text-muted-foreground">
+          <p>
+            Please download it once more. Those early builds can show{" "}
+            <span className="font-medium text-foreground">
+              &ldquo;This agent isn&apos;t configured for your organization yet&rdquo;
+            </span>{" "}
+            at sign-in, and they can&apos;t update themselves. Run the new installer over your
+            existing copy — there&apos;s no need to uninstall first, nothing is lost, and your device
+            keeps its history.
+          </p>
+          <p>
+            <span className="font-medium text-foreground">
+              It&apos;s the last time you&apos;ll download it by hand.
+            </span>{" "}
+            From version 0.1.2 on, the app updates itself in the background — unless your
+            organization has switched automatic updates off.
+          </p>
+        </div>
+      </details>
+
 
       {/* macOS first-run walkthrough */}
       <Dialog open={macHelpOpen} onOpenChange={setMacHelpOpen}>

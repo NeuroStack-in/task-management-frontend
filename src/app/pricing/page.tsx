@@ -197,7 +197,7 @@ export default function PricingPage() {
             Start free <em>today.</em>
           </>
         }
-        body="No card required while we're in beta. Set up your organization and be running in an afternoon."
+        body="Free during the beta, no card required. Request your workspace and we'll review it within one business day."
         primary={{ label: "Get started", href: "/register" }}
         secondary={{ label: "Log in", href: "/login" }}
       />

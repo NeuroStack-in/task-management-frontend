@@ -73,7 +73,7 @@ export const PLANS = [
     features: [
       "Everything in Free",
       "Activity & productivity analytics",
-      "Slack & Google Calendar integrations",
+      "Slack integration",
       membersLabel("starter"),
     ],
     featured: false,

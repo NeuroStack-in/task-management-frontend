@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Loader } from "@/components/shared/loader";
 import { usePoll } from "@/hooks/use-poll";
+import { formatDate } from "@/lib/format";
+import { AuthHeading } from "@/modules/auth/components/auth-frame";
 import { useAuthStore } from "@/stores/auth.store";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
@@ -15,12 +15,9 @@ import {
   withdrawMyOrgRequest,
   type MyOrgRequest,
 } from "../services/onboarding.service";
-
-/**
- * What the waiting screen promises (owner decision 2026-10-20, UX audit ONB-02). It said only "a
- * member of the team is reviewing", with no idea of when.
- */
-export const REVIEW_TIME = "We usually review requests within one business day.";
+// What the waiting screen promises (owner decision 2026-10-20, UX audit ONB-02) — shared with the
+// sign-up screens so they say the same sentence (PUB-03).
+import { REVIEW_TIME } from "../review-time";
 
 /** How often a waiting applicant re-checks. Slow: a human decision is minutes-to-days, not seconds. */
 const POLL_MS = 30_000;
@@ -105,25 +102,25 @@ export function OrgRequestStatus({
   if (current.status === "approved") {
     return (
       <Card
-        icon={<CheckCircle2 className="text-success size-6" />}
+        icon={<CheckCircle2 className="size-5" />}
         title={`${current.org_name} is ready`}
         body="Your organization has been approved. Opening your workspace setup…"
       >
         {enterFailed ? (
-          <div className="space-y-2">
-            <p className="text-muted-foreground text-sm">
+          <>
+            <p className="m-anote" role="alert">
               We couldn&apos;t finish signing you in. Check your connection and try again, or sign
               out and back in.
             </p>
-            <Button onClick={() => void enter()} className="w-full">
+            <button type="button" onClick={() => void enter()} className="m-btn m-btn-primary w-full">
               Try again
-            </Button>
-          </div>
+            </button>
+          </>
         ) : (
-          <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            {entering ? <Loader2 className="size-4 animate-spin" /> : null}
+          <p className="m-anote flex items-center gap-2" role="status">
+            {entering ? <Loader2 className="m-spin size-4" aria-hidden="true" /> : null}
             Signing you in
-          </div>
+          </p>
         )}
       </Card>
     );
@@ -132,38 +129,36 @@ export function OrgRequestStatus({
   if (current.status === "rejected") {
     return (
       <Card
-        icon={<XCircle className="text-destructive size-6" />}
+        icon={<XCircle className="size-5" />}
+        tone="bad"
         title="Request not approved"
         body={`We couldn't set up ${current.org_name}.`}
       >
         {/* The reason is the point of this screen. Without it the applicant has nothing to act on
             and no option but to ask a human — the support ticket this whole flow exists to avoid. */}
-        {current.reason ? (
-          <p className="bg-muted/50 text-foreground rounded-lg border px-3 py-2 text-sm">
-            {current.reason}
-          </p>
-        ) : null}
-        <Button onClick={onReapply} className="w-full">
+        {current.reason ? <p className="m-reqreason">{current.reason}</p> : null}
+        <button type="button" onClick={onReapply} className="m-btn m-btn-primary w-full">
           Submit a new request
-        </Button>
+        </button>
       </Card>
     );
   }
 
   return (
     <Card
-      icon={<Clock className="text-primary size-6" />}
+      icon={<Clock className="size-5" />}
       title="Request received"
       body={`A member of the WorkPulse team is reviewing your request for ${current.org_name}. ${REVIEW_TIME} We'll email you as soon as it's decided.`}
     >
-      <p className="text-muted-foreground text-xs">
-        You can close this page — nothing is lost. Sign in again any time to check.
+      <p className="m-anote">
+        Sent {formatDate(current.requested_at)}. You can close this page — nothing is lost. Sign in
+        again any time to check.
       </p>
       {/* A typo in the organisation name, or the wrong size, used to be stuck until the review —
           withdrawing frees the request so a corrected one can go in (ONB-02). */}
-      <Button variant="outline" className="w-full" onClick={() => setChanging(true)}>
+      <button type="button" className="m-btn m-btn-ghost w-full" onClick={() => setChanging(true)}>
         Change my request
-      </Button>
+      </button>
       <ConfirmDialog
         open={changing}
         onOpenChange={(o) => !o && setChanging(false)}
@@ -197,39 +192,31 @@ export function OrgRequestStatus({
   );
 }
 
-/** The shared frame, so the three outcomes differ only in what they say. */
+/**
+ * The shared content, so the three outcomes differ only in what they say. It renders inside the
+ * sign-up's auth card (`OnboardingExperience`) — it was a separate app card on a grey page, a
+ * different product from the form the applicant had just filled in (UX audit ONB-13).
+ */
 function Card({
   icon,
   title,
   body,
+  tone = "neutral",
   children,
 }: {
   icon: React.ReactNode;
   title: string;
   body: string;
+  tone?: "neutral" | "bad";
   children?: React.ReactNode;
 }) {
   return (
-    <div className="bg-card shadow-soft w-full max-w-md rounded-2xl border p-8">
-      <div className="mb-5 flex items-start gap-3">
-        <span className="bg-muted flex size-11 shrink-0 items-center justify-center rounded-xl">
-          {icon}
-        </span>
-        <div className="min-w-0 space-y-1">
-          <h1 className="font-heading text-xl font-semibold tracking-tight">{title}</h1>
-          <p className="text-muted-foreground text-sm">{body}</p>
-        </div>
-      </div>
-      <div className="space-y-3">{children}</div>
-    </div>
-  );
-}
-
-/** The loading frame, while we find out whether they have asked yet. */
-export function OrgRequestLoading() {
-  return (
-    <div className="bg-card shadow-soft flex w-full max-w-md items-center justify-center rounded-2xl border p-12">
-      <Loader label="Checking your request…" />
-    </div>
+    <>
+      <span className={`m-reqicon${tone === "bad" ? " m-reqicon--bad" : ""}`} aria-hidden="true">
+        {icon}
+      </span>
+      <AuthHeading title={title} subtitle={body} />
+      <div className="grid gap-3">{children}</div>
+    </>
   );
 }

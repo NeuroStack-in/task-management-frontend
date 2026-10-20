@@ -17,8 +17,9 @@ import {
   AuthField,
   AuthHeading,
   AuthPasswordField,
+  AuthPasswordRules,
 } from "./auth-frame";
-import { AuthShell } from "./auth-shell";
+import { AuthShell as BaseAuthShell } from "./auth-shell";
 import { landAfterSignIn, useAuthStore } from "@/stores/auth.store";
 import { legalHref } from "@/modules/legal/documents";
 import {
@@ -29,6 +30,22 @@ import {
 } from "@/lib/api";
 
 const TERMS_MESSAGE = "Agree to the Terms of Service and Privacy Policy to continue";
+
+/**
+ * The brand panel for someone joining for the first time. The recovery-flow default ("Back to work
+ * in a moment — we'll get you signed in again") greeted a brand-new invitee (UX audit ONB-16).
+ */
+function AuthShell({ children }: { children: React.ReactNode }) {
+  return (
+    <BaseAuthShell
+      headline="Join your team"
+      headlineAccent="on WorkPulse"
+      copy="Set up your account once. You'll use the same email and password on the web and in the WorkPulse desktop app."
+    >
+      {children}
+    </BaseAuthShell>
+  );
+}
 
 const schema = z
   .object({
@@ -167,11 +184,18 @@ export function InviteAcceptForm() {
   /** Bumped by "Try again" to re-run the lookup after a transient failure. */
   const [attempt, setAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  /**
+   * The server's refusal, kept in the error summary until the form changes (UX audit ONB-10). It was
+   * a toast: gone in four seconds, never focused, so a wrong invite code left a screen-reader user
+   * with a form that "did nothing".
+   */
+  const [serverError, setServerError] = useState<[string, string] | null>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
 
   const {
     control,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -187,6 +211,16 @@ export function InviteAcceptForm() {
       terms: false,
     },
   });
+
+  // Any edit clears the server's refusal — it described the values that were sent, not these.
+  useEffect(() => {
+    const sub = watch(() => setServerError(null));
+    return () => sub.unsubscribe();
+  }, [watch]);
+
+  // The live password checklist reads the fields as they're typed (ONB-10).
+  const password = watch("password");
+  const confirm = watch("confirm");
 
   useEffect(() => {
     if (!hasLink) {
@@ -220,6 +254,7 @@ export function InviteAcceptForm() {
   const onSubmit = async (values: FormValues) => {
     if (!preview) return;
     setSubmitting(true);
+    setServerError(null);
     try {
       const result = await acceptInvite({
         tenant_id: tenantId,
@@ -255,9 +290,10 @@ export function InviteAcceptForm() {
         router.replace("/login");
       }
     } catch (err) {
-      const { title, description } = describeAcceptError(err);
-      toast.error(title, { description });
+      const { title, description, field } = describeAcceptError(err);
+      setServerError([field ?? "", `${title}. ${description}`]);
       setSubmitting(false);
+      requestAnimationFrame(() => summaryRef.current?.focus());
     }
   };
 
@@ -326,6 +362,7 @@ export function InviteAcceptForm() {
       ["iv-dob", errors.dateOfBirth?.message],
       ["iv-workmode", errors.workMode?.message],
       ["iv-terms", errors.terms?.message],
+      ...(serverError ? [serverError] : []),
     ] as [string, string | undefined][]
   ).filter((e): e is [string, string] => Boolean(e[1]));
 
@@ -414,6 +451,10 @@ export function InviteAcceptForm() {
             />
           )}
         />
+
+        {/* The same live checklist sign-up shows: invitees saw the policy only after a failed
+            submit (ONB-10). */}
+        <AuthPasswordRules value={password ?? ""} confirm={confirm ?? ""} showMatch />
 
         {/* ── Your employee record ──
             Each personal field says why it is asked (ONB-08). One per row, so each purpose line
@@ -680,12 +721,15 @@ function noticeForStatus(
 function describeAcceptError(err: unknown): {
   title: string;
   description: string;
+  /** The field that can fix it, for the error summary's link; absent = the whole form. */
+  field?: string;
 } {
   if (err instanceof ApiError) {
     if (err.status === 401)
       return {
         title: "That code didn't match",
         description: "Check the invite code from your email and try again.",
+        field: "iv-otp",
       };
     switch (err.code) {
       case "invite_locked":
@@ -753,7 +797,15 @@ function describeAcceptError(err: unknown): {
     // A rejected detail ("Date of birth …", the password policy). `apiFetch` has already made the
     // server's words display-ready, and they name the one thing to fix.
     if (err.status === 400)
-      return { title: "Check your details", description: err.message };
+      return {
+        title: "Check your details",
+        description: err.message,
+        field: /password/i.test(err.message)
+          ? "iv-password"
+          : /birth/i.test(err.message)
+            ? "iv-dob"
+            : undefined,
+      };
     if (err.status === 404)
       return {
         title: "Invite unavailable",

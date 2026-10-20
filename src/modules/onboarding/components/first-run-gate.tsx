@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,8 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { cn } from "@/lib/utils";
 import { PALETTES, applyPalette } from "@/lib/palette";
 import { useAuthStore } from "@/stores/auth.store";
+import { canAccessPath } from "@/lib/rbac";
+import { currentRoleSnapshot } from "@/hooks/use-permissions";
 import {
   getMyProfile,
   updateMyProfile,
@@ -342,7 +346,11 @@ const THEMES: { id: AppearanceTheme; label: string }[] = [
  * deliberately in Settings, where the surrounding explanation lives.
  */
 function SettingsStep({ onDone }: { onDone: () => void }) {
+  const router = useRouter();
   const { serverTheme, serverPalette, saveTheme, savePalette } = useAppearance();
+  // "Settings → Appearance" is a link when this person can open it (UX audit SET-15).
+  const appearanceHref = "/settings/appearance";
+  const canOpenAppearance = canAccessPath(currentRoleSnapshot(), appearanceHref);
   const [theme, setTheme] = useState<AppearanceTheme>("system");
   const [palette, setPalette] = useState<string>("teal");
   const [saving, setSaving] = useState(false);
@@ -368,6 +376,9 @@ function SettingsStep({ onDone }: { onDone: () => void }) {
       // this session and Settings can set it again.
       toast.error("Couldn't save your preferences", {
         description: "You can set them any time in Settings → Appearance.",
+        ...(canOpenAppearance
+          ? { action: { label: "Open Appearance", onClick: () => router.push(appearanceHref) } }
+          : {}),
       });
     } finally {
       setSaving(false);
@@ -381,7 +392,20 @@ function SettingsStep({ onDone }: { onDone: () => void }) {
         <DialogHeader>
           <DialogTitle>Make it yours</DialogTitle>
           <DialogDescription>
-            Optional — you can change any of this later in Settings → Appearance.
+            Optional — you can change any of this later in{" "}
+            {canOpenAppearance ? (
+              // Following it ends this step: the dialog would otherwise stay open over the page.
+              <Link
+                href={appearanceHref}
+                onClick={onDone}
+                className="text-foreground font-medium underline underline-offset-2"
+              >
+                Settings → Appearance
+              </Link>
+            ) : (
+              "Settings → Appearance"
+            )}
+            .
           </DialogDescription>
         </DialogHeader>
 

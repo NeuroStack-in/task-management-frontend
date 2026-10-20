@@ -200,7 +200,9 @@ export function MarketingNav({ onDark = false }: { onDark?: boolean }) {
       ref={navRef}
       className="fixed inset-x-0 top-0 z-50 transition-[background,backdrop-filter,border-color] duration-300"
       style={{
-        background: scrolled ? "color-mix(in srgb, var(--m-bg) 82%, transparent)" : "transparent",
+        // 94%, not 82%: over the dark CTA band the 82% bar went grey and its muted links fell to
+        // 3.8:1 (axe, UX audit PUB-02 follow-up). At 94% they hold 4.8:1 over any section.
+        background: scrolled ? "color-mix(in srgb, var(--m-bg) 94%, transparent)" : "transparent",
         backdropFilter: scrolled ? "blur(14px)" : "none",
         WebkitBackdropFilter: scrolled ? "blur(14px)" : "none",
         borderBottom: scrolled ? "1px solid var(--m-border)" : "1px solid transparent",

@@ -125,6 +125,11 @@ export class AuthError extends Error {
   constructor(
     message: string,
     readonly kind: "credentials" | "state" = "credentials",
+    /**
+     * The form field the refusal is about, when one field can fix it — so the form can put the
+     * message beside that field instead of in a toast (UX audit ONB-10). Absent = the whole form.
+     */
+    readonly field?: "code" | "password",
   ) {
     super(message);
   }
@@ -533,15 +538,20 @@ export async function confirmPasswordReset(
             new AuthError(
               "That code is incorrect. Check your email and try again.",
               "credentials",
+              "code",
             ),
           );
         if (c === "ExpiredCodeException")
           return reject(
-            new AuthError("That code has expired. Request a new one.", "state"),
+            new AuthError("That code has expired. Send a new one and try again.", "state", "code"),
           );
         if (c === "InvalidPasswordException")
           return reject(
-            new AuthError("That password doesn't meet the password policy.", "state"),
+            new AuthError(
+              "That password doesn't meet the password requirements.",
+              "state",
+              "password",
+            ),
           );
         if (c === "LimitExceededException")
           return reject(

@@ -1,212 +1,244 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { PASSWORD_MIN, validatePassword } from "@/lib/password";
-import { friendlyError } from "@/lib/errors";
-import { useRouter } from "next/navigation";
-import { takeHandedOffEmail } from "@/modules/auth/email-handoff";
-import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { PasswordInput } from "@/components/shared/password-input";
-import { Label } from "@/components/ui/label";
-import {
-  confirmPasswordReset,
-  requestPasswordReset,
-} from "@/modules/auth/services/auth.service";
-
-const schema = z
-  .object({
-    email: z.string().email("Enter a valid email address."),
-    code: z.string().trim().min(1, "Enter the code from your email."),
-    password: z.string().superRefine((val, ctx) => {
-      const m = validatePassword(val);
-      if (m) ctx.addIssue({ code: z.ZodIssueCode.custom, message: m });
-    }),
-    confirm: z.string(),
-  })
-  .refine((d) => d.password === d.confirm, {
-    message: "Passwords don't match.",
-    path: ["confirm"],
-  });
-
-type FormValues = z.infer<typeof schema>;
-
 /**
  * Step 2 of the real Cognito reset flow: enter the emailed code and a new password
  * (`confirmPassword`). The forgot-password step hands the email over in `sessionStorage` — not the
- * URL (WP-390) — and it stays editable so a direct visit (or a typo) still works. "Resend code"
+ * URL (WP-390) — and it stays editable so a direct visit (or a typo) still works. "Send a new code"
  * re-triggers `forgotPassword`.
+ *
+ * On the shared auth field primitives (UX audit 2026-10-16, ONB-09) — no nested app card, no
+ * placeholders, `aria-invalid`/`aria-describedby` on every field — with the same live password
+ * checklist sign-up shows, so the policy is visible before a failed submit rather than after
+ * (ONB-10). A refusal from Cognito (wrong or expired code, a rejected password) lands in the focused
+ * error summary, beside the field it's about, and stays until that field changes.
  */
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { takeHandedOffEmail, handOffEmail } from "@/modules/auth/email-handoff";
+import {
+  AuthError,
+  confirmPasswordReset,
+  requestPasswordReset,
+} from "@/modules/auth/services/auth.service";
+import {
+  AuthBackLink,
+  AuthErrorSummary,
+  AuthField,
+  AuthHeading,
+  AuthPasswordField,
+  AuthPasswordRules,
+  AuthStatus,
+  passwordMeetsPolicy,
+} from "./auth-frame";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type Field = "email" | "code" | "password" | "confirm";
+type Errors = Partial<Record<Field | "form", string>>;
+
+/** Field → input id, which is also the error summary's jump target. */
+const IDS: Record<Field, string> = {
+  email: "rp-email",
+  code: "rp-code",
+  password: "rp-password",
+  confirm: "rp-confirm",
+};
+
 export function ResetPasswordForm() {
   const router = useRouter();
+  const [values, setValues] = useState<Record<Field, string>>({
+    email: "",
+    code: "",
+    password: "",
+    confirm: "",
+  });
+  /** The address the previous step sent a code to — only to say so in the subtitle. */
+  const [sentTo, setSentTo] = useState("");
+  const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
+  const [status, setStatus] = useState("");
+  const summaryRef = useRef<HTMLDivElement>(null);
 
-  const {
-    register,
-    handleSubmit,
-    getValues,
-    setValue,
-    formState: { errors },
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: { email: "", code: "", password: "", confirm: "" },
-  });
-
+  // In an effect, not initial state: the server render has no sessionStorage (hydration).
   useEffect(() => {
     const handedOff = takeHandedOffEmail();
-    if (handedOff) setValue("email", handedOff);
-  }, [setValue]);
+    if (handedOff) {
+      setValues((v) => ({ ...v, email: v.email || handedOff }));
+      setSentTo(handedOff);
+    }
+  }, []);
 
-  const onSubmit = async (values: FormValues) => {
+  const focusSummary = () => requestAnimationFrame(() => summaryRef.current?.focus());
+
+  const set = (field: Field) => (v: string) => {
+    setValues((s) => ({ ...s, [field]: field === "code" ? v.replace(/\s/g, "") : v }));
+    // Live-clear: an error disappears the moment its field changes; a whole-form refusal too.
+    if (errors[field] || errors.form) {
+      setErrors((e) => ({ ...e, [field]: undefined, form: undefined }));
+    }
+  };
+
+  const validate = (): Errors => {
+    const e: Errors = {};
+    if (!values.email.trim()) e.email = "Enter your email address";
+    else if (!EMAIL_RE.test(values.email.trim()))
+      e.email = "Enter an email address in the correct format, like name@company.com";
+    if (!values.code.trim()) e.code = "Enter the code from your email";
+    if (!passwordMeetsPolicy(values.password))
+      e.password = "Your new password doesn't meet all the requirements yet";
+    if (values.confirm !== values.password) e.confirm = "Both passwords must match";
+    return e;
+  };
+
+  const onSubmit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const found = validate();
+    setErrors(found);
+    setStatus("");
+    if (Object.keys(found).length > 0) {
+      focusSummary();
+      return;
+    }
     setSubmitting(true);
+    const email = values.email.trim().toLowerCase();
     try {
-      await confirmPasswordReset(values.email, values.code, values.password);
+      await confirmPasswordReset(email, values.code, values.password);
       toast.success("Password updated", {
-        description: "You can now sign in with your new password.",
+        description: "Sign in with your new password.",
       });
+      // Prefill the sign-in page — through sessionStorage, never the URL (WP-390).
+      handOffEmail(email);
       router.push("/login");
     } catch (err) {
-      toast.error("Couldn't reset your password", {
-        description: friendlyError(
-          err,
-          "Check the code and try again — it may have expired.",
-        ),
-      });
+      const message =
+        err instanceof AuthError
+          ? err.message
+          : "Couldn't reset your password. Check the code and try again — it may have expired.";
+      const field = err instanceof AuthError ? err.field : undefined;
+      setErrors(field ? { [field]: message } : { form: message });
+      // Never leave a refused password sitting in the fields.
+      if (field === "password") setValues((v) => ({ ...v, password: "", confirm: "" }));
       setSubmitting(false);
+      focusSummary();
     }
   };
 
   const resend = async () => {
-    const email = getValues("email").trim();
-    if (!email) {
-      toast.error("Enter your email first");
+    const email = values.email.trim();
+    if (!email || !EMAIL_RE.test(email)) {
+      setErrors((e) => ({ ...e, email: "Enter your email address first, then send a new code" }));
+      focusSummary();
       return;
     }
     setResending(true);
+    setStatus("");
     try {
       await requestPasswordReset(email);
-      toast.success("Code sent", { description: "Check your email for a new code." });
+      setErrors((e) => ({ ...e, code: undefined, form: undefined }));
+      setStatus(`We sent a new code to ${email.toLowerCase()} if it has a WorkPulse account. Codes from earlier emails no longer work.`);
     } catch (err) {
-      toast.error("Couldn't send a new code", {
-        description: friendlyError(err, "Wait a moment and try again."),
-      });
+      setErrors((e) => ({
+        ...e,
+        form: err instanceof AuthError ? err.message : "Couldn't send a new code. Wait a moment and try again.",
+      }));
+      focusSummary();
     } finally {
       setResending(false);
     }
   };
 
+  const summary = (Object.keys(IDS) as Field[])
+    .filter((f) => errors[f])
+    .map((f) => [IDS[f], errors[f]!] as [string, string])
+    .concat(errors.form ? [["", errors.form]] : []);
+
   return (
-    <Card>
-      <CardHeader>
-        {/* A real heading — the title was a styled div (WP-368). */}
-        <CardTitle className="text-xl">
-          <h1>Set a new password</h1>
-        </CardTitle>
-        <CardDescription>
-          Enter the code we emailed you and choose a strong password you don&apos;t
-          use elsewhere.
-        </CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="rp-email">Email</Label>
-            <Input
-              id="rp-email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@company.com"
-              {...register("email")}
-            />
-            {errors.email ? (
-              <p className="text-xs text-destructive">{errors.email.message}</p>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="rp-code">Verification code</Label>
-              <button
-                type="button"
-                onClick={resend}
-                disabled={resending}
-                className="text-xs font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                {resending ? "Sending…" : "Resend code"}
-              </button>
-            </div>
-            <Input
-              id="rp-code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="6-digit code"
-              {...register("code")}
-            />
-            {errors.code ? (
-              <p className="text-xs text-destructive">{errors.code.message}</p>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="rp-password">New password</Label>
-            <PasswordInput
-              id="rp-password"
-              autoComplete="new-password"
-              placeholder={`At least ${PASSWORD_MIN} characters`}
-              {...register("password")}
-            />
-            {errors.password ? (
-              <p className="text-xs text-destructive">
-                {errors.password.message}
-              </p>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="rp-confirm">Confirm password</Label>
-            <PasswordInput
-              id="rp-confirm"
-              autoComplete="new-password"
-              placeholder="Re-enter password"
-              {...register("confirm")}
-            />
-            {errors.confirm ? (
-              <p className="text-xs text-destructive">
-                {errors.confirm.message}
-              </p>
-            ) : null}
-          </div>
-        </CardContent>
-        <CardFooter className="flex-col gap-3">
-          <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" /> Updating…
-              </>
-            ) : (
-              "Update password"
-            )}
-          </Button>
-          <Link
-            href="/login"
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Back to sign in
-          </Link>
-        </CardFooter>
+    <>
+      <AuthHeading
+        title="Set a new password"
+        subtitle={
+          sentTo
+            ? `If ${sentTo} has a WorkPulse account, we've emailed it a code. Enter it below with your new password.`
+            : "Enter the code we emailed you and choose a password you don't use anywhere else."
+        }
+      />
+      <form onSubmit={onSubmit} noValidate>
+        <AuthErrorSummary errors={summary} summaryRef={summaryRef} />
+
+        <AuthField
+          id={IDS.email}
+          label="Work email"
+          type="email"
+          value={values.email}
+          onChange={set("email")}
+          error={errors.email}
+          autoComplete="username"
+          inputMode="email"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          disabled={submitting}
+        />
+        <AuthField
+          id={IDS.code}
+          label="Verification code"
+          hint="The 6-digit code in the email. It can take a minute to arrive — check spam too."
+          value={values.code}
+          onChange={set("code")}
+          error={errors.code}
+          autoComplete="one-time-code"
+          inputMode="numeric"
+          disabled={submitting}
+        />
+        <AuthPasswordField
+          id={IDS.password}
+          label="New password"
+          value={values.password}
+          onChange={set("password")}
+          error={errors.password}
+          autoComplete="new-password"
+          disabled={submitting}
+        />
+        <AuthPasswordField
+          id={IDS.confirm}
+          label="Confirm new password"
+          value={values.confirm}
+          onChange={set("confirm")}
+          error={errors.confirm}
+          autoComplete="new-password"
+          disabled={submitting}
+        />
+        <AuthPasswordRules value={values.password} confirm={values.confirm} showMatch />
+
+        <button type="submit" disabled={submitting} className="m-btn m-btn-primary mt-4 w-full">
+          {submitting ? (
+            <>
+              <Loader2 className="m-spin size-4" /> Updating…
+            </>
+          ) : (
+            "Update password"
+          )}
+        </button>
       </form>
-    </Card>
+
+      <p className="m-anote">
+        No code, or it expired?{" "}
+        <button
+          type="button"
+          onClick={resend}
+          disabled={resending || submitting}
+          className="font-semibold underline underline-offset-2"
+          style={{ color: "var(--m-accent-ink)" }}
+        >
+          {resending ? "Sending…" : "Send a new code"}
+        </button>
+      </p>
+      <AuthStatus>{status}</AuthStatus>
+      <AuthBackLink href="/login">Back to sign in</AuthBackLink>
+    </>
   );
 }

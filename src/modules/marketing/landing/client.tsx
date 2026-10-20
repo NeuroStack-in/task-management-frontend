@@ -285,6 +285,37 @@ export function RoleSelector() {
   );
 }
 
+/* ---------------- "See more" below sm ----------------
+ * The home page was 16,300 px on a phone — nineteen screens, fourteen sections (UX audit PUB-05).
+ * The secondary sections (roles, breadth, security cards, principles) keep their heading and intro
+ * on a phone and fold their body behind this button; from `sm` up nothing changes and the button
+ * isn't rendered visibly. CSS-only hiding (`max-sm:hidden`), so the server render needs no idea of
+ * the screen width and there is nothing to mismatch on hydration. */
+export function PhoneMore({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div id={id} className={open ? undefined : "max-sm:hidden"}>
+        {children}
+      </div>
+      {/* The wrapper carries `sm:hidden`: `.wp-btn` sets `display` in unlayered CSS, which beats a
+          Tailwind utility on the button itself, so the button stayed visible on desktop. */}
+      <div className="mt-8 sm:hidden">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen((o) => !o)}
+          className="wp-btn wp-btn-ghost w-full"
+        >
+          {open ? "Show less" : label}
+          <ChevronDown className="size-4 transition-transform" style={{ transform: open ? "rotate(180deg)" : "none" }} />
+        </button>
+      </div>
+    </>
+  );
+}
+
 /* ---------------- FAQ ---------------- */
 export function FaqItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);

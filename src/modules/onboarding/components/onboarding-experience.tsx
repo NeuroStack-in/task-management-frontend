@@ -1,21 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Activity, Mail } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
+import { formatDate } from "@/lib/format";
 import { useAuthStore } from "@/stores/auth.store";
 import { useRolesStore } from "@/stores/roles.store";
 import { resolveRole } from "@/hooks/use-permissions";
 import { canAccess } from "@/lib/rbac";
-import { Loader } from "@/components/shared/loader";
-import { Button } from "@/components/ui/button";
-import { OnboardingWizard } from "./onboarding-wizard";
+import { AuthFrame, AuthHeading } from "@/modules/auth/components/auth-frame";
 import { SignupExperience } from "@/modules/auth/components/signup-experience";
-import { OrgRequestLoading, OrgRequestStatus } from "./org-request-status";
+import { SIGNUP_PANEL } from "@/modules/auth/signup-panel";
+import { OnboardingWizard } from "./onboarding-wizard";
+import { OrgRequestStatus } from "./org-request-status";
 import {
   getMyInvites,
   getMyOrgRequest,
@@ -29,6 +29,15 @@ import {
  * (the auth guard sends them here) to request one, so it must not be publicly viewable: wait for the
  * persisted auth store to hydrate, then bounce unauthenticated visitors to /login. Kept out of the
  * (app) group on purpose so onboarding stays full-screen, without the dashboard shell.
+ *
+ * ## One frame for the whole route (UX audit 2026-10-16, ONB-13 / ONB-14)
+ *
+ * Every state renders in the sign-up's own split frame (`AuthFrame`): the request form, the waiting
+ * screen, a pending invite and the owner's setup wizard. It used to drop the request form — itself a
+ * full-screen split layout — inside a centred column under a second, hand-drawn logo, with "Sign
+ * out" loose below the page; and the wizard was a grey app card that looked like another product.
+ * "Signed in as … · Sign out" now sits at the foot of the card on every state. The route imports
+ * the auth styles itself (`app/onboarding/page.tsx`), so a hard refresh keeps them.
  */
 export function OnboardingExperience() {
   const router = useRouter();
@@ -37,7 +46,6 @@ export function OnboardingExperience() {
   // A signed-in user with no organization yet (the "Continue with Google" self-signup) creates one
   // here first; a user who already has an org continues to the setup wizard.
   const hasOrg = useAuthStore((s) => Boolean(s.user?.organizationId));
-  const logout = useAuthStore((s) => s.logout);
   // The wizard edits the org — its details, invites, the tracking policy — so it is for whoever
   // manages org settings. Anyone else with an org has nothing to set up: an Employee who typed the
   // URL got four steps of failing writes, one of them blaming the plan (QA audit 2026-10-08, WP-127).
@@ -55,32 +63,26 @@ export function OnboardingExperience() {
 
   if (!hydrated || !isAuthenticated || (hasOrg && !canSetUp)) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-muted/30">
-        <Loader label="Loading…" />
-      </div>
+      <AuthFrame {...SIGNUP_PANEL}>
+        <FrameLoading label="Loading…" />
+      </AuthFrame>
     );
   }
 
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-muted/30 p-4">
-      <Link href="/" className="flex items-center gap-2">
-        <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Activity className="size-5" />
-        </div>
-        <span className="text-lg font-semibold tracking-tight">WorkPulse</span>
-      </Link>
-      {hasOrg ? <OnboardingWizard /> : <NoOrgFlow />}
-      {/* This page sits outside the app shell, so the sidebar's "Log out" is not here. Without this
-          someone who signed in with the wrong Google account — or is waiting on a request — had no
-          way to leave that account on this browser (QA audit 2026-10-08, WP-126). The auth guard's
-          redirect to /login follows the sign-out. */}
-      {!hasOrg ? (
-        <Button variant="ghost" size="sm" onClick={logout}>
-          Sign out
-        </Button>
-      ) : null}
-    </div>
-  );
+  if (hasOrg) {
+    return (
+      <AuthFrame
+        headline="Your workspace"
+        headlineAccent="is ready"
+        copy="Four quick steps: your organization, your team, tracking and your dashboard. Every choice can be changed later in Settings."
+      >
+        <OnboardingWizard />
+        <SignedInAs />
+      </AuthFrame>
+    );
+  }
+
+  return <NoOrgFlow />;
 }
 
 /**
@@ -120,24 +122,70 @@ function NoOrgFlow() {
 
   useEffect(load, [load]);
 
-  if (loading) return <OrgRequestLoading />;
-  // Invited, but signed in with Google before opening the invite email: they have no organisation
-  // yet, and this screen used to offer them a new one (UX audit ONB-03). The invite is the way in.
-  if (!request && invites.length && !createOwn) {
-    return <PendingInvites invites={invites} onCreateOwn={() => setCreateOwn(true)} />;
-  }
-  if (request) {
-    // Re-applying clears the local view and shows the form again; the server released the
-    // one-per-email claim when it rejected, so a new submission is accepted.
-    return <OrgRequestStatus request={request} onReapply={() => setRequest(null)} />;
-  }
   // The full signup wizard minus its account step — Google already established who they are, and
-  // there is no password to set. Steps 2-5 run unchanged and end in a request for approval.
+  // there is no password to set. The remaining steps run unchanged and end in a request for
+  // approval.
   //
   // Deliberately the same component the public flow uses rather than a second, smaller form: a
   // parallel "quick" version would drift from it, and the fields it skipped would be ones the org
-  // simply never gets.
-  return <SignupExperience authenticated onSubmitted={load} />;
+  // simply never gets. It brings its own frame; the sign-out goes in its card's footer.
+  const showForm = !loading && !request && !(invites.length && !createOwn);
+  if (showForm) {
+    return <SignupExperience authenticated onSubmitted={load} footer={<SignedInAs />} />;
+  }
+
+  return (
+    <AuthFrame {...SIGNUP_PANEL}>
+      {loading ? (
+        <FrameLoading label="Checking your request…" />
+      ) : request ? (
+        // Re-applying clears the local view and shows the form again; the server released the
+        // one-per-email claim when it rejected, so a new submission is accepted.
+        <OrgRequestStatus request={request} onReapply={() => setRequest(null)} />
+      ) : (
+        // Invited, but signed in with Google before opening the invite email: they have no
+        // organisation yet, and this screen used to offer them a new one (UX audit ONB-03).
+        <PendingInvites invites={invites} onCreateOwn={() => setCreateOwn(true)} />
+      )}
+      <SignedInAs />
+    </AuthFrame>
+  );
+}
+
+/**
+ * "Signed in as … · Sign out", at the foot of the card (ONB-13). This page sits outside the app
+ * shell, so the sidebar's "Log out" is not here. Without this someone who signed in with the wrong
+ * Google account — or is waiting on a request — had no way to leave that account on this browser
+ * (QA audit 2026-10-08, WP-126). The guard's redirect to /login follows the sign-out.
+ */
+function SignedInAs() {
+  const email = useAuthStore((s) => s.user?.email ?? "");
+  const logout = useAuthStore((s) => s.logout);
+  return (
+    <p className="m-signedin">
+      {email ? (
+        <span>
+          Signed in as <strong>{email}</strong>
+        </span>
+      ) : null}
+      <button type="button" onClick={() => void logout()}>
+        Sign out
+      </button>
+    </p>
+  );
+}
+
+function FrameLoading({ label }: { label: string }) {
+  return (
+    <p
+      className="flex items-center justify-center gap-2 py-10 text-sm"
+      style={{ color: "var(--m-muted)" }}
+      role="status"
+    >
+      <Loader2 className="m-spin size-4" aria-hidden="true" />
+      {label}
+    </p>
+  );
 }
 
 /**
@@ -179,54 +227,48 @@ function PendingInvites({
   }
 
   return (
-    <div className="bg-card shadow-soft w-full max-w-md space-y-5 rounded-2xl border p-8">
-      <div className="flex items-start gap-3">
-        <span className="bg-muted flex size-11 shrink-0 items-center justify-center rounded-xl">
-          <Mail className="text-primary size-6" />
-        </span>
-        <div className="min-w-0 space-y-1">
-          <h1 className="font-heading text-xl font-semibold tracking-tight">
-            {invites.length === 1
-              ? `You've been invited to ${invites[0].org_name || "an organisation"}`
-              : "You've been invited"}
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            To join, open the invite email we sent{email ? ` to ${email}` : ""} and use its link
-            and code. You don&apos;t need to create a workspace.
-          </p>
-        </div>
-      </div>
-      <ul className="space-y-2">
+    <>
+      <AuthHeading
+        title={
+          invites.length === 1
+            ? `You've been invited to ${invites[0].org_name || "an organisation"}`
+            : "You've been invited"
+        }
+        subtitle={`To join, open the invite email we sent${email ? ` to ${email}` : ""} and use its link and code. You don't need to create a workspace.`}
+      />
+      <ul className="m-invitelist">
         {invites.map((inv) => (
-          <li
-            key={inv.invite_id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
-          >
-            <div className="min-w-0 text-sm">
-              <p className="truncate font-medium">{inv.org_name || "An organisation"}</p>
-              <p className="text-muted-foreground text-xs">
+          <li key={inv.invite_id}>
+            <div className="min-w-0">
+              <p className="m-invitelist__org">{inv.org_name || "An organisation"}</p>
+              <p className="m-invitelist__meta">
                 {inv.locked
                   ? "Locked after too many wrong codes — sending it again unlocks it."
-                  : `Expires ${new Date(inv.expires_at * 1000).toLocaleDateString([], { day: "numeric", month: "short" })}`}
+                  : `Expires ${formatDate(inv.expires_at * 1000)}`}
               </p>
             </div>
-            <Button
-              size="sm"
-              variant={sent.has(inv.invite_id) ? "ghost" : "outline"}
+            <button
+              type="button"
+              className="m-btn m-btn-ghost m-btn--sm"
               disabled={busy === inv.invite_id}
               onClick={() => void resend(inv)}
             >
               {sent.has(inv.invite_id) ? "Sent — send again" : "Email me the invite again"}
-            </Button>
+            </button>
           </li>
         ))}
       </ul>
-      <p className="text-muted-foreground text-xs">
+      <p className="m-anote">
         Not what you expected?{" "}
-        <button type="button" className="text-foreground underline underline-offset-2" onClick={onCreateOwn}>
+        <button
+          type="button"
+          className="font-semibold underline underline-offset-2"
+          style={{ color: "var(--m-accent-ink)" }}
+          onClick={onCreateOwn}
+        >
           Create your own workspace instead
         </button>
       </p>
-    </div>
+    </>
   );
 }

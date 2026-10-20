@@ -19,7 +19,7 @@ import {
   FOOTER_COLUMNS,
 } from "./content";
 import { Visual } from "./visuals";
-import { Reveal, CountUp, UseCaseMarquee, RoleSelector, FaqItem } from "./client";
+import { Reveal, CountUp, UseCaseMarquee, RoleSelector, FaqItem, PhoneMore } from "./client";
 import { LEGAL_DOCS, legalHref } from "@/modules/legal/documents";
 import { PRODUCTS, productHref } from "@/modules/marketing/products";
 
@@ -36,8 +36,8 @@ export function MarqueeSection() {
 /* ---------------- Oversized stat band ---------------- */
 export function StatsSection() {
   return (
-    <section className="px-5 py-20 sm:py-24">
-      <div className="mx-auto grid max-w-6xl gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
+    <section className="px-5 py-14 sm:py-24">
+      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-x-4 gap-y-10 lg:grid-cols-4">
         {STATS.map((s, i) => (
           <Reveal key={s.label} delay={i * 90} className="text-center">
             <p className="wp-display text-[clamp(3rem,7vw,4.6rem)]" style={{ color: "var(--wp-accent)" }}>
@@ -63,7 +63,7 @@ export function FeaturesSection() {
           </h2>
         </Reveal>
 
-        <div className="mt-20 space-y-24 sm:space-y-32">
+        <div className="mt-12 space-y-16 sm:mt-20 sm:space-y-32">
           {FEATURE_BLOCKS.map((f, i) => {
             const Icon = f.icon;
             const flip = i % 2 === 1;
@@ -92,7 +92,9 @@ export function FeaturesSection() {
                     </Link>
                   </div>
                 </Reveal>
-                <Reveal variant={flip ? "left" : "right"} delay={80}>
+                {/* On a phone only the first block keeps its illustration: four stacked mock-ups
+                    were a quarter of a 19-screen page (UX audit PUB-05). Desktop is unchanged. */}
+                <Reveal variant={flip ? "left" : "right"} delay={80} className={i > 0 ? "max-sm:hidden" : ""}>
                   <Visual kind={f.visual} />
                 </Reveal>
               </div>
@@ -107,7 +109,7 @@ export function FeaturesSection() {
 /* ---------------- Roles ---------------- */
 export function RolesSection() {
   return (
-    <section id="roles" className="mt-24 px-5 py-20 sm:py-28" style={{ background: "var(--wp-bg-2)" }}>
+    <section id="roles" className="mt-16 px-5 py-14 sm:mt-24 sm:py-28" style={{ background: "var(--wp-bg-2)" }}>
       <div className="mx-auto max-w-6xl">
         <Reveal className="max-w-2xl">
           <p className="wp-kicker">Built for every role</p>
@@ -120,9 +122,11 @@ export function RolesSection() {
             whole organization.
           </p>
         </Reveal>
-        <Reveal className="mt-12">
-          <RoleSelector />
-        </Reveal>
+        <PhoneMore id="roles-more" label="See it by role">
+          <Reveal className="mt-12">
+            <RoleSelector />
+          </Reveal>
+        </PhoneMore>
       </div>
     </section>
   );
@@ -131,7 +135,7 @@ export function RolesSection() {
 /* ---------------- Breadth (one platform) ---------------- */
 export function BreadthSection() {
   return (
-    <section id="platform" className="px-5 py-20 sm:py-28">
+    <section id="platform" className="px-5 py-14 sm:py-28">
       <div className="mx-auto max-w-6xl">
         <Reveal className="max-w-2xl">
           <p className="wp-kicker">One platform, every workflow</p>
@@ -139,6 +143,7 @@ export function BreadthSection() {
             Replace the stack. Keep one source of truth.
           </h2>
         </Reveal>
+        <PhoneMore id="platform-more" label="See everything it covers">
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {MODULE_GROUPS.map((g, i) => {
             const Icon = g.icon;
@@ -164,6 +169,7 @@ export function BreadthSection() {
             );
           })}
         </div>
+        </PhoneMore>
       </div>
     </section>
   );
@@ -172,12 +178,14 @@ export function BreadthSection() {
 /* ---------------- How it works ---------------- */
 export function HowSection() {
   return (
-    <section className="px-5 py-20 sm:py-24" style={{ background: "var(--wp-bg-2)" }}>
+    <section className="px-5 py-14 sm:py-24" style={{ background: "var(--wp-bg-2)" }}>
       <div className="mx-auto max-w-6xl">
         <Reveal className="max-w-2xl">
           <p className="wp-kicker">How it works</p>
+          {/* Was "Live in an afternoon." — every new workspace now waits for WorkPulse staff
+              approval, reviewed within one business day (owner decision 2026-10-17, UX audit PUB-03). */}
           <h2 className="wp-display mt-4 text-[clamp(2rem,4.5vw,3.2rem)]" style={{ color: "var(--wp-ink)" }}>
-            Live in an afternoon.
+            Three steps to a clear pulse.
           </h2>
         </Reveal>
         <div className="mt-12 grid gap-8 md:grid-cols-3">
@@ -199,7 +207,7 @@ export function HowSection() {
 /* ---------------- Security ---------------- */
 export function SecuritySection() {
   return (
-    <section id="security" className="px-5 py-20 sm:py-28">
+    <section id="security" className="px-5 py-14 sm:py-28">
       <div className="mx-auto max-w-6xl">
         <Reveal className="max-w-2xl">
           <p className="wp-kicker">Enterprise &amp; security</p>
@@ -211,6 +219,7 @@ export function SecuritySection() {
             WorkPulse is designed around from the ground up.
           </p>
         </Reveal>
+        <PhoneMore id="security-more" label="See all six safeguards">
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {ENTERPRISE.map((e, i) => {
             const Icon = e.icon;
@@ -227,6 +236,7 @@ export function SecuritySection() {
             );
           })}
         </div>
+        </PhoneMore>
       </div>
     </section>
   );
@@ -235,7 +245,7 @@ export function SecuritySection() {
 /* ---------------- Principles ---------------- */
 export function PrinciplesSection() {
   return (
-    <section className="px-5 py-20 sm:py-28" style={{ background: "var(--wp-bg-2)" }}>
+    <section className="px-5 py-14 sm:py-28" style={{ background: "var(--wp-bg-2)" }}>
       <div className="mx-auto max-w-6xl">
         <Reveal className="max-w-2xl">
           <p className="wp-kicker">What we believe</p>
@@ -243,6 +253,7 @@ export function PrinciplesSection() {
             A calmer way to run a productive team.
           </h2>
         </Reveal>
+        <PhoneMore id="principles-more" label="Read our three principles">
         <div className="mt-12 grid gap-6 md:grid-cols-3">
           {PRINCIPLES.map((p, i) => {
             const Icon = p.icon;
@@ -259,6 +270,7 @@ export function PrinciplesSection() {
             );
           })}
         </div>
+        </PhoneMore>
       </div>
     </section>
   );
@@ -267,7 +279,7 @@ export function PrinciplesSection() {
 /* ---------------- Pricing ---------------- */
 export function PricingSection() {
   return (
-    <section id="pricing" className="px-5 py-20 sm:py-28">
+    <section id="pricing" className="px-5 py-14 sm:py-28">
       <div className="mx-auto max-w-6xl">
         <Reveal className="mx-auto max-w-2xl text-center">
           <p className="wp-kicker">Pricing</p>
@@ -275,7 +287,7 @@ export function PricingSection() {
             Simple per-seat pricing. Free in beta.
           </h2>
         </Reveal>
-        <div className="mt-14 grid items-stretch gap-6 lg:grid-cols-3">
+        <div className="mt-10 grid items-stretch gap-6 sm:mt-14 lg:grid-cols-3">
           {PRICING.map((p, i) => (
             <Reveal key={p.name} delay={i * 90}>
               <div
@@ -315,7 +327,7 @@ export function PricingSection() {
 /* ---------------- FAQ ---------------- */
 export function FaqSection() {
   return (
-    <section id="faq" className="px-5 py-20 sm:py-28" style={{ background: "var(--wp-bg-2)" }}>
+    <section id="faq" className="px-5 py-14 sm:py-28" style={{ background: "var(--wp-bg-2)" }}>
       <div className="mx-auto max-w-3xl">
         <Reveal className="text-center">
           <p className="wp-kicker">Questions</p>
@@ -336,16 +348,19 @@ export function FaqSection() {
 /* ---------------- Final CTA ---------------- */
 export function CtaSection() {
   return (
-    <section className="px-5 py-24 sm:py-36">
+    <section className="px-5 py-14 sm:py-36">
       <Reveal variant="scale">
-        <div className="relative mx-auto max-w-4xl overflow-hidden rounded-[32px] p-12 text-center sm:p-20" style={{ background: "var(--wp-ink)" }}>
+        <div className="relative mx-auto max-w-4xl overflow-hidden rounded-[32px] px-6 py-12 text-center sm:p-20" style={{ background: "var(--wp-ink)" }}>
           <span className="pointer-events-none absolute rounded-full" aria-hidden style={{ width: "40vw", height: "40vw", right: "-10%", top: "-30%", background: "radial-gradient(circle, color-mix(in srgb, var(--wp-accent) 55%, transparent), transparent 60%)" }} />
           <div className="relative">
             <h2 className="wp-display text-[clamp(2.4rem,6vw,4.2rem)]" style={{ color: "#fff" }}>
               Find your team&apos;s <span className="wp-serif-italic" style={{ color: "var(--wp-accent-glow)" }}>pulse.</span>
             </h2>
             <p className="mx-auto mt-4 max-w-md text-base" style={{ color: "rgb(255 255 255 / 0.72)" }}>
-              Set up your organization in minutes. No card required while we&apos;re in beta.
+              {/* Was "Set up your organization in minutes" — new workspaces wait for staff approval
+                  (UX audit PUB-03). */}
+              Request your workspace today — we review every request within one business day.
+              Free during the beta, no card required.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link href="/register" className="wp-btn wp-btn-primary">Start free <ArrowRight className="size-4" /></Link>
@@ -372,8 +387,8 @@ export function Footer({ allProducts = false }: { allProducts?: boolean }) {
     : FOOTER_COLUMNS;
   return (
     <footer className="border-t px-5 py-14" style={{ borderColor: "var(--wp-border)", background: "var(--wp-bg-2)" }}>
-      <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
-        <div>
+      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-x-6 gap-y-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        <div className="col-span-2 md:col-span-1">
           <div className="flex items-center gap-2">
             <span className="flex size-8 items-center justify-center rounded-[10px]" style={{ background: "var(--wp-accent)" }}>
               <svg viewBox="0 0 24 24" className="size-5" fill="none" aria-hidden>

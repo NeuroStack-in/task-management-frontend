@@ -516,7 +516,11 @@ export function AuthErrorSummary({
   errors,
   summaryRef,
 }: {
-  /** `[fieldId, message]` — the id makes each entry a jump link to the field. */
+  /**
+   * `[fieldId, message]` — the id makes each entry a jump link to the field. An empty id renders the
+   * message as plain text: a server refusal that no one field can fix (an expired invite, a mail
+   * outage) has nothing to jump to, and a link to an unrelated field would mislead.
+   */
   errors: [string, string][];
   summaryRef?: React.Ref<HTMLDivElement>;
 }) {
@@ -526,6 +530,7 @@ export function AuthErrorSummary({
   // one-item list says the same thing twice and costs ~35px of a height-locked card. One error
   // renders as one line; the heading returns only when there is genuinely a list to introduce.
   const one = errors.length === 1;
+  const entry = (id: string, msg: string) => (id ? <a href={`#${id}`}>{msg}</a> : msg);
 
   return (
     <div
@@ -537,21 +542,50 @@ export function AuthErrorSummary({
       {one ? (
         <p>
           <span className="m-sr">There is a problem: </span>
-          <a href={`#${errors[0][0]}`}>{errors[0][1]}</a>
+          {entry(errors[0][0], errors[0][1])}
         </p>
       ) : (
         <>
           <h2>There is a problem</h2>
           <ul>
-            {errors.map(([id, msg]) => (
-              <li key={id}>
-                <a href={`#${id}`}>{msg}</a>
-              </li>
+            {errors.map(([id, msg], i) => (
+              <li key={`${id}-${i}`}>{entry(id, msg)}</li>
             ))}
           </ul>
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * A polite, persistent status line under a form — "We sent a new code to …". Toasts vanish after a
+ * few seconds and never take focus; on the auth screens the outcome stays where the user is looking
+ * (UX audit ONB-10).
+ *
+ * Render it unconditionally and change only its text: a live region that is inserted already
+ * holding its message is not announced by every screen reader.
+ */
+export function AuthStatus({ children }: { children?: React.ReactNode }) {
+  return (
+    <p className={children ? "m-authstatus" : "m-sr"} role="status">
+      {children}
+    </p>
+  );
+}
+
+/** A back link under an auth card's main action ("Back to sign in"). */
+export function AuthBackLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <p className="mt-4 text-center text-sm">
+      <Link
+        href={href}
+        className="font-medium underline underline-offset-2"
+        style={{ color: "var(--m-accent-ink)" }}
+      >
+        {children}
+      </Link>
+    </p>
   );
 }
 
