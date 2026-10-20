@@ -182,29 +182,21 @@ export function MonitoringTab() {
   // The idle window only applies to the managed Windows service, so the card is hidden for
   // `project` orgs rather than shown as a setting that changes nothing.
   const trackingMode = useTrackingMode()
-  // Two switches decide the interval control (UX audit 2026-10-16, SET-03 — see `captureLock`):
-  // Features → Screenshots is what the agents obey, and `monitoring.activity` is what
-  // `fleet::update_policy` checks before accepting a *changed* non-Off interval. The page used to
-  // read only the second, so with Screenshots off it offered an editable "Every 5 minutes" while
-  // nothing was captured, and its lock message blamed Activity monitoring.
+  // Features → Screenshots decides the interval control (UX audit 2026-10-16, SET-03 — see
+  // `captureLock`): the agents obey it, and `fleet::update_policy` checks it before accepting a
+  // changed interval. The page used to read only Activity monitoring, so with Screenshots off it
+  // offered an editable "Every 5 minutes" while nothing was captured.
   //
-  // While either locks the interval, a save sends the stored interval back unchanged, which the
-  // server accepts (`req.cadence == stored_cadence`), so retention and the rest still save. It used
-  // to send Off (WP-330), which quietly threw away the interval an org would get back with the
-  // switch — and with Activity off and Screenshots on, stopped a capture the page said wasn't running.
+  // While it locks the interval, a save sends the stored interval back unchanged, which the server
+  // accepts (`req.cadence == stored_cadence`), so retention and the rest still save. It used to send
+  // Off (WP-330), which quietly threw away the interval an org would get back with the switch.
   const screenshotsOn = useEntitlementsStore((s) =>
     effectiveFromState(s, "monitoring.screenshots"),
   )
   const screenshotsInPlan = useEntitlementsStore(
     (s) => !s.loaded || s.allowed.includes("monitoring.screenshots"),
   )
-  const activityOn = useEntitlementsStore((s) =>
-    effectiveFromState(s, "monitoring.activity"),
-  )
-  const activityInPlan = useEntitlementsStore(
-    (s) => !s.loaded || s.allowed.includes("monitoring.activity"),
-  )
-  const lock = captureLock({ screenshotsOn, screenshotsInPlan, activityOn, activityInPlan })
+  const lock = captureLock({ screenshotsOn, screenshotsInPlan })
 
   const {
     control,
@@ -663,8 +655,7 @@ export function MonitoringTab() {
 
 /**
  * Why the interval is locked, naming the switch that actually causes it and linking to where it is
- * changed (UX audit SET-03). Screenshots off means nothing is captured, and says so plainly; with
- * only Activity off, capture carries on and the notice must not pretend otherwise.
+ * changed (UX audit SET-03). Screenshots off means nothing is captured, and it says so plainly.
  */
 function CaptureLockNotice({ lock }: { lock: CaptureLock }) {
   // Inherits the notice's own (contrast-safe) ink rather than adding a third colour to the box.
@@ -677,16 +668,6 @@ function CaptureLockNotice({ lock }: { lock: CaptureLock }) {
     },
     "screenshots-not-in-plan": {
       text: "Screenshots aren't included in your plan — nothing is being captured.",
-      href: "/settings/billing",
-      link: "See plans",
-    },
-    "activity-off": {
-      text: "Screenshots are still being captured at the interval below. Changing it needs Activity monitoring, which is off in Features; to stop screenshots, switch Screenshots off there.",
-      href: "/settings/features",
-      link: "Open Features",
-    },
-    "activity-not-in-plan": {
-      text: "Screenshots are still being captured at the interval below. Changing it needs Activity monitoring, which isn't included in your plan.",
       href: "/settings/billing",
       link: "See plans",
     },

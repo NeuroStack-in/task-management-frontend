@@ -7,7 +7,7 @@ import {
   retentionOptions,
 } from "./monitoring-capture"
 
-const on = { screenshotsOn: true, screenshotsInPlan: true, activityOn: true, activityInPlan: true }
+const on = { screenshotsOn: true, screenshotsInPlan: true }
 
 /** SET-03: the page read only the Activity switch, and blamed it for the Screenshots switch. */
 describe("captureLock", () => {
@@ -28,20 +28,6 @@ describe("captureLock", () => {
     })
   })
 
-  it("checks Screenshots before Activity, since only Screenshots stops capture", () => {
-    expect(captureLock({ ...on, screenshotsOn: false, activityOn: false })).toEqual({
-      kind: "screenshots-off",
-    })
-  })
-
-  it("with only Activity off, locks the interval but capture carries on", () => {
-    const lock = captureLock({ ...on, activityOn: false })
-    expect(lock).toEqual({ kind: "activity-off" })
-    expect(capturing(lock)).toBe(true)
-    expect(captureLock({ ...on, activityOn: false, activityInPlan: false })).toEqual({
-      kind: "activity-not-in-plan",
-    })
-  })
 })
 
 /** SET-04: presets instead of a one-day stepper, without losing a stored odd value. */

@@ -71,14 +71,14 @@ export function matchesDepartment(e: EmployeeRow, dept: string): boolean {
 }
 
 /**
- * Search across what the directory carries: name, employee ID, job title, department and role.
- * Not email — the directory list has none (it lives on each profile), so offering it would be a
- * promise the data can't keep.
+ * Search across what the directory carries: name, email, employee ID, job title, department and
+ * role. Email arrives on the directory row now (`workforce::directory_list`, PEOPLE-04); a server
+ * that predates it sends none, and the other fields still match.
  */
 export function matchesQuery(e: EmployeeRow, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [e.name, e.empId ?? "", e.jobTitle, e.department, e.roleName].some((f) =>
+  return [e.name, e.email ?? "", e.empId ?? "", e.jobTitle, e.department, e.roleName].some((f) =>
     f.toLowerCase().includes(q),
   );
 }

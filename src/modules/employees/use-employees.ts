@@ -123,6 +123,8 @@ export interface EmployeeRow {
   /** On the **bench** — still an employee, but excluded from Attendance + Time-Tracking. */
   benched: boolean;
   productivityScore: number | null;
+  /** For search only (PEOPLE-04); `""` when the server didn't send one. */
+  email?: string;
 }
 
 export interface EmployeesData {
@@ -238,6 +240,7 @@ export function useEmployees({ withScores = false }: { withScores?: boolean } = 
             // Absent on every row that predates the field, so this reads false for existing orgs.
             monitored: e.login === "none",
             benched: e.benched ?? false,
+            email: e.email ?? "",
             // Joined from `scores` below; `null` — rendered "—" — until there is one.
             productivityScore: null,
           })),

@@ -35,6 +35,9 @@ export interface ApiEmployee {
   /** Join date (epoch ms), enriched from the base user item. Powers the dashboard "New Hires" count.
    * Absent for legacy rows minted before join dates were recorded. */
   joined_at?: number;
+  /** Sign-in / contact address, for directory search (UX audit PEOPLE-04). Absent from older servers
+   *  and for a monitored employee with none. */
+  email?: string;
   /** `active` | `deactivated`. */
   status: string;
   department_id: string;

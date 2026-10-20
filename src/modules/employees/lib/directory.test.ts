@@ -5,6 +5,7 @@ import {
   directoryStats,
   filterEmployees,
   hiddenByStatus,
+  matchesQuery,
   NO_DEPARTMENT,
   nextSort,
   sortEmployees,
@@ -138,5 +139,14 @@ describe("sorting", () => {
     expect(nextSort("-name", "name")).toBe("name");
     expect(nextSort("name", "role")).toBe("role");
     expect(nextSort("name", "productivity")).toBe("-productivity");
+  });
+});
+
+/** PEOPLE-04: email is searchable once the server sends it on the row. */
+describe("matchesQuery — email", () => {
+  it("matches an email fragment, and ignores rows without one", () => {
+    const withEmail = { ...roster[0], email: "priya.n@acme.test" };
+    expect(matchesQuery(withEmail, "priya.n@")).toBe(true);
+    expect(matchesQuery({ ...roster[0], email: undefined }, "priya.n@")).toBe(false);
   });
 });

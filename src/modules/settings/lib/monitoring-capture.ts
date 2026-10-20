@@ -6,44 +6,32 @@
 /**
  * Why the capture interval can't be changed right now, or `null` when it can.
  *
- * Two switches matter, and they do different things (UX audit 2026-10-16, SET-03):
+ * **Features → Screenshots** (`monitoring.screenshots`) is the one switch that matters (UX audit
+ * 2026-10-16, SET-03). The agents obey it — off, they capture nothing whatever the interval says
+ * (`fleet::enforce_monitoring_entitlement` sets `screenshots_enabled`, and ingest refuses to presign
+ * uploads) — and `PUT /v1/fleet/update-policy` checks it before accepting a changed interval. The
+ * stored interval is kept for when it comes back on.
  *
- *  - **Screenshots** (`monitoring.screenshots`) is what the agents obey. Off, they capture nothing
- *    whatever the interval says (`fleet::enforce_monitoring_entitlement` sets `screenshots_enabled`,
- *    and ingest refuses to presign uploads). The stored interval is kept for when it comes back on.
- *  - **Activity monitoring** (`monitoring.activity`) is what `PUT /v1/fleet/update-policy` checks
- *    before it accepts a *changed* non-Off interval. It does not stop capture: with Screenshots on
- *    and Activity off, the agents keep capturing at the stored interval.
- *
- * The page used to read only the second, so with Screenshots off it offered an editable "Every
- * 5 minutes" while nothing was captured, and with Activity off it claimed capture was off when it
- * wasn't. Screenshots is checked first because it is the one that decides whether anything is
- * captured at all.
+ * The page used to read only Activity monitoring (which the server then checked), so with
+ * Screenshots off it offered an editable "Every 5 minutes" while nothing was captured; and with
+ * Activity off and Screenshots on, the interval was locked while capture ran at it. The server now
+ * checks Screenshots too, so Activity monitoring no longer decides anything here.
  */
-export type CaptureLock =
-  | { kind: "screenshots-off" }
-  | { kind: "screenshots-not-in-plan" }
-  | { kind: "activity-off" }
-  | { kind: "activity-not-in-plan" }
+export type CaptureLock = { kind: "screenshots-off" } | { kind: "screenshots-not-in-plan" }
 
 export function captureLock(s: {
   screenshotsOn: boolean
   screenshotsInPlan: boolean
-  activityOn: boolean
-  activityInPlan: boolean
 }): CaptureLock | null {
   if (!s.screenshotsOn) {
     return { kind: s.screenshotsInPlan ? "screenshots-off" : "screenshots-not-in-plan" }
   }
-  if (!s.activityOn) {
-    return { kind: s.activityInPlan ? "activity-off" : "activity-not-in-plan" }
-  }
   return null
 }
 
-/** Is anything being captured under this lock? Only when Screenshots itself is on. */
+/** Is anything being captured under this lock? Only when there is no lock. */
 export function capturing(lock: CaptureLock | null): boolean {
-  return lock === null || lock.kind === "activity-off" || lock.kind === "activity-not-in-plan"
+  return lock === null
 }
 
 /**

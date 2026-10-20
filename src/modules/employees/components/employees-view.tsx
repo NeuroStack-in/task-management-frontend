@@ -632,7 +632,7 @@ export function EmployeesView() {
           <Input
             value={query}
             onChange={(e) => resetPage(setQuery)(e.target.value)}
-            placeholder="Search name, ID, title, department, role…"
+            placeholder="Search name, email, ID, title, department, role…"
             aria-label="Search employees"
             className="pl-9"
           />
