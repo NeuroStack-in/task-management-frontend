@@ -4,10 +4,13 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   FolderKanban,
+  FolderPlus,
   LayoutGrid,
   List,
+  ListChecks,
   Plus,
   Search,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -248,6 +251,18 @@ export function ProjectsView() {
     () => selectablePeople(userMap),
     [userMap],
   );
+  /**
+   * The New project form starts with its creator as the manager (UX audit PROJ-10) — the usual case,
+   * and the one where the creator can then add the team themselves. Only when they are someone the
+   * picker can offer.
+   */
+  const createInitial = useMemo(
+    () =>
+      currentUserId && leads.some((u) => u.id === currentUserId)
+        ? { managerId: currentUserId }
+        : undefined,
+    [currentUserId, leads],
+  );
 
   const membersFor = (p: Project): UserMini[] =>
     p.memberIds.map((id) => userMap[id]).filter(Boolean) as UserMini[];
@@ -311,6 +326,14 @@ export function ProjectsView() {
     );
   }
 
+  /**
+   * Nothing to show yet. The page used to draw four zero KPIs (one an amber "0 Past deadline"),
+   * zero-count chips, tabs, a layout toggle and a search box above a small empty state — about
+   * 560 px of zeros on a phone (UX audit PROJ-17). With no projects there is nothing for any of it to
+   * describe, so the first-run panel comes first and alone.
+   */
+  const noProjects = projects.length === 0;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -319,14 +342,32 @@ export function ProjectsView() {
         actions={<RefreshButton onRefresh={reload} refreshing={loading} />}
       />
 
+      {noProjects ? (
+        <>
+          <NotShownBanner
+            failedProjects={failedProjects}
+            hiddenProjects={hiddenProjects}
+            failedBoards={0}
+            onRetry={reload}
+          />
+          <FirstRunPanel
+            canCreate={canCreate}
+            failed={failedProjects > 0}
+            onCreate={() => setNewOpen(true)}
+            onRetry={reload}
+          />
+        </>
+      ) : (
+        <>
       {/* KPI stat band */}
-      <ProjectsStatBand stats={stats} />
+      <ProjectsStatBand stats={stats} wholeOrg={seesWholeOrg} />
 
       {/* Toolbar — row 1: tabs · status filters · view toggle · New project;
           row 2: search beneath the tabs. */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Segmented
+            label="Show"
             options={[
               { value: "projects", label: "Projects", count: projects.length },
               {
@@ -358,11 +399,13 @@ export function ProjectsView() {
                   dot={toneDot[PROJECT_STATUS_META[s].tone]}
                 />
               ))}
-              {/* Projects with an overdue *task* — read from the boards, so unknown until they load. */}
+              {/* Projects with an overdue *task* — read from the boards, so unknown until they load.
+                  Named for what it counts: "Overdue" beside the hero's "Overdue" (a project past its
+                  own end date) meant two things (UX audit PROJ-13). */}
               <FilterChip
                 active={statusFilter === "overdue"}
                 onClick={() => setStatusFilter("overdue")}
-                label="Overdue"
+                label="Overdue tasks"
                 count={tasksPending ? undefined : statusCounts.overdue}
                 dot="bg-destructive"
               />
@@ -455,69 +498,17 @@ export function ProjectsView() {
         </div>
       </div>
 
-      {/* What wasn't loaded, said rather than left out in silence (WP-302). A 404 is a project this
-          person may list but not open — the server opens a project only to its members or to
-          someone who manages projects — so "retry" would not help there. */}
-      {failedProjects > 0 || hiddenProjects > 0 || failedBoards > 0 ? (
-        <div
-          role="status"
-          className="border-warning/40 bg-warning/10 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-sm"
-        >
-          <span className="space-y-0.5">
-            {failedProjects > 0 ? (
-              <span className="block">
-                {failedProjects} {failedProjects === 1 ? "project" : "projects"} couldn&apos;t be
-                loaded and {failedProjects === 1 ? "isn't" : "aren't"} shown.
-              </span>
-            ) : null}
-            {hiddenProjects > 0 ? (
-              <span className="block">
-                {hiddenProjects} {hiddenProjects === 1 ? "project" : "projects"} in your
-                organization {hiddenProjects === 1 ? "isn't" : "aren't"} shown — you can open only
-                the projects you&apos;re a member of.
-              </span>
-            ) : null}
-            {failedBoards > 0 ? (
-              <span className="block">
-                Tasks from {failedBoards} {failedBoards === 1 ? "project" : "projects"}{" "}
-                couldn&apos;t be loaded — they&apos;re missing from Tasks, the Overdue filter and
-                search.
-              </span>
-            ) : null}
-          </span>
-          {failedProjects > 0 || failedBoards > 0 ? (
-            <Button size="sm" variant="outline" onClick={reload}>
-              Retry
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+      {/* What wasn't loaded, said rather than left out in silence (WP-302). */}
+      <NotShownBanner
+        failedProjects={failedProjects}
+        hiddenProjects={hiddenProjects}
+        failedBoards={failedBoards}
+        onRetry={reload}
+      />
 
       {/* Content */}
       {view === "projects" ? (
-        projects.length === 0 ? (
-          // Nothing to filter. "No projects match — try a different status" with a reset button that
-          // did nothing was what a brand-new organization saw (QA audit 2026-10-08, WP-498).
-          <EmptyState
-            icon={FolderKanban}
-            title={failedProjects > 0 ? "No projects to show" : "No projects yet"}
-            description={
-              failedProjects > 0
-                ? "None of your projects could be loaded."
-                : canCreate
-                  ? "Create a project to start tracking its work."
-                  : "When you're added to a project, it appears here."
-            }
-            action={
-              canCreate && failedProjects === 0 ? (
-                <Button onClick={() => setNewOpen(true)} className="gap-1.5">
-                  <Plus />
-                  New project
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : statusFilter === "overdue" && tasksPending ? (
+        statusFilter === "overdue" && tasksPending ? (
           // The Overdue filter reads the boards; until they're in, it has nothing to say yet.
           <div className="flex min-h-[30vh] items-center justify-center">
             <Loader label="Loading tasks…" />
@@ -586,6 +577,8 @@ export function ProjectsView() {
           }
         />
       )}
+        </>
+      )}
 
       {canCreate ? (
         <ProjectFormDialog
@@ -594,6 +587,7 @@ export function ProjectsView() {
           onOpenChange={setNewOpen}
           leads={leads}
           departments={departments}
+          initial={createInitial}
           peopleNote={
             directoryAvailable
               ? undefined
@@ -683,5 +677,157 @@ function FilterChip({
         </span>
       ) : null}
     </button>
+  );
+}
+
+/**
+ * What wasn't loaded, said rather than left out in silence (WP-302). A 404 is a project this person
+ * may list but not open — the server opens a project only to its members or to someone who manages
+ * projects — so "retry" would not help there.
+ */
+function NotShownBanner({
+  failedProjects,
+  hiddenProjects,
+  failedBoards,
+  onRetry,
+}: {
+  failedProjects: number;
+  hiddenProjects: number;
+  failedBoards: number;
+  onRetry: () => void;
+}) {
+  if (failedProjects === 0 && hiddenProjects === 0 && failedBoards === 0) return null;
+  return (
+    <div
+      role="status"
+      className="border-warning/40 bg-warning/10 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-sm"
+    >
+      <span className="space-y-0.5">
+        {failedProjects > 0 ? (
+          <span className="block">
+            {failedProjects} {failedProjects === 1 ? "project" : "projects"} couldn&apos;t be
+            loaded and {failedProjects === 1 ? "isn't" : "aren't"} shown.
+          </span>
+        ) : null}
+        {hiddenProjects > 0 ? (
+          <span className="block">
+            {hiddenProjects} {hiddenProjects === 1 ? "project" : "projects"} in your organization{" "}
+            {hiddenProjects === 1 ? "isn't" : "aren't"} shown — you can open only the projects
+            you&apos;re a member of.
+          </span>
+        ) : null}
+        {failedBoards > 0 ? (
+          <span className="block">
+            Tasks from {failedBoards} {failedBoards === 1 ? "project" : "projects"} couldn&apos;t
+            be loaded — they&apos;re missing from Tasks, the Overdue tasks filter and search.
+          </span>
+        ) : null}
+      </span>
+      {failedProjects > 0 || failedBoards > 0 ? (
+        <Button size="sm" variant="outline" onClick={onRetry}>
+          Retry
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** How a project comes together — the first-run panel's three steps, for someone who can start one. */
+const FIRST_RUN_STEPS = [
+  {
+    icon: FolderPlus,
+    title: "Create a project",
+    body: "Name it and pick its manager and lead.",
+  },
+  {
+    icon: UsersRound,
+    title: "Add the team",
+    body: "Everyone on it can see the board and add tasks.",
+  },
+  {
+    icon: ListChecks,
+    title: "Add tasks",
+    body: "Assign them to people on the team and follow them across the board.",
+  },
+] as const;
+
+/**
+ * The page with no projects: one panel that says what a project is and how to start one — or, for
+ * someone who can't create projects, that they appear here once they are added to one. It replaces
+ * the KPI band, chips and toolbar, which had nothing to describe (UX audit PROJ-17).
+ */
+function FirstRunPanel({
+  canCreate,
+  failed,
+  onCreate,
+  onRetry,
+}: {
+  canCreate: boolean;
+  /** Projects exist but none could be loaded — not a first run at all. */
+  failed: boolean;
+  onCreate: () => void;
+  onRetry: () => void;
+}) {
+  if (failed) {
+    return (
+      <EmptyState
+        icon={FolderKanban}
+        title="No projects to show"
+        description="None of your projects could be loaded."
+        action={
+          <Button variant="outline" onClick={onRetry}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
+  if (!canCreate) {
+    return (
+      <EmptyState
+        icon={FolderKanban}
+        title="You're not on any projects yet"
+        description="When a project manager adds you to a project, it appears here with its tasks."
+        className="py-14"
+      />
+    );
+  }
+  return (
+    <section
+      aria-labelledby="projects-first-run"
+      className="bg-card rounded-2xl border px-5 py-8 sm:px-10 sm:py-12"
+    >
+      <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
+        <span className="bg-feature-tint text-primary flex size-12 items-center justify-center rounded-xl">
+          <FolderKanban className="size-6" aria-hidden="true" />
+        </span>
+        <h2 id="projects-first-run" className="font-heading mt-4 text-xl font-semibold">
+          Start your first project
+        </h2>
+        <p className="text-muted-foreground mt-1.5 max-w-md text-sm">
+          A project holds a team&apos;s tasks, who is doing them and how far they&apos;ve got.
+        </p>
+        <ol className="mt-6 grid w-full gap-3 text-left sm:grid-cols-3">
+          {FIRST_RUN_STEPS.map((step, i) => (
+            <li key={step.title} className="bg-muted/30 flex gap-3 rounded-xl border p-3 sm:flex-col sm:gap-2">
+              <span className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                {i + 1}
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-medium">
+                  <step.icon className="text-muted-foreground size-4" aria-hidden="true" />
+                  {step.title}
+                </span>
+                <span className="text-muted-foreground mt-0.5 block text-xs">{step.body}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <Button onClick={onCreate} className="mt-6 gap-1.5">
+          <Plus />
+          New project
+        </Button>
+      </div>
+    </section>
   );
 }

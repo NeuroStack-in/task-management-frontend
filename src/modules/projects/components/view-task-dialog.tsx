@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { personName } from "@/lib/format";
+import { formatDate, formatDuration, formatHours, isoDay, personName } from "@/lib/format";
 import {
   TASK_PRIORITY_META,
   TASK_STATUS_META,
@@ -30,6 +30,8 @@ import { toneSoft, type UserMini } from "../lib";
 import { AssignedByLine } from "./assignees";
 import { StatusBadge } from "./parts";
 import { getAttachmentDownloadUrl, listSubtasks } from "../services/projects.service";
+import { getRange } from "@/modules/time-tracking/services/timesheet.service";
+import { TaskActionsBar, type TaskActionHandlers } from "./task-actions";
 import { ApiError } from "@/lib/api";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import {
@@ -76,6 +78,95 @@ interface ViewTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   userMap: Record<string, UserMini>;
+  /**
+   * What this person may do from here — the same actions, under the same rules, as the board card's
+   * menu. The view offered none, so editing, signing off or moving a task meant closing it and
+   * finding the card again (UX audit PROJ-14). Absent for a read-only viewer.
+   */
+  actions?: TaskActionHandlers;
+  /**
+   * The project's start date, when the viewer is on the project: shows **their own** tracked time on
+   * this task (UX audit PROJ-12). Absent hides it. Everyone's time per task is not served by the API
+   * yet, so only the viewer's own — read from their timesheet — is shown, and labelled as theirs.
+   */
+  ownTimeSince?: string;
+}
+
+/** The timesheet serves at most 92 days per read (`timesheet_grid::MAX_DAYS`). */
+const MAX_RANGE_DAYS = 92;
+
+/**
+ * The window "your time on this task" covers: from the project's start, or the last 92 days when the
+ * project is older than one timesheet read can span — and the label says which.
+ */
+export function ownTimeWindow(
+  projectStart: string,
+  today: Date = new Date(),
+): { from: string; to: string; sinceStart: boolean } {
+  const to = isoDay(today);
+  const earliest = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (MAX_RANGE_DAYS - 1));
+  const floor = isoDay(earliest);
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(projectStart) ? projectStart : floor;
+  if (start > to) return { from: to, to, sinceStart: true };
+  return start >= floor ? { from: start, to, sinceStart: true } : { from: floor, to, sinceStart: false };
+}
+
+/**
+ * The viewer's own time on one task, from their own timesheet (`GET /v1/me/timesheet`). Fetched when
+ * the dialog opens — one read — and only for someone on the project.
+ */
+function OwnTimeSection({ taskId, since, open }: { taskId: string; since: string; open: boolean }) {
+  const [state, setState] = useState<
+    { secs: number; truncated: boolean; from: string; sinceStart: boolean } | "error" | null
+  >(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    setState(null);
+    const w = ownTimeWindow(since);
+    getRange(w.from, w.to)
+      .then((grid) => {
+        if (!alive) return;
+        let secs = 0;
+        for (const day of grid.days) {
+          for (const e of day.entries) if (e.task_id === taskId) secs += e.duration_secs ?? 0;
+        }
+        setState({ secs, truncated: Boolean(grid.truncated), from: w.from, sinceStart: w.sinceStart });
+      })
+      .catch(() => alive && setState("error"));
+    return () => {
+      alive = false;
+    };
+  }, [open, taskId, since]);
+
+  return (
+    <Section label="Your time">
+      {state === null ? (
+        <Empty>Loading…</Empty>
+      ) : state === "error" ? (
+        <Empty>Your time on this task couldn&apos;t be loaded.</Empty>
+      ) : (
+        <p className="text-sm">
+          {state.secs > 0 ? (
+            <>
+              <span className="font-medium tabular-nums">
+                {state.truncated ? "At least " : ""}
+                {formatHours(state.secs / 3600)}
+              </span>{" "}
+              tracked by you
+            </>
+          ) : (
+            "You haven't tracked time on this task"
+          )}
+          <span className="text-muted-foreground">
+            {" "}
+            {state.sinceStart ? "since the project started" : `since ${formatDate(state.from)}`}.
+          </span>
+        </p>
+      )}
+    </Section>
+  );
 }
 
 /**
@@ -228,6 +319,8 @@ export function ViewTaskDialog({
   open,
   onOpenChange,
   userMap,
+  actions,
+  ownTimeSince,
 }: ViewTaskDialogProps) {
   // Hooks before the early return — rules of hooks. The viewer is a nested dialog over this one.
   const [viewer, setViewer] = useState<ViewerState | null>(null);
@@ -355,17 +448,24 @@ export function ViewTaskDialog({
                   <Empty>No due date</Empty>
                 )}
               </Section>
-              <Section label="Estimate" className="pl-4">
-                {/* Unestimated is its own state, not "0 hrs" (WP-505). */}
-                {task.estimateHours === null ? (
-                  <Empty>No estimate</Empty>
-                ) : (
-                  <p className="text-sm tabular-nums">
-                    {task.estimateHours} {task.estimateHours === 1 ? "hr" : "hrs"}
-                  </p>
-                )}
+              <Section label="Logged / estimate" className="pl-4">
+                {/* Everyone's completed sessions on the task (PROJ-12), against the estimate.
+                    Unestimated is its own state, not "0 hrs" (WP-505). */}
+                <p className="text-sm tabular-nums">
+                  {task.loggedSecs ? formatDuration(task.loggedSecs) : "Nothing logged"}
+                  <span className="text-muted-foreground">
+                    {" / "}
+                    {task.estimateHours === null
+                      ? "no estimate"
+                      : `${task.estimateHours} ${task.estimateHours === 1 ? "hr" : "hrs"}`}
+                  </span>
+                </p>
               </Section>
             </div>
+
+            {ownTimeSince !== undefined ? (
+              <OwnTimeSection taskId={task.id} since={ownTimeSince} open={open} />
+            ) : null}
 
             <Section label="Description">
               {task.description.trim() ? (
@@ -444,6 +544,7 @@ export function ViewTaskDialog({
               )}
             </Section>
           </div>
+          {actions ? <TaskActionsBar {...actions} /> : null}
         </DialogContent>
       </Dialog>
 

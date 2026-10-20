@@ -21,8 +21,17 @@ export interface ProjectFormValues {
   department: string;
   leadUserId: string;
   managerId: string;
-  /** Team members picked from the org directory. */
+  /**
+   * Team members picked from the org directory. The form always includes its manager and lead
+   * (`teamWithRoles`) — both are on the team by construction (UX audit PROJ-08).
+   */
   memberIds: string[];
+  /**
+   * `YYYY-MM-DD`. Chosen at creation (it used to be today, silently), and movable in an edit — the
+   * PATCH takes `start_date`, sent only when it changed (UX audit PROJ-09).
+   */
+  startDate: string;
+  /** `YYYY-MM-DD`, or `""` for no end date — optional, as on the server (UX audit PROJ-09). */
   dueDate: string;
   /** Project-level, required at creation; every task inherits it (LLD §4). */
   billable: boolean;

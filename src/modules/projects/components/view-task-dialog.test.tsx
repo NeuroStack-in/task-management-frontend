@@ -6,8 +6,14 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../services/projects.service", () => ({
   getAttachmentDownloadUrl: vi.fn(),
 }));
+// The viewer's own time on the task (UX audit PROJ-12) comes from their own timesheet.
+const getRange = vi.fn();
+vi.mock("@/modules/time-tracking/services/timesheet.service", () => ({
+  getRange: (...args: unknown[]) => getRange(...args),
+}));
 
-import { ViewTaskDialog } from "./view-task-dialog";
+import userEvent from "@testing-library/user-event";
+import { ViewTaskDialog, ownTimeWindow } from "./view-task-dialog";
 import type { Task } from "../types";
 import type { UserMini } from "../lib";
 
@@ -97,5 +103,79 @@ describe("ViewTaskDialog", () => {
     show(task());
     expect(screen.getByText("No description")).toBeInTheDocument();
     expect(screen.getByText("No attachments")).toBeInTheDocument();
+  });
+});
+
+describe("ViewTaskDialog actions (UX audit PROJ-14)", () => {
+  it("offers the actions it is given, and runs them", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    render(
+      <ViewTaskDialog
+        task={task()}
+        projectId="p1"
+        open
+        onOpenChange={vi.fn()}
+        userMap={userMap}
+        actions={{ onEdit, onDelete, moves: [{ status: "in_progress", via: "move" }], onMove: vi.fn() }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Edit/ }));
+    expect(onEdit).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: /Move to/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Delete/ }));
+    expect(onDelete).toHaveBeenCalledOnce();
+  });
+
+  it("shows no action bar to a read-only viewer", () => {
+    show(task());
+    expect(screen.queryByRole("button", { name: /Edit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Move to/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("own time on a task (UX audit PROJ-12)", () => {
+  it("covers the whole project when it began within one timesheet read", () => {
+    const w = ownTimeWindow("2026-09-01", new Date(2026, 9, 20));
+    expect(w).toEqual({ from: "2026-09-01", to: "2026-10-20", sinceStart: true });
+  });
+
+  it("falls back to the last 92 days for an older project, and says so", () => {
+    const w = ownTimeWindow("2025-01-01", new Date(2026, 9, 20));
+    expect(w).toEqual({ from: "2026-07-21", to: "2026-10-20", sinceStart: false });
+  });
+
+  it("sums only this task's entries from the viewer's timesheet", async () => {
+    getRange.mockResolvedValueOnce({
+      from: "2026-10-01",
+      to: "2026-10-20",
+      total_secs: 0,
+      billable_secs: 0,
+      days: [
+        {
+          date: "2026-10-02",
+          total_secs: 0,
+          billable_secs: 0,
+          entries: [
+            { task_id: "k1", project_id: "p1", duration_secs: 3600 },
+            { task_id: "k2", project_id: "p1", duration_secs: 7200 },
+            { task_id: "k1", project_id: "p1", duration_secs: 1800 },
+          ],
+        },
+      ],
+    });
+    render(
+      <ViewTaskDialog
+        task={task()}
+        projectId="p1"
+        open
+        onOpenChange={vi.fn()}
+        userMap={userMap}
+        ownTimeSince="2026-10-01"
+      />,
+    );
+    expect(await screen.findByText("01:30:00")).toBeInTheDocument();
+    expect(screen.getByText(/since the project started/)).toBeInTheDocument();
   });
 });

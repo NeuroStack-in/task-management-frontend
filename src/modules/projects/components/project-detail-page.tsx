@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, Hourglass, ListChecks, MoreHorizontal, Pencil, Plus, Star, Trash2, Undo2, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, FileDown, FolderKanban, Hourglass, Info, ListChecks, Lock, MoreHorizontal, Pencil, Plus, Star, Timer, Trash2, Undo2, Users } from "lucide-react";
 import { toast } from "sonner";
-import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCorners, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type Announcements, type CollisionDetection, type DragEndEvent, type KeyboardCoordinateGetter } from "@dnd-kit/core";
+import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCorners, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type Announcements, type CollisionDetection, type DragEndEvent, type DragStartEvent, type KeyboardCoordinateGetter } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -17,13 +17,13 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Loader } from "@/components/shared/loader";
 import { cn } from "@/lib/utils";
-import { personName } from "@/lib/format";
+import { formatDate as formatDay, formatDateRange, formatDuration, personName } from "@/lib/format";
 import type { ProjectFormValues } from "@/modules/projects/forms";
 import type { TaskFormValues } from "@/modules/projects/forms";
 import { useProjectDetail } from "../use-project-detail";
 import { useQueryState } from "../use-query-state";
 import { PROJECT_STATUS_META, TASK_PRIORITY_META, TASK_STATUS_META, TASK_STATUS_ORDER, TASK_STATUS_SETTABLE, type SettableTaskStatus, type Task, type TaskStatus } from "../types";
-import { OVERSIGHT_TARGETS, canDeleteTask, canMoveTask, canWorkOnTasks, canMoveTaskTo, canReviewTask, settableStatuses, taskTotals, daysUntil, dueLabel, formatDate, isAtRisk, selectablePeople, toneDot, toneSoft, type UserMini } from "../lib";
+import { OVERSIGHT_TARGETS, STATUS_WEIGHT, canDeleteTask, canMoveTask, canWorkOnTasks, canReviewTask, moveOptions, settableStatuses, taskCounts, taskLoadByPerson, taskTotals, daysUntil, dueLabel, isAtRisk, selectablePeople, toneDot, toneSoft, type MoveOption, type UserMini } from "../lib";
 import { AssigneeStack } from "./assignees";
 import { useAuthStore } from "@/stores/auth.store";
 import { Segmented, StatusBadge } from "./parts";
@@ -34,6 +34,7 @@ import { ViewTaskDialog } from "./view-task-dialog";
 import { generateProjectReportPdf } from "../report";
 import { ProjectTimeByMember } from "./project-time-by-member";
 import { TaskFlowGuide } from "./task-flow-guide";
+import { TaskActionsMenu, type TaskActionHandlers } from "./task-actions";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
 interface ProjectDetailPageProps {
@@ -173,7 +174,17 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
    */
   const canWork = canWorkOnTasks(authority);
   const [reviewTarget, setReviewTarget] = useState<Task | null>(null);
-  const [viewingTask, setViewingTask] = useState<Task | null>(null);
+  /**
+   * The open task's id. The task itself is read from the board on every render, so a move or an
+   * edit made from the view shows in it at once rather than the snapshot taken when it opened — the
+   * view now carries actions (UX audit PROJ-14).
+   */
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const viewingTask = viewingId ? (tasks.find((t) => t.id === viewingId) ?? null) : null;
+  /** The card being dragged, so the columns can say which take it — and why not (UX audit PROJ-07). */
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  /** The Progress card's "How is this counted?" (UX audit PROJ-13). */
+  const [showWeights, setShowWeights] = useState(false);
   /**
    * The open task, in the URL (`?task=<id>`), so a task can be linked to — from the Tasks tab, the
    * dashboard's My tasks, a shared link — and Back or a refresh keeps it open. Those surfaces used to
@@ -181,18 +192,18 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
    */
   const [taskParam, setTaskParam] = useQueryState<string>("task", "");
   const openTask = (t: Task) => {
-    setViewingTask(t);
+    setViewingId(t.id);
     setTaskParam(t.id);
   };
   const closeTask = () => {
-    setViewingTask(null);
+    setViewingId(null);
     setTaskParam("");
   };
   useEffect(() => {
-    if (!taskParam || loading || !project || viewingTask) return;
+    if (!taskParam || loading || !project || viewingId) return;
     const linked = tasks.find((t) => t.id === taskParam);
     if (linked) {
-      setViewingTask(linked);
+      setViewingId(linked.id);
     } else {
       // Deleted, or on another project: say so rather than opening the project as if nothing was asked.
       toast.error("That task isn't on this project any more", {
@@ -200,7 +211,15 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
       });
       setTaskParam("");
     }
-  }, [taskParam, loading, project, tasks, viewingTask, setTaskParam]);
+  }, [taskParam, loading, project, tasks, viewingId, setTaskParam]);
+  // The open task is gone (deleted from its own view, or by someone else): close it rather than keep
+  // a link to nothing in the URL.
+  useEffect(() => {
+    if (viewingId && !loading && !tasks.some((t) => t.id === viewingId)) {
+      setViewingId(null);
+      setTaskParam("");
+    }
+  }, [viewingId, loading, tasks, setTaskParam]);
 
   const [editOpen, setEditOpen] = useState(false);
   // A manager who has just handed their own project over is no longer its manager once the page
@@ -295,21 +314,36 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   // one read "NaN days left" over "undefined NaN" here (QA audit 2026-10-08, WP-305).
   const hasDeadline = Boolean(project.dueDate);
   const daysLeft = hasDeadline ? daysUntil(project.dueDate) : 0;
-  const deadlineDate = hasDeadline ? formatDate(project.dueDate) : "No end date";
+  // The one date notation (UX audit XC-06): the shared helpers, not this module's compact "Oct 12".
+  const deadlineDate = hasDeadline ? formatDay(project.dueDate) : "No end date";
+  const timeline = hasDeadline
+    ? formatDateRange(project.startDate.slice(0, 10), project.dueDate.slice(0, 10))
+    : `${formatDay(project.startDate)} – no end date`;
   const lead = userMap[project.leadUserId];
   const manager = project.managerId ? userMap[project.managerId] : null;
   // One source for every headline number on this page — see `taskTotals`. `pending` used to be
   // `tasks.length - done`, which counted closed and blocked tasks as outstanding work: a project
   // with everything signed off still read "5 open".
   const totals = taskTotals(tasks);
+  const counts = taskCounts(tasks);
+  /** The project's own role for a member, as the Team card and dialog label it. */
+  const roleOf = (uid: string): string | null =>
+    uid === project.managerId ? "Manager" : uid === project.leadUserId ? "Lead" : null;
+  // Manager, then lead, then everyone else in the server's order (the sort is stable).
+  const rank = (uid: string) =>
+    uid === project.managerId ? 0 : uid === project.leadUserId ? 1 : 2;
+  const team = teamOf(project.memberIds, userMap).sort((a, b) => rank(a.id) - rank(b.id));
 
   const dayWord = (n: number) => (n === 1 ? "day" : "days");
+  // "Overdue" is a *task* word on this app — the Projects list's "Overdue tasks" filter counts
+  // projects holding one. A project past its own end date is "past its deadline", here and on the
+  // Projects page's "Past deadline" tile (UX audit PROJ-13).
   const deadlineText = !hasDeadline
     ? "No deadline"
     : daysLeft === 0
       ? "Due today"
       : daysLeft < 0
-        ? `${-daysLeft} ${dayWord(-daysLeft)} overdue`
+        ? `Passed ${-daysLeft} ${dayWord(-daysLeft)} ago`
         : `${daysLeft} ${dayWord(daysLeft)} left`;
 
   const editInitial: Partial<ProjectFormValues> = {
@@ -320,6 +354,8 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     leadUserId: project.leadUserId,
     managerId: project.managerId ?? "",
     memberIds: project.memberIds,
+    // Shown, not sent: the server's PATCH has no start date (UX audit PROJ-09).
+    startDate: project.startDate.slice(0, 10),
     dueDate: project.dueDate.slice(0, 10),
     // Must be carried: omitting it would pre-fill the form as non-billable and silently
     // reclassify a billable project on save.
@@ -440,7 +476,18 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           size: a.size,
         })),
       }
-    : { status: createStatus };
+    : {
+        status: createStatus,
+        // A member adding a task is most often adding their own: start with them on it, rather than
+        // an empty required field they must find themselves in (UX audit PROJ-11). Only when they
+        // are on the team — nobody else can be assigned.
+        assigneeIds:
+          currentUserId && projectTeam.some((u) => u.id === currentUserId) ? [currentUserId] : [],
+      };
+  /** Who the assignee list holds, and what to do about someone missing from it (PROJ-11). */
+  const assigneeHint = canManageProject
+    ? "Only people on this project can be assigned. Add someone to the team from Edit project."
+    : "Only people on this project can be assigned. To add someone, ask the project manager.";
 
   const downloadReport = () => {
     // A failed jsPDF chunk load used to be an unhandled rejection and a button that did nothing
@@ -451,63 +498,99 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
     );
   };
 
+  /**
+   * Move a task — from a drop, the card's "Move to…" menu or the task view's (UX audit PROJ-06,
+   * PROJ-14). One path, so the three can't disagree about what a person may do.
+   *
+   * **Done is reached only through a review** (owner rule, 2026-10-16): for someone who may sign the
+   * task off, choosing Done opens the review; the server refuses a move to `done` outright. Anything
+   * else this person may not do is refused here with the reason `moveOptions` gives — before the card
+   * slides, so it doesn't slide in and spring back. While a card is held the board now greys those
+   * columns out and says why (PROJ-07), so a drop rarely gets this far.
+   */
+  const requestMove = (moved: Task, target: TaskStatus, from: "drag" | "menu") => {
+    if (moved.status === target || !TASK_STATUS_SETTABLE.includes(target)) return;
+    const option = moveOptions(moved, authority, ownRole, currentUserId).find(
+      (o) => o.status === target,
+    );
+    if (!option) return;
+    if (option.via === "review") {
+      if (viewingId) closeTask();
+      setReviewTarget(moved);
+      return;
+    }
+    if (option.via === "refused") {
+      toast.error(`It can’t go to ${TASK_STATUS_META[target].label}`, {
+        description:
+          target === "done" && moved.status === "in_review"
+            ? `${option.reason}. ${waitingFor(moved)}.`
+            : option.reason,
+      });
+      return;
+    }
+    moveTask(moved.id, target).then(
+      () => {
+        // A drop shows itself; a menu move on a phone can take the card out of sight.
+        if (from === "menu") {
+          toast.success(`Moved to ${TASK_STATUS_META[target].label}`, { description: moved.title });
+        }
+      },
+      (err: unknown) => {
+        // The board has already re-read, so the card is back where the server says it is; this says
+        // why (QA audit 2026-10-08, WP-303).
+        if (err instanceof ApiError && err.status === 404) {
+          toast.error("That task no longer exists — someone may have deleted it.");
+        } else if (err instanceof ApiError && err.code === "review_required") {
+          toast.error("Tasks reach Done only through a review.", {
+            description: "Move it to In review — the project lead or manager signs it off from there.",
+          });
+        } else if (err instanceof ApiError && err.status === 409) {
+          toast.error("Someone else changed that task just now.", {
+            description: "The board shows their change — move it again if you still need to.",
+          });
+        } else {
+          toast.error(friendlyError(err, "Couldn't move the task. Try again."));
+        }
+      },
+    );
+  };
+
+  const handleDragStart = (e: DragStartEvent) => setDraggingId(String(e.active.id));
   const handleDragEnd = (e: DragEndEvent) => {
+    setDraggingId(null);
     const { active, over } = e;
     if (!over) return;
-    const target = over.id as TaskStatus;
     const moved = tasks.find((t) => t.id === active.id);
-    if (!moved || moved.status === target || !TASK_STATUS_SETTABLE.includes(target)) return;
-    // **Done is reached only through a review** (owner rule, 2026-10-16). A drop there opens the
-    // review for the people who can sign the task off, and says what has to happen for everyone else
-    // — the card stays where it is either way. The server refuses a move to `done` outright.
-    if (target === "done") {
-      if (canReview(moved)) {
-        setReviewTarget(moved);
-      } else if (moved.status !== "in_review") {
-        toast.error("Move it to In review first", {
-          description:
-            "A task reaches Done when the project lead or manager reviews it. Move it to In review when the work is finished.",
-        });
-      } else if (moved.assignees.some((a) => a.userId === currentUserId)) {
-        toast.error("You can't sign off your own task", {
-          description: `${waitingFor(moved)}.`,
-        });
-      } else {
-        toast.error("Only the project lead or manager can sign off a task", {
-          description: `${waitingFor(moved)}.`,
-        });
-      }
-      return;
-    }
-    // **The target column decides** — any member may move any card between the working columns, and
-    // only a Manager or Lead may put one in Done or Blocked (`canMoveTaskTo`, the server's
-    // `update_task`). Checked before the move so the card doesn't slide in and spring back. The toast
-    // used to blame the card's ownership ("That task belongs to someone else"), a rule retired on
-    // 2026-09-01 (QA audit 2026-10-08, WP-499).
-    if (!canMoveTaskTo(moved, authority, currentUserId, target)) {
-      toast.error(
-        `Only a project lead or manager can move a task to ${TASK_STATUS_META[target].label}`,
-        { description: "Ask a project lead or manager to mark it blocked." },
-      );
-      return;
-    }
-    moveTask(moved.id, target).catch((err: unknown) => {
-      // The board has already re-read, so the card is back where the server says it is; this says
-      // why (QA audit 2026-10-08, WP-303).
-      if (err instanceof ApiError && err.status === 404) {
-        toast.error("That task no longer exists — someone may have deleted it.");
-      } else if (err instanceof ApiError && err.code === "review_required") {
-        toast.error("Tasks reach Done only through a review.", {
-          description: "Move it to In review — the project lead or manager signs it off from there.",
-        });
-      } else if (err instanceof ApiError && err.status === 409) {
-        toast.error("Someone else changed that task just now.", {
-          description: "The board shows their change — move it again if you still need to.",
-        });
-      } else {
-        toast.error(friendlyError(err, "Couldn't move the task. Try again."));
-      }
-    });
+    if (moved) requestMove(moved, over.id as TaskStatus, "drag");
+  };
+
+  /** Where the held card may go, column by column — `null` while nothing is being dragged. */
+  const dragging = draggingId ? tasks.find((t) => t.id === draggingId) : undefined;
+  const dragOptions = dragging ? moveOptions(dragging, authority, ownRole, currentUserId) : null;
+  const dropFor = (col: TaskStatus): ColumnDrop | null => {
+    if (!dragging || !dragOptions) return null;
+    if (col === dragging.status) return { via: "origin" };
+    return dragOptions.find((o) => o.status === col) ?? null;
+  };
+
+  /**
+   * What this person may do to one task. The card's "⋯" menu and the task view's footer read the
+   * same answer (UX audit PROJ-06, PROJ-14). From the view, an action that opens another dialog
+   * closes the view first rather than stacking two.
+   */
+  const actionsFor = (t: Task, inView = false): TaskActionHandlers => {
+    const leaving = (fn: () => void) => () => {
+      if (inView) closeTask();
+      fn();
+    };
+    return {
+      onOpen: inView ? undefined : () => openTask(t),
+      onEdit: canWork ? leaving(() => openEditTask(t)) : undefined,
+      onDelete: canDelete(t) ? leaving(() => setTaskToDelete(t)) : undefined,
+      onReview: canReview(t) ? leaving(() => setReviewTarget(t)) : undefined,
+      moves: canWork ? moveOptions(t, authority, ownRole, currentUserId) : undefined,
+      onMove: canWork ? (target) => requestMove(t, target, "menu") : undefined,
+    };
   };
 
   // What a screen reader hears during a drag — task titles and column names, not their ids.
@@ -516,18 +599,29 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
   const columnOf = (col: string | number) =>
     TASK_STATUS_META[col as TaskStatus]?.label ?? String(col);
   const announcements: Announcements = {
-    onDragStart: ({ active }) => `Picked up ${titleOf(active.id)}.`,
+    // Where it can go, said as it is picked up: the columns it can't enter are skipped by the arrow
+    // keys, and a screen reader would otherwise never learn why (UX audit PROJ-07).
+    onDragStart: ({ active }) => {
+      const t = tasks.find((x) => x.id === active.id);
+      const ok = t
+        ? moveOptions(t, authority, ownRole, currentUserId)
+            .filter((o) => o.via !== "refused")
+            .map((o) => TASK_STATUS_META[o.status].label)
+        : [];
+      return `Picked up ${titleOf(active.id)}. ${
+        ok.length ? `It can go to ${ok.join(", ")}.` : "It can’t go to another column."
+      }`;
+    },
     onDragOver: ({ active, over }) =>
       over
         ? `${titleOf(active.id)} is over ${columnOf(over.id)}.`
-        : `${titleOf(active.id)} is not over a column.`,
+        : `${titleOf(active.id)} is not over a column it can go to.`,
     onDragEnd: ({ active, over }) =>
       over
         ? `${titleOf(active.id)} was dropped on ${columnOf(over.id)}.`
         : `${titleOf(active.id)} was put back.`,
     onDragCancel: ({ active }) => `Moving ${titleOf(active.id)} was cancelled.`,
   };
-
   return (
     <div className="flex flex-col gap-6">
       {/* Title + actions live in the top navbar; the back link stays in-page. */}
@@ -646,14 +740,16 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               {atRisk ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
                   <AlertTriangle className="size-3" />
-                  Overdue
+                  Past deadline
                 </span>
               ) : null}
             </div>
 
-            <h1 className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+            {/* Not an <h1>: `PageHeader` above already renders the page's one H1 with this name, and
+                two read as two pages to a screen reader (UX audit PROJ-18). */}
+            <p className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
               {project.name}
-            </h1>
+            </p>
 
             {project.description ? (
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/80">
@@ -672,7 +768,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               ) : null}
               <span className="inline-flex items-center gap-1.5">
                 <CalendarRange className="size-4" />
-                {formatDate(project.startDate)} – {hasDeadline ? deadlineDate : "no end date"}
+                {timeline}
               </span>
               {lead ? (
                 <span className="inline-flex items-center gap-1.5">
@@ -731,27 +827,40 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           <p className="text-muted-foreground self-start text-xs font-medium tracking-wide uppercase">
             Progress
           </p>
-          {/* Gauge and caption share ONE source — the live board (done / total tasks) — so the
-              percentage and the "N of M" can never disagree. (The aggregator's cached
-              `project.progress` can lag the board, which made the gauge look wrong.) */}
-          {/* Progress counts **closed as completed** — see `TaskTotals.completed`. Its denominator
-              is therefore not the Tasks card's total, and the caption says "completed" rather than
-              "done" so the two cards are visibly answering different questions: this one is how
-              much of the work is finished, that one is how much is left. */}
-          <Gauge value={totals.progressPct} label="of work done" size={172} />
-          {/* "Signed off", not "completed". The gauge above is WEIGHTED — a task in review counts
-              75% — so a board can honestly read 75% with nothing signed off yet. Captioning that
-              with "0 of 1 tasks completed" would look like one of the two numbers was broken; they
-              are answering different questions and the wording now says which. */}
+          {/* Gauge and caption share ONE source — the live board — so the two can never disagree.
+              The gauge is **weighted**: a task in review counts 90%, so it can read 90% with nothing
+              signed off. It said "of work done" and nowhere how it was counted (UX audit PROJ-13);
+              now it says "weighted" and one click away exactly how. */}
+          <Gauge value={totals.progressPct} label="weighted" size={172} />
           <p className="text-muted-foreground mt-1 text-xs">
             {totals.completed} of {totals.deliverable} tasks signed off
           </p>
+          <button
+            type="button"
+            onClick={() => setShowWeights((v) => !v)}
+            aria-expanded={showWeights}
+            aria-controls={`${project.id}-weights`}
+            className="text-primary hover:text-primary/80 mt-2 inline-flex items-center gap-1 text-xs font-medium"
+          >
+            <Info className="size-3.5" aria-hidden="true" />
+            How is this counted?
+          </button>
+          {showWeights ? (
+            <p
+              id={`${project.id}-weights`}
+              className="text-muted-foreground mt-2 max-w-xs text-center text-xs leading-relaxed"
+            >
+              Each task counts for how far it has got: To do {STATUS_WEIGHT.todo}%, In progress{" "}
+              {STATUS_WEIGHT.in_progress}%, In review {STATUS_WEIGHT.in_review}%, Done{" "}
+              {STATUS_WEIGHT.done}%. Blocked tasks are left out until they move again.
+            </p>
+          ) : null}
         </div>
 
-        {/* One card, two questions. The headline is what is LEFT — closed and blocked are not in
-            it — so the four figures below deliberately do not sum to it. The rule is stated on the
-            divider rather than left to be inferred: without it "1 total" above "0 · 1 · 2 · 2"
-            reads as an arithmetic bug, which is exactly how the split card was misread before. */}
+        {/* What is left, and how it splits. The headline is the open work — to do, in progress and
+            in review — and the three figures under it add up to it. Done sat directly under "still
+            to do" and read as part of it (UX audit PROJ-13); finished and blocked work now has its
+            own labelled group, outside the count. */}
         <div className="bg-card flex flex-col rounded-2xl border p-5">
           <div className="flex items-center justify-between">
             <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
@@ -763,27 +872,30 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           </div>
           <div className="mt-5 flex items-baseline gap-2">
             <span className="font-display text-3xl font-semibold tabular-nums">
-              {totals.total}
+              {totals.open}
             </span>
             <span className="text-muted-foreground text-sm">still to do</span>
           </div>
           <div className="mt-auto pt-5">
-            <div className="grid grid-cols-2 gap-3">
-              <TaskStat label="Done" value={totals.done} dot="bg-primary" />
-              <TaskStat label="Open" value={totals.open} dot="bg-muted-foreground/40" />
+            <div className="grid grid-cols-3 gap-2">
+              {(["todo", "in_progress", "in_review"] as const).map((s) => (
+                <TaskStat
+                  key={s}
+                  label={TASK_STATUS_META[s].label}
+                  value={counts[s]}
+                  dot={toneDot[TASK_STATUS_META[s].tone]}
+                />
+              ))}
             </div>
             <div className="my-3 flex items-center gap-2">
               <span className="bg-border h-px flex-1" />
-              {/* What closed and blocked actually share: neither can be worked on. Closed is
-                  finished and signed off; blocked is waiting on something else. "Not in the
-                  total" described the arithmetic rather than the state, leaving the reader to
-                  work out *why* they were excluded. */}
               <span className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-                Not workable
+                Not in the count above
               </span>
               <span className="bg-border h-px flex-1" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <TaskStat label="Done · signed off" value={totals.done} dot="bg-success" />
               <TaskStat label="Blocked" value={totals.blocked} dot="bg-warning" />
             </div>
           </div>
@@ -804,24 +916,21 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             </span>
             <span className="text-muted-foreground text-sm">members</span>
           </div>
-          {/* A count and a row of faces left most of this card empty once the Tasks card beside
-              it grew — and "Team details" showing no detail was the odder half of that. The first
-              few members are named here; the rest stay behind "View more", which is what that
-              control was always for. */}
+          {/* The first few members, named — the manager and lead first and labelled as such. Only the
+              lead was labelled, so the person who runs the project read as one more member (UX
+              audit PROJ-15). */}
           <ul className="mt-4 space-y-2">
-            {teamOf(project.memberIds, userMap)
-              .slice(0, 4)
-              .map((u) => (
-                <li key={u.id} className="flex items-center gap-2">
-                  <UserAvatar userId={u.id} name={u.name} size="sm" className="size-6" />
-                  <span className="min-w-0 flex-1 truncate text-sm">{u.name}</span>
-                  {u.id === project.leadUserId ? (
-                    <span className="text-muted-foreground shrink-0 text-[10px] font-medium tracking-wide uppercase">
-                      Lead
-                    </span>
-                  ) : null}
-                </li>
-              ))}
+            {team.slice(0, 4).map((u) => (
+              <li key={u.id} className="flex items-center gap-2">
+                <UserAvatar userId={u.id} name={u.name} size="sm" className="size-6" />
+                <span className="min-w-0 flex-1 truncate text-sm">{u.name}</span>
+                {roleOf(u.id) ? (
+                  <span className="text-muted-foreground shrink-0 text-[10px] font-medium tracking-wide uppercase">
+                    {roleOf(u.id)}
+                  </span>
+                ) : null}
+              </li>
+            ))}
           </ul>
           <div className="mt-auto flex items-center justify-between gap-2 pt-4">
             <span className="text-muted-foreground text-xs">
@@ -834,7 +943,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
               onClick={() => setTeamOpen(true)}
               className="text-primary hover:text-primary/80 inline-flex shrink-0 items-center gap-0.5 text-xs font-medium transition-colors"
             >
-              View more
+              {canManageProject ? "Team & details" : "View more"}
               <ChevronRight className="size-3.5" />
             </button>
           </div>
@@ -849,6 +958,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           </h2>
           <div className="flex items-center gap-2">
             <Segmented
+              label="Task view"
               options={[
                 { value: "board", label: "Board" },
                 { value: "list", label: "List" },
@@ -881,10 +991,20 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             sensors={sensors}
             collisionDetection={boardCollision}
             accessibility={{ announcements }}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
+            onDragCancel={() => setDraggingId(null)}
           >
-            {/* Five columns: `lg:grid-cols-4` left Blocked alone on a second row at every width. */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {/* Five columns: `lg:grid-cols-4` left Blocked alone on a second row at every width.
+                On a phone the columns sit side by side and snap as you swipe, rather than stacking
+                into one long page where moving a card from To do to Done was a long press-drag down
+                the whole of it (UX audit PROJ-06). Each column is a little narrower than the screen,
+                so the next one peeks in to say there is more. */}
+            <div
+              className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 sm:mx-0 sm:grid sm:snap-none sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 xl:grid-cols-5"
+              role="group"
+              aria-label="Task board"
+            >
               {TASK_STATUS_ORDER.map((col) => (
                 <KanbanColumn
                   key={col}
@@ -900,13 +1020,12 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                       : () => openCreateTask(col)
                   }
                   onView={openTask}
-                  onEdit={canWork ? openEditTask : undefined}
-                  onDelete={setTaskToDelete}
-                  canDelete={canDelete}
+                  actionsFor={actionsFor}
                   canReview={canReview}
                   canMove={canMove}
                   onReview={setReviewTarget}
                   waitingFor={waitingFor}
+                  drop={dropFor(col)}
                 />
               ))}
             </div>
@@ -915,8 +1034,9 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
           <TaskListView
             tasks={tasks}
             userMap={userMap}
-            // A viewer's row opens the read-only view instead of the edit form.
-            onEdit={canWork ? openEditTask : openTask}
+            // Every row opens the task's view, like a board card — it opened the edit form, with no
+            // way to just read a task (UX audit PROJ-14). Edit is one click from the view.
+            onOpen={openTask}
             onAdd={canWork ? () => openCreateTask("todo") : undefined}
             onDelete={setTaskToDelete}
             canDelete={canDelete}
@@ -924,12 +1044,14 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         )}
       </section>
 
-      {/* Who put how many hours into this project — the project × person cross-tab. Self-fetching and
-          gated to viewers who can read team time; renders nothing for anyone else. */}
+      {/* Who put how many hours into this project — the project × person cross-tab for someone who
+          reads team time, and the viewer's own hours on it for a member who doesn't (PROJ-12). */}
       <ProjectTimeByMember
         projectId={project.id}
         memberIds={project.memberIds}
         userMap={userMap}
+        currentUserId={currentUserId}
+        isMember={canWork}
       />
 
       {/* Project edit dialog */}
@@ -945,6 +1067,8 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             : "Only people already on this project are listed — you don't have access to the employee directory. An admin can add anyone else."
         }
         initial={editInitial}
+        // What unticking each person does to their work, said before the save (PROJ-15).
+        taskLoad={taskLoadByPerson(tasks)}
         onSubmit={handleEdit}
       />
 
@@ -956,17 +1080,21 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
         projectId={project.id}
         members={projectTeam}
         statuses={settableStatuses(authority, editingTask?.status)}
+        assigneeHint={assigneeHint}
         initial={taskInitial}
         onSubmit={handleTaskSubmit}
       />
 
-      {/* Read-only task view */}
+      {/* The task view — with the actions this person may take, the same as the card's menu
+          (PROJ-14), and their own time on it when they are on the project (PROJ-12). */}
       <ViewTaskDialog
         task={viewingTask}
         projectId={project.id}
         open={!!viewingTask}
         onOpenChange={(o) => !o && closeTask()}
         userMap={userMap}
+        actions={viewingTask ? actionsFor(viewingTask, true) : undefined}
+        ownTimeSince={canWork ? project.startDate.slice(0, 10) : undefined}
       />
 
       {reviewTarget ? (
@@ -1101,7 +1229,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                 />
                 <DetailRow
                   label="Timeline"
-                  value={`${formatDate(project.startDate)} – ${hasDeadline ? deadlineDate : "no end date"}`}
+                  value={timeline}
                 />
                 <DetailRow
                   label="Status"
@@ -1111,7 +1239,7 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
                   label="Health"
                   value={
                     atRisk ? (
-                      <span className="text-warning font-medium">Overdue</span>
+                      <span className="text-warning font-medium">Past deadline</span>
                     ) : (
                       <span className="text-success font-medium">On track</span>
                     )
@@ -1124,13 +1252,29 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
 
             {/* Members */}
             <section>
-              <p className="text-muted-foreground mb-3 text-xs font-medium tracking-wide uppercase">
-                Members · {project.memberIds.length}
-              </p>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                  Members · {project.memberIds.length}
+                </p>
+                {/* The team was read-only here even for the person who runs it; the edit lives in
+                    Edit project, so this goes straight there (UX audit PROJ-15). */}
+                {canManageProject ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    onClick={() => {
+                      setTeamOpen(false);
+                      setEditOpen(true);
+                    }}
+                  >
+                    <Pencil className="size-3.5" /> Manage team
+                  </Button>
+                ) : null}
+              </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {project.memberIds.map((mid) => {
-                  const u = userMap[mid];
-                  if (!u) return null;
+                {team.map((u) => {
+                  const mid = u.id;
                   const isLead = mid === project.leadUserId;
                   const isManager = mid === project.managerId;
                   return (
@@ -1188,10 +1332,10 @@ function Mono({ children }: { children: React.ReactNode }) {
 
 function TaskStat({ label, value, dot }: { label: string; value: number; dot: string }) {
   return (
-    <div className="bg-muted/30 rounded-xl border px-3 py-2.5">
+    <div className="bg-muted/30 min-w-0 rounded-xl border px-2.5 py-2.5">
       <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-        <span className={cn("size-1.5 rounded-full", dot)} />
-        {label}
+        <span className={cn("size-1.5 shrink-0 rounded-full", dot)} />
+        <span className="truncate">{label}</span>
       </p>
       <p className="font-heading mt-1 text-xl font-semibold tabular-nums">{value}</p>
     </div>
@@ -1207,19 +1351,24 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
+/**
+ * A column's answer while a card is held over the board: the column it came from, one it can go to
+ * (`move`), Done for someone who signs it off (`review`), or one it can't — with the reason.
+ */
+type ColumnDrop = { via: "origin" } | MoveOption;
+
 function KanbanColumn({
   col,
   tasks,
   userMap,
   onAdd,
   onView,
-  onEdit,
-  onDelete,
-  canDelete,
+  actionsFor,
   canReview,
   canMove,
   onReview,
   waitingFor,
+  drop,
 }: {
   col: TaskStatus;
   tasks: Task[];
@@ -1227,24 +1376,38 @@ function KanbanColumn({
   /** Absent on a column this person can't create a task in (Done; Blocked for a Member). */
   onAdd?: () => void;
   onView: (t: Task) => void;
-  /** Absent for a read-only viewer. */
-  onEdit?: (t: Task) => void;
-  onDelete: (t: Task) => void;
-  canDelete: (t: Task) => boolean;
+  /** What this person may do to a card — its "⋯" menu (`actionsFor` on the page). */
+  actionsFor: (t: Task) => TaskActionHandlers;
   canReview: (t: Task) => boolean;
   /** False ⇒ the card does not lift — only for a viewer with no project role resolved yet. */
   canMove: (t: Task) => boolean;
   onReview: (t: Task) => void;
   /** Who an `in_review` task is waiting for — shown to everyone who can't review it themselves. */
   waitingFor: (t: Task) => string;
+  /** While a card is held: whether it may land here. `null` when nothing is being dragged. */
+  drop: ColumnDrop | null;
 }) {
   const meta = TASK_STATUS_META[col];
-  const { setNodeRef, isOver } = useDroppable({ id: col });
+  const refused = drop?.via === "refused";
+  // A column the held card can't enter takes no drop at all — the arrow keys skip it too — and says
+  // why, in place of its usual hint (UX audit PROJ-07). It used to accept the hover and refuse in a
+  // toast after the drop.
+  const { setNodeRef, isOver } = useDroppable({ id: col, disabled: refused });
+  const hint =
+    drop?.via === "refused"
+      ? drop.reason
+      : drop?.via === "review"
+        ? "Drop here to review and sign it off"
+        : COLUMN_HINT[col];
   return (
     <div
       ref={setNodeRef}
+      aria-disabled={refused || undefined}
       className={cn(
-        "bg-muted/40 flex min-h-[140px] flex-col rounded-2xl border p-3 transition-colors",
+        "bg-muted/40 flex min-h-[140px] w-[85%] shrink-0 snap-start flex-col rounded-2xl border p-3 transition-[background-color,opacity,box-shadow] sm:w-auto",
+        // While dragging: the columns that take the card are outlined, the ones that don't recede.
+        drop && drop.via !== "origin" && !refused && "ring-primary/30 ring-1",
+        refused && "opacity-55",
         isOver && "bg-primary/5 ring-primary/40 ring-2",
       )}
     >
@@ -1253,12 +1416,18 @@ function KanbanColumn({
           <span className={cn("size-2 rounded-full", toneDot[meta.tone])} />
           {meta.label}
           <span className="text-muted-foreground tabular-nums">{tasks.length}</span>
+          {refused ? <Lock className="text-muted-foreground size-3" aria-hidden="true" /> : null}
         </span>
         {/* The two columns a first-time viewer can't read off the board: who acts on In review, and
-            what it takes to reach Done. */}
-        {COLUMN_HINT[col] ? (
-          <p className="text-muted-foreground mt-0.5 text-[0.7rem] leading-snug">
-            {COLUMN_HINT[col]}
+            what it takes to reach Done — or, mid-drag, whether the held card can come here. */}
+        {hint ? (
+          <p
+            className={cn(
+              "mt-0.5 text-[0.7rem] leading-snug",
+              refused ? "text-foreground font-medium" : "text-muted-foreground",
+            )}
+          >
+            {hint}
           </p>
         ) : null}
       </div>
@@ -1285,8 +1454,7 @@ function KanbanColumn({
               task={t}
               userMap={userMap}
               onView={onView}
-              onEdit={onEdit}
-              onDelete={canDelete(t) ? onDelete : undefined}
+              actions={actionsFor(t)}
               onReview={canReview(t) ? onReview : undefined}
               waitingFor={t.status === "in_review" && !canReview(t) ? waitingFor(t) : undefined}
               draggable={canMove(t)}
@@ -1319,18 +1487,15 @@ function TaskCard({
   waitingFor,
   userMap,
   onView,
-  onEdit,
-  onDelete,
+  actions,
   draggable = true,
 }: {
   task: Task;
   userMap: Record<string, UserMini>;
-  /** Open the read-only view of this task. */
+  /** Open the task's view. */
   onView: (t: Task) => void;
-  /** Absent for a read-only viewer — the pencil is not shown. */
-  onEdit?: (t: Task) => void;
-  /** Absent when the caller may not delete this task — see `canDeleteTask`. */
-  onDelete?: (t: Task) => void;
+  /** The "⋯" menu: what this person may do to this task (UX audit PROJ-06). */
+  actions: TaskActionHandlers;
   /** Present only when this person may sign this task off — absent hides the action entirely. */
   onReview?: (t: Task) => void;
   /** On an `in_review` card this person can't review: who it is waiting for. */
@@ -1357,20 +1522,30 @@ function TaskCard({
    * task. A short move (under the mouse sensor's 6 px) is still a click.
    */
   const pressedAt = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * Did this event happen on the card itself? The "⋯" menu renders in a portal, and React still
+   * bubbles its events up to the card — so a click on "Edit" in the menu also "clicked the card"
+   * and opened the task underneath, and a press in the menu reached the drag sensor.
+   */
+  const onCard = (e: React.SyntheticEvent) => e.currentTarget.contains(e.target as Node);
   const openFromCard = (e: React.MouseEvent) => {
-    // The card's own buttons (view, edit, review, delete) do their own thing.
+    if (!onCard(e)) return;
+    // The card's own buttons (the menu, review) do their own thing.
     if ((e.target as HTMLElement).closest("button, a")) return;
     const p = pressedAt.current;
     if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) return;
     onView(task);
   };
+  const hasMenu = Boolean(
+    actions.onEdit || actions.onDelete || actions.onReview || actions.moves?.length,
+  );
 
   return (
     <li
       ref={(el) => {
         setNodeRef(el);
-        // The card itself is the keyboard handle, so Enter or Space on View / Edit / Delete
-        // still presses that button instead of picking the card up.
+        // The card itself is the keyboard handle, so Enter or Space on its own buttons still
+        // presses that button instead of picking the card up.
         setActivatorNodeRef(el);
       }}
       style={style}
@@ -1379,15 +1554,18 @@ function TaskCard({
       // Click, or Enter, opens the task (PROJ-01); dragging still starts on a short move, a long
       // press, or Space. The drag sensors' own handlers run first, so dragging is unchanged.
       onMouseDown={(e) => {
+        if (!onCard(e)) return;
         pressedAt.current = { x: e.clientX, y: e.clientY };
         listeners?.onMouseDown?.(e);
       }}
       onTouchStart={(e) => {
+        if (!onCard(e)) return;
         const t = e.touches[0];
         pressedAt.current = t ? { x: t.clientX, y: t.clientY } : null;
         listeners?.onTouchStart?.(e);
       }}
       onKeyDown={(e) => {
+        if (!onCard(e)) return;
         if (e.key === "Enter" && e.target === e.currentTarget) {
           e.preventDefault();
           onView(task);
@@ -1407,49 +1585,15 @@ function TaskCard({
         isDragging && "ring-primary/30 shadow-xl ring-2",
       )}
     >
-      {/* Both actions stop the pointer from reaching the drag sensor — otherwise a click on the
-          icon starts a drag and the button never fires.
-
-          A solid, bordered pill (not a bare icon row): an `in_review` task carries up to four
-          actions (view · edit · review · delete), which is wider than the title's right padding, so
-          a bare row overlapped the title text. The opaque pill floats over the top-right corner
-          cleanly on hover instead, and the title stays full-width when the card isn't hovered. On a
-          screen with no hover it is always shown — otherwise the actions were found only by tapping
-          one by accident. */}
-      <div className="bg-card absolute top-1.5 right-1.5 flex items-center gap-0.5 rounded-lg border p-0.5 opacity-0 shadow-sm transition-opacity group-hover/task:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
-        <button
-          type="button"
-          {...KEEP_OFF_THE_CARD}
-          onClick={() => onView(task)}
-          aria-label="View task"
-          title="View task"
-          className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6 items-center justify-center rounded-md"
-        >
-          <Eye className="size-3.5" />
-        </button>
-        {onEdit ? (
-          <button
-            type="button"
-            {...KEEP_OFF_THE_CARD}
-            onClick={() => onEdit(task)}
-            aria-label="Edit task"
-            className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-6 items-center justify-center rounded-md"
-          >
-            <Pencil className="size-3.5" />
-          </button>
-        ) : null}
-        {onDelete ? (
-          <button
-            type="button"
-            {...KEEP_OFF_THE_CARD}
-            onClick={() => onDelete(task)}
-            aria-label="Delete task"
-            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-6 items-center justify-center rounded-md"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
-        ) : null}
-      </div>
+      {/* One "⋯" menu for everything else — edit, sign off, **move to another column**, delete —
+          instead of a row of 24 px icons. It is the way to move a card on a phone, where columns
+          used to stack and a move meant a long press-drag down the page (UX audit PROJ-06); and its
+          refused columns say why (PROJ-07). Hidden for someone who can do nothing but read. */}
+      {hasMenu ? (
+        <div className="absolute top-1.5 right-1.5">
+          <TaskActionsMenu title={task.title} stopDrag={KEEP_OFF_THE_CARD} {...actions} />
+        </div>
+      ) : null}
       <TaskCardContent task={task} userMap={userMap} />
       {/* Sent back with a note (UX audit PROJ-02): the assignee reads what to change on the card
           itself, not only in a notification. Open the task for the whole note. */}
@@ -1489,14 +1633,15 @@ function TaskCard({
 function TaskListView({
   tasks,
   userMap,
-  onEdit,
+  onOpen,
   onAdd,
   onDelete,
   canDelete,
 }: {
   tasks: Task[];
   userMap: Record<string, UserMini>;
-  onEdit: (t: Task) => void;
+  /** Open the task's view — the same as clicking a board card. */
+  onOpen: (t: Task) => void;
   /** Absent for a read-only viewer. */
   onAdd?: () => void;
   onDelete: (t: Task) => void;
@@ -1557,7 +1702,7 @@ function TaskListView({
             >
               <button
                 type="button"
-                onClick={() => onEdit(t)}
+                onClick={() => onOpen(t)}
                 className="flex min-w-0 flex-1 items-center gap-4 py-3 pl-4 text-left"
               >
                 {/* Task */}
@@ -1574,6 +1719,7 @@ function TaskListView({
                   >
                     {t.title}
                   </span>
+                  <SubtaskCount progress={t.subtaskProgress} />
                 </span>
 
                 {/* Due */}
@@ -1637,7 +1783,7 @@ function TaskListView({
                     type="button"
                     onClick={() => onDelete(t)}
                     aria-label={`Delete ${t.title}`}
-                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-7 items-center justify-center rounded-md opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-7 items-center justify-center rounded-md opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -1648,6 +1794,24 @@ function TaskListView({
         })}
       </ul>
     </div>
+  );
+}
+
+/**
+ * The breakdown counter (`3/5`) — on board cards and list rows, as the Tasks tab already showed it
+ * (UX audit PROJ-12). Rendered only when the task has subtasks: "0/0" everywhere else would be noise.
+ */
+function SubtaskCount({ progress }: { progress: Task["subtaskProgress"] }) {
+  if (progress.total === 0) return null;
+  return (
+    <span
+      className="text-muted-foreground inline-flex shrink-0 items-center gap-1 text-[0.7rem] tabular-nums"
+      title={`${progress.done} of ${progress.total} subtasks done`}
+    >
+      <ListChecks className="size-3" aria-hidden="true" />
+      <span className="sr-only">Subtasks: </span>
+      {progress.done}/{progress.total}
+    </span>
   );
 }
 
@@ -1663,7 +1827,7 @@ function TaskCardContent({
   const due = dueLabel(task.dueDate, task.status === "done");
   return (
     <>
-      <p className="pr-6 text-sm leading-snug font-medium">{task.title}</p>
+      <p className="pr-9 text-sm leading-snug font-medium">{task.title}</p>
 
       {/* Who signed this off, on the card itself — the question the review step exists to answer,
           so it should not need a click. `reviewer_name` was resolved server-side at review time, so
@@ -1679,20 +1843,57 @@ function TaskCardContent({
         </p>
       ) : null}
 
+      {/* The breakdown, the time logged and the estimate, which the card never showed (UX audit
+          PROJ-12) — on their own line, so a narrow column doesn't wrap the due date. Logged time is
+          everyone's completed sessions on this task, served by the board. */}
+      {task.subtaskProgress.total > 0 || task.estimateHours !== null || task.loggedSecs ? (
+        <p className="mt-1.5 flex items-center gap-2.5">
+          <SubtaskCount progress={task.subtaskProgress} />
+          {task.loggedSecs || task.estimateHours !== null ? (
+            <span
+              className="text-muted-foreground inline-flex shrink-0 items-center gap-1 text-[0.7rem] tabular-nums"
+              title={[
+                task.loggedSecs ? `Logged: ${formatDuration(task.loggedSecs)}` : null,
+                task.estimateHours !== null
+                  ? `Estimate: ${task.estimateHours} ${task.estimateHours === 1 ? "hr" : "hrs"}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            >
+              <Timer className="size-3" aria-hidden="true" />
+              {task.loggedSecs ? (
+                <>
+                  <span className="sr-only">Logged: </span>
+                  {formatDuration(task.loggedSecs)}
+                  {task.estimateHours !== null ? " / " : ""}
+                </>
+              ) : null}
+              {task.estimateHours !== null ? (
+                <>
+                  <span className="sr-only">Estimate: </span>
+                  {task.estimateHours}h est.
+                </>
+              ) : null}
+            </span>
+          ) : null}
+        </p>
+      ) : null}
+
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <span
           className={cn(
-            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium",
+            "inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[0.65rem] font-medium",
             toneSoft[prio.tone],
           )}
         >
           {prio.label}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           {task.dueDate ? (
             <span
               className={cn(
-                "text-[0.7rem] tabular-nums",
+                "text-[0.7rem] whitespace-nowrap tabular-nums",
                 due.overdue ? "text-destructive" : "text-muted-foreground",
               )}
             >

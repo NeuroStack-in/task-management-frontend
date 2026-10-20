@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { STATUS_WEIGHT, boardTasks, canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, daysUntil, deriveProjectKey, dueLabel, isTaskOverdue, settableStatuses, taskPatchFrom, taskTotals, toAssignees } from "./lib";
+import { STATUS_WEIGHT, boardTasks, canDeleteTask, canMoveTask, canMoveTaskTo, canReviewTask, daysUntil, deriveProjectKey, dueLabel, isTaskOverdue, moveOptions, settableStatuses, taskLoadByPerson, taskPatchFrom, taskTotals, teamWithRoles, toAssignees } from "./lib";
 import type { Task, TaskStatus } from "./types";
 import type { TaskFormValues } from "./forms";
 import type { ApiBoardTask } from "./services/projects.service";
@@ -475,5 +475,81 @@ describe("settableStatuses (WP-300)", () => {
   it("keeps Done selectable on a task that is already done, so editing it doesn't reopen it", () => {
     expect(settableStatuses("member", "done")).toContain("done");
     expect(settableStatuses("lead", "done")).toContain("done");
+  });
+});
+
+/**
+ * One verdict per column for the board's drag highlighting, the card's "Move to…" menu and the task
+ * view (UX audit PROJ-06, PROJ-07, PROJ-14). Built on `canMoveTaskTo` and `canReviewTask`, so these
+ * assert only what it adds: which way Done is reached, and the reason when it isn't.
+ */
+describe("moveOptions", () => {
+  const a = (id: string) => ({ userId: id, assignedBy: "u-lead", assignedAt: 1 });
+  const task = (status: TaskStatus, ...ids: string[]) => ({ status, assignees: ids.map(a) });
+  const verdicts = (opts: ReturnType<typeof moveOptions>) =>
+    Object.fromEntries(opts.map((o) => [o.status, o.via]));
+
+  it("leaves out the column the task is in", () => {
+    const opts = moveOptions(task("todo", "u-me"), "member", "", "u-me");
+    expect(opts.map((o) => o.status)).toEqual(["in_progress", "in_review", "done", "blocked"]);
+  });
+
+  it("lets a member move between the working columns and says why Done and Blocked are closed", () => {
+    const opts = moveOptions(task("in_progress", "u-me"), "member", "", "u-me");
+    expect(verdicts(opts)).toEqual({
+      todo: "move",
+      in_review: "move",
+      done: "refused",
+      blocked: "refused",
+    });
+    expect(opts.find((o) => o.status === "done")?.reason).toMatch(/In review first/);
+    expect(opts.find((o) => o.status === "blocked")?.reason).toMatch(/lead or manager/);
+  });
+
+  it("offers the project's own lead Done through a review, never as a plain move", () => {
+    const opts = moveOptions(task("in_review", "u-dev"), "lead", "lead", "u-me");
+    expect(verdicts(opts).done).toBe("review");
+    expect(verdicts(opts).blocked).toBe("move");
+  });
+
+  it("refuses Done to a reviewer assigned to the task, saying so", () => {
+    const opts = moveOptions(task("in_review", "u-me"), "manager", "manager", "u-me");
+    const done = opts.find((o) => o.status === "done");
+    expect(done?.via).toBe("refused");
+    expect(done?.reason).toMatch(/assigned to/);
+  });
+
+  /** An org admin resolves to `manager` everywhere but is not the project's own lead or manager. */
+  it("lets an admin block a task but not sign it off", () => {
+    const opts = moveOptions(task("in_review", "u-dev"), "manager", "", "u-admin");
+    expect(verdicts(opts)).toMatchObject({ done: "refused", blocked: "move" });
+  });
+
+  it("refuses everything to a read-only viewer", () => {
+    const opts = moveOptions(task("todo", "u-dev"), "viewer", "", "u-me");
+    expect(opts.every((o) => o.via === "refused")).toBe(true);
+  });
+});
+
+describe("taskLoadByPerson (PROJ-15)", () => {
+  const a = (id: string) => ({ userId: id, assignedBy: "", assignedAt: 0 });
+  it("counts every task a person is on, and the ones nobody else is on", () => {
+    const load = taskLoadByPerson([
+      { assignees: [a("u-dev")] },
+      { assignees: [a("u-dev"), a("u-lead")] },
+      { assignees: [a("u-lead")] },
+      { assignees: [] },
+    ]);
+    expect(load["u-dev"]).toEqual({ total: 2, solo: 1 });
+    expect(load["u-lead"]).toEqual({ total: 2, solo: 1 });
+    expect(load["u-nobody"]).toBeUndefined();
+  });
+});
+
+describe("teamWithRoles (PROJ-08)", () => {
+  it("puts the manager and lead on the team, without duplicates or blanks", () => {
+    expect(teamWithRoles(["u-a", "u-mgr"], "u-mgr", "u-lead")).toEqual(["u-mgr", "u-lead", "u-a"]);
+    expect(teamWithRoles([], "u-mgr", "")).toEqual(["u-mgr"]);
+    expect(teamWithRoles(["u-a"], "", "")).toEqual(["u-a"]);
   });
 });

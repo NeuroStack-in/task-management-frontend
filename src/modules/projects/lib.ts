@@ -111,6 +111,7 @@ export function boardTasks(columns: ApiBoardColumn[], projectId: string): Task[]
       dueDate: t.due ?? null,
       // Absent means unestimated, which is not an estimate of zero hours (QA audit 2026-10-08, WP-505).
       estimateHours: t.estimate_hours ?? null,
+      loggedSecs: t.logged_secs ?? null,
       createdBy: t.created_by ?? null,
       // A review is a verdict on finished work. Rows reopened before the server cleared it on leaving
       // Done still carry one, and it must not ride along into In progress (QA audit 2026-10-08, WP-313).
@@ -544,6 +545,100 @@ export function settableStatuses(authority: string, current?: TaskStatus): TaskS
     (s) =>
       s === current || (s !== "done" && (reviewer || MEMBER_TARGETS.includes(s))),
   );
+}
+
+/** One column a task could go to from where it is, and whether this person may take it there. */
+export interface MoveOption {
+  status: TaskStatus;
+  /**
+   * `move` — a plain status change. `review` — Done, reached by opening the sign-off for someone who
+   * may give it (owner rule, 2026-10-16: Done only through a review). `refused` — not for this person,
+   * and `reason` says why in words a member can act on.
+   */
+  via: "move" | "review" | "refused";
+  reason?: string;
+}
+
+/**
+ * Every column a task could move to, with the verdict for this person — one answer for the board's
+ * drag highlighting, the card's "Move to…" menu and the task view's actions, so the three can't
+ * disagree (UX audit PROJ-06, PROJ-07, PROJ-14). The column the task is in is left out.
+ *
+ * The same rules as {@link canMoveTaskTo} and {@link canReviewTask}; this adds the *why*. The board
+ * used to let a member drag over Done or Blocked and only then refuse in a toast.
+ *
+ * `role` is the person's own role on the project (their member row), as `canReviewTask` takes it;
+ * `authority` is the server's resolved one (an org admin is `manager` everywhere).
+ */
+export function moveOptions(
+  task: Pick<Task, "assignees" | "status">,
+  authority: string,
+  role: string,
+  currentUserId: string | null | undefined,
+): MoveOption[] {
+  const onProject = canWorkOnTasks(authority);
+  return [...MEMBER_TARGETS, ...OVERSIGHT_TARGETS]
+    .filter((s) => s !== task.status)
+    .map((status): MoveOption => {
+      if (!onProject) {
+        return { status, via: "refused", reason: "You aren't on this project" };
+      }
+      if (status === "done") {
+        if (canReviewTask(task, role, currentUserId)) return { status, via: "review" };
+        return {
+          status,
+          via: "refused",
+          reason:
+            task.status !== "in_review"
+              ? "Move it to In review first — the lead or manager signs it off from there"
+              : currentUserId && task.assignees.some((a) => a.userId === currentUserId)
+                ? "You can't sign off a task you're assigned to"
+                : "Only the project's lead or manager signs tasks off",
+        };
+      }
+      if (canMoveTaskTo(task, authority, currentUserId, status)) return { status, via: "move" };
+      return {
+        status,
+        via: "refused",
+        reason: "Only a project lead or manager can mark a task blocked",
+      };
+    });
+}
+
+/** How much of the board a person carries — what taking them off the team would hand on. */
+export interface TaskLoad {
+  /** Tasks they are on, in any column — the server takes a leaver off every one (`unassign_all`). */
+  total: number;
+  /** Of those, the ones nobody else is on: those pass to the project's manager. */
+  solo: number;
+}
+
+/**
+ * Per person, the tasks they are on — so the Edit dialog can say what unticking them does before the
+ * save does it (UX audit PROJ-15). Removing a member takes them off **every** task in the project,
+ * finished ones included, and a task they were the only person on passes to the manager
+ * (`manage_members::unassign_all`, owner decision 2026-09-01).
+ */
+export function taskLoadByPerson(tasks: Pick<Task, "assignees">[]): Record<string, TaskLoad> {
+  const load: Record<string, TaskLoad> = {};
+  for (const t of tasks) {
+    for (const a of t.assignees) {
+      const l = (load[a.userId] ??= { total: 0, solo: 0 });
+      l.total += 1;
+      if (t.assignees.length === 1) l.solo += 1;
+    }
+  }
+  return load;
+}
+
+/**
+ * The team a project form will save: the people ticked, plus its manager and lead, who are always on
+ * it. The manager picker offered the whole organization while the hand-over needed them on the team
+ * already, so picking an outsider saved everything else and then failed (UX audit PROJ-08); they are
+ * now part of the team by construction. Order is kept, duplicates and blanks dropped.
+ */
+export function teamWithRoles(memberIds: string[], managerId: string, leadId: string): string[] {
+  return [...new Set([managerId, leadId, ...memberIds].filter(Boolean))];
 }
 
 /**

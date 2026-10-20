@@ -179,6 +179,11 @@ interface TaskFormDialogProps {
   members: UserMini[];
   /** The statuses this person may pick (`settableStatuses`); every column when omitted. */
   statuses?: TaskStatus[];
+  /**
+   * Under the assignee picker: who can be picked and what to do about someone missing (UX audit
+   * PROJ-11). The picker lists project members only, and nothing said so.
+   */
+  assigneeHint?: string;
   /** `attachments` (in wire shape) seeds the attachment list when editing. */
   initial?: Partial<FormShape> & { attachments?: ApiAttachment[] };
   /**
@@ -197,6 +202,7 @@ export function TaskFormDialog({
   projectId,
   members,
   statuses = TASK_STATUS_ORDER,
+  assigneeHint = "Only people on this project can be assigned.",
   initial,
   onSubmit,
 }: TaskFormDialogProps) {
@@ -206,6 +212,8 @@ export function TaskFormDialog({
   const [pending, setPending] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const uid = useId();
+  /** The message under a field, for its control's `aria-describedby` (UX audit PROJ-18). */
+  const errorId = (field: string, error: unknown) => (error ? `${uid}-${field}-error` : undefined);
 
   // Form defaults, minus `attachments` (not a form field — it lives in its own state above).
   const formInitial = useMemo<Partial<FormShape>>(() => {
@@ -382,6 +390,7 @@ export function TaskFormDialog({
                 id={`${uid}-title`}
                 placeholder="e.g. Wire up the checkout API"
                 aria-invalid={!!errors.title}
+                aria-describedby={errorId("title", errors.title)}
                 {...register("title")}
               />
             </Field>
@@ -396,6 +405,7 @@ export function TaskFormDialog({
                 placeholder="Add any detail, context, or acceptance criteria…"
                 rows={3}
                 aria-invalid={!!errors.description}
+                aria-describedby={errorId("description", errors.description)}
                 {...register("description")}
               />
             </Field>
@@ -470,25 +480,34 @@ export function TaskFormDialog({
               </Field>
             </div>
 
-            <Field label="Assignees" error={errors.assigneeIds?.message}>
+            <Field
+              label="Assignees"
+              htmlFor={`${uid}-assignees`}
+              error={errors.assigneeIds?.message}
+            >
               <Controller
                 control={control}
                 name="assigneeIds"
                 render={({ field }) => (
                   <AssigneePicker
+                    id={`${uid}-assignees`}
                     members={members}
                     value={field.value}
                     onChange={field.onChange}
                     max={MAX_ASSIGNEES}
+                    invalid={!!errors.assigneeIds}
+                    describedBy={
+                      errorId("assignees", errors.assigneeIds) ?? `${uid}-assignees-hint`
+                    }
                   />
                 )}
               />
               {/* This said "Leave empty to offer this task to everyone on the project" — the
                   unclaimed-picker behaviour, retired on 2026-09-01 along with unassigned tasks
-                  themselves. It survived the invariant landing and was then instructing people to
-                  do the one thing the form now refuses. */}
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Pick at least one person — a task always has someone on it.
+                  themselves. Now it says who the list holds and what to do about someone missing
+                  from it (UX audit PROJ-11). */}
+              <p id={`${uid}-assignees-hint`} className="mt-1.5 text-xs text-muted-foreground">
+                {assigneeHint}
               </p>
             </Field>
 
@@ -503,7 +522,9 @@ export function TaskFormDialog({
                       value={field.value}
                       onChange={field.onChange}
                       min={minDue}
-                      className="w-full"
+                      placeholder="No due date"
+                      aria-describedby={errorId("due", errors.dueDate)}
+                      className={cn("w-full", errors.dueDate && "border-destructive")}
                     />
                   )}
                 />
@@ -520,6 +541,7 @@ export function TaskFormDialog({
                   step="any"
                   placeholder="No estimate"
                   aria-invalid={!!errors.estimateHours}
+                  aria-describedby={errorId("estimate", errors.estimateHours)}
                   {...register("estimateHours", {
                     setValueAs: (v: unknown) =>
                       v === "" || v === null || v === undefined ? null : Number(v),
@@ -649,7 +671,12 @@ function Field({
         {label}
       </Label>
       {children}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {/* Its id is what the control's `aria-describedby` names (UX audit PROJ-18). */}
+      {error ? (
+        <p id={htmlFor ? `${htmlFor}-error` : undefined} className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

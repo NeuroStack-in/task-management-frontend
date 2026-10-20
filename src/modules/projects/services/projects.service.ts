@@ -175,6 +175,8 @@ export interface ProjectPatch {
   billable: boolean;
   department: string;
   end_date?: string;
+  /** Move the start (`YYYY-MM-DD`; never after the end — UX audit PROJ-09). Sent only when changed. */
+  start_date?: string;
   status?: "active" | "on_hold" | "archived";
   key?: string;
 }
@@ -299,6 +301,11 @@ export interface ApiBoardTask {
   /** `low` | `medium` | `high`. */
   priority: string;
   estimate_hours?: number;
+  /**
+   * Seconds of completed timer sessions logged against this task, by anyone (UX audit PROJ-12).
+   * Counted from 2026-10-20 on; absent when none, and from older servers.
+   */
+  logged_secs?: number;
   /**
    * Who created the task (Cognito `sub`). Drives the delete affordance: a project **Member** may
    * delete only their own tasks, so the card can't know whether to offer Delete without this.

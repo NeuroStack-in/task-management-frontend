@@ -203,6 +203,9 @@ export function useProjectDetail(id: string): ProjectDetailData {
       };
       // Status and key only when they changed (see `ProjectPatch`). Nothing in the app could change
       // either before: a finished project could only be deleted (QA audit 2026-10-08, WP-312).
+      // The start moves only when it was changed (PROJ-09).
+      if (v.startDate && v.startDate !== project.startDate.slice(0, 10))
+        patch.start_date = v.startDate;
       if (v.status && v.status !== project.status)
         patch.status = toServerStatus(v.status);
       const key = v.key?.trim().toUpperCase() ?? "";
@@ -378,7 +381,13 @@ async function saveTeam(
   // 1 · Membership — first, because the role writes need their people on the team. Never removed
   //     here: the manager (the server refuses; a hand-over below takes them off if asked), the
   //     incoming manager (a hand-over needs them on it), and the lead.
-  await syncMembers(projectId, project.memberIds, v.memberIds, [
+  //
+  //     **The incoming manager is added here**, whether or not they were ticked: the hand-over
+  //     refuses anyone not on the team, and the picker offers the whole organization. Picking an
+  //     outsider used to save every other change and then fail (UX audit PROJ-08).
+  const nextTeam =
+    nextManager && nextManager !== prevManager ? [...v.memberIds, nextManager] : v.memberIds;
+  await syncMembers(projectId, project.memberIds, nextTeam, [
     prevManager,
     nextManager,
     nextLead,
@@ -495,8 +504,9 @@ async function syncManager(projectId: string, next: string): Promise<void> {
     await transferProjectManager(projectId, next);
   } catch (e) {
     throw new Error(
+      // The team save above added them, so a 400 now means they left it again in between.
       e instanceof ApiError && e.status === 400
-        ? "The project was saved, but the manager wasn't changed — add them to the team first."
+        ? "The project was saved, but the manager wasn't changed — they aren't on the team. Save again to retry."
         : e instanceof ApiError && e.status === 403
           ? "The project was saved, but the manager wasn't changed. Only the current manager or an admin can transfer a project."
           : `The project was saved, but the manager wasn't changed. ${friendlyError(e)}`,

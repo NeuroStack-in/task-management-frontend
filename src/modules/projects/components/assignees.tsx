@@ -122,12 +122,20 @@ export function AssigneePicker({
   onChange,
   disabled,
   max = Infinity,
+  id,
+  invalid,
+  describedBy,
 }: {
   members: UserMini[];
   /** Selected user ids, in the order they were picked — the first is served as the legacy single. */
   value: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
+  /** The trigger's id, so the field's label names it. */
+  id?: string;
+  invalid?: boolean;
+  /** The error or hint under the field (UX audit PROJ-18). */
+  describedBy?: string;
   /**
    * The most people a task can hold (the server's `MAX_ASSIGNEES`). At the cap, unpicked people
    * can't be ticked, and "Select all" appears only while everyone shown still fits — on a big
@@ -173,11 +181,15 @@ export function AssigneePicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        id={id}
         disabled={disabled}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         className={cn(
           "border-input bg-background ring-offset-background flex h-9 w-full items-center gap-2 rounded-md border px-3 text-sm",
           "focus:ring-ring focus:outline-none focus:ring-2 focus:ring-offset-2",
           "disabled:cursor-not-allowed disabled:opacity-50",
+          invalid && "border-destructive",
         )}
       >
         {chosen.length === 0 ? (

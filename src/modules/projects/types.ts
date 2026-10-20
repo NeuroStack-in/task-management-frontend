@@ -119,6 +119,8 @@ export interface Task {
   dueDate: string | null;
   /** Hours, fractions allowed. `null` = not estimated — a real state, distinct from zero. */
   estimateHours: number | null;
+  /** Seconds logged against the task by anyone (PROJ-12); `null` when none / not served. */
+  loggedSecs?: number | null;
   /** Files attached to the task; empty array when none. */
   attachments: Attachment[];
   /**

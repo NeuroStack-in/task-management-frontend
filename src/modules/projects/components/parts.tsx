@@ -99,14 +99,19 @@ export function Segmented<T extends string>({
   value,
   onChange,
   className,
+  label,
 }: {
   options: SegmentedOption<T>[];
   value: T;
   onChange: (value: T) => void;
   className?: string;
+  /** Names the group for assistive tech, e.g. "Task view". */
+  label?: string;
 }) {
   return (
     <div
+      role="group"
+      aria-label={label}
       className={cn(
         "inline-flex items-center gap-1 rounded-xl bg-muted p-1",
         className,
@@ -118,6 +123,8 @@ export function Segmented<T extends string>({
           <button
             key={o.value}
             type="button"
+            // The selected segment was told by styling alone (UX audit PROJ-18).
+            aria-pressed={active}
             onClick={() => onChange(o.value)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",

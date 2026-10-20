@@ -9,7 +9,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { ApiError } from "@/lib/api";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { formatHours } from "@/lib/format";
-import { getUserTimesheet } from "@/modules/time-tracking/services/timesheet.service";
+import { getRange, getUserTimesheet } from "@/modules/time-tracking/services/timesheet.service";
 
 import { Segmented } from "./parts";
 import type { UserMini } from "../lib";
@@ -55,10 +55,19 @@ export function ProjectTimeByMember({
   projectId,
   memberIds,
   userMap,
+  currentUserId,
+  isMember = false,
 }: {
   projectId: string;
   memberIds: string[];
   userMap: Record<string, UserMini>;
+  /** The viewer — for their own row when they can't read the team's time. */
+  currentUserId?: string | null;
+  /**
+   * The viewer is on the project. Without `time-tracking:manage` they used to get nothing at all;
+   * they now see **their own** hours on it, from their own timesheet (UX audit PROJ-12).
+   */
+  isMember?: boolean;
 }) {
   const { can } = usePermissions();
   // **The bit the SERVER enforces, not the one that sounds right.**
@@ -74,6 +83,8 @@ export function ProjectTimeByMember({
   // `time-tracking:manage` is what bits 31/32 (`TimeReadTeam`/`TimeReadOrg`) light in
   // `lib/permission-bits.ts`, so the boundary is now the same on both sides.
   const allowed = can("time-tracking:manage");
+  /** Own-time mode: a member who can't read other people's time sees just theirs. */
+  const selfOnly = !allowed && isMember && Boolean(currentUserId);
 
   const [period, setPeriod] = useState<Period>("month");
   // `null` = loading; an array = loaded (possibly empty).
@@ -83,6 +94,26 @@ export function ProjectTimeByMember({
   const memberKey = useMemo(() => [...memberIds].sort().join(","), [memberIds]);
 
   useEffect(() => {
+    if (selfOnly && currentUserId) {
+      // `GET /v1/me/timesheet` — the caller's own, which every employee may read.
+      let live = true;
+      setRows(null);
+      const { from, to } = rangeFor(period);
+      getRange(from, to)
+        .then((grid) => {
+          let seconds = 0;
+          for (const day of grid.days) {
+            for (const e of day.entries) {
+              if (e.project_id === projectId) seconds += e.duration_secs ?? 0;
+            }
+          }
+          if (live) setRows([{ userId: currentUserId, seconds }]);
+        })
+        .catch(() => live && setRows([{ userId: currentUserId, seconds: 0, unread: "failed" }]));
+      return () => {
+        live = false;
+      };
+    }
     if (!allowed || memberIds.length === 0) {
       setRows([]);
       return;
@@ -120,10 +151,61 @@ export function ProjectTimeByMember({
     };
     // memberKey stands in for the (stable) member list; the others drive a re-fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, memberKey, period, allowed]);
+  }, [projectId, memberKey, period, allowed, selfOnly, currentUserId]);
 
-  // Only for viewers who can read team time — checked after the hooks so hook order stays stable.
-  if (!allowed) return null;
+  // Only for viewers who can read team time, or a member's own — checked after the hooks so hook
+  // order stays stable.
+  if (!allowed && !selfOnly) return null;
+
+  if (selfOnly) {
+    const mine = rows?.[0];
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+          <div className="space-y-1">
+            <CardTitle>Your time on this project</CardTitle>
+            <CardDescription>
+              Hours you tracked against it {period === "week" ? "this week" : "this month"}. The
+              team&apos;s hours are shown to people who manage time tracking.
+            </CardDescription>
+          </div>
+          <div className="w-36 shrink-0">
+            <Segmented
+              label="Period"
+              options={[
+                { value: "week", label: "Week" },
+                { value: "month", label: "Month" },
+              ]}
+              value={period}
+              onChange={setPeriod}
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!mine ? (
+            <p className="py-2 text-sm text-muted-foreground">Loading…</p>
+          ) : mine.unread ? (
+            <p className="py-2 text-sm text-muted-foreground">Your time couldn&apos;t be loaded.</p>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="flex size-9 items-center justify-center rounded-md bg-muted">
+                <Clock className="size-4 text-muted-foreground" aria-hidden="true" />
+              </span>
+              <span className="font-mono text-lg font-medium tabular-nums">
+                {formatHours(mine.seconds / 3600)}
+              </span>
+              {mine.seconds === 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  None {period === "week" ? "this week" : "this month"} — time appears here once
+                  you run a timer against this project.
+                </span>
+              ) : null}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   const withTime = rows?.filter((r) => r.seconds > 0) ?? [];
   const totalSec = withTime.reduce((s, r) => s + r.seconds, 0);
@@ -152,6 +234,7 @@ export function ProjectTimeByMember({
         </div>
         <div className="w-36 shrink-0">
           <Segmented
+            label="Period"
             options={[
               { value: "week", label: "Week" },
               { value: "month", label: "Month" },

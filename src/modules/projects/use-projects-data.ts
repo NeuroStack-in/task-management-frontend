@@ -189,7 +189,8 @@ export function useProjectsData(): ProjectsData {
         name: v.name,
         ...(v.description?.trim() ? { description: v.description.trim() } : {}),
         billable: v.billable,
-        start_date: todayIso(),
+        // The form's start date (UX audit PROJ-09); today when it somehow arrives empty.
+        start_date: v.startDate || todayIso(),
         end_date: v.dueDate || undefined,
         manager_user_id: manager,
         key: deriveProjectKey(v.name),

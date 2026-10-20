@@ -29,13 +29,24 @@ interface Segment {
  * control strip. The primary cell carries the indigo feature tint + the
  * aggregate project pulse; 1px gaps over a border-coloured parent form the dividers.
  */
-export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
+export function ProjectsStatBand({
+  stats,
+  wholeOrg,
+}: {
+  stats: ProjectStats;
+  /**
+   * The viewer sees every project in the organization (the server's oversight scope). Everyone else
+   * is served only the projects they are on, and read "across the organization" over a count of
+   * their own (UX audit PROJ-17).
+   */
+  wholeOrg: boolean;
+}) {
   const segments: Segment[] = [
     {
       key: "total",
-      label: "Total projects",
+      label: wholeOrg ? "Total projects" : "Your projects",
       value: stats.total,
-      sub: "across the organization",
+      sub: wholeOrg ? "across the organization" : "that you're on",
       icon: FolderKanban,
       chip: "bg-primary/10 text-primary",
       primary: true,
@@ -64,10 +75,11 @@ export function ProjectsStatBand({ stats }: { stats: ProjectStats }) {
       key: "atRisk",
       label: "Past deadline",
       value: stats.atRisk,
-      sub: "unfinished, past their end date",
+      sub: stats.atRisk ? "unfinished, past their end date" : "none past their end date",
       icon: AlertTriangle,
-      chip: "bg-warning/15 text-warning",
-      accent: "text-warning",
+      // Amber only when there is something to look at: an amber "0" read as an alarm about nothing.
+      chip: stats.atRisk ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground",
+      accent: stats.atRisk ? "text-warning" : undefined,
     },
   ];
 

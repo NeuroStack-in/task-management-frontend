@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Check, Search, Users, X } from "lucide-react";
+import { Check, ChevronsUpDown, Search, TriangleAlert, Users, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,13 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -31,13 +38,19 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { initials, todayIso } from "@/lib/format";
-import type { UserMini } from "../lib";
+import { teamWithRoles, type TaskLoad, type UserMini } from "../lib";
 import {
   PROJECT_STATUS_META,
   PROJECT_STATUS_ORDER,
   type ProjectStatus,
 } from "../types";
 import type { ProjectFormValues } from "@/modules/projects/forms";
+import { AddFromTeam } from "./add-from-team";
+import {
+  listTeamMembers,
+  listTeams,
+  type ApiTeam,
+} from "@/modules/employees/services/employees.service";
 
 /** The Department picker's "none" choice — a Select value can't be the empty string. */
 const NO_DEPARTMENT = "__none__";
@@ -64,11 +77,17 @@ const schema = z.object({
     .trim()
     .refine((k) => !k || /^[A-Za-z0-9]{2,8}$/.test(k), "Use 2–8 letters or digits, e.g. WP")
     .optional(),
-  // Required, like the manager, and someone else (owner request 2026-10-16) — see `schemaWithMinDue`.
+  // Required, like the manager, and someone else (owner request 2026-10-16) — see `schemaFor`.
   leadUserId: z.string().min(1, "Pick a project lead"),
   managerId: z.string().min(1, "Pick a manager"),
-  memberIds: z.array(z.string()).min(1, "Select at least one member"),
-  dueDate: z.string().min(1, "Pick a deadline"),
+  // **Not required** (UX audit PROJ-10): the manager and lead are on the team by construction
+  // (`teamWithRoles`), so a project always has people on it. Demanding one more was a rule with no
+  // reason behind it.
+  memberIds: z.array(z.string()),
+  startDate: z.string(),
+  // **Optional** (UX audit PROJ-09): the server takes a project with no end date, and ongoing work
+  // has none. It was required here, so a deadline once set could never be removed from the form.
+  dueDate: z.string(),
   // Required at creation (LLD §4) — deliberately a choice with no default rather than a
   // checkbox, which would silently default every project to non-billable. Modelled as an
   // enum, not a boolean, precisely so "unanswered" is representable and fails validation.
@@ -87,11 +106,20 @@ type FormShape = z.infer<typeof schema>;
  * `minDue` is normally today, but in edit mode it relaxes to a project's own already-past deadline
  * (see `minDue` below) so that editing anything *else* on an overdue project isn't blocked by it.
  */
-function schemaWithMinDue(minDue: string) {
+function schemaFor(minDue: string, isCreate: boolean) {
   return schema
+    .refine((v) => !isCreate || Boolean(v.startDate), {
+      path: ["startDate"],
+      message: "Pick a start date",
+    })
     .refine((v) => !v.dueDate || v.dueDate >= minDue, {
       path: ["dueDate"],
       message: "Deadline can't be in the past",
+    })
+    // The server refuses it too ("end_date precedes start_date"); saying so on the field beats a toast.
+    .refine((v) => !v.dueDate || !v.startDate || v.dueDate >= v.startDate, {
+      path: ["dueDate"],
+      message: "Deadline can't be before the start date",
     })
     // Two people, not one in both seats. Only the project's own lead or manager signs a task off, and
     // never on work they're assigned to — so each reviews the other's, and a project where one person
@@ -107,23 +135,26 @@ const fieldClass =
   "h-9 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 // `billable` is intentionally absent: it has no default, so an unanswered form fails
-// validation instead of quietly creating a non-billable project (LLD §4).
-const EMPTY: Omit<FormShape, "billable"> = {
-  name: "",
-  description: "",
-  department: "",
-  leadUserId: "",
-  managerId: "",
-  memberIds: [],
-  dueDate: "",
-};
+// validation instead of quietly creating a non-billable project (LLD §4). A function, not a
+// constant: the start date defaults to *today*, read when the form opens rather than at page load.
+function blank(): Omit<FormShape, "billable"> {
+  return {
+    name: "",
+    description: "",
+    department: "",
+    leadUserId: "",
+    managerId: "",
+    memberIds: [],
+    startDate: todayIso(),
+    dueDate: "",
+  };
+}
 
-import { AddFromTeam } from "./add-from-team";
-import {
-  listTeamMembers,
-  listTeams,
-  type ApiTeam,
-} from "@/modules/employees/services/employees.service";
+/** The id of the message under a field — its error, else its hint — for `aria-describedby`. */
+function describedBy(id: string, error: unknown, hint?: unknown): string | undefined {
+  if (error) return `${id}-error`;
+  return hint ? `${id}-hint` : undefined;
+}
 
 interface ProjectFormDialogProps {
   mode: "create" | "edit";
@@ -138,8 +169,13 @@ interface ProjectFormDialogProps {
    * directory refused them, so only people they already work with are listed (WP-308).
    */
   peopleNote?: string;
-  /** Pre-fill for edit mode. */
+  /** Pre-fill for edit mode; in create mode, just the defaults (the manager — UX audit PROJ-10). */
   initial?: Partial<ProjectFormValues>;
+  /**
+   * Edit only: the tasks each person is on, so unticking someone says what the save will do to their
+   * work before it does it (UX audit PROJ-15).
+   */
+  taskLoad?: Record<string, TaskLoad>;
   /**
    * Save. **The dialog stays open until this resolves** and does not close itself — the caller
    * closes it on success, so a refused save keeps everything typed. It used to close straight after
@@ -156,9 +192,11 @@ export function ProjectFormDialog({
   departments,
   peopleNote,
   initial,
+  taskLoad,
   onSubmit,
 }: ProjectFormDialogProps) {
   const uid = useId();
+  const id = (field: string) => `${uid}-${field}`;
   const [submitting, setSubmitting] = useState(false);
   // The org's departments, plus the project's own label when it isn't (or is no longer) one of
   // them — an Edit must still show what is stored, rather than a value no option matches.
@@ -176,14 +214,16 @@ export function ProjectFormDialog({
   );
   // The domain model carries `billable` as a boolean; the form as an enum, so that
   // "unanswered" is representable and a new project can't default to non-billable.
-  // Convert on the way in — the submit handler converts back.
-  const initialForm = useMemo(
-    () =>
-      initial
-        ? { ...initial, billable: (initial.billable ? "yes" : "no") as "yes" | "no" }
-        : undefined,
-    [initial],
-  );
+  // Convert on the way in — the submit handler converts back. Only when it is *given*: create mode
+  // passes defaults without it, and mapping `undefined` to "no" would default every project to
+  // non-billable — the very guess the enum exists to prevent.
+  const initialForm = useMemo(() => {
+    if (!initial) return undefined;
+    const { billable, ...rest } = initial;
+    return billable === undefined
+      ? rest
+      : { ...rest, billable: (billable ? "yes" : "no") as "yes" | "no" };
+  }, [initial]);
 
   // The deadline floor: today, so a new project can't be created already overdue. An existing
   // project whose deadline has passed keeps its own value as the floor, so editing its other fields
@@ -192,6 +232,8 @@ export function ProjectFormDialog({
     const t = todayIso();
     return initial?.dueDate && initial.dueDate < t ? initial.dueDate : t;
   }, [initial?.dueDate]);
+
+  const isEdit = mode === "edit";
 
   const {
     register,
@@ -202,24 +244,66 @@ export function ProjectFormDialog({
     control,
     formState: { errors },
   } = useForm<FormShape>({
-    resolver: zodResolver(schemaWithMinDue(minDue)),
-    defaultValues: { ...EMPTY, ...initialForm },
+    resolver: zodResolver(schemaFor(minDue, !isEdit)),
+    defaultValues: { ...blank(), ...initialForm },
   });
 
   // Re-seed the form whenever it (re)opens so edit mode reflects the latest data.
   useEffect(() => {
-    if (open) reset({ ...EMPTY, ...initialForm });
+    if (open) reset({ ...blank(), ...initialForm });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const isEdit = mode === "edit";
   const memberIds = watch("memberIds");
+  const managerId = watch("managerId");
+  const leadUserId = watch("leadUserId");
+  const startDate = watch("startDate");
+  // Who the save puts on the team: the ticked people plus the manager and lead (PROJ-08).
+  const team = teamWithRoles(memberIds, managerId, leadUserId);
+  const locked: Record<string, string> = {
+    ...(leadUserId ? { [leadUserId]: "Lead" } : {}),
+    ...(managerId ? { [managerId]: "Manager" } : {}),
+  };
+  // The deadline can't precede the start, nor (as before) be in the past.
+  const dueFloor = startDate && startDate > minDue ? startDate : minDue;
+
+  const nameOf = (userId: string) => leads.find((u) => u.id === userId)?.name;
+  // PROJ-15: who unticking takes off the team, and what happens to their tasks. Removals run before
+  // a hand-over (see `saveTeam`), so a leaver's only-assignee tasks pass to the *current* manager —
+  // except the outgoing manager's own, which go to the new one once they hand over.
+  const removalNote = (() => {
+    if (!isEdit || !taskLoad) return null;
+    const before = initial?.memberIds ?? [];
+    const prevManager = initial?.managerId ?? "";
+    const leaving = before.filter((u) => !team.includes(u));
+    const withWork = leaving
+      .map((u) => ({ id: u, load: taskLoad[u] ?? { total: 0, solo: 0 } }))
+      .filter((x) => x.load.total > 0);
+    if (withWork.length === 0) return null;
+    const parts = withWork.map(
+      (x) =>
+        `${nameOf(x.id) ?? "someone"} off ${x.load.total} ${x.load.total === 1 ? "task" : "tasks"}`,
+    );
+    const list =
+      parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+    const solo = withWork.reduce((s, x) => s + x.load.solo, 0);
+    const heirs = new Set(
+      withWork.filter((x) => x.load.solo > 0).map((x) => (x.id === prevManager ? managerId : prevManager)),
+    );
+    const heir = heirs.size === 1 ? nameOf([...heirs][0]) : undefined;
+    return `Saving takes ${list}.${
+      solo > 0
+        ? ` ${solo === 1 ? "The 1 task" : `The ${solo} tasks`} nobody else is on will pass to ${heir ?? "the project manager"}.`
+        : ""
+    }`;
+  })();
 
   const submit = handleSubmit(async (data) => {
     setSubmitting(true);
     try {
       await onSubmit({
         ...data,
+        memberIds: teamWithRoles(data.memberIds, data.managerId, data.leadUserId),
         description: data.description ?? "",
         // The form models this as an enum so "unanswered" can fail validation; the domain
         // model is a boolean. Map at the boundary.
@@ -236,7 +320,7 @@ export function ProjectFormDialog({
       onOpenChange={(o) => {
         // Not while a save is in flight: closing then would lose the form if the save fails.
         if (!o && submitting) return;
-        if (!o) reset({ ...EMPTY, ...initialForm });
+        if (!o) reset({ ...blank(), ...initialForm });
         onOpenChange(o);
       }}
     >
@@ -246,32 +330,34 @@ export function ProjectFormDialog({
           <DialogDescription>
             {isEdit
               ? "Update the project’s details, people, and timeline."
-              : "Name the project, assign its people, and set a deadline."}
+              : "Name the project, pick who runs it, and set its dates."}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4">
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4" noValidate>
           <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-1">
-          <Field label="Project name" htmlFor={`${uid}-name`} error={errors.name?.message}>
+          <Field label="Project name" htmlFor={id("name")} error={errors.name?.message}>
             <Input
-              id={`${uid}-name`}
+              id={id("name")}
               placeholder="e.g. Atlas Migration"
               aria-invalid={!!errors.name}
+              aria-describedby={describedBy(id("name"), errors.name)}
               {...register("name")}
             />
           </Field>
 
           <Field
             label="Description"
-            htmlFor={`${uid}-description`}
+            htmlFor={id("description")}
             error={errors.description?.message}
             optional
           >
             <textarea
-              id={`${uid}-description`}
+              id={id("description")}
               rows={3}
               placeholder="What is this project about? Goals, scope, anything worth knowing."
               aria-invalid={!!errors.description}
+              aria-describedby={describedBy(id("description"), errors.description)}
               className={cn(fieldClass, "h-auto resize-none py-2 leading-relaxed")}
               {...register("description")}
             />
@@ -281,10 +367,10 @@ export function ProjectFormDialog({
               name. Neither could be changed anywhere in the app — a finished project could only be
               deleted, and a renamed one kept its old key (QA audit 2026-10-08, WP-312). */}
           {isEdit ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field
                 label="Status"
-                htmlFor={`${uid}-status`}
+                htmlFor={id("status")}
                 hint="Completed and On hold keep the project’s tasks and history. A hold you set stays until someone resumes it."
               >
                 <Controller
@@ -296,7 +382,11 @@ export function ProjectFormDialog({
                       onValueChange={(v) => field.onChange(v as ProjectStatus)}
                       items={STATUS_ITEMS}
                     >
-                      <SelectTrigger id={`${uid}-status`} className="w-full">
+                      <SelectTrigger
+                        id={id("status")}
+                        aria-describedby={`${id("status")}-hint`}
+                        className="w-full"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -312,79 +402,142 @@ export function ProjectFormDialog({
               </Field>
               <Field
                 label="Key"
-                htmlFor={`${uid}-key`}
+                htmlFor={id("key")}
                 error={errors.key?.message}
                 hint="The short badge on cards — 2 to 8 letters or digits."
               >
                 <Input
-                  id={`${uid}-key`}
+                  id={id("key")}
                   maxLength={8}
                   autoComplete="off"
                   className="font-mono uppercase"
                   aria-invalid={!!errors.key}
+                  aria-describedby={describedBy(id("key"), errors.key, true)}
                   {...register("key")}
                 />
               </Field>
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="Project lead"
-              htmlFor={`${uid}-lead`}
-              error={errors.leadUserId?.message}
-            >
-              <Controller
-                control={control}
-                name="leadUserId"
-                render={({ field }) => (
-                  <PersonSelect
-                    id={`${uid}-lead`}
-                    users={leads}
-                    value={field.value}
-                    onChange={field.onChange}
-                    placeholder="Select lead"
-                    invalid={!!errors.leadUserId}
-                  />
-                )}
-              />
-            </Field>
-            {/* Editable again: `POST /v1/projects/{id}/transfer-manager` exists as of 2026-09-01.
-                It was disabled for exactly one commit, because until that route was built this
-                control did what the lead picker did — accepted a change, reported success, and
-                moved nothing. A picker that cannot perform its edit should say so rather than
-                pretend. */}
+          {/* One column on a phone: two pickers side by side were ~170 px each (UX audit PROJ-10). */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* Editable again: `POST /v1/projects/{id}/transfer-manager` exists as of 2026-09-01. */}
             <Field
               label="Project manager"
-              htmlFor={`${uid}-manager`}
+              htmlFor={id("manager")}
               error={errors.managerId?.message}
+              hint={
+                isEdit
+                  ? "Someone new joins the team and takes over. The current manager stays on the team unless you untick them below."
+                  : "Runs the project and its team."
+              }
             >
               <Controller
                 control={control}
                 name="managerId"
                 render={({ field }) => (
-                  <PersonSelect
-                    id={`${uid}-manager`}
+                  <PersonPicker
+                    id={id("manager")}
                     users={leads}
                     value={field.value}
                     onChange={field.onChange}
                     placeholder="Select manager"
                     invalid={!!errors.managerId}
+                    describedBy={describedBy(id("manager"), errors.managerId, true)}
                   />
                 )}
               />
-              {isEdit ? (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  They must already be on the team. The current manager becomes a member.
-                </p>
-              ) : null}
+            </Field>
+            <Field
+              label="Project lead"
+              htmlFor={id("lead")}
+              error={errors.leadUserId?.message}
+              hint="Signs work off with the manager — someone other than the manager."
+            >
+              <Controller
+                control={control}
+                name="leadUserId"
+                render={({ field }) => (
+                  <PersonPicker
+                    id={id("lead")}
+                    users={leads}
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="Select lead"
+                    invalid={!!errors.leadUserId}
+                    describedBy={describedBy(id("lead"), errors.leadUserId, true)}
+                  />
+                )}
+              />
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* The dates. A start date is chosen at creation — it used to be today, silently — and the
+              deadline is optional (UX audit PROJ-09). */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Start date" htmlFor={id("start")} error={errors.startDate?.message}>
+              {/* Movable in an edit too — the PATCH takes `start_date` (PROJ-09); the deadline check
+                  below keeps it on or before the end. */}
+              <Controller
+                control={control}
+                name="startDate"
+                render={({ field }) => (
+                  <DatePicker
+                    id={id("start")}
+                    value={field.value}
+                    onChange={field.onChange}
+                    aria-describedby={describedBy(id("start"), errors.startDate)}
+                    className={cn("w-full", errors.startDate && "border-destructive")}
+                  />
+                )}
+              />
+            </Field>
+            <Field
+              label="Deadline"
+              htmlFor={id("deadline")}
+              error={errors.dueDate?.message}
+              optional
+              hint="Leave it empty for ongoing work."
+            >
+              <Controller
+                control={control}
+                name="dueDate"
+                render={({ field }) => (
+                  <div className="flex items-center gap-1.5">
+                    <div className="min-w-0 flex-1">
+                      <DatePicker
+                        id={id("deadline")}
+                        value={field.value}
+                        onChange={field.onChange}
+                        min={dueFloor}
+                        placeholder="No end date"
+                        aria-describedby={describedBy(id("deadline"), errors.dueDate, true)}
+                        className={cn("w-full", errors.dueDate && "border-destructive")}
+                      />
+                    </div>
+                    {field.value ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-9 shrink-0"
+                        onClick={() => field.onChange("")}
+                        aria-label="Remove the deadline"
+                        title="Remove the deadline"
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field
               label="Department"
-              htmlFor={`${uid}-department`}
+              htmlFor={id("department")}
               error={errors.department?.message}
               optional
               hint={
@@ -405,7 +558,12 @@ export function ProjectFormDialog({
                     items={departmentItems}
                   >
                     <SelectTrigger
-                      id={`${uid}-department`}
+                      id={id("department")}
+                      aria-describedby={describedBy(
+                        id("department"),
+                        errors.department,
+                        departments === null,
+                      )}
                       className={cn("w-full", errors.department && "border-destructive")}
                     >
                       <SelectValue />
@@ -422,56 +580,45 @@ export function ProjectFormDialog({
                 )}
               />
             </Field>
-            <Field label="Deadline" htmlFor={`${uid}-deadline`} error={errors.dueDate?.message}>
+
+            <Field
+              label="Billing"
+              htmlFor={id("billing")}
+              error={errors.billable?.message}
+              hint="Every task inherits this. Time already logged keeps its original billing."
+            >
               <Controller
                 control={control}
-                name="dueDate"
+                name="billable"
                 render={({ field }) => (
-                  <DatePicker
-                    id={`${uid}-deadline`}
-                    value={field.value}
-                    onChange={field.onChange}
-                    min={minDue}
-                    className={cn("w-full", errors.dueDate && "border-destructive")}
-                  />
+                  <Select
+                    value={field.value || null}
+                    onValueChange={(v) => field.onChange(v as string)}
+                    items={{ yes: "Billable", no: "Non-billable" }}
+                  >
+                    <SelectTrigger
+                      id={id("billing")}
+                      aria-invalid={!!errors.billable}
+                      aria-describedby={describedBy(id("billing"), errors.billable, true)}
+                      className={cn("w-full", errors.billable && "border-destructive")}
+                    >
+                      <SelectValue placeholder="Billable or non-billable?" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Billable</SelectItem>
+                      <SelectItem value="no">Non-billable</SelectItem>
+                    </SelectContent>
+                  </Select>
                 )}
               />
             </Field>
           </div>
 
           <Field
-            label="Billing"
-            htmlFor={`${uid}-billing`}
-            error={errors.billable?.message}
-            hint="Every task inherits this. Time already logged keeps its original billing."
-          >
-            <Controller
-              control={control}
-              name="billable"
-              render={({ field }) => (
-                <Select
-                  value={field.value || null}
-                  onValueChange={(v) => field.onChange(v as string)}
-                  items={{ yes: "Billable", no: "Non-billable" }}
-                >
-                  <SelectTrigger
-                    id={`${uid}-billing`}
-                    className={cn("w-full", errors.billable && "border-destructive")}
-                  >
-                    <SelectValue placeholder="Billable or non-billable?" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="yes">Billable</SelectItem>
-                    <SelectItem value="no">Non-billable</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </Field>
-
-          <Field
-            label={`Team members${memberIds.length ? ` (${memberIds.length})` : ""}`}
+            label={`Team members (${team.length})`}
+            htmlFor={id("team")}
             error={errors.memberIds?.message}
+            hint="The manager and lead are always on the team."
           >
             {/* Snapshot a whole team in: adds its current members to the list below (union — nobody
                 already picked is duplicated or removed). A one-time add, not a live link, so later
@@ -487,14 +634,28 @@ export function ProjectFormDialog({
               }
             />
             <MemberMultiSelect
+              searchId={id("team")}
+              describedBy={describedBy(id("team"), errors.memberIds, true)}
               users={leads}
-              value={memberIds}
+              value={team}
+              locked={locked}
               onChange={(ids) =>
                 setValue("memberIds", ids, { shouldValidate: true })
               }
             />
             {peopleNote ? (
               <p className="mt-1.5 text-xs text-muted-foreground">{peopleNote}</p>
+            ) : null}
+            {removalNote ? (
+              // Before the save, not after it: unticking someone used to reassign their work with no
+              // word at all (UX audit PROJ-15).
+              <p
+                role="status"
+                className="border-warning/40 bg-warning/10 text-foreground mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs"
+              >
+                <TriangleAlert className="text-warning mt-px size-3.5 shrink-0" aria-hidden="true" />
+                <span>{removalNote}</span>
+              </p>
             ) : null}
           </Field>
 
@@ -545,11 +706,22 @@ const ALL_TEAMS = "__all__";
 function MemberMultiSelect({
   users,
   value,
+  locked,
   onChange,
+  searchId,
+  describedBy,
 }: {
   users: UserMini[];
   value: string[];
+  /**
+   * People who are on the team because of their role (`id → "Manager" | "Lead"`): ticked, labelled,
+   * and not removable here — change the role picker instead.
+   */
+  locked: Record<string, string>;
   onChange: (ids: string[]) => void;
+  /** The search box's id, so the field's label names it. */
+  searchId?: string;
+  describedBy?: string;
 }) {
   const [query, setQuery] = useState("");
   const [teams, setTeams] = useState<ApiTeam[]>([]);
@@ -603,6 +775,7 @@ function MemberMultiSelect({
   });
 
   const toggle = (id: string) => {
+    if (locked[id]) return;
     const next = new Set(value);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -623,6 +796,8 @@ function MemberMultiSelect({
   const selectAllShown = () => onChange([...value, ...unselectedShown.map((u) => u.id)]);
   /** True when a filter is on, so the control can promise only what it will actually do. */
   const narrowed = Boolean(q) || Boolean(inTeam);
+  /** "Clear all" keeps the manager and lead — they are on the team by role, not by tick. */
+  const removable = value.filter((id) => !locked[id]);
 
   const chosen = value
     .map((id) => users.find((u) => u.id === id))
@@ -636,17 +811,24 @@ function MemberMultiSelect({
           {chosen.map((u) => (
             <span
               key={u.id}
-              className="inline-flex items-center gap-1 rounded-full bg-accent py-0.5 pr-1 pl-1.5 text-xs font-medium text-accent-foreground"
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full bg-accent py-0.5 pl-1.5 text-xs font-medium text-accent-foreground",
+                locked[u.id] ? "pr-2" : "pr-1",
+              )}
             >
               {u.name.split(" ")[0]}
-              <button
-                type="button"
-                onClick={() => toggle(u.id)}
-                aria-label={`Remove ${u.name}`}
-                className="rounded-full p-0.5 transition-colors hover:bg-foreground/10"
-              >
-                <X className="size-3" />
-              </button>
+              {locked[u.id] ? (
+                <span className="text-[0.65rem] font-normal opacity-80">· {locked[u.id]}</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => toggle(u.id)}
+                  aria-label={`Remove ${u.name}`}
+                  className="rounded-full p-0.5 transition-colors hover:bg-foreground/10"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
             </span>
           ))}
         </div>
@@ -657,10 +839,11 @@ function MemberMultiSelect({
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
+            id={searchId}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search people…"
-            aria-label="Search people"
+            aria-describedby={describedBy}
             className="h-9 w-full bg-transparent pr-2.5 pl-8 text-sm outline-none"
           />
         </div>
@@ -694,7 +877,7 @@ function MemberMultiSelect({
           <span className="text-muted-foreground">
             {filtered.length} {filtered.length === 1 ? "person" : "people"}
             {narrowed ? " shown" : ""}
-            {value.length ? ` · ${value.length} selected` : ""}
+            {value.length ? ` · ${value.length} on the team` : ""}
           </span>
           <span className="flex items-center gap-3">
             {unselectedShown.length > 0 ? (
@@ -706,10 +889,10 @@ function MemberMultiSelect({
                 {narrowed ? `Select all ${filtered.length} shown` : "Select all"}
               </button>
             ) : null}
-            {value.length > 0 ? (
+            {removable.length > 0 ? (
               <button
                 type="button"
-                onClick={() => onChange([])}
+                onClick={() => onChange(value.filter((id) => locked[id]))}
                 className="font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 Clear all
@@ -719,8 +902,9 @@ function MemberMultiSelect({
         </div>
       ) : null}
 
-      {/* Directory list */}
-      <ul className="max-h-44 overflow-y-auto p-1">
+      {/* Directory list — each row a checkbox to assistive tech; its state was a styled square
+          only (UX audit PROJ-18). */}
+      <ul className="max-h-44 overflow-y-auto p-1" aria-label="People">
         {loadingTeam ? (
           <li className="px-2 py-4 text-center text-xs text-muted-foreground">
             Loading team…
@@ -738,19 +922,25 @@ function MemberMultiSelect({
         ) : (
           filtered.map((u) => {
             const isOn = selected.has(u.id);
+            const role = locked[u.id];
             return (
               <li key={u.id}>
                 <button
                   type="button"
+                  role="checkbox"
+                  aria-checked={isOn}
+                  aria-disabled={role ? true : undefined}
+                  title={role ? `On the team as ${role.toLowerCase()}` : undefined}
                   onClick={() => toggle(u.id)}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted",
+                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors",
+                    role ? "cursor-default" : "hover:bg-muted",
                     isOn && "bg-muted/60",
                   )}
                 >
                   <Avatar size="sm" className="size-7">
                     {u.avatarUrl ? (
-                      <AvatarImage src={u.avatarUrl} alt={u.name} />
+                      <AvatarImage src={u.avatarUrl} alt="" />
                     ) : null}
                     <AvatarFallback>{initials(u.name)}</AvatarFallback>
                   </Avatar>
@@ -759,15 +949,17 @@ function MemberMultiSelect({
                       {u.name}
                     </span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {u.jobTitle}
+                      {role ? `${role}${u.jobTitle ? ` · ${u.jobTitle}` : ""}` : u.jobTitle}
                     </span>
                   </span>
                   <span
+                    aria-hidden="true"
                     className={cn(
                       "flex size-4 shrink-0 items-center justify-center rounded-[5px] border",
                       isOn
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-input",
+                      role && "opacity-60",
                     )}
                   >
                     {isOn ? <Check className="size-3" /> : null}
@@ -784,14 +976,20 @@ function MemberMultiSelect({
 
 /* --------------------- person picker (lead / manager) ---------------------- */
 
-function PersonSelect({
+/**
+ * One person from the directory, **searchable** once the list is long enough to need it (UX audit
+ * PROJ-10). It was a plain select over the whole organization: finding someone in a long list meant
+ * scrolling it. A menu of radio items rather than a `<Select>` because a select's type-ahead would
+ * swallow the search box's keystrokes.
+ */
+function PersonPicker({
   id,
   users,
   value,
   onChange,
   placeholder,
   invalid,
-  disabled,
+  describedBy,
 }: {
   /** For the field's label. */
   id?: string;
@@ -800,66 +998,83 @@ function PersonSelect({
   onChange: (id: string) => void;
   placeholder: string;
   invalid?: boolean;
-  /** Renders the current person but refuses the change — see the manager field. */
-  disabled?: boolean;
+  describedBy?: string;
 }) {
+  const [query, setQuery] = useState("");
+  const searchable = users.length > 6;
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? users.filter(
+        (u) => u.name.toLowerCase().includes(q) || u.jobTitle.toLowerCase().includes(q),
+      )
+    : users;
+  const current = users.find((u) => u.id === value);
+
   return (
-    <Select
-      value={value || null}
-      onValueChange={(v) => onChange(v as string)}
-      disabled={disabled}
-    >
-      <SelectTrigger
+    <DropdownMenu onOpenChange={(o) => !o && setQuery("")}>
+      <DropdownMenuTrigger
         id={id}
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         className={cn(
-          "w-full",
+          "border-input flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border bg-transparent px-2.5 text-left text-sm outline-none transition-colors dark:bg-input/30",
+          "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
           invalid && "border-destructive",
-          disabled && "cursor-not-allowed opacity-60",
         )}
       >
-        <SelectValue placeholder={placeholder}>
-          {(v) => {
-            const u = users.find((x) => x.id === v);
-            if (!u) return placeholder;
-            return (
-              <span className="flex min-w-0 items-center gap-2">
-                <Avatar className="size-5">
-                  {u.avatarUrl ? (
-                    <AvatarImage src={u.avatarUrl} alt={u.name} />
-                  ) : null}
-                  <AvatarFallback className="text-[0.55rem]">
-                    {initials(u.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="truncate">{u.name}</span>
-              </span>
-            );
-          }}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        {users.map((u) => (
-          <SelectItem key={u.id} value={u.id}>
-            <span className="flex items-center gap-2">
-              <Avatar className="size-6">
-                {u.avatarUrl ? (
-                  <AvatarImage src={u.avatarUrl} alt={u.name} />
-                ) : null}
-                <AvatarFallback className="text-[0.6rem]">
-                  {initials(u.name)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="flex min-w-0 flex-col leading-tight">
-                <span className="truncate text-sm">{u.name}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {u.jobTitle}
+        {current ? (
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <Avatar className="size-5">
+              {current.avatarUrl ? <AvatarImage src={current.avatarUrl} alt="" /> : null}
+              <AvatarFallback className="text-[0.55rem]">{initials(current.name)}</AvatarFallback>
+            </Avatar>
+            <span className="truncate">{current.name}</span>
+          </span>
+        ) : (
+          <span className="text-muted-foreground flex-1 truncate">{placeholder}</span>
+        )}
+        <ChevronsUpDown className="size-4 shrink-0 opacity-50" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-72">
+        {searchable ? (
+          <div className="px-1 pt-0.5 pb-1.5">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search people…"
+              aria-label="Search people"
+              className="h-8"
+              // Typing must reach the input rather than being swallowed as menu type-ahead.
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+          </div>
+        ) : null}
+        {filtered.length === 0 ? (
+          <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+            {users.length === 0 ? "Nobody to choose from." : `No one matches “${query}”.`}
+          </p>
+        ) : (
+          <DropdownMenuRadioGroup value={value} onValueChange={(v) => onChange(v as string)}>
+            {filtered.map((u) => (
+              <DropdownMenuRadioItem key={u.id} value={u.id} closeOnClick>
+                <span className="flex min-w-0 items-center gap-2">
+                  <Avatar className="size-6">
+                    {u.avatarUrl ? <AvatarImage src={u.avatarUrl} alt="" /> : null}
+                    <AvatarFallback className="text-[0.6rem]">{initials(u.name)}</AvatarFallback>
+                  </Avatar>
+                  <span className="flex min-w-0 flex-col leading-tight">
+                    <span className="truncate text-sm">{u.name}</span>
+                    {u.jobTitle ? (
+                      <span className="truncate text-xs text-muted-foreground">{u.jobTitle}</span>
+                    ) : null}
+                  </span>
                 </span>
-              </span>
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -891,10 +1106,16 @@ function Field({
         ) : null}
       </Label>
       {children}
+      {/* Ids the control points at with `aria-describedby`, so a screen reader hears the error with
+          the field rather than never (UX audit PROJ-18). */}
       {error ? (
-        <p className="text-xs text-destructive">{error}</p>
+        <p id={htmlFor ? `${htmlFor}-error` : undefined} className="text-xs text-destructive">
+          {error}
+        </p>
       ) : hint ? (
-        <p className="text-xs text-muted-foreground">{hint}</p>
+        <p id={htmlFor ? `${htmlFor}-hint` : undefined} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
       ) : null}
     </div>
   );
