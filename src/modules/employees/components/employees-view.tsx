@@ -774,13 +774,22 @@ export function EmployeesView() {
                     {/* Sortable columns (PEOPLE-04): a click sorts, a second click reverses. */}
                     <SortableHead label="Employee" sortKey="name" sort={sort} onSort={sortBy} />
                     <SortableHead label="Role" sortKey="role" sort={sort} onSort={sortBy} />
-                    <SortableHead label="Department" sortKey="department" sort={sort} onSort={sortBy} />
+                    {/* Below sm only Employee, Role and the menu fit at 390 px — the menu used to sit
+                        off-screen behind a sideways scroll nothing hinted at (UX audit XC-05). The
+                        department moves under the name there; productivity is on the profile. */}
+                    <SortableHead
+                      label="Department"
+                      sortKey="department"
+                      sort={sort}
+                      onSort={sortBy}
+                      className="hidden sm:table-cell"
+                    />
                     <SortableHead
                       label="Productivity"
                       sortKey="productivity"
                       sort={sort}
                       onSort={sortBy}
-                      className="w-40"
+                      className="hidden w-40 sm:table-cell"
                     />
                     {canManage && <TableHead className="w-10" />}
                   </TableRow>
@@ -803,7 +812,9 @@ export function EmployeesView() {
                             className="size-8"
                             fallbackClassName="text-xs"
                           />
-                          <div className="min-w-0">
+                          {/* Capped on phones so a long title truncates instead of widening the
+                              table past the screen and pushing the row menu out of reach (XC-05). */}
+                          <div className="max-w-[40vw] min-w-0 sm:max-w-none">
                             <div className="flex items-center gap-1.5">
                               <Link
                                 href={`/employees/${e.id}`}
@@ -845,6 +856,11 @@ export function EmployeesView() {
                                 {e.jobTitle}
                               </p>
                             )}
+                            {e.department ? (
+                              <p className="text-muted-foreground truncate text-xs sm:hidden">
+                                {e.department}
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       </TableCell>
@@ -852,12 +868,12 @@ export function EmployeesView() {
                         {e.roleName}
                       </TableCell>
                       <TableCell
-                        className="text-muted-foreground"
+                        className="text-muted-foreground hidden sm:table-cell"
                         title={e.department ? undefined : "No department"}
                       >
                         {e.department || "—"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <ProductivityCell value={e.productivityScore} status={scoreStatus} />
                       </TableCell>
                       {canManage && (
