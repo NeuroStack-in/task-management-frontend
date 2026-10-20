@@ -67,4 +67,17 @@ describe("agent versions", () => {
     const latest = latestVersions([dev("a", "0.1.31")], "0.1.30");
     expect(isBehind(dev("a", "0.1.31"), latest)).toBe(false);
   });
+
+  it("compares managed-service devices with the service's own release once it is published", () => {
+    const devices = [
+      dev("s1", "0.2.0", { variant: "service" }),
+      dev("s2", "0.2.0", { variant: "service" }),
+    ];
+    const unpublished = latestVersions(devices, "0.1.30", null);
+    expect(unpublished).toMatchObject({ service: "0.2.0", serviceSource: "fleet" });
+    expect(devices.some((d) => isBehind(d, unpublished))).toBe(false);
+    const published = latestVersions(devices, "0.1.30", "0.2.1");
+    expect(published).toMatchObject({ service: "0.2.1", serviceSource: "release" });
+    expect(devices.every((d) => isBehind(d, published))).toBe(true);
+  });
 });

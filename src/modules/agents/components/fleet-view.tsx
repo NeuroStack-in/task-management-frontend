@@ -20,7 +20,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Loader } from "@/components/shared/loader";
 import { useDirectory } from "@/hooks/use-directory";
 import { useTrackingMode } from "@/hooks/use-features";
-import { useAgentRelease } from "@/hooks/use-agent-release";
+import { useAgentRelease, useManagedAgentRelease } from "@/hooks/use-agent-release";
 import { usePermissions } from "@/hooks/use-permissions";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -333,9 +333,15 @@ export function FleetView() {
   const devices = useMemo(() => fleet?.devices ?? [], [fleet]);
   const live = useMemo(() => devices.filter((d) => isLiveDevice(d.state)), [devices]);
   const retiredCount = devices.length - live.length;
-  // Per-variant: the .exe and .msi are separate release streams (§8 Ph1). The app is compared with
-  // its published release; the service with the newest in the fleet (see `lib/agent-version`).
-  const latest: LatestVersions = useMemo(() => latestVersions(devices, release), [devices, release]);
+  // Per-variant: the .exe and .msi are separate release streams (§8 Ph1), each compared with its own
+  // published release — the service's manifest is asked for only when there are service devices.
+  const { version: serviceRelease } = useManagedAgentRelease(
+    devices.some((d) => d.variant === "service"),
+  );
+  const latest: LatestVersions = useMemo(
+    () => latestVersions(devices, release, serviceRelease),
+    [devices, release, serviceRelease],
+  );
   const behindOf = (d: ApiDevice) => (isBehind(d, latest) ? targetFor(d, latest) : null);
   const outdated = live.filter((d) => isBehind(d, latest)).length;
   // Counted over live devices only — a retired device is neither online nor waiting to come back.
@@ -402,7 +408,11 @@ export function FleetView() {
               ? `app: v${latest.app.replace(/^v/i, "")}, the current release`
               : "app: newest in your fleet"
             : "",
-          hasService && latest.service ? "service: newest in your fleet" : "",
+          hasService && latest.service
+            ? latest.serviceSource === "release"
+              ? `service: v${latest.service.replace(/^v/i, "")}, the current release`
+              : "service: newest in your fleet"
+            : "",
         ]
           .filter(Boolean)
           .join(" · ") || "no versions reported";

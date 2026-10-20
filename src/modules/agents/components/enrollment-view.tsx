@@ -65,6 +65,7 @@ import {
   type ApiDevice,
 } from "../services/fleet.service";
 import { MANAGED_AGENT_MSI_URL } from "@/lib/agent-release";
+import { useManagedAgentRelease } from "@/hooks/use-agent-release";
 import { effectiveUserId } from "../lib/presence";
 import { isLiveDevice } from "../lib/device-state";
 import { EmployeePicker } from "./employee-picker";
@@ -141,6 +142,8 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 export function EnrollmentView() {
   const { can } = usePermissions();
   const mode = useTrackingMode();
+  /** The managed installer's published release — or that none is published yet. */
+  const managedRelease = useManagedAgentRelease();
   /**
    * The mode reads `project` until the org's entitlements arrive, so deciding on it earlier told a
    * machine-mode admin who deep-linked here that enrolment "isn't available in this mode" (WP-467).
@@ -406,29 +409,45 @@ export function EnrollmentView() {
 
       {/* Said before a code is minted, so a technician has the file before copying a command for
           it. Each signed release is published to the public download bucket (QA audit 2026-10-08,
-          WP-250); support stays the fallback if the download fails. */}
+          WP-250); support stays the fallback if the download fails. Before the first release is
+          published the link led to the bucket's "Access Denied" page — it says so instead. */}
       <p className="bg-muted/30 text-muted-foreground flex items-start gap-2 rounded-lg border p-3 text-sm">
         <Info className="mt-0.5 size-4 shrink-0" />
-        <span>
-          You&apos;ll need the WorkPulse agent installer.{" "}
-          <a
-            href={MANAGED_AGENT_MSI_URL}
-            className="text-foreground font-medium underline-offset-2 hover:underline"
-            download
-          >
-            Download WorkPulse.msi
-          </a>{" "}
-          — it&apos;s signed, and installed agents keep themselves up to date when
-          automatic updates are on. If the download doesn&apos;t work, contact WorkPulse
-          support through{" "}
-          <Link
-            href="/help"
-            className="text-foreground font-medium underline-offset-2 hover:underline"
-          >
-            Help → Submit a ticket
-          </Link>
-          .
-        </span>
+        {managedRelease.missing ? (
+          <span>
+            The WorkPulse agent installer (WorkPulse.msi) hasn&apos;t been published for download
+            yet. Ask WorkPulse support for it through{" "}
+            <Link
+              href="/help"
+              className="text-foreground font-medium underline-offset-2 hover:underline"
+            >
+              Help → Submit a ticket
+            </Link>
+            ; the enrolment code you create here works with it.
+          </span>
+        ) : (
+          <span>
+            You&apos;ll need the WorkPulse agent installer.{" "}
+            <a
+              href={MANAGED_AGENT_MSI_URL}
+              className="text-foreground font-medium underline-offset-2 hover:underline"
+              download
+            >
+              Download WorkPulse.msi
+              {managedRelease.version ? ` (v${managedRelease.version.replace(/^v/i, "")})` : ""}
+            </a>{" "}
+            — it&apos;s signed, and installed agents keep themselves up to date when
+            automatic updates are on. If the download doesn&apos;t work, contact WorkPulse
+            support through{" "}
+            <Link
+              href="/help"
+              className="text-foreground font-medium underline-offset-2 hover:underline"
+            >
+              Help → Submit a ticket
+            </Link>
+            .
+          </span>
+        )}
       </p>
 
       <Card>

@@ -6,9 +6,10 @@
  * had actually shipped. The interactive app now compares against the **published release** (the
  * manifest the Download page and the agent's own updater read, `useAgentRelease`).
  *
- * The managed service is a separate release stream whose manifest isn't publicly readable yet, so
- * for it — and for the app while the manifest hasn't answered — the newest version in the fleet is
- * still the reference, and the caller says so.
+ * The managed service is a separate release stream with its own manifest
+ * (`useManagedAgentRelease`), compared the same way. While a manifest hasn't answered — or, for the
+ * service, before its first release is published — the newest version in the fleet is the
+ * reference, and the caller says so.
  *
  * Retired devices (released, revoked, deactivated) never update and are left out of every count.
  */
@@ -41,17 +42,24 @@ export interface LatestVersions {
   app: string | null;
   /** `release` when it is the published release; `fleet` when it fell back to the newest in use. */
   appSource: "release" | "fleet";
-  /** What a managed-service device is compared against — always the newest in the fleet. */
+  /** What a managed-service device is compared against. */
   service: string | null;
+  /** As `appSource`, for the service's own release stream. */
+  serviceSource: "release" | "fleet";
 }
 
-export function latestVersions(devices: ApiDevice[], release: string | null): LatestVersions {
+export function latestVersions(
+  devices: ApiDevice[],
+  release: string | null,
+  serviceRelease: string | null = null,
+): LatestVersions {
   const live = devices.filter((d) => isLiveDevice(d.state));
   const isService = (d: ApiDevice) => d.variant === "service";
   return {
     app: release ?? newest(live.filter((d) => !isService(d))),
     appSource: release ? "release" : "fleet",
-    service: newest(live.filter(isService)),
+    service: serviceRelease ?? newest(live.filter(isService)),
+    serviceSource: serviceRelease ? "release" : "fleet",
   };
 }
 

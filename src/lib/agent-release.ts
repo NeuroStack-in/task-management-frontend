@@ -54,6 +54,14 @@ const MANAGED_DOWNLOADS_BASE =
 export const MANAGED_AGENT_MSI_URL = `${MANAGED_DOWNLOADS_BASE}/WorkPulse.msi`;
 
 /**
+ * The managed service's release manifest — `{ version, platforms: {…} }`, the file its own updater
+ * polls, written **last** by monitoring-agent's release workflow (after the MSI it points at). Until
+ * that workflow has published a release the file doesn't exist, and the bucket answers **403** (it
+ * doesn't allow listing, so a missing key reads as forbidden, not 404) — see `useManagedAgentRelease`.
+ */
+export const MANAGED_AGENT_MANIFEST_URL = `${MANAGED_DOWNLOADS_BASE}/latest.json`;
+
+/**
  * The release manifest the desktop agent's self-updater reads — `{ version, platforms: {…} }`.
  *
  * The navbar and the Download page read it too (through `useAgentRelease`), so the version they
