@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, CheckCheck } from "lucide-react";
+import { ArrowRight, Bell, CheckCheck } from "lucide-react";
 import { useNotificationStore } from "@/stores/notification.store";
 import { useUnsavedStore } from "@/stores/unsaved.store";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { timeAgo } from "@/lib/format";
 import { useNotifications } from "@/modules/notifications/use-notifications";
+import { usePermissions } from "@/hooks/use-permissions";
 import { cn } from "@/lib/utils";
 
 export function NotificationsMenu() {
@@ -27,7 +28,18 @@ export function NotificationsMenu() {
   const router = useRouter();
   // Controlled, so following an item can close the menu behind it.
   const [open, setOpen] = useState(false);
+  // The full page is gated on `notifications:view` (its nav entry); offer the link only to whoever
+  // can open it.
+  const canOpenAll = usePermissions().can("notifications:view");
+  // Capped, so a busy inbox reads "99+" instead of a number that spills out of the dot (SHELL-12).
+  const badge = unread > 99 ? "99+" : String(unread);
 
+  /** Close the menu and navigate. Unsaved settings edits ask first; the settings layout navigates
+   *  once confirmed (WP-347). */
+  const go = (href: string) => {
+    setOpen(false);
+    if (useUnsavedStore.getState().requestLeave(href)) router.push(href);
+  };
   /**
    * An item marks itself read and, when it has somewhere to go, goes there. It only ever marked read
    * — `href` was never used and the menu stayed open, so "Support replied" cleared a dot and nothing
@@ -35,10 +47,7 @@ export function NotificationsMenu() {
    */
   const openItem = (id: string, href?: string) => {
     markRead(id);
-    if (!href) return;
-    setOpen(false);
-    // Unsaved settings edits ask first; the settings layout navigates once confirmed (WP-347).
-    if (useUnsavedStore.getState().requestLeave(href)) router.push(href);
+    if (href) go(href);
   };
 
   return (
@@ -57,14 +66,17 @@ export function NotificationsMenu() {
             variant="ghost"
             size="icon"
             className="relative"
-            aria-label="Notifications"
+            aria-label={unread > 0 ? `Notifications, ${badge} unread` : "Notifications"}
           />
         }
       >
         <Bell className="size-5" />
         {unread > 0 ? (
-          <Badge className="absolute -top-0.5 -right-0.5 size-4 justify-center rounded-full p-0 text-[10px]">
-            {unread}
+          <Badge
+            aria-hidden
+            className="absolute -top-0.5 -right-0.5 h-4 min-w-4 justify-center rounded-full px-1 py-0 text-[10px] tabular-nums"
+          >
+            {badge}
           </Badge>
         ) : null}
       </DropdownMenuTrigger>
@@ -128,6 +140,18 @@ export function NotificationsMenu() {
             </div>
           )}
         </ScrollArea>
+        {/* The whole feed, with filters — the bell had no way there (UX audit 2026-10-16,
+            SHELL-12), and the sidebar no longer lists it (the bell is the way in). */}
+        {canOpenAll ? (
+          <div className="border-t p-1">
+            <DropdownMenuItem
+              className="justify-center gap-1.5 py-2 text-sm font-medium"
+              onClick={() => go("/notifications")}
+            >
+              View all notifications <ArrowRight className="size-3.5" />
+            </DropdownMenuItem>
+          </div>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

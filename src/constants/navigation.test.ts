@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { ALL_NAV_ITEMS, navItemForPath } from "./navigation";
+import { ALL_NAV_ITEMS, NAV_GROUPS, navItemForPath } from "./navigation";
+import { SYSTEM_ROLES } from "./roles";
+import { canAccessPath, getAccessibleNav } from "@/lib/rbac";
 
 /**
  * `navItemForPath` is what tells the assistant which page the user is on. Getting it wrong is not a
@@ -66,5 +68,58 @@ describe("navItemForPath", () => {
     for (const href of ["/dashboard", "/employees", "/attendance"]) {
       expect(ALL_NAV_ITEMS.some((i) => i.href === href)).toBe(true);
     }
+  });
+});
+
+/**
+ * SHELL-04 regrouped the sidebar so every group label is true for every role that sees it. Only the
+ * grouping moved: this pins each entry's gate, so a later regroup can't quietly change who may open
+ * a page (route gating reads these same entries — `canAccessPath`).
+ */
+describe("sidebar groups (UX audit SHELL-04)", () => {
+  const gates = Object.fromEntries(
+    NAV_GROUPS.flatMap((g) => g.items).map((i) => [
+      i.href,
+      i.anyPermissions ? `any:${i.anyPermissions.join(",")}` : String(i.permission),
+    ]),
+  );
+
+  it("keeps every entry's gate exactly as it was", () => {
+    expect(gates).toEqual({
+      "/dashboard": "dashboard:view",
+      "/time-tracking": "time-tracking:view",
+      "/projects": "projects:view",
+      "/attendance": "attendance:view",
+      "/leave-requests": "any:leave:view,leave:manage",
+      "/employees": "employees:view",
+      "/approvals": "approvals:view",
+      "/payroll": "payroll:view",
+      "/insights": "any:activity:view,screenshots:view,ai:view",
+      "/settings": "null",
+      "/help": "help:view",
+      "/notifications": "notifications:view",
+    });
+  });
+
+  it("gives an Employee no oversight heading and no one-item group", () => {
+    const employee = SYSTEM_ROLES.find((r) => r.id === "role-employee")!;
+    const groups = getAccessibleNav(employee).map((g) => ({
+      label: g.label,
+      footer: g.placement === "footer",
+      sidebar: g.items.filter((i) => i.inSidebar !== false).map((i) => i.href),
+    }));
+    expect(groups).toEqual([
+      { label: "Work", footer: false, sidebar: ["/dashboard", "/time-tracking", "/projects"] },
+      { label: "Attendance & leave", footer: false, sidebar: ["/attendance", "/leave-requests"] },
+      { label: "General", footer: true, sidebar: ["/settings", "/help"] },
+    ]);
+  });
+
+  it("still gates /notifications though the sidebar no longer lists it", () => {
+    const noBell = { ...SYSTEM_ROLES.find((r) => r.id === "role-employee")!, permissions: [] };
+    expect(canAccessPath(noBell, "/notifications")).toBe(false);
+    expect(canAccessPath(SYSTEM_ROLES.find((r) => r.id === "role-employee")!, "/notifications")).toBe(
+      true,
+    );
   });
 });

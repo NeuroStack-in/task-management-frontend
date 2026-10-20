@@ -47,16 +47,29 @@ const optionId = (i: number) => `sidebar-search-option-${i}`;
  */
 let focusHandled = 0;
 
-/** Does every typed word start some word of `label`? (The server's match is a prefix match.) */
+/**
+ * Could a previous answer's hit still be right for what's typed now? People are matched on a name
+ * prefix and projects on a name *substring* server-side, so "contains every typed word" is the loose
+ * test that never drops a hit the server would return — the server's answer replaces it anyway.
+ */
 function matchesWords(label: string, q: string): boolean {
-  const words = label.toLowerCase().split(/\s+/);
-  return q.split(/\s+/).every((t) => words.some((w) => w.startsWith(t)));
+  const l = label.toLowerCase();
+  return q.split(/\s+/).every((t) => l.includes(t));
+}
+
+/** True when focus is somewhere typing happens — a bare "/" there is a character, not a shortcut. */
+export function isTypingTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
 /**
  * Inline global search for the sidebar. Type to get live suggestions (people,
  * projects, pages) in a dropdown right under the field — no modal. Keyboard:
- * ↑/↓ to move, ↵ to open, esc to clear.
+ * ↑/↓ to move, ↵ to open, esc to clear. ⌘K / Ctrl+K or "/" anywhere focuses it, and on a phone
+ * the top bar's search button opens the menu straight onto it (`top-navbar.tsx`, UX audit SHELL-11).
  */
 export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
@@ -75,7 +88,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  // People + projects come from the real backend (`GET /v1/search`, prefix-scoped, perm-gated
+  // People + projects come from the real backend (`GET /v1/search`, name-matched, perm-gated
   // server-side). Pages stay client-side (they're the static nav tree). Debounced so a type-ahead
   // doesn't fire a request per keystroke. Kept **with the query it answered**: the previous query's
   // people used to sit under a new query until its response arrived, and Enter opened one of them —
@@ -90,7 +103,27 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
 
   // Only the server can return people/projects, so skip the round-trip entirely for callers who
   // can see neither — they still get page results.
+  const canPeople = can("employees:view") && !hideHref("/employees");
+  const canProjects = can("projects:view") && !hideHref("/projects");
   const canSearchRemote = can("employees:view") || can("projects:view");
+  // Says what this box can actually find, for this caller — "Search…" said nothing (SHELL-11).
+  // Short enough to fit the 240 px rail (the magnifier already says "search"); the full sentence is
+  // the accessible name.
+  const finds =
+    canPeople && canProjects
+      ? ["People, projects, pages", "people, projects and pages"]
+      : canPeople
+        ? ["People and pages", "people and pages"]
+        : canProjects
+          ? ["Projects and pages", "projects and pages"]
+          : ["Search pages", "pages"];
+
+  // The shortcut, in this platform's notation, for the field's tooltip. Resolved after mount so the
+  // server render and the first client render agree.
+  const [shortcut, setShortcut] = useState("Ctrl+K");
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) setShortcut("⌘K");
+  }, []);
 
   useEffect(() => {
     const q = query.trim();
@@ -136,7 +169,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
     if (!q) return [];
     const out: Result[] = [];
 
-    // People + projects are already prefix-matched and permission-scoped by the server; render them
+    // People + projects are already matched and permission-scoped by the server; render them
     // straight through (the server's shape is `{ id, label }` only — no title/department/avatar).
     // Until the answer for *this* query arrives, only the previous answer's hits that still match
     // what's typed are shown — never one that doesn't.
@@ -271,6 +304,22 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   const showPanel = open && query.trim().length > 0;
+  /**
+   * The server's answer for exactly what's typed hasn't arrived. "No results" used to flash for the
+   * debounce + round trip on every keystroke, then flip to a list (SHELL-11) — so until it lands an
+   * empty list reads "Searching…", and a list of page hits says more may follow.
+   */
+  const trimmed = query.trim();
+  const searching =
+    canSearchRemote && trimmed.length > 0 && remote.q.toLowerCase() !== trimmed.toLowerCase();
+  const remoteNoun = canPeople && canProjects ? "people and projects" : canPeople ? "people" : "projects";
+  const status = !showPanel
+    ? ""
+    : results.length === 0
+      ? searching
+        ? "Searching…"
+        : `No results for “${trimmed}”.`
+      : `${results.length} ${results.length === 1 ? "result" : "results"}${searching ? `, still searching ${remoteNoun}` : ""}.`;
 
   return (
     <div ref={wrapRef} className="relative">
@@ -287,8 +336,11 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
           }}
           onFocus={() => query.trim() && setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search…"
-          aria-label="Search"
+          placeholder={finds[0]}
+          aria-label={`Search ${finds[1]}`}
+          title={`Search ${finds[1]} (${shortcut} or /)`}
+          aria-keyshortcuts="Control+K Meta+K /"
+          data-search-input=""
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={showPanel}
@@ -313,6 +365,11 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
         ) : null}
       </div>
 
+      {/* Announces the state the list can't: searching, how many, or none. */}
+      <p role="status" className="sr-only">
+        {status}
+      </p>
+
       {showPanel ? (
         <div
           ref={listRef}
@@ -323,7 +380,7 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
         >
           {results.length === 0 ? (
             <p role="presentation" className="px-3 py-6 text-center text-sm text-muted-foreground">
-              No results for “{query.trim()}”.
+              {searching ? "Searching…" : `No results for “${trimmed}”.`}
             </p>
           ) : (
             results.map((r, i) => {
@@ -385,6 +442,11 @@ export function SidebarSearch({ onNavigate }: { onNavigate?: () => void }) {
               );
             })
           )}
+          {results.length > 0 && searching ? (
+            <p role="presentation" className="text-muted-foreground px-2.5 pt-2 pb-1 text-xs">
+              Searching {remoteNoun}…
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -28,9 +28,9 @@
  *   caller's role includes it, which is exactly what the step's `permission` already declares.
  * - `dash:kpis` — the dashboard KPI strip, deliberately marked in **both** dashboard branches.
  *
- * `GreetingHeader` is the cautionary tale: it looks like the dashboard's heading but `return`s
- * `null` — it only publishes into the page-title store. Wrapping it produced a zero-height,
- * full-width spotlight: a white strip across the page pointing at nothing.
+ * `GreetingHeader` is the cautionary tale: it looks like the dashboard's heading but renders only an
+ * sr-only `<h1>` — the visible greeting is published into the page-title store. Wrapping it produced
+ * a zero-height, full-width spotlight: a white strip across the page pointing at nothing.
  *
  * ## Every step is spotlighted
  *

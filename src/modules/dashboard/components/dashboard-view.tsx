@@ -20,8 +20,8 @@ import { useNow } from "@/hooks/use-now";
 import { useDashboardStore } from "@/stores/dashboard.store";
 import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
-import { PageHeader } from "@/components/shared/page-header";
 import { GreetingHeader } from "./greeting-header";
+import { TourOfferCard } from "./tour-offer-card";
 import { DashboardControls } from "./dashboard-controls";
 import { CustomizableDashboard } from "./customizable-dashboard";
 import { PersonalDashboard } from "./personal-dashboard";
@@ -60,6 +60,7 @@ export function DashboardView() {
     return (
       <div className="space-y-4 pt-1">
         <GreetingHeader />
+        <TourOfferCard />
         <PersonalDashboard />
       </div>
     );
@@ -68,6 +69,7 @@ export function DashboardView() {
   return (
     <div className="space-y-4 pt-1">
       <GreetingHeader />
+      <TourOfferCard />
       <OrgDashboard />
     </div>
   );
@@ -239,7 +241,8 @@ function OrgDashboard() {
   if (error && !data) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Dashboard" description="Your organization at a glance." />
+        {/* No PageHeader here: `GreetingHeader` above already gives the page its one <h1> and its
+            navbar title, and a second would make two (SHELL-07). */}
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-16 text-center">
           <p className="text-muted-foreground text-sm">{error}</p>
           <Button variant="outline" size="sm" onClick={reload}>
@@ -378,19 +381,12 @@ function OrgDashboard() {
           featured
         />
         )}
+        {/* **Stable slots** (UX audit 2026-10-16, SHELL-14): Productivity, then Hours Tracked, in
+            the same two places for every range — Hours used to jump from the third slot to the
+            second when the range changed, so the eye lost it. Only the last two slots change, from
+            today's live counts (Working now, Screenshots) to the period's (Attendance, New hires). */}
         {range === "today" ? (
           <>
-            {/* One "Working now" card folds in the old Working-now / Not-working / Running-timers
-                trio — they were the same running-timer fact (working = running-timers) plus its
-                complement. Value is working / team; the hint carries the idle count. Links straight
-                to the attendance-log roster where you see *who*. */}
-            <StatCard
-              label="Working now"
-              value={`${kpis.active.value} / ${kpis.active.value + kpis.inactive.value}`}
-              icon={Users}
-              hint={`${kpis.inactive.value} not tracking · today`}
-              href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
-            />
             {/* Two genuinely distinct dimensions the trio never showed: total effort (active hours)
                 and monitoring volume (screenshots) — both real, today-scoped, and drilling to their
                 canonical pages. */}
@@ -403,6 +399,17 @@ function OrgDashboard() {
               icon={Clock}
               hint="logged today"
               href="/time-tracking"
+            />
+            {/* One "Working now" card folds in the old Working-now / Not-working / Running-timers
+                trio — they were the same running-timer fact (working = running-timers) plus its
+                complement. Value is working / team; the hint carries the idle count. Links straight
+                to the attendance-log roster where you see *who*. */}
+            <StatCard
+              label="Working now"
+              value={`${kpis.active.value} / ${kpis.active.value + kpis.inactive.value}`}
+              icon={Users}
+              hint={`${kpis.inactive.value} not tracking · today`}
+              href={`/attendance#${ATTENDANCE_LOG_ANCHOR}`}
             />
             {!isFeatureAllowed("monitoring.screenshots") ? (
               <UpgradeStatCard

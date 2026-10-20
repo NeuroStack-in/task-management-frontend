@@ -9,7 +9,7 @@ import {
   usePlatformAdmin,
   hasNoCustomerPermissions,
 } from "@/modules/ops/use-platform-admin";
-import type { NavGroup } from "@/constants/navigation";
+import type { NavGroup, NavItem } from "@/constants/navigation";
 import { useIsFeatureOffForOthers } from "@/hooks/use-features";
 import { featureForHref } from "@/constants/features";
 import { useOrgName } from "@/hooks/use-org";
@@ -65,11 +65,23 @@ export function SidebarNav({
   // an owner/admin who is also an operator keeps their full nav plus the ops group.
   const opsOnly =
     isPlatformAdmin && !!role && hasNoCustomerPermissions(role.permissions);
-  const nav = useMemo(
+  const allGroups = useMemo(
     () =>
       opsOnly ? [OPS_GROUP] : isPlatformAdmin ? [...baseNav, OPS_GROUP] : baseNav,
     [baseNav, isPlatformAdmin, opsOnly],
   );
+  // The rail's own cut of the tree: entries flagged `inSidebar: false` stay out (they are still in
+  // the tree for route gating and search), and `placement: "footer"` groups render at the foot of
+  // the panel instead of as a headed section (UX audit 2026-10-16, SHELL-04).
+  const { nav, footerItems } = useMemo(() => {
+    const groups = allGroups
+      .map((g) => ({ ...g, items: g.items.filter((it) => it.inSidebar !== false) }))
+      .filter((g) => g.items.length > 0);
+    return {
+      nav: groups.filter((g) => g.placement !== "footer"),
+      footerItems: groups.filter((g) => g.placement === "footer").flatMap((g) => g.items),
+    };
+  }, [allGroups]);
   const orgName = useOrgName();
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
@@ -78,8 +90,20 @@ export function SidebarNav({
   const logout = useAuthStore((s) => s.logout);
 
   // Total stagger beats consumed by the nav: one per group heading, one per link.
-  // The account rows at the foot continue the sequence from here.
+  // The footer rows continue the sequence from here.
   const navSteps = nav.reduce((n, g) => n + g.items.length + 1, 0);
+
+  /**
+   * The row sweep plays **only when the person expands the rail themselves** (UX audit 2026-10-16,
+   * SHELL-03 / EMP-08). It ran on every mount: ≈ 1.1 s of rows fading in one after another on each
+   * page load, so the sidebar sat blank beside an already-loaded page, and on a phone it replayed
+   * every time the menu opened. On load, in the phone sheet, and on a programmatic expand (leaving
+   * Settings) the rows now render at full opacity. Set by the rail's own Expand button, cleared on
+   * collapse. Reduced motion is still honoured by the CSS (`.wp-rail-item` drops to a plain fade).
+   */
+  const [sweep, setSweep] = useState(false);
+  const rail = (i: number): { className?: string; style?: React.CSSProperties } =>
+    sweep ? { className: "wp-rail-item", style: { "--wp-i": i } as React.CSSProperties } : {};
 
   // Collapse runs in two beats — contents out, then the panel narrows — so the
   // labels never reflow against a shrinking edge. `exiting` holds the expanded
@@ -101,6 +125,7 @@ export function SidebarNav({
 
   const startCollapse = () => {
     if (exiting) return;
+    setSweep(false);
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -133,6 +158,75 @@ export function SidebarNav({
     requestSearchFocus();
   };
 
+  /** One icon of the collapsed rail, with its label as tooltip and accessible name. */
+  const railLink = (item: NavItem) => {
+    const active = isActive(pathname, item.href);
+    const Icon = item.icon;
+    return (
+      <Tooltip key={item.href}>
+        <TooltipTrigger
+          render={
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
+              aria-label={item.label}
+              data-tour={`nav:${item.href}`}
+            />
+          }
+        >
+          <span
+            className={cn(
+              "flex size-10 items-center justify-center rounded-md transition-colors",
+              active
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            )}
+          >
+            <Icon className="size-[18px]" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="right">{item.label}</TooltipContent>
+      </Tooltip>
+    );
+  };
+
+  /** One row of the expanded panel. `i` is its beat in the expand sweep. */
+  const panelLink = (item: NavItem, i: number) => {
+    const active = isActive(pathname, item.href);
+    const Icon = item.icon;
+    const r = rail(i);
+    return (
+      <li key={item.href} className={r.className} style={r.style}>
+        <Link
+          href={item.href}
+          onClick={onNavigate}
+          aria-current={active ? "page" : undefined}
+          data-tour={`nav:${item.href}`}
+          className={cn(
+            "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+            active
+              ? "border-primary bg-sidebar-accent text-sidebar-accent-foreground border-l-2 font-medium"
+              : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          )}
+        >
+          <Icon className="size-4 shrink-0" />
+          <span className="truncate">{item.label}</span>
+          {/* Owner-only: this feature is switched off org-wide and the Owner is the sole exemption.
+              Without a marker they would have no way to tell which surfaces their team can see. */}
+          {offForOthers(featureForHref(item.href)) ? (
+            <span
+              title="Switched off for everyone else"
+              className="bg-warning/15 text-warning ml-auto shrink-0 rounded-full px-1.5 py-px text-[0.6rem] font-semibold"
+            >
+              OFF
+            </span>
+          ) : null}
+        </Link>
+      </li>
+    );
+  };
+
   if (collapsed) {
     return (
       // The panel is `w-full` so it tracks the wrapper's width tween rather than
@@ -151,7 +245,10 @@ export function SidebarNav({
               render={
                 <button
                   type="button"
-                  onClick={toggleSidebar}
+                  onClick={() => {
+                    setSweep(true);
+                    toggleSidebar();
+                  }}
                   aria-label="Expand sidebar"
                 />
               }
@@ -186,43 +283,16 @@ export function SidebarNav({
               {nav.map((group, gi) => (
                 <div key={group.label} className="flex flex-col items-center gap-1">
                   {gi > 0 ? <span className="bg-sidebar-border my-1 h-px w-7" /> : null}
-                  {group.items.map((item) => {
-                    const active = isActive(pathname, item.href);
-                    const Icon = item.icon;
-                    return (
-                      <Tooltip key={item.href}>
-                        <TooltipTrigger
-                          render={
-                            <Link
-                              href={item.href}
-                              onClick={onNavigate}
-                              aria-current={active ? "page" : undefined}
-                              aria-label={item.label}
-                              data-tour={`nav:${item.href}`}
-                            />
-                          }
-                        >
-                          <span
-                            className={cn(
-                              "flex size-10 items-center justify-center rounded-md transition-colors",
-                              active
-                                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                                : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                            )}
-                          >
-                            <Icon className="size-[18px]" />
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">{item.label}</TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
+                  {group.items.map(railLink)}
                 </div>
               ))}
             </nav>
           </ScrollArea>
 
           <div className="flex flex-col items-center gap-1">
+            {/* Settings + Help, pinned above the account controls as in the expanded panel. */}
+            {footerItems.map(railLink)}
+            {footerItems.length > 0 ? <span className="bg-sidebar-border my-1 h-px w-7" /> : null}
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -318,57 +388,22 @@ export function SidebarNav({
               const groupStart = nav
                 .slice(0, groupIndex)
                 .reduce((n, g) => n + g.items.length + 1, 0);
+              const heading = rail(groupStart);
               return (
                 <div key={group.label}>
                   <p
-                    className="wp-rail-item text-muted-foreground px-3 pb-1.5 text-[11px] font-semibold tracking-[0.1em] uppercase"
-                    style={{ "--wp-i": groupStart } as React.CSSProperties}
+                    className={cn(
+                      heading.className,
+                      "text-muted-foreground px-3 pb-1.5 text-[11px] font-semibold tracking-[0.1em] uppercase",
+                    )}
+                    style={heading.style}
                   >
                     {group.label}
                   </p>
                   <ul className="flex flex-col gap-0.5">
-                    {group.items.map((item, itemIndex) => {
-                      const active = isActive(pathname, item.href);
-                      const Icon = item.icon;
-                      return (
-                        <li
-                          key={item.href}
-                          className="wp-rail-item"
-                          style={
-                            {
-                              "--wp-i": groupStart + itemIndex + 1,
-                            } as React.CSSProperties
-                          }
-                        >
-                          <Link
-                            href={item.href}
-                            onClick={onNavigate}
-                            aria-current={active ? "page" : undefined}
-                            data-tour={`nav:${item.href}`}
-                            className={cn(
-                              "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                              active
-                                ? "border-primary bg-sidebar-accent text-sidebar-accent-foreground border-l-2 font-medium"
-                                : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                            )}
-                          >
-                            <Icon className="size-4 shrink-0" />
-                            <span className="truncate">{item.label}</span>
-                            {/* Owner-only: this feature is switched off org-wide and the Owner is
-                                the sole exemption. Without a marker they would have no way to tell
-                                which surfaces their team can actually see. */}
-                            {offForOthers(featureForHref(item.href)) ? (
-                              <span
-                                title="Switched off for everyone else"
-                                className="bg-warning/15 text-warning ml-auto shrink-0 rounded-full px-1.5 py-px text-[0.6rem] font-semibold"
-                              >
-                                OFF
-                              </span>
-                            ) : null}
-                          </Link>
-                        </li>
-                      );
-                    })}
+                    {group.items.map((item, itemIndex) =>
+                      panelLink(item, groupStart + itemIndex + 1),
+                    )}
                   </ul>
                 </div>
               );
@@ -376,17 +411,24 @@ export function SidebarNav({
           </nav>
         </ScrollArea>
 
-        {/* Account — profile + log out, pinned to the foot of the sidebar. These
-          pick up where the nav left off so the sweep runs the full height. */}
+        {/* Settings + Help, then the account — profile + log out — pinned to the foot of the
+            sidebar. Always visible, whatever the nav's scroll; they pick up where the nav left off
+            so an expand sweep runs the full height. */}
         <div className="border-sidebar-border space-y-0.5 border-t p-3">
+          {footerItems.length > 0 ? (
+            <ul className="border-sidebar-border mb-1.5 flex flex-col gap-0.5 border-b pb-1.5">
+              {footerItems.map((item, i) => panelLink(item, navSteps + i))}
+            </ul>
+          ) : null}
           {user ? (
             <Link
               href="/settings/profile"
               onClick={onNavigate}
               aria-current={isActive(pathname, "/settings/profile") ? "page" : undefined}
-              style={{ "--wp-i": navSteps } as React.CSSProperties}
+              style={rail(navSteps + footerItems.length).style}
               className={cn(
-                "wp-rail-item flex items-center gap-3 rounded-md px-2 py-2 transition-colors",
+                rail(navSteps + footerItems.length).className,
+                "flex items-center gap-3 rounded-md px-2 py-2 transition-colors",
                 isActive(pathname, "/settings/profile")
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -407,8 +449,11 @@ export function SidebarNav({
           <button
             type="button"
             onClick={handleLogout}
-            style={{ "--wp-i": navSteps + 1 } as React.CSSProperties}
-            className="wp-rail-item text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors"
+            style={rail(navSteps + footerItems.length + 1).style}
+            className={cn(
+              rail(navSteps + footerItems.length + 1).className,
+              "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+            )}
           >
             <LogOut className="size-4 shrink-0" />
             <span className="truncate">Log out</span>

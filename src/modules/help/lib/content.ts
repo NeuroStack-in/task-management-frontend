@@ -181,7 +181,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: "security",
     excerpt: "Add an authenticator-app code (MFA) to your sign-in.",
     readMins: 3,
-    body: "Multi-factor authentication adds a code from an authenticator app — Google Authenticator, Authy, 1Password and the like — to your sign-in. Go to Settings → Security and, on the Multi-factor authentication card, choose Enable, scan the QR code with your app and enter the code it shows. There are no recovery codes: if you lose the device, an owner or admin can reset your authenticator from their Security page, and you set it up again at your next sign-in. Multi-factor authentication can't yet be made mandatory for the whole organization.",
+    body: "Multi-factor authentication adds a code from an authenticator app — Google Authenticator, Authy, 1Password and the like — to your sign-in. Go to Settings → Login & security and, on the Multi-factor authentication card, choose Enable, scan the QR code with your app and enter the code it shows. There are no recovery codes: if you lose the device, an owner or admin can reset your authenticator from Settings → Security, and you set it up again at your next sign-in. Multi-factor authentication can't yet be made mandatory for the whole organization.",
   },
   {
     slug: "slack-integration",
@@ -243,11 +243,15 @@ export const FAQS: Faq[] = [
 
 export interface VideoTutorial {
   title: string;
-  duration: string;
+  /**
+   * The file's real running time — **only on a filmed video**. Unfilmed entries carried invented
+   * lengths ("6:12") on "Coming soon" tiles (UX audit 2026-10-16, SHELL-10).
+   */
+  duration?: string;
   category: HelpCategory;
   /**
-   * Where the video lives. **Absent = not filmed yet**, and the card says so rather than pretending
-   * — six tiles that all open nothing is worse than one that plays and five that are honest.
+   * Where the video lives. **Absent = not filmed yet**, and the Help Center does not list it — a
+   * planned title is a backlog note here, not a tile (SHELL-10).
    */
   src?: string;
   /**
@@ -296,15 +300,12 @@ export const VIDEO_TUTORIALS: VideoTutorial[] = [
     // whose screens it actually shows.
     permission: "employees:view",
   },
-  {
-    title: "Setting up your first project",
-    duration: "3:45",
-    category: "getting-started",
-  },
-  { title: "How time gets tracked", duration: "2:18", category: "time-tracking" },
-  { title: "Reading activity reports", duration: "4:30", category: "monitoring" },
-  // Not filmed yet. Titled for what exists: there are no monitoring "thresholds" and no report
-  // scheduling to film (WP-247).
-  { title: "Configuring monitoring settings", duration: "6:12", category: "monitoring" },
-  { title: "Exporting reports", duration: "3:55", category: "reports" },
+  // Not filmed yet — no `src`, so not listed, and no running time until there is a file to time.
+  // Titled for what exists: there are no monitoring "thresholds" and no report scheduling to film
+  // (WP-247).
+  { title: "Setting up your first project", category: "getting-started" },
+  { title: "How time gets tracked", category: "time-tracking" },
+  { title: "Reading activity reports", category: "monitoring" },
+  { title: "Configuring monitoring settings", category: "monitoring" },
+  { title: "Exporting reports", category: "reports" },
 ];

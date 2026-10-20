@@ -15,10 +15,12 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader } from "@/components/shared/loader";
 import { MyTasksCard } from "./my-tasks-card";
+import { DeviceStatusCard } from "./device-status-card";
 import { useMyWork } from "../use-my-work";
 import { useWeekTracked } from "../use-week-tracked";
 import { useMyAttendance, ymd, type DayRecord } from "@/modules/attendance/use-my-attendance";
-import { useIsSurfaceOn } from "@/hooks/use-features";
+import { useIsSurfaceOn, useTrackingMode } from "@/hooks/use-features";
+import type { TrackingMode } from "@/lib/tracking-mode";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -51,8 +53,21 @@ const SHORT_DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 type LiveStatus = DayRecord["status"] | "in_progress" | "tracked_today";
 type LiveRecord = Omit<DayRecord, "status"> & { status: LiveStatus };
 
+/**
+ * What "Absent" means, under the week — said where the red dot is (UX audit 2026-10-16, EMP-09).
+ * Mirrors `time-attendance::shared::attendance::resolve`: a scheduled working day with no session
+ * (project mode) / no sign-in (machine mode), no approved leave, holiday or admin override.
+ */
+const ABSENT_MEANS: Record<TrackingMode, string> = {
+  project: "Absent means a working day with no time from the desktop app and no approved leave.",
+  machine:
+    "Absent means a working day with no sign-in recorded on your work computer and no approved leave.",
+  both: "Absent means a working day WorkPulse recorded no time for you and no approved leave.",
+};
+
 export function PersonalDashboard() {
   const isSurfaceOn = useIsSurfaceOn();
+  const mode = useTrackingMode();
   // These surfaces are gated: Time Tracking (the timer tile) and Projects (task/project cards + the
   // work sections below). Hidden when the org switched the feature off, or its tracking mode hides
   // it (MANAGED-AGENT.md §8). Grid children auto-flow, so dropping cards leaves no hole.
@@ -200,6 +215,9 @@ export function PersonalDashboard() {
 
   return (
     <>
+      {/* Is my device connected? Renders nothing while that is unknown (EMP-09). */}
+      <DeviceStatusCard />
+
       {/* Personal KPI strip */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-tour="dash:kpis">
         {showTimer && (
@@ -299,6 +317,11 @@ export function PersonalDashboard() {
               })
             )}
           </div>
+          {mounted && attRowsLive.some((w) => w.record?.status === "absent") ? (
+            <p className="text-muted-foreground border-t border-border px-5 py-2.5 text-xs">
+              {ABSENT_MEANS[mode] ?? ABSENT_MEANS.project}
+            </p>
+          ) : null}
           <div className="flex items-center justify-between border-t border-border px-5 py-3 text-sm">
             <span className="text-muted-foreground">
               {/* Out of the working days actually shown, not a hard-coded 7 — the denominator has

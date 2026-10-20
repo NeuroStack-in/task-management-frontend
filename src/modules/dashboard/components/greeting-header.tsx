@@ -7,7 +7,9 @@ import { usePageTitle } from "@/stores/page-header.store";
 
 /**
  * Publishes the personalized greeting + date to the top navbar header (in place
- * of the generic "Dashboard" route label) and renders nothing in-page.
+ * of the generic "Dashboard" route label). In-page it renders only the page's sr-only `<h1>`: the
+ * navbar title is a plain span, so neither dashboard had a heading at all — a screen-reader user
+ * jumping by heading landed nowhere (UX audit 2026-10-16, SHELL-07 / XC-10).
  */
 export function GreetingHeader() {
   const user = useAuthStore((s) => s.user);
@@ -32,5 +34,9 @@ export function GreetingHeader() {
 
   usePageTitle(`Hello, ${firstName}`, today ? `${today} · ${glance}` : glance);
 
-  return null;
+  return (
+    <h1 className="sr-only">
+      {personal ? "Your dashboard" : "Organization dashboard"} — Hello, {firstName}
+    </h1>
+  );
 }

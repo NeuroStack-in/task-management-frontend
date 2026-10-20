@@ -16,13 +16,6 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Loader } from "@/components/shared/loader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
   DropdownMenu,
@@ -31,12 +24,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useNotificationStore } from "@/stores/notification.store";
+import { useUnsavedStore } from "@/stores/unsaved.store";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAssistantPageContext } from "@/stores/page-context.store";
 import { useNotifications } from "../use-notifications";
 import { NOTIFICATION_TYPE_META } from "@/modules/notifications/lib/type-meta";
 import { timeAgo } from "@/lib/format";
-import type { AppNotification, NotificationType } from "@/types";
+import type { NotificationType } from "@/types";
 import type { PermissionId } from "@/types/rbac";
 import { cn } from "@/lib/utils";
 
@@ -93,8 +87,20 @@ export function NotificationsCenter() {
   );
 
   const router = useRouter();
-  const [selected, setSelected] = useState<AppNotification | null>(null);
 
+  /**
+   * A row goes where the bell's item goes (UX audit 2026-10-16, SHELL-13). It opened a dialog that
+   * repeated the row's own title and text, with the real destination one more click away behind
+   * "View details" — while the bell, for the same notification, went straight there. Now a row with
+   * a target marks itself read and navigates; one without a target only marks itself read, because
+   * its whole message is already on the row.
+   */
+  const openItem = (id: string, href?: string) => {
+    markRead(id);
+    if (!href) return;
+    // Unsaved settings edits ask first; the settings layout navigates once confirmed (WP-347).
+    if (useUnsavedStore.getState().requestLeave(href)) router.push(href);
+  };
 
   const canType = (t: NotificationType) => {
     const perm = TYPE_PERMISSION[t];
@@ -122,8 +128,8 @@ export function NotificationsCenter() {
   });
 
   return (
-    // Bottom room for the floating assistant button (UX audit 2026-10-16, XC-03).
-    <div className="space-y-5 pb-20">
+    // (Bottom room for the floating assistant button is the shell's now — `dashboard-shell.tsx`.)
+    <div className="space-y-5">
       <PageHeader
         title="Notifications"
         description="Everything that needs your attention."
@@ -229,17 +235,15 @@ export function NotificationsCenter() {
                   const Icon = meta.icon;
                   return (
                     // A click anywhere on the row opens it, for the mouse. The row is not itself a
-                    // button any more: it held three real ones, and its Enter/Space handler swallowed
-                    // their keyboard activation — Enter on Dismiss opened the dialog instead (QA
-                    // audit 2026-10-08, WP-244). Keyboard users reach View / Mark read / Dismiss.
+                    // button: it holds real ones, and a row-level Enter/Space handler swallowed their
+                    // keyboard activation (QA audit 2026-10-08, WP-244). Keyboard users reach the
+                    // row's own "Open" link, Mark read and Dismiss.
                     <li
                       key={n.id}
-                      onClick={() => {
-                        markRead(n.id);
-                        setSelected(n);
-                      }}
+                      onClick={() => openItem(n.id, n.href)}
                       className={cn(
-                        "flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50",
+                        "flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50",
+                        (n.href || !n.read) && "cursor-pointer",
                         !n.read && "bg-feature-tint/40",
                       )}
                     >
@@ -267,18 +271,28 @@ export function NotificationsCenter() {
                           {n.message}
                         </p>
                         <div className="mt-2 flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2.5 text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              markRead(n.id);
-                              setSelected(n);
-                            }}
-                          >
-                            View
-                          </Button>
+                          {/* A real link: keyboard, middle-click and "open in new tab" all work. */}
+                          {n.href ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1 px-2.5 text-xs"
+                              nativeButton={false}
+                              render={<Link href={n.href} />}
+                              aria-label={`Open “${n.title}”`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markRead(n.id);
+                                // Same unsaved-edits guard as the row; a modified click (new tab)
+                                // is left to the browser.
+                                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                                e.preventDefault();
+                                openItem(n.id, n.href);
+                              }}
+                            >
+                              Open <ArrowUpRight className="size-3.5" />
+                            </Button>
+                          ) : null}
                           {!n.read ? (
                             <Button
                               variant="ghost"
@@ -314,64 +328,7 @@ export function NotificationsCenter() {
             </Card>
           )}
         </div>
-
-        <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-          {selected ? (
-            <NotificationDialog
-              notification={selected}
-              onView={() => {
-                if (selected.href) router.push(selected.href);
-                setSelected(null);
-              }}
-            />
-          ) : null}
-        </Dialog>
       </div>
-  );
-}
-
-function NotificationDialog({
-  notification,
-  onView,
-}: {
-  notification: AppNotification;
-  onView: () => void;
-}) {
-  const meta = NOTIFICATION_TYPE_META[notification.type];
-  const Icon = meta.icon;
-  return (
-    <DialogContent className="sm:max-w-md">
-      <DialogHeader>
-        <div className="flex items-start gap-3">
-          <span
-            className={cn(
-              "flex size-9 shrink-0 items-center justify-center rounded-full",
-              meta.className,
-            )}
-          >
-            <Icon className="size-4" />
-          </span>
-          <div className="min-w-0 space-y-0.5">
-            <DialogTitle className="text-base leading-snug">
-              {notification.title}
-            </DialogTitle>
-            <p className="text-xs text-muted-foreground">
-              {meta.label} · {timeAgo(notification.createdAt)}
-            </p>
-          </div>
-        </div>
-      </DialogHeader>
-
-      <p className="text-sm text-muted-foreground">{notification.message}</p>
-
-      <DialogFooter showCloseButton>
-        {notification.href ? (
-          <Button onClick={onView}>
-            View details <ArrowUpRight className="size-4" />
-          </Button>
-        ) : null}
-      </DialogFooter>
-    </DialogContent>
   );
 }
 
@@ -388,6 +345,7 @@ function FilterPill({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
         "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
         active

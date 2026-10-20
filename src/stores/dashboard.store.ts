@@ -77,8 +77,8 @@ export interface DashboardWidget {
 }
 
 /**
- * Default layout (left→right): AI summary, Attendance, Working now, Department comparison — then the
- * exec snapshot. The first six are single-width visible tiles; the rest ship hidden and are opt-in
+ * Default layout (left→right): AI summary, Attendance, Department comparison — then the exec
+ * snapshot. The visible ones are single-width tiles; the rest ship hidden and are opt-in
  * via Customize. The grid picks its own column count to stay gap-free, so the exact span total isn't
  * load-bearing.
  *
@@ -92,7 +92,10 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   // the starting order for a fresh/reset layout.
   { id: "attention_list.ai_summary", title: "AI summary", type: "attention_list.ai_summary", position: 0, visible: true },
   { id: "org_attendance", title: "Attendance", type: "org_attendance", position: 1, visible: true },
-  { id: "org_attendance.live_timers", title: "Working now", type: "org_attendance.live_timers", position: 2, visible: true },
+  // Ships hidden: the KPI strip's "Working now" tile already says it, and the default board showed
+  // the same fact twice (UX audit 2026-10-16, SHELL-14). One click in Customize brings back the
+  // list of *who* is working. Changes fresh and reset layouts only — a saved layout keeps its choice.
+  { id: "org_attendance.live_timers", title: "Working now", type: "org_attendance.live_timers", position: 2, visible: false },
   { id: "team_activity", title: "Department comparison", type: "team_activity", position: 3, visible: true },
   { id: "org_activity.top_performers", title: "Top performers", type: "org_activity.top_performers", position: 4, visible: true },
   { id: "attention_list.alerts", title: "Needs attention", type: "attention_list.alerts", position: 5, visible: true },

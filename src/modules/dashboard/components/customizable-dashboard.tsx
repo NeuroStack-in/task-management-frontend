@@ -21,7 +21,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  Check,
   GripVertical,
+  Move,
   SlidersHorizontal,
   RotateCcw,
   X,
@@ -39,10 +41,13 @@ import { isOwnerOf, useIsSurfaceOn } from "@/hooks/use-features";
 import { WIDGET_REGISTRY, type DashboardData } from "@/modules/dashboard/widget-registry";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -79,13 +84,19 @@ const HERO_ROW_FILL = "xl:min-h-[22rem]";
 
 function SortableWidget({
   id,
+  title,
   heroFill,
+  editing,
   onRemove,
   children,
 }: {
   id: string;
+  /** The card's own title — named in its controls' labels. */
+  title: string;
   /** First-row tile: stretch to fill the viewport down to the sidebar bottom. */
   heroFill?: boolean;
+  /** "Edit layout" is on — the touch-screen way to show the controls (see the parent). */
+  editing: boolean;
   onRemove: () => void;
   children: React.ReactNode;
 }) {
@@ -110,24 +121,32 @@ function SortableWidget({
         // hovering, which is when both are wanted. Widget headers are title-only for that reason;
         // put a widget's own actions in its footer (see the AI summary card).
         //
-        // Revealed on hover — and on keyboard focus within the tile, and always on a touch screen.
-        // Hover alone left a keyboard user tabbing onto invisible buttons and a touch user with no
-        // way to reveal them at all (QA audit 2026-10-08, WP-439).
-        <div className="absolute right-3 top-3 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/widget:opacity-100 group-focus-within/widget:opacity-100 pointer-coarse:opacity-100">
+        // Revealed on hover and on keyboard focus within the tile (QA audit 2026-10-08, WP-439).
+        // On a touch screen — no hover — they used to show on every tile, all the time, over every
+        // card's corner (UX audit 2026-10-16, SHELL-15); there they appear only in "Edit layout".
+        <div
+          className={cn(
+            "absolute right-3 top-3 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/widget:opacity-100 group-focus-within/widget:opacity-100",
+            editing ? "opacity-100" : "pointer-coarse:hidden",
+          )}
+        >
+          {/* Named per widget: a dozen buttons all called "Drag to reorder" / "Remove widget" were
+              indistinguishable in a screen reader's list of controls (SHELL-15). */}
           <button
             type="button"
-            aria-label="Drag to reorder"
             {...attributes}
             {...listeners}
-            className="flex size-7 cursor-grab items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground active:cursor-grabbing"
+            aria-label={`Move “${title}”`}
+            // `touch-none`: on a touch screen a drag on the handle moves the card, not the page.
+            className="flex size-7 cursor-grab touch-none items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground active:cursor-grabbing pointer-coarse:size-9"
           >
             <GripVertical className="size-4" />
           </button>
           <button
             type="button"
-            aria-label="Remove widget"
+            aria-label={`Remove “${title}”`}
             onClick={onRemove}
-            className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive pointer-coarse:size-9"
           >
             <X className="size-4" />
           </button>
@@ -178,6 +197,11 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
   useDashboardLayoutSync();
 
   const [activeId, setActiveId] = useState<string | null>(null);
+  /**
+   * Touch screens only: show the move/remove controls on every tile while on. Desktop reveals them
+   * on hover/focus and never needs it, so the toggle is shown to coarse pointers alone.
+   */
+  const [editing, setEditing] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -237,7 +261,9 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
       <SortableWidget
         key={w.id}
         id={w.id}
+        title={w.title}
         heroFill={heroFill}
+        editing={editing}
         onRemove={() => removeWithUndo(w)}
       >
         {def.render(data)}
@@ -254,47 +280,61 @@ export function CustomizableDashboard({ data }: { data: DashboardData }) {
         <h2 className="font-display text-lg font-semibold tracking-tight">
           Your widgets
         </h2>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                data-tour="dash:customize"
-              />
-            }
-          >
-            <SlidersHorizontal className="size-4" /> Customize
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64 p-0">
-            <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
-              Show widgets
-            </p>
-            <div className="max-h-72 overflow-y-auto px-1 pb-1">
-              {permitted.map((w) => (
-                <label
-                  key={w.id}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                >
-                  <Checkbox
-                    checked={w.visible}
-                    onCheckedChange={() => toggleWidget(w.id)}
-                  />
-                  <span className="truncate">{w.title}</span>
-                </label>
-              ))}
-            </div>
-            <DropdownMenuSeparator />
-            <button
-              type="button"
-              onClick={resetWithUndo}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+        <div className="flex items-center gap-2">
+          {/* Touch screens only (`pointer-coarse`) — see `editing`. */}
+          {visible.length > 0 ? (
+            <Button
+              variant={editing ? "default" : "outline"}
+              size="sm"
+              className="hidden gap-2 pointer-coarse:inline-flex"
+              aria-pressed={editing}
+              onClick={() => setEditing((e) => !e)}
             >
-              <RotateCcw className="size-4" /> Reset layout
-            </button>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {editing ? <Check className="size-4" /> : <Move className="size-4" />}
+              {editing ? "Done" : "Edit layout"}
+            </Button>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  data-tour="dash:customize"
+                />
+              }
+            >
+              <SlidersHorizontal className="size-4" /> Customize
+            </DropdownMenuTrigger>
+            {/* A real menu now (UX audit 2026-10-16, SHELL-16): it was `role="menu"` around plain
+                labels, checkboxes and a raw button, so arrow keys reached none of them and a screen
+                reader heard an empty menu. Each widget is a `menuitemcheckbox` that stays open on
+                toggle; Reset is a menu item (its toast offers Undo). */}
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Show widgets</DropdownMenuLabel>
+                <div className="max-h-72 overflow-y-auto">
+                  {permitted.map((w) => (
+                    <DropdownMenuCheckboxItem
+                      key={w.id}
+                      checked={w.visible}
+                      onCheckedChange={() => toggleWidget(w.id)}
+                      closeOnClick={false}
+                      className="py-1.5"
+                    >
+                      <span className="truncate">{w.title}</span>
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </div>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={resetWithUndo} className="py-1.5">
+                <RotateCcw className="size-4" /> Reset layout
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {visible.length === 0 ? (

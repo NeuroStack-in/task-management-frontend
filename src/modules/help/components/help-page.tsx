@@ -353,6 +353,9 @@ function ArticleSheet({
  * (`lib/tours.ts`) actually show — they used to promise timers, manual entries, anomaly
  * alerts, exports and idle settings that no step (or no screen) has (QA audit 2026-10-08,
  * WP-468). Edit the two together.
+ *
+ * No durations: "~3 min" was a guess nobody timed (UX audit 2026-10-16, SHELL-10). Each card counts
+ * the stops this person will actually be shown instead — a number the code knows.
  */
 const WALKTHROUGHS = [
   {
@@ -361,7 +364,6 @@ const WALKTHROUGHS = [
     title: "Getting Started",
     description:
       "A short tour of your dashboard and where your work lives in the sidebar.",
-    duration: "~3 min",
   },
   {
     id: "time-tracking",
@@ -369,7 +371,6 @@ const WALKTHROUGHS = [
     title: "Time Tracking",
     description:
       "Where your tracked time shows up, how the desktop app records it, and your attendance.",
-    duration: "~4 min",
   },
   {
     id: "insights",
@@ -377,7 +378,6 @@ const WALKTHROUGHS = [
     title: "Analytics & Reports",
     description:
       "How the productivity score moves, where the time went, the daily AI summary and screenshot review.",
-    duration: "~5 min",
   },
   {
     id: "team-management",
@@ -385,7 +385,6 @@ const WALKTHROUGHS = [
     title: "Team Management",
     description:
       "Invite people, see who holds which role, and build custom roles.",
-    duration: "~4 min",
   },
   {
     id: "monitoring-setup",
@@ -393,7 +392,6 @@ const WALKTHROUGHS = [
     title: "Monitoring Setup",
     description:
       "Screenshot cadence and retention, what counts as productive, and agent updates.",
-    duration: "~3 min",
   },
 ] as const
 
@@ -603,7 +601,11 @@ export function HelpPage() {
   const [openThreadId, setOpenThreadId] = useState<string | null>(null)
   /** Ticket currently being closed — per-id, so one row's spinner can't disable the others. */
   const [closingId, setClosingId] = useState<string | null>(null)
-  const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("videos")
+  /**
+   * Walkthroughs first: every one of them works, while the Videos tab opened on a grid of "Coming
+   * soon" tiles with made-up running times (UX audit 2026-10-16, SHELL-10).
+   */
+  const [mediaTab, setMediaTab] = useState<"videos" | "walkthroughs">("walkthroughs")
   /**
    * The video being watched, or null.
    *
@@ -778,8 +780,11 @@ export function HelpPage() {
   const browseCategories = visibleCategories.filter((c) => articleCount(c.key) > 0)
   // Gated on BOTH the category (as before) and the video's own permission — getting-started
   // ships as two cuts, and an employee has no use for a walkthrough of Payroll and Settings.
+  //
+  // Only videos that exist: an unfilmed one was shown as a disabled "Coming soon" tile with an
+  // invented duration, as if it were due at a known length (SHELL-10).
   const visibleVideos = VIDEO_TUTORIALS.filter(
-    (v) => canCategory(v.category) && (!v.permission || can(v.permission)),
+    (v) => !!v.src && canCategory(v.category) && (!v.permission || can(v.permission)),
   )
   const visibleWalkthroughs = WALKTHROUGHS.filter((t) => {
     // The gate lives with the tour data, not here. When it was duplicated in this file the two
@@ -795,6 +800,7 @@ export function HelpPage() {
     if (tour && !tour.steps.some(showableStep)) return false
     return true
   })
+  const stopsIn = (id: string) => getTour(id)?.steps.filter(showableStep).length ?? 0
   const visibleFaqs = FAQS.filter((f) => !f.permission || can(f.permission))
   const visiblePopular = POPULAR_SEARCHES.filter((p) => canCategory(p.category))
 
@@ -868,7 +874,262 @@ export function HelpPage() {
         </div>
       </section>
 
-      {/* ── Support tickets ── */}
+      {/* ── Articles ── right under the search, so what it filters is in view: they started
+          ≈ 1,280 px down, below the ticket form, and the page asked people to file a ticket before
+          it showed them a single answer (UX audit 2026-10-16, SHELL-08). The categories are a
+          filter row on the list they filter rather than a block of tiles above it. */}
+      <section className="space-y-3" aria-labelledby="help-articles-title">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2
+              id="help-articles-title"
+              className="text-sm font-semibold text-muted-foreground uppercase tracking-wide"
+            >
+              Documentation &amp; guides
+            </h2>
+            <p role="status" className="text-xs text-muted-foreground">
+              {search.trim() || selectedCategory
+                ? `${filteredArticles.length} ${filteredArticles.length === 1 ? "result" : "results"}${
+                    search.trim() ? ` for “${search.trim()}”` : ""
+                  }`
+                : `${filteredArticles.length} articles`}
+            </p>
+          </div>
+          {(search || selectedCategory) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setSearch("")
+                setSelectedCategory(null)
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+
+        <div role="group" aria-label="Filter by category" className="flex flex-wrap gap-2">
+          {browseCategories.map((cat) => {
+            const Icon = cat.icon
+            const active = selectedCategory === cat.key
+            const count = articleCount(cat.key)
+            return (
+              <button
+                key={cat.key}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setSelectedCategory(active ? null : cat.key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                  active
+                    ? "border-primary bg-primary/5 text-primary"
+                    : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Icon className="size-3.5" />
+                {cat.label}
+                <span className="tabular-nums opacity-70">{count}</span>
+              </button>
+            )
+          })}
+        </div>
+        {filteredArticles.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No articles found"
+            description="Try a different search term or browse by category."
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setSearch("")
+                  setSelectedCategory(null)
+                }}
+              >
+                Clear filters
+              </Button>
+            }
+          />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredArticles.map((article) => {
+              const categoryDef = HELP_CATEGORIES.find((c) => c.key === article.category)
+              return (
+                <button
+                  key={article.slug}
+                  onClick={() => setSelectedArticle(article)}
+                  className="group flex flex-col items-start gap-2 rounded-2xl border bg-card p-4 text-left transition-colors hover:bg-muted"
+                >
+                  <div className="flex w-full items-center justify-between gap-2">
+                    <Badge variant="secondary" className="text-xs capitalize">
+                      {categoryDef?.label ?? article.category}
+                    </Badge>
+                    <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                      <Clock className="size-3" />
+                      {article.readMins} min
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium leading-snug group-hover:text-primary">
+                    {article.title}
+                  </p>
+                  <p className="line-clamp-2 text-xs text-muted-foreground">
+                    {article.excerpt}
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* ── Tutorials: videos / guided walkthroughs (toggle) ── */}
+      {/* `id` — the anchor the dashboard's tour offer and search point people to (SHELL-09). */}
+      <section id="tutorials" className="scroll-mt-24 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Tutorials
+          </h2>
+          {visibleVideos.length > 0 ? (
+          <div className="flex rounded-lg border border-border bg-card p-0.5">
+            {(
+              [
+                { k: "walkthroughs", label: "Walkthroughs", icon: Compass },
+                { k: "videos", label: "Videos", icon: PlayCircle },
+              ] as const
+            ).map((o) => {
+              const activeTab = mediaTab === o.k
+              return (
+                <button
+                  key={o.k}
+                  type="button"
+                  onClick={() => setMediaTab(o.k)}
+                  aria-pressed={activeTab}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    activeTab
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <o.icon className="size-4" />
+                  {o.label}
+                </button>
+              )
+            })}
+          </div>
+          ) : null}
+        </div>
+
+        {mediaTab === "videos" && visibleVideos.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleVideos.map((video, i) => {
+              const hue = [210, 160, 280, 30, 190, 320][i % 6]
+              return (
+                <button
+                  key={video.title}
+                  onClick={() => setPlaying(video)}
+                  title={`Play ${video.title}`}
+                  className="group relative overflow-hidden rounded-2xl border text-left"
+                >
+                  {/* Gradient thumbnail */}
+                  <div
+                    className="flex h-36 items-center justify-center"
+                    style={{
+                      background: `linear-gradient(135deg, hsl(${hue} 60% 30%), hsl(${hue + 40} 70% 50%))`,
+                    }}
+                  >
+                    <div className="flex size-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110">
+                      <Play className="size-5 fill-white text-white" />
+                    </div>
+                  </div>
+                  {/* Running time — the file's real length, never an estimate. */}
+                  {video.duration ? (
+                    <div className="absolute top-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
+                      {video.duration}
+                    </div>
+                  ) : null}
+                  <div className="p-3">
+                    <p className="text-sm font-medium leading-snug">{video.title}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground capitalize">
+                      {HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
+                        video.category}
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleWalkthroughs.map((tour) => {
+              const Icon = tour.icon
+              return (
+                <Card key={tour.id} className="flex flex-col">
+                  <CardContent className="flex flex-1 flex-col gap-3 pt-5">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
+                      <Icon className="size-5" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-medium">{tour.title}</p>
+                      <p className="text-xs text-muted-foreground">{tour.description}</p>
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Compass className="size-3" />
+                        {stopsIn(tour.id)} {stopsIn(tour.id) === 1 ? "stop" : "stops"}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => startTour(tour.id)}
+                      >
+                        <PlayCircle className="size-4" />
+                        Start tour
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* ── FAQs ── */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Frequently asked questions
+        </h2>
+        <Card>
+          <CardContent className="divide-y p-0">
+            {visibleFaqs.map((faq, i) => (
+              <div key={i}>
+                <button
+                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left text-sm font-medium transition-colors hover:bg-muted/50"
+                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                >
+                  {faq.q}
+                  <ChevronDown
+                    className={cn(
+                      "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+                      openFaq === i && "rotate-180",
+                    )}
+                  />
+                </button>
+                {openFaq === i && (
+                  <p className="px-6 pb-4 text-sm text-muted-foreground">{faq.a}</p>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* ── Support tickets ── last: the way out when the articles, tutorials and FAQs above
+          haven't answered it (SHELL-08). */}
       <section className="space-y-6">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
           Support
@@ -1123,266 +1384,6 @@ export function HelpPage() {
         </div>
       </section>
 
-      {/* ── Quick links / categories ── */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Browse by category
-        </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-          {browseCategories.map((cat) => {
-            const Icon = cat.icon
-            const active = selectedCategory === cat.key
-            const count = articleCount(cat.key)
-            return (
-              <button
-                key={cat.key}
-                onClick={() =>
-                  setSelectedCategory(active ? null : cat.key)
-                }
-                className={cn(
-                  "flex flex-col items-center gap-2 rounded-2xl border p-3 text-center text-xs font-medium transition-colors",
-                  active
-                    ? "border-primary bg-primary/5 text-primary"
-                    : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <div
-                  className={cn(
-                    "flex size-9 items-center justify-center rounded-xl",
-                    active ? "bg-primary/10" : "bg-muted",
-                  )}
-                >
-                  <Icon className="size-4" />
-                </div>
-                <span className="leading-tight">{cat.label}</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {count} {count === 1 ? "article" : "articles"}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </section>
-
-      {/* ── Articles ── */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Documentation &amp; guides
-          </h2>
-          {(search || selectedCategory) && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setSearch("")
-                setSelectedCategory(null)
-              }}
-            >
-              Clear filters
-            </Button>
-          )}
-        </div>
-
-        {filteredArticles.length === 0 ? (
-          <EmptyState
-            icon={Search}
-            title="No articles found"
-            description="Try a different search term or browse by category."
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setSearch("")
-                  setSelectedCategory(null)
-                }}
-              >
-                Clear filters
-              </Button>
-            }
-          />
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredArticles.map((article) => {
-              const categoryDef = HELP_CATEGORIES.find((c) => c.key === article.category)
-              return (
-                <button
-                  key={article.slug}
-                  onClick={() => setSelectedArticle(article)}
-                  className="group flex flex-col items-start gap-2 rounded-2xl border bg-card p-4 text-left transition-colors hover:bg-muted"
-                >
-                  <div className="flex w-full items-center justify-between gap-2">
-                    <Badge variant="secondary" className="text-xs capitalize">
-                      {categoryDef?.label ?? article.category}
-                    </Badge>
-                    <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-                      <Clock className="size-3" />
-                      {article.readMins} min
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium leading-snug group-hover:text-primary">
-                    {article.title}
-                  </p>
-                  <p className="line-clamp-2 text-xs text-muted-foreground">
-                    {article.excerpt}
-                  </p>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ── Tutorials: videos / guided walkthroughs (toggle) ── */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            Tutorials
-          </h2>
-          <div className="flex rounded-lg border border-border bg-card p-0.5">
-            {(
-              [
-                { k: "videos", label: "Videos", icon: PlayCircle },
-                { k: "walkthroughs", label: "Walkthroughs", icon: Compass },
-              ] as const
-            ).map((o) => {
-              const activeTab = mediaTab === o.k
-              return (
-                <button
-                  key={o.k}
-                  type="button"
-                  onClick={() => setMediaTab(o.k)}
-                  aria-pressed={activeTab}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                    activeTab
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <o.icon className="size-4" />
-                  {o.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {mediaTab === "videos" ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {visibleVideos.map((video, i) => {
-              const hue = [210, 160, 280, 30, 190, 320][i % 6]
-              return (
-                <button
-                  key={video.title}
-                  disabled={!video.src}
-                  onClick={() => video.src && setPlaying(video)}
-                  title={video.src ? `Play ${video.title}` : "Not filmed yet"}
-                  className={cn(
-                    "group relative overflow-hidden rounded-2xl border text-left",
-                    !video.src && "cursor-not-allowed opacity-60",
-                  )}
-                >
-                  {/* Gradient thumbnail */}
-                  <div
-                    className="flex h-36 items-center justify-center"
-                    style={{
-                      background: `linear-gradient(135deg, hsl(${hue} 60% 30%), hsl(${hue + 40} 70% 50%))`,
-                    }}
-                  >
-                    {video.src ? (
-                      <div className="flex size-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform group-hover:scale-110">
-                        <Play className="size-5 fill-white text-white" />
-                      </div>
-                    ) : (
-                      <span className="rounded-full bg-black/35 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
-                        Coming soon
-                      </span>
-                    )}
-                  </div>
-                  {/* Duration badge */}
-                  <div className="absolute top-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white tabular-nums">
-                    {video.duration}
-                  </div>
-                  <div className="p-3">
-                    <p className="text-sm font-medium leading-snug">{video.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground capitalize">
-                      {HELP_CATEGORIES.find((c) => c.key === video.category)?.label ??
-                        video.category}
-                    </p>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {visibleWalkthroughs.map((tour) => {
-              const Icon = tour.icon
-              return (
-                <Card key={tour.id} className="flex flex-col">
-                  <CardContent className="flex flex-1 flex-col gap-3 pt-5">
-                    <div className="flex size-10 items-center justify-center rounded-xl bg-feature-tint text-primary">
-                      <Icon className="size-5" />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium">{tour.title}</p>
-                      <p className="text-xs text-muted-foreground">{tour.description}</p>
-                    </div>
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="size-3" />
-                        {tour.duration}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        onClick={() => startTour(tour.id)}
-                      >
-                        <PlayCircle className="size-4" />
-                        Start tour
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ── FAQs ── */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Frequently asked questions
-        </h2>
-        <Card>
-          <CardContent className="divide-y p-0">
-            {visibleFaqs.map((faq, i) => (
-              <div key={i}>
-                <button
-                  className="flex w-full items-center justify-between gap-4 px-6 py-4 text-left text-sm font-medium transition-colors hover:bg-muted/50"
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                >
-                  {faq.q}
-                  <ChevronDown
-                    className={cn(
-                      "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
-                      openFaq === i && "rotate-180",
-                    )}
-                  />
-                </button>
-                {openFaq === i && (
-                  <p className="px-6 pb-4 text-sm text-muted-foreground">{faq.a}</p>
-                )}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </section>
-
       {/* Article reader sheet */}
       {/* Video player. `key` forces a fresh <video> per title, so switching videos can't leave the
           previous one's buffered stream attached. */}
@@ -1394,7 +1395,9 @@ export function HelpPage() {
           <DialogHeader className="px-5 pb-3 pt-4">
             <DialogTitle className="text-base">{playing?.title}</DialogTitle>
             <DialogDescription className="text-xs">
-              {HELP_CATEGORIES.find((c) => c.key === playing?.category)?.label} · {playing?.duration}
+              {[HELP_CATEGORIES.find((c) => c.key === playing?.category)?.label, playing?.duration]
+                .filter(Boolean)
+                .join(" · ")}
             </DialogDescription>
           </DialogHeader>
           {playing?.src ? (

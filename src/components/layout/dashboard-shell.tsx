@@ -6,7 +6,8 @@ import { isSidebarCollapsed, useUiStore } from "@/stores/ui.store";
 import { useHydrateProfile } from "@/modules/profile/use-hydrate-profile";
 import { SidebarNav } from "./sidebar-nav";
 import { TopNavbar } from "./top-navbar";
-import { ChatBot } from "./chat-bot";
+import { ChatBot, FAB_RESERVE_CLASS } from "./chat-bot";
+import { useAssistantAccess } from "@/hooks/use-assistant-access";
 import { ProductTour } from "./product-tour";
 import { FirstRunGate } from "@/modules/onboarding/components/first-run-gate";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const collapsed = useUiStore(isSidebarCollapsed);
   const setInSettings = useUiStore((s) => s.setInSettings);
   const pathname = usePathname();
+  // Whether the floating assistant button is on screen — the same gate `ChatBot` renders on.
+  const fabShown = useAssistantAccess().chat;
 
   // Patch the store with the caller's real name (the JWT has none — see the hook).
   useHydrateProfile();
@@ -61,14 +64,19 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNavbar />
-        {/* Tight bottom padding so content ends level with the sidebar's bottom
-            edge; the translucent, draggable AI FAB overlays the corner. The keyed
-            wrapper gives each route a subtle fade-up entrance (disabled under
-            reduced-motion). */}
+        {/* Tight bottom padding so content ends level with the sidebar's bottom edge — except
+            while the floating assistant button is shown (`sm` up; on a phone it docks in the top
+            bar): then the page keeps room under it, so the last row of any page — a table's
+            foot, "Regenerate", a settings toggle — can scroll clear of the button instead of
+            sitting under it (UX audit 2026-10-16, XC-03 / SHELL-05). The keyed wrapper gives each
+            route a subtle fade-up entrance (disabled under reduced-motion). */}
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 px-4 pt-3 pb-3 outline-none sm:px-6 sm:pt-4"
+          className={cn(
+            "flex-1 px-4 pt-3 pb-3 outline-none sm:px-6 sm:pt-4",
+            fabShown && FAB_RESERVE_CLASS,
+          )}
         >
           <div key={section} className="wp-enter">
             {children}

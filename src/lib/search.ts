@@ -6,9 +6,10 @@
  * wins — a hit is `{ id, label }` and nothing more (no title/department/avatar), so callers render
  * from those two fields alone.
  *
- * `projects` and `tasks` are declared by the contract but the backend returns them **empty for now**
- * (`search/data.rs` hardcodes `vec![]`, pending the projects crate's GSI1 search). We wire them
- * anyway so the surface lights up automatically the day the backend fills them — no frontend change.
+ * `projects` — projects whose **name contains** the query (case-insensitive, starts-with ranked
+ * first, max 10), scoped server-side: org scope + projects:read sees every project, anyone else only
+ * the projects they are a member of. Added to `search/data.rs` 2026-10-20 (UX audit SHELL-11); a
+ * server that predates it returns `[]`, which simply renders no Projects group. `tasks` stays empty.
  */
 import { apiFetch } from "@/lib/api";
 

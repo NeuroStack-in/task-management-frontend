@@ -43,6 +43,71 @@ interface Message {
 const FAB_SIZE = 56; // size-14
 const FAB_MARGIN = 16; // gap from the edge after snapping
 const FAB_KEY = "wp-fab-pos";
+/**
+ * Bottom room the app shell reserves under the page while the floating button is shown, so the last
+ * row of any page can scroll clear of it (UX audit 2026-10-16, XC-03): its size plus its 20 px inset,
+ * plus a little air. `dashboard-shell.tsx` applies it.
+ */
+export const FAB_RESERVE_CLASS = "sm:pb-24";
+/**
+ * "You can move me" is said once per browser. A `wp.` key, not `wp-`: `clearWorkPulseState()` wipes
+ * `wp-*` on every sign-out, and a hint that returns at each login is a nag.
+ */
+const HINT_KEY = "wp.assistantHint.seen";
+const HINT_MS = 12_000;
+/** Below `sm` the launcher docks in the top bar and the panel opens under it (XC-03). */
+const PHONE_QUERY = "(max-width: 639.98px)";
+/** Marks both launchers — the floating one and the top-bar one — for the outside-press check. */
+const LAUNCHER_ATTR = "data-assistant-launcher";
+
+/** True below `sm`. `false` on the server and the first client render, then tracks the viewport. */
+function usePhone(): boolean {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE_QUERY);
+    const sync = () => setPhone(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return phone;
+}
+
+/** The launcher actually on screen (the floating button is hidden on a phone, the top-bar one above). */
+function visibleLauncher(): HTMLElement | null {
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>(`[${LAUNCHER_ATTR}]`))) {
+    if (el.getClientRects().length > 0) return el;
+  }
+  return null;
+}
+
+/**
+ * The assistant's launcher **in the top bar, on a phone** (UX audit 2026-10-16, XC-03 / SHELL-05 /
+ * PROJ-16). At 390 px the floating button sat on whatever was in the bottom-right corner — the
+ * dashboard's Customize, "New project", table headers — and dragging it was the only way out. On a
+ * phone it lives in the top bar's control pill instead and floats over nothing. `sm:hidden`: from
+ * `sm` up the floating button returns, with bottom room reserved under the page.
+ */
+export function AssistantTopBarButton() {
+  const available = useAssistantAccess().chat;
+  const open = useAssistantStore((s) => s.open);
+  const setOpen = useAssistantStore((s) => s.setOpen);
+  if (!available) return null;
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="sm:hidden"
+      {...{ [LAUNCHER_ATTR]: "topbar" }}
+      aria-label={open ? "Close assistant" : "Open assistant"}
+      aria-expanded={open}
+      aria-controls={open ? PANEL_ID : undefined}
+      onClick={() => setOpen(!open)}
+    >
+      {open ? <X className="size-5" /> : <Sparkles className="size-5" />}
+    </Button>
+  );
+}
 
 /** The panel's preferred size (28rem × 22rem), and its gaps to the launcher and the viewport. */
 const PANEL_H = 448;
@@ -132,11 +197,15 @@ export function ChatBot() {
    */
   useEffect(() => {
     if (!open) return;
+    // Either launcher counts as "inside" — the top-bar one too, or tapping it to close would close
+    // here and reopen in its own onClick.
+    const onLauncher = (t: Node) =>
+      !!fabRef.current?.contains(t) || !!(t as Element).closest?.(`[${LAUNCHER_ATTR}]`);
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
       if (panelRef.current?.contains(target)) return;
-      if (fabRef.current?.contains(target)) return;
+      if (onLauncher(target)) return;
       setOpen(false);
     };
     // Escape closes the panel only when it is pressed *in* the assistant. As a bare document
@@ -145,11 +214,10 @@ export function ChatBot() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       const target = e.target as Node | null;
-      const inside =
-        !!target && (!!panelRef.current?.contains(target) || !!fabRef.current?.contains(target));
+      const inside = !!target && (!!panelRef.current?.contains(target) || onLauncher(target));
       if (!inside) return;
       setOpen(false);
-      fabRef.current?.focus();
+      visibleLauncher()?.focus();
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKey);
@@ -274,8 +342,35 @@ export function ChatBot() {
     return clampFab({ x, y });
   };
 
+  /**
+   * "Drag me" — said once (UX audit 2026-10-16, XC-03). The button could always be moved, but
+   * nothing said so, so people worked around it covering a control instead. Shown beside the button
+   * on its first appearance in this browser, gone after a while, a drag, an open or "Got it" — and
+   * remembered from the moment it shows, so it is never repeated.
+   */
+  const phone = usePhone();
+  const [hint, setHint] = useState(false);
+  useEffect(() => {
+    if (phone || !fab) return;
+    try {
+      if (window.localStorage.getItem(HINT_KEY)) return;
+      window.localStorage.setItem(HINT_KEY, "1");
+    } catch {
+      return; // no storage: we couldn't remember having said it, so don't say it on every load
+    }
+    setHint(true);
+    const t = setTimeout(() => setHint(false), HINT_MS);
+    return () => clearTimeout(t);
+    // Once the button has a position; `fab` moving afterwards doesn't re-run it (storage says seen).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone, fab === null]);
+  useEffect(() => {
+    if (open) setHint(false);
+  }, [open]);
+
   const onFabPointerDown = (e: React.PointerEvent) => {
     if (!fab) return;
+    setHint(false);
     movedRef.current = false;
     dragRef.current = true;
     startRef.current = { px: e.clientX, py: e.clientY, x: fab.x, y: fab.y };
@@ -324,7 +419,20 @@ export function ChatBot() {
    * Now: the height shrinks to fit the viewport, the panel opens toward whichever side of the
    * launcher has more room, and both axes are clamped inside the viewport.
    */
-  const panelStyle: React.CSSProperties | undefined = fab
+  const panelStyle: React.CSSProperties | undefined = phone
+    ? // Docked (phone): full width under the top-bar launcher, down to the bottom edge.
+      open
+      ? (() => {
+        const top = (visibleLauncher()?.getBoundingClientRect().bottom ?? 56) + PANEL_GAP;
+        return {
+          left: VIEWPORT_EDGE,
+          top,
+          width: window.innerWidth - VIEWPORT_EDGE * 2,
+          height: Math.max(240, window.innerHeight - top - VIEWPORT_EDGE),
+        };
+      })()
+      : undefined
+    : fab
     ? (() => {
         const vw = window.innerWidth;
         const vh = window.innerHeight;
@@ -415,6 +523,17 @@ export function ChatBot() {
 
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex flex-col gap-3 p-4">
+              {/* The conversation is a log: each new message — the reply above all — is announced
+                  to a screen reader as it arrives. Replies used to land in silence, so someone who
+                  can't see the panel never knew an answer had come (UX audit 2026-10-16, MON-17).
+                  The opening greeting is there before the region is, so it isn't read out. */}
+              <div
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions"
+                aria-label="Conversation with the assistant"
+                className="flex flex-col gap-3"
+              >
               {messages.map((m) => (
                 <div
                   key={m.id}
@@ -449,13 +568,15 @@ export function ChatBot() {
               ))}
               {pending ? (
                 <div className="bg-muted text-muted-foreground self-start rounded-lg px-3 py-2 text-sm">
-                  <span className="inline-flex gap-1">
+                  <span className="sr-only">The assistant is replying…</span>
+                  <span className="inline-flex gap-1" aria-hidden="true">
                     <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.2s]" />
                     <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full [animation-delay:-0.1s]" />
                     <span className="bg-muted-foreground size-1.5 animate-bounce rounded-full" />
                   </span>
                 </div>
               ) : null}
+              </div>
 
               {messages.length <= 1 ? (
                 <div className="flex flex-wrap gap-2 pt-1">
@@ -499,15 +620,52 @@ export function ChatBot() {
               <ArrowUp className="size-4" />
             </Button>
           </form>
+          {/* Said once, always visible: answers are a model's, and models get figures wrong
+              (UX audit 2026-10-16, MON-17 / XC-08). The chips under each reply say what it read. */}
+          <p className="text-muted-foreground -mt-1 px-3 pb-2.5 text-xs">
+            AI can be wrong — check important figures on the page they come from.
+          </p>
         </div>
       ) : null}
 
-      {/* Floating button — draggable, snaps to the nearest edge */}
+      {/* The one-time "you can move me" note, beside the button on the side with room. */}
+      {hint && fab && !open ? (
+        <div
+          id="wp-assistant-hint"
+          role="note"
+          style={{
+            top: fab.y + FAB_SIZE / 2,
+            ...(fab.x + FAB_SIZE / 2 > window.innerWidth / 2
+              ? { right: window.innerWidth - fab.x + PANEL_GAP }
+              : { left: fab.x + FAB_SIZE + PANEL_GAP }),
+          }}
+          className="bg-popover text-popover-foreground shadow-soft animate-in fade-in fixed z-50 flex w-60 -translate-y-1/2 items-start gap-2 rounded-xl border p-3 text-sm duration-200 max-sm:hidden"
+        >
+          <p className="flex-1 leading-snug">
+            The assistant. If it&apos;s covering something, drag it to any edge of the screen.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 px-2 text-xs"
+            onClick={() => setHint(false)}
+          >
+            Got it
+          </Button>
+        </div>
+      ) : null}
+
+      {/* Floating button — draggable, snaps to the nearest edge. Not on a phone: there the launcher
+          is in the top bar (`AssistantTopBarButton`), and the shell keeps bottom room for this one
+          from `sm` up (`FAB_RESERVE_CLASS`). */}
       <Button
         size="icon"
         aria-label={open ? "Close assistant" : "Open assistant"}
         aria-expanded={open}
         aria-controls={open ? PANEL_ID : undefined}
+        aria-describedby={hint ? "wp-assistant-hint" : undefined}
+        title={open ? undefined : "Open the assistant — drag to move it"}
+        {...{ [LAUNCHER_ATTR]: "floating" }}
         style={fab ? { left: fab.x, top: fab.y } : undefined}
         ref={fabRef}
         onPointerDown={onFabPointerDown}
@@ -515,8 +673,8 @@ export function ChatBot() {
         onPointerUp={onFabPointerUp}
         onClick={onFabClick}
         className={cn(
-          "shadow-soft fixed z-50 size-14 cursor-grab touch-none rounded-lg transition-[opacity,transform] hover:scale-105 hover:opacity-100 active:cursor-grabbing",
-          !open && "opacity-40",
+          "shadow-soft fixed z-50 size-14 cursor-grab touch-none rounded-lg transition-[opacity,transform] hover:scale-105 hover:opacity-100 active:cursor-grabbing max-sm:hidden",
+          !open && !hint && "opacity-40",
           !fab && "right-5 bottom-5",
         )}
       >

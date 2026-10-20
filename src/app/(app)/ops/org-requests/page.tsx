@@ -17,18 +17,26 @@ import { Button } from "@/components/ui/button";
  */
 export default function Page() {
   const { isAdmin, loading, failed, retry } = usePlatformAdmin();
+  // The guard states keep the page's one <h1> (and its top-bar title): they rendered an empty state
+  // whose heading is an <h3>, so the page had no H1 at all (UX audit 2026-10-16, XC-10).
+  const heading = <PageHeader title="Organization requests" />;
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader label="Checking access…" />
-      </div>
+      <>
+        {heading}
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <Loader label="Checking access…" />
+        </div>
+      </>
     );
   }
 
   // A failed check is not a "no" — it used to read "Not authorized", with no way to ask again.
   if (failed) {
     return (
+      <>
+      {heading}
       <EmptyState
         icon={ShieldOff}
         title="Couldn't check your access"
@@ -39,16 +47,20 @@ export default function Page() {
           </Button>
         }
       />
+      </>
     );
   }
 
   if (!isAdmin) {
     return (
-      <EmptyState
-        icon={ShieldOff}
-        title="Not authorized"
-        description="This area is for WorkPulse platform-support operators only."
-      />
+      <>
+        {heading}
+        <EmptyState
+          icon={ShieldOff}
+          title="Not authorized"
+          description="This area is for WorkPulse platform-support operators only."
+        />
+      </>
     );
   }
 

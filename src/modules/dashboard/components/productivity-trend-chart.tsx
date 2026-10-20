@@ -106,14 +106,18 @@ export function ProductivityTrendChart({
                         timer was active at the computer
                       </li>
                       <li>
-                        <strong>Quality (40%)</strong> — active time spent in productive
-                        apps
+                        {/* Worded from the scorer, as on the Activity tab (SET-07). */}
+                        <strong>Quality (40%)</strong> — how productive the active time was: the
+                        AI&rsquo;s rating of the day&rsquo;s screenshots, or your app rules when
+                        none were rated
                       </li>
                       <li>
-                        <strong>Focus (15%)</strong> — steady work vs. constant switching
+                        <strong>Focus (15%)</strong> — how much of the active time had real
+                        keyboard or mouse input
                       </li>
                       <li>
-                        <strong>Reliability (20%)</strong> — showing up consistently
+                        <strong>Reliability (20%)</strong> — starting on time and working the
+                        expected hours
                       </li>
                     </ul>
                     <span className="mt-1 block opacity-80">
