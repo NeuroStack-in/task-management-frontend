@@ -24,6 +24,7 @@ import { formatHours } from "@/lib/format";
 import { friendlyError } from "@/lib/errors";
 import {
   getRunDetail,
+  type ApiRunDetail,
   type ApiPayrollRun,
   type ApiRunLine,
 } from "../services/payroll.service";
@@ -39,6 +40,8 @@ export function RunLinesCard({
   onLoaded?: (count: number) => void;
 }) {
   const [lines, setLines] = useState<ApiRunLine[] | null>(null);
+  /** The run's own deduction rules (TIME-20); `undefined` = not recorded (an older run). */
+  const [rules, setRules] = useState<ApiRunDetail["rules"]>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   // Re-read when the run changes — a redraft keeps the period but changes every number.
@@ -52,6 +55,7 @@ export function RunLinesCard({
       (d) => {
         if (!live) return;
         setLines(d.lines ?? []);
+        setRules(d.rules);
         onLoaded?.((d.lines ?? []).length);
       },
       (e: unknown) =>
@@ -75,6 +79,21 @@ export function RunLinesCard({
             ? "The payslips issued for this run."
             : "What each person will be paid. Check it before finalizing — each line becomes their payslip."}
         </p>
+        {/* The rules this run actually used — they may differ from today's (TIME-20). */}
+        {rules ? (
+          <p className="text-muted-foreground text-xs">
+            Deductions on this run:{" "}
+            {rules.length === 0
+              ? "none"
+              : rules
+                  .map((r) =>
+                    r.kind === "percent"
+                      ? `${r.name} ${r.value}% of gross`
+                      : `${r.name} ${money(r.value)} per employee`,
+                  )
+                  .join(" · ")}
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent className="p-0">
         {error ? (

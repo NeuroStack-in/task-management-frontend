@@ -45,6 +45,11 @@ export interface ApiRunLine {
 
 export interface ApiRunDetail extends ApiPayrollRun {
   lines: ApiRunLine[];
+  /**
+   * The deduction rules this run was computed with, as they stood when it was drafted (UX audit
+   * TIME-20). Absent on runs drafted before the server kept them.
+   */
+  rules?: { name: string; kind: "percent" | "flat" | string; value: number }[];
 }
 
 /**

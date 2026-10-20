@@ -18,6 +18,7 @@ import { canAccessPath, requiredPermissionsForPath, titleForPath } from "@/lib/r
 import { AccessWall } from "@/components/shared/access-wall";
 import { FeatureGateNotice } from "@/components/shared/feature-gate-notice";
 import { Loader } from "@/components/shared/loader";
+import { PAYSLIPS_HREF } from "@/modules/time-tracking/components/payroll-widget";
 
 /** "A", "A or B", "A, B or C". */
 function orList(items: string[]): string {
@@ -52,12 +53,24 @@ export function RouteGate({ children }: { children: React.ReactNode }) {
       (id) => PERMISSION_MAP[id]?.label ?? id,
     );
     const canFixRoles = can("roles:manage");
+    // Someone after their own payslip lands here from an old link or habit — point them to it
+    // (UX audit TIME-19).
+    const payslips = pathname === "/payroll" || pathname.startsWith("/payroll/");
     return (
       <AccessWall
         icon={ShieldX}
         title={`You don't have access to ${label}`}
-        action={canFixRoles ? { label: "Open Roles & Permissions", href: "/settings/roles" } : undefined}
+        action={
+          payslips && can("time-tracking:view")
+            ? { label: "Open my payslips", href: PAYSLIPS_HREF }
+            : canFixRoles
+              ? { label: "Open Roles & Permissions", href: "/settings/roles" }
+              : undefined
+        }
       >
+        {payslips ? (
+          <p>Looking for your own payslips? They&apos;re on Time Tracking.</p>
+        ) : null}
         <p>
           Your role{role?.name ? ` (${role.name})` : ""} doesn&apos;t include{" "}
           {needed.length ? (

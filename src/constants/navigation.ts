@@ -158,7 +158,9 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/payroll",
         icon: Wallet,
         permission: "payroll:view",
-        keywords: "salary payslip compensation deductions pay run wages money",
+        // Not "payslip": search sent employees to this admin page (a wall for them) when their own
+        // payslips are on Time Tracking — see the "My payslips" entry (UX audit TIME-19).
+        keywords: "salary compensation deductions pay run wages money",
       },
       {
         label: "Analytics",
@@ -319,6 +321,16 @@ export const SETTINGS_SUBSECTIONS: NavItem[] = [
   // No separate "Export organization data" entry: it repeated `/settings/ownership` (declared below
   // in ADMIN_SECTIONS), so search dropped it as a duplicate href and its keywords never matched.
   // They live on that entry now (QA audit 2026-10-08, WP-509).
+  // Your own payslips live on Time Tracking (UX audit TIME-19) — findable by search for everyone who
+  // tracks time, while Payroll stays the admin's page.
+  {
+    label: "My payslips",
+    href: "/time-tracking#payslips",
+    icon: Wallet,
+    permission: "time-tracking:view",
+    description: "Your finalized monthly payslips.",
+    keywords: "payslip payslips salary pay net gross wages",
+  },
   // Personal security lives on Login & security, for every role; Settings → Security is the
   // organisation's policies only (UX audit SET-08 — search used to send owners to a page outside their
   // rail, and both pages carried the same MFA, password and session cards).

@@ -158,9 +158,9 @@ export function DeductionsCard({
             take anyone&apos;s pay below zero.
           </p>
           <p className="text-muted-foreground text-xs">
-            These are the current rules. Runs don&apos;t record the rules they were computed with,
-            so a run drafted before a change may have used different ones — its totals and pay per
-            employee above are what it actually used.
+            These are the current rules. Each run keeps the rules it was drafted with (shown under
+            &ldquo;Pay per employee&rdquo;); a run drafted before runs kept them shows only its
+            totals and pay per employee.
           </p>
         </div>
         {showEditor && !editing ? (
