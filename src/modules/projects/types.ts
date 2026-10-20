@@ -132,6 +132,11 @@ export interface Task {
   /** Sign-off, present only on a `done` task — who approved it, when, and their rating. */
   review?: TaskReview | null;
   /**
+   * A reviewer sent it back with a note (UX audit PROJ-02) — present until it's signed off, so the
+   * assignee sees what to change on the card and in the task.
+   */
+  changes?: { byName: string; at: number; note: string } | null;
+  /**
    * How much of this task's breakdown is done — the `3/5` counter on the card.
    *
    * `{total: 0, done: 0}` means the task has no subtasks, which is the normal case. The count comes

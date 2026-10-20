@@ -115,6 +115,10 @@ export function boardTasks(columns: ApiBoardColumn[], projectId: string): Task[]
       // A review is a verdict on finished work. Rows reopened before the server cleared it on leaving
       // Done still carry one, and it must not ride along into In progress (QA audit 2026-10-08, WP-313).
       review: col.status === "done" ? (t.review ?? null) : null,
+      changes:
+        col.status !== "done" && t.changes
+          ? { byName: t.changes.by_name, at: t.changes.at, note: t.changes.note }
+          : null,
       // A server predating subtasks omits this; an absent breakdown and an empty one are the same
       // thing to a card, so both collapse to zero.
       subtaskProgress: t.subtasks ?? { total: 0, done: 0 },

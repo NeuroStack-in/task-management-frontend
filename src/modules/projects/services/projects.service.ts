@@ -314,6 +314,11 @@ export interface ApiBoardTask {
    */
   review?: TaskReview;
   /**
+   * The reviewer's request for changes, served until the task is signed off (UX audit PROJ-02):
+   * who sent it back, when, and what to change.
+   */
+  changes?: ApiChangesRequested;
+  /**
    * How much of this card's breakdown is finished. Served on the board so the counter needs no
    * second call — the server reads every subtask in the project in one query.
    *
@@ -623,11 +628,29 @@ async function readPickerDirectory(projectId?: string): Promise<ProjectDirectory
  * can also drag a card to Done, which records neither — and moving a signed-off task out of Done
  * clears its review.
  */
+/** `review_task::ChangesRequested` — a reviewer sent the task back with a note. */
+export interface ApiChangesRequested {
+  by: string;
+  by_name: string;
+  /** Epoch ms. */
+  at: number;
+  note: string;
+}
+
+/**
+ * Sign a task off (`outcome` absent / `approve`, with a 1–5 `rating`), or send it back to In progress
+ * with a required `note` the assignees are notified of (`outcome: "changes"`, UX audit PROJ-02).
+ */
 export function reviewTask(
   projectId: string,
   taskId: string,
-  body: { rating: number; note?: string },
-): Promise<{ task_id: string; status: string; review: TaskReview }> {
+  body: { rating: number; note?: string } | { outcome: "changes"; note: string },
+): Promise<{
+  task_id: string;
+  status: string;
+  review?: TaskReview;
+  changes?: ApiChangesRequested;
+}> {
   return apiFetch(
     `/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/review`,
     { method: "POST", body: JSON.stringify(body) },

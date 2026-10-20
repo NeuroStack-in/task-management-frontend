@@ -4,7 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { CheckCircle2, Circle, Download, Eye, Loader2, Paperclip, Star } from "lucide-react";
+import {
+  CheckCircle2,
+  Circle,
+  Download,
+  Eye,
+  Loader2,
+  Paperclip,
+  Star,
+  Undo2,
+} from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { personName } from "@/lib/format";
@@ -375,6 +384,22 @@ export function ViewTaskDialog({
               open={open}
               userMap={userMap}
             />
+
+            {/* Sent back with a note (UX audit PROJ-02) — what to change before it goes to review again. */}
+            {task.changes ? (
+              <Section label="Changes requested">
+                <div className="border-warning/30 bg-warning/[0.06] space-y-1 rounded-xl border p-3">
+                  <p className="text-warning flex items-center gap-1.5 text-sm font-medium">
+                    <Undo2 className="size-4" />
+                    {task.changes.byName || "The reviewer"}
+                    <span className="text-muted-foreground font-normal">
+                      · {new Date(task.changes.at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+                    </span>
+                  </p>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{task.changes.note}</p>
+                </div>
+              </Section>
+            ) : null}
 
             {/* Review sign-off */}
             {task.review ? (

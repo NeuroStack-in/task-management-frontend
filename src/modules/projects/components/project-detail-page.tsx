@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, Hourglass, ListChecks, MoreHorizontal, Pencil, Plus, Star, Trash2, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Building2, CalendarRange, ChevronRight, Crown, Eye, FileDown, FolderKanban, Hourglass, ListChecks, MoreHorizontal, Pencil, Plus, Star, Trash2, Undo2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCorners, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type Announcements, type CollisionDetection, type DragEndEvent, type KeyboardCoordinateGetter } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -980,7 +980,6 @@ export function ProjectDetailPage({ id }: ProjectDetailPageProps) {
             setReviewTarget(null);
             void reload();
           }}
-          onSendBack={() => moveTask(reviewTarget.id, "in_progress")}
         />
       ) : null}
 
@@ -1452,6 +1451,17 @@ function TaskCard({
         ) : null}
       </div>
       <TaskCardContent task={task} userMap={userMap} />
+      {/* Sent back with a note (UX audit PROJ-02): the assignee reads what to change on the card
+          itself, not only in a notification. Open the task for the whole note. */}
+      {task.changes ? (
+        <p className="text-warning mt-2.5 flex items-start gap-1.5 border-t pt-2 text-[0.7rem] leading-snug">
+          <Undo2 className="mt-px size-3 shrink-0" aria-hidden="true" />
+          <span className="line-clamp-2">
+            Changes requested{task.changes.byName ? ` by ${task.changes.byName}` : ""}:{" "}
+            {task.changes.note}
+          </span>
+        </p>
+      ) : null}
       {/* The next step for an `in_review` card, on the card and always visible: a hover-only star
           was the only way in, and a first-time viewer couldn't tell what would finish a task
           (owner feedback, 2026-10-16). The reviewer gets the button; everyone else is told who

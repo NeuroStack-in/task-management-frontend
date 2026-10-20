@@ -1,14 +1,16 @@
 "use client";
 
 /**
- * Review a finished task: sign it off (rate it 1–5, and it moves to Done) or send it back.
+ * Review a finished task: sign it off (rate it 1–5, and it moves to Done) or request changes.
  *
  * The second half of the task lifecycle. `in_review` is the assignee saying *I finished it*; this is
  * the project's lead or manager agreeing. Signing off moves the task to `done` with the rating and
  * the reviewer's name recorded (`review_task`) — and it is the **only** way into Done (owner rule,
- * 2026-10-16): a drop on the Done column opens this dialog instead of moving the card. Sending it
- * back returns it to In progress for more work. Moving a signed-off task out of Done clears its
- * review.
+ * 2026-10-16): a drop on the Done column opens this dialog instead of moving the card. **Requesting
+ * changes** returns it to In progress with a note the assignees are notified of and see on the card
+ * (UX audit PROJ-02) — it used to be a bare move with no word to anyone, which left a 1-star "Needs
+ * rework" sign-off, closing the task, as the only verdict that carried a message. Moving a
+ * signed-off task out of Done clears its review.
  *
  * Only the project's own lead or manager reviews — not an org admin (`canReviewTask`, mirroring
  * `review_task`), and never the assignee, even a lead: reviewing your own work is the thing review
@@ -36,8 +38,10 @@ import { reviewTask } from "../services/projects.service";
 /** Mirrors the server's MIN_RATING..=MAX_RATING. It validates too; this just avoids a round trip. */
 const STARS = [1, 2, 3, 4, 5] as const;
 
+// 1 is "Poor", not "Needs rework": signing off always closes the task. Work that needs more doing
+// goes back with "Request changes" instead.
 const RATING_HINT: Record<number, string> = {
-  1: "Needs rework",
+  1: "Poor",
   2: "Below expectations",
   3: "Meets expectations",
   4: "Good work",
@@ -51,23 +55,23 @@ export function TaskReviewDialog({
   taskId,
   taskTitle,
   onReviewed,
-  onSendBack,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   projectId: string;
   taskId: string;
   taskTitle: string;
-  /** Refresh the board — the task leaves In review and appears under Done. */
+  /** Refresh the board — the task left In review (to Done, or back to In progress). */
   onReviewed: () => void;
-  /** Return the task to In progress — the work isn't finished yet. */
-  onSendBack: () => Promise<void>;
 }) {
   const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
+  /** "Request changes" mode: the note becomes the required message to the assignees. */
+  const [changesMode, setChangesMode] = useState(false);
+  const [changesNote, setChangesNote] = useState("");
 
   const shown = hover || rating;
 
@@ -108,15 +112,33 @@ export function TaskReviewDialog({
   }
 
   async function sendBack() {
+    const message = changesNote.trim();
+    if (!message) {
+      toast.error("Say what needs changing — the assignees get this note.");
+      return;
+    }
     setSending(true);
     try {
-      await onSendBack();
-      toast.success("Sent back to In progress", {
-        description: "It comes back here when it's moved to In review again.",
+      await reviewTask(projectId, taskId, { outcome: "changes", note: message });
+      toast.success("Changes requested", {
+        description:
+          "It's back in In progress with your note, and the assignees have been notified. It returns here when it's moved to In review again.",
       });
+      onReviewed();
       onOpenChange(false);
+      setChangesMode(false);
+      setChangesNote("");
     } catch (e) {
-      toast.error(friendlyError(e, "Couldn't send the task back."));
+      const code = e instanceof ApiError ? e.code : undefined;
+      toast.error(
+        code === "task_not_awaiting_review"
+          ? "This task isn't in review any more — someone may have just moved it. Check the board."
+          : code === "cannot_review_own_task"
+            ? "You can't review a task you're assigned to."
+            : e instanceof ApiError && e.status === 403
+              ? "Only this project's lead or manager can review its tasks."
+              : friendlyError(e, "Couldn't send the task back."),
+      );
     } finally {
       setSending(false);
     }
@@ -126,14 +148,39 @@ export function TaskReviewDialog({
     <Dialog open={open} onOpenChange={(o) => !busy && !sending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Review task</DialogTitle>
+          <DialogTitle>{changesMode ? "Request changes" : "Review task"}</DialogTitle>
           <DialogDescription>
-            <span className="text-foreground font-medium">{taskTitle}</span> is waiting for your
-            review. Rate it and sign it off to move it to Done, with your name as the reviewer — or
-            send it back if it needs more work.
+            {changesMode ? (
+              <>
+                <span className="text-foreground font-medium">{taskTitle}</span> goes back to In
+                progress. Say what needs changing — the assignees are notified and see your note on
+                the task.
+              </>
+            ) : (
+              <>
+                <span className="text-foreground font-medium">{taskTitle}</span> is waiting for your
+                review. Rate it and sign it off to move it to Done, with your name as the reviewer —
+                or request changes if it needs more work.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
+        {changesMode ? (
+          <div className="space-y-1.5">
+            <Label htmlFor="changes-note">What needs changing</Label>
+            <textarea
+              id="changes-note"
+              value={changesNote}
+              onChange={(e) => setChangesNote(e.target.value)}
+              rows={4}
+              maxLength={1000}
+              autoFocus
+              placeholder="e.g. The export misses the totals row — add it and re-check the March figures."
+              className="border-input bg-background placeholder:text-muted-foreground focus:ring-ring w-full resize-none rounded-lg border px-3 py-2 text-sm focus:ring-2 focus:outline-none"
+            />
+          </div>
+        ) : (
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Rating</Label>
@@ -179,22 +226,39 @@ export function TaskReviewDialog({
             />
           </div>
         </div>
+        )}
 
-        <DialogFooter className="sm:justify-between">
-          <Button variant="outline" onClick={sendBack} disabled={busy || sending}>
-            {sending ? <Loader2 className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
-            Send back
-          </Button>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy || sending}>
-              Cancel
+        {changesMode ? (
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setChangesMode(false)} disabled={sending}>
+              Back
             </Button>
-            <Button onClick={submit} disabled={busy || sending || !rating}>
-              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-              {busy ? "Signing off…" : "Sign off · move to Done"}
+            <Button onClick={sendBack} disabled={sending || !changesNote.trim()}>
+              {sending ? <Loader2 className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
+              {sending ? "Sending…" : "Send back with note"}
             </Button>
-          </div>
-        </DialogFooter>
+          </DialogFooter>
+        ) : (
+          <DialogFooter className="sm:justify-between">
+            <Button
+              variant="outline"
+              onClick={() => setChangesMode(true)}
+              disabled={busy || sending}
+            >
+              <Undo2 className="size-4" />
+              Request changes
+            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy || sending}>
+                Cancel
+              </Button>
+              <Button onClick={submit} disabled={busy || sending || !rating}>
+                {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+                {busy ? "Signing off…" : "Sign off · move to Done"}
+              </Button>
+            </div>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
