@@ -317,6 +317,7 @@ export function SignupExperience({
     timezone: region.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || undefined,
     // The authorisation tick was required and then sent nowhere (QA audit 2026-10-08, WP-128).
     monitoring_consent: consent,
+    terms_accepted: termsAccepted,
   });
 
   /**

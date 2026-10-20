@@ -275,6 +275,11 @@ export function LoginExperience() {
         />
 
         <AuthSwitch prompt="Don't have an account?" href="/register" label="Create a workspace" />
+        {/* An invited employee who pressed "Create a workspace" or "Continue with Google" instead of
+            the invite link ended up asking for a second organisation (UX audit ONB-03). */}
+        <p className="mt-2 text-center text-xs" style={{ color: "var(--m-muted)" }}>
+          Joining your team? Use the link in your invite email.
+        </p>
       </AuthFrame>
     </>
   );

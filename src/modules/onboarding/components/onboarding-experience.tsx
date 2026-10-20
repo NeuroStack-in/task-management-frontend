@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Activity } from "lucide-react";
+import { Activity, Mail } from "lucide-react";
+import { toast } from "sonner";
+import { ApiError } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
 import { useAuthStore } from "@/stores/auth.store";
 import { useRolesStore } from "@/stores/roles.store";
 import { resolveRole } from "@/hooks/use-permissions";
@@ -13,7 +16,13 @@ import { Button } from "@/components/ui/button";
 import { OnboardingWizard } from "./onboarding-wizard";
 import { SignupExperience } from "@/modules/auth/components/signup-experience";
 import { OrgRequestLoading, OrgRequestStatus } from "./org-request-status";
-import { getMyOrgRequest, type MyOrgRequest } from "../services/onboarding.service";
+import {
+  getMyInvites,
+  getMyOrgRequest,
+  resendMyInvite,
+  type MyInvite,
+  type MyOrgRequest,
+} from "../services/onboarding.service";
 
 /**
  * Guards the standalone /onboarding route. It's where a signed-in user with no organization lands
@@ -87,21 +96,36 @@ export function OnboardingExperience() {
  */
 function NoOrgFlow() {
   const [request, setRequest] = useState<MyOrgRequest | null>(null);
+  const [invites, setInvites] = useState<MyInvite[]>([]);
+  /** They were invited but would rather create their own organisation. */
+  const [createOwn, setCreateOwn] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
     setLoading(true);
-    getMyOrgRequest()
-      .then((r) => setRequest(r))
-      // A failed lookup falls through to the form rather than blocking: the server rejects a second
-      // request with `request_already_open`, so the worst case is a clear error, not a duplicate.
-      .catch(() => setRequest(null))
+    Promise.all([
+      getMyOrgRequest()
+        // A failed lookup falls through to the form rather than blocking: the server rejects a
+        // second request with `request_already_open`, so the worst case is a clear error.
+        .catch(() => null),
+      // Best-effort: without it the screen behaves as it always did.
+      getMyInvites().catch(() => [] as MyInvite[]),
+    ])
+      .then(([r, inv]) => {
+        setRequest(r);
+        setInvites(inv);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(load, [load]);
 
   if (loading) return <OrgRequestLoading />;
+  // Invited, but signed in with Google before opening the invite email: they have no organisation
+  // yet, and this screen used to offer them a new one (UX audit ONB-03). The invite is the way in.
+  if (!request && invites.length && !createOwn) {
+    return <PendingInvites invites={invites} onCreateOwn={() => setCreateOwn(true)} />;
+  }
   if (request) {
     // Re-applying clears the local view and shows the form again; the server released the
     // one-per-email claim when it rejected, so a new submission is accepted.
@@ -114,4 +138,95 @@ function NoOrgFlow() {
   // parallel "quick" version would drift from it, and the fields it skipped would be ones the org
   // simply never gets.
   return <SignupExperience authenticated onSubmitted={load} />;
+}
+
+/**
+ * "You've been invited to Acme" — for someone who signed in before opening their invite email
+ * (UX audit ONB-03). Accepting needs the link and code from that email, so this sends it again to
+ * their own address rather than pretending they can join from here.
+ */
+function PendingInvites({
+  invites,
+  onCreateOwn,
+}: {
+  invites: MyInvite[];
+  onCreateOwn: () => void;
+}) {
+  const email = useAuthStore((s) => s.user?.email ?? "");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [sent, setSent] = useState<Set<string>>(new Set());
+
+  async function resend(inv: MyInvite) {
+    setBusy(inv.invite_id);
+    try {
+      const r = await resendMyInvite(inv.tenant_id, inv.invite_id);
+      setSent((s) => new Set(s).add(inv.invite_id));
+      toast.success("Invite sent again", {
+        description: `Check ${r.sent_to} for a new email with your link and code. The old ones no longer work.`,
+      });
+    } catch (e) {
+      const code = e instanceof ApiError ? e.code : undefined;
+      toast.error(
+        code === "resent_recently"
+          ? "It was sent less than a minute ago — check your inbox (and spam) first."
+          : e instanceof ApiError && e.status === 404
+            ? "That invite is no longer open. Ask your organisation for a new one."
+            : friendlyError(e, "Couldn't send the invite again."),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="bg-card shadow-soft w-full max-w-md space-y-5 rounded-2xl border p-8">
+      <div className="flex items-start gap-3">
+        <span className="bg-muted flex size-11 shrink-0 items-center justify-center rounded-xl">
+          <Mail className="text-primary size-6" />
+        </span>
+        <div className="min-w-0 space-y-1">
+          <h1 className="font-heading text-xl font-semibold tracking-tight">
+            {invites.length === 1
+              ? `You've been invited to ${invites[0].org_name || "an organisation"}`
+              : "You've been invited"}
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            To join, open the invite email we sent{email ? ` to ${email}` : ""} and use its link
+            and code. You don&apos;t need to create a workspace.
+          </p>
+        </div>
+      </div>
+      <ul className="space-y-2">
+        {invites.map((inv) => (
+          <li
+            key={inv.invite_id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2"
+          >
+            <div className="min-w-0 text-sm">
+              <p className="truncate font-medium">{inv.org_name || "An organisation"}</p>
+              <p className="text-muted-foreground text-xs">
+                {inv.locked
+                  ? "Locked after too many wrong codes — sending it again unlocks it."
+                  : `Expires ${new Date(inv.expires_at * 1000).toLocaleDateString([], { day: "numeric", month: "short" })}`}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant={sent.has(inv.invite_id) ? "ghost" : "outline"}
+              disabled={busy === inv.invite_id}
+              onClick={() => void resend(inv)}
+            >
+              {sent.has(inv.invite_id) ? "Sent — send again" : "Email me the invite again"}
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <p className="text-muted-foreground text-xs">
+        Not what you expected?{" "}
+        <button type="button" className="text-foreground underline underline-offset-2" onClick={onCreateOwn}>
+          Create your own workspace instead
+        </button>
+      </p>
+    </div>
+  );
 }

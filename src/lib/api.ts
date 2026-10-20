@@ -301,6 +301,8 @@ export interface InvitePreview {
   status: "pending" | "expired" | "accepted" | "locked" | string;
   /** Epoch seconds. */
   expires_at: number;
+  /** Who sent the invite (UX audit ONB-05); empty when unknown. Absent from older servers. */
+  inviter_name?: string;
 }
 
 /** The three values the accept-link carries. */
@@ -334,6 +336,8 @@ export interface AcceptInviteBody {
    *  joiner's record is complete on day one; validated by `identity::shared::profile`. */
   date_of_birth?: string;
   work_mode?: string;
+  /** The "I agree to the Terms and Privacy Policy" tick — recorded as `terms_accepted_at` (ONB-08). */
+  terms_accepted?: boolean;
 }
 
 export interface AcceptInviteResult {

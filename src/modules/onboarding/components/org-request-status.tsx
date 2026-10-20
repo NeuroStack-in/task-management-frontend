@@ -6,7 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Loader } from "@/components/shared/loader";
 import { usePoll } from "@/hooks/use-poll";
 import { useAuthStore } from "@/stores/auth.store";
-import { getMyOrgRequest, type MyOrgRequest } from "../services/onboarding.service";
+import { toast } from "sonner";
+import { ApiError } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import {
+  getMyOrgRequest,
+  withdrawMyOrgRequest,
+  type MyOrgRequest,
+} from "../services/onboarding.service";
+
+/**
+ * What the waiting screen promises (owner decision 2026-10-20, UX audit ONB-02). It said only "a
+ * member of the team is reviewing", with no idea of when.
+ */
+export const REVIEW_TIME = "We usually review requests within one business day.";
 
 /** How often a waiting applicant re-checks. Slow: a human decision is minutes-to-days, not seconds. */
 const POLL_MS = 30_000;
@@ -36,6 +50,9 @@ export function OrgRequestStatus({
   const [entering, setEntering] = useState(false);
   /** The approval hand-off's token refresh failed — offer a retry instead of spinning forever. */
   const [enterFailed, setEnterFailed] = useState(false);
+  /** "Change my request": withdraw the pending one, then the form shows again (ONB-02). */
+  const [changing, setChanging] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
 
   // Poll while pending. Stops the moment it is decided — there is nothing further to learn, and a
   // decided request never changes again. Through the shared `usePoll`, so it pauses while the tab is
@@ -137,11 +154,45 @@ export function OrgRequestStatus({
     <Card
       icon={<Clock className="text-primary size-6" />}
       title="Request received"
-      body={`A member of the WorkPulse team is reviewing your request for ${current.org_name}. We'll email you as soon as it's decided.`}
+      body={`A member of the WorkPulse team is reviewing your request for ${current.org_name}. ${REVIEW_TIME} We'll email you as soon as it's decided.`}
     >
       <p className="text-muted-foreground text-xs">
         You can close this page — nothing is lost. Sign in again any time to check.
       </p>
+      {/* A typo in the organisation name, or the wrong size, used to be stuck until the review —
+          withdrawing frees the request so a corrected one can go in (ONB-02). */}
+      <Button variant="outline" className="w-full" onClick={() => setChanging(true)}>
+        Change my request
+      </Button>
+      <ConfirmDialog
+        open={changing}
+        onOpenChange={(o) => !o && setChanging(false)}
+        title="Change your request?"
+        description={`Your request for ${current.org_name} is withdrawn and you fill the form in again. The new one joins the queue when you send it.`}
+        confirmLabel="Withdraw and edit"
+        busy={withdrawing}
+        onConfirm={async () => {
+          setWithdrawing(true);
+          try {
+            await withdrawMyOrgRequest();
+            setChanging(false);
+            onReapply();
+          } catch (e) {
+            const code = e instanceof ApiError ? e.code : undefined;
+            toast.error(
+              code === "approval_in_progress"
+                ? "Your request is being approved right now, so it can't be changed. Check back in a few minutes."
+                : e instanceof ApiError && e.status === 404
+                  ? "This request was already decided — refresh the page."
+                  : friendlyError(e, "Couldn't withdraw the request."),
+            );
+            setChanging(false);
+            check();
+          } finally {
+            setWithdrawing(false);
+          }
+        }}
+      />
     </Card>
   );
 }

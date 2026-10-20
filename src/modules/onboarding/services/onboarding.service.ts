@@ -37,6 +37,8 @@ export interface ProvisionOrgInput {
   phone?: string;
   /** The "authorised to monitor" tick — stored on the request and carried onto the org (WP-128). */
   monitoring_consent?: boolean;
+  /** The Terms/Privacy agreement — stored on the request as `terms_accepted_at` (UX audit ONB-08). */
+  terms_accepted?: boolean;
 }
 
 /**
@@ -78,4 +80,46 @@ export function requestOrg(input: ProvisionOrgInput): Promise<{ id: string; stat
  */
 export function getMyOrgRequest(): Promise<MyOrgRequest | null> {
   return apiFetch<MyOrgRequest | null>("/v1/org/requests/mine");
+}
+
+/**
+ * `POST /v1/org/requests/mine/withdraw` — take back a pending request so it can be corrected and
+ * sent again (UX audit ONB-02). `409 approval_in_progress` while an operator is approving it.
+ */
+export async function withdrawMyOrgRequest(): Promise<void> {
+  await apiFetch("/v1/org/requests/mine/withdraw", { method: "POST" });
+}
+
+/** An invite waiting for the signed-in person's own address (`GET /v1/me/invites`, ONB-03). */
+export interface MyInvite {
+  tenant_id: string;
+  invite_id: string;
+  org_name: string;
+  /** Epoch seconds. */
+  expires_at: number;
+  /** Five wrong codes locked it; sending it again unlocks it with fresh codes. */
+  locked: boolean;
+}
+
+/**
+ * `GET /v1/me/invites` — invites waiting for this account's address. For someone who signed in
+ * with Google before opening their invite email: they have no organisation yet, and without this
+ * the screen offered to create one (UX audit ONB-03).
+ */
+export function getMyInvites(): Promise<MyInvite[]> {
+  return apiFetch<{ invites: MyInvite[] }>("/v1/me/invites").then((r) => r.invites);
+}
+
+/**
+ * `POST /v1/me/invites/resend` — email that invite again, to this account's own address, with a
+ * fresh link and code. `409 resent_recently` within a minute of the last send.
+ */
+export function resendMyInvite(
+  tenantId: string,
+  inviteId: string,
+): Promise<{ sent_to: string; expires_at: number }> {
+  return apiFetch("/v1/me/invites/resend", {
+    method: "POST",
+    body: JSON.stringify({ tenant_id: tenantId, invite_id: inviteId }),
+  });
 }

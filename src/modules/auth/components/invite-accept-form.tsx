@@ -138,9 +138,15 @@ function LinkNotice({
   );
 }
 
-/** "Ask the person who invited you (to Acme) to …" — the org only when the page knows it. */
-function askInviter(org: string | undefined, what: string): string {
-  return `Ask the person who invited you${org ? ` to ${org}` : ""} to ${what}. A new invite email comes with a fresh link and code.`;
+/**
+ * "Ask Priya (who invited you to Acme) to …" — the inviter's name and the org only when the page
+ * knows them (`inviter_name` on the preview, UX audit ONB-05); otherwise "the person who invited you".
+ */
+function askInviter(org: string | undefined, what: string, inviter?: string): string {
+  const who = inviter?.trim()
+    ? `${inviter.trim()}${org ? ` (who invited you to ${org})` : ""}`
+    : `the person who invited you${org ? ` to ${org}` : ""}`;
+  return `Ask ${who} to ${what}. A new invite email comes with a fresh link and code.`;
 }
 
 export function InviteAcceptForm() {
@@ -228,8 +234,8 @@ export function InviteAcceptForm() {
         location: values.location?.trim() || undefined,
         date_of_birth: values.dateOfBirth || undefined,
         work_mode: values.workMode,
-        // No terms field: `POST /v1/invites/accept` has none, so the agreement is required here and
-        // not yet recorded server-side (ONB-08) — never sent as a field the server would drop.
+        // Recorded on their user row as `terms_accepted_at` (ONB-08); the form won't submit without it.
+        terms_accepted: values.terms,
       });
 
       // Account exists now. Try to sign them straight in; if that hiccups, send them to /login —
@@ -298,7 +304,9 @@ export function InviteAcceptForm() {
   if (preview && preview.status !== "pending") {
     return (
       <AuthShell>
-        <LinkNotice {...noticeForStatus(preview.status, preview.org_name)} />
+        <LinkNotice
+          {...noticeForStatus(preview.status, preview.org_name, preview.inviter_name)}
+        />
       </AuthShell>
     );
   }
@@ -632,6 +640,7 @@ function MonitoringNotice({ org }: { org: string }) {
 function noticeForStatus(
   status: string,
   org: string | undefined,
+  inviter?: string,
 ): {
   title: string;
   description: string;
@@ -644,7 +653,7 @@ function noticeForStatus(
         title: "This invite has expired",
         description: "Invites are valid for 7 days, and this one has run out.",
         helpTitle: "Request a new invite",
-        help: askInviter(org, "send you a new one"),
+        help: askInviter(org, "send you a new one", inviter),
       };
     case "accepted":
       return {
@@ -657,13 +666,13 @@ function noticeForStatus(
         title: "This invite is locked",
         description: "Too many incorrect codes were entered, so this invite can't be used now.",
         helpTitle: "Request a new invite",
-        help: askInviter(org, "resend it"),
+        help: askInviter(org, "resend it", inviter),
       };
     default:
       return {
         title: "Invite unavailable",
         description: "This invite can no longer be used.",
-        help: askInviter(org, "send you a new invite"),
+        help: askInviter(org, "send you a new invite", inviter),
       };
   }
 }
